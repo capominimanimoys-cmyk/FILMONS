@@ -1,0 +1,14 @@
+/* Prevent black background flash at scroll overscroll */
+html, body, #root {
+  background-color: #ffffff;
+  min-height: 100%;
+}
+
+html {
+  /* iOS overscroll background */
+  overscroll-behavior: none;
+}
+
+body {
+  overscroll-behavior-y: none;
+}

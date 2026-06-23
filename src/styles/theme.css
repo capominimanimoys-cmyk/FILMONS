@@ -1,0 +1,248 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   FILMONS — Theme System
+   Light mode: clean white + blue (default)
+   Dark mode: AMOLED black with glass/neon accents
+   Toggle: add `.dark` class to <html>
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Transition for smooth switching ─────────────────────────────────── */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+  transition-duration: 0.18s;
+  transition-timing-function: ease;
+}
+/* Disable transitions for images/videos */
+img, video { transition: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DARK MODE
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Root — AMOLED black */
+.dark, .dark body, .dark #root {
+  background-color: #000000 !important;
+  color: #ededed !important;
+  color-scheme: dark;
+}
+
+/* ── Backgrounds ─────────────────────────────────────────────────────── */
+.dark .bg-white           { background-color: #141414 !important; }
+.dark .bg-gray-50         { background-color: #0d0d0d !important; }
+.dark .bg-gray-100        { background-color: #1c1c1c !important; }
+.dark .bg-gray-200        { background-color: #262626 !important; }
+.dark .bg-gray-800        { background-color: #e5e5e5 !important; }
+.dark .bg-gray-900        { background-color: #f0f0f0 !important; }
+
+/* Glass effect on cards in dark mode */
+.dark .rounded-2xl.bg-white,
+.dark .rounded-2xl.border {
+  background-color: rgba(255,255,255,0.055) !important;
+  backdrop-filter: blur(16px) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.5) !important;
+}
+
+/* ── Text ─────────────────────────────────────────────────────────────── */
+.dark .text-gray-900      { color: #f0f0f0 !important; }
+.dark .text-gray-800      { color: #d8d8d8 !important; }
+.dark .text-gray-700      { color: #c0c0c0 !important; }
+.dark .text-gray-600      { color: #a0a0a0 !important; }
+.dark .text-gray-500      { color: #848484 !important; }
+.dark .text-gray-400      { color: #686868 !important; }
+.dark .text-gray-300      { color: #505050 !important; }
+.dark .text-black         { color: #f0f0f0 !important; }
+
+/* ── Borders ─────────────────────────────────────────────────────────── */
+.dark .border-gray-50     { border-color: #1a1a1a !important; }
+.dark .border-gray-100    { border-color: #222222 !important; }
+.dark .border-gray-200    { border-color: #2e2e2e !important; }
+.dark .border-gray-300    { border-color: #3a3a3a !important; }
+.dark .border             { border-color: #222222 !important; }
+
+/* ── Inputs ──────────────────────────────────────────────────────────── */
+.dark input, .dark textarea, .dark select {
+  background-color: #1a1a1a !important;
+  color: #ededed !important;
+  border-color: #333 !important;
+}
+.dark input::placeholder, .dark textarea::placeholder { color: #555 !important; }
+.dark input:focus, .dark textarea:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.2) !important;
+}
+
+/* ── Navigation / Header ─────────────────────────────────────────────── */
+.dark header {
+  background-color: rgba(0,0,0,0.95) !important;
+  border-color: rgba(255,255,255,0.06) !important;
+  backdrop-filter: blur(16px) !important;
+}
+/* Bottom tab bar */
+.dark nav, .dark .fixed.bottom-0 {
+  background-color: rgba(0,0,0,0.97) !important;
+  border-color: rgba(255,255,255,0.06) !important;
+}
+
+/* ── Hover states ─────────────────────────────────────────────────────── */
+.dark .hover\:bg-gray-50:hover    { background-color: #161616 !important; }
+.dark .hover\:bg-gray-100:hover   { background-color: #202020 !important; }
+
+/* ── Shadows → neon glow in dark mode ─────────────────────────────────── */
+.dark .shadow-sm  { box-shadow: 0 1px 6px rgba(0,0,0,0.7) !important; }
+.dark .shadow-md  { box-shadow: 0 4px 20px rgba(0,0,0,0.8) !important; }
+.dark .shadow-xl  { box-shadow: 0 8px 40px rgba(0,0,0,0.9) !important; }
+.dark .shadow-2xl { box-shadow: 0 16px 60px rgba(0,0,0,0.95) !important; }
+
+/* ── Blue accent — stays electric blue ───────────────────────────────── */
+.dark .bg-blue-600         { background-color: #2563eb !important; }
+.dark .bg-blue-700         { background-color: #1d4ed8 !important; }
+.dark .text-blue-600       { color: #60a5fa !important; }
+.dark .text-blue-500       { color: #93c5fd !important; }
+.dark .bg-blue-50          { background-color: rgba(59,130,246,0.08) !important; }
+.dark .bg-blue-100         { background-color: rgba(59,130,246,0.12) !important; }
+.dark .border-blue-200     { border-color: rgba(59,130,246,0.3) !important; }
+
+/* ── Purple / Creator+ ────────────────────────────────────────────────── */
+.dark .bg-purple-100       { background-color: rgba(139,92,246,0.1) !important; }
+.dark .text-purple-700     { color: #a78bfa !important; }
+
+/* ── Green ────────────────────────────────────────────────────────────── */
+.dark .bg-green-100        { background-color: rgba(34,197,94,0.08) !important; }
+.dark .text-green-700      { color: #4ade80 !important; }
+.dark .text-green-600      { color: #4ade80 !important; }
+
+/* ── Red ──────────────────────────────────────────────────────────────── */
+.dark .bg-red-50           { background-color: rgba(239,68,68,0.06) !important; }
+.dark .text-red-500        { color: #f87171 !important; }
+
+/* ── Amber / warning ─────────────────────────────────────────────────── */
+.dark .bg-amber-50         { background-color: rgba(245,158,11,0.06) !important; }
+.dark .text-amber-700      { color: #fbbf24 !important; }
+
+/* ── Gradients ─────────────────────────────────────────────────────────── */
+.dark .bg-gradient-to-br   { filter: brightness(0.88) saturate(1.15); }
+.dark .bg-gradient-to-r    { filter: brightness(0.92) saturate(1.1); }
+
+/* ── Dividers ─────────────────────────────────────────────────────────── */
+.dark [class*="divide-gray"] > * + * { border-color: #222 !important; }
+
+/* ── Sticky / backdrop ────────────────────────────────────────────────── */
+.dark .sticky { background-color: rgba(0,0,0,0.95) !important; }
+
+/* ══════════════════════════════════════════════════════════
+   DARK MODE NEON GLASS EFFECTS (applied via JS class)
+   Add .glass to any card for the glassmorphism effect
+   ══════════════════════════════════════════════════════════ */
+.dark .glass {
+  background: rgba(255,255,255,0.03) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+/* Neon glow on Creator+ badge */
+.dark [class*="from-purple"] {
+  box-shadow: 0 0 12px rgba(139,92,246,0.4) !important;
+}
+
+/* Image brightness adjustment */
+.dark img { filter: brightness(0.88) saturate(1.05); }
+.dark img[src*="avatar"], .dark img[src*="profile"] { filter: none; }
+
+/* ── Profile About form utility class ─────────────────────────────── */
+.input-field {
+  width: 100%;
+  background-color: #ffffff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #1f2937;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input-field:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+
+/* Dark mode for input-field */
+.dark .input-field,
+[data-theme="dark"] .input-field {
+  background-color: #1a1a1a !important;
+  border-color: #333 !important;
+  color: #ededed !important;
+}
+
+/* ── Login page always keeps dark text (not affected by dark mode override) ── */
+html[data-theme="dark"] input.text-gray-900,
+html[data-theme="dark"] textarea.text-gray-900 {
+  color: #111827 !important;
+  background-color: #f9fafb !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DARK MODE — ENHANCED AESTHETIC
+   Better posts, buttons, feed cards, settings rows
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Primary blue buttons — keep electric blue, add subtle glow ─── */
+.dark .bg-blue-600 {
+  background-color: #2563eb !important;
+  box-shadow: 0 0 16px rgba(37,99,235,0.35) !important;
+}
+.dark .bg-blue-600:hover {
+  background-color: #1d4ed8 !important;
+  box-shadow: 0 0 22px rgba(37,99,235,0.5) !important;
+}
+
+/* ── Feed post cards ─────────────────────────────────────────────── */
+.dark .post-card,
+.dark [class*="rounded-"][class*="bg-white"],
+.dark [class*="rounded-2xl"][class*="bg-white"] {
+  background-color: #161616 !important;
+  border-color: rgba(255,255,255,0.07) !important;
+}
+
+/* ── Settings rows / list items ──────────────────────────────────── */
+.dark .hover\:bg-gray-50:hover { background-color: #1a1a1a !important; }
+.dark [class*="divide-gray"] > * + * { border-color: rgba(255,255,255,0.06) !important; }
+
+/* ── Settings icon containers ────────────────────────────────────── */
+.dark .bg-gray-50 { background-color: #1c1c1c !important; }
+
+/* ── Amber/warning banners ───────────────────────────────────────── */
+.dark .bg-amber-50  { background-color: rgba(245,158,11,0.07) !important; }
+.dark .border-amber-200 { border-color: rgba(245,158,11,0.2) !important; }
+
+/* ── Blue accent surfaces ────────────────────────────────────────── */
+.dark .bg-blue-50   { background-color: rgba(59,130,246,0.08) !important; }
+.dark .bg-blue-100  { background-color: rgba(59,130,246,0.13) !important; }
+
+/* ── Green accent surfaces ───────────────────────────────────────── */
+.dark .bg-green-50  { background-color: rgba(34,197,94,0.07) !important; }
+.dark .bg-green-100 { background-color: rgba(34,197,94,0.10) !important; }
+
+/* ── Purple accent surfaces ──────────────────────────────────────── */
+.dark .bg-purple-50  { background-color: rgba(139,92,246,0.07) !important; }
+.dark .bg-purple-100 { background-color: rgba(139,92,246,0.11) !important; }
+
+/* ── Sticky header glass ─────────────────────────────────────────── */
+.dark .sticky.top-14,
+.dark .sticky.top-0 {
+  background-color: rgba(0,0,0,0.88) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  border-color: rgba(255,255,255,0.07) !important;
+}
+
+/* ── Dividers ─────────────────────────────────────────────────────── */
+.dark .border-gray-50  { border-color: rgba(255,255,255,0.05) !important; }
+.dark .border-gray-100 { border-color: rgba(255,255,255,0.07) !important; }
+.dark .border-gray-200 { border-color: rgba(255,255,255,0.10) !important; }
+.dark .border-gray-300 { border-color: rgba(255,255,255,0.15) !important; }
+
+/* ── Image brightness ────────────────────────────────────────────── */
+.dark img:not([src*="avatar"]):not([src*="profile"]) {
+  filter: brightness(0.90) saturate(1.08);
+}
+
+/* ── Feed page background — AMOLED black ────────────────────────── */
+.dark .feed-page { background-color: #000000 !important; }
+

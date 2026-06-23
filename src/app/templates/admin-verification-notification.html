@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            color: white;
+            padding: 40px 30px;
+            border-radius: 12px 12px 0 0;
+            text-align: center;
+        }
+        .logo {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+        .header-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 12px;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-left: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+        }
+        .alert-box {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .alert-icon {
+            font-size: 36px;
+            margin-bottom: 8px;
+        }
+        .alert-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #92400e;
+            margin: 0;
+        }
+        .alert-sub {
+            font-size: 14px;
+            color: #b45309;
+            margin-top: 4px;
+        }
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 28px 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .info-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 12px;
+        }
+        .info-label {
+            display: table-cell;
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+            width: 40%;
+            vertical-align: top;
+            padding: 8px 0;
+        }
+        .info-value {
+            display: table-cell;
+            color: #111827;
+            font-size: 14px;
+            vertical-align: top;
+            padding: 8px 0;
+        }
+        .info-block {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 8px;
+        }
+        .user-card {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+        }
+        .user-card-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 4px;
+        }
+        .user-card-id {
+            font-size: 12px;
+            color: #3b82f6;
+            font-family: 'Courier New', monospace;
+        }
+        .tag {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1d4ed8;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 6px;
+            margin-top: 8px;
+        }
+        .tag.phone {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .tag.email {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+        .cta-button {
+            display: block;
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            color: white !important;
+            padding: 16px 32px;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 16px;
+            text-align: center;
+            margin: 30px 0 10px 0;
+        }
+        .cta-sub {
+            text-align: center;
+            font-size: 13px;
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+        .divider {
+            height: 1px;
+            background: #e5e7eb;
+            margin: 25px 0;
+        }
+        .footer {
+            background: #f9fafb;
+            padding: 30px;
+            text-align: center;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid #e5e7eb;
+            border-top: none;
+        }
+        .footer-text {
+            color: #6b7280;
+            font-size: 14px;
+            margin: 8px 0;
+        }
+        .request-id-box {
+            background: #f3f4f6;
+            border: 1px dashed #d1d5db;
+            border-radius: 6px;
+            padding: 10px 16px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .request-id-label {
+            font-size: 11px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .request-id-value {
+            font-size: 13px;
+            color: #374151;
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="logo">FILMONS 🎬</div>
+        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Admin Notification Center</p>
+        <div class="header-badge">🔔 New Verification Request</div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+        <!-- Alert -->
+        <div class="alert-box">
+            <div class="alert-icon">📋</div>
+            <p class="alert-title">New Verification Request Received</p>
+            <p class="alert-sub">A user has submitted their details for host verification. Review and take action below.</p>
+        </div>
+
+        <!-- User Summary Card -->
+        <div class="user-card">
+            <div class="user-card-name">{{user_name}}</div>
+            <div class="user-card-id">Request ID: {{request_id}}</div>
+            <div>
+                <span class="tag phone">📱 Phone Verified</span>
+                <span class="tag email">✉️ Email Verified</span>
+            </div>
+        </div>
+
+        <!-- Account Details -->
+        <div class="section-title">Account Details</div>
+        <div class="info-block">
+            <div class="info-row">
+                <div class="info-label">👤 Display Name</div>
+                <div class="info-value">{{user_name}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">📧 Email</div>
+                <div class="info-value">{{user_email}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">📱 Phone</div>
+                <div class="info-value">{{user_phone}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">🕐 Submitted At</div>
+                <div class="info-value">{{submitted_at}}</div>
+            </div>
+        </div>
+
+        <!-- Verification Details -->
+        <div class="section-title">Verification Information Provided</div>
+        <div class="info-block">
+            <div class="info-row">
+                <div class="info-label">📝 Full Legal Name</div>
+                <div class="info-value">{{full_name}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">🪪 ID Number</div>
+                <div class="info-value">{{id_number}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">📸 ID Document</div>
+                <div class="info-value">Uploaded (view in admin panel)</div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- CTA -->
+        <a href="{{admin_link}}" class="cta-button">
+            🔍 Review &amp; Approve / Deny Request →
+        </a>
+        <p class="cta-sub">
+            Password: <strong>filmons2024</strong> &nbsp;|&nbsp; Direct link to Admin Verifications panel
+        </p>
+
+        <div class="divider"></div>
+
+        <p style="color: #6b7280; font-size: 13px; text-align: center;">
+            Once approved, the user's profile will automatically update with a <strong>✓ Verified Seller</strong> badge.
+        </p>
+
+        <!-- Request ID -->
+        <div class="request-id-box">
+            <div class="request-id-label">Verification Request ID</div>
+            <div class="request-id-value">{{request_id}}</div>
+        </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <p class="footer-text">
+            <strong>FILMONS</strong> — Admin Notification
+        </p>
+        <p class="footer-text">
+            This email was sent automatically when a user submitted a verification request.
+        </p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
+            © 2026 Filmons. All rights reserved.
+        </p>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+@import url('https://api.fontshare.com/v2/css?f[]=neue-montreal@400,500,700,800&display=swap');
+
+/* San Francisco Pro is Apple's system font — accessible via system-ui */
+/* This stack renders SF Pro on Apple devices, Segoe UI on Windows, Roboto on Android */
+:root {
+  --font-sans: -apple-system, 'SF Pro Display', 'SF Pro Text', BlinkMacSystemFont,
+               'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-logo: 'Neue Montreal', 'SF Pro Display', -apple-system, sans-serif;
+}
+
+html, body, #root {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tailwind font-sans override */
+*, *::before, *::after {
+  font-family: var(--font-sans);
+}

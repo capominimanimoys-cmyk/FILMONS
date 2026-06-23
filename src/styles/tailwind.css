@@ -1,0 +1,5 @@
+@import 'tailwindcss' source(none);
+@source '../**/*.{js,ts,jsx,tsx}';
+@variant dark (&:where(.dark, .dark *));
+/* Explicitly override @variant dark to use .dark class on html */
+@variant dark (&:where(html.dark, html.dark *));

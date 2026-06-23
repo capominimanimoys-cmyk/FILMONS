@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Welcome to Filmons</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        'Helvetica Neue', Arial, sans-serif;
+      background-color: #f1f5f9;
+      color: #1e293b;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrapper {
+      max-width: 620px;
+      margin: 40px auto;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.10);
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: linear-gradient(140deg, #1d4ed8 0%, #1e3a8a 60%, #0f172a 100%);
+      padding: 48px 40px 40px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 220px; height: 220px;
+      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .header::after {
+      content: '';
+      position: absolute;
+      bottom: -40px; left: -40px;
+      width: 160px; height: 160px;
+      background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .film-strip {
+      display: inline-block;
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 8px;
+      padding: 6px 18px;
+      font-size: 12px;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.75);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    .header-logo {
+      font-size: 42px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+    }
+
+    .header-logo span {
+      color: #60a5fa;
+    }
+
+    .header-tagline {
+      font-size: 13px;
+      color: rgba(255,255,255,0.65);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+
+    .welcome-pill {
+      display: inline-block;
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 24px;
+      border-radius: 999px;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 14px rgba(37,99,235,0.45);
+    }
+
+    /* ── HERO ── */
+    .hero {
+      background: #ffffff;
+      padding: 44px 40px 32px;
+      text-align: center;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .hero-emoji {
+      font-size: 54px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .hero-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 10px;
+    }
+
+    .hero-title span {
+      color: #2563eb;
+    }
+
+    .hero-sub {
+      font-size: 15px;
+      color: #64748b;
+      max-width: 380px;
+      margin: 0 auto;
+    }
+
+    /* ── CONTENT ── */
+    .content {
+      background: #ffffff;
+      padding: 0 40px 40px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin: 36px 0 14px;
+    }
+
+    /* Account card */
+    .account-card {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 22px 24px;
+      display: table;
+      width: 100%;
+    }
+
+    .account-card-left {
+      display: table-cell;
+      vertical-align: middle;
+    }
+
+    .account-card-avatar {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: #fff;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .account-card-right {
+      display: table-cell;
+      vertical-align: middle;
+      padding-left: 16px;
+    }
+
+    .account-name {
+      font-size: 17px;
+      font-weight: 700;
+      color: #1e40af;
+    }
+
+    .account-email {
+      font-size: 13px;
+      color: #3b82f6;
+      margin-top: 2px;
+    }
+
+    .account-date {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    .account-badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+      margin-top: 6px;
+    }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #e2e8f0, transparent);
+      margin: 32px 0;
+    }
+
+    /* Features */
+    .features-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 18px;
+    }
+
+    .feature-row {
+      display: table;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    .feature-icon-cell {
+      display: table-cell;
+      width: 48px;
+      vertical-align: top;
+    }
+
+    .feature-icon-wrap {
+      width: 40px; height: 40px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .feature-body {
+      display: table-cell;
+      vertical-align: top;
+      padding-left: 14px;
+      padding-top: 2px;
+    }
+
+    .feature-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 2px;
+    }
+
+    .feature-desc {
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.5;
+    }
+
+    /* Pro tip */
+    .pro-tip {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 1px solid #bbf7d0;
+      border-left: 4px solid #22c55e;
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin: 28px 0;
+    }
+
+    .pro-tip-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #15803d;
+      margin-bottom: 5px;
+    }
+
+    .pro-tip-body {
+      font-size: 13px;
+      color: #166534;
+      line-height: 1.6;
+    }
+
+    /* CTA */
+    .cta-wrap {
+      text-align: center;
+      margin: 32px 0 24px;
+    }
+
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 15px 40px;
+      border-radius: 10px;
+      letter-spacing: 0.3px;
+      box-shadow: 0 4px 18px rgba(37,99,235,0.35);
+    }
+
+    .cta-sub {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 10px;
+    }
+
+    /* Security note */
+    .security-note {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.5;
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      background: #0f172a;
+      padding: 36px 40px;
+      text-align: center;
+    }
+
+    .footer-logo {
+      font-size: 20px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+
+    .footer-logo span { color: #60a5fa; }
+
+    .footer-tagline {
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    .footer-links {
+      margin-bottom: 20px;
+    }
+
+    .footer-links a {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 12px;
+      margin: 0 10px;
+    }
+
+    .footer-copy {
+      font-size: 11px;
+      color: #334155;
+      margin-top: 16px;
+    }
+
+    .footer-no-reply {
+      font-size: 11px;
+      color: #334155;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="wrapper">
+
+  <!-- ══ HEADER ══ -->
+  <div class="header">
+    <div class="film-strip">🎞 &nbsp;Film Gear &amp; Creative Services</div>
+    <div class="header-logo">FIL<span>MONS</span></div>
+    <div class="header-tagline">Your Marketplace for Filmmakers</div>
+    <div class="welcome-pill">🎉 &nbsp;Welcome aboard!</div>
+  </div>
+
+  <!-- ══ HERO ══ -->
+  <div class="hero">
+    <span class="hero-emoji">🎬</span>
+    <div class="hero-title">Hey <span>{{user_name}}</span>, you're in!</div>
+    <p class="hero-sub">
+      Your Filmons account is live and ready. Start browsing gear, listing equipment,
+      and connecting with the filmmaking community.
+    </p>
+  </div>
+
+  <!-- ══ CONTENT ══ -->
+  <div class="content">
+
+    <!-- Account Details -->
+    <div class="section-label">Your Account</div>
+    <div class="account-card">
+      <div class="account-card-left">
+        <div class="account-card-avatar">🎥</div>
+      </div>
+      <div class="account-card-right">
+        <div class="account-name">{{user_name}}</div>
+        <div class="account-email">{{to_email}}</div>
+        <div class="account-date">📅 Joined {{signup_date}}</div>
+        <div class="account-badge">✦ New Member</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- What You Can Do -->
+    <div class="features-title">Everything you can do on Filmons</div>
+
+    <div class="feature-row">
+      <div class="feature-icon-cell">
+        <div class="feature-icon-wrap">📷</div>
+      </div>
+      <div class="feature-body">
+        <div class="feature-name">Browse Film Gear</div>
+        <div class="feature-desc">Rent cameras, lenses, lighting, audio equipment and more from trusted sellers in your area.</div>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-icon-cell">
+        <div class="feature-icon-wrap">🎥</div>
+      </div>
+      <div class="feature-body">
+        <div class="feature-name">Find Creative Services</div>
+        <div class="feature-desc">Hire photographers, directors of photography, video editors, and other film professionals.</div>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-icon-cell">
+        <div class="feature-icon-wrap">📦</div>
+      </div>
+      <div class="feature-body">
+        <div class="feature-name">List Your Own Gear</div>
+        <div class="feature-desc">Turn idle equipment into income — list anything from a tripod to a full cinema rig.</div>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-icon-cell">
+        <div class="feature-icon-wrap">⭐</div>
+      </div>
+      <div class="feature-body">
+        <div class="feature-name">Build Your Reputation</div>
+        <div class="feature-desc">Collect reviews from renters and buyers to establish trust on the platform.</div>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-icon-cell">
+        <div class="feature-icon-wrap">💬</div>
+      </div>
+      <div class="feature-body">
+        <div class="feature-name">Message Sellers & Buyers</div>
+        <div class="feature-desc">Coordinate pickups, ask questions, and close deals directly through your inbox.</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Pro Tip -->
+    <div class="pro-tip">
+      <div class="pro-tip-title">✦ Pro Tip — Get Verified</div>
+      <div class="pro-tip-body">
+        Submit your seller verification to earn the <strong>✓ Verified Seller</strong> badge on your profile.
+        Verified hosts appear higher in search results and close deals faster — it only takes a few minutes.
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta-wrap">
+      <a href="https://your-filmons-url.com" class="cta-button">
+        Start Exploring Filmons &nbsp;→
+      </a>
+      <div class="cta-sub">Browse gear · List equipment · Find talent</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Security note -->
+    <div class="security-note">
+      🔒 <strong>Security notice:</strong> If you didn't sign up for a Filmons account,
+      please ignore this email or contact us immediately so we can protect your email address.
+      We will never ask for your password by email.
+    </div>
+
+  </div>
+
+  <!-- ══ FOOTER ══ -->
+  <div class="footer">
+    <div class="footer-logo">FIL<span>MONS</span></div>
+    <div class="footer-tagline">Film Gear Rentals &amp; Creative Services</div>
+    <div class="footer-links">
+      <a href="#">Browse Gear</a>
+      <a href="#">List Equipment</a>
+      <a href="#">Get Verified</a>
+      <a href="#">Help Center</a>
+    </div>
+    <div class="footer-copy">© 2026 Filmons. All rights reserved.</div>
+    <div class="footer-no-reply">This is an automated message — please do not reply to this email.</div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,230 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   FILMONS MOTION DESIGN SYSTEM
+   Cinematic, fluid, premium UI motion.
+   Philosophy: scenes transitioning, not panels replacing.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Easing curve library ──────────────────────────────────────────────── */
+:root {
+  --ease-out-quart:    cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo:     cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-circ:  cubic-bezier(0.85, 0, 0.15, 1);
+  --ease-spring:       cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-cinematic:    cubic-bezier(0.37, 0, 0.63, 1);
+  --ease-sheet:        cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Duration scale */
+  --dur-micro:    120ms;
+  --dur-fast:     180ms;
+  --dur-normal:   260ms;
+  --dur-page:     320ms;
+  --dur-modal:    280ms;
+  --dur-slow:     420ms;
+}
+
+/* ── 2. Smooth scrolling everywhere ──────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+* {
+  -webkit-overflow-scrolling: touch;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── 3. Global micro-interaction defaults ─────────────────────────────────── */
+button, a, [role="button"] {
+  transition:
+    opacity        var(--dur-micro) var(--ease-out-quart),
+    transform      var(--dur-micro) var(--ease-out-quart),
+    background-color var(--dur-fast) var(--ease-out-quart),
+    box-shadow     var(--dur-fast)  var(--ease-out-quart),
+    border-color   var(--dur-fast)  var(--ease-out-quart),
+    color          var(--dur-fast)  var(--ease-out-quart);
+}
+button:active, a:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+/* Don't scale nav links — feels wrong on mobile */
+nav a:active { transform: none; }
+
+/* ── 4. Card hover — cinematic lift ──────────────────────────────────────── */
+.film-card {
+  transition:
+    transform  var(--dur-normal) var(--ease-out-quart),
+    box-shadow var(--dur-normal) var(--ease-out-quart);
+}
+.film-card:hover {
+  transform:  translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
+}
+.film-card:active {
+  transform:  translateY(0) scale(0.985);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+/* ── 5. Page enter animation ─────────────────────────────────────────────── */
+@keyframes page-enter-forward {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes page-enter-back {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes page-enter-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter-forward {
+  animation: page-enter-forward var(--dur-page) var(--ease-out-expo) both;
+}
+.page-enter-back {
+  animation: page-enter-back var(--dur-page) var(--ease-out-expo) both;
+}
+.page-enter-up {
+  animation: page-enter-up var(--dur-page) var(--ease-out-expo) both;
+}
+
+/* ── 6. Modal / sheet animations ─────────────────────────────────────────── */
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes modal-enter {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes modal-exit {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 0; transform: scale(0.96) translateY(4px); }
+}
+@keyframes sheet-enter {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes sheet-exit {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}
+@keyframes backdrop-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+
+.modal-enter   { animation: modal-enter  var(--dur-modal) var(--ease-out-expo) both; }
+.modal-exit    { animation: modal-exit   180ms var(--ease-in-out-circ) both; }
+.sheet-enter   { animation: sheet-enter  var(--dur-modal) var(--ease-sheet) both; }
+.sheet-exit    { animation: sheet-exit   220ms var(--ease-in-out-circ) both; }
+.backdrop-in   { animation: backdrop-in  var(--dur-normal) ease both; }
+.backdrop-out  { animation: backdrop-out 200ms ease both; }
+
+/* ── 7. Skeleton shimmer loading ─────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e0e0e0 50%,
+    #f0f0f0 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 8px;
+}
+html[data-theme="dark"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    #1a1a1a 25%,
+    #252525 50%,
+    #1a1a1a 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* ── 8. Fade-in stagger for lists ────────────────────────────────────────── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stagger > * {
+  animation: fade-up var(--dur-normal) var(--ease-out-expo) both;
+}
+.stagger > *:nth-child(1) { animation-delay:  0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay:120ms; }
+.stagger > *:nth-child(5) { animation-delay:160ms; }
+.stagger > *:nth-child(6) { animation-delay:200ms; }
+.stagger > *:nth-child(n+7) { animation-delay:240ms; }
+
+/* ── 9. Shared element transition helper ─────────────────────────────────── */
+[data-animate-id] {
+  will-change: transform;
+}
+
+/* ── 10. Image cinematic fade-in ─────────────────────────────────────────── */
+@keyframes img-reveal {
+  from { opacity: 0; filter: blur(8px) scale(1.02); }
+  to   { opacity: 1; filter: blur(0px) scale(1); }
+}
+img.reveal {
+  animation: img-reveal var(--dur-slow) var(--ease-out-quart) both;
+}
+
+/* ── 11. Button shine sweep (CTA buttons) ────────────────────────────────── */
+@keyframes shine {
+  from { left: -100%; }
+  to   { left: 200%; }
+}
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  transform: skewX(-20deg);
+  animation: shine 2.4s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+/* ── 12. Nav active indicator animation ──────────────────────────────────── */
+@keyframes nav-pip {
+  from { transform: translateX(-50%) scaleX(0); opacity: 0; }
+  to   { transform: translateX(-50%) scaleX(1); opacity: 1; }
+}
+.nav-active-pip {
+  animation: nav-pip 200ms var(--ease-spring) both;
+}
+
+/* ── 13. Toast / notification entry ──────────────────────────────────────── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-enter { animation: toast-in 220ms var(--ease-out-expo) both; }
+
+/* ── 14. Cinematic ambient glow (for hero/cover areas) ───────────────────── */
+@keyframes ambient-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 0.5; }
+}
+.ambient-glow {
+  animation: ambient-pulse 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ── 15. Reduce motion for accessibility ─────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:   0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration:  0.01ms !important;
+  }
+}
