@@ -1000,6 +1000,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [showFilterSheet,setShowFilterSheet]= useState(false);
   const [showSortSheet,  setShowSortSheet]  = useState(false);
 
+  const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const suggRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

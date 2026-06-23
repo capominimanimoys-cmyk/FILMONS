@@ -10,6 +10,7 @@ import {
   UserPlus, UserCheck, Share2, Package, Grid3X3, List, LayoutGrid, Globe, X,
 } from 'lucide-react';
 import { AccountTypeBadge } from '../components/AccountTypeBadge';
+import { ReliabilityBadge } from '../components/ReliabilityScore';
 import { ListingCard } from '../components/ListingCard';
 import { toast } from 'sonner';
 import { FollowersModal } from '../components/FollowersModal';
@@ -142,18 +143,6 @@ function computeTrustLevel(
   };
 
   return { level, signals, ...configs[level] };
-}
-
-// ── Trust Badge (inline pill) ─────────────────────────────────────────────────
-function TrustBadge({ trust, onClick }: { trust: TrustResult; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${trust.badgeCls}`}>
-      <span>{trust.emoji}</span>
-      {trust.label}
-    </button>
-  );
 }
 
 // ── Trust Info Sheet (bottom sheet) ──────────────────────────────────────────
@@ -301,6 +290,7 @@ export function HostProfile() {
   const [reviews,          setReviews]          = useState<Review[]>([]);
   const [portfolioItems,   setPortfolioItems]   = useState<PortfolioItem[]>([]);
   const [reliabilityLevel, setReliabilityLevel] = useState<string>('new_user');
+  const [reliabilityScore, setReliabilityScore] = useState<number>(0);
   const [following,      setFollowing]      = useState(false);
   const [confirmUnfollow,setConfirmUnfollow]= useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -336,9 +326,10 @@ export function HostProfile() {
         listingsApi.getUserListings(uid).catch(() => []),
         reviewsApi.getUserReviews(uid).catch(() => []),
         getPortfolioItems(uid).catch(() => []),
-        supabase.from('reputation_scores').select('reliability_level').eq('user_id', uid).single(),
+        supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single(),
       ]);
       if (repScore.data?.reliability_level) setReliabilityLevel(repScore.data.reliability_level);
+      if (repScore.data?.reliability_score != null) setReliabilityScore(repScore.data.reliability_score);
       setListings(hostListings);
       setReviews(hostReviews);
       setPortfolioItems(hostPortfolio);
@@ -532,7 +523,9 @@ export function HostProfile() {
                   <ShieldCheck className="w-3 h-3"/> Verified
                 </span>
               )}
-              <TrustBadge trust={trust} onClick={() => setShowTrustSheet(true)}/>
+              <button onClick={() => setShowTrustSheet(true)} className="flex-shrink-0">
+                <ReliabilityBadge score={reliabilityScore} level={reliabilityLevel} accountType={host.accountType} size="sm"/>
+              </button>
             </div>
             {host.username && <p className="text-sm text-gray-400 mt-0.5">@{host.username}</p>}
             {primaryRole && <p className="text-xs font-semibold text-blue-600 mt-0.5">{primaryRole}</p>}
