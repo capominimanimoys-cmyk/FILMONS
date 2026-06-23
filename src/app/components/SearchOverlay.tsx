@@ -400,7 +400,7 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
   const seen = new Set<string>();
   const combined: ListingRow[] = [];
   for (const row of [...(textRes.data ?? []), ...(tagRes.data ?? [])]) {
-    if (row?.id && !seen.has(row.id)) { seen.add(row.id); combined.push(row as ListingRow); }
+    if (row?.id && !seen.has(row.id)) { seen.add(row.id); combined.push(row as unknown as ListingRow); }
   }
   return combined;
 }
@@ -749,11 +749,10 @@ function SortSheet({ sort, onSelect, onClose }: {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
-function CreatorCard({ u, onClose }: { u: ProfileRow; onClose: () => void }) {
-  const navigate = useNavigate();
+function CreatorCard({ u, onNavigate }: { u: ProfileRow; onNavigate: (url: string) => void }) {
   return (
     <motion.button variants={itemV}
-      onClick={() => { onClose(); navigate(`/host/${u.id}`); }}
+      onClick={() => onNavigate(`/host/${u.id}`)}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 shrink-0 border border-gray-200">
         {u.avatar_url
@@ -779,12 +778,11 @@ function CreatorCard({ u, onClose }: { u: ProfileRow; onClose: () => void }) {
   );
 }
 
-function MarketplaceCard({ l, onClose }: { l: ListingRow; onClose: () => void }) {
-  const navigate = useNavigate();
+function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
   const price = `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
   return (
     <motion.button variants={itemV}
-      onClick={() => { onClose(); navigate(`/listing/${l.id}`); }}
+      onClick={() => onNavigate(`/listing/${l.id}`)}
       className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
       <div className="aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
@@ -805,11 +803,10 @@ function MarketplaceCard({ l, onClose }: { l: ListingRow; onClose: () => void })
   );
 }
 
-function ServiceCard({ l, onClose }: { l: ListingRow; onClose: () => void }) {
-  const navigate = useNavigate();
+function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
   return (
     <motion.button variants={itemV}
-      onClick={() => { onClose(); navigate(`/listing/${l.id}`); }}
+      onClick={() => onNavigate(`/listing/${l.id}`)}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
@@ -831,11 +828,10 @@ function ServiceCard({ l, onClose }: { l: ListingRow; onClose: () => void }) {
   );
 }
 
-function PortfolioCard({ item, onClose }: { item: PortfolioRow; onClose: () => void }) {
-  const navigate = useNavigate();
+function PortfolioCard({ item, onNavigate }: { item: PortfolioRow; onNavigate: (url: string) => void }) {
   return (
     <motion.button variants={itemV}
-      onClick={() => { onClose(); navigate(`/host/${item.user_id}?tab=portfolio`); }}
+      onClick={() => onNavigate(`/host/${item.user_id}?tab=portfolio`)}
       className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
       <div className="aspect-square bg-gray-100 overflow-hidden">
         {item.thumbnail_url
@@ -980,9 +976,15 @@ function SuggestionList({ suggestions, onSelect, loading }: {
 }
 
 // ── Main overlay ───────────────────────────────────────────────────────────────
-interface Props { onClose: () => void; }
+interface Props {
+  onClose: () => void;
+  /** If provided, called with the target URL when a result card is clicked.
+   *  Use this in route-based contexts (SearchPage) to avoid the 280ms delayed
+   *  navigate(-1) from firing after the user has already navigated to a result. */
+  onResultNavigate?: (url: string) => void;
+}
 
-export function SearchOverlay({ onClose }: Props) {
+export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
   const [rawListings,    setRawListings]    = useState<ListingRow[]>([]);
@@ -1003,6 +1005,19 @@ export function SearchOverlay({ onClose }: Props) {
   const suggRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const handleClose = useCallback(() => { setClosing(true); setTimeout(onClose, 280); }, [onClose]);
+
+  // For result card clicks: if caller provides onResultNavigate, use it directly
+  // (avoids the delayed navigate(-1) firing AFTER we've already navigated to the result).
+  // For modal usage (Root.tsx), fall back to navigate(url) + delayed onClose.
+  const handleResultNavigate = useCallback((url: string) => {
+    setClosing(true);
+    if (onResultNavigate) {
+      onResultNavigate(url);
+    } else {
+      navigate(url);
+      setTimeout(onClose, 280);
+    }
+  }, [navigate, onClose, onResultNavigate]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
   useEffect(() => {
@@ -1203,22 +1218,22 @@ export function SearchOverlay({ onClose }: Props) {
             <div className="py-2">
               {visibleUsers.length > 0 && (
                 <ResultSection label={activeTab === 'portfolio' ? '🎨 Portfolio Creators' : '👤 Creators'} count={visibleUsers.length}>
-                  {visibleUsers.slice(0, 10).map(u => <CreatorCard key={u.id} u={u} onClose={handleClose}/>)}
+                  {visibleUsers.slice(0, 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visiblePortfolio.length > 0 && activeTab !== 'creators' && (
                 <ResultSection label="🎨 Portfolio" count={visiblePortfolio.length} grid>
-                  {visiblePortfolio.map(item => <PortfolioCard key={item.id} item={item} onClose={handleClose}/>)}
+                  {visiblePortfolio.map(item => <PortfolioCard key={item.id} item={item} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleGear.length > 0 && (
                 <ResultSection label="📦 Marketplace" count={visibleGear.length} grid>
-                  {visibleGear.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onClose={handleClose}/>)}
+                  {visibleGear.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
                 <ResultSection label="🛠️ Services" count={visibleServices.length}>
-                  {visibleServices.slice(0, 10).map(l => <ServiceCard key={l.id} l={l} onClose={handleClose}/>)}
+                  {visibleServices.slice(0, 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {activeTab === 'schools' && <SchoolsPlaceholder/>}
