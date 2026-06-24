@@ -56,13 +56,12 @@ function _notifTitle(type: string, actorName: string): string {
 }
 
 async function _insertNotification(row: Record<string, any>) {
-  // Always use the column names the edge function creates (to_user_id convention)
-  const title = row.title || _notifTitle(row.type || '', row.from_user_name || 'Someone');
+  const title = row.title || _notifTitle(row.type || '', row.actor_name || row.from_user_name || 'Someone');
   const payload = { ...row, title };
 
   const { error } = await supabase.from('notifications').insert(payload);
   if (!error) {
-    console.log('[notifications] ✓ saved type:', row.type, '→', row.to_user_id);
+    console.log('[notifications] ✓ saved type:', row.type, '→', row.user_id ?? row.to_user_id);
     return;
   }
   console.error('[notifications] insert error:', error.code, '-', error.message);
@@ -131,19 +130,19 @@ export function push(
     try { window.dispatchEvent(new CustomEvent('filmons:notif', { detail: full })); } catch {}
   }
 
-  // Write to Supabase — use the column names the edge function creates
+  // Write to Supabase — use the actual table column names (user_id convention)
   _insertNotification({
-    to_user_id:      toUserId,
-    from_user_id:    notif.fromUserId        || null,
-    from_user_name:  notif.fromUserName       || '',
-    from_user_avatar: notif.fromUserAvatar    || null,
+    user_id:      toUserId,
+    actor_id:     notif.fromUserId        || null,
+    actor_name:   notif.fromUserName      || '',
+    actor_avatar: notif.fromUserAvatar    || null,
     type:            notif.type,
     post_id:         (notif as any).postId    || null,
     post_content:    (notif as any).postContent || null,
     post_image:      (notif as any).postImage   || null,
     comment_content: (notif as any).commentContent || null,
     conversation_id: (notif as any).conversationId || null,
-    read:            false,
+    is_read:         false,
   });
 }
 

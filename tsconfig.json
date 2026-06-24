@@ -8,6 +8,12 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
 
+    /* Allow Vite root-relative imports like /utils/supabase/info */
+    "baseUrl": ".",
+    "paths": {
+      "/utils/supabase/info": ["utils/supabase/info"]
+    },
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

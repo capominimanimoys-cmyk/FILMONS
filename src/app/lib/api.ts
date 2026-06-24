@@ -2494,9 +2494,14 @@ export const chatApi = {
 
   async fetchMessages(convId: string): Promise<ChatMessage[]> {
     try {
-      // Route through the server edge function to bypass RLS recursion
+      // Route through the server edge function to bypass RLS
       const data = await call<any>(`/conversations/${encodeURIComponent(convId)}/messages?limit=100`);
       const messages: ChatMessage[] = (data?.messages || []).map(dbRowToMsg);
+
+      if (!messages.length) {
+        console.warn('[fetchMessages] edge fn returned 0 messages for conv', convId,
+          '— check: (1) SUPABASE_DB_URL set in edge function secrets, (2) conversation_id in messages table matches this ID');
+      }
 
       // Merge into localStorage cache
       const convs = loadConvs();
@@ -2519,25 +2524,35 @@ export const chatApi = {
         return messages;
       }
     } catch (e) {
-      console.warn('fetchMessages edge fn failed, trying direct Supabase:', e);
+      console.warn('[fetchMessages] edge fn failed for conv', convId, ':', e, '— trying direct Supabase');
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('messages')
-          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, edited_at, deleted_for, is_read')
+          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted')
           .eq('conversation_id', convId)
-          .order('created_at', { ascending: true })
+          .order('created_at', { ascending: false })
           .limit(100);
+        if (error) {
+          console.warn('[fetchMessages] direct Supabase error:', error.message,
+            '— likely missing RLS SELECT policy on messages table. Fix: add policy "auth.uid()::text = ANY(SELECT unnest(participants) FROM conversations WHERE id = conversation_id)"');
+        }
         if (data && data.length > 0) {
-          const messages: ChatMessage[] = data.map(dbRowToMsg);
+          // Reverse so messages are oldest-first after fetching newest-first
+          const messages: ChatMessage[] = data.reverse().map(dbRowToMsg);
+          // Union-merge into localStorage cache
           const convs = loadConvs();
           const idx = convs.findIndex(c => c.id === convId);
           if (idx !== -1) {
-            convs[idx].messages = messages;
+            const serverMap = new Map(messages.map(m => [m.id, m]));
+            const kept = convs[idx].messages.filter(m => !serverMap.has(m.id));
+            convs[idx].messages = [...kept, ...messages].sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
             saveConvs(convs);
           }
           return messages;
         }
-      } catch (supaErr) { console.warn('fetchMessages direct Supabase also failed:', supaErr); }
+      } catch (supaErr) { console.warn('[fetchMessages] direct Supabase also failed:', supaErr); }
     }
     return loadConvs().find(c => c.id === convId)?.messages ?? [];
   },
@@ -2766,7 +2781,7 @@ export const chatApi = {
       try {
         const { data } = await supabase
           .from('messages')
-          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, is_read')
+          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted')
           .in('conversation_id', convIds)
           .order('created_at', { ascending: true });
         allMsgs = data;

@@ -49,6 +49,8 @@ import { PostDetail } from './pages/PostDetail';
 import { ReelFeed } from './pages/ReelFeed';
 import MyOrders from './pages/MyOrders';
 import { SearchPage } from './pages/SearchPage';
+import { OAuthCallback } from './pages/OAuthCallback';
+import { Onboarding }    from './pages/Onboarding';
 
 export const router = createBrowserRouter([
   {
@@ -108,4 +110,6 @@ export const router = createBrowserRouter([
   { path: '/create-account',   Component: CreateAccount  },
   { path: '/forgot-password',  Component: ForgotPassword },
   { path: '/reset-password',    Component: ResetPassword  },
+  { path: '/auth/callback',    Component: OAuthCallback  },
+  { path: '/onboarding',       Component: Onboarding     },
 ]);

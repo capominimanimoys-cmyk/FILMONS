@@ -7,6 +7,7 @@ import { useNavigate, Link } from 'react-router';
 import { Eye, EyeOff, ArrowLeft, Mail, Phone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
+import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 
@@ -49,29 +50,15 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
   );
 }
 
-function AppleLogo({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 3.99zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-    </svg>
-  );
-}
-
 // ── OAuth button ───────────────────────────────────────────────────────────
-type OAuthProvider = 'google' | 'apple';
-function OAuthBtn({ provider, onClick }: { provider: OAuthProvider; onClick: () => void }) {
-  const isGoogle = provider === 'google';
+function OAuthBtn({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick}
-      className={`w-full flex items-center gap-3 active:scale-[0.98] border font-semibold text-sm rounded-2xl px-4 py-3.5 transition-all backdrop-blur-sm ${
-        isGoogle
-          ? 'bg-white hover:bg-gray-50 border-white/80 text-gray-800 shadow-sm'
-          : 'bg-[#1c1c1e] hover:bg-[#2c2c2e] border-white/15 text-white'
-      }`}>
+      className="w-full flex items-center gap-3 active:scale-[0.98] border font-semibold text-sm rounded-2xl px-4 py-3.5 transition-all backdrop-blur-sm bg-white hover:bg-gray-50 border-white/80 text-gray-800 shadow-sm">
       <span className="w-5 h-5 shrink-0 flex items-center justify-center">
-        {isGoogle ? <GoogleLogo size={20}/> : <AppleLogo size={20}/>}
+        <GoogleLogo size={20}/>
       </span>
-      <span className="flex-1 text-left">{isGoogle ? 'Continue with Google' : 'Continue with Apple'}</span>
+      <span className="flex-1 text-left">Continue with Google</span>
     </button>
   );
 }
@@ -123,8 +110,12 @@ export function Login() {
     setLoading(false);
   };
 
-  const handleOAuth = (provider: string) => {
-    toast.info(`${provider} sign-in — coming soon`);
+  const handleOAuth = async (provider: 'google' | 'apple') => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) toast.error(error.message);
   };
 
   // ── SPLASH ──────────────────────────────────────────────────────────────
@@ -159,8 +150,7 @@ export function Login() {
           </div>
           {/* Methods */}
           <div className="space-y-3">
-            <OAuthBtn provider="google" onClick={() => handleOAuth('Google')}/>
-            <OAuthBtn provider="apple"  onClick={() => handleOAuth('Apple')}/>
+            <OAuthBtn onClick={() => handleOAuth('google')}/>
             <button onClick={() => setScreen('email')}
               className="w-full flex items-center gap-3 bg-white text-gray-900 font-semibold text-sm rounded-2xl px-4 py-3.5 hover:bg-gray-100 active:scale-[0.98] transition-all">
               <Mail className="w-5 h-5 text-gray-500 shrink-0"/>
@@ -245,8 +235,7 @@ export function Login() {
             <div className="flex-1 h-px bg-white/10"/>
           </div>
           <div className="space-y-2.5">
-            <OAuthBtn provider="google" onClick={() => handleOAuth('Google')}/>
-            <OAuthBtn provider="apple"  onClick={() => handleOAuth('Apple')}/>
+            <OAuthBtn onClick={() => handleOAuth('google')}/>
           </div>
           <p className="text-center text-xs text-white/30 mt-6">
             Don't have an account?{' '}

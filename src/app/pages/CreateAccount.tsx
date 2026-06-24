@@ -6,7 +6,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Eye, EyeOff, ArrowLeft, Check, SkipForward, Camera, Phone, Search, X, Plus, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Check, SkipForward, Camera, Phone, Search, X, Plus, Loader2, Film, Video, User, Gamepad2, Star, Scissors, Music2, Palette, Building2, Package, Layers, Briefcase, Sparkles, ShoppingBag, Users, Wrench, ShoppingCart, Mic } from 'lucide-react';
 import { SmartAddressInput } from '../components/SmartAddressInput';
 import { ProfessionPicker } from '../components/ProfessionPicker';
 import { useAuth } from '../context/AuthContext';
@@ -22,21 +22,22 @@ const TOTAL = 14;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CREATIVE_TYPES = [
-  { emoji:'🎬', label:'Filmmaker'              },
-  { emoji:'📹', label:'Videographer'           },
-  { emoji:'📸', label:'Photographer'           },
-  { emoji:'🧍', label:'Model'                  },
-  { emoji:'🎮', label:'Gamer / Streamer'       },
-  { emoji:'🎭', label:'Actor'                  },
-  { emoji:'✂️', label:'Editor'                 },
-  { emoji:'🎵', label:'Music / Audio Creator'  },
-  { emoji:'🎨', label:'Designer'               },
-  { emoji:'🏢', label:'Production Company'     },
-  { emoji:'🎥', label:'Equipment Owner'        },
-  { emoji:'🏗️', label:'Studio Owner'           },
-  { emoji:'💼', label:'Client / Hirer'         },
-  { emoji:'✨', label:'Other Creative'         },
+type LucideIcon = React.ComponentType<{ className?: string }>;
+const CREATIVE_TYPES: { icon: LucideIcon; label: string }[] = [
+  { icon: Film,      label:'Filmmaker'              },
+  { icon: Video,     label:'Videographer'           },
+  { icon: Camera,    label:'Photographer'           },
+  { icon: User,      label:'Model'                  },
+  { icon: Gamepad2,  label:'Gamer / Streamer'       },
+  { icon: Star,      label:'Actor'                  },
+  { icon: Scissors,  label:'Editor'                 },
+  { icon: Music2,    label:'Music / Audio Creator'  },
+  { icon: Palette,   label:'Designer'               },
+  { icon: Building2, label:'Production Company'     },
+  { icon: Package,   label:'Equipment Owner'        },
+  { icon: Layers,    label:'Studio Owner'           },
+  { icon: Briefcase, label:'Client / Hirer'         },
+  { icon: Sparkles,  label:'Other Creative'         },
 ];
 
 const LANGUAGES = [
@@ -97,16 +98,16 @@ const COLLAB_PROJECT_TYPES = [
   'Modeling','Design','Content Creation','Podcast','Brand Work',
 ];
 
-const MARKETPLACE_INTENTS = [
-  { emoji:'🛍️', label:'Offer Services'     },
-  { emoji:'🎥', label:'Rent Equipment'     },
-  { emoji:'🏗️', label:'Rent Studio Space'  },
-  { emoji:'💼', label:'Get Hired'          },
-  { emoji:'👥', label:'Hire Creatives'     },
-  { emoji:'🔍', label:'Find Equipment'     },
-  { emoji:'🔧', label:'Find Services'      },
-  { emoji:'🌟', label:'Book Talent'        },
-  { emoji:'🛒', label:'Explore Marketplace'},
+const MARKETPLACE_INTENTS: { icon: LucideIcon; label: string }[] = [
+  { icon: ShoppingBag,  label:'Offer Services'      },
+  { icon: Package,      label:'Rent Equipment'      },
+  { icon: Building2,    label:'Rent Studio Space'   },
+  { icon: Briefcase,    label:'Get Hired'           },
+  { icon: Users,        label:'Hire Creatives'      },
+  { icon: Search,       label:'Find Equipment'      },
+  { icon: Wrench,       label:'Find Services'       },
+  { icon: Star,         label:'Book Talent'         },
+  { icon: ShoppingCart, label:'Explore Marketplace' },
 ];
 
 const GEAR_SUGGESTIONS = [
@@ -128,13 +129,6 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
   );
 }
 
-function AppleLogo({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 3.99zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-    </svg>
-  );
-}
 
 function CinematicBg() {
   return (
@@ -300,6 +294,15 @@ export function CreateAccount() {
 
   // ── Step 13: Marketplace Intent ───────────────────────────────────────────
   const [marketplaceIntent, setMarketplaceIntent] = useState<string[]>([]);
+
+  // ── OAuth (Google / Apple) ────────────────────────────────────────────────
+  const handleOAuth = async (provider: 'google' | 'apple') => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) toast.error(error.message);
+  };
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const SKIPPABLE: Step[] = [7, 8, 10, 11, 12];
@@ -525,13 +528,9 @@ export function CreateAccount() {
 
               {/* OAuth */}
               <div className="space-y-2.5">
-                <button onClick={() => toast.info('Google sign-up coming soon')}
+                <button onClick={() => handleOAuth('google')}
                   className="w-full flex items-center gap-3 bg-white hover:bg-gray-50 border border-white/80 text-gray-800 font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all">
                   <GoogleLogo size={18}/><span className="flex-1 text-left">Continue with Google</span>
-                </button>
-                <button onClick={() => toast.info('Apple sign-up coming soon')}
-                  className="w-full flex items-center gap-3 bg-[#1c1c1e] hover:bg-[#2c2c2e] border border-white/15 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all">
-                  <AppleLogo size={18}/><span className="flex-1 text-left">Continue with Apple</span>
                 </button>
                 <button onClick={() => { captureSnapshot(); navigate('/phone-signup'); }}
                   className="w-full flex items-center gap-3 bg-white/8 hover:bg-white/12 border border-white/15 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all">
@@ -659,7 +658,7 @@ export function CreateAccount() {
                 return (
                   <button key={t.label} onClick={() => toggle(creativeTypes, t.label, setCreativeTypes)}
                     className={`flex items-center gap-2.5 px-3.5 py-3 rounded-2xl border-2 text-left transition-all active:scale-95 ${on ? 'bg-blue-600/20 border-blue-500 text-white' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}>
-                    <span className="text-xl shrink-0">{t.emoji}</span>
+                    {(() => { const Icon = t.icon; return <Icon className="w-5 h-5 shrink-0"/>; })()}
                     <span className="text-xs font-semibold leading-tight">{t.label}</span>
                     {on && <Check className="w-3.5 h-3.5 text-blue-400 ml-auto shrink-0"/>}
                   </button>
@@ -1163,7 +1162,7 @@ export function CreateAccount() {
                 return (
                   <button key={opt.label} onClick={() => toggle(marketplaceIntent, opt.label, setMarketplaceIntent)}
                     className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 text-left transition-all active:scale-[0.99] ${on ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:border-white/25'}`}>
-                    <span className="text-xl shrink-0">{opt.emoji}</span>
+                    {(() => { const Icon = opt.icon; return <Icon className="w-5 h-5 shrink-0"/>; })()}
                     <span className={`text-sm font-semibold flex-1 ${on ? 'text-white' : 'text-white/70'}`}>{opt.label}</span>
                     {on && <Check className="w-4 h-4 text-blue-400 shrink-0"/>}
                   </button>

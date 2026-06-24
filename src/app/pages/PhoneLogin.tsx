@@ -9,14 +9,8 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const COUNTRIES = [
-  { code: 'CA', name: 'Canada',         dial: '+1',  flag: '🇨🇦', format: '(###) ###-####' },
-  { code: 'US', name: 'United States',  dial: '+1',  flag: '🇺🇸', format: '(###) ###-####' },
-  { code: 'GB', name: 'United Kingdom', dial: '+44', flag: '🇬🇧', format: '#### ### ####'  },
-  { code: 'FR', name: 'France',         dial: '+33', flag: '🇫🇷', format: '## ## ## ## ##'  },
-  { code: 'DE', name: 'Germany',        dial: '+49', flag: '🇩🇪', format: '#### #######'    },
-  { code: 'AU', name: 'Australia',      dial: '+61', flag: '🇦🇺', format: '#### ### ###'    },
-  { code: 'MX', name: 'Mexico',         dial: '+52', flag: '🇲🇽', format: '## #### ####'   },
-  { code: 'BR', name: 'Brazil',         dial: '+55', flag: '🇧🇷', format: '(##) #####-####' },
+  { code: 'CA', name: 'Canada',        dial: '+1', flag: '🇨🇦', format: '(###) ###-####' },
+  { code: 'US', name: 'United States', dial: '+1', flag: '🇺🇸', format: '(###) ###-####' },
 ];
 
 function formatPhone(raw: string, fmt: string): string {
@@ -203,7 +197,6 @@ export function PhoneLogin() {
   };
 
   const pct = ((step - 1) / 1) * 100;
-  const inputCls = "w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all";
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden">
