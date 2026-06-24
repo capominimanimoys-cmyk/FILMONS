@@ -3,6 +3,7 @@
   "description": "Canada's marketplace for renting film gear, booking creative services, and building a filmmaker community.",
   "private": true,
   "version": "1.0.0",
+  "packageManager": "pnpm@10.33.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
