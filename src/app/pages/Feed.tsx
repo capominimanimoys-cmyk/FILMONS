@@ -3,8 +3,10 @@
  * Placeholder shown while the community feed is in development.
  */
 import { useNavigate } from 'react-router';
+import { Video, Camera, Gamepad2, Mic, Palette, Film, Music2, PenLine, Rocket, Users, MessageCircle } from 'lucide-react';
 
-const ICONS = ['🎥', '📸', '🎮', '🎤', '🎨', '🎬', '🎵', '✏️'];
+type LucideIcon = React.ComponentType<{ className?: string }>;
+const ICONS: LucideIcon[] = [Video, Camera, Gamepad2, Mic, Palette, Film, Music2, PenLine];
 
 export function Feed() {
   const navigate = useNavigate();
@@ -16,7 +18,7 @@ export function Feed() {
         className="sticky top-0 z-10 px-4 pt-12 pb-3 flex items-center gap-3"
         style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #f3f4f6' }}
       >
-        <span className="text-xl">🎬</span>
+        <Film className="w-5 h-5 text-gray-800"/>
         <p className="text-base font-black text-gray-900">Filmons Feed</p>
       </div>
 
@@ -25,17 +27,17 @@ export function Feed() {
 
         {/* Floating icons */}
         <div className="grid grid-cols-4 gap-3 mb-2">
-          {ICONS.map((icon, i) => (
+          {ICONS.map((Icon, i) => (
             <div
               key={i}
-              className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
+              className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{
                 background: 'linear-gradient(135deg,#f0f4ff,#e8eeff)',
                 border: '1px solid #e0e7ff',
                 animation: `float ${2.5 + i * 0.3}s ease-in-out ${i * 0.2}s infinite alternate`,
               }}
             >
-              {icon}
+              <Icon className="w-7 h-7 text-indigo-500"/>
             </div>
           ))}
         </div>
@@ -53,7 +55,7 @@ export function Feed() {
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black mb-2"
             style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}
           >
-            🚀 Coming Soon
+            <Rocket className="w-3 h-3"/> Coming Soon
           </div>
           <h1 className="text-2xl font-black text-gray-900 leading-tight">Community Feed</h1>
           <p className="text-[15px] text-gray-500 leading-relaxed">
@@ -63,14 +65,14 @@ export function Feed() {
 
         {/* Feature list */}
         <div className="w-full max-w-xs space-y-2.5 text-left">
-          {[
-            { icon: '🎬', text: 'Share projects & behind-the-scenes' },
-            { icon: '🎵', text: 'Publish audio postcards' },
-            { icon: '👥', text: 'Discover creators & build your audience' },
-            { icon: '💬', text: 'Connect with the Filmons community' },
-          ].map(({ icon, text }) => (
+          {([
+            { Icon: Film,          text: 'Share projects & behind-the-scenes' },
+            { Icon: Music2,        text: 'Publish audio postcards' },
+            { Icon: Users,         text: 'Discover creators & build your audience' },
+            { Icon: MessageCircle, text: 'Connect with the Filmons community' },
+          ] as { Icon: LucideIcon; text: string }[]).map(({ Icon, text }) => (
             <div key={text} className="flex items-center gap-3 bg-gray-50 rounded-2xl px-4 py-3">
-              <span className="text-lg shrink-0">{icon}</span>
+              <Icon className="w-5 h-5 text-indigo-500 shrink-0"/>
               <p className="text-sm text-gray-700 font-medium">{text}</p>
             </div>
           ))}

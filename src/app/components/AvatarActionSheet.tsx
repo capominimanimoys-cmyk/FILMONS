@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Camera, Eye, BookOpen, Trash2, X, ImagePlus, Upload } from 'lucide-react';
+import { Camera, Eye, Trash2, X, ImagePlus, Upload } from 'lucide-react';
 
 const SHEET_SPRING = { type: 'spring' as const, damping: 32, stiffness: 340, mass: 0.9 };
 
@@ -88,18 +88,15 @@ function PhotoSourcePicker({ onFile, onClose }: { onFile: (f: File) => void; onC
 // ── Main action sheet ────────────────────────────────────────────────────────
 interface AvatarActionSheetProps {
   avatar?: string;
-  hasStory?: boolean;
   onChangePhoto: (file: File) => void;
   onDeletePhoto: () => void;
   onViewPhoto: () => void;
-  onViewStory?: () => void;
-  onAddStory?: () => void;
   onClose: () => void;
 }
 
 export function AvatarActionSheet({
-  avatar, hasStory,
-  onChangePhoto, onDeletePhoto, onViewPhoto, onViewStory, onAddStory, onClose,
+  avatar,
+  onChangePhoto, onDeletePhoto, onViewPhoto, onClose,
 }: AvatarActionSheetProps) {
   const hasAvatar = !!avatar;
   const [showPicker, setShowPicker] = useState(false);
@@ -130,13 +127,6 @@ export function AvatarActionSheet({
           danger: false,
         },
         {
-          icon: <div className="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center shrink-0"><BookOpen className="w-4.5 h-4.5 text-purple-600" /></div>,
-          label: hasStory ? 'View story' : 'Add a story',
-          sub: hasStory ? 'Watch your current story' : 'Share a moment',
-          action: () => { (hasStory ? onViewStory?.() : onAddStory?.()); onClose(); },
-          danger: false,
-        },
-        {
           icon: <div className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center shrink-0"><Trash2 className="w-4.5 h-4.5 text-red-500" /></div>,
           label: 'Delete profile picture',
           sub: 'Remove your current photo',
@@ -150,13 +140,6 @@ export function AvatarActionSheet({
           label: 'Add profile picture',
           sub: 'Choose a photo to represent you',
           action: () => setShowPicker(true),
-          danger: false,
-        },
-        {
-          icon: <div className="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center shrink-0"><BookOpen className="w-4.5 h-4.5 text-purple-600" /></div>,
-          label: 'Add a story',
-          sub: 'Share a moment with followers',
-          action: () => { onAddStory?.(); onClose(); },
           danger: false,
         },
       ];

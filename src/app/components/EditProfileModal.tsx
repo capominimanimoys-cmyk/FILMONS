@@ -4,6 +4,9 @@ import {
   User as UserIcon, ChevronRight, Check, Loader2, Instagram,
   Facebook, Phone, Mail, MessageCircle, Globe, Store,
   ShoppingBag, Briefcase, AlertCircle, Zap,
+  Music2, PenLine, Shirt, Users, Sparkles, Film,
+  BookOpen, Gamepad2, Monitor, Video, Volume2, Palette,
+  Star, Scissors, Dumbbell, UtensilsCrossed, TrendingUp, Building2,
 } from 'lucide-react';
 import { User, UserLink } from '../types';
 import { authApi } from '../lib/api';
@@ -12,30 +15,31 @@ import { UserAvatar } from './AccountTypeBadge';
 import { SmartAddressInput } from './SmartAddressInput';
 
 // ── Account categories ─────────────────────────────────────────────────────
+type LucideIcon = React.ComponentType<{ className?: string }>;
 const CATEGORIES = [
-  { id: 'musician',         emoji: '🎵', label: 'Musician / Artist'     },
-  { id: 'blogger',          emoji: '✍️', label: 'Blogger / Writer'       },
-  { id: 'clothing-brand',   emoji: '👗', label: 'Clothing Brand'         },
-  { id: 'community',        emoji: '🌐', label: 'Community'              },
-  { id: 'digital-creator',  emoji: '✨', label: 'Digital Creator'        },
-  { id: 'content-creator',  emoji: '🎬', label: 'Content Creator'        },
-  { id: 'education',        emoji: '📚', label: 'Education'              },
-  { id: 'gamer',            emoji: '🎮', label: 'Gamer'                  },
-  { id: 'streamer',         emoji: '📺', label: 'Streamer'               },
-  { id: 'photographer',     emoji: '📷', label: 'Photographer'           },
-  { id: 'videographer',     emoji: '🎥', label: 'Videographer'           },
-  { id: 'producer',         emoji: '🎛️', label: 'Producer'               },
-  { id: 'sound-designer',   emoji: '🔊', label: 'Sound Designer'         },
-  { id: 'visual-artist',    emoji: '🎨', label: 'Visual Artist'          },
-  { id: 'actor',            emoji: '🎭', label: 'Actor / Performer'      },
-  { id: 'beauty',           emoji: '💄', label: 'Beauty / Makeup'        },
-  { id: 'fitness',          emoji: '🏋️', label: 'Fitness'                },
-  { id: 'food',             emoji: '🍳', label: 'Food / Chef'            },
-  { id: 'influencer',       emoji: '📱', label: 'Influencer'             },
-  { id: 'brand',            emoji: '🏢', label: 'Brand / Business'       },
-  { id: 'screenwriter',     emoji: '📝', label: 'Screenwriter'           },
-  { id: 'film-tv',          emoji: '🎞️', label: 'Film & TV'              },
-];
+  { id: 'musician',         icon: Music2,        label: 'Musician / Artist'     },
+  { id: 'blogger',          icon: PenLine,        label: 'Blogger / Writer'       },
+  { id: 'clothing-brand',   icon: Shirt,          label: 'Clothing Brand'         },
+  { id: 'community',        icon: Users,          label: 'Community'              },
+  { id: 'digital-creator',  icon: Sparkles,       label: 'Digital Creator'        },
+  { id: 'content-creator',  icon: Film,           label: 'Content Creator'        },
+  { id: 'education',        icon: BookOpen,       label: 'Education'              },
+  { id: 'gamer',            icon: Gamepad2,       label: 'Gamer'                  },
+  { id: 'streamer',         icon: Monitor,        label: 'Streamer'               },
+  { id: 'photographer',     icon: Camera,         label: 'Photographer'           },
+  { id: 'videographer',     icon: Video,          label: 'Videographer'           },
+  { id: 'producer',         icon: Palette,        label: 'Producer'               },
+  { id: 'sound-designer',   icon: Volume2,        label: 'Sound Designer'         },
+  { id: 'visual-artist',    icon: Palette,        label: 'Visual Artist'          },
+  { id: 'actor',            icon: Star,           label: 'Actor / Performer'      },
+  { id: 'beauty',           icon: Scissors,       label: 'Beauty / Makeup'        },
+  { id: 'fitness',          icon: Dumbbell,       label: 'Fitness'                },
+  { id: 'food',             icon: UtensilsCrossed,label: 'Food / Chef'            },
+  { id: 'influencer',       icon: TrendingUp,     label: 'Influencer'             },
+  { id: 'brand',            icon: Building2,      label: 'Brand / Business'       },
+  { id: 'screenwriter',     icon: PenLine,        label: 'Screenwriter'           },
+  { id: 'film-tv',          icon: Film,           label: 'Film & TV'              },
+] as { id: string; icon: LucideIcon; label: string }[];
 
 // ── Nav items ──────────────────────────────────────────────────────────────
 const SECTIONS = [
@@ -547,7 +551,7 @@ export function EditProfileModal({ user, onClose, onSaved }: EditProfileModalPro
                             : 'border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        <span className="text-base leading-none">{cat.emoji}</span>
+                        {(() => { const Icon = cat.icon; return <Icon className="w-4 h-4 shrink-0"/>; })()}
                         <span className="leading-tight">{cat.label}</span>
                         {accountCategory === cat.id && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-blue-500" />}
                       </button>

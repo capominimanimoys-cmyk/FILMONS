@@ -3,7 +3,7 @@
  * 3-step bottom sheet: Category → Details → Media
  */
 import { useState, useRef } from 'react';
-import { X, ChevronLeft, Upload, Link as LinkIcon, Star, Play, Music2, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, Upload, Link as LinkIcon, Star, Play, Music2, Image as ImageIcon, Loader2, Film, Aperture, User, Gamepad2, Palette, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -13,14 +13,15 @@ import {
 
 type Step = 'category' | 'details' | 'media';
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'Film & Video':      '🎬',
-  'Photography':       '📸',
-  'Modeling':          '💃',
-  'Gaming':            '🎮',
-  'Music & Audio':     '🎵',
-  'Design & Creative': '🎨',
-  'Other':             '✨',
+type LucideIcon = React.ComponentType<{ className?: string }>;
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  'Film & Video':      Film,
+  'Photography':       Aperture,
+  'Modeling':          User,
+  'Gaming':            Gamepad2,
+  'Music & Audio':     Music2,
+  'Design & Creative': Palette,
+  'Other':             Sparkles,
 };
 
 interface Props {
@@ -176,7 +177,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
                   style={{ background: '#f9fafb', border: '1px solid #f0f0f0' }}
                 >
-                  <span className="text-2xl w-8 text-center shrink-0">{CATEGORY_ICONS[cat] || '✨'}</span>
+                  {(() => { const Icon = CATEGORY_ICONS[cat] ?? Sparkles; return <Icon className="w-7 h-7 shrink-0 text-gray-600"/>; })()}
                   <span className="text-sm font-black text-gray-900">{cat}</span>
                   <svg className="w-4 h-4 text-gray-300 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6"/>
@@ -191,7 +192,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
             <div className="px-4 pt-4 pb-8 space-y-4">
               {/* Category chip */}
               <div className="flex items-center gap-2">
-                <span className="text-lg">{CATEGORY_ICONS[category] || '✨'}</span>
+                {(() => { const Icon = CATEGORY_ICONS[category] ?? Sparkles; return <Icon className="w-5 h-5 text-blue-500"/>; })()}
                 <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">{category}</span>
                 <button onClick={() => setStep('category')} className="text-xs text-gray-400 underline ml-auto">Change</button>
               </div>

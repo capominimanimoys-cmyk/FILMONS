@@ -8,7 +8,10 @@ import { User, Listing, Review } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
   UserPlus, UserCheck, Share2, Package, Grid3X3, List, LayoutGrid, Globe, X,
+  Video, Music, Image as ImageIcon, Sprout, Briefcase, Trophy,
 } from 'lucide-react';
+
+type LucideIcon = React.ComponentType<{ className?: string }>;
 import { AccountTypeBadge } from '../components/AccountTypeBadge';
 import { ReliabilityBadge } from '../components/ReliabilityScore';
 import { ListingCard } from '../components/ListingCard';
@@ -43,18 +46,18 @@ interface TrustResult {
   level: TrustLevel;
   label: string;
   description: string;
-  emoji: string;
+  icon: LucideIcon;
   badgeCls: string;   // Tailwind classes for the pill
   barCls: string;     // Tailwind class for progress bar fill
   nextHint?: string;
   signals: { label: string; met: boolean }[];
 }
 
-const TRUST_LEVELS: { level: TrustLevel; label: string; emoji: string }[] = [
-  { level: 1, label: 'New Member',   emoji: '🌱' },
-  { level: 2, label: 'Community',    emoji: '💼' },
-  { level: 3, label: 'Trusted',      emoji: '✅' },
-  { level: 4, label: 'Top Creator',  emoji: '🏆' },
+const TRUST_LEVELS: { level: TrustLevel; label: string; icon: LucideIcon }[] = [
+  { level: 1, label: 'New Member',   icon: Sprout },
+  { level: 2, label: 'Community',    icon: Briefcase },
+  { level: 3, label: 'Trusted',      icon: ShieldCheck },
+  { level: 4, label: 'Top Creator',  icon: Trophy },
 ];
 
 const RELIABILITY_LEVEL_MAP: Record<string, TrustLevel> = {
@@ -112,7 +115,7 @@ function computeTrustLevel(
     1: {
       label: 'New Member',
       description: 'Just getting started. Complete your profile to build trust with clients.',
-      emoji: '🌱',
+      icon: Sprout,
       badgeCls: 'bg-gray-100 text-gray-500 border-gray-200',
       barCls:   'bg-gray-400',
       nextHint: 'Add a photo, bio, and your first listing to reach Community level.',
@@ -120,7 +123,7 @@ function computeTrustLevel(
     2: {
       label: 'Community',
       description: 'Active member with a complete profile and at least one listing.',
-      emoji: '💼',
+      icon: Briefcase,
       badgeCls: 'bg-blue-50 text-blue-600 border-blue-200',
       barCls:   'bg-blue-500',
       nextHint: 'Get Filmons Verified and receive your first review to reach Trusted.',
@@ -128,7 +131,7 @@ function computeTrustLevel(
     3: {
       label: 'Trusted',
       description: 'Filmons Verified with real client reviews. Clients can book with confidence.',
-      emoji: '✅',
+      icon: ShieldCheck,
       badgeCls: 'bg-green-50 text-green-700 border-green-200',
       barCls:   'bg-green-500',
       nextHint: 'Maintain 4.5+ stars across 5+ reviews to reach Top Creator.',
@@ -136,7 +139,7 @@ function computeTrustLevel(
     4: {
       label: 'Top Creator',
       description: 'Elite verified professional with outstanding reviews and a strong portfolio.',
-      emoji: '🏆',
+      icon: Trophy,
       badgeCls: 'bg-amber-50 text-amber-700 border-amber-200',
       barCls:   'bg-amber-400',
     },
@@ -173,7 +176,7 @@ function TrustInfoSheet({ trust, onClose }: { trust: TrustResult; onClose: () =>
 
           {/* Level hero card */}
           <div className={`mt-5 p-5 rounded-2xl border ${trust.badgeCls}`}>
-            <span className="text-4xl">{trust.emoji}</span>
+            {(() => { const Icon = trust.icon; return <Icon className="w-10 h-10"/>; })()}
             <p className="text-lg font-black text-gray-900 mt-2">{trust.label}</p>
             <p className="text-sm text-gray-600 mt-1 leading-relaxed">{trust.description}</p>
           </div>
@@ -217,13 +220,13 @@ function TrustInfoSheet({ trust, onClose }: { trust: TrustResult; onClose: () =>
           <div className="mt-6">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Level Ladder</p>
             <div className="space-y-2">
-              {TRUST_LEVELS.map(({ level: l, label, emoji }) => (
+              {TRUST_LEVELS.map(({ level: l, label, icon: LevelIcon }) => (
                 <div key={l} className={`flex items-center gap-3 p-3.5 rounded-xl border transition-colors ${
                   l === trust.level
                     ? `${trust.badgeCls.split(' ')[0]} ${trust.badgeCls.split(' ')[2]}`
                     : 'bg-white border-gray-100'
                 }`}>
-                  <span className="text-xl shrink-0">{emoji}</span>
+                  <LevelIcon className="w-5 h-5 shrink-0"/>
                   <span className={`text-sm flex-1 ${l === trust.level ? 'font-bold text-gray-900' : l < trust.level ? 'text-gray-400 line-through' : 'text-gray-500'}`}>
                     {label}
                   </span>
@@ -404,7 +407,7 @@ export function HostProfile() {
 
   const handleMessage = () => {
     if (!me) { navigate('/login'); return; }
-    navigate(`/inbox?userId=${host?.id}`);
+    navigate(`/inbox?with=${host?.id}`);
   };
 
   const handleShare = async () => {
@@ -642,7 +645,7 @@ export function HostProfile() {
                         <img src={item.thumbnail_url || item.media_url!} alt={item.title} className="w-full h-full object-cover"/>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-3xl opacity-30">
-                          {item.media_type === 'video' ? '🎬' : item.media_type === 'audio' ? '🎵' : '🖼️'}
+                          {item.media_type === 'video' ? <Video className="w-8 h-8 text-gray-400"/> : item.media_type === 'audio' ? <Music className="w-8 h-8 text-gray-400"/> : <ImageIcon className="w-8 h-8 text-gray-400"/>}
                         </div>
                       )}
                       {item.is_featured && (

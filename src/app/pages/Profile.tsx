@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useT } from '../lib/i18n';
 import { useAuth } from '../context/AuthContext';
 import { SoundEditSheet } from '../components/SoundEditSheet';
@@ -9,11 +10,12 @@ import { usePostStore } from '../context/PostContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import {
-  Star, MapPin, ShieldCheck, Loader2, Camera,
+  Star, StarOff, MapPin, ShieldCheck, Loader2, Camera,
   Globe, Link as LinkIcon, X, Settings, Bookmark,
   FileText, ThumbsUp, Package, Info, Grid3X3,
   Plus, Trash2, ChevronDown, ChevronUp, Check,
   Instagram, Youtube, Edit3, Share2, QrCode, Repeat2,
+  Film, Music2, User, ExternalLink, MoreVertical,
 } from 'lucide-react';
 import { reviewsApi, listingsApi, postsApi, savedPostsApi } from '../lib/api';
 import { authApi } from '../lib/api';
@@ -97,47 +99,71 @@ function CoverActionSheet({ coverImg, onChangePhoto, onRemove, onClose }: {
   const uploadRef = useRef<HTMLInputElement>(null);
   const [showPicker, setShowPicker] = useState(false);
 
+  const SPRING = { type: 'spring' as const, damping: 32, stiffness: 340, mass: 0.9 };
+
   if (showPicker) return (
-    <>
-      <div className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm" onClick={() => setShowPicker(false)} />
-      <div className="fixed inset-x-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl" style={{paddingBottom:'calc(env(safe-area-inset-bottom)+8px)'}}>
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-4"/>
-        <p className="text-center text-sm font-black text-gray-900 mb-4">Choose method</p>
-        <div className="px-4 pb-2 space-y-2">
-          <button onClick={()=>cameraRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-sm font-semibold text-gray-800 hover:bg-gray-50">
-            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center"><Camera className="w-5 h-5 text-blue-600"/></div>Take a photo
-          </button>
-          <button onClick={()=>uploadRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-sm font-semibold text-gray-800 hover:bg-gray-50">
-            <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Globe className="w-5 h-5 text-purple-600"/></div>Upload from library
-          </button>
-        </div>
-        <button onClick={()=>setShowPicker(false)} className="mx-4 mt-2 mb-1 w-[calc(100%-32px)] py-3.5 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">Cancel</button>
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){onChangePhoto(f);onClose();}}}/>
-        <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){onChangePhoto(f);onClose();}}}/>
-      </div>
-    </>
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-[70]"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+      >
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowPicker(false)} />
+        <motion.div
+          className="absolute inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-2xl"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom)+8px)' }}
+          initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+          transition={SPRING}
+        >
+          <div className="w-9 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1"/>
+          <p className="text-center text-sm font-black text-gray-900 mt-2 mb-3">Choose method</p>
+          <div className="px-4 pb-2 space-y-2">
+            <button onClick={()=>cameraRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-sm font-semibold text-gray-800 hover:bg-gray-50">
+              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center"><Camera className="w-5 h-5 text-blue-600"/></div>Take a photo
+            </button>
+            <button onClick={()=>uploadRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-sm font-semibold text-gray-800 hover:bg-gray-50">
+              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Globe className="w-5 h-5 text-purple-600"/></div>Upload from library
+            </button>
+          </div>
+          <button onClick={()=>setShowPicker(false)} className="mx-4 mt-2 mb-1 w-[calc(100%-32px)] py-3.5 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">Cancel</button>
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){onChangePhoto(f);onClose();}}}/>
+          <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){onChangePhoto(f);onClose();}}}/>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={onClose}/>
-      <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl" style={{paddingBottom:'calc(env(safe-area-inset-bottom)+8px)'}}>
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-4"/>
-        <div className="px-4 pb-2 space-y-1">
-          <button onClick={()=>setShowPicker(true)} className="w-full flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-gray-50 text-left">
-            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center"><Camera className="w-5 h-5 text-blue-600"/></div>
-            <div><p className="text-sm font-semibold text-gray-900">{coverImg ? 'Change cover picture' : 'Add cover picture'}</p><p className="text-[11px] text-gray-400">Take or upload a photo</p></div>
-          </button>
-          {coverImg && (
-            <button onClick={onRemove} className="w-full flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-gray-50 text-left">
-              <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center"><Trash2 className="w-5 h-5 text-red-500"/></div>
-              <div><p className="text-sm font-semibold text-red-500">Remove cover picture</p><p className="text-[11px] text-gray-400">Revert to default gradient</p></div>
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-50"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+      >
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}/>
+        <motion.div
+          className="absolute inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-2xl"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom)+8px)' }}
+          initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+          transition={SPRING}
+        >
+          <div className="w-9 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1"/>
+          <div className="px-4 pt-2 pb-2 space-y-1">
+            <button onClick={()=>setShowPicker(true)} className="w-full flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-gray-50 text-left">
+              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center"><Camera className="w-5 h-5 text-blue-600"/></div>
+              <div><p className="text-sm font-semibold text-gray-900">{coverImg ? 'Change cover picture' : 'Add cover picture'}</p><p className="text-[11px] text-gray-400">Take or upload a photo</p></div>
             </button>
-          )}
-        </div>
-        <button onClick={onClose} className="mx-4 mt-2 mb-1 w-[calc(100%-32px)] py-3.5 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">Cancel</button>
-      </div>
-    </>
+            {coverImg && (
+              <button onClick={onRemove} className="w-full flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-gray-50 text-left">
+                <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center"><Trash2 className="w-5 h-5 text-red-500"/></div>
+                <div><p className="text-sm font-semibold text-red-500">Remove cover picture</p><p className="text-[11px] text-gray-400">Revert to default gradient</p></div>
+              </button>
+            )}
+          </div>
+          <button onClick={onClose} className="mx-4 mt-2 mb-1 w-[calc(100%-32px)] py-3.5 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">Cancel</button>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -216,7 +242,7 @@ function CanadianLocationField({ value, onChange }: { value: string; onChange: (
           ))}
         </div>
       )}
-      <p className="text-[11px] text-gray-400 mt-1.5">Canada only · Start typing or tap 📍 to detect</p>
+      <p className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-0.5 flex-wrap">Canada only · Start typing or tap <MapPin className="inline w-3 h-3"/> to detect</p>
     </div>
   );
 }
@@ -369,9 +395,9 @@ function PortfolioCard({ item, userId, onTap, onToggleFeatured, onDelete }: {
       {thumb && !isAudio && !isLink ? (
         <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
       ) : (
-        <div className="w-full h-full flex items-center justify-center text-4xl"
+        <div className="w-full h-full flex items-center justify-center"
           style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}>
-          {isAudio ? '🎵' : isLink ? '🔗' : '📁'}
+          {isAudio ? <Music2 className="w-10 h-10 text-purple-300"/> : isLink ? <LinkIcon className="w-10 h-10 text-indigo-400"/> : <FileText className="w-10 h-10 text-indigo-300"/>}
         </div>
       )}
 
@@ -385,7 +411,7 @@ function PortfolioCard({ item, userId, onTap, onToggleFeatured, onDelete }: {
       {/* Featured badge */}
       {item.is_featured && (
         <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center">
-          <span className="text-[10px]">⭐</span>
+          <Star className="w-3 h-3 fill-white text-white"/>
         </div>
       )}
 
@@ -402,7 +428,7 @@ function PortfolioCard({ item, userId, onTap, onToggleFeatured, onDelete }: {
           onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
           className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center"
         >
-          <span className="text-white text-base leading-none">⋮</span>
+          <MoreVertical className="w-4 h-4 text-white" />
         </button>
       )}
 
@@ -413,7 +439,9 @@ function PortfolioCard({ item, userId, onTap, onToggleFeatured, onDelete }: {
             onClick={e => e.stopPropagation()}>
             <button onClick={() => { setMenuOpen(false); onToggleFeatured(); }}
               className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
-              <span>{item.is_featured ? '☆' : '⭐'}</span>
+              {item.is_featured
+                ? <StarOff className="w-3.5 h-3.5 text-gray-400"/>
+                : <Star className="w-3.5 h-3.5 text-amber-500"/>}
               {item.is_featured ? 'Unfeature' : 'Feature'}
             </button>
             <button onClick={() => { setMenuOpen(false); if (window.confirm('Delete this portfolio item?')) onDelete(); }}
@@ -452,14 +480,14 @@ function PortfolioDetailSheet({ item, onClose }: { item: PortfolioItem; onClose:
         {isAudio && item.media_url && (
           <div className="px-4 py-6 flex flex-col items-center gap-3"
             style={{ background: 'linear-gradient(135deg,#1e1040,#312e81)' }}>
-            <span className="text-5xl">🎵</span>
+            <Music2 className="w-12 h-12 text-purple-300"/>
             <audio controls src={item.media_url} className="w-full" />
           </div>
         )}
 
         {/* Info */}
         <div className="px-4 pt-4 pb-6 space-y-3">
-          {item.is_featured && <span className="text-xs font-black text-amber-500">⭐ Featured Work</span>}
+          {item.is_featured && <span className="flex items-center gap-1 text-xs font-black text-amber-500"><Star className="w-3 h-3 fill-amber-400 text-amber-400"/> Featured Work</span>}
           <h2 className="text-xl font-black text-gray-900">{item.title}</h2>
           {item.description && <p className="text-sm text-gray-600 leading-relaxed">{item.description}</p>}
 
@@ -472,7 +500,7 @@ function PortfolioDetailSheet({ item, onClose }: { item: PortfolioItem; onClose:
           {isLink && item.external_link && (
             <a href={item.external_link} target="_blank" rel="noreferrer"
               className="flex items-center gap-2 text-sm font-semibold text-blue-600 bg-blue-50 px-4 py-3 rounded-2xl">
-              🔗 Open Link
+              <ExternalLink className="w-4 h-4"/> Open Link
             </a>
           )}
         </div>
@@ -490,7 +518,7 @@ export function Profile() {
     { id: 'listings',  label: T('profile.listings_tab') || 'Listings' },
     { id: 'reviews',   label: T('profile.reviews')      || 'Reviews'  },
     { id: 'about',     label: T('profile.about')        || 'About'    },
-    { id: 'liked',     label: '❤️ Liked' },
+    { id: 'liked',     label: 'Liked' },
   ];
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1167,7 +1195,7 @@ export function Profile() {
               {/* Empty state */}
               {portfolioItems.length === 0 && (
                 <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-14 px-6">
-                  <div className="text-5xl mb-4">🎬</div>
+                  <Film className="w-12 h-12 text-gray-300 mx-auto mb-4"/>
                   <p className="font-black text-gray-900 mb-1">Showcase your work</p>
                   <p className="text-sm text-gray-400 mb-6 max-w-xs mx-auto">Upload photos, videos, audio samples, or link to your best projects.</p>
                   <button
@@ -1183,7 +1211,7 @@ export function Profile() {
               {/* Featured items */}
               {portfolioItems.filter(i => i.is_featured).length > 0 && (
                 <div className="mb-5">
-                  <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-2.5">⭐ Featured Work</p>
+                  <p className="flex items-center gap-1 text-[10px] font-black text-amber-500 uppercase tracking-widest mb-2.5"><Star className="w-3 h-3 fill-amber-400 text-amber-400"/> Featured Work</p>
                   <div className="grid grid-cols-2 gap-2.5">
                     {portfolioItems.filter(i => i.is_featured).map(item => (
                       <PortfolioCard key={item.id} item={item} userId={user.id}
@@ -1571,7 +1599,7 @@ export function Profile() {
               <div>
                 <h3 className="font-bold text-gray-900 mb-3">Saved Listings</h3>
                 {savedListings.length===0
-                  ? <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100"><Bookmark className="w-8 h-8 text-gray-200 mx-auto mb-2" /><p className="text-xs text-gray-400">Tap ❤️ on any listing to save it</p></div>
+                  ? <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100"><Bookmark className="w-8 h-8 text-gray-200 mx-auto mb-2" /><p className="text-xs text-gray-400">Save listings to see them here</p></div>
                   : <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {savedListings.map((fav:any)=>{
                         const d=fav.item_data||{};
@@ -1620,7 +1648,7 @@ export function Profile() {
                   </div>
                 ) : userSounds.length === 0 ? (
                   <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100">
-                    <span className="text-3xl block mb-2">🎵</span>
+                    <Music2 className="w-8 h-8 mx-auto mb-2 text-gray-400"/>
                     <p className="text-sm font-semibold text-gray-500">No public sounds yet</p>
                     <p className="text-xs text-gray-400 mt-1">Upload original audio to earn FP when others use your sounds</p>
                   </div>
@@ -1632,7 +1660,7 @@ export function Profile() {
                         {track.artwork_url
                           ? <img src={track.artwork_url} className="w-12 h-12 rounded-xl object-cover shrink-0"/>
                           : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                              <span className="text-xl">🎵</span>
+                              <Music2 className="w-5 h-5 text-gray-400"/>
                             </div>}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-gray-900 truncate">{track.title}</p>
@@ -1701,7 +1729,7 @@ export function Profile() {
                           {track.artwork_url
                             ? <img src={track.artwork_url} className="w-12 h-12 rounded-xl object-cover shrink-0"/>
                             : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                                <span className="text-xl">🎵</span>
+                                <Music2 className="w-5 h-5 text-gray-400"/>
                               </div>}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-gray-900 truncate">{track.title}</p>
@@ -1790,12 +1818,12 @@ export function Profile() {
               {/* Liked Listings */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-                  <p className="font-bold text-sm text-gray-900">📦 Liked Listings</p>
+                  <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><Package className="w-4 h-4"/> Liked Listings</p>
                   <span className="text-xs text-gray-400">{savedListings.length}</span>
                 </div>
                 {savedListings.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-gray-400">
-                    <p className="text-2xl mb-2">📦</p>
+                    <Package className="w-8 h-8 mx-auto mb-2 text-gray-300"/>
                     Swipe right on listings to save them here.
                   </div>
                 ) : (
@@ -1813,12 +1841,12 @@ export function Profile() {
                           <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
                             {item.images?.[0]
                               ? <img src={item.images[0]} className="w-full h-full object-cover" alt=""/>
-                              : <div className="w-full h-full flex items-center justify-center text-gray-300 text-lg">🎬</div>
+                              : <div className="w-full h-full flex items-center justify-center"><Film className="w-6 h-6 text-gray-300"/></div>
                             }
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-gray-900 truncate">{item.title || 'Listing'}</p>
-                            {item.city && <p className="text-xs text-gray-400 truncate">📍 {item.city}</p>}
+                            {item.city && <p className="text-xs text-gray-400 truncate flex items-center gap-0.5"><MapPin className="w-3 h-3 shrink-0"/> {item.city}</p>}
                           </div>
                           {price && <p className="text-sm font-black text-blue-600 shrink-0">{price}{suffix}</p>}
                         </button>
@@ -1831,12 +1859,12 @@ export function Profile() {
               {/* Liked Creators */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-                  <p className="font-bold text-sm text-gray-900">👤 Liked Creators</p>
+                  <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><User className="w-4 h-4"/> Liked Creators</p>
                   <span className="text-xs text-gray-400">{likedCreators.length}</span>
                 </div>
                 {likedCreators.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-gray-400">
-                    <p className="text-2xl mb-2">👤</p>
+                    <User className="w-8 h-8 mx-auto mb-2 text-gray-300"/>
                     Swipe right on creators to like them here.
                   </div>
                 ) : (
@@ -1860,7 +1888,7 @@ export function Profile() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-gray-900 truncate">{c.name || 'Creator'}</p>
                             {c.primary_role && <p className="text-xs text-blue-600 truncate">{c.primary_role}</p>}
-                            {c.city && <p className="text-xs text-gray-400">📍 {c.city}</p>}
+                            {c.city && <p className="text-xs text-gray-400 flex items-center gap-0.5"><MapPin className="w-3 h-3 shrink-0"/> {c.city}</p>}
                           </div>
                         </button>
                       );
@@ -1934,8 +1962,6 @@ export function Profile() {
       {showAvatarSheet && (
         <AvatarActionSheet
           avatar={user.avatar}
-          hasAvatar={!!user.avatar}
-          hasStory={false}
           onChangePhoto={handleAvatarFile}
           onDeletePhoto={handleDeleteAvatar}
           onViewPhoto={() => { setShowAvatarSheet(false); setShowAvatarFull(true); }}

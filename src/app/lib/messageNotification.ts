@@ -15,11 +15,26 @@ import { supabase } from '../../lib/supabase';
 interface Receiver { id: string; name: string; username?: string; email?: string; phone?: string; }
 interface Sender   { id: string; name: string; username?: string; }
 
+export type MessageKind =
+  | 'direct'
+  | 'request'
+  | 'booking_inquiry'
+  | 'rental_inquiry'
+  | 'marketplace'
+  | 'collaboration';
+
+export interface ListingContext {
+  id?: string;
+  title?: string;
+  price?: number;
+  location?: string;
+}
+
 // ── Timing ───────────────────────────────────────────────────────────────────
 
 const EMAIL_DELAY = 5  * 60 * 1000;
 const SMS_DELAY   = 10 * 60 * 1000;
-const ONLINE_TTL  = 3  * 60 * 1000;  // online if last_seen < 3 min
+const ONLINE_TTL  = 3  * 60 * 1000;
 const SPAM_TTL    = 60 * 60 * 1000;  // 1 email / conversation / hour
 
 // ── Anti-spam ─────────────────────────────────────────────────────────────────
@@ -68,11 +83,9 @@ async function loadProfile(uid: string): Promise<Receiver | null> {
       .select('id, name, username, email, phone')
       .eq('id', uid)
       .maybeSingle();
-    if (error) { console.warn('[msgNotif] profile error:', error.message); return null; }
-    if (!data)  { console.warn('[msgNotif] profile not found for', uid); return null; }
-    console.log('[msgNotif] profile loaded — email:', data.email || 'MISSING', '| phone:', data.phone || 'MISSING');
+    if (error || !data) return null;
     return { id: data.id, name: data.name || data.username || 'User', username: data.username, email: data.email || undefined, phone: data.phone || undefined };
-  } catch (e) { console.warn('[msgNotif] profile fetch threw:', e); return null; }
+  } catch { return null; }
 }
 
 async function loadSettings(uid: string): Promise<Record<string, any>> {
@@ -82,26 +95,80 @@ async function loadSettings(uid: string): Promise<Record<string, any>> {
   } catch { return {}; }
 }
 
+// ── Settings check per message kind ──────────────────────────────────────────
+
+function emailEnabledForKind(settings: Record<string, any>, kind: MessageKind): boolean {
+  if (settings.notif_dms === false) return false;
+  switch (kind) {
+    case 'request':          return settings.email_message_requests    !== false;
+    case 'booking_inquiry':  return settings.email_booking_inquiries   !== false;
+    case 'rental_inquiry':   return settings.email_rental_inquiries    !== false;
+    case 'marketplace':      return settings.email_marketplace_messages !== false;
+    case 'collaboration':    return settings.email_collaboration_requests !== false;
+    default:                 return settings.email_new_messages        !== false;
+  }
+}
+
+// ── Subject line per kind ─────────────────────────────────────────────────────
+
+function buildSubject(senderName: string, kind: MessageKind, listing?: ListingContext): string {
+  switch (kind) {
+    case 'request':         return `New message request from ${senderName}`;
+    case 'booking_inquiry': return listing?.title
+      ? `New booking inquiry for ${listing.title}`
+      : `New booking inquiry from ${senderName}`;
+    case 'rental_inquiry':  return listing?.title
+      ? `New rental inquiry for ${listing.title}`
+      : `New rental inquiry from ${senderName} on Filmons`;
+    case 'marketplace':     return listing?.title
+      ? `Someone messaged you about ${listing.title}`
+      : `New marketplace message from ${senderName}`;
+    case 'collaboration':   return `New collaboration request from ${senderName}`;
+    default:                return `New message from ${senderName} on Filmons`;
+  }
+}
+
 // ── EmailJS send ──────────────────────────────────────────────────────────────
 
-async function dispatchEmail(receiver: Receiver, sender: Sender, preview: string, convId: string) {
-  if (!receiver.email) { console.warn('[msgNotif] no email on receiver profile — skipping'); return; }
-  const params = {
+async function dispatchEmail(
+  receiver: Receiver,
+  sender: Sender,
+  preview: string,
+  convId: string,
+  kind: MessageKind,
+  listing?: ListingContext,
+) {
+  if (!receiver.email) return;
+
+  const subject     = buildSubject(sender.username || sender.name, kind, listing);
+  const convLink    = `${window.location.origin}/inbox?conv=${convId}&with=${sender.id}`;
+  const unsubLink   = `${window.location.origin}/settings/notifications`;
+  const settingsUrl = `${window.location.origin}/settings/notifications`;
+
+  const params: Record<string, string> = {
     to_email:          receiver.email,
     to_name:           receiver.username || receiver.name,
     from_name:         sender.username   || sender.name,
+    subject,
     message_preview:   preview,
-    conversation_link: `${window.location.origin}/inbox?conv=${convId}&with=${sender.id}`,
+    is_request:        kind === 'request' ? 'yes' : 'no',
+    conversation_link: convLink,
+    unsubscribe_url:   unsubLink,
+    settings_url:      settingsUrl,
+    // Listing context (empty strings when absent — template renders nothing)
+    listing_title:     listing?.title    || '',
+    listing_price:     listing?.price    != null ? `$${listing.price}` : '',
+    listing_location:  listing?.location || '',
+    listing_id:        listing?.id       || '',
   };
-  console.log('[msgNotif] calling EmailJS with params:', params);
+
   const emailjs = await import('@emailjs/browser');
-  const result = await emailjs.default.send(
+  await emailjs.default.send(
     EMAILJS_CONFIG.serviceId,
     EMAILJS_CONFIG.templates.messageNotification,
     params,
     EMAILJS_CONFIG.publicKey,
   );
-  console.log('[msgNotif] EmailJS response:', result);
 }
 
 // ── SMS send ──────────────────────────────────────────────────────────────────
@@ -110,7 +177,6 @@ async function dispatchSMS(receiver: Receiver, sender: Sender, preview: string, 
   if (!receiver.phone) return;
   const link = `${window.location.origin}/inbox?conv=${convId}&with=${sender.id}`;
   await sendSMS(receiver.phone, `New Filmons message from ${sender.username || sender.name}: "${preview}"\n${link}`);
-  console.log('[msgNotif] SMS dispatched');
 }
 
 // ── Immediate email (no delay — for real-time Inbox notifications) ───────────
@@ -121,8 +187,16 @@ async function dispatchSMS(receiver: Receiver, sender: Sender, preview: string, 
 const IMMEDIATE_SPAM_TTL = 30 * 60 * 1000;
 
 export function notifyImmediateEmail({
-  receiverId, receiverEmail, receiverName,
-  senderName, senderId, messageText, conversationId, isRequest,
+  receiverId,
+  receiverEmail,
+  receiverName,
+  senderName,
+  senderId,
+  messageText,
+  conversationId,
+  isRequest,
+  kind,
+  listing,
 }: {
   receiverId: string;
   receiverEmail: string;
@@ -132,6 +206,8 @@ export function notifyImmediateEmail({
   messageText: string;
   conversationId: string;
   isRequest: boolean;
+  kind?: MessageKind;
+  listing?: ListingContext;
 }): void {
   if (!receiverEmail) return;
   if (receiverId === senderId) return;
@@ -144,9 +220,11 @@ export function notifyImmediateEmail({
     localStorage.setItem(key, String(Date.now()));
   } catch {}
 
-  const preview  = (messageText || (isRequest ? 'Message request' : 'New message')).slice(0, 100);
-  const subject  = isRequest ? `New message request from ${senderName}` : `New message from ${senderName}`;
+  const resolvedKind: MessageKind = kind ?? (isRequest ? 'request' : 'direct');
+  const preview  = (messageText || (isRequest ? 'Message request' : 'New message')).slice(0, 120);
+  const subject  = buildSubject(senderName, resolvedKind, listing);
   const convLink = `${window.location.origin}/inbox?conv=${conversationId}&with=${senderId}`;
+  const settingsUrl = `${window.location.origin}/settings/notifications`;
 
   import('@emailjs/browser').then(async emailjs => {
     try {
@@ -161,10 +239,15 @@ export function notifyImmediateEmail({
           message_preview:   preview,
           is_request:        isRequest ? 'yes' : 'no',
           conversation_link: convLink,
+          unsubscribe_url:   settingsUrl,
+          settings_url:      settingsUrl,
+          listing_title:     listing?.title    || '',
+          listing_price:     listing?.price    != null ? `$${listing.price}` : '',
+          listing_location:  listing?.location || '',
+          listing_id:        listing?.id       || '',
         },
         EMAILJS_CONFIG.publicKey,
       );
-      console.log('[msgNotif] immediate email sent to', receiverEmail);
     } catch (e) {
       console.warn('[msgNotif] immediate email failed:', e);
     }
@@ -174,30 +257,36 @@ export function notifyImmediateEmail({
 // ── Main entry (synchronous — schedules its own timers) ───────────────────────
 
 export function notifyReceiverForMessage({
-  receiverId, sender, messageText, conversationId,
+  receiverId,
+  sender,
+  messageText,
+  conversationId,
+  kind = 'direct',
+  listing,
 }: {
-  receiverId: string; sender: Sender; messageText: string; conversationId: string;
+  receiverId: string;
+  sender: Sender;
+  messageText: string;
+  conversationId: string;
+  kind?: MessageKind;
+  listing?: ListingContext;
 }): void {
   if (receiverId === sender.id) return;
 
-  const preview = (messageText || 'New message').slice(0, 100);
+  const preview = (messageText || 'New message').slice(0, 120);
 
   // ── Email after 5 min ────────────────────────────────────────────────────────
   setTimeout(async () => {
-    console.log('[msgNotif] 5-min timer fired — checking email eligibility');
     try {
-      if (await receiverIsOnline(receiverId))                             { console.log('[msgNotif] skip email — user online'); return; }
-      if (await conversationIsRead(conversationId, receiverId))           { console.log('[msgNotif] skip email — already read'); return; }
-      if (!canSend(receiverId, conversationId, 'email'))                  { console.log('[msgNotif] skip email — spam window'); return; }
+      if (await receiverIsOnline(receiverId))                   return;
+      if (await conversationIsRead(conversationId, receiverId)) return;
+      if (!canSend(receiverId, conversationId, 'email'))        return;
 
       const [receiver, settings] = await Promise.all([loadProfile(receiverId), loadSettings(receiverId)]);
       if (!receiver) return;
 
-      const emailEnabled = settings.notif_dms !== false && settings.email_messages !== false;
-      console.log('[msgNotif] emailEnabled:', emailEnabled, '| settings:', { notif_dms: settings.notif_dms, email_messages: settings.email_messages });
-
-      if (emailEnabled) {
-        await dispatchEmail(receiver, sender, preview, conversationId);
+      if (emailEnabledForKind(settings, kind)) {
+        await dispatchEmail(receiver, sender, preview, conversationId, kind, listing);
         markSent(receiverId, conversationId, 'email');
       }
     } catch (e) { console.error('[msgNotif] email timer error:', e); }
@@ -206,9 +295,9 @@ export function notifyReceiverForMessage({
   // ── SMS after 10 min ─────────────────────────────────────────────────────────
   setTimeout(async () => {
     try {
-      if (await receiverIsOnline(receiverId))              return;
+      if (await receiverIsOnline(receiverId))                   return;
       if (await conversationIsRead(conversationId, receiverId)) return;
-      if (!canSend(receiverId, conversationId, 'sms'))     return;
+      if (!canSend(receiverId, conversationId, 'sms'))          return;
 
       const [receiver, settings] = await Promise.all([loadProfile(receiverId), loadSettings(receiverId)]);
       if (!receiver?.phone) return;

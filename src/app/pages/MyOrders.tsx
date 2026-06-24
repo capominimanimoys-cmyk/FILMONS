@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Package, Film } from 'lucide-react';
 import { ArrowBackIosNewRounded, ArticleRounded, CalendarMonthRounded, InventoryRounded, OpenInNewRounded, PaidRounded, PrintRounded, ReceiptLongRounded, RefreshRounded, VerifiedRounded, VisibilityRounded, WorkspacePremiumRounded } from '../components/Icons';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
@@ -329,8 +330,8 @@ export default function MyOrders() {
         <div className="max-w-2xl mx-auto px-4 pb-3 flex gap-2">
           {(['renter', 'host'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === t ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              {t === 'renter' ? '📦 As Renter' : '🎬 As Host'}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${tab === t ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {t === 'renter' ? <><Package className="w-4 h-4"/> As Renter</> : <><Film className="w-4 h-4"/> As Host</>}
             </button>
           ))}
         </div>

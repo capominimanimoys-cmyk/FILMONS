@@ -14,11 +14,11 @@ import {
   Send, ArrowLeft, MessageCircle, Search, Play, Heart, Music2,
   Image as ImageIcon, CalendarDays, Clock, Package, CheckCircle,
   XCircle, BadgeCheck, CreditCard, ExternalLink, X, DollarSign,
-  ChevronDown, Camera, Wrench, Tag, Smile, Paperclip, Mic,
+  Camera, Wrench, Tag, Smile, Paperclip, Mic,
   MicOff, Phone, PhoneOff, Video, VideoOff, Square, Volume2, MapPin,
   UserCheck, UserX, ShieldAlert, CornerUpLeft, Pencil, Pin, Trash2,
   MoreHorizontal, Check, CheckCheck, SquarePen, Users, UserPlus, Plus,
-  ImagePlus, Film, GalleryHorizontal,
+  ImagePlus, Film, GalleryHorizontal, Truck, BellOff,
 } from 'lucide-react';
 
 // MUI icons — filled/rounded, React Native feel
@@ -414,12 +414,12 @@ function PaymentRequestBubble({ msg, isOwn, conversationId, onStatusChange }: { 
         <p className="text-xs text-gray-600 leading-relaxed">{pay.description}</p>
         {pay.paymentMethod && (
           <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5">
-            <span>💳</span><span className="font-semibold">{pay.paymentMethod}</span>
+            <CreditCard className="w-4 h-4"/><span className="font-semibold">{pay.paymentMethod}</span>
           </div>
         )}
         {pay.deliveryOption && (
           <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5">
-            <span>{pay.deliveryOption === 'delivery' ? '🚚' : '📍'}</span>
+            {pay.deliveryOption === 'delivery' ? <Truck className="w-4 h-4"/> : <MapPin className="w-4 h-4"/>}
             <span className="font-semibold capitalize">{pay.deliveryOption}</span>
           </div>
         )}
@@ -1024,8 +1024,8 @@ function MsgActionSheet({ msg, currentUserId, onClose, onReply, onEdit, onPin, o
 }) {
   const isOwn   = msg.senderId === currentUserId;
   const preview = msg.type === 'media'
-    ? (msg.mediaType === 'audio' ? '🎤 Voice message' : msg.mediaType === 'video' ? '🎬 Video' : '📷 Photo')
-    : msg.type === 'post' ? '📎 Shared a post'
+    ? (msg.mediaType === 'audio' ? 'Voice message' : msg.mediaType === 'video' ? 'Video' : 'Photo')
+    : msg.type === 'post' ? 'Shared a post'
     : (msg.content || '');
   return (
     <div className="fixed inset-0 z-[200] flex items-end justify-center" onMouseDown={onClose} onTouchEnd={onClose}>
@@ -1077,11 +1077,11 @@ function MsgActionSheet({ msg, currentUserId, onClose, onReply, onEdit, onPin, o
 
 // ── Conversation Row ───────────────────────────────────────────────────────────
 function ConvRow({
-  conv, currentUserId, isActive, onClick, isRequest, onLongPress,
+  conv, currentUserId, isActive, onClick, isRequest, convType, onLongPress,
   onArchive, onMute, onPin, onDelete,
 }: {
   conv: Conversation; currentUserId: string; isActive: boolean; onClick: () => void;
-  isRequest?: boolean; onLongPress?: () => void;
+  isRequest?: boolean; convType?: 'booking' | 'sale' | 'collab' | 'general'; onLongPress?: () => void;
   onArchive?: () => void; onMute?: () => void; onPin?: () => void; onDelete?: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -1095,11 +1095,11 @@ function ConvRow({
   const unread  = conv.unreadCount ?? conv.messages.filter(m => m.senderId !== currentUserId && !m.read).length;
   const lastPreview = conv.lastMessagePreview ||
     (!last ? '' :
-      last.type === 'post'            ? '📎 Shared a post' :
-      last.type === 'rental_request'  ? '📋 Rental request' :
-      last.type === 'payment_request' ? '💳 Payment request' :
+      last.type === 'post'            ? 'Shared a post' :
+      last.type === 'rental_request'  ? 'Rental request' :
+      last.type === 'payment_request' ? 'Payment request' :
       last.type === 'media'
-        ? (last.mediaType === 'audio' ? '🎤 Voice message' : last.mediaType === 'video' ? '🎬 Video' : '📷 Photo')
+        ? (last.mediaType === 'audio' ? 'Voice message' : last.mediaType === 'video' ? 'Video' : 'Photo')
         : (last.content || ''));
   const lastTime = conv.lastMessageAt || last?.createdAt;
 
@@ -1167,7 +1167,7 @@ function ConvRow({
             {other?.name || 'Unknown'}
           </span>
           <div className="shrink-0 flex items-center gap-1">
-            {conv.isMuted && <span title="Muted" className="text-[11px] opacity-50">🔕</span>}
+            {conv.isMuted && <BellOff className="w-3 h-3 opacity-50" title="Muted"/>}
             <span className={`text-[11px] ${unread > 0 && !conv.isMuted ? 'text-blue-500 font-semibold' : 'text-gray-400'}`}>
               {lastTime && timeAgo(lastTime)}
             </span>
@@ -1184,7 +1184,21 @@ function ConvRow({
             </span>
           )}
         </div>
-        {isRequest && <p className="text-[10px] text-amber-600 font-semibold mt-0.5">Message request</p>}
+        {/* Row 3: type badge or request label */}
+        <div className="flex items-center gap-1.5 mt-0.5">
+          {isRequest && (
+            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Request</span>
+          )}
+          {!isRequest && convType && convType !== 'general' && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+              convType === 'booking' ? 'text-blue-600 bg-blue-50 border-blue-200' :
+              convType === 'sale'    ? 'text-green-600 bg-green-50 border-green-200' :
+              'text-purple-600 bg-purple-50 border-purple-200'
+            }`}>
+              {convType === 'booking' ? 'Booking' : convType === 'sale' ? 'Marketplace' : 'Collab'}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Desktop ⋯ button — hover only, hidden on pure touch screens */}
@@ -1234,10 +1248,9 @@ export function Inbox() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showCallScreen, setShowCallScreen] = useState(false);
-  const [inboxTab, setInboxTab] = useState<'messages' | 'requests'>('messages');
+  const [inboxTab, setInboxTab] = useState<'all' | 'unread' | 'bookings' | 'marketplace' | 'archived'>('all');
   const [serverLoaded, setServerLoaded] = useState(false);
   const [archivedConvs, setArchivedConvs]   = useState<Conversation[]>([]);
-  const [showArchived, setShowArchived]       = useState(false);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [deleteConfirm, setDeleteConfirm]     = useState<string | null>(null);
   const [convActionSheet, setConvActionSheet] = useState<Conversation | null>(null);
@@ -1321,10 +1334,6 @@ export function Inbox() {
     }
   }, [user]);
 
-  const handleToggleArchived = () => {
-    if (!showArchived) loadArchived();
-    setShowArchived(v => !v);
-  };
 
   // ── Message bubble long-press ─────────────────────────────────────────────
   const handleMsgTouchStart = (msg: ChatMessage) => () => {
@@ -1380,23 +1389,31 @@ export function Inbox() {
           const prevConv = prevMap.get(c.id);
           if (!prevConv) return c;
 
-          // Preserve richer message history from React state.
-          // fetchConversationsDB now fetches all messages, but React state may have
-          // optimistic (unsent) messages not yet committed to DB.
+          // Union merge: start from prevMsgs (full history already in state) and
+          // add any messages the server returned that aren't already there.
+          // This is symmetric with the fetchMessages union merge and prevents
+          // loadConversations from dropping messages that were loaded via
+          // fetchMessages or realtime but happen to be outside the server's result window.
           const prevMsgs   = prevConv.messages || [];
           const serverMsgs = c.messages || [];
-          const prevIds    = new Set(prevMsgs.map((m: ChatMessage) => m.id));
-          // Only add server messages not already in prev (new arrivals from another device/tab)
-          const serverOnly = serverMsgs.filter((m: ChatMessage) => !prevIds.has(m.id));
+          const serverMap  = new Map(serverMsgs.map((m: ChatMessage) => [m.id, m]));
+          // Server version wins for known IDs (picks up edits / status changes)
+          const serverOnly = serverMsgs.filter((m: ChatMessage) => !prevMsgs.some(p => p.id === m.id));
+          const kept       = prevMsgs.map((m: ChatMessage) => serverMap.get(m.id) ?? m);
 
-          const merged = [...prevMsgs, ...serverOnly].sort((a: ChatMessage, b: ChatMessage) =>
+          const merged = [...kept, ...serverOnly].sort((a: ChatMessage, b: ChatMessage) =>
             new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
           );
 
           return { ...c, messages: merged };
         });
 
-        return final.sort((a: Conversation, b: Conversation) =>
+        // Preserve conversations that exist in prev but are absent from fromServer
+        // (realtime-added convs not yet in localStorage / throttle-fallback result)
+        const serverIds = new Set(fromServer.map((c: Conversation) => c.id));
+        const prevOnly  = prev.filter(c => !serverIds.has(c.id));
+
+        return [...final, ...prevOnly].sort((a: Conversation, b: Conversation) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
       });
@@ -1524,6 +1541,16 @@ export function Inbox() {
 
                   // Email for new message requests (brand-new conv arriving via Realtime)
                   if (newMsg.senderId !== user?.id && user && convId !== activeId) {
+                    const isReq = row.is_request ?? false;
+                    const rr = newMsg.rentalRequest;
+                    const pr = newMsg.paymentRequest;
+                    const msgKind = isReq ? 'request'
+                      : newMsg.type === 'rental_request' ? (rr?.listingMode === 'sale' || rr?.durationType === 'purchase' ? 'marketplace' : (rr?.listingType === 'service' ? 'booking_inquiry' : 'rental_inquiry'))
+                      : newMsg.type === 'payment_request' ? 'marketplace'
+                      : 'direct';
+                    const listing = rr ? { id: rr.listingId, title: rr.listingTitle, location: undefined }
+                      : pr ? { id: pr.listingId, title: pr.listingTitle, price: pr.amount, location: undefined }
+                      : undefined;
                     notifyImmediateEmail({
                       receiverId:     user.id,
                       receiverEmail:  user.email || '',
@@ -1532,7 +1559,9 @@ export function Inbox() {
                       senderId:       newMsg.senderId || '',
                       messageText:    newMsg.content || '',
                       conversationId: convId,
-                      isRequest:      row.is_request ?? false,
+                      isRequest:      isReq,
+                      kind:           msgKind,
+                      listing,
                     });
                   }
                 }).catch(() => loadConversations());
@@ -1552,6 +1581,15 @@ export function Inbox() {
 
           // Email notification: receiver only, and not when the conversation is already open
           if (newMsg.senderId && newMsg.senderId !== user?.id && user && convId !== activeId) {
+            const rr = newMsg.rentalRequest;
+            const pr = newMsg.paymentRequest;
+            const msgKind = newMsg.type === 'rental_request'
+              ? (rr?.listingMode === 'sale' || rr?.durationType === 'purchase' ? 'marketplace' : (rr?.listingType === 'service' ? 'booking_inquiry' : 'rental_inquiry'))
+              : newMsg.type === 'payment_request' ? 'marketplace'
+              : 'direct';
+            const listing = rr ? { id: rr.listingId, title: rr.listingTitle, location: undefined }
+              : pr ? { id: pr.listingId, title: pr.listingTitle, price: pr.amount, location: undefined }
+              : undefined;
             notifyImmediateEmail({
               receiverId:     user.id,
               receiverEmail:  user.email || '',
@@ -1561,6 +1599,8 @@ export function Inbox() {
               messageText:    newMsg.content || '',
               conversationId: convId,
               isRequest:      false,
+              kind:           msgKind,
+              listing,
             });
           }
         },
@@ -1675,8 +1715,20 @@ export function Inbox() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages',
           filter: `conversation_id=eq.${activeId}` },
-        (payload: any) => {
-          const newMsg = dbRowToMsg(payload.new);
+        async (payload: any) => {
+          // If REPLICA IDENTITY is not FULL the payload may be missing fields — fetch the full row
+          let rawRow = payload.new;
+          if (!rawRow.sender_id || !rawRow.type || !rawRow.metadata) {
+            try {
+              const { data } = await supabase
+                .from('messages').select('*').eq('id', rawRow.id).single();
+              if (data) rawRow = data;
+            } catch {}
+          }
+          const newMsg = dbRowToMsg(rawRow);
+          if (newMsg.rentalRequest && !newMsg.rentalRequest.status) {
+            newMsg.rentalRequest = { status: 'pending', ...newMsg.rentalRequest };
+          }
           setConversations(prev => prev.map(c => {
             if (c.id !== activeId) return c;
             // Skip if we already have it (optimistic message from sender's own write)
@@ -1728,29 +1780,47 @@ export function Inbox() {
         if (c.id !== activeConv.id) return c;
         // Empty response means edge function failed — keep what we have
         if (!msgs.length && c.messages.length > 0) return c;
-        const serverIds = new Set(msgs.map((m: ChatMessage) => m.id));
-        const pending = c.messages.filter(m =>
-          !serverIds.has(m.id) && (m.id.startsWith('opt-') || /^\d{13}-/.test(m.id))
-        );
-        return { ...c, messages: [...msgs, ...pending] };
+        // Union merge: server version wins for known IDs; keep state messages not
+        // returned by this fetch (they may be outside the fetch window — loadConversations
+        // fetches all rows but fetchMessages uses limit=100, so older/newer messages
+        // already in state must not be dropped)
+        const serverMap = new Map(msgs.map((m: ChatMessage) => [m.id, m]));
+        const kept = c.messages.filter(m => !serverMap.has(m.id));
+        return {
+          ...c,
+          messages: [...kept, ...msgs].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          ),
+        };
       }));
     }).catch(e => console.warn('fetchMessages error:', e));
 
     // Poll every 8s as fallback when Realtime misses messages
     const pollId = setInterval(() => {
       chatApi.fetchMessages(activeConv.id).then(msgs => {
+        if (!msgs.length) return;
         setConversations(prev => prev.map(c => {
           if (c.id !== activeConv.id) return c;
-          const serverIds = new Set(msgs.map((m: ChatMessage) => m.id));
-          const hasNew = msgs.some((m: ChatMessage) => !c.messages.find(x => x.id === m.id));
+          const hasNew = msgs.some((m: ChatMessage) => !c.messages.some(x => x.id === m.id));
           if (!hasNew) return c;
-          const pending = c.messages.filter(m => !serverIds.has(m.id) && (m.id.startsWith('opt-') || /^\d{13}-/.test(m.id)));
-          return { ...c, messages: [...msgs, ...pending] };
+          // Same union merge: never drop messages outside the fetch window
+          const serverMap = new Map(msgs.map((m: ChatMessage) => [m.id, m]));
+          const kept = c.messages.filter(m => !serverMap.has(m.id));
+          return {
+            ...c,
+            messages: [...kept, ...msgs].sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            ),
+          };
         }));
       }).catch(() => {});
     }, 8_000);
     return () => clearInterval(pollId);
-  }, [activeId]);
+  // serverLoaded ensures the effect re-runs once conversations finish loading.
+  // Without this, if activeId is set before conversations load (e.g. URL param),
+  // activeConv is null on first run and fetchMessages never fires.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, serverLoaded]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [activeConv?.messages.length]);
 
@@ -2005,7 +2075,8 @@ export function Inbox() {
     if (!search.trim()) return true;
     const oid = c.participantIds.find(id => id !== user?.id) || '';
     const other = authApi.getUserByIdSync(oid);
-    return other?.name?.toLowerCase().includes(search.toLowerCase());
+    const msgMatch = c.messages.some(m => m.content?.toLowerCase().includes(search.toLowerCase()));
+    return other?.name?.toLowerCase().includes(search.toLowerCase()) || msgMatch;
   });
 
   // Separate requests (I'm the recipient) from regular messages
@@ -2014,16 +2085,38 @@ export function Inbox() {
   const requestCount = requestConvs.length;
   const totalUnread  = regularConvs.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
 
-  // Unread conversations float to the top; within each group sort by most recent activity
-  const sortByUnreadThenRecent = (a: typeof filteredConvs[0], b: typeof filteredConvs[0]) => {
-    const aU = (a.unreadCount ?? 0) > 0 ? 1 : 0;
-    const bU = (b.unreadCount ?? 0) > 0 ? 1 : 0;
-    if (aU !== bU) return bU - aU;
+  // Infer conversation type from message history
+  const getConvType = (c: Conversation): 'booking' | 'sale' | 'collab' | 'general' => {
+    if (c.messages.some(m => m.type === 'rental_request')) {
+      const req = c.messages.find(m => m.type === 'rental_request' && m.rentalRequest)?.rentalRequest;
+      return req?.listingMode === 'sale' || req?.durationType === 'purchase' ? 'sale' : 'booking';
+    }
+    if (c.messages.some(m => m.type === 'payment_request')) return 'sale';
+    return 'general';
+  };
+
+  // Priority sort: unread first, then bookings, then recency
+  const sortConvs = (a: Conversation, b: Conversation) => {
+    const aUnread = (a.unreadCount ?? 0) > 0 ? 2 : 0;
+    const bUnread = (b.unreadCount ?? 0) > 0 ? 2 : 0;
+    if (aUnread !== bUnread) return bUnread - aUnread;
+    const aBook = getConvType(a) === 'booking' ? 1 : 0;
+    const bBook = getConvType(b) === 'booking' ? 1 : 0;
+    if (aBook !== bBook) return bBook - aBook;
     return (b.updatedAt || '').localeCompare(a.updatedAt || '');
   };
-  const displayedConvs = (inboxTab === 'requests' ? requestConvs : regularConvs)
-    .slice()
-    .sort(sortByUnreadThenRecent);
+
+  const tabConvs = (() => {
+    switch (inboxTab) {
+      case 'unread':      return regularConvs.filter(c => (c.unreadCount ?? 0) > 0);
+      case 'bookings':    return regularConvs.filter(c => getConvType(c) === 'booking');
+      case 'marketplace': return regularConvs.filter(c => getConvType(c) === 'sale');
+      case 'archived':    return archivedConvs;
+      default:            return regularConvs; // 'all'
+    }
+  })();
+
+  const displayedConvs = tabConvs.slice().sort(sortConvs);
 
   // Is the active conversation a pending request directed at me?
   const isActiveRequest = !!(activeConv?.isRequest && activeConv?.requestedBy !== user?.id);
@@ -2431,203 +2524,185 @@ export function Inbox() {
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search conversations…"
                 className="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none" />
             </div>
-            {/* Messages / Requests tabs */}
-            <div className="flex bg-gray-100 rounded-xl p-0.5">
-              <button
-                onClick={() => setInboxTab('messages')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all ${inboxTab === 'messages' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-              >
-                <ChatBubbleRounded sx={{fontSize:12}} /> Messages
-              </button>
-              <button
-                onClick={() => setInboxTab('requests')}
-                className={`flex-1 relative flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all ${inboxTab === 'requests' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-              >
-                <GppBadRounded sx={{fontSize:12}} /> Requests
-                {requestCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1">
-                    {requestCount > 99 ? '99+' : requestCount}
-                  </span>
-                )}
-              </button>
+            {/* 5-tab filter bar */}
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-0.5">
+              {([
+                { key: 'all',         label: 'All',         badge: 0 },
+                { key: 'unread',      label: 'Unread',      badge: totalUnread },
+                { key: 'bookings',    label: 'Bookings',    badge: 0 },
+                { key: 'marketplace', label: 'Marketplace', badge: 0 },
+                { key: 'archived',    label: 'Archived',    badge: 0 },
+              ] as const).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => { setInboxTab(tab.key); if (tab.key === 'archived') loadArchived(); }}
+                  className={`relative shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                    inboxTab === tab.key
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {tab.label}
+                  {tab.badge > 0 && (
+                    <span className={`min-w-[14px] h-3.5 text-[9px] font-black rounded-full flex items-center justify-center px-1 ${inboxTab === tab.key ? 'bg-white/30 text-white' : 'bg-blue-500 text-white'}`}>
+                      {tab.badge > 99 ? '99+' : tab.badge}
+                    </span>
+                  )}
+                  {tab.key === 'all' && requestCount > 0 && (
+                    <span className="min-w-[14px] h-3.5 text-[9px] font-black rounded-full flex items-center justify-center px-1 bg-amber-500 text-white">
+                      {requestCount}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {displayedConvs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
-                <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-4">
-                  {inboxTab === 'requests'
-                    ? <GppBadRounded sx={{fontSize:32}} />
-                    : <ChatBubbleRounded sx={{fontSize:32,color:"#60a5fa"}} />}
+            {/* ── Delete confirm overlay ──────────────────────────────── */}
+            {deleteConfirm && (() => {
+              const target = conversations.find(c => c.id === deleteConfirm)
+                || archivedConvs.find(c => c.id === deleteConfirm);
+              const otherId = target?.participantIds.find(id => id !== user.id) || '';
+              const other = authApi.getUserByIdSync(otherId);
+              return (
+                <div className="absolute inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
+                  <div className="w-full sm:w-80 bg-white rounded-t-3xl sm:rounded-2xl p-6 shadow-2xl m-0 sm:m-4">
+                    <div className="flex flex-col items-center text-center mb-5">
+                      <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mb-3">
+                        <DeleteRounded sx={{fontSize:28,color:"#ef4444"}} />
+                      </div>
+                      <h3 className="text-base font-bold text-gray-900 mb-1">Delete conversation?</h3>
+                      <p className="text-sm text-gray-500 leading-relaxed">
+                        This will permanently delete your conversation with <span className="font-semibold text-gray-700">{other?.name || 'this person'}</span> for both sides. This cannot be undone.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setDeleteConfirm(null)}
+                        className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                        Cancel
+                      </button>
+                      <button onClick={() => { if (deleteConfirm) { handleDeleteConversation(deleteConfirm); setDeleteConfirm(null); } }}
+                        className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors shadow-sm">
+                        Delete for everyone
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-sm font-semibold text-gray-700 mb-1">
-                  {inboxTab === 'requests' ? 'No message requests' : 'No messages yet'}
-                </p>
-                <p className="text-xs text-gray-400 mb-5">
-                  {inboxTab === 'requests'
-                    ? "People who message you without following you back will appear here."
-                    : search ? 'No conversations match.' : 'Start a conversation from a user profile.'}
-                </p>
-              </div>
-            ) : (
+              );
+            })()}
+
+            {/* ── Archived tab ─────────────────────────────────────────── */}
+            {inboxTab === 'archived' && (
+              loadingArchived ? (
+                <div className="flex items-center justify-center h-full py-16">
+                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : archivedConvs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                    <Package className="w-8 h-8 text-gray-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-600 mb-1">No archived conversations</p>
+                  <p className="text-xs text-gray-400">Archived chats will appear here.</p>
+                </div>
+              ) : (
+                archivedConvs.map(conv => (
+                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id}
+                    isActive={conv.id === activeId}
+                    convType={getConvType(conv)}
+                    onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}
+                    onDelete={() => setDeleteConfirm(conv.id)}
+                    onArchive={() => {
+                      setArchivedConvs(prev => prev.filter(c => c.id !== conv.id));
+                      setConversations(prev => [{ ...conv, isArchived: false }, ...prev]);
+                      chatApi.unarchiveConversation(conv.id, user.id);
+                      toast('Moved back to inbox');
+                    }}
+                  />
+                ))
+              )
+            )}
+
+            {/* ── Other tabs ───────────────────────────────────────────── */}
+            {inboxTab !== 'archived' && (
               <>
-                {inboxTab === 'requests' && (
-                  <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100">
-                    <p className="text-xs text-amber-700 font-medium">
-                      💬 These people messaged you without following you. Accept to chat, or decline to remove.
+                {/* Message Requests section — only in All tab */}
+                {inboxTab === 'all' && requestConvs.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-700 flex items-center gap-1.5">
+                        <GppBadRounded sx={{fontSize:12}} />
+                        Message Requests
+                        <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{requestConvs.length}</span>
+                      </span>
+                      <span className="text-[10px] text-amber-600">Accept to reply</span>
+                    </div>
+                    {requestConvs.map(conv => (
+                      <ConvRow key={conv.id} conv={conv} currentUserId={user.id}
+                        isActive={conv.id === activeId} isRequest convType="general"
+                        onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}
+                        onLongPress={() => setConvActionSheet(conv)}
+                        onDelete={() => setDeleteConfirm(conv.id)}
+                      />
+                    ))}
+                    {displayedConvs.length > 0 && (
+                      <div className="px-4 py-2 border-b border-gray-100">
+                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Messages</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Empty state */}
+                {displayedConvs.length === 0 && (inboxTab !== 'all' || requestConvs.length === 0) && (
+                  <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
+                    <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-4">
+                      <ChatBubbleRounded sx={{fontSize:32,color:"#60a5fa"}} />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700 mb-1">
+                      {inboxTab === 'unread'      ? 'No unread messages' :
+                       inboxTab === 'bookings'    ? 'No booking conversations' :
+                       inboxTab === 'marketplace' ? 'No marketplace chats' :
+                       search ? 'No conversations match' : 'No messages yet'}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {inboxTab === 'unread'      ? "You're all caught up." :
+                       inboxTab === 'bookings'    ? 'Rental and booking requests appear here.' :
+                       inboxTab === 'marketplace' ? 'Payment and purchase chats appear here.' :
+                       search ? '' : 'Start a conversation from a user profile.'}
                     </p>
                   </div>
                 )}
-                {/* ── Delete confirm overlay ─────────────────────────── */}
-                {deleteConfirm && (() => {
-                  const target = conversations.find(c => c.id === deleteConfirm)
-                    || archivedConvs.find(c => c.id === deleteConfirm);
-                  const otherId = target?.participantIds.find(id => id !== user.id) || '';
-                  const other = authApi.getUserByIdSync(otherId);
-                  return (
-                    <div className="absolute inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
-                      <div className="w-full sm:w-80 bg-white rounded-t-3xl sm:rounded-2xl p-6 shadow-2xl m-0 sm:m-4">
-                        <div className="flex flex-col items-center text-center mb-5">
-                          <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mb-3">
-                            <DeleteRounded sx={{fontSize:28,color:"#ef4444"}} />
-                          </div>
-                          <h3 className="text-base font-bold text-gray-900 mb-1">Delete conversation?</h3>
-                          <p className="text-sm text-gray-500 leading-relaxed">
-                            This will permanently delete your conversation with <span className="font-semibold text-gray-700">{other?.name || 'this person'}</span> for both sides. This cannot be undone.
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (deleteConfirm) {
-                                handleDeleteConversation(deleteConfirm);
-                                setDeleteConfirm(null);
-                              }
-                            }}
-                            className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors shadow-sm"
-                              >
-                            Delete for everyone
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
 
+                {/* Conversation list */}
                 {displayedConvs.map(conv => (
-                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id} isActive={conv.id === activeId}
-                    isRequest={inboxTab === 'requests'}
+                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id}
+                    isActive={conv.id === activeId}
+                    convType={getConvType(conv)}
                     onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}
                     onLongPress={() => setConvActionSheet(conv)}
                     onPin={() => {
                       const pinned = !conv.isPinned;
                       setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, isPinned: pinned } : c));
                       chatApi.pinConversation(conv.id, user.id, pinned);
-                      toast(pinned ? 'Conversation pinned 📌' : 'Conversation unpinned');
+                      toast(pinned ? 'Conversation pinned' : 'Conversation unpinned');
                     }}
                     onMute={() => {
                       const muted = !conv.isMuted;
                       setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, isMuted: muted } : c));
                       chatApi.muteConversation(conv.id, user.id, muted);
-                      toast(muted ? 'Notifications muted 🔕' : 'Notifications unmuted 🔔');
+                      toast(muted ? 'Notifications muted' : 'Notifications unmuted');
                     }}
                     onArchive={() => {
                       setConversations(prev => prev.filter(c => c.id !== conv.id));
                       if (activeId === conv.id) { setActiveId(null); setShowSidebar(true); }
                       chatApi.archiveConversation(conv.id, user.id, true);
                       setArchivedConvs(prev => [{ ...conv, isArchived: true }, ...prev]);
-                      toast('Conversation archived 📁');
+                      toast('Conversation archived');
                     }}
                     onDelete={() => setDeleteConfirm(conv.id)}
                   />
                 ))}
-
-                {/* ── Archived section ───────────────────────────────── */}
-                {inboxTab === 'messages' && (
-                  <div className="border-t border-gray-100 mt-1">
-                    <button
-                      onClick={handleToggleArchived}
-                      className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-gray-500 hover:bg-gray-50 transition-colors"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="text-base leading-none">📁</span>
-                        Archived
-                        {archivedConvs.length > 0 && (
-                          <span className="bg-gray-200 text-gray-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                            {archivedConvs.length}
-                          </span>
-                        )}
-                      </span>
-                      <ChevronDown className={`w-4 h-4 transition-transform ${showArchived ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showArchived && (
-                      <div className="bg-gray-50/60">
-                        {loadingArchived ? (
-                          <div className="flex items-center justify-center py-8">
-                            <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        ) : archivedConvs.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                            <span className="text-3xl mb-2">📭</span>
-                            <p className="text-xs text-gray-400 font-medium">No archived conversations</p>
-                          </div>
-                        ) : (
-                          archivedConvs.map(conv => {
-                            const otherId = conv.participantIds.find(id => id !== user.id) || '';
-                            const other = authApi.getUserByIdSync(otherId);
-                            const last = conv.messages[conv.messages.length - 1];
-                            const preview = conv.lastMessagePreview || last?.content || '';
-                            return (
-                              <div key={conv.id} className="relative group/arch flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors cursor-pointer border-b border-gray-100 last:border-0"
-                                onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}>
-                                <div className="relative shrink-0 opacity-70">
-                                  <UserAvatar user={other || { name: otherId, id: otherId }} size={40} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between mb-0.5">
-                                    <span className="text-sm font-semibold text-gray-600 truncate">{other?.name || 'Unknown'}</span>
-                                    <span className="text-[10px] text-gray-400">Archived</span>
-                                  </div>
-                                  {preview && <p className="text-xs text-gray-400 truncate">{preview}</p>}
-                                </div>
-                                {/* Unarchive + delete actions */}
-                                <div className="flex items-center gap-1 opacity-0 group-hover/arch:opacity-100 transition-opacity shrink-0">
-                                  <button
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      setArchivedConvs(prev => prev.filter(c => c.id !== conv.id));
-                                      setConversations(prev => [{ ...conv, isArchived: false }, ...prev]);
-                                      chatApi.unarchiveConversation(conv.id, user.id);
-                                      toast('Moved back to inbox');
-                                    }}
-                                    title="Unarchive"
-                                    className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors"
-                                  >
-                                    <span className="text-sm">📥</span>
-                                  </button>
-                                  <button
-                                    onClick={e => { e.stopPropagation(); setDeleteConfirm(conv.id); }}
-                                    title="Delete for everyone"
-                                    className="w-7 h-7 flex items-center justify-center rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition-colors"
-                                  >
-                                    <DeleteRounded sx={{fontSize:12}} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
               </>
             )}
           </div>

@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router';
 import { useState, useEffect, useCallback } from 'react';
 import { listingsApi, authApi, reviewsApi } from '../lib/api';
-import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award } from 'lucide-react';
+import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -230,14 +230,14 @@ export function ListingDetail() {
             {/* ── Title + meta ── */}
             <div>
               <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${
                   listing.listingType === 'service' ? 'bg-purple-100 text-purple-700'
                   : listing.listingMode === 'sale'  ? 'bg-orange-100 text-orange-700'
                   : 'bg-blue-100 text-blue-700'
                 }`}>
-                  {listing.listingType === 'service' ? '🎥 Service'
-                   : listing.listingMode === 'sale' ? '💰 For Sale'
-                   : '🎬 Rental'}
+                  {listing.listingType === 'service' ? <><Wrench className="w-3 h-3"/> Service</>
+                   : listing.listingMode === 'sale' ? <><Tag className="w-3 h-3"/> For Sale</>
+                   : <><Film className="w-3 h-3"/> Rental</>}
                 </span>
                 {reviews.length > 0 && (
                   <span className="flex items-center gap-1 text-sm text-gray-600">

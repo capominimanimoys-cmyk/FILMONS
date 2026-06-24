@@ -7,16 +7,22 @@
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { UserAvatar } from './AccountTypeBadge';
-import { X } from 'lucide-react';
+import {
+  X, ShoppingBag, Heart, CalendarDays, CreditCard,
+  Layers, ShieldCheck, BarChart2, HelpCircle, Mail,
+  Settings, Lock, Bell, LogOut,
+} from 'lucide-react';
+
+type LucideIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
 
 interface Section {
   title: string;
   items: {
-    emoji:  string;
-    label:  string;
-    to?:    string;
+    icon:    LucideIcon;
+    label:   string;
+    to?:     string;
     action?: () => void;
-    badge?: string;
+    badge?:  string;
     danger?: boolean;
   }[];
 }
@@ -35,39 +41,39 @@ export function SideDrawer({ onClose }: Props) {
     {
       title: 'Marketplace',
       items: [
-        { emoji: '📦', label: 'My Listings',          to: '/my-listings'   },
-        { emoji: '❤️', label: 'Saved Listings',       to: '/profile?tab=saved' },
-        { emoji: '📅', label: 'Bookings & Requests',  to: '/my-orders'     },
-        { emoji: '💳', label: 'Payments & Earnings',  to: '/wallet'        },
+        { icon: ShoppingBag,  label: 'My Listings',         to: '/my-listings'           },
+        { icon: Heart,        label: 'Saved Listings',       to: '/profile?tab=saved'     },
+        { icon: CalendarDays, label: 'Bookings & Requests',  to: '/my-orders'             },
+        { icon: CreditCard,   label: 'Payments & Earnings',  to: '/wallet'                },
       ],
     },
     {
       title: 'Professional',
       items: [
-        { emoji: '🖼️', label: 'Portfolio',            to: '/profile?tab=portfolio' },
-        { emoji: '✅', label: 'Verification',          to: '/verification'  },
-        { emoji: '📊', label: 'Analytics',             to: '/dashboard'     },
+        { icon: Layers,      label: 'Portfolio',    to: '/profile?tab=portfolio' },
+        { icon: ShieldCheck, label: 'Verification', to: '/verification'          },
+        { icon: BarChart2,   label: 'Analytics',    to: '/dashboard'             },
       ],
     },
     {
       title: 'Support',
       items: [
-        { emoji: '❓', label: 'Help Center',           to: '/help'          },
-        { emoji: '📩', label: 'Contact Support',       to: '/contact'       },
+        { icon: HelpCircle, label: 'Help Center',     to: '/help'    },
+        { icon: Mail,       label: 'Contact Support',  to: '/contact' },
       ],
     },
     {
       title: 'Settings',
       items: [
-        { emoji: '⚙️', label: 'Settings',             to: '/settings'      },
-        { emoji: '🔒', label: 'Privacy & Security',   to: '/settings/privacy' },
-        { emoji: '🔔', label: 'Notifications',        to: '/settings/notifications' },
+        { icon: Settings, label: 'Settings',           to: '/settings'              },
+        { icon: Lock,     label: 'Privacy & Security', to: '/settings/privacy'      },
+        { icon: Bell,     label: 'Notifications',      to: '/settings/notifications' },
       ],
     },
     {
       title: 'Account',
       items: [
-        { emoji: '🚪', label: 'Logout', danger: true, action: () => { onClose(); logout?.(); navigate('/login'); } },
+        { icon: LogOut, label: 'Logout', danger: true, action: () => { onClose(); logout?.(); navigate('/login'); } },
       ],
     },
   ];
@@ -125,21 +131,27 @@ export function SideDrawer({ onClose }: Props) {
               <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">
                 {section.title}
               </p>
-              {section.items.map(item => (
-                <button
-                  key={item.label}
-                  onClick={() => item.action ? item.action() : go(item.to!)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 ${item.danger ? 'text-red-500' : 'text-gray-800'}`}
-                >
-                  <span className="text-lg w-6 text-center shrink-0">{item.emoji}</span>
-                  <span className="text-sm font-medium flex-1">{item.label}</span>
-                  {item.badge && (
-                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
+              {section.items.map(item => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.label}
+                    onClick={() => item.action ? item.action() : go(item.to!)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 ${item.danger ? 'text-red-500' : 'text-gray-700'}`}
+                  >
+                    <Icon
+                      className={`w-[18px] h-[18px] shrink-0 ${item.danger ? 'text-red-500' : 'text-gray-500'}`}
+                      strokeWidth={1.75}
+                    />
+                    <span className="text-sm font-medium flex-1">{item.label}</span>
+                    {item.badge && (
+                      <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           ))}
         </div>

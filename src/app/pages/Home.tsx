@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { Search } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Star } from 'lucide-react';
 import { listingsApi } from '../lib/api';
 import { supabase } from '../../lib/supabase';
 import { Listing } from '../types';
@@ -13,14 +13,15 @@ import { SwipeStack, type DeckItem, type CreatorProfile } from '../components/Sw
 // ── Filter system ─────────────────────────────────────────────────────────────
 type FilterId = 'all' | 'rentals' | 'sales' | 'services' | 'creators' | 'studios' | 'talent';
 
-const FILTERS: { id: FilterId; label: string; emoji: string }[] = [
-  { id: 'all',      label: 'All',      emoji: '✨' },
-  { id: 'rentals',  label: 'Rentals',  emoji: '📦' },
-  { id: 'sales',    label: 'Sales',    emoji: '🏷️' },
-  { id: 'services', label: 'Services', emoji: '🛠️' },
-  { id: 'creators', label: 'Creators', emoji: '👤' },
-  { id: 'studios',  label: 'Studios',  emoji: '🏢' },
-  { id: 'talent',   label: 'Talent',   emoji: '🎭' },
+type LucideIcon = React.ComponentType<{ className?: string }>;
+const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
+  { id: 'all',      label: 'All',      icon: Sparkles  },
+  { id: 'rentals',  label: 'Rentals',  icon: Package   },
+  { id: 'sales',    label: 'Sales',    icon: Tag       },
+  { id: 'services', label: 'Services', icon: Wrench    },
+  { id: 'creators', label: 'Creators', icon: User      },
+  { id: 'studios',  label: 'Studios',  icon: Building2 },
+  { id: 'talent',   label: 'Talent',   icon: Star      },
 ];
 
 function buildDeck(listings: Listing[], creators: CreatorProfile[], filter: FilterId): DeckItem[] {
@@ -169,7 +170,7 @@ export function Home() {
                 ? 'bg-gray-900 text-white shadow-sm'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
             }`}>
-            <span>{f.emoji}</span>
+            <f.icon className="w-3.5 h-3.5"/>
             {f.label}
           </button>
         ))}

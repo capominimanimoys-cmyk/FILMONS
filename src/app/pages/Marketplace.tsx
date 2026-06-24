@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Navigation } from 'lucide-react';
+import { Navigation, Sparkles, Camera, Mic, Aperture, Video, Lightbulb, Scissors, Building2, Shirt, Plane, Gamepad2, Music, Monitor, Wrench, Search } from 'lucide-react';
 import { SwipeStack, EnrichedListing } from '../components/SwipeStack';
 import { FilterPanel, FilterOptions } from '../components/FilterPanel';
 import { LocationPermissionDialog } from '../components/LocationPermissionDialog';
@@ -29,7 +29,8 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────
-interface Category { emoji: string; label: string; match: (l: Listing) => boolean; }
+type LucideIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
+interface Category { icon: LucideIcon; label: string; match: (l: Listing) => boolean; }
 
 function kw(l: Listing, words: string[]): boolean {
   const text = `${l.title} ${l.description ?? ''} ${(l.tags ?? []).join(' ')}`.toLowerCase();
@@ -37,20 +38,20 @@ function kw(l: Listing, words: string[]): boolean {
 }
 
 const CATEGORIES: Category[] = [
-  { emoji:'✨', label:'All',          match: ()  => true },
-  { emoji:'📷', label:'Cameras',      match: (l) => kw(l,['camera','canon','sony','nikon','blackmagic','fuji','lumix']) },
-  { emoji:'🎤', label:'Audio',        match: (l) => kw(l,['audio','microphone','mic','sound','speaker','rode','sennheiser']) },
-  { emoji:'📸', label:'Photography',  match: (l) => kw(l,['photo','photography','photographer','shoot','portrait']) },
-  { emoji:'🎥', label:'Video',        match: (l) => kw(l,['video','videographer','filming','cinema','reel']) },
-  { emoji:'💡', label:'Lighting',     match: (l) => kw(l,['light','aputure','godox','led','strobe','tungsten']) },
-  { emoji:'✂️', label:'Editing Gear', match: (l) => kw(l,['editor','editing','post','color','grade','cut','monitor','drive']) },
-  { emoji:'🏢', label:'Studios',      match: (l) => kw(l,['studio','space','location','soundstage']) },
-  { emoji:'👗', label:'Props',        match: (l) => kw(l,['prop','costume','wardrobe','fashion','set dressing']) },
-  { emoji:'🚁', label:'Drones',       match: (l) => kw(l,['drone','dji','aerial','fpv','mavic']) },
-  { emoji:'🎮', label:'Gaming',       match: (l) => kw(l,['gaming','game','stream','esport','twitch','capture card']) },
-  { emoji:'🎵', label:'Music',        match: (l) => kw(l,['music','producer','beat','mixing','mastering']) },
-  { emoji:'🖥️', label:'Streaming',    match: (l) => kw(l,['stream','broadcast','podcast','live','elgato']) },
-  { emoji:'🛠️', label:'Services',     match: (l) => l.listingType === 'service' },
+  { icon: Sparkles,  label:'All',          match: ()  => true },
+  { icon: Camera,    label:'Cameras',      match: (l) => kw(l,['camera','canon','sony','nikon','blackmagic','fuji','lumix']) },
+  { icon: Mic,       label:'Audio',        match: (l) => kw(l,['audio','microphone','mic','sound','speaker','rode','sennheiser']) },
+  { icon: Aperture,  label:'Photography',  match: (l) => kw(l,['photo','photography','photographer','shoot','portrait']) },
+  { icon: Video,     label:'Video',        match: (l) => kw(l,['video','videographer','filming','cinema','reel']) },
+  { icon: Lightbulb, label:'Lighting',     match: (l) => kw(l,['light','aputure','godox','led','strobe','tungsten']) },
+  { icon: Scissors,  label:'Editing Gear', match: (l) => kw(l,['editor','editing','post','color','grade','cut','monitor','drive']) },
+  { icon: Building2, label:'Studios',      match: (l) => kw(l,['studio','space','location','soundstage']) },
+  { icon: Shirt,     label:'Props',        match: (l) => kw(l,['prop','costume','wardrobe','fashion','set dressing']) },
+  { icon: Plane,     label:'Drones',       match: (l) => kw(l,['drone','dji','aerial','fpv','mavic']) },
+  { icon: Gamepad2,  label:'Gaming',       match: (l) => kw(l,['gaming','game','stream','esport','twitch','capture card']) },
+  { icon: Music,     label:'Music',        match: (l) => kw(l,['music','producer','beat','mixing','mastering']) },
+  { icon: Monitor,   label:'Streaming',    match: (l) => kw(l,['stream','broadcast','podcast','live','elgato']) },
+  { icon: Wrench,    label:'Services',     match: (l) => l.listingType === 'service' },
 ];
 
 const DEFAULT_FILTERS: FilterOptions = {
@@ -169,7 +170,7 @@ export function Marketplace() {
                 className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
                   active ? 'bg-gray-900 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                 }`}>
-                <span>{cat.emoji}</span> {cat.label}
+                <cat.icon className="w-4 h-4"/> {cat.label}
               </button>
             );
           })}
@@ -199,7 +200,7 @@ export function Marketplace() {
 
         ) : filtered.length === 0 ? (
           <div className="text-center py-24 px-6">
-            <div className="text-4xl mb-4">🔍</div>
+            <Search className="w-10 h-10 text-gray-300 mx-auto mb-4"/>
             <h3 className="text-base font-black text-gray-900 mb-1">No listings found</h3>
             <p className="text-sm text-gray-400 mb-5">
               {hasFilters ? 'No listings match your filters.' : `Nothing in "${category}" yet.`}
@@ -215,8 +216,9 @@ export function Marketplace() {
             {/* Category header */}
             <div className="flex items-center justify-between px-4 mb-4">
               <div>
-                <p className="text-lg font-black text-gray-900">
-                  {CATEGORIES.find(c => c.label === category)?.emoji} {category}
+                <p className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  {(() => { const Icon = CATEGORIES.find(c => c.label === category)?.icon; return Icon ? <Icon className="w-5 h-5"/> : null; })()}
+                  {category}
                 </p>
                 <p className="text-xs text-gray-400">{filtered.length} listings · swipe to browse</p>
               </div>

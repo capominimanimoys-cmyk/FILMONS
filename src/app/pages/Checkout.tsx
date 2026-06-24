@@ -884,7 +884,7 @@ export function Checkout() {
                           : 'border-gray-200 hover:border-gray-300'
                       }`}>
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 mt-0.5 ${selectedDelivery === opt ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                        {opt === 'delivery' ? '🚚' : '📍'}
+                        {opt === 'delivery' ? <Truck className="w-5 h-5"/> : <MapPin className="w-5 h-5"/>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -975,7 +975,7 @@ export function Checkout() {
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-500">Fulfilment</span>
                     <span className="font-semibold text-gray-800 capitalize flex items-center gap-1">
-                      <span>{effectiveDelivery === 'delivery' ? '🚚' : '📍'}</span> {effectiveDelivery}
+                      {effectiveDelivery === 'delivery' ? <Truck className="w-4 h-4"/> : <MapPin className="w-4 h-4"/>} {effectiveDelivery}
                     </span>
                   </div>
 
