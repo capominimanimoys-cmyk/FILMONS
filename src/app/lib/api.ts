@@ -2717,15 +2717,16 @@ export const chatApi = {
       .eq('id', convId)
       .then(() => {}).catch(() => {});
 
-    // Notify the recipient for every message
+    // Notify the recipient — skip system messages (senderId='system' or type='system')
     const recipientId = participantIds.find(pid => pid !== msg.senderId);
-    if (recipientId && msg.senderId) {
+    if (recipientId && msg.senderId && msg.senderId !== 'system' && (msg as any).type !== 'system') {
       notifs.push(recipientId, {
         type:           'message_received',
         fromUserId:     msg.senderId,
         fromUserName:   msg.senderName   || 'Someone',
         fromUserAvatar: msg.senderAvatar || undefined,
         conversationId: convId,
+        commentContent: (msg.content || '').slice(0, 100) || undefined,
       } as any);
     }
 

@@ -24,7 +24,7 @@ function timeAgo(d: string) {
 
 // ── Priority sort (messages first, then marketplace, network, activity, system)
 function priorityOf(type: string): number {
-  if (['new_message','message_received','message_reply','message_reaction'].includes(type)) return 0;
+  if (['message','new_message','message_received','message_reply','message_reaction'].includes(type)) return 0;
   if (['marketplace_order','marketplace_booking','marketplace_reply','service_booked','booking_accepted','booking_rejected','payment_received','payment_released'].includes(type)) return 1;
   if (['connection_request','follow_request','connection_accepted','follow_accepted','new_follower'].includes(type)) return 2;
   if (['comment_received','comment_reply','comment_like','comment_mention','application_received','application_accepted','application_rejected'].includes(type)) return 3;
@@ -126,6 +126,7 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Bell,          gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',
                label: () => 'Application update received' };
     // Messages
+    case 'message':
     case 'new_message':
     case 'message_received':
       return { icon: Inbox,         gradient: 'from-sky-400 to-cyan-500',        iconColor: 'text-white', ringColor: 'ring-sky-100',
@@ -442,7 +443,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'network',     label: 'Network'     },
 ];
 
-const MESSAGE_TYPES   = ['new_message','message_received','message_reply','message_reaction'];
+const MESSAGE_TYPES   = ['message','new_message','message_received','message_reply','message_reaction'];
 const MARKETPLACE_TYPES = ['service_booked','booking_accepted','booking_rejected','payment_received','payment_released','marketplace_order','marketplace_booking','marketplace_reply','application_received','application_accepted','application_rejected'];
 const NETWORK_TYPES   = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted'];
 

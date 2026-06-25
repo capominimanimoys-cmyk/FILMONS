@@ -1969,16 +1969,6 @@ export function Inbox() {
       null,
     ).then(() => {
       isSendingRef.current = false;
-      if (recipientId) {
-        notifs.push(recipientId, {
-          type: 'message',
-          fromUserId:     user.id,
-          fromUserName:   user.name,
-          fromUserAvatar: user.avatar,
-          conversationId: targetConvId,
-          commentContent: content.slice(0, 100),
-        });
-      }
     }).catch((e: any) => {
       isSendingRef.current = false;
       console.error('[Inbox] send error:', e?.message || e);
