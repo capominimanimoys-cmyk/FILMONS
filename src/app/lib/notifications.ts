@@ -92,8 +92,8 @@ async function _insertNotification(row: Record<string, any>) {
 export async function testNotif(toUserId: string) {
   console.log('[notifications] running test insert →', toUserId);
   await _insertNotification({
-    user_id: toUserId, actor_id: null, actor_name: 'Test', actor_avatar: null,
-    type: 'test', is_read: false,
+    to_user_id: toUserId, from_user_id: null, from_user_name: 'Test', from_user_avatar: null,
+    type: 'test', read: false,
   });
 }
 // Expose on window for easy console testing
@@ -142,19 +142,19 @@ export function push(
     try { window.dispatchEvent(new CustomEvent('filmons:notif', { detail: full })); } catch {}
   }
 
-  // Write to Supabase — use the actual table column names (user_id convention)
+  // Write to Supabase — column names match the edge-function schema and realtime filter
   _insertNotification({
-    user_id:      toUserId,
-    actor_id:     notif.fromUserId        || null,
-    actor_name:   notif.fromUserName      || '',
-    actor_avatar: notif.fromUserAvatar    || null,
-    type:            notif.type,
-    post_id:         (notif as any).postId    || null,
-    post_content:    (notif as any).postContent || null,
-    post_image:      (notif as any).postImage   || null,
-    comment_content: (notif as any).commentContent || null,
-    conversation_id: (notif as any).conversationId || null,
-    is_read:         false,
+    to_user_id:       toUserId,
+    from_user_id:     notif.fromUserId       || null,
+    from_user_name:   notif.fromUserName     || '',
+    from_user_avatar: notif.fromUserAvatar   || null,
+    type:             notif.type,
+    post_id:          (notif as any).postId       || null,
+    post_content:     (notif as any).postContent  || null,
+    post_image:       (notif as any).postImage    || null,
+    comment_content:  (notif as any).commentContent || null,
+    conversation_id:  (notif as any).conversationId || null,
+    read:             false,
   });
 }
 

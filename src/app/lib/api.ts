@@ -2215,7 +2215,7 @@ export const chatApi = {
     const recipientId = convs[idx].participantIds.find(id => id !== senderId);
     if (recipientId) {
       notifs.push(recipientId, {
-        type: 'new_message',
+        type: 'message_received',
         fromUserId:     senderId,
         fromUserName:   senderName,
         fromUserAvatar: senderAvatar,
