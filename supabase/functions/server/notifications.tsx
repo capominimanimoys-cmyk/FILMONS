@@ -160,8 +160,10 @@ function buildTitle(type: string, fromUserName: string): string {
     case "comment_pinned":   return "Your comment was pinned";
     case "comment_deleted":  return "Your comment was removed by moderation";
     case "comment_mention":  return `${fromUserName} mentioned you in a comment`;
-    case "message":        return `New message from ${fromUserName}`;
-    case "mention":        return `${fromUserName} mentioned you`;
+    case "message":           return `${fromUserName} sent you a message`;
+    case "new_message":       return `${fromUserName} sent you a message`;
+    case "message_received":  return `${fromUserName} sent you a message`;
+    case "mention":           return `${fromUserName} mentioned you`;
     case "repost":         return `${fromUserName} reposted your post`;
     case "repost_chain":   return `${fromUserName} reposted a post`;
     case "rental_request": return `${fromUserName} sent a rental request`;
@@ -215,22 +217,26 @@ export async function push(notif: {
 
   const title = notif.title?.trim() || buildTitle(notif.type, notif.fromUserName);
 
-  // 24-hour dedup
-  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  try {
-    const existing = await sql().unsafe(
-      `SELECT id FROM notifications
-       WHERE  "${m.toUserId}"             = $1
-         AND  "${m.fromUserId}"           = $2
-         AND  "${m.type}"                 = $3
-         AND  COALESCE("${m.postId}", '') = $4
-         AND  "${m.createdAt}"            > $5
-       LIMIT 1`,
-      [notif.toUserId, notif.fromUserId, notif.type, notif.postId ?? "", cutoff],
-    );
-    if ((existing as any[]).length > 0) return;
-  } catch (e) {
-    console.warn("[notifications] dedup check failed:", String(e).slice(0, 200));
+  // Message notifications are never deduped — every message is its own notification.
+  // All other types use a 24-hour dedup keyed on (recipient, sender, type, post).
+  const isMessage = notif.type === "message_received" || notif.type === "new_message" || notif.type === "message";
+  if (!isMessage) {
+    const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    try {
+      const existing = await sql().unsafe(
+        `SELECT id FROM notifications
+         WHERE  "${m.toUserId}"             = $1
+           AND  "${m.fromUserId}"           = $2
+           AND  "${m.type}"                 = $3
+           AND  COALESCE("${m.postId}", '') = $4
+           AND  "${m.createdAt}"            > $5
+         LIMIT 1`,
+        [notif.toUserId, notif.fromUserId, notif.type, notif.postId ?? "", cutoff],
+      );
+      if ((existing as any[]).length > 0) return;
+    } catch (e) {
+      console.warn("[notifications] dedup check failed:", String(e).slice(0, 200));
+    }
   }
 
   try {

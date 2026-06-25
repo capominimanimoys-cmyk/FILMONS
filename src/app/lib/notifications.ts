@@ -142,20 +142,25 @@ export function push(
     try { window.dispatchEvent(new CustomEvent('filmons:notif', { detail: full })); } catch {}
   }
 
-  // Write to Supabase — column names match the edge-function schema and realtime filter
-  _insertNotification({
-    to_user_id:       toUserId,
-    from_user_id:     notif.fromUserId       || null,
-    from_user_name:   notif.fromUserName     || '',
-    from_user_avatar: notif.fromUserAvatar   || null,
-    type:             notif.type,
-    post_id:          (notif as any).postId       || null,
-    post_content:     (notif as any).postContent  || null,
-    post_image:       (notif as any).postImage    || null,
-    comment_content:  (notif as any).commentContent || null,
-    conversation_id:  (notif as any).conversationId || null,
-    read:             false,
-  });
+  // Push via edge function — service-role key bypasses RLS so the sender can
+  // write a notification row owned by the recipient.
+  fetch(`${BASE}/notifications`, {
+    method: 'POST',
+    headers: H(),
+    body: JSON.stringify({
+      toUserId,
+      fromUserId:     notif.fromUserId     ?? null,
+      fromUserName:   notif.fromUserName   ?? '',
+      fromUserAvatar: notif.fromUserAvatar ?? null,
+      title:          _notifTitle(notif.type, notif.fromUserName || 'Someone'),
+      type:           notif.type,
+      postId:         (notif as any).postId         ?? null,
+      postContent:    (notif as any).postContent    ?? null,
+      postImage:      (notif as any).postImage      ?? null,
+      commentContent: (notif as any).commentContent ?? null,
+      conversationId: (notif as any).conversationId ?? null,
+    }),
+  }).catch(e => console.warn('[notifications] push failed:', e));
 }
 
 // ── Instant read from local cache (no network) ───────────────────────────────

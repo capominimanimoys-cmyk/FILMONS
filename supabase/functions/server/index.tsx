@@ -1997,6 +1997,7 @@ app.post("/make-server-ec8fe879/notifications", async (c) => {
       fromUserId,
       fromUserName,
       fromUserAvatar,
+      title,
       type,
       postId,
       postContent,
@@ -2004,19 +2005,14 @@ app.post("/make-server-ec8fe879/notifications", async (c) => {
       commentContent,
       conversationId,
     } = await c.req.json();
-    if (!toUserId || !fromUserId || !fromUserName || !type)
-      return c.json(
-        {
-          error:
-            "toUserId, fromUserId, fromUserName, type required",
-        },
-        400,
-      );
+    if (!toUserId || !fromUserId || !type)
+      return c.json({ error: "toUserId, fromUserId, type required" }, 400);
     await notifsDb.push({
       toUserId,
       fromUserId,
-      fromUserName,
+      fromUserName: fromUserName ?? '',
       fromUserAvatar,
+      title,
       type,
       postId,
       postContent,
