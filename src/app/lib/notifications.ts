@@ -181,6 +181,7 @@ export function getLocal(userId: string): Notification[] {
 
 // ── Read from notifications table ────────────────────────────────────────────
 export async function getAll(userId: string): Promise<Notification[]> {
+  console.log('[notifications] getAll called for', userId);
   try {
     const { data, error } = await supabase
       .from('notifications')
@@ -188,12 +189,13 @@ export async function getAll(userId: string): Promise<Notification[]> {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(100);
+    console.log('[notifications] getAll result — rows:', data?.length, 'error:', error?.message ?? null);
     if (error) throw error;
     const mapped = (data || []).map(rowToNotif);
     saveLocal(userId, mapped);
     return mapped;
   } catch (e) {
-    console.warn('[notifications] getAll failed:', (e as any)?.message);
+    console.error('[notifications] getAll FAILED:', (e as any)?.message, (e as any)?.code);
   }
   return loadLocal(userId);
 }
