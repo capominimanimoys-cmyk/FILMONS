@@ -2717,6 +2717,21 @@ export const chatApi = {
       .eq('id', convId)
       .then(() => {}).catch(() => {});
 
+    // Notify the recipient — pass the message id as postId so the server-side
+    // 24h dedup (keyed on recipient+sender+type+postId) never collapses two
+    // messages from the same conversation into one notification.
+    const recipientId = participantIds.find(pid => pid !== msg.senderId);
+    if (recipientId && msg.senderId) {
+      notifs.push(recipientId, {
+        type:           'message_received',
+        fromUserId:     msg.senderId,
+        fromUserName:   msg.senderName   || 'Someone',
+        fromUserAvatar: msg.senderAvatar || undefined,
+        conversationId: convId,
+        postId:         id,
+      } as any);
+    }
+
     return { ...msg, id, createdAt: now } as ChatMessage;
   },
 
