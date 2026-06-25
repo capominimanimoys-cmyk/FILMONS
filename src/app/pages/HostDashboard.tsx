@@ -484,6 +484,8 @@ function CreatorDashboard({ user }: { user: any }) {
 // ── Host Dashboard Content (business/service accounts) ─────────────
 function HostDashboardContent({ user }: { user: any }) {
   const navigate = useNavigate();
+  const isCreatorPlus = ['creator_plus', 'professional', 'business'].includes(user.accountType ?? '');
+  const goCreate = () => navigate(isCreatorPlus ? '/create-listing' : '/creator-plus-required?type=listings');
   const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'orders'>('overview');
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
@@ -587,7 +589,7 @@ function HostDashboardContent({ user }: { user: any }) {
   };
 
   const quickActions = [
-    { icon: <Plus className="w-4 h-4 text-blue-600" />, label: 'Create a new listing', color: 'bg-blue-50', action: () => navigate('/create-listing') },
+    { icon: <Plus className="w-4 h-4 text-blue-600" />, label: 'Create a new listing', color: 'bg-blue-50', action: goCreate },
     { icon: <Package className="w-4 h-4 text-purple-600" />, label: 'My listings', color: 'bg-purple-50', action: () => setActiveTab('listings') },
     { icon: <MessageCircle className="w-4 h-4 text-green-600" />, label: 'Open inbox', color: 'bg-green-50', action: () => navigate('/inbox') },
     { icon: <ShieldCheck className="w-4 h-4 text-orange-500" />, label: 'Get verified', color: 'bg-orange-50', action: () => navigate('/verification') },
@@ -606,7 +608,7 @@ function HostDashboardContent({ user }: { user: any }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Link to="/create-listing" className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> New Listing</Link>
+            <button onClick={goCreate} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> New Listing</button>
             <Link to="/profile" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"><Settings className="w-4 h-4" /></Link>
           </div>
         </div>
@@ -746,13 +748,13 @@ function HostDashboardContent({ user }: { user: any }) {
           <>
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-gray-600">{myListings.length} listing{myListings.length !== 1 ? 's' : ''}</p>
-              <Link to="/create-listing" className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> Add</Link>
+              <button onClick={goCreate} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
             </div>
             {myListings.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center space-y-3">
                 <Package className="w-12 h-12 text-blue-200 mx-auto" />
                 <h3 className="font-bold text-gray-900">No listings yet</h3>
-                <Link to="/create-listing" className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"><Plus className="w-4 h-4" /> Create Listing</Link>
+                <button onClick={goCreate} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"><Plus className="w-4 h-4" /> Create Listing</button>
               </div>
             ) : (
               <div className="space-y-3">

@@ -100,7 +100,7 @@ export function OAuthCallback() {
         const u = rowToUser(byId);
         await completeLogin(undefined, undefined, undefined, u);
         toast.success('Welcome back.');
-        navigate(isComplete(u) ? '/feed' : '/onboarding', { replace: true });
+        navigate(isComplete(u) ? '/' : '/onboarding', { replace: true });
         return;
       }
 
@@ -145,7 +145,7 @@ export function OAuthCallback() {
             toast.success('Welcome back.');
           }
 
-          navigate(isComplete(u) ? '/feed' : '/onboarding', { replace: true });
+          navigate(isComplete(u) ? '/' : '/onboarding', { replace: true });
           return;
         }
       }
