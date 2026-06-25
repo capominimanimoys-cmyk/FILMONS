@@ -175,18 +175,18 @@ export function getLocal(userId: string): Notification[] {
 function rowToNotif(r: any): Notification {
   return {
     id:             r.id,
-    toUserId:       r.to_user_id    ?? r.user_id    ?? '',
-    fromUserId:     r.from_user_id  ?? r.actor_id   ?? '',
-    fromUserName:   r.from_user_name ?? r.actor_name ?? '',
+    toUserId:       r.user_id       ?? r.to_user_id    ?? '',
+    fromUserId:     r.actor_id      ?? r.from_user_id  ?? '',
+    fromUserName:   r.from_user_name ?? r.actor_name   ?? '',
     fromUserAvatar: r.from_user_avatar ?? r.actor_avatar ?? undefined,
     type:           r.type,
     postId:         r.post_id         ?? undefined,
-    postContent:    r.post_content     ?? undefined,
-    postImage:      r.post_image       ?? undefined,
-    commentContent: r.comment_content  ?? undefined,
-    conversationId: r.conversation_id  ?? undefined,
+    postContent:    r.post_content    ?? undefined,
+    postImage:      r.post_image      ?? undefined,
+    commentContent: r.comment_content ?? r.body         ?? undefined,
+    conversationId: r.conversation_id ?? r.entity_id    ?? undefined,
     fpAmount:       r.fp_amount        ?? undefined,
-    read:           r.read ?? r.is_read ?? false,
+    read:           r.is_read ?? r.read ?? false,
     createdAt:      r.created_at       ?? new Date().toISOString(),
   };
 }
@@ -284,7 +284,7 @@ export function subscribe(
         event:  'INSERT',
         schema: 'public',
         table:  'notifications',
-        filter: `to_user_id=eq.${userId}`,
+        filter: `user_id=eq.${userId}`,
       },
       (payload) => {
         const row   = payload.new as any;

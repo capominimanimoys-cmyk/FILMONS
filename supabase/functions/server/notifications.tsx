@@ -33,8 +33,8 @@ interface ColMap {
 
 function defaultMap(): ColMap {
   return {
-    toUserId:       "to_user_id",
-    fromUserId:     "from_user_id",
+    toUserId:       "user_id",
+    fromUserId:     "actor_id",
     fromUserName:   "from_user_name",
     fromUserAvatar: "from_user_avatar",
     title:          "title",
@@ -44,7 +44,7 @@ function defaultMap(): ColMap {
     postImage:      "post_image",
     commentContent: "comment_content",
     conversationId: "conversation_id",
-    read:           "read",
+    read:           "is_read",
     createdAt:      "created_at",
   };
 }
@@ -60,18 +60,22 @@ async function ensureTable(): Promise<void> {
     await sql().unsafe(`
       CREATE TABLE IF NOT EXISTS notifications (
         id               text        PRIMARY KEY,
-        to_user_id       text,
-        from_user_id     text,
+        user_id          text,
+        actor_id         text,
         from_user_name   text,
         from_user_avatar text,
         title            text        NOT NULL DEFAULT '',
         type             text,
+        entity_type      text,
+        entity_id        text,
+        message_id       text,
         post_id          text,
         post_content     text,
         post_image       text,
+        body             text,
         comment_content  text,
         conversation_id  text,
-        read             boolean     NOT NULL DEFAULT false,
+        is_read          boolean     NOT NULL DEFAULT false,
         created_at       timestamptz NOT NULL DEFAULT now()
       )
     `);
@@ -81,8 +85,8 @@ async function ensureTable(): Promise<void> {
 
   // ── 2. Index (separate statement, best-effort) ───────────────────────────
   await sql()
-    .unsafe(`CREATE INDEX IF NOT EXISTS notifs_user_idx ON notifications(to_user_id, created_at DESC)`)
-    .catch(() => {/* ignore if index or column name differs */});
+    .unsafe(`CREATE INDEX IF NOT EXISTS notifs_user_id_created_idx ON notifications(user_id, created_at DESC)`)
+    .catch(() => {});
 
   // ── 3. Detect actual columns ─────────────────────────────────────────────
   let cols = new Set<string>();
@@ -103,19 +107,19 @@ async function ensureTable(): Promise<void> {
   // ── 4. Build alias map ────────────────────────────────────────────────────
   const pick = (...names: string[]) => names.find(n => cols.has(n)) ?? names[0];
   _map = {
-    toUserId:       pick("to_user_id",       "user_id",       "recipient_id",  "target_user_id", "notif_user_id"),
-    fromUserId:     pick("from_user_id",      "actor_id",      "sender_id",     "source_user_id"),
-    fromUserName:   pick("from_user_name",    "actor_name",    "sender_name",   "from_name",      "actor_username"),
-    fromUserAvatar: pick("from_user_avatar",  "actor_avatar",  "sender_avatar", "from_avatar"),
-    title:          pick("title",             "subject",       "heading",       "notification_title"),
-    type:           pick("type",              "kind",          "event_type",    "notification_type"),
-    postId:         pick("post_id",           "resource_id",   "ref_id",        "entity_id"),
-    postContent:    pick("post_content",      "post_body",     "content",       "body"),
-    postImage:      pick("post_image",        "image_url",     "thumbnail",     "photo_url"),
-    commentContent: pick("comment_content",   "comment",       "comment_text",  "comment_body"),
-    conversationId: pick("conversation_id",   "conv_id",       "thread_id"),
-    read:           pick("read",              "is_read",       "seen",          "viewed",         "opened"),
-    createdAt:      pick("created_at",        "inserted_at",   "timestamp",     "ts",             "created"),
+    toUserId:       pick("user_id",          "to_user_id",     "recipient_id",  "target_user_id"),
+    fromUserId:     pick("actor_id",         "from_user_id",   "sender_id",     "source_user_id"),
+    fromUserName:   pick("from_user_name",   "actor_name",     "sender_name",   "from_name"),
+    fromUserAvatar: pick("from_user_avatar", "actor_avatar",   "sender_avatar", "from_avatar"),
+    title:          pick("title",            "subject",        "heading",       "notification_title"),
+    type:           pick("type",             "kind",           "event_type",    "notification_type"),
+    postId:         pick("post_id",          "resource_id",    "ref_id"),
+    postContent:    pick("post_content",     "post_body",      "content"),
+    postImage:      pick("post_image",       "image_url",      "thumbnail",     "photo_url"),
+    commentContent: pick("comment_content",  "comment",        "comment_text",  "body"),
+    conversationId: pick("conversation_id",  "conv_id",        "thread_id"),
+    read:           pick("is_read",          "read",           "seen",          "viewed"),
+    createdAt:      pick("created_at",       "inserted_at",    "timestamp",     "ts"),
   };
   console.log("[notifications] map:", JSON.stringify(_map));
 
@@ -127,6 +131,10 @@ async function ensureTable(): Promise<void> {
     [_map.fromUserAvatar, "text"],
     [_map.title,          "text NOT NULL DEFAULT ''"],
     [_map.type,           "text"],
+    ["entity_type",       "text"],
+    ["entity_id",         "text"],
+    ["message_id",        "text"],
+    ["body",              "text"],
     [_map.postId,         "text"],
     [_map.postContent,    "text"],
     [_map.postImage,      "text"],
