@@ -39,18 +39,30 @@ function _notifTitle(type: string, actorName: string): string {
     case 'application_accepted': return 'Your application was accepted';
     case 'application_rejected': return 'Your application was not accepted';
     // Messages
-    case 'new_message':        return `New message from ${actorName}`;
+    case 'new_message':        return `${actorName} sent you a message`;
+    case 'message_received':   return `${actorName} sent you a message`;
+    case 'message_reply':      return `${actorName} replied to your message`;
     case 'message_reaction':   return `${actorName} reacted to your message`;
+    // Network
+    case 'connection_request': return `${actorName} sent you a connection request`;
+    case 'connection_accepted':return `${actorName} accepted your connection request`;
     // Marketplace
     case 'service_booked':     return `${actorName} booked your service`;
     case 'booking_accepted':   return 'Your booking was accepted';
     case 'booking_rejected':   return 'Your booking was declined';
     case 'payment_received':   return `Payment received from ${actorName}`;
     case 'payment_released':   return 'Your payment has been released';
+    case 'marketplace_order':  return `${actorName} placed a new order`;
+    case 'marketplace_booking':return `${actorName} requested a booking`;
+    case 'marketplace_reply':  return `${actorName} replied to your inquiry`;
+    // Profile & Trust
+    case 'profile_completion': return 'Your profile is now 80% complete';
+    case 'trust_level_update': return 'Your trust level has increased';
     // System
     case 'account_verified':   return 'Your account has been verified';
     case 'account_warning':    return 'Important notice about your account';
     case 'system_announcement':return 'New announcement from Filmons';
+    case 'system_notification':return 'You have a new notification from Filmons';
     default:                   return `New notification from ${actorName}`;
   }
 }

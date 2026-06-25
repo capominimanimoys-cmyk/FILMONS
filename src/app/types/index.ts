@@ -262,19 +262,23 @@ export type NotificationType =
   // Comments
   | 'comment_received' | 'comment_reply' | 'comment_like'
   | 'comment_mention'  | 'comment_pinned' | 'comment_deleted'
-  // Likes & Reposts
-  | 'content_like' | 'content_repost'
-  // Followers
+  // Likes, Reposts & Posts
+  | 'new_post' | 'content_like' | 'content_repost'
+  // Network / Followers
   | 'new_follower' | 'follow_request' | 'follow_accepted'
+  | 'connection_request' | 'connection_accepted'
   // Applications
   | 'application_received' | 'application_accepted' | 'application_rejected'
   // Messages
-  | 'new_message' | 'message_reaction'
+  | 'new_message' | 'message_received' | 'message_reply' | 'message_reaction'
   // Marketplace
   | 'service_booked' | 'booking_accepted' | 'booking_rejected'
   | 'payment_received' | 'payment_released'
+  | 'marketplace_order' | 'marketplace_booking' | 'marketplace_reply'
+  // Profile & Trust
+  | 'profile_completion' | 'trust_level_update'
   // System
-  | 'account_verified' | 'account_warning' | 'system_announcement';
+  | 'account_verified' | 'account_warning' | 'system_announcement' | 'system_notification';
 
 export interface Notification {
   id: string;
@@ -293,7 +297,8 @@ export interface Notification {
   commentContent?: string;
   // Messaging
   conversationId?: string;
-  // Follow
+  messageContent?: string;
+  // Network
   followBack?: boolean;
   // Marketplace
   listingId?: string;

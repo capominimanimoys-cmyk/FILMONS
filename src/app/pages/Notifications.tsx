@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router';
 import {
   Bell, Heart, MessageCircle, UserPlus,
   Check, Trash2, X, BellOff, UserCheck, Inbox, ArrowRight, Repeat2,
-  ShoppingBag, Zap, Trophy, AtSign, Image,
+  ShoppingBag, Zap, Trophy, AtSign, Image, Shield, Star,
+  Rocket, Wrench, PartyPopper, Eye, ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
@@ -21,6 +22,16 @@ function timeAgo(d: string) {
   return new Date(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
 }
 
+// ── Priority sort (messages first, then marketplace, network, activity, system)
+function priorityOf(type: string): number {
+  if (['new_message','message_received','message_reply','message_reaction'].includes(type)) return 0;
+  if (['marketplace_order','marketplace_booking','marketplace_reply','service_booked','booking_accepted','booking_rejected','payment_received','payment_released'].includes(type)) return 1;
+  if (['connection_request','follow_request','connection_accepted','follow_accepted','new_follower'].includes(type)) return 2;
+  if (['comment_received','comment_reply','comment_like','comment_mention','application_received','application_accepted','application_rejected'].includes(type)) return 3;
+  if (['content_like','content_repost','new_post'].includes(type)) return 4;
+  return 5;
+}
+
 function groupByDate(notifs: Notification[]): { label: string; items: Notification[] }[] {
   const now  = new Date();
   const tod  = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -32,10 +43,18 @@ function groupByDate(notifs: Notification[]): { label: string; items: Notificati
     else if (t >= week) thisWeek.push(n);
     else earlier.push(n);
   }
+  // Within each group: unread first, then by priority, then newest
+  const sort = (arr: Notification[]) =>
+    arr.slice().sort((a, b) => {
+      if (a.read !== b.read) return a.read ? 1 : -1;
+      const pd = priorityOf(a.type) - priorityOf(b.type);
+      if (pd !== 0) return pd;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   const groups: { label: string; items: Notification[] }[] = [];
-  if (today.length)    groups.push({ label: 'Today',     items: today });
-  if (thisWeek.length) groups.push({ label: 'This week', items: thisWeek });
-  if (earlier.length)  groups.push({ label: 'Earlier',   items: earlier });
+  if (today.length)    groups.push({ label: 'Today',     items: sort(today) });
+  if (thisWeek.length) groups.push({ label: 'This week', items: sort(thisWeek) });
+  if (earlier.length)  groups.push({ label: 'Earlier',   items: sort(earlier) });
   return groups;
 }
 
@@ -50,7 +69,7 @@ type NotifCfg = {
 
 function typeCfg(n: Notification): NotifCfg {
   switch (n.type) {
-    // ── Comments ─────────────────────────────────────────────────────────────
+    // Comments
     case 'comment_received':
       return { icon: MessageCircle, gradient: 'from-emerald-400 to-green-500',   iconColor: 'text-white', ringColor: 'ring-green-100',
                label: () => 'commented on your post' };
@@ -69,18 +88,18 @@ function typeCfg(n: Notification): NotifCfg {
     case 'comment_deleted':
       return { icon: Bell,          gradient: 'from-gray-400 to-gray-500',       iconColor: 'text-white', ringColor: 'ring-gray-100',
                label: () => 'removed your comment' };
-    // ── New post from someone you follow ─────────────────────────────────────
+    // Posts
     case 'new_post':
-      return { icon: Image, gradient: 'from-blue-400 to-violet-500', iconColor: 'text-white', ringColor: 'ring-blue-100',
+      return { icon: Image,         gradient: 'from-blue-400 to-violet-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',
                label: () => 'shared a new post' };
-    // ── Likes & Reposts ───────────────────────────────────────────────────────
+    // Likes & Reposts
     case 'content_like':
       return { icon: Heart,         gradient: 'from-rose-400 to-pink-500',       iconColor: 'text-white', ringColor: 'ring-rose-100',
                label: () => 'liked your post' };
     case 'content_repost':
       return { icon: Repeat2,       gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',
                label: () => 'reposted your content' };
-    // ── Followers ─────────────────────────────────────────────────────────────
+    // Network
     case 'new_follower':
       return { icon: UserPlus,      gradient: 'from-blue-500 to-blue-600',       iconColor: 'text-white', ringColor: 'ring-blue-100',
                label: () => 'started following you' };
@@ -88,34 +107,51 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: UserPlus,      gradient: 'from-indigo-400 to-blue-500',     iconColor: 'text-white', ringColor: 'ring-indigo-100',
                label: () => 'wants to follow you' };
     case 'follow_accepted':
-      return { icon: UserPlus,      gradient: 'from-blue-400 to-cyan-500',       iconColor: 'text-white', ringColor: 'ring-blue-100',
+      return { icon: UserCheck,     gradient: 'from-blue-400 to-cyan-500',       iconColor: 'text-white', ringColor: 'ring-blue-100',
                label: () => 'accepted your follow request' };
-    // ── Applications ──────────────────────────────────────────────────────────
+    case 'connection_request':
+      return { icon: UserPlus,      gradient: 'from-indigo-500 to-purple-500',   iconColor: 'text-white', ringColor: 'ring-indigo-100',
+               label: () => 'sent you a connection request' };
+    case 'connection_accepted':
+      return { icon: UserCheck,     gradient: 'from-blue-500 to-indigo-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',
+               label: () => 'accepted your connection request' };
+    // Applications
     case 'application_received':
       return { icon: Bell,          gradient: 'from-purple-400 to-violet-500',   iconColor: 'text-white', ringColor: 'ring-purple-100',
                label: () => 'applied to your listing' };
     case 'application_accepted':
-      return { icon: Bell,          gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',
+      return { icon: Check,         gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',
                label: () => 'Your application was accepted' };
     case 'application_rejected':
       return { icon: Bell,          gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',
                label: () => 'Application update received' };
-    // ── Messages ──────────────────────────────────────────────────────────────
+    // Messages
     case 'new_message':
+    case 'message_received':
       return { icon: Inbox,         gradient: 'from-sky-400 to-cyan-500',        iconColor: 'text-white', ringColor: 'ring-sky-100',
                label: () => 'sent you a message' };
+    case 'message_reply':
+      return { icon: MessageCircle, gradient: 'from-cyan-400 to-blue-500',       iconColor: 'text-white', ringColor: 'ring-cyan-100',
+               label: () => 'replied to your message' };
     case 'message_reaction':
       return { icon: Heart,         gradient: 'from-sky-300 to-blue-400',        iconColor: 'text-white', ringColor: 'ring-sky-100',
                label: () => 'reacted to your message' };
-    // ── Marketplace ───────────────────────────────────────────────────────────
+    // Marketplace
     case 'service_booked':
+    case 'marketplace_booking':
       return { icon: ShoppingBag,   gradient: 'from-orange-400 to-amber-500',    iconColor: 'text-white', ringColor: 'ring-orange-100',
-               label: () => 'booked your service' };
+               label: () => n.type === 'marketplace_booking' ? 'requested a booking' : 'booked your service' };
+    case 'marketplace_order':
+      return { icon: ShoppingBag,   gradient: 'from-amber-500 to-orange-600',    iconColor: 'text-white', ringColor: 'ring-amber-100',
+               label: () => 'placed a new order' };
+    case 'marketplace_reply':
+      return { icon: MessageCircle, gradient: 'from-orange-300 to-amber-400',    iconColor: 'text-white', ringColor: 'ring-orange-100',
+               label: () => 'replied to your inquiry' };
     case 'booking_accepted':
-      return { icon: ShoppingBag,   gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',
+      return { icon: Check,         gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',
                label: () => 'Your booking was accepted' };
     case 'booking_rejected':
-      return { icon: ShoppingBag,   gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',
+      return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',
                label: () => 'Your booking was declined' };
     case 'payment_received':
       return { icon: Zap,           gradient: 'from-emerald-500 to-green-600',   iconColor: 'text-white', ringColor: 'ring-emerald-100',
@@ -123,7 +159,14 @@ function typeCfg(n: Notification): NotifCfg {
     case 'payment_released':
       return { icon: Zap,           gradient: 'from-green-500 to-teal-500',      iconColor: 'text-white', ringColor: 'ring-green-100',
                label: () => 'Your payment has been released' };
-    // ── System ────────────────────────────────────────────────────────────────
+    // Profile & Trust
+    case 'profile_completion':
+      return { icon: Star,          gradient: 'from-yellow-400 to-amber-500',    iconColor: 'text-white', ringColor: 'ring-yellow-100',
+               label: () => 'Your profile is now 80% complete' };
+    case 'trust_level_update':
+      return { icon: Shield,        gradient: 'from-blue-600 to-indigo-700',     iconColor: 'text-white', ringColor: 'ring-blue-100',
+               label: () => 'Trust level increased to Pro' };
+    // System
     case 'account_verified':
       return { icon: Trophy,        gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',
                label: () => 'Your account has been verified' };
@@ -131,11 +174,38 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Bell,          gradient: 'from-red-500 to-rose-600',        iconColor: 'text-white', ringColor: 'ring-red-100',
                label: () => 'Important notice about your account' };
     case 'system_announcement':
-      return { icon: Bell,          gradient: 'from-gray-600 to-gray-700',       iconColor: 'text-white', ringColor: 'ring-gray-100',
+    case 'system_notification':
+      return { icon: Rocket,        gradient: 'from-gray-600 to-gray-700',       iconColor: 'text-white', ringColor: 'ring-gray-100',
                label: () => 'New announcement from Filmons' };
     default:
       return { icon: Bell,          gradient: 'from-gray-400 to-gray-500',       iconColor: 'text-white', ringColor: 'ring-gray-100',
                label: () => '' };
+  }
+}
+
+// ── System notification: no avatar, use a styled icon circle ─────────────────
+const SYSTEM_TYPES: string[] = [
+  'account_verified','account_warning','system_announcement','system_notification',
+  'profile_completion','trust_level_update','booking_accepted','booking_rejected',
+  'payment_released','application_accepted','application_rejected',
+];
+
+function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
+
+function systemIcon(type: string): ElementType {
+  switch (type) {
+    case 'profile_completion': return Star;
+    case 'trust_level_update': return Shield;
+    case 'account_verified':   return Trophy;
+    case 'account_warning':    return Bell;
+    case 'system_announcement':
+    case 'system_notification':return Rocket;
+    case 'booking_accepted':   return Check;
+    case 'booking_rejected':   return X;
+    case 'payment_released':   return Zap;
+    case 'application_accepted': return PartyPopper;
+    case 'application_rejected': return Bell;
+    default:                   return Wrench;
   }
 }
 
@@ -175,110 +245,143 @@ function FollowBackBtn({ targetUserId, already }: { targetUserId: string; alread
 }
 
 // ── Single notification row ───────────────────────────────────────────────────
-function NotifRow({ notif, currentUser, onRead, onRemove }: {
+function NotifRow({ notif, currentUser, onRead, onRemove, onNavigate }: {
   notif: Notification;
   currentUser: User;
-  onRead:   (id: string) => void;
-  onRemove: (id: string) => void;
+  onRead:     (id: string) => void;
+  onRemove:   (id: string) => void;
+  onNavigate: (notif: Notification) => void;
 }) {
-  const navigate = useNavigate();
+  const [hovered, setHovered] = useState(false);
   const cfg      = typeCfg(notif);
   const Icon     = cfg.icon;
   const fromUser = authApi.getUserByIdSync(notif.fromUserId);
   const alreadyFollowing = (currentUser.following || []).includes(notif.fromUserId);
+  const isSystem = isSystemType(notif.type);
+  const SysIcon  = systemIcon(notif.type);
 
-  const handleClick = () => {
-    onRead(notif.id);
-    if (notif.type === 'new_message' || notif.type === 'message_reaction') {
-      if (notif.conversationId) {
-        navigate(`/inbox?conv=${notif.conversationId}&with=${notif.fromUserId}`);
-      } else {
-        navigate(`/inbox?with=${notif.fromUserId}`);
-      }
-    } else if (notif.type === 'payment_received' || notif.type === 'payment_released') {
-      navigate('/wallet');
-    } else if (notif.postId) {
-      // All post-related notifications → PostDetail page
-      navigate(`/post/${notif.postId}`);
-    } else {
-      navigate(`/host/${notif.fromUserId}`);
-    }
-  };
+  const preview = notif.messageContent || notif.commentContent;
 
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={handleClick}
-      onKeyDown={e => e.key === 'Enter' && handleClick()}
+      onClick={() => onNavigate(notif)}
+      onKeyDown={e => e.key === 'Enter' && onNavigate(notif)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className={`group relative flex items-start gap-3.5 px-4 py-3.5 cursor-pointer transition-all border-b border-gray-50 last:border-0 ${
         notif.read ? 'hover:bg-gray-50/80' : 'bg-gradient-to-r from-blue-50/70 to-transparent hover:from-blue-50'
       }`}
     >
-      {/* Unread indicator bar */}
+      {/* Unread bar */}
       {!notif.read && (
         <span className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full bg-blue-500" />
       )}
 
-      {/* Avatar + gradient icon badge */}
+      {/* Avatar or system icon */}
       <div className="relative shrink-0 mt-0.5">
-        <div className={`ring-2 ${cfg.ringColor} rounded-full`}>
-          <UserAvatar
-            user={fromUser || { name: notif.fromUserName, avatar: notif.fromUserAvatar, id: notif.fromUserId } as User}
-            size={42}
-          />
-        </div>
-        <div className={`absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] bg-gradient-to-br ${cfg.gradient} rounded-full flex items-center justify-center shadow-sm border-2 border-white`}>
-          <Icon className={`w-2 h-2 ${cfg.iconColor}`} />
-        </div>
+        {isSystem ? (
+          <div className={`w-[42px] h-[42px] bg-gradient-to-br ${cfg.gradient} rounded-full flex items-center justify-center ring-2 ${cfg.ringColor}`}>
+            <SysIcon className="w-5 h-5 text-white" />
+          </div>
+        ) : (
+          <>
+            <div className={`ring-2 ${cfg.ringColor} rounded-full`}>
+              <UserAvatar
+                user={fromUser || { name: notif.fromUserName, avatar: notif.fromUserAvatar, id: notif.fromUserId } as User}
+                size={42}
+              />
+            </div>
+            <div className={`absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] bg-gradient-to-br ${cfg.gradient} rounded-full flex items-center justify-center shadow-sm border-2 border-white`}>
+              <Icon className={`w-2 h-2 ${cfg.iconColor}`} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Text body */}
-      <div className="flex-1 min-w-0 pr-8">
-        {/* Main line */}
+      <div className="flex-1 min-w-0 pr-6">
         <p className="text-[13px] leading-snug text-gray-800">
-          <span className="font-bold text-gray-900">{notif.fromUserName}</span>
-          {' '}
-          <span className="text-gray-500">{cfg.label(notif)}</span>
+          {!isSystem && (
+            <span className="font-bold text-gray-900">{notif.fromUserName} </span>
+          )}
+          <span className={isSystem ? 'font-semibold text-gray-800' : 'text-gray-500'}>
+            {cfg.label(notif)}
+          </span>
         </p>
 
-        {/* Comment preview */}
-        {notif.commentContent && (
+        {/* Preview text (message / comment) */}
+        {preview && (
           <div className="mt-1 px-2 py-1 bg-gray-100 rounded-lg text-[11px] text-gray-500 line-clamp-1 italic border-l-2 border-gray-300">
-            {notif.commentContent}
+            {preview}
           </div>
         )}
 
-        {/* Post snippet (no comment) */}
-        {notif.postContent && !notif.commentContent && (
+        {/* Post snippet */}
+        {notif.postContent && !preview && (
           <p className="mt-0.5 text-[11px] text-gray-400 line-clamp-1">{notif.postContent}</p>
         )}
 
-        {/* Footer row: time + follow-back */}
+        {/* Listing title for marketplace */}
+        {notif.listingTitle && (
+          <p className="mt-0.5 text-[11px] text-orange-500 font-medium truncate">{notif.listingTitle}</p>
+        )}
+
+        {/* Footer: time + actions */}
         <div className="flex items-center gap-2 mt-1.5">
           <span className="text-[10px] text-gray-400 font-medium">{timeAgo(notif.createdAt)}</span>
-          {notif.type === 'new_follower' && notif.fromUserId !== currentUser.id && (
+          {!notif.read && (
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+          )}
+          {(notif.type === 'new_follower' || notif.type === 'connection_accepted') && notif.fromUserId !== currentUser.id && (
             <FollowBackBtn targetUserId={notif.fromUserId} already={alreadyFollowing} />
+          )}
+          {(notif.type === 'connection_request' || notif.type === 'follow_request') && (
+            <button
+              onClick={e => { e.stopPropagation(); onNavigate(notif); }}
+              className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-full px-2.5 py-0.5 transition-colors"
+            >
+              <ChevronRight className="w-2.5 h-2.5" /> View
+            </button>
           )}
         </div>
       </div>
 
       {/* Post thumbnail */}
       {notif.postImage && (
-        <img
-          src={notif.postImage}
-          alt=""
-          className="w-11 h-11 object-cover rounded-xl shrink-0 border border-gray-100 shadow-sm"
-        />
+        <img src={notif.postImage} alt="" className="w-11 h-11 object-cover rounded-xl shrink-0 border border-gray-100 shadow-sm" />
+      )}
+      {notif.listingImage && !notif.postImage && (
+        <img src={notif.listingImage} alt="" className="w-11 h-11 object-cover rounded-xl shrink-0 border border-gray-100 shadow-sm" />
       )}
 
-      {/* Dismiss X */}
-      <button
-        onClick={e => { e.stopPropagation(); onRemove(notif.id); }}
-        className="absolute top-3 right-3 w-5 h-5 flex items-center justify-center rounded-full text-gray-300 hover:text-gray-500 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all"
-      >
-        <X className="w-3 h-3" />
-      </button>
+      {/* Hover quick actions */}
+      <div className={`absolute top-2.5 right-2.5 flex items-center gap-1 transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'}`}>
+        {!notif.read && (
+          <button
+            title="Mark as read"
+            onClick={e => { e.stopPropagation(); onRead(notif.id); }}
+            className="w-6 h-6 flex items-center justify-center rounded-full text-blue-500 hover:bg-blue-50 transition-colors"
+          >
+            <Check className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button
+          title="View"
+          onClick={e => { e.stopPropagation(); onRead(notif.id); onNavigate(notif); }}
+          className="w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 transition-colors"
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+        <button
+          title="Delete"
+          onClick={e => { e.stopPropagation(); onRemove(notif.id); }}
+          className="w-6 h-6 flex items-center justify-center rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -307,7 +410,7 @@ function SuggestedCard({ user, following }: { user: User; following: string[] })
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{user.name}</p>
         <p className="text-[11px] text-gray-400 truncate">
-          {user.username ? `@${user.username}` : user.accountCategory || 'Filmons creator'}
+          {user.username ? `@${user.username}` : (user as any).accountCategory || 'Filmons creator'}
         </p>
       </div>
       <button
@@ -329,28 +432,27 @@ function SuggestedCard({ user, following }: { user: User; following: string[] })
 }
 
 // ── Tab filter ────────────────────────────────────────────────────────────────
-type Tab = 'all' | 'messages' | 'marketplace' | 'activity' | 'system';
+type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'network';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'all',         label: 'All',          icon: '🔔' },
-  { key: 'messages',    label: 'Messages',     icon: '💬' },
-  { key: 'marketplace', label: 'Marketplace',  icon: '🛍️' },
-  { key: 'activity',    label: 'Activity',     icon: '❤️' },
-  { key: 'system',      label: 'System',       icon: '⚙️' },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'all',         label: 'All'         },
+  { key: 'unread',      label: 'Unread'      },
+  { key: 'messages',    label: 'Messages'    },
+  { key: 'marketplace', label: 'Marketplace' },
+  { key: 'network',     label: 'Network'     },
 ];
+
+const MESSAGE_TYPES   = ['new_message','message_received','message_reply','message_reaction'];
+const MARKETPLACE_TYPES = ['service_booked','booking_accepted','booking_rejected','payment_received','payment_released','marketplace_order','marketplace_booking','marketplace_reply','application_received','application_accepted','application_rejected'];
+const NETWORK_TYPES   = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted'];
 
 function filterByTab(notifs: Notification[], tab: Tab): Notification[] {
   switch (tab) {
-    case 'messages':
-      return notifs.filter(n => n.type === 'new_message' || n.type === 'message_reaction');
-    case 'marketplace':
-      return notifs.filter(n => ['service_booked','booking_accepted','booking_rejected','payment_received','payment_released','application_received','application_accepted','application_rejected'].includes(n.type));
-    case 'activity':
-      return notifs.filter(n => ['content_like','content_repost','new_follower','follow_request','follow_accepted','comment_received','comment_reply','comment_like','comment_mention'].includes(n.type));
-    case 'system':
-      return notifs.filter(n => ['account_verified','account_warning','system_announcement','comment_pinned','comment_deleted'].includes(n.type));
-    default:
-      return notifs;
+    case 'unread':      return notifs.filter(n => !n.read);
+    case 'messages':    return notifs.filter(n => MESSAGE_TYPES.includes(n.type));
+    case 'marketplace': return notifs.filter(n => MARKETPLACE_TYPES.includes(n.type));
+    case 'network':     return notifs.filter(n => NETWORK_TYPES.includes(n.type));
+    default:            return notifs;
   }
 }
 
@@ -371,7 +473,6 @@ export function Notifications() {
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [activeTab,   setActiveTab]   = useState<Tab>('all');
 
-  // Load follow suggestions lazily
   useEffect(() => {
     if (!user) return;
     authApi.getAllUsers().then(allUsers => {
@@ -392,17 +493,32 @@ export function Notifications() {
     load();
   }, [user?.id]); // eslint-disable-line
 
-  const handleRead   = (id: string) => markRead(id);
-  const handleRemove = (id: string) => remove(id);
+  const handleNavigate = (n: Notification) => {
+    markRead(n.id);
+    if (MESSAGE_TYPES.includes(n.type)) {
+      navigate(n.conversationId
+        ? `/inbox?conv=${n.conversationId}&with=${n.fromUserId}`
+        : `/inbox?with=${n.fromUserId}`);
+    } else if (n.type === 'payment_received' || n.type === 'payment_released') {
+      navigate('/wallet');
+    } else if (MARKETPLACE_TYPES.includes(n.type)) {
+      navigate(n.listingId ? `/listing/${n.listingId}` : '/marketplace');
+    } else if (n.postId) {
+      navigate(`/post/${n.postId}`);
+    } else if (n.fromUserId) {
+      navigate(`/host/${n.fromUserId}`);
+    }
+  };
+
   const handleMarkAllRead = () => ctxMarkAllRead();
   const handleClearAll = () => {
     if (!window.confirm('Clear all notifications?')) return;
     ctxClearAll();
   };
 
-  const unread = notifs.filter(n => !n.read).length;
-  const visible = filterByTab(notifs, activeTab);
-  const groups = groupByDate(visible);
+  const unread   = notifs.filter(n => !n.read).length;
+  const visible  = filterByTab(notifs, activeTab);
+  const groups   = groupByDate(visible);
 
   if (!user) return null;
 
@@ -411,16 +527,16 @@ export function Notifications() {
       <div className="max-w-lg mx-auto pb-10">
 
         {/* ── Header ── */}
-        <div className="bg-white border-b border-gray-100 sticky top-0 z-20 px-5 pt-5 pb-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-white border-b border-gray-100 sticky top-0 z-20 px-5 pt-5 pb-0">
+          <div className="flex items-center justify-between pb-3">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-                <Bell className="w-4.5 h-4.5 text-white" />
+                <Bell className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-gray-900 leading-none tracking-tight">Activity</h1>
+                <h1 className="text-base font-bold text-gray-900 leading-none tracking-tight">Notifications</h1>
                 <p className="text-[11px] text-gray-400 mt-0.5">
-                  {unread > 0 ? `${unread} new notification${unread !== 1 ? 's' : ''}` : refreshing ? 'Refreshing…' : "You're all caught up ✓"}
+                  {unread > 0 ? `${unread} unread` : refreshing ? 'Refreshing…' : "You're all caught up"}
                 </p>
               </div>
               {unread > 0 && (
@@ -448,22 +564,30 @@ export function Notifications() {
               )}
             </div>
           </div>
+
           {/* ── Tabs ── */}
-          <div className="flex gap-1 mt-3 -mb-px overflow-x-auto scrollbar-hide pb-0.5">
+          <div className="flex -mx-5 px-4 overflow-x-auto scrollbar-hide border-t border-gray-100">
             {TABS.map(t => {
               const isActive = activeTab === t.key;
-              const unread = (t.key === 'all' ? notifs : filterByTab(notifs, t.key)).filter(n => !n.read).length;
+              const cnt = t.key === 'unread'
+                ? notifs.filter(n => !n.read).length
+                : t.key === 'all' ? 0
+                : filterByTab(notifs, t.key).filter(n => !n.read).length;
               return (
-                <button key={t.key} onClick={() => setActiveTab(t.key)}
-                  className={`relative shrink-0 flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-full transition-all ${
-                    isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'
-                  }`}>
-                  <span>{t.icon}</span>
-                  <span>{t.label}</span>
-                  {unread > 0 && (
-                    <span className={`text-[9px] font-black min-w-[14px] text-center px-1 py-0.5 rounded-full leading-none ${
-                      isActive ? 'bg-white/30 text-white' : 'bg-blue-600 text-white'
-                    }`}>{unread}</span>
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`relative shrink-0 flex items-center gap-1.5 px-3 py-3 text-[12px] font-semibold transition-all border-b-2 ${
+                    isActive
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-gray-500 border-transparent hover:text-gray-800'
+                  }`}
+                >
+                  {t.label}
+                  {cnt > 0 && (
+                    <span className={`text-[9px] font-black min-w-[15px] h-[15px] flex items-center justify-center px-0.5 rounded-full leading-none ${
+                      isActive ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'
+                    }`}>{cnt}</span>
                   )}
                 </button>
               );
@@ -471,8 +595,8 @@ export function Notifications() {
           </div>
         </div>
 
-        {/* ── Follow-back suggestions strip ── */}
-        {suggestions.length > 0 && (
+        {/* ── People you may know ── */}
+        {suggestions.length > 0 && activeTab === 'all' && (
           <div className="mt-3 mx-3 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100/80">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50">
               <div className="flex items-center gap-2">
@@ -491,47 +615,50 @@ export function Notifications() {
           </div>
         )}
 
-        {/* ── Notifications card ── */}
+        {/* ── Notifications list ── */}
         <div className="mt-3 mx-3 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100/80">
           {groups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
               <div className="w-20 h-20 bg-gradient-to-br from-gray-50 to-gray-100 rounded-full flex items-center justify-center mb-4 shadow-inner">
                 <BellOff className="w-9 h-9 text-gray-300" />
               </div>
-              <p className="text-sm font-bold text-gray-600 mb-1.5">No activity yet</p>
-              <p className="text-xs text-gray-400 max-w-[220px] leading-relaxed">
-                Likes, comments, follows and messages will show up here.
+              <p className="text-sm font-bold text-gray-600 mb-1.5">
+                {activeTab === 'unread' ? 'All caught up' : 'No notifications yet'}
               </p>
-              <button
-                onClick={() => navigate('/feed')}
-                className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-              >
-                Explore the feed <ArrowRight className="w-3 h-3" />
-              </button>
+              <p className="text-xs text-gray-400 max-w-[240px] leading-relaxed">
+                {activeTab === 'unread'
+                  ? 'You have no unread notifications.'
+                  : 'When people interact with your profile, posts, marketplace listings, or messages, you\'ll see them here.'}
+              </p>
+              {activeTab === 'all' && (
+                <button
+                  onClick={() => navigate('/feed')}
+                  className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  Explore the feed <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
             </div>
           ) : (
-            <>
-              {groups.map((group, gi) => (
-                <div key={group.label}>
-                  {/* Group label */}
-                  <div className={`px-4 py-2 ${gi === 0 ? '' : 'border-t border-gray-50'}`}>
-                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
-                      {group.label}
-                    </p>
-                  </div>
-                  {/* Rows */}
-                  {group.items.map(n => (
-                    <NotifRow
-                      key={n.id}
-                      notif={n}
-                      currentUser={user}
-                      onRead={handleRead}
-                      onRemove={handleRemove}
-                    />
-                  ))}
+            groups.map((group, gi) => (
+              <div key={group.label}>
+                <div className={`px-4 py-2 ${gi === 0 ? '' : 'border-t border-gray-50'}`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
+                    {group.label}
+                  </p>
                 </div>
-              ))}
-            </>
+                {group.items.map(n => (
+                  <NotifRow
+                    key={n.id}
+                    notif={n}
+                    currentUser={user}
+                    onRead={markRead}
+                    onRemove={remove}
+                    onNavigate={handleNavigate}
+                  />
+                ))}
+              </div>
+            ))
           )}
         </div>
 
