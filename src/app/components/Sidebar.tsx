@@ -44,7 +44,7 @@ function NavRow({
 }
 
 export function Sidebar({ open, onClose }: SidebarProps) {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
   const { theme, setTheme } = useTheme();
@@ -97,8 +97,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    // Belt-and-suspenders: wipe storage before React state update
+    localStorage.removeItem('filmons_current_user');
+    await logout();
     onClose();
     navigate('/login');
   };
@@ -126,7 +128,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </div>
 
         {/* ── LOGGED IN ─────────────────────────────────────────────────── */}
-        {isAuthenticated && user ? (
+        {user ? (
           <>
             {/* User card */}
             <div className="px-3 pt-3 pb-2 border-b border-gray-100 flex-shrink-0">
@@ -175,29 +177,36 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         ) : (
           /* ── LOGGED OUT ─────────────────────────────────────────────── */
           <>
+            {/* Sign in card — mirrors user card position */}
+            <div className="px-3 pt-3 pb-2 border-b border-gray-100 flex-shrink-0">
+              <Link to="/login" onClick={onClose}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 transition-all group">
+                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                  <UserPlus className="w-4 h-4 text-white" strokeWidth={1.75}/>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-white">Sign In / Create Account</p>
+                  <p className="text-xs text-white/60">Join the community</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0 group-hover:text-white/70 transition-colors" strokeWidth={1.75}/>
+              </Link>
+            </div>
+
             <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-0.5">
-              <NavRow icon={Home}      label="Home"        to="/"           active={isActive('/')}           onClick={onClose}/>
+              <NavRow icon={Home}       label="Home"        to="/"            active={isActive('/')}            onClick={onClose}/>
               <NavRow icon={LayoutGrid} label="Marketplace" to="/marketplace" active={isActive('/marketplace')} onClick={onClose}/>
-              <NavRow icon={Search}    label="Search"      to="/search"     active={isActive('/search')}     onClick={onClose}/>
+              <NavRow icon={Search}     label="Search"      to="/search"      active={isActive('/search')}      onClick={onClose}/>
             </nav>
 
-            <div className="flex-shrink-0 border-t border-gray-100 px-3 py-4 space-y-2">
-              {/* Secondary links */}
-              <div className="flex gap-2">
-                <Link to="/login" onClick={onClose}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
-                  Log in
-                </Link>
-                <Link to="/create-account" onClick={onClose}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
-                  <UserPlus className="w-4 h-4"/>
-                  Sign up
-                </Link>
-              </div>
-              {/* Primary CTA */}
+            <div className="flex-shrink-0 border-t border-gray-100 px-3 py-4 flex gap-2">
               <Link to="/login" onClick={onClose}
-                className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold hover:bg-gray-800 transition-all w-full">
-                Sign In / Create Account
+                className="flex-1 flex items-center justify-center py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
+                Log in
+              </Link>
+              <Link to="/create-account" onClick={onClose}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
+                <UserPlus className="w-4 h-4"/>
+                Sign up
               </Link>
             </div>
           </>
