@@ -134,9 +134,8 @@ export function SideDrawer({ onClose }: Props) {
           {/* LOGGED OUT: simple nav */}
           {!user && (
             <div className="py-2">
-              <NavRow icon={Home}       label="Home"        to="/"            active={isActive('/')}            onClick={onClose} />
-              <NavRow icon={ShoppingBag} label="Marketplace" to="/marketplace" active={isActive('/marketplace')} onClick={onClose} />
-              <NavRow icon={Search}     label="Search"      to="/search"      active={isActive('/search')}      onClick={onClose} />
+              <NavRow icon={Home}   label="Home"   to="/"       active={isActive('/')}       onClick={onClose} />
+              <NavRow icon={Search} label="Search" to="/search" active={isActive('/search')} onClick={onClose} />
             </div>
           )}
 
