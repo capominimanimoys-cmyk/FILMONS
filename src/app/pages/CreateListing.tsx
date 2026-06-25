@@ -1240,8 +1240,12 @@ export function CreateListing() {
 
   // ── Auth guard ──
   useEffect(() => {
-    if (!isAuthenticated) navigate('/login');
-  }, [isAuthenticated]);
+    if (!isAuthenticated) { navigate('/login'); return; }
+    const type = user?.accountType ?? '';
+    if (!['creator_plus', 'professional', 'business'].includes(type)) {
+      navigate('/creator-plus-required?type=listings', { replace: true });
+    }
+  }, [isAuthenticated, user?.accountType]);
 
   // ── Draft recovery ──
   useEffect(() => {
