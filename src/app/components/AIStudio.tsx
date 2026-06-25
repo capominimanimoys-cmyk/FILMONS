@@ -8,7 +8,7 @@ import { X, Sparkles, ChevronRight, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
-import { aiApi } from '../lib/aiApi';
+import { aiApi } from '../lib/aiapi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type AIEditType =
@@ -70,7 +70,8 @@ type Section =
   | 'remove_bg'      // ✂ Remove Background
   | 'change_bg'      // 🌄 Change Background
   | 'remove_objects' // 🧹 Remove Objects
-  | 'magic_edit';    // 🪄 Magic Edit
+  | 'magic_edit'     // 🪄 Magic Edit
+  | 'score';         // 📊 Creator Score
 
 // ── Intent Router ─────────────────────────────────────────────────────────────
 interface RouterOutput {
@@ -195,13 +196,13 @@ export function AIStudio({
   const { user } = useAuth();
   const [section, setSection]     = useState<Section>('home');
   const [running, setRunning]     = useState<AIEditType|null>(null);
-  const [credits, setCredits]     = useState<number>(user?.ai_credits ?? 10);
+  const [credits, setCredits]     = useState<number>((user as any)?.ai_credits ?? 10);
   const [smartQuery, setSmartQuery] = useState('');
   const [routerOutput, setRouterOutput]     = useState<RouterOutput | null>(null);
   const [validation, setValidation]         = useState<{face:number;bg:number;clothing:number}|null>(null);
   const pendingValRef = useRef<{face:number;bg:number;clothing:number}|null>(null);
   const [score, setScore]               = useState<any>(null);
-  const [visible, setVisible]           = useState(true);
+
   const [genConfirmPending, setGenConfirmPending] = useState<{type: AIEditType; label: string} | null>(null);
   const [showEnhanceResult, setShowEnhanceResult] = useState(false);
 
@@ -380,7 +381,7 @@ export function AIStudio({
       });
       setScore(result);
       if (postId) {
-        await supabase.from('posts').update({ ai_score: result }).eq('id', postId).catch(() => {});
+        try { await supabase.from('posts').update({ ai_score: result }).eq('id', postId); } catch { /* silent */ }
       }
       await logEdit('creator_score', {}, undefined);
       setSection('score');
