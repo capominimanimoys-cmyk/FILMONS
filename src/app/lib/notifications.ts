@@ -1,6 +1,6 @@
 /**
  * notifications.ts
- * Hybrid: fire-and-forget writes to Supabase DB, localStorage for fast reads.
+ * Hybrid: fire-and-forget writes directly to Supabase DB, localStorage for fast reads.
  *
  * push()           – sync call; persists to server in the background
  * getAll()         – async; fetches from server, updates local cache
@@ -8,101 +8,58 @@
  * markRead/markAllRead/remove/clearAll – optimistic local + server fire-and-forget
  */
 import { Notification } from '../types';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabase';
 
-const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879`;
-const H = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` });
+const LS_KEY  = (uid: string) => `filmons_notifs_${uid}`;
+const CNT_KEY = (uid: string) => `filmons_notifs_cnt_${uid}`;
+const MAX      = 200;
+const DEDUP_MS = 24 * 60 * 60 * 1000;
 
-const LS_KEY   = (uid: string) => `filmons_notifs_${uid}`;
-
-// ── DB insert (with FK-safe retry) ────────────────────────────────────────────
+// ── Title builder ─────────────────────────────────────────────────────────────
 function _notifTitle(type: string, actorName: string): string {
   switch (type) {
-    // Comments
-    case 'comment_received':   return `${actorName} commented on your post`;
-    case 'comment_reply':      return `${actorName} replied to your comment`;
-    case 'comment_like':       return `${actorName} liked your comment`;
-    case 'comment_mention':    return `${actorName} mentioned you in a comment`;
-    case 'comment_pinned':     return 'Your comment was pinned';
-    case 'comment_deleted':    return 'Your comment was removed';
-    // Likes & Reposts
+    case 'comment_received':    return `${actorName} commented on your post`;
+    case 'comment_reply':       return `${actorName} replied to your comment`;
+    case 'comment_like':        return `${actorName} liked your comment`;
+    case 'comment_mention':     return `${actorName} mentioned you in a comment`;
+    case 'comment_pinned':      return 'Your comment was pinned';
+    case 'comment_deleted':     return 'Your comment was removed';
     case 'new_post':            return `${actorName} shared a new post`;
-    case 'content_like':       return `${actorName} liked your post`;
-    case 'content_repost':     return `${actorName} reposted your content`;
-    // Followers
-    case 'new_follower':       return `${actorName} started following you`;
-    case 'follow_request':     return `${actorName} wants to follow you`;
-    case 'follow_accepted':    return `${actorName} accepted your follow request`;
-    // Applications
+    case 'content_like':        return `${actorName} liked your post`;
+    case 'like':                return `${actorName} liked your post`;
+    case 'content_repost':      return `${actorName} reposted your content`;
+    case 'repost':              return `${actorName} reposted your post`;
+    case 'new_follower':        return `${actorName} started following you`;
+    case 'follow':              return `${actorName} started following you`;
+    case 'follow_request':      return `${actorName} wants to follow you`;
+    case 'follow_accepted':     return `${actorName} accepted your follow request`;
     case 'application_received': return `${actorName} applied to your listing`;
     case 'application_accepted': return 'Your application was accepted';
     case 'application_rejected': return 'Your application was not accepted';
-    // Messages
-    case 'new_message':        return `${actorName} sent you a message`;
-    case 'message_received':   return `${actorName} sent you a message`;
-    case 'message_reply':      return `${actorName} replied to your message`;
-    case 'message_reaction':   return `${actorName} reacted to your message`;
-    // Network
-    case 'connection_request': return `${actorName} sent you a connection request`;
-    case 'connection_accepted':return `${actorName} accepted your connection request`;
-    // Marketplace
-    case 'service_booked':     return `${actorName} booked your service`;
-    case 'booking_accepted':   return 'Your booking was accepted';
-    case 'booking_rejected':   return 'Your booking was declined';
-    case 'payment_received':   return `Payment received from ${actorName}`;
-    case 'payment_released':   return 'Your payment has been released';
-    case 'marketplace_order':  return `${actorName} placed a new order`;
-    case 'marketplace_booking':return `${actorName} requested a booking`;
-    case 'marketplace_reply':  return `${actorName} replied to your inquiry`;
-    // Profile & Trust
-    case 'profile_completion': return 'Your profile is now 80% complete';
-    case 'trust_level_update': return 'Your trust level has increased';
-    // System
-    case 'account_verified':   return 'Your account has been verified';
-    case 'account_warning':    return 'Important notice about your account';
-    case 'system_announcement':return 'New announcement from Filmons';
-    case 'system_notification':return 'You have a new notification from Filmons';
-    default:                   return `New notification from ${actorName}`;
+    case 'message':             return `${actorName} sent you a message`;
+    case 'new_message':         return `${actorName} sent you a message`;
+    case 'message_received':    return `${actorName} sent you a message`;
+    case 'message_reply':       return `${actorName} replied to your message`;
+    case 'message_reaction':    return `${actorName} reacted to your message`;
+    case 'connection_request':  return `${actorName} sent you a connection request`;
+    case 'connection_accepted': return `${actorName} accepted your connection request`;
+    case 'service_booked':      return `${actorName} booked your service`;
+    case 'booking_accepted':    return 'Your booking was accepted';
+    case 'booking_rejected':    return 'Your booking was declined';
+    case 'payment_received':    return `Payment received from ${actorName}`;
+    case 'payment_released':    return 'Your payment has been released';
+    case 'marketplace_order':   return `${actorName} placed a new order`;
+    case 'marketplace_booking': return `${actorName} requested a booking`;
+    case 'marketplace_reply':   return `${actorName} replied to your inquiry`;
+    case 'profile_completion':  return 'Your profile is now 80% complete';
+    case 'trust_level_update':  return 'Your trust level has increased';
+    case 'account_verified':    return 'Your account has been verified';
+    case 'account_warning':     return 'Important notice about your account';
+    case 'system_announcement': return 'New announcement from Filmons';
+    case 'system_notification': return 'You have a new notification from Filmons';
+    default:                    return `New notification from ${actorName}`;
   }
 }
-
-async function _insertNotification(row: Record<string, any>) {
-  const title = row.title || _notifTitle(row.type || '', row.actor_name || row.from_user_name || 'Someone');
-  const payload = { ...row, title };
-
-  const { error } = await supabase.from('notifications').insert(payload);
-  if (!error) {
-    console.log('[notifications] ✓ saved type:', row.type, '→', row.user_id ?? row.to_user_id);
-    return;
-  }
-  console.error('[notifications] insert error:', error.code, '-', error.message);
-
-  // FK violation on post_id → retry without post fields
-  if (error.code === '23503' && row.post_id) {
-    const { error: e2 } = await supabase.from('notifications').insert({
-      ...payload, post_id: null, post_content: null, post_image: null,
-    });
-    if (!e2) return;
-    console.error('[notifications] retry error:', e2.message);
-  }
-}
-
-// ── Test helper — call from browser console: filmons.testNotif("user-id") ────
-export async function testNotif(toUserId: string) {
-  console.log('[notifications] running test insert →', toUserId);
-  await _insertNotification({
-    to_user_id: toUserId, from_user_id: null, from_user_name: 'Test', from_user_avatar: null,
-    type: 'test', read: false,
-  });
-}
-// Expose on window for easy console testing
-if (typeof window !== 'undefined') {
-  (window as any).filmons = { ...((window as any).filmons || {}), testNotif };
-}
-const CNT_KEY  = (uid: string) => `filmons_notifs_cnt_${uid}`;
-const MAX      = 200;
-const DEDUP_MS = 24 * 60 * 60 * 1000;
 
 function genId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
 
@@ -115,51 +72,105 @@ function saveLocal(uid: string, notifs: Notification[]) {
   localStorage.setItem(CNT_KEY(uid), String(sliced.filter(n => !n.read).length));
 }
 
+// ── DB insert — direct Supabase REST (RLS policy: WITH CHECK (true)) ──────────
+async function _dbInsert(row: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.from('notifications').insert(row);
+  if (!error) {
+    console.log('[notifications] ✓ saved type:', row.type, '→', row.user_id);
+    return;
+  }
+  console.error('[notifications] insert error:', error.code, '-', error.message);
+
+  // FK violation on post_id → retry without post fields
+  if (error.code === '23503' && row.post_id) {
+    const { error: e2 } = await supabase.from('notifications').insert({
+      ...row, post_id: null, post_content: null, post_image: null,
+    });
+    if (!e2) return;
+    console.error('[notifications] retry error:', e2.message);
+  }
+}
+
+// ── Map a notifications table row → client Notification shape ─────────────────
+function rowToNotif(r: any): Notification {
+  return {
+    id:             r.id,
+    toUserId:       r.user_id           ?? '',
+    fromUserId:     r.actor_id          ?? '',
+    fromUserName:   r.actor_name        ?? r.from_user_name ?? '',
+    fromUserAvatar: r.actor_avatar      ?? r.from_user_avatar ?? undefined,
+    type:           r.type,
+    postId:         r.post_id           ?? undefined,
+    postContent:    r.post_content      ?? undefined,
+    postImage:      r.post_image        ?? undefined,
+    commentContent: r.comment_content   ?? r.body ?? undefined,
+    conversationId: r.conversation_id   ?? undefined,
+    fpAmount:       r.fp_amount         ?? undefined,
+    read:           r.is_read           ?? r.read ?? false,
+    createdAt:      r.created_at        ?? new Date().toISOString(),
+  };
+}
+
+// ── Test helper — call from browser console: filmons.testNotif("user-id") ─────
+export async function testNotif(toUserId: string) {
+  console.log('[notifications] running test insert →', toUserId);
+  await _dbInsert({
+    user_id:    toUserId,
+    actor_id:   null,
+    actor_name: 'Test',
+    type:       'test',
+    title:      'Test notification',
+    is_read:    false,
+  });
+}
+if (typeof window !== 'undefined') {
+  (window as any).filmons = { ...((window as any).filmons || {}), testNotif };
+}
+
 // ── Push (fire-and-forget to server + optimistic localStorage write) ──────────
 export function push(
   toUserId: string,
   notif: Omit<Notification, 'id' | 'toUserId' | 'read' | 'createdAt'>,
 ): void {
-  // Allow self-notifications for system events like fp_purchase
   if (!toUserId) return;
+  // Don't notify yourself (except system events)
   if (toUserId === notif.fromUserId && notif.type !== ('fp_purchase' as any)) return;
 
-  // Optimistic local write (so the recipient sees it immediately when on same device)
+  const title = _notifTitle(notif.type, notif.fromUserName || 'Someone');
+
+  // Optimistic local write so the recipient sees it immediately on the same device
   const all    = loadLocal(toUserId);
-  const isDupe = all.some(n =>
+  const isMsg  = ['message', 'new_message', 'message_received'].includes(notif.type);
+  const isDupe = !isMsg && all.some(n =>
     n.type       === notif.type &&
     n.fromUserId === notif.fromUserId &&
-    n.postId     === notif.postId &&
+    n.postId     === (notif as any).postId &&
     Date.now() - new Date(n.createdAt).getTime() < DEDUP_MS,
   );
   if (!isDupe) {
     const full: Notification = {
       id: genId(), toUserId, read: false,
-      createdAt: new Date().toISOString(), ...notif,
+      createdAt: new Date().toISOString(),
+      ...notif,
     };
     saveLocal(toUserId, [full, ...all]);
-    // Dispatch event so the real-time banner picks it up on the same device
     try { window.dispatchEvent(new CustomEvent('filmons:notif', { detail: full })); } catch {}
   }
 
-  // Push via edge function — service-role key bypasses RLS so the sender can
-  // write a notification row owned by the recipient.
-  fetch(`${BASE}/notifications`, {
-    method: 'POST',
-    headers: H(),
-    body: JSON.stringify({
-      toUserId,
-      fromUserId:     notif.fromUserId     ?? null,
-      fromUserName:   notif.fromUserName   ?? '',
-      fromUserAvatar: notif.fromUserAvatar ?? null,
-      title:          _notifTitle(notif.type, notif.fromUserName || 'Someone'),
-      type:           notif.type,
-      postId:         (notif as any).postId         ?? null,
-      postContent:    (notif as any).postContent    ?? null,
-      postImage:      (notif as any).postImage      ?? null,
-      commentContent: (notif as any).commentContent ?? null,
-      conversationId: (notif as any).conversationId ?? null,
-    }),
+  // Fire-and-forget DB insert via direct Supabase client (bypasses edge function)
+  _dbInsert({
+    user_id:         toUserId,
+    actor_id:        notif.fromUserId     || null,
+    actor_name:      notif.fromUserName   || '',
+    actor_avatar:    notif.fromUserAvatar || null,
+    type:            notif.type,
+    title,
+    post_id:         (notif as any).postId         || null,
+    post_content:    (notif as any).postContent    || null,
+    post_image:      (notif as any).postImage      || null,
+    comment_content: (notif as any).commentContent || null,
+    conversation_id: (notif as any).conversationId || null,
+    is_read:         false,
   }).catch(e => console.warn('[notifications] push failed:', e));
 }
 
@@ -168,44 +179,22 @@ export function getLocal(userId: string): Notification[] {
   return loadLocal(userId);
 }
 
-// ── Map a notifications table row → client Notification shape ─────────────────
-// Handles both column-name conventions:
-//   server-created table: to_user_id, from_user_id, from_user_name, read
-//   client-created table: user_id,    actor_id,     actor_name,     is_read
-function rowToNotif(r: any): Notification {
-  return {
-    id:             r.id,
-    toUserId:       r.user_id       ?? r.to_user_id    ?? '',
-    fromUserId:     r.actor_id      ?? r.from_user_id  ?? '',
-    fromUserName:   r.from_user_name ?? r.actor_name   ?? '',
-    fromUserAvatar: r.from_user_avatar ?? r.actor_avatar ?? undefined,
-    type:           r.type,
-    postId:         r.post_id         ?? undefined,
-    postContent:    r.post_content    ?? undefined,
-    postImage:      r.post_image      ?? undefined,
-    commentContent: r.comment_content ?? r.body         ?? undefined,
-    conversationId: r.conversation_id ?? r.entity_id    ?? undefined,
-    fpAmount:       r.fp_amount        ?? undefined,
-    read:           r.is_read ?? r.read ?? false,
-    createdAt:      r.created_at       ?? new Date().toISOString(),
-  };
-}
-
-// ── Read from notifications table (primary) ───────────────────────────────────
+// ── Read from notifications table ────────────────────────────────────────────
 export async function getAll(userId: string): Promise<Notification[]> {
-  // Use the edge function — it handles dynamic column names (to_user_id vs user_id)
   try {
-    const resp = await fetch(`${BASE}/notifications/${userId}`, { headers: H() });
-    if (!resp.ok) throw new Error(`${resp.status}`);
-    const json = await resp.json();
-    // Server already returns camelCase Notification objects
-    const mapped = (json.notifications || []) as Notification[];
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    const mapped = (data || []).map(rowToNotif);
     saveLocal(userId, mapped);
     return mapped;
   } catch (e) {
-    console.warn('[notifications] getAll from server failed:', (e as any)?.message);
+    console.warn('[notifications] getAll failed:', (e as any)?.message);
   }
-  // Fallback to localStorage cache
   return loadLocal(userId);
 }
 
@@ -224,56 +213,31 @@ export function getUnreadCount(userId: string): number {
 export function markRead(userId: string, notifId: string): void {
   const updated = loadLocal(userId).map(n => n.id === notifId ? { ...n, read: true } : n);
   saveLocal(userId, updated);
-  fetch(`${BASE}/notifications/${notifId}/read`, { method: 'PUT', headers: H() })
-    .catch(() => {});
+  void supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
 }
 
 export function markAllRead(userId: string): void {
   saveLocal(userId, loadLocal(userId).map(n => ({ ...n, read: true })));
   localStorage.setItem(CNT_KEY(userId), '0');
-  fetch(`${BASE}/notifications/${userId}/read-all`, { method: 'PUT', headers: H() })
-    .catch(() => {});
+  void supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
 }
 
 export function remove(userId: string, notifId: string): void {
-  const updated = loadLocal(userId).filter(n => n.id !== notifId);
-  saveLocal(userId, updated);
-  fetch(`${BASE}/notifications/${notifId}`, { method: 'DELETE', headers: H() })
-    .then(r => { if (!r.ok) throw new Error(`${r.status}`); })
-    .catch(() => {
-      // Edge function SQL failing — delete directly via Supabase REST
-      supabase.from('notifications').delete().eq('id', notifId).then(({ error }) => {
-        if (error) console.warn('[notifications] remove REST fallback failed:', error.message);
-      });
-    });
+  saveLocal(userId, loadLocal(userId).filter(n => n.id !== notifId));
+  void supabase.from('notifications').delete().eq('id', notifId);
 }
 
 export function clearAll(userId: string): void {
   saveLocal(userId, []);
   localStorage.setItem(CNT_KEY(userId), '0');
-  fetch(`${BASE}/notifications/${userId}/all`, { method: 'DELETE', headers: H() })
-    .then(r => { if (!r.ok) throw new Error(`${r.status}`); })
-    .catch(() => {
-      // Edge function SQL failing — delete directly via Supabase REST
-      supabase.from('notifications').delete().eq('user_id', userId).then(({ error }) => {
-        if (error) console.warn('[notifications] clearAll REST fallback failed:', error.message);
-      });
-    });
+  void supabase.from('notifications').delete().eq('user_id', userId);
 }
 
 // ── Realtime subscription ─────────────────────────────────────────────────────
-// Subscribes to INSERT events on the notifications table for this user.
-// Returns an unsubscribe function — call it on component unmount.
-//
-// Falls back gracefully: if the table doesn't exist or realtime is disabled,
-// the channel status will be 'CHANNEL_ERROR' and no events will fire (polling
-// in the UI layer is the safety net).
 export function subscribe(
   userId: string,
   onNew: (notif: Notification) => void,
 ): () => void {
-  // Unique name per call — avoids the "cannot add callbacks after subscribe()" error
-  // that happens when a component re-mounts before the cleanup runs.
   const name = `notifs:${userId}:${Date.now()}`;
 
   const channel = supabase
