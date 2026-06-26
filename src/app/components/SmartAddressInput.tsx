@@ -6,7 +6,6 @@
  *               all parsed components (for listings, checkout, etc.)
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { searchLocations } from '../lib/locationApi';
 import { MapPin, Navigation, Loader2, X } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner';
@@ -28,6 +27,8 @@ interface Prediction {
   place_id: string;
   description: string;
   structured_formatting?: { main_text: string; secondary_text?: string };
+  /** Pre-parsed components from Nominatim fallback — skip details fetch when present */
+  _parts?: AddressComponents;
 }
 
 export interface SmartAddressInputProps {
@@ -124,34 +125,69 @@ export function SmartAddressInput({
     abortRef.current = ctrl;
 
     setIsSearching(true);
+    let usedFallback = false;
     try {
-      const country  = effectiveCountry ? `&country=${effectiveCountry.toLowerCase()}` : '';
-      const typeParam = mode === 'city' ? '&type=city' : '&type=address';
+      const countryParam = effectiveCountry ? `&country=${effectiveCountry.toLowerCase()}` : '';
+      const typeParam    = mode === 'city' ? '&type=city' : '&type=address';
       const res = await fetch(
-        `${EDGE}/geocode/autocomplete?input=${encodeURIComponent(text)}${country}${typeParam}`,
+        `${EDGE}/geocode/autocomplete?input=${encodeURIComponent(text)}${countryParam}${typeParam}`,
         { headers: { Authorization: `Bearer ${publicAnonKey}` }, signal: ctrl.signal }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      const preds: Prediction[] = data.predictions ?? [];
       if (!ctrl.signal.aborted) {
-        setPredictions(data.predictions ?? []);
-        setShowDrop((data.predictions ?? []).length > 0);
+        if (preds.length > 0) {
+          setPredictions(preds);
+          setShowDrop(true);
+        } else {
+          // Edge function succeeded but returned nothing — try Nominatim
+          usedFallback = true;
+          throw new Error('EMPTY');
+        }
       }
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        // Fallback to locationApi (Nominatim) when edge function fails
+      if (err?.name !== 'AbortError' && !ctrl.signal.aborted) {
+        // Nominatim fallback — respects effectiveCountry for both CA and US
         try {
-          const fallback = await searchLocations(text);
+          const cc  = effectiveCountry?.toLowerCase() ?? 'ca';
+          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=${cc}&format=json&addressdetails=1&limit=8&accept-language=en`;
+          const nomRes  = await fetch(url, { headers: { 'User-Agent': 'Filmons/1.0', 'Accept-Language': 'en' }, signal: ctrl.signal });
+          const nomData = await nomRes.json() as any[];
           if (!ctrl.signal.aborted) {
-            const preds = fallback.slice(0, 8).map(r => ({
-              place_id:    r.id ?? r.name,
-              description: r.name,
-            }));
+            const preds: Prediction[] = nomData.map(r => {
+              const addr     = r.address ?? {};
+              const city     = addr.city || addr.town || addr.village || addr.county || r.display_name.split(', ')[0];
+              const province = addr.state_code || addr.ISO3166_2_lvl4?.split('-')[1] || addr.state || '';
+              const country  = (addr.country_code ?? '').toUpperCase();
+              const desc     = [city, province].filter(Boolean).join(', ') || r.display_name;
+              return {
+                place_id:    String(r.place_id),
+                description: desc,
+                structured_formatting: {
+                  main_text:      city || desc,
+                  secondary_text: [province, addr.country].filter(Boolean).join(', '),
+                },
+                _parts: {
+                  formatted:     desc,
+                  streetAddress: '',
+                  city,
+                  province,
+                  postalCode:    addr.postcode ?? '',
+                  country,
+                  lat:           parseFloat(r.lat),
+                  lng:           parseFloat(r.lon),
+                },
+              };
+            });
             setPredictions(preds);
             setShowDrop(preds.length > 0);
           }
-        } catch { setPredictions([]); }
+        } catch (nomErr: any) {
+          if (nomErr?.name !== 'AbortError') setPredictions([]);
+        }
       }
+      void usedFallback; // suppress unused-variable warning
     } finally {
       if (!ctrl.signal.aborted) setIsSearching(false);
     }
@@ -166,8 +202,20 @@ export function SmartAddressInput({
   const handleSelect = useCallback(async (p: Prediction) => {
     setShowDrop(false);
     setPredictions([]);
-    onInputChange(p.description);
 
+    // ── Nominatim fallback predictions carry pre-parsed parts — no extra fetch needed
+    if (p._parts) {
+      const parts  = p._parts;
+      const display = mode === 'city'
+        ? (parts.city && parts.province ? `${parts.city}, ${parts.province}` : p.description)
+        : p.description;
+      onInputChange(display);
+      onAddressSelect?.(display, parts);
+      return;
+    }
+
+    // ── Google Places prediction — fetch full details for address components + geometry
+    onInputChange(p.description);
     try {
       const res = await fetch(
         `${EDGE}/geocode/details?place_id=${encodeURIComponent(p.place_id)}`,
