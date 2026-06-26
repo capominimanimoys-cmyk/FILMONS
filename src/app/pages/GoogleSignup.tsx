@@ -9,21 +9,38 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { ArrowLeft, Check, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check, X, ChevronDown, ChevronUp, Loader2, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ProfessionPicker } from '../components/ProfessionPicker';
+import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { User } from '../types';
 import { toast } from 'sonner';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const CANADIAN_PROVINCES = [
-  'Alberta','British Columbia','Manitoba','New Brunswick',
-  'Newfoundland and Labrador','Northwest Territories','Nova Scotia',
-  'Nunavut','Ontario','Prince Edward Island','Quebec','Saskatchewan','Yukon',
+type CountryCode = 'CA' | 'US';
+
+interface LocationData {
+  country:          string;       // full name, e.g. "Canada"
+  countryCode:      CountryCode;
+  province:         string;       // short code, e.g. "ON", "CA"
+  city:             string;
+  formattedAddress: string;
+  lat?:             number;
+  lng?:             number;
+}
+
+const COUNTRY_OPTIONS: { code: CountryCode; label: string; flag: string }[] = [
+  { code: 'CA', label: 'Canada',        flag: '🇨🇦' },
+  { code: 'US', label: 'United States', flag: '🇺🇸' },
 ];
+
+const COUNTRY_NAMES: Record<CountryCode, string> = {
+  CA: 'Canada',
+  US: 'United States',
+};
 
 // ── Background ────────────────────────────────────────────────────────────────
 
@@ -84,9 +101,12 @@ export function GoogleSignup() {
   // ── Required fields ────────────────────────────────────────────────────────
   const [username,       setUsername]       = useState('');
   const [usernameStatus, setUsernameStatus] = useState<'idle'|'checking'|'ok'|'taken'>('idle');
-  const [country,        setCountry]        = useState('Canada');
-  const [province,       setProvince]       = useState('');
-  const [city,           setCity]           = useState('');
+
+  // Location — structured
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>('CA');
+  const [cityInput,       setCityInput]       = useState('');  // controlled text in the autocomplete
+  const [locationData,    setLocationData]    = useState<LocationData | null>(null);
+
   const [primaryRole,    setPrimaryRole]    = useState('');
   const [secondaryRoles, setSecondaryRoles] = useState<string[]>([]);
 
@@ -115,21 +135,40 @@ export function GoogleSignup() {
     return () => clearTimeout(t);
   }, [username]);
 
+  // ── When country changes, clear location so user picks again ─────────────
+  const handleCountryChange = (code: CountryCode) => {
+    if (code === selectedCountry) return;
+    setSelectedCountry(code);
+    setCityInput('');
+    setLocationData(null);
+  };
+
+  // ── SmartAddressInput callback ────────────────────────────────────────────
+  const handleAddressSelect = (_display: string, parts: AddressComponents) => {
+    setLocationData({
+      country:          COUNTRY_NAMES[selectedCountry],
+      countryCode:      selectedCountry,
+      province:         parts.province,
+      city:             parts.city || _display.split(',')[0].trim(),
+      formattedAddress: parts.formatted || _display,
+      lat:              parts.lat,
+      lng:              parts.lng,
+    });
+  };
+
   // ── Validation ────────────────────────────────────────────────────────────
   const canSubmit =
     usernameStatus === 'ok' &&
-    country.trim() !== '' &&
-    province.trim() !== '' &&
-    city.trim() !== '' &&
+    locationData !== null &&
     primaryRole !== '' &&
     !loading;
 
   // ── Submit: create profile ────────────────────────────────────────────────
   const handleCreate = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !locationData) return;
     setLoading(true);
     try {
-      const locationStr = `${city}, ${province}`;
+      const locationStr = `${locationData.city}, ${locationData.province}`;
 
       const profileRow: Record<string, any> = {
         id:                   authId,
@@ -144,9 +183,11 @@ export function GoogleSignup() {
         secondary_roles:      secondaryRoles,
         bio:                  bio.trim()       || null,
         location:             locationStr,
-        city,
-        province,
-        country,
+        city:                 locationData.city,
+        province:             locationData.province,
+        country:              locationData.country,
+        latitude:             locationData.lat  ?? null,
+        longitude:            locationData.lng  ?? null,
         website:              website.trim()   || null,
         instagram:            instagram.trim() || null,
         youtube:              youtube.trim()   || null,
@@ -160,6 +201,15 @@ export function GoogleSignup() {
           provider:  'google',
           googleId:  authId,
           providers: ['google'],
+          location: {
+            country:          locationData.country,
+            countryCode:      locationData.countryCode,
+            province:         locationData.province,
+            city:             locationData.city,
+            formattedAddress: locationData.formattedAddress,
+            lat:              locationData.lat,
+            lng:              locationData.lng,
+          },
         },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -341,40 +391,74 @@ export function GoogleSignup() {
             )}
           </div>
 
-          {/* Location */}
+          {/* ── Location ──────────────────────────────────────────────────── */}
           <div>
             <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">
               Location <span className="text-red-400">*</span>
             </p>
-            <div className="space-y-2.5">
-              <input
-                value={country}
-                onChange={e => setCountry(e.target.value)}
-                placeholder="Country"
-                className={iCls}
-              />
-              <div className="relative">
-                <select
-                  value={province}
-                  onChange={e => setProvince(e.target.value)}
-                  className={`${iCls} appearance-none pr-10 ${!province ? 'text-white/40' : ''}`}
-                >
-                  <option value="" className="bg-gray-900 text-white/40">Province / State</option>
-                  {CANADIAN_PROVINCES.map(p => (
-                    <option key={p} value={p} className="bg-gray-900 text-white">{p}</option>
-                  ))}
-                  <option disabled className="bg-gray-900 text-white/20">──────────</option>
-                  <option value="Other" className="bg-gray-900 text-white">Other / Not Listed</option>
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none"/>
-              </div>
-              <input
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                placeholder="City"
-                className={iCls}
-              />
+
+            {/* Country toggle */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {COUNTRY_OPTIONS.map(opt => {
+                const on = selectedCountry === opt.code;
+                return (
+                  <button
+                    key={opt.code}
+                    onClick={() => handleCountryChange(opt.code)}
+                    className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border-2 transition-all active:scale-95 ${
+                      on ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:border-white/25'
+                    }`}
+                  >
+                    <span className="text-lg leading-none">{opt.flag}</span>
+                    <span className={`text-sm font-bold ${on ? 'text-white' : 'text-white/60'}`}>{opt.label}</span>
+                    {on && <Check className="w-3.5 h-3.5 text-blue-400 ml-auto"/>}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* City autocomplete — filtered to selected country */}
+            <SmartAddressInput
+              value={cityInput}
+              onInputChange={val => {
+                setCityInput(val);
+                // If user clears or modifies after a selection, reset confirmation
+                if (locationData && val !== locationData.formattedAddress && val !== `${locationData.city}, ${locationData.province}`) {
+                  setLocationData(null);
+                }
+              }}
+              onAddressSelect={handleAddressSelect}
+              mode="city"
+              countryCode={selectedCountry}
+              canadaOnly={false}
+              placeholder={selectedCountry === 'CA' ? 'e.g. Toronto, ON' : 'e.g. Seattle, WA'}
+              showGPS
+              variant="dark"
+            />
+
+            {/* Confirmed location chip */}
+            {locationData && (
+              <div className="flex items-center gap-2 mt-2.5 bg-green-500/10 border border-green-500/25 rounded-xl px-3 py-2">
+                <MapPin className="w-3.5 h-3.5 text-green-400 shrink-0"/>
+                <span className="text-green-300 text-xs font-semibold truncate">
+                  {locationData.city}{locationData.province ? `, ${locationData.province}` : ''} · {locationData.country}
+                </span>
+                <button
+                  onClick={() => { setCityInput(''); setLocationData(null); }}
+                  className="ml-auto shrink-0 text-green-400/60 hover:text-green-300 transition-colors"
+                  aria-label="Clear location"
+                >
+                  <X className="w-3 h-3"/>
+                </button>
+              </div>
+            )}
+
+            {/* Hint: must select from suggestions */}
+            {!locationData && cityInput.length >= 3 && (
+              <p className="text-white/30 text-[11px] mt-1.5 px-1">
+                Select a city from the suggestions to confirm your location.
+              </p>
+            )}
           </div>
 
           {/* Primary Role (+ Secondary) */}
@@ -433,7 +517,7 @@ export function GoogleSignup() {
         </p>
 
         {/* Validation summary */}
-        {!canSubmit && (username || province || city || primaryRole) && (
+        {!canSubmit && (username || locationData || cityInput || primaryRole) && (
           <div className="mt-4 bg-white/5 border border-white/10 rounded-xl px-4 py-3 space-y-1.5">
             <p className="text-[11px] font-bold text-white/50">Still needed:</p>
             {usernameStatus !== 'ok' && (
@@ -442,8 +526,12 @@ export function GoogleSignup() {
                 {usernameStatus === 'taken' ? 'Choose a different username' : 'Enter a valid username (3+ characters)'}
               </div>
             )}
-            {!province    && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Select a province or state</div>}
-            {!city        && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Enter your city</div>}
+            {!locationData && (
+              <div className="flex items-center gap-2 text-[11px] text-white/40">
+                <X className="w-3 h-3 text-red-400 shrink-0"/>
+                Select your city from the autocomplete suggestions
+              </div>
+            )}
             {!primaryRole && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Select a primary role</div>}
           </div>
         )}

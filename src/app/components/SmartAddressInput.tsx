@@ -19,6 +19,9 @@ export interface AddressComponents {
   city:          string;
   province:      string;
   postalCode:    string;
+  country?:      string; // ISO short code, e.g. 'CA' or 'US'
+  lat?:          number;
+  lng?:          number;
 }
 
 interface Prediction {
@@ -44,25 +47,30 @@ export interface SmartAddressInputProps {
   className?:     string;
   showGPS?:       boolean;
   canadaOnly?:    boolean;
+  /** ISO country code to restrict results. Overrides canadaOnly when set. */
+  countryCode?:   'CA' | 'US';
   disabled?:      boolean;
   variant?:       'light' | 'dark';
 }
 
-function parseComps(comps: any[], mode: 'city' | 'full'): AddressComponents {
-  let streetNum = '', route = '', city = '', province = '', postalCode = '';
+function parseComps(comps: any[], mode: 'city' | 'full', geometry?: any): AddressComponents {
+  let streetNum = '', route = '', city = '', province = '', postalCode = '', country = '';
   for (const c of comps) {
-    if (c.types.includes('street_number'))            streetNum  = c.long_name;
-    if (c.types.includes('route'))                    route       = c.long_name;
+    if (c.types.includes('street_number'))               streetNum  = c.long_name;
+    if (c.types.includes('route'))                       route      = c.long_name;
     if (c.types.includes('locality') ||
-        c.types.includes('sublocality_level_1'))      city        = city || c.long_name;
-    if (c.types.includes('administrative_area_level_1')) province = c.short_name;
-    if (c.types.includes('postal_code'))              postalCode  = c.long_name;
+        c.types.includes('sublocality_level_1'))         city       = city || c.long_name;
+    if (c.types.includes('administrative_area_level_1')) province   = c.short_name;
+    if (c.types.includes('postal_code'))                 postalCode = c.long_name;
+    if (c.types.includes('country'))                     country    = c.short_name;
   }
   const streetAddress = [streetNum, route].filter(Boolean).join(' ');
   const formatted = mode === 'city'
     ? [city, province].filter(Boolean).join(', ')
     : [streetAddress, city, province, postalCode].filter(Boolean).join(', ');
-  return { formatted, streetAddress, city, province, postalCode };
+  const lat = geometry?.location?.lat;
+  const lng = geometry?.location?.lng;
+  return { formatted, streetAddress, city, province, postalCode, country, lat, lng };
 }
 
 export function SmartAddressInput({
@@ -75,9 +83,12 @@ export function SmartAddressInput({
   className   = '',
   showGPS     = true,
   canadaOnly  = true,
+  countryCode,
   disabled    = false,
   variant     = 'light',
 }: SmartAddressInputProps) {
+  // Effective country: explicit countryCode wins, else fall back to canadaOnly
+  const effectiveCountry = countryCode ?? (canadaOnly ? 'CA' : null);
   const dark = variant === 'dark';
   const [predictions,   setPredictions]   = useState<Prediction[]>([]);
   const [showDrop,      setShowDrop]      = useState(false);
@@ -114,7 +125,7 @@ export function SmartAddressInput({
 
     setIsSearching(true);
     try {
-      const country  = canadaOnly ? '&country=ca' : '';
+      const country  = effectiveCountry ? `&country=${effectiveCountry.toLowerCase()}` : '';
       const typeParam = mode === 'city' ? '&type=city' : '&type=address';
       const res = await fetch(
         `${EDGE}/geocode/autocomplete?input=${encodeURIComponent(text)}${country}${typeParam}`,
@@ -144,7 +155,7 @@ export function SmartAddressInput({
     } finally {
       if (!ctrl.signal.aborted) setIsSearching(false);
     }
-  }, [canadaOnly, mode]);
+  }, [effectiveCountry, mode]);
 
   const handleChange = (val: string) => {
     onInputChange(val);
@@ -163,14 +174,20 @@ export function SmartAddressInput({
         { headers: { Authorization: `Bearer ${publicAnonKey}` } }
       );
       const data = await res.json();
-      const comps: any[] = data.results?.[0]?.address_components ?? [];
+      const result = data.results?.[0];
+      const comps: any[]  = result?.address_components ?? [];
+      const geometry: any = result?.geometry;
 
-      if (canadaOnly) {
-        const isCA = comps.some((c: any) => c.types.includes('country') && c.short_name === 'CA');
-        if (!isCA) { toast.error('Please select a Canadian location.'); return; }
+      if (effectiveCountry) {
+        const inCountry = comps.some((c: any) => c.types.includes('country') && c.short_name === effectiveCountry);
+        if (!inCountry) {
+          const name = effectiveCountry === 'CA' ? 'Canada' : 'the United States';
+          toast.error(`Please select a location in ${name}.`);
+          return;
+        }
       }
 
-      const parts = parseComps(comps, mode);
+      const parts = parseComps(comps, mode, geometry);
       const display = mode === 'city'
         ? (parts.city && parts.province ? `${parts.city}, ${parts.province}` : p.description)
         : p.description;
@@ -180,7 +197,7 @@ export function SmartAddressInput({
     } catch {
       onAddressSelect?.(p.description, { formatted: p.description, streetAddress: '', city: '', province: '', postalCode: '' });
     }
-  }, [mode, canadaOnly, onInputChange, onAddressSelect]);
+  }, [mode, effectiveCountry, onInputChange, onAddressSelect]);
 
   const handleGPS = () => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported in your browser.'); return; }
@@ -195,12 +212,17 @@ export function SmartAddressInput({
           const data = await res.json();
           const result = data.results?.[0];
           if (!result) { toast.error('Could not determine your location.'); return; }
-          const comps: any[] = result.address_components ?? [];
-          if (canadaOnly) {
-            const isCA = comps.some((c: any) => c.types.includes('country') && c.short_name === 'CA');
-            if (!isCA) { toast.error('Your GPS location is outside Canada.'); return; }
+          const comps: any[]  = result.address_components ?? [];
+          const geometry: any = result.geometry;
+          if (effectiveCountry) {
+            const inCountry = comps.some((c: any) => c.types.includes('country') && c.short_name === effectiveCountry);
+            if (!inCountry) {
+              const name = effectiveCountry === 'CA' ? 'Canada' : 'the United States';
+              toast.error(`Your GPS location is outside ${name}.`);
+              return;
+            }
           }
-          const parts = parseComps(comps, mode);
+          const parts = parseComps(comps, mode, geometry);
           const display = mode === 'city'
             ? (parts.city && parts.province ? `${parts.city}, ${parts.province}` : result.formatted_address)
             : result.formatted_address;
