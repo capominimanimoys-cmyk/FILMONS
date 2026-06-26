@@ -50,6 +50,7 @@ import { ReelFeed } from './pages/ReelFeed';
 import MyOrders from './pages/MyOrders';
 import { SearchPage } from './pages/SearchPage';
 import { OAuthCallback } from './pages/OAuthCallback';
+import { GoogleSignup }  from './pages/GoogleSignup';
 import { Onboarding }    from './pages/Onboarding';
 
 export const router = createBrowserRouter([
@@ -111,5 +112,6 @@ export const router = createBrowserRouter([
   { path: '/forgot-password',  Component: ForgotPassword },
   { path: '/reset-password',    Component: ResetPassword  },
   { path: '/auth/callback',    Component: OAuthCallback  },
+  { path: '/google-signup',    Component: GoogleSignup   },
   { path: '/onboarding',       Component: Onboarding     },
 ]);
