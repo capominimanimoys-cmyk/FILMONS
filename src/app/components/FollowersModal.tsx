@@ -3,7 +3,7 @@ import { X, Search, UserCheck, UserPlus } from 'lucide-react';
 import { UserAvatar } from './AccountTypeBadge';
 import { socialApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 interface FollowerUser {
@@ -28,6 +28,18 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
     new Set(user?.following || [])
   );
 
+  // Slide-in animation state
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const handleClose = () => {
+    setVisible(false);
+    setTimeout(onClose, 280);
+  };
+
   const list = tab === 'followers' ? followers : following;
   const filtered = list.filter(u =>
     !search || u.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -48,15 +60,23 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-        <div className="bg-white w-full md:max-w-sm md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col"
-          style={{ maxHeight: '80vh' }}>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 z-50 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}
+        onClick={handleClose}
+      />
 
+      {/* Sheet */}
+      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center pointer-events-none">
+        <div
+          className={`bg-white w-full md:max-w-sm md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col pointer-events-auto
+            transition-transform duration-300 ease-out
+            ${visible ? 'translate-y-0' : 'translate-y-full'}`}
+          style={{ maxHeight: '80vh' }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div className="w-8" />
-            {/* Tabs */}
             <div className="flex gap-0">
               {(['followers','following'] as const).map(t => (
                 <button key={t} onClick={() => onTabChange(t)}
@@ -67,7 +87,7 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
                 </button>
               ))}
             </div>
-            <button onClick={onClose}
+            <button onClick={handleClose}
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
               <X className="w-4 h-4 text-gray-500" />
             </button>
@@ -95,21 +115,16 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
                 return (
                   <div key={u.id}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
-                    {/* Avatar */}
-                    <button onClick={() => { navigate(`/host/${u.id}`); onClose(); }}
+                    <button onClick={() => { navigate(`/host/${u.id}`); handleClose(); }}
                       className="shrink-0">
                       <UserAvatar user={u} size={44} />
                     </button>
-
-                    {/* Info */}
-                    <button onClick={() => { navigate(`/host/${u.id}`); onClose(); }}
+                    <button onClick={() => { navigate(`/host/${u.id}`); handleClose(); }}
                       className="flex-1 text-left min-w-0">
                       <p className="font-semibold text-sm text-gray-900 truncate">{u.name}</p>
                       {u.username && <p className="text-xs text-gray-400">@{u.username}</p>}
                       {u.bio && <p className="text-xs text-gray-500 truncate mt-0.5">{u.bio}</p>}
                     </button>
-
-                    {/* Follow button — not for yourself */}
                     {!isMe && (
                       <button onClick={() => handleFollow(u.id)}
                         className={`shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full transition-all ${
