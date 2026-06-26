@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 
-type Screen = 'splash' | 'method' | 'email' | 'security';
+type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'security';
 
 // ── Cinematic background ───────────────────────────────────────────────────
 function CinematicBg() {
@@ -50,6 +50,15 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
   );
 }
 
+// ── Apple logo ─────────────────────────────────────────────────────────────
+function AppleLogo({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.39-1.32 2.76-2.53 3.99zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+    </svg>
+  );
+}
+
 // ── OAuth button ───────────────────────────────────────────────────────────
 function OAuthBtn({ onClick }: { onClick: () => void }) {
   return (
@@ -74,6 +83,7 @@ export function Login() {
   const [remember, setRemember] = useState(true);
   const [loading,  setLoading]  = useState(false);
   const [otp,      setOtp]      = useState('');
+  const [pwError,  setPwError]  = useState('');
   const [mounted,  setMounted]  = useState(false);
 
   useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
@@ -95,16 +105,21 @@ export function Login() {
 
   const handleEmailLogin = async () => {
     if (!email || !password) { toast.error('Enter your email and password'); return; }
+    setPwError('');
     setLoading(true);
     try {
       await login(email, password);
       captureSnapshot(); navigate('/');
     } catch (e: any) {
-      const msg: string = e?.message || 'Incorrect email or password';
-      if (msg.includes('confirm') || msg.includes('Confirm')) {
+      const msg: string = e?.message || '';
+      if (msg === 'EMAIL_NOT_FOUND') {
+        setScreen('email_not_found');
+      } else if (msg.includes('confirm') || msg.includes('Confirm')) {
         toast.error(msg, { duration: 6000, description: 'Check your inbox and click the confirmation link, then try again.' });
+      } else if (msg.toLowerCase().includes('incorrect password') || msg.toLowerCase().includes('invalid')) {
+        setPwError('Incorrect password. Please try again or reset your password.');
       } else {
-        toast.error(msg);
+        toast.error(msg || 'Something went wrong. Please try again.');
       }
     }
     setLoading(false);
@@ -197,22 +212,28 @@ export function Login() {
           <div className="space-y-3">
             {/* Email */}
             <div className="group">
-              <input value={email} onChange={e => setEmail(e.target.value)}
+              <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
                 type="email" placeholder="Email address" autoComplete="email"
                 onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
                 className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
             </div>
             {/* Password */}
             <div className="relative">
-              <input value={password} onChange={e => setPassword(e.target.value)}
+              <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
                 type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
                 onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
+                className={`w-full bg-white/10 border text-white placeholder-white/40 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white/15 transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-white/20 focus:border-blue-400'}`}/>
               <button onClick={() => setShowPw(p => !p)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors">
                 {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
               </button>
             </div>
+            {/* Inline password error */}
+            {pwError && (
+              <p className="text-red-400 text-xs font-medium px-1 leading-snug">
+                {pwError}
+              </p>
+            )}
             {/* Remember + Forgot */}
             <div className="flex items-center justify-between px-1">
               <label className="flex items-center gap-2 text-xs text-white/50 cursor-pointer">
@@ -241,6 +262,102 @@ export function Login() {
             Don't have an account?{' '}
             <Link to="/create-account" className="text-blue-400 font-semibold hover:underline">Create one</Link>
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── EMAIL NOT FOUND ──────────────────────────────────────────────────────
+  if (screen === 'email_not_found') {
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden">
+        <CinematicBg/>
+        <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
+          {/* Back */}
+          <button
+            onClick={() => setScreen('email')}
+            className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4"/> Back
+          </button>
+
+          {/* Icon */}
+          <div className="flex justify-center mb-6">
+            <div className="relative w-20 h-20">
+              <div className="w-20 h-20 rounded-full bg-white/10 border border-white/20 flex items-center justify-center">
+                <Mail className="w-9 h-9 text-white/50"/>
+              </div>
+              {/* ✕ badge */}
+              <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center border-2 border-[#0f172a] shadow-lg">
+                <span className="text-white text-xs font-black leading-none">✕</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Title + message */}
+          <div className="text-center mb-5">
+            <p className="text-2xl font-black text-white mb-2">Email not found</p>
+            <p className="text-white/60 text-sm leading-relaxed">
+              We couldn't find a Filmons account with this email address.
+            </p>
+          </div>
+
+          {/* Email pill */}
+          <div className="flex justify-center mb-6">
+            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-2">
+              <Mail className="w-3.5 h-3.5 text-white/40 shrink-0"/>
+              <span className="text-white/80 text-sm font-medium truncate max-w-[240px]">{email}</span>
+            </div>
+          </div>
+
+          {/* CTA copy */}
+          <p className="text-center text-white/40 text-xs leading-relaxed mb-6 px-2">
+            New to Filmons? Create your account in a few seconds and start connecting with creators, clients, and marketplace hosts.
+          </p>
+
+          {/* Primary CTA */}
+          <button
+            onClick={() => { captureSnapshot(); navigate(`/create-account?email=${encodeURIComponent(email)}`); }}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30 mb-3"
+          >
+            Create account with this email
+          </button>
+
+          {/* Secondary */}
+          <button
+            onClick={() => setScreen('email')}
+            className="w-full py-3.5 border border-white/20 hover:bg-white/5 text-white font-semibold text-sm rounded-2xl transition-all active:scale-[0.98] mb-5"
+          >
+            Try another email
+          </button>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 h-px bg-white/10"/>
+            <p className="text-white/30 text-xs font-medium">or sign up with</p>
+            <div className="flex-1 h-px bg-white/10"/>
+          </div>
+
+          {/* OAuth + Phone alternatives */}
+          <div className="space-y-3 pb-8">
+            <OAuthBtn onClick={() => handleOAuth('google')}/>
+            <button
+              onClick={() => handleOAuth('apple')}
+              className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all"
+            >
+              <span className="w-5 h-5 shrink-0 flex items-center justify-center">
+                <AppleLogo size={20}/>
+              </span>
+              <span className="flex-1 text-left">Continue with Apple</span>
+            </button>
+            <button
+              onClick={() => { captureSnapshot(); navigate('/phone-login'); }}
+              className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all"
+            >
+              <Phone className="w-5 h-5 shrink-0"/>
+              <span className="flex-1 text-left">Continue with Phone Number</span>
+            </button>
+          </div>
         </div>
       </div>
     );

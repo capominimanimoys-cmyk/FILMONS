@@ -6,7 +6,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Eye, EyeOff, ArrowLeft, Check, SkipForward, Camera, Phone, Search, X, Plus, Loader2, Film, Video, User, Gamepad2, Star, Scissors, Music2, Palette, Building2, Package, Layers, Briefcase, Sparkles, ShoppingBag, Users, Wrench, ShoppingCart, Mic } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Check, SkipForward, Camera, Phone, Search, X, Plus, Loader2, Film, Video, User, Gamepad2, Star, Scissors, Music2, Palette, Building2, Package, Layers, Briefcase, Sparkles, ShoppingBag, Users, Wrench, ShoppingCart, Mail, RefreshCw } from 'lucide-react';
 import { SmartAddressInput } from '../components/SmartAddressInput';
 import { ProfessionPicker } from '../components/ProfessionPicker';
 import { useAuth } from '../context/AuthContext';
@@ -318,9 +318,19 @@ export function CreateAccount() {
   // ── Auth: send OTP via EmailJS ────────────────────────────────────────────
   const [otpFallbackCode,  setOtpFallbackCode]  = useState('');
   const [accountCreated,   setAccountCreated]   = useState(false);
+  const [resendCooldown,   setResendCooldown]   = useState(0);
+  const [resendSuccess,    setResendSuccess]    = useState(false);
 
-  const sendVerificationCode = async () => {
+  // Countdown tick for resend cooldown
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  const sendVerificationCode = async (isResend = false) => {
     setOtpLoading(true); setOtpError(''); setOtpFallbackCode('');
+    if (isResend) setResendSuccess(false);
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     sessionStorage.setItem('fm_otp',         code);
     sessionStorage.setItem('fm_otp_email',   email.toLowerCase());
@@ -332,18 +342,20 @@ export function CreateAccount() {
         site_url: window.location.origin, expires_in: '10 minutes',
       });
       setOtpSent(true);
+      setResendCooldown(60);
       if (r.success) {
-        toast.success(`Code sent to ${email}`);
+        if (isResend) setResendSuccess(true);
       } else {
         setOtpFallbackCode(code);
-        toast.warning('Email delivery failed — use the code shown below', { duration: 10000 });
+        if (!isResend) toast.warning('Email delivery failed — use the code shown below', { duration: 10000 });
         console.error('[EmailJS]', r.message);
       }
     } catch (e: unknown) {
       setOtpSent(true);
+      setResendCooldown(60);
       setOtpFallbackCode(code);
       const msg = e instanceof Error ? e.message : String(e);
-      toast.warning(`Email error: ${msg} — use the code below`, { duration: 10000 });
+      if (!isResend) toast.warning(`Email error: ${msg} — use the code below`, { duration: 10000 });
     }
     setOtpLoading(false);
   };
@@ -604,36 +616,126 @@ export function CreateAccount() {
                   </button>
                 </div>
               ) : !otpSent ? (
-                <button onClick={sendVerificationCode} disabled={!step1Ok || otpLoading}
+                <button onClick={() => sendVerificationCode()} disabled={!step1Ok || otpLoading}
                   className="w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
                   {otpLoading ? 'Sending…' : 'Verify Email & Continue'}
                 </button>
               ) : (
-                <div className="space-y-3">
-                  {otpFallbackCode ? (
-                    <div className="bg-amber-900/40 border border-amber-500/50 rounded-xl px-4 py-3 text-center">
-                      <p className="text-xs text-amber-300 mb-1">Email delivery failed — your code:</p>
+                /* ── Check your email screen ─────────────────────────── */
+                <div className="space-y-4 pt-2">
+
+                  {/* Title */}
+                  <div className="text-center space-y-1">
+                    <div className="flex justify-center mb-3">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center">
+                        <Mail className="w-7 h-7 text-blue-400"/>
+                      </div>
+                    </div>
+                    <h2 className="text-xl font-black text-white">Check your email</h2>
+                    <p className="text-white/50 text-sm">We've sent a verification code to:</p>
+                    <div className="flex justify-center mt-1">
+                      <span className="inline-flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-full px-3 py-1.5 text-sm font-semibold text-white/90">
+                        <Mail className="w-3.5 h-3.5 text-white/40 shrink-0"/>
+                        {email}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fallback code (if email failed) */}
+                  {otpFallbackCode && (
+                    <div className="bg-amber-900/40 border border-amber-500/50 rounded-2xl px-4 py-3 text-center">
+                      <p className="text-xs text-amber-300 mb-1.5">Email delivery failed — your code:</p>
                       <p className="text-3xl font-black text-white tracking-[0.4em]">{otpFallbackCode}</p>
                       <p className="text-[10px] text-amber-400 mt-1">Enter this code below to continue</p>
                     </div>
-                  ) : (
+                  )}
+
+                  {/* Resend success */}
+                  {resendSuccess && (
                     <div className="flex items-center gap-2 bg-green-900/30 border border-green-700/40 rounded-xl px-3 py-2.5">
                       <Check className="w-3.5 h-3.5 text-green-400 shrink-0"/>
-                      <p className="text-xs text-green-300">Code sent to <strong>{email}</strong></p>
+                      <p className="text-xs text-green-300">A new verification email has been sent.</p>
                     </div>
                   )}
-                  <input value={otp} onChange={e => { setOtp(e.target.value.replace(/\D/g,'').slice(0,6)); setOtpError(''); }}
-                    type="tel" placeholder="000000" maxLength={6}
-                    className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-2xl px-4 py-4 text-2xl font-black text-center tracking-[0.5em] outline-none focus:border-blue-400 transition-all"/>
-                  {otpError && <p className="text-red-400 text-xs text-center">{otpError}</p>}
-                  <button onClick={verifyAndCreate} disabled={otp.length < 6 || otpLoading}
-                    className="w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 hover:bg-blue-700 transition-all shadow-lg shadow-blue-900/30">
-                    {otpLoading ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Creating account…</span> : 'Verify & Create Account'}
+
+                  {/* OTP input */}
+                  <div>
+                    <input
+                      value={otp}
+                      onChange={e => { setOtp(e.target.value.replace(/\D/g,'').slice(0,6)); setOtpError(''); }}
+                      type="tel" placeholder="000000" maxLength={6}
+                      className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-2xl px-4 py-4 text-2xl font-black text-center tracking-[0.5em] outline-none focus:border-blue-400 transition-all"
+                    />
+                    {otpError && <p className="text-red-400 text-xs text-center mt-1.5">{otpError}</p>}
+                  </div>
+
+                  {/* Verify button */}
+                  <button
+                    onClick={verifyAndCreate}
+                    disabled={otp.length < 6 || otpLoading}
+                    className="w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 hover:bg-blue-700 transition-all shadow-lg shadow-blue-900/30"
+                  >
+                    {otpLoading
+                      ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Creating account…</span>
+                      : 'Verify & Create Account'}
                   </button>
-                  <button onClick={() => { setOtpSent(false); setOtp(''); setOtpError(''); }}
-                    className="w-full text-center text-white/30 text-xs py-1 hover:text-white/60">
-                    Change email or resend code
-                  </button>
+
+                  {/* Spam / tips box */}
+                  <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 space-y-2">
+                    <p className="text-sm font-bold text-white/80 flex items-center gap-2">
+                      <span>📩</span> Can't find the email?
+                    </p>
+                    <ul className="space-y-1.5 pl-1">
+                      {[
+                        'Check your Spam or Junk folder.',
+                        'If you use Gmail, also check the Promotions or Updates tab.',
+                        <>Mark the email as <span className="font-bold text-white/80">Not Spam</span> to ensure future Filmons emails arrive in your inbox.</>,
+                      ].map((tip, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-white/50 leading-relaxed">
+                          <span className="mt-0.5 w-1 h-1 rounded-full bg-white/30 shrink-0 mt-1.5"/>
+                          <span>{tip}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Secondary actions */}
+                  <div className="space-y-2.5">
+                    {/* Open email app */}
+                    <button
+                      onClick={() => window.open('mailto:', '_blank')}
+                      className="w-full flex items-center justify-center gap-2 py-3.5 bg-white/10 hover:bg-white/15 border border-white/15 text-white font-semibold text-sm rounded-2xl transition-all active:scale-[0.98]"
+                    >
+                      <Mail className="w-4 h-4 text-white/60"/>
+                      Open Email App
+                    </button>
+
+                    {/* Resend with countdown */}
+                    <button
+                      onClick={() => sendVerificationCode(true)}
+                      disabled={resendCooldown > 0 || otpLoading}
+                      className="w-full flex items-center justify-center gap-2 py-3.5 border border-white/15 text-sm font-semibold rounded-2xl transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 text-white/70 hover:text-white hover:border-white/30"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${otpLoading ? 'animate-spin' : ''}`}/>
+                      {resendCooldown > 0
+                        ? `Resend Email (${resendCooldown}s)`
+                        : 'Resend Email'}
+                    </button>
+
+                    {/* Change email */}
+                    <button
+                      onClick={() => { setOtpSent(false); setOtp(''); setOtpError(''); setResendSuccess(false); setOtpFallbackCode(''); }}
+                      className="w-full text-center text-white/30 text-xs py-1 hover:text-white/60 transition-colors"
+                    >
+                      Change Email Address
+                    </button>
+                  </div>
+
+                  {/* Footer hint */}
+                  <p className="text-center text-[11px] text-white/25 leading-relaxed pb-2">
+                    Didn't receive the email after a few minutes?<br/>
+                    You can resend it or use a different email address.
+                  </p>
                 </div>
               )}
             </div>

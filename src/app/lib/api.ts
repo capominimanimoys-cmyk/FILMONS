@@ -204,22 +204,19 @@ export const authApi = {
         throw new Error('Please confirm your email first — we just resent the confirmation link.');
       }
 
-      // Check if a profile exists for this email — account may have been created
-      // via the edge function without a Supabase Auth record.
+      // Distinguish "wrong password" from "email not registered at all"
       const { data: profileByEmail } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, followers, following')
+        .select('id')
         .eq('email', email.toLowerCase())
         .maybeSingle();
 
       if (profileByEmail) {
-        // Profile exists → the user was created without a Supabase Auth account.
-        // Send a magic-link / OTP so they can set up their auth account.
-        await supabase.auth.signInWithOtp({ email: email.toLowerCase(), options: { shouldCreateUser: false } }).catch(() => {});
-        throw new Error('Your account was found but needs password setup. Check your email for a sign-in link, then set a password in Settings.');
+        // Account exists → wrong password
+        throw new Error('Incorrect password. Please try again or reset your password.');
       }
 
-      throw new Error('No account found with that email.');
+      throw new Error('EMAIL_NOT_FOUND');
     }
 
     // 2. Load full profile from profiles table

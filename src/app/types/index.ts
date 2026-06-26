@@ -270,7 +270,7 @@ export type NotificationType =
   // Applications
   | 'application_received' | 'application_accepted' | 'application_rejected'
   // Messages
-  | 'new_message' | 'message_received' | 'message_reply' | 'message_reaction'
+  | 'message' | 'new_message' | 'message_received' | 'message_reply' | 'message_reaction'
   // Marketplace
   | 'service_booked' | 'booking_accepted' | 'booking_rejected'
   | 'payment_received' | 'payment_released'
