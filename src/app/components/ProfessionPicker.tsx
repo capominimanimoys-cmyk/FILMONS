@@ -42,19 +42,28 @@ function scoreMatch(item: string, query: string): number {
 function searchProfessions(
   query: string,
   exclude: string[],
+  extras: string[] = [],
 ): { item: string; cat: string }[] {
   if (!query.trim()) return [];
   const results: { item: string; cat: string; score: number }[] = [];
+  const hardcodedLower = new Set(ALL_PROFESSIONS.map(p => p.toLowerCase()));
   for (const { cat, items } of PROFESSIONS) {
     for (const item of items) {
-      if (exclude.includes(item)) continue;
+      if (exclude.some(e => e.toLowerCase() === item.toLowerCase())) continue;
       const score = scoreMatch(item, query);
       if (score > 0) results.push({ item, cat, score });
     }
   }
+  // DB suggestions not already in the hardcoded catalogue
+  for (const item of extras) {
+    if (hardcodedLower.has(item.toLowerCase())) continue;
+    if (exclude.some(e => e.toLowerCase() === item.toLowerCase())) continue;
+    const score = scoreMatch(item, query);
+    if (score > 0) results.push({ item, cat: 'Community', score });
+  }
   return results
     .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
+    .slice(0, 10)
     .map(({ item, cat }) => ({ item, cat }));
 }
 
@@ -67,6 +76,10 @@ export interface ProfessionPickerProps {
   variant?:          'dark' | 'light';
   /** Hide the secondary section (useful when only primary is needed) */
   primaryOnly?:      boolean;
+  /** Extra suggestions loaded from the DB (merged with the hardcoded catalogue) */
+  dbSuggestions?:    string[];
+  /** Called whenever a role is selected — use to persist to DB */
+  onTagSelected?:    (role: string, type: 'primary_role' | 'secondary_role') => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -75,8 +88,10 @@ export function ProfessionPicker({
   onPrimaryChange,
   secondaryRoles,
   onSecondaryChange,
-  variant     = 'light',
-  primaryOnly = false,
+  variant        = 'light',
+  primaryOnly    = false,
+  dbSuggestions  = [],
+  onTagSelected,
 }: ProfessionPickerProps) {
   const dark = variant === 'dark';
 
@@ -100,17 +115,19 @@ export function ProfessionPicker({
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const primarySuggestions   = searchProfessions(primaryQ,   primaryRole ? [primaryRole, ...secondaryRoles] : secondaryRoles);
-  const secondarySuggestions = searchProfessions(secondaryQ, [primaryRole, ...secondaryRoles]);
+  const primarySuggestions   = searchProfessions(primaryQ,   primaryRole ? [primaryRole, ...secondaryRoles] : secondaryRoles, dbSuggestions);
+  const secondarySuggestions = searchProfessions(secondaryQ, [primaryRole, ...secondaryRoles], dbSuggestions);
 
   const selectPrimary = (role: string) => {
     onPrimaryChange(role);
+    onTagSelected?.(role, 'primary_role');
     setPrimaryQ('');
     setPrimaryOpen(false);
   };
 
   const addSecondary = (role: string) => {
     if (!secondaryRoles.includes(role)) onSecondaryChange([...secondaryRoles, role]);
+    onTagSelected?.(role, 'secondary_role');
     setSecondaryQ('');
     setSecondaryOpen(false);
   };

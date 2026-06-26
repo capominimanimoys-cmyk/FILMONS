@@ -15,7 +15,8 @@ import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { SmartAddressInput } from '../components/SmartAddressInput';
-import { ProfessionPicker } from '../components/ProfessionPicker';
+import { ProfessionPicker, ALL_PROFESSIONS } from '../components/ProfessionPicker';
+import { fetchTagSuggestions, saveTagSuggestion } from '../lib/tagSuggestions';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type AccType = 'creator' | 'professional' | 'creator_plus';
@@ -89,6 +90,10 @@ export function CompleteProfile() {
   const [primaryRole, setPrimaryRole]       = useState('');
   const [secondaryRoles, setSecondaryRoles] = useState<string[]>([]);
 
+  // DB-backed tag suggestions
+  const [dbRoleSuggestions, setDbRoleSuggestions] = useState<string[]>([]);
+  const [dbToolSuggestions, setDbToolSuggestions] = useState<string[]>([]);
+
   // Step 4 — Tools
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [toolQuery,     setToolQuery]     = useState('');
@@ -133,6 +138,17 @@ export function CompleteProfile() {
         setCountryCode(CA_PROVINCE_CODES.has(user.province.toUpperCase()) ? 'CA' : 'US');
       }
     }
+    // Fetch DB suggestions for all three types in parallel
+    const uid = user?.id;
+    Promise.all([
+      fetchTagSuggestions('primary_role', uid),
+      fetchTagSuggestions('secondary_role', uid),
+      fetchTagSuggestions('tool', uid),
+    ]).then(([primarySuggs, secondarySuggs, toolSuggs]) => {
+      setDbRoleSuggestions([...new Set([...primarySuggs, ...secondarySuggs])]);
+      setDbToolSuggestions(toolSuggs);
+    }).catch(() => {});
+
     setTimeout(() => setMounted(true), 80);
   }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -162,9 +178,25 @@ export function CompleteProfile() {
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const filteredTools = TOOLS.filter(t =>
-    !selectedTools.includes(t) && t.toLowerCase().includes(toolQuery.toLowerCase().trim())
-  );
+  const allToolOptions = [...new Set([...TOOLS, ...dbToolSuggestions])];
+  const filteredTools  = toolQuery.trim()
+    ? allToolOptions.filter(t =>
+        !selectedTools.includes(t) &&
+        t.toLowerCase().includes(toolQuery.toLowerCase())
+      )
+    : [];
+
+  function handleRoleTagSelected(role: string, type: 'primary_role' | 'secondary_role') {
+    const isFromCatalogue = ALL_PROFESSIONS.some(p => p.toLowerCase() === role.toLowerCase());
+    saveTagSuggestion(type, role, user?.id, isFromCatalogue);
+  }
+
+  function addTool(label: string) {
+    if (!label.trim() || selectedTools.includes(label)) return;
+    setSelectedTools(prev => [...prev, label]);
+    const isFromCatalogue = TOOLS.some(t => t.toLowerCase() === label.toLowerCase());
+    saveTagSuggestion('tool', label, user?.id, isFromCatalogue);
+  }
 
   const usernameError =
     username.length > 0 && username.length < 3 ? 'At least 3 characters' :
@@ -493,6 +525,8 @@ export function CompleteProfile() {
               secondaryRoles={secondaryRoles}
               onSecondaryChange={setSecondaryRoles}
               variant="dark"
+              dbSuggestions={dbRoleSuggestions}
+              onTagSelected={handleRoleTagSelected}
             />
             <button onClick={next} disabled={!canStep3}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
@@ -540,19 +574,18 @@ export function CompleteProfile() {
                     <button
                       key={t}
                       type="button"
-                      onMouseDown={e => { e.preventDefault(); toggleTool(t); setToolQuery(''); setToolPickerOpen(false); }}
+                      onMouseDown={e => { e.preventDefault(); addTool(t); setToolQuery(''); setToolPickerOpen(false); }}
                       className="w-full text-left px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors border-b border-white/5 last:border-0"
                     >
                       {t}
                     </button>
                   ))}
-                  {toolQuery.trim() && !TOOLS.some(t => t.toLowerCase() === toolQuery.trim().toLowerCase()) && (
+                  {toolQuery.trim() && !allToolOptions.some(t => t.toLowerCase() === toolQuery.trim().toLowerCase()) && !selectedTools.some(t => t.toLowerCase() === toolQuery.trim().toLowerCase()) && (
                     <button
                       type="button"
                       onMouseDown={e => {
                         e.preventDefault();
-                        const custom = toolQuery.trim();
-                        if (!selectedTools.includes(custom)) setSelectedTools(prev => [...prev, custom]);
+                        addTool(toolQuery.trim());
                         setToolQuery(''); setToolPickerOpen(false);
                       }}
                       className="w-full text-left px-4 py-2.5 text-sm font-semibold text-blue-400 hover:bg-white/10 transition-colors flex items-center gap-2"
