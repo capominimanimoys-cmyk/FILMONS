@@ -306,7 +306,7 @@ export function GoogleSignup() {
 
           {/* Continue button */}
           <button
-            onClick={() => navigate('/onboarding', { replace: true })}
+            onClick={() => navigate('/', { replace: true })}
             className="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
           >
             Continue to Filmons
