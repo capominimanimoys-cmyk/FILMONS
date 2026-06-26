@@ -120,6 +120,7 @@ export function GoogleSignup() {
   const [linkedin,     setLinkedin]     = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   // ── Username availability check ───────────────────────────────────────────
   useEffect(() => {
@@ -170,37 +171,33 @@ export function GoogleSignup() {
     try {
       const locationStr = `${locationData.city}, ${locationData.province}`;
 
+      // Only columns confirmed to exist in the profiles table
       const profileRow: Record<string, any> = {
-        id:                   authId,
-        email:                googleEmail,
-        name:                 googleName,
+        id:                  authId,
+        email:               googleEmail,
+        name:                googleName,
         username,
-        avatar_url:           googleAvatar || null,
-        avatar:               googleAvatar || null,
-        account_type:         'creator',
-        account_mode:         'creator',
-        primary_role:         primaryRole,
-        secondary_roles:      secondaryRoles,
-        bio:                  bio.trim()       || null,
-        location:             locationStr,
-        city:                 locationData.city,
-        province:             locationData.province,
-        country:              locationData.country,
-        latitude:             locationData.lat  ?? null,
-        longitude:            locationData.lng  ?? null,
-        website:              website.trim()   || null,
-        instagram:            instagram.trim() || null,
-        youtube:              youtube.trim()   || null,
-        tiktok:               tiktok.trim()    || null,
-        linkedin:             linkedin.trim()  || null,
-        is_verified:          false,
-        email_verified:       true,
-        verification_status:  'not_started',
-        profile_setup_percentage: 30,
+        avatar_url:          googleAvatar || null,
+        account_type:        'creator',
+        account_mode:        'creator',
+        primary_role:        primaryRole,
+        secondary_roles:     secondaryRoles,
+        bio:                 bio.trim()      || null,
+        location:            locationStr,
+        city:                locationData.city,
+        province:            locationData.province,
+        website:             website.trim()  || null,
+        instagram:           instagram.trim()|| null,
+        youtube:             youtube.trim()  || null,
+        tiktok:              tiktok.trim()   || null,
+        is_verified:         false,
+        verification_status: 'not_started',
         profile_meta: {
           provider:  'google',
           googleId:  authId,
           providers: ['google'],
+          // Store extended location data (country, lat/lng) here since
+          // the profiles table only has city + province columns
           location: {
             country:          locationData.country,
             countryCode:      locationData.countryCode,
@@ -217,11 +214,14 @@ export function GoogleSignup() {
 
       const { data: created, error: insertErr } = await supabase
         .from('profiles')
-        .insert(profileRow)
+        .upsert(profileRow, { onConflict: 'id' })
         .select()
         .single();
 
-      if (insertErr) throw new Error(insertErr.message);
+      if (insertErr) {
+        console.error('[GoogleSignup] profiles upsert error:', insertErr);
+        throw new Error(insertErr.message);
+      }
 
       await Promise.allSettled([
         supabase.from('reputation_scores').upsert(
@@ -252,21 +252,69 @@ export function GoogleSignup() {
       };
 
       await completeLogin(undefined, undefined, undefined, newUser);
-      toast.success('Account created! Welcome to Filmons.');
-      navigate('/onboarding', { replace: true });
+      setSuccess(true);
 
     } catch (e: any) {
-      console.error('[GoogleSignup]', e);
+      console.error('[GoogleSignup] error:', e);
+      const msg: string = e?.message ?? '';
       toast.error(
-        e?.message?.includes('unique')
+        msg.includes('unique') || msg.includes('duplicate')
           ? 'That username is already taken. Please choose another.'
-          : 'Something went wrong. Please try again.'
+          : msg || 'Something went wrong. Please try again.',
+        { duration: 6000 }
       );
     }
     setLoading(false);
   };
 
   const iCls = 'w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all';
+
+  // ── Success screen ────────────────────────────────────────────────────────
+  if (success) {
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden">
+        <CinematicBg/>
+        <div className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center gap-6">
+          {/* Big check */}
+          <div className="w-24 h-24 rounded-full bg-green-500/20 border-2 border-green-500/50 flex items-center justify-center">
+            <Check className="w-12 h-12 text-green-400"/>
+          </div>
+
+          {/* Text */}
+          <div className="space-y-2">
+            <h1 className="text-3xl font-black text-white">Account created!</h1>
+            <p className="text-white/60 text-sm">Welcome to Filmons, {googleName.split(' ')[0] || 'Creator'}.</p>
+          </div>
+
+          {/* Details recap */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4 w-full max-w-xs space-y-2 text-left">
+            <div className="flex items-center gap-2 text-sm text-white/70">
+              <span className="text-white/30 text-xs w-20 shrink-0">Username</span>
+              <span className="font-semibold text-white">@{username}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-white/70">
+              <span className="text-white/30 text-xs w-20 shrink-0">Role</span>
+              <span className="font-semibold text-white">{primaryRole}</span>
+            </div>
+            {locationData && (
+              <div className="flex items-center gap-2 text-sm text-white/70">
+                <span className="text-white/30 text-xs w-20 shrink-0">Location</span>
+                <span className="font-semibold text-white">{locationData.city}, {locationData.province}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Continue button */}
+          <button
+            onClick={() => navigate('/onboarding', { replace: true })}
+            className="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
+          >
+            Continue to Filmons
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (sessionOk === null) {
     return (
