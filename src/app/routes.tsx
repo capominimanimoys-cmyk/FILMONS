@@ -113,5 +113,5 @@ export const router = createBrowserRouter([
   { path: '/reset-password',    Component: ResetPassword  },
   { path: '/auth/callback',    Component: OAuthCallback  },
   { path: '/google-signup',    Component: GoogleSignup   },
-  { path: '/complete-profile',  Component: CompleteProfile },
+  { path: '/onboarding',  Component: CompleteProfile },
 ]);

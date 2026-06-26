@@ -243,20 +243,27 @@ export const authApi = {
     }
 
     const profile = data || { id: authData.user.id, email };
+    const profileMeta: Record<string, unknown> = profile.profile_meta
+      ? (typeof profile.profile_meta === 'string' ? JSON.parse(profile.profile_meta) : profile.profile_meta)
+      : {};
     const user: User = {
-      id:                 profile.id,
-      email:              profile.email || email,
-      name:               profile.name || profile.username || email.split('@')[0],
-      username:           profile.username,
-      avatar:             profile.avatar_url || profile.avatar,
-      accountType:        profile.account_type || 'creator',
-      accountMode:        profile.account_mode || 'creator',
-      isVerified:         profile.is_verified ?? false,
-      verificationStatus: profile.verification_status || 'not_started',
-      bio:                profile.bio,
-      location:           profile.location,
-      following:          parsePgArray(profile.following),
-      followers:          parsePgArray(profile.followers),
+      id:                   profile.id,
+      email:                profile.email || email,
+      name:                 profile.name || profile.username || email.split('@')[0],
+      username:             profile.username,
+      avatar:               profile.avatar_url || profile.avatar,
+      accountType:          profile.account_type || 'creator',
+      accountMode:          profile.account_mode || 'creator',
+      isVerified:           profile.is_verified ?? false,
+      verificationStatus:   profile.verification_status || 'not_started',
+      bio:                  profile.bio,
+      location:             profile.location,
+      city:                 profile.city             || undefined,
+      province:             profile.province          || undefined,
+      primaryRole:          profile.primary_role      || undefined,
+      profileSetupCompleted: !!(profileMeta.onboarding_completed),
+      following:            parsePgArray(profile.following),
+      followers:            parsePgArray(profile.followers),
     } as User;
 
     saveSession(user);
@@ -275,23 +282,30 @@ export const authApi = {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, followers, following')
+        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following')
         .eq('id', cached.id)
         .single();
       if (data) {
+        const getMeMeta: Record<string, unknown> = data.profile_meta
+          ? (typeof data.profile_meta === 'string' ? JSON.parse(data.profile_meta) : data.profile_meta)
+          : {};
         const fresh: User = {
           ...cached,
-          name:               data.name               || cached.name,
-          username:           data.username            || cached.username,
-          avatar:             data.avatar_url          || cached.avatar,
-          accountType:        data.account_type        || cached.accountType,
-          accountMode:        data.account_mode        || cached.accountMode,
-          isVerified:         data.is_verified         ?? cached.isVerified,
-          verificationStatus: data.verification_status ?? cached.verificationStatus,
-          bio:                data.bio                 || cached.bio,
-          location:           data.location            || cached.location,
-          following:          parsePgArray(data.following  ?? cached.following),
-          followers:          parsePgArray(data.followers  ?? cached.followers),
+          name:                 data.name               || cached.name,
+          username:             data.username            || cached.username,
+          avatar:               data.avatar_url          || cached.avatar,
+          accountType:          data.account_type        || cached.accountType,
+          accountMode:          data.account_mode        || cached.accountMode,
+          isVerified:           data.is_verified         ?? cached.isVerified,
+          verificationStatus:   data.verification_status ?? cached.verificationStatus,
+          bio:                  data.bio                 || cached.bio,
+          location:             data.location            || cached.location,
+          city:                 data.city                || cached.city,
+          province:             data.province            || cached.province,
+          primaryRole:          data.primary_role        || cached.primaryRole,
+          profileSetupCompleted: !!(getMeMeta.onboarding_completed) || cached.profileSetupCompleted,
+          following:            parsePgArray(data.following  ?? cached.following),
+          followers:            parsePgArray(data.followers  ?? cached.followers),
         };
         saveSession(fresh);
         return { user: fresh };

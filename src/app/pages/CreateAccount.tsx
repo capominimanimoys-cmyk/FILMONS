@@ -397,7 +397,7 @@ export function CreateAccount() {
         isVerified: false, verificationStatus: 'not_started',
         following: [], followers: [],
       });
-      navigate('/complete-profile', { replace: true });
+      navigate('/onboarding', { replace: true });
     } catch (e: unknown) {
       console.error('[verifyAndCreate]', e);
       toast.error(e instanceof Error ? e.message : 'Account creation failed');

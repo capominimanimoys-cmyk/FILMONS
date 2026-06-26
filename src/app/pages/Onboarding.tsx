@@ -1,18 +1,21 @@
 /**
- * Onboarding — 9-step profile setup for new users (OAuth + phone).
- * Steps 1–8 collect data; step 9 saves everything and navigates to /feed.
+ * Onboarding — 9-step profile setup for new users (OAuth + phone + email).
+ * When navigated with state.showReminder=true (from Root guard), shows a
+ * "Finish setting up your account" screen before jumping to the first incomplete step.
+ * Steps 1–8 collect data; step 9 saves everything and navigates to /.
  */
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import {
   ArrowLeft, Check, Loader2, AtSign, Camera,
-  CheckCircle, Upload,
+  CheckCircle, Upload, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { SmartAddressInput } from '../components/SmartAddressInput';
+import { ProfessionPicker } from '../components/ProfessionPicker';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type AccType = 'creator' | 'professional' | 'creator_plus';
@@ -21,17 +24,6 @@ const ACCOUNT_TYPES: { value: AccType; label: string; description: string }[] = 
   { value: 'creator',      label: 'Creator', description: 'Share your work and build an audience' },
   { value: 'professional', label: 'Client',  description: 'Hire talent and manage projects' },
   { value: 'creator_plus', label: 'Both',    description: 'Create content, hire, and collaborate' },
-];
-
-const ROLES = [
-  { cat: 'Film & Video',   items: ['Director', 'Cinematographer', 'Camera Operator', 'Gaffer', 'Grip', 'Producer', 'Video Editor', 'Colorist', 'VFX Artist', 'Sound Designer'] },
-  { cat: 'Photography',    items: ['Photographer', 'Fashion Photographer', 'Drone Operator', 'Retoucher'] },
-  { cat: 'Music & Audio',  items: ['Music Producer', 'DJ', 'Mixing Engineer', 'Mastering Engineer', 'Composer', 'Beatmaker'] },
-  { cat: 'Content',        items: ['Content Creator', 'UGC Creator', 'YouTuber', 'Streamer', 'Podcast Producer'] },
-  { cat: 'Design',         items: ['Graphic Designer', 'Motion Designer', 'UI Designer', 'Creative Director', 'Brand Designer'] },
-  { cat: 'Animation / 3D', items: ['3D Animator', 'Blender Artist', 'Unreal Engine Artist', 'Motion Capture Artist'] },
-  { cat: 'Emerging Tech',  items: ['AI Artist', 'Prompt Engineer', 'XR Designer', 'Virtual Production Artist'] },
-  { cat: 'Writing',        items: ['Scriptwriter', 'Copywriter', 'Storyboard Artist'] },
 ];
 
 const TOOLS = [
@@ -46,11 +38,38 @@ const COUNTRY_OPTIONS = [
   { label: '🇺🇸 United States', code: 'US' as const },
 ];
 
+// Province codes that belong to Canada (used to detect country from stored province)
+const CA_PROVINCE_CODES = new Set(['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT']);
+
 const TOTAL_STEPS = 8;
+
+function calcProgress(u: ReturnType<typeof useAuth>['user']): number {
+  if (!u) return 0;
+  let pct = 0;
+  if (u.username)     pct += 20;
+  if (u.city)         pct += 20;
+  if (u.primaryRole)  pct += 20;
+  if (u.bio)          pct += 20;
+  if (u.avatar)       pct += 20;
+  return pct;
+}
+
+function firstIncompleteStep(u: ReturnType<typeof useAuth>['user']): Step {
+  if (!u?.username)    return 1;
+  if (!u?.city)        return 2;
+  if (!u?.primaryRole) return 3;
+  return 4;
+}
 
 export function CompleteProfile() {
   const navigate = useNavigate();
-  const { user, updateUser, isAuthenticated } = useAuth();
+  const location = useLocation();
+  const { user, updateUser, isAuthenticated, logout } = useAuth();
+
+  // Show reminder screen when redirected from Root guard
+  const [showReminder, setShowReminder] = useState(
+    !!(location.state as any)?.showReminder
+  );
 
   const [step, setStep]       = useState<Step>(1);
   const [mounted, setMounted] = useState(false);
@@ -66,10 +85,8 @@ export function CompleteProfile() {
   const [city, setCity]               = useState('');
   const [province, setProvince]       = useState('');
 
-  // Step 3 — Primary Role
-  const [primaryRole, setPrimaryRole] = useState('');
-
-  // Step 4 — Secondary Roles
+  // Step 3+4 — Roles (via ProfessionPicker)
+  const [primaryRole, setPrimaryRole]       = useState('');
   const [secondaryRoles, setSecondaryRoles] = useState<string[]>([]);
 
   // Step 5 — Tools
@@ -95,11 +112,24 @@ export function CompleteProfile() {
 
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login', { replace: true }); return; }
-    if (user?.name) {
-      const suggested = user.name.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9._]/g, '');
-      setUsername(suggested.slice(0, 24));
+    if (user) {
+      // Pre-fill username: use existing or generate suggestion from name
+      if (user.username) {
+        setUsername(user.username);
+      } else if (user.name) {
+        const suggested = user.name.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9._]/g, '');
+        setUsername(suggested.slice(0, 24));
+      }
+      if (user.avatar)      setPhotoPreview(user.avatar);
+      if (user.bio)         setBio(user.bio);
+      if (user.primaryRole) setPrimaryRole(user.primaryRole);
+      // Pre-fill location if returning user
+      if (user.city)     setCity(user.city);
+      if (user.province) {
+        setProvince(user.province);
+        setCountryCode(CA_PROVINCE_CODES.has(user.province.toUpperCase()) ? 'CA' : 'US');
+      }
     }
-    if (user?.avatar) setPhotoPreview(user.avatar);
     setTimeout(() => setMounted(true), 80);
   }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -128,13 +158,6 @@ export function CompleteProfile() {
   const canStep2 = countryCode.length > 0 && city.length >= 2;
   const canStep3 = primaryRole.length > 0;
 
-  function toggleSecondaryRole(r: string) {
-    if (r === primaryRole) return;
-    setSecondaryRoles(prev =>
-      prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r].slice(0, 5)
-    );
-  }
-
   function toggleTool(t: string) {
     setSelectedTools(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   }
@@ -156,7 +179,6 @@ export function CompleteProfile() {
     try {
       let finalAvatarUrl = user.avatar || null;
 
-      // Upload new photo if selected
       if (newPhotoFile) {
         const ext = (newPhotoFile.name.split('.').pop() || 'jpg').toLowerCase();
         const filePath = `avatars/${user.id}.${ext}`;
@@ -169,7 +191,6 @@ export function CompleteProfile() {
         }
       }
 
-      // Fetch and merge existing profile_meta
       const { data: existingProfile } = await supabase
         .from('profiles').select('profile_meta').eq('id', user.id).maybeSingle();
       const existingMeta: Record<string, unknown> = existingProfile?.profile_meta
@@ -222,14 +243,18 @@ export function CompleteProfile() {
       }
 
       await updateUser({
-        username:    username.toLowerCase(),
-        accountType: accountType as any,
+        username:             username.toLowerCase(),
+        accountType:          accountType as any,
+        city:                 city || undefined,
+        province:             province || undefined,
+        primaryRole:          primaryRole || undefined,
+        profileSetupCompleted: true,
         ...(finalAvatarUrl ? { avatar: finalAvatarUrl } : {}),
-        bio:         bio || undefined,
-        location:    [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', ') || undefined,
+        bio:                  bio || undefined,
+        location:             [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', ') || undefined,
       } as any);
 
-      navigate('/feed', { replace: true });
+      navigate('/', { replace: true });
     } catch (e: any) {
       toast.error(e?.message || 'Could not save profile');
     } finally {
@@ -238,6 +263,67 @@ export function CompleteProfile() {
   }
 
   const pct = step < 9 ? ((step - 1) / (TOTAL_STEPS - 1)) * 100 : 100;
+
+  // ── Reminder screen (shown when Root guard redirects here) ─────────────────
+  if (showReminder) {
+    const progress = calcProgress(user);
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden bg-gray-950">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950"/>
+          <div className="absolute top-1/3 left-1/4 w-80 h-80 rounded-full bg-amber-500 opacity-8 blur-[120px]"/>
+          <div className="absolute bottom-1/3 right-1/4 w-56 h-56 rounded-full bg-blue-600 opacity-10 blur-[80px]"/>
+        </div>
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-5 text-center">
+          <FilmonsLogo iconSize={36} theme="dark" className="mb-8"/>
+
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-6">
+            <AlertCircle className="w-7 h-7 text-amber-400"/>
+          </div>
+
+          <h1 className="text-2xl font-black text-white mb-3 leading-tight max-w-xs">
+            Finish setting up your Filmons account
+          </h1>
+          <p className="text-white/45 text-sm leading-relaxed mb-8 max-w-xs">
+            You're almost there. Complete your profile to start connecting with the Filmons creative community.
+          </p>
+
+          {/* Progress bar */}
+          <div className="w-full max-w-xs mb-8 space-y-2">
+            <div className="flex justify-between text-xs text-white/40">
+              <span>Profile setup</span>
+              <span>{progress}% complete</span>
+            </div>
+            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all duration-700"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setShowReminder(false);
+              setStep(firstIncompleteStep(user));
+            }}
+            className="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl mb-4 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30"
+          >
+            Continue setup →
+          </button>
+          <button
+            onClick={async () => {
+              await logout();
+              navigate('/login', { replace: true });
+            }}
+            className="text-white/35 text-sm hover:text-white/60 transition-colors py-2"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-gray-950">
@@ -378,31 +464,20 @@ export function CompleteProfile() {
           </div>
         )}
 
-        {/* ══ STEP 3: Primary Role ══════════════════════════════════════════════ */}
+        {/* ══ STEP 3: Primary + Secondary Roles (ProfessionPicker) ═════════════ */}
         {step === 3 && (
           <div className="pt-8 space-y-6 pb-4">
             <div>
               <h2 className="text-2xl font-black text-white">What's your main role?</h2>
-              <p className="text-white/40 text-sm mt-1">Pick the one that best describes you</p>
+              <p className="text-white/40 text-sm mt-1">Search or pick the one that best describes you</p>
             </div>
-            <div className="space-y-5">
-              {ROLES.map(({ cat, items }) => (
-                <div key={cat}>
-                  <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">{cat}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {items.map(r => (
-                      <button key={r} onClick={() => setPrimaryRole(r)}
-                        className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-all active:scale-[0.95] ${
-                          primaryRole === r
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
-                            : 'bg-white/8 text-white/60 hover:bg-white/12 border border-white/8'}`}>
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ProfessionPicker
+              primaryRole={primaryRole}
+              onPrimaryChange={setPrimaryRole}
+              secondaryRoles={secondaryRoles}
+              onSecondaryChange={setSecondaryRoles}
+              variant="dark"
+            />
             <button onClick={next} disabled={!canStep3}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
               Continue →
@@ -410,47 +485,8 @@ export function CompleteProfile() {
           </div>
         )}
 
-        {/* ══ STEP 4: Secondary Roles ═══════════════════════════════════════════ */}
+        {/* ══ STEP 4: Tools & Equipment ═════════════════════════════════════════ */}
         {step === 4 && (
-          <div className="pt-8 space-y-6 pb-4">
-            <div>
-              <h2 className="text-2xl font-black text-white">Any other skills?</h2>
-              <p className="text-white/40 text-sm mt-1">Select up to 5 — helps with discovery</p>
-            </div>
-            <div className="space-y-5">
-              {ROLES.map(({ cat, items }) => {
-                const available = items.filter(r => r !== primaryRole);
-                if (available.length === 0) return null;
-                return (
-                  <div key={cat}>
-                    <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">{cat}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {available.map(r => (
-                        <button key={r} onClick={() => toggleSecondaryRole(r)}
-                          className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-all active:scale-[0.95] ${
-                            secondaryRoles.includes(r)
-                              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40'
-                              : 'bg-white/8 text-white/60 hover:bg-white/12 border border-white/8'}`}>
-                          {r}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {secondaryRoles.length > 0 && (
-              <p className="text-xs text-white/40">{secondaryRoles.length}/5 selected</p>
-            )}
-            <button onClick={next}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
-              Continue →
-            </button>
-          </div>
-        )}
-
-        {/* ══ STEP 5: Tools & Equipment ═════════════════════════════════════════ */}
-        {step === 5 && (
           <div className="pt-8 space-y-6">
             <div>
               <h2 className="text-2xl font-black text-white">Tools & Equipment</h2>
@@ -477,8 +513,8 @@ export function CompleteProfile() {
           </div>
         )}
 
-        {/* ══ STEP 6: Profile Photo ═════════════════════════════════════════════ */}
-        {step === 6 && (
+        {/* ══ STEP 5: Profile Photo ═════════════════════════════════════════════ */}
+        {step === 5 && (
           <div className="pt-8 space-y-6">
             <div>
               <h2 className="text-2xl font-black text-white">Profile photo</h2>
@@ -511,8 +547,8 @@ export function CompleteProfile() {
           </div>
         )}
 
-        {/* ══ STEP 7: Bio ═══════════════════════════════════════════════════════ */}
-        {step === 7 && (
+        {/* ══ STEP 6: Bio ═══════════════════════════════════════════════════════ */}
+        {step === 6 && (
           <div className="pt-8 space-y-6">
             <div>
               <h2 className="text-2xl font-black text-white">About you</h2>
@@ -535,8 +571,8 @@ export function CompleteProfile() {
           </div>
         )}
 
-        {/* ══ STEP 8: External Links ════════════════════════════════════════════ */}
-        {step === 8 && (
+        {/* ══ STEP 7: External Links ════════════════════════════════════════════ */}
+        {step === 7 && (
           <div className="pt-8 space-y-6">
             <div>
               <h2 className="text-2xl font-black text-white">Connect your socials</h2>
@@ -563,14 +599,45 @@ export function CompleteProfile() {
                 </div>
               ))}
             </div>
-            <button onClick={() => setStep(9)}
+            <button onClick={() => setStep(8)}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
               Continue →
             </button>
           </div>
         )}
 
-        {/* ══ STEP 9: Complete ══════════════════════════════════════════════════ */}
+        {/* ══ STEP 8: Preview summary before save ══════════════════════════════ */}
+        {step === 8 && (
+          <div className="pt-8 space-y-6">
+            <div>
+              <h2 className="text-2xl font-black text-white">Review your profile</h2>
+              <p className="text-white/40 text-sm mt-1">Everything looks good? Let's go.</p>
+            </div>
+            <div className="bg-white/6 border border-white/10 rounded-2xl p-4 space-y-3">
+              {([
+                `@${username}`,
+                ACCOUNT_TYPES.find(a => a.value === accountType)?.label || null,
+                primaryRole || null,
+                [city, countryCode === 'CA' ? 'Canada' : countryCode === 'US' ? 'United States' : ''].filter(Boolean).join(', ') || null,
+                bio ? `Bio added` : null,
+              ] as (string | null)[]).filter(Boolean).map((val, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0"/>
+                  <span className="text-sm text-white/70">{val}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={handleComplete}
+              disabled={saving}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-violet-600 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-60">
+              {saving && <Loader2 className="w-4 h-4 animate-spin"/>}
+              {saving ? 'Setting up your profile…' : 'Go to Filmons →'}
+            </button>
+          </div>
+        )}
+
+        {/* ══ STEP 9: Complete (legacy — kept in case of direct navigation) ════ */}
         {step === 9 && (
           <div className="pt-20 flex flex-col items-center gap-8 text-center">
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-2xl shadow-blue-900/40">
@@ -582,29 +649,13 @@ export function CompleteProfile() {
                 You're all set. Welcome to the Filmons creative community.
               </p>
             </div>
-            <div className="w-full max-w-xs space-y-4">
-              <div className="bg-white/6 border border-white/10 rounded-2xl p-4 text-left space-y-2">
-                {([
-                  `@${username}`,
-                  ACCOUNT_TYPES.find(a => a.value === accountType)?.label || null,
-                  primaryRole || null,
-                  [city, countryCode === 'CA' ? 'Canada' : countryCode === 'US' ? 'United States' : ''].filter(Boolean).join(', ') || null,
-                ] as (string | null)[]).filter(Boolean).map((val, i) => (
-                  <div key={i} className="flex items-center gap-2.5">
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0"/>
-                    <span className="text-sm text-white/70">{val}</span>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                onClick={handleComplete}
-                disabled={saving}
-                className="w-full py-4 bg-gradient-to-r from-blue-600 to-violet-600 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-60">
-                {saving && <Loader2 className="w-4 h-4 animate-spin"/>}
-                {saving ? 'Setting up your profile…' : 'Go to Filmons →'}
-              </button>
-            </div>
+            <button
+              onClick={handleComplete}
+              disabled={saving}
+              className="w-full max-w-xs py-4 bg-gradient-to-r from-blue-600 to-violet-600 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-60">
+              {saving && <Loader2 className="w-4 h-4 animate-spin"/>}
+              {saving ? 'Setting up your profile…' : 'Go to Filmons →'}
+            </button>
           </div>
         )}
       </div>

@@ -33,6 +33,9 @@ export interface User {
   verificationStatus?: string;
   contactPublic?: boolean;
   createdAt?: string;
+  primaryRole?: string;
+  profileSetupCompleted?: boolean;
+  profileSetupPercentage?: number;
 }
 
 export interface Comment {
