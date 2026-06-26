@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import {
   ArrowLeft, Check, Loader2, AtSign, Camera,
-  CheckCircle, Upload, AlertCircle,
+  CheckCircle, Upload, AlertCircle, Search, X, Plus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -89,8 +89,11 @@ export function CompleteProfile() {
   const [primaryRole, setPrimaryRole]       = useState('');
   const [secondaryRoles, setSecondaryRoles] = useState<string[]>([]);
 
-  // Step 5 — Tools
+  // Step 4 — Tools
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [toolQuery,     setToolQuery]     = useState('');
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
+  const toolPickerRef = useRef<HTMLDivElement>(null);
 
   // Step 6 — Profile Photo
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
@@ -148,6 +151,20 @@ export function CompleteProfile() {
     }, 400);
     return () => clearTimeout(t);
   }, [username, user?.id]);
+
+  // Close tool picker on outside click
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (toolPickerRef.current && !toolPickerRef.current.contains(e.target as Node))
+        setToolPickerOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const filteredTools = TOOLS.filter(t =>
+    !selectedTools.includes(t) && t.toLowerCase().includes(toolQuery.toLowerCase().trim())
+  );
 
   const usernameError =
     username.length > 0 && username.length < 3 ? 'At least 3 characters' :
@@ -487,25 +504,74 @@ export function CompleteProfile() {
 
         {/* ══ STEP 4: Tools & Equipment ═════════════════════════════════════════ */}
         {step === 4 && (
-          <div className="pt-8 space-y-6">
+          <div className="pt-8 space-y-5 pb-4">
             <div>
               <h2 className="text-2xl font-black text-white">Tools & Equipment</h2>
-              <p className="text-white/40 text-sm mt-1">What do you work with?</p>
+              <p className="text-white/40 text-sm mt-1">What do you work with? Select all that apply.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {TOOLS.map(t => (
-                <button key={t} onClick={() => toggleTool(t)}
-                  className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-all active:scale-[0.95] ${
-                    selectedTools.includes(t)
-                      ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40'
-                      : 'bg-white/8 text-white/60 hover:bg-white/12 border border-white/8'}`}>
-                  {t}
-                </button>
-              ))}
+
+            {/* Selected chips */}
+            {selectedTools.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedTools.map(t => (
+                  <span key={t} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-violet-600/25 border border-violet-500/40 text-white">
+                    {t}
+                    <button type="button" onClick={() => toggleTool(t)} className="text-white/40 hover:text-red-400 transition-colors">
+                      <X className="w-3 h-3"/>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Search input + dropdown */}
+            <div className="relative" ref={toolPickerRef}>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none"/>
+              <input
+                type="text"
+                value={toolQuery}
+                onChange={e => { setToolQuery(e.target.value); setToolPickerOpen(true); }}
+                onFocus={() => setToolPickerOpen(true)}
+                placeholder="Camera, Drone, Editing Suite…"
+                className="w-full pl-9 pr-4 py-3.5 text-sm rounded-2xl outline-none bg-white/10 border border-white/20 text-white placeholder-white/40 focus:border-blue-400 transition-all"
+              />
+              {toolPickerOpen && (filteredTools.length > 0 || toolQuery.trim()) && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-900 border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
+                  {filteredTools.map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); toggleTool(t); setToolQuery(''); setToolPickerOpen(false); }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors border-b border-white/5 last:border-0"
+                    >
+                      {t}
+                    </button>
+                  ))}
+                  {toolQuery.trim() && !TOOLS.some(t => t.toLowerCase() === toolQuery.trim().toLowerCase()) && (
+                    <button
+                      type="button"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        const custom = toolQuery.trim();
+                        if (!selectedTools.includes(custom)) setSelectedTools(prev => [...prev, custom]);
+                        setToolQuery(''); setToolPickerOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-semibold text-blue-400 hover:bg-white/10 transition-colors flex items-center gap-2"
+                    >
+                      <Plus className="w-3.5 h-3.5 shrink-0"/> Add &ldquo;{toolQuery.trim()}&rdquo;
+                    </button>
+                  )}
+                  {filteredTools.length === 0 && !toolQuery.trim() && (
+                    <p className="px-4 py-3 text-sm text-white/30">Start typing to search…</p>
+                  )}
+                </div>
+              )}
             </div>
+
             {selectedTools.length > 0 && (
               <p className="text-xs text-white/40">{selectedTools.length} selected</p>
             )}
+
             <button onClick={next}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
               Continue →
