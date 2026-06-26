@@ -233,11 +233,10 @@ export function CompleteProfile() {
         location:                 [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', '),
         city:                     city || null,
         province:                 province || null,
-        primary_role:             primaryRole || null,
-        secondary_roles:          secondaryRoles,
-        bio:                      bio || null,
-        profile_setup_percentage: 100,
-        profile_meta:             mergedMeta,
+        primary_role:    primaryRole || null,
+        secondary_roles: secondaryRoles,
+        bio:             bio || null,
+        profile_meta:    mergedMeta,
         updated_at:               new Date().toISOString(),
       };
       if (finalAvatarUrl) {
