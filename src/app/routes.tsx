@@ -51,7 +51,7 @@ import MyOrders from './pages/MyOrders';
 import { SearchPage } from './pages/SearchPage';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { GoogleSignup }  from './pages/GoogleSignup';
-import { Onboarding }    from './pages/Onboarding';
+import { CompleteProfile } from './pages/Onboarding';
 
 export const router = createBrowserRouter([
   {
@@ -113,5 +113,5 @@ export const router = createBrowserRouter([
   { path: '/reset-password',    Component: ResetPassword  },
   { path: '/auth/callback',    Component: OAuthCallback  },
   { path: '/google-signup',    Component: GoogleSignup   },
-  { path: '/onboarding',       Component: Onboarding     },
+  { path: '/complete-profile',  Component: CompleteProfile },
 ]);

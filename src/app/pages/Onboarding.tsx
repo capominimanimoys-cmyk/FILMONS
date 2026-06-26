@@ -6,12 +6,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ArrowLeft, Check, Loader2, AtSign, Camera,
-  ChevronRight, SkipForward, CheckCircle, Upload,
+  CheckCircle, Upload,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { SmartAddressInput } from '../components/SmartAddressInput';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type AccType = 'creator' | 'professional' | 'creator_plus';
@@ -40,23 +41,14 @@ const TOOLS = [
   'Teleprompter', 'AI Tools',
 ];
 
-const COUNTRIES_LIST = [
-  'Canada', 'United States',
-  'United Kingdom', 'Australia', 'New Zealand', 'Ireland',
-  'France', 'Germany', 'Spain', 'Italy', 'Netherlands', 'Belgium', 'Sweden', 'Norway', 'Denmark',
-  'Switzerland', 'Austria', 'Portugal', 'Poland', 'Czech Republic',
-  'Japan', 'South Korea', 'Singapore', 'Hong Kong', 'India', 'China', 'Taiwan',
-  'Brazil', 'Mexico', 'Argentina', 'Colombia', 'Chile',
-  'South Africa', 'Nigeria', 'Kenya', 'Ghana',
-  'United Arab Emirates', 'Saudi Arabia', 'Israel',
-  'Russia', 'Ukraine', 'Turkey',
-  'Other',
+const COUNTRY_OPTIONS = [
+  { label: '🇨🇦 Canada',        code: 'CA' as const },
+  { label: '🇺🇸 United States', code: 'US' as const },
 ];
 
 const TOTAL_STEPS = 8;
-const SKIPPABLE: Step[] = [4, 5, 6, 7, 8];
 
-export function Onboarding() {
+export function CompleteProfile() {
   const navigate = useNavigate();
   const { user, updateUser, isAuthenticated } = useAuth();
 
@@ -70,9 +62,9 @@ export function Onboarding() {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
   // Step 2 — Location
-  const [country, setCountry]         = useState('');
+  const [countryCode, setCountryCode] = useState<'CA' | 'US' | ''>('');
   const [city, setCity]               = useState('');
-  const [showCountries, setShowCountries] = useState(false);
+  const [province, setProvince]       = useState('');
 
   // Step 3 — Primary Role
   const [primaryRole, setPrimaryRole] = useState('');
@@ -133,7 +125,7 @@ export function Onboarding() {
     usernameAvailable === false ? 'Username taken' : null;
 
   const canStep1 = username.length >= 3 && usernameAvailable === true && !usernameError;
-  const canStep2 = country.length > 0 && city.length >= 2;
+  const canStep2 = countryCode.length > 0 && city.length >= 2;
   const canStep3 = primaryRole.length > 0;
 
   function toggleSecondaryRole(r: string) {
@@ -190,6 +182,7 @@ export function Onboarding() {
         ...existingMeta,
         tools: selectedTools,
         links: { instagram, tiktok, youtube, vimeo, linkedin, website },
+        onboarding_completed: true,
       };
 
       const { projectId, publicAnonKey } = await import('/utils/supabase/info');
@@ -199,7 +192,9 @@ export function Onboarding() {
         username:                 username.toLowerCase(),
         account_type:             accountType,
         account_mode:             accountType,
-        location:                 [city, country].filter(Boolean).join(', '),
+        location:                 [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', '),
+        city:                     city || null,
+        province:                 province || null,
         primary_role:             primaryRole || null,
         secondary_roles:          secondaryRoles,
         bio:                      bio || null,
@@ -231,7 +226,7 @@ export function Onboarding() {
         accountType: accountType as any,
         ...(finalAvatarUrl ? { avatar: finalAvatarUrl } : {}),
         bio:         bio || undefined,
-        location:    [city, country].filter(Boolean).join(', ') || undefined,
+        location:    [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', ') || undefined,
       } as any);
 
       navigate('/feed', { replace: true });
@@ -265,12 +260,6 @@ export function Onboarding() {
             <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }}/>
           </div>
           <span className="text-[11px] text-white/25 tabular-nums shrink-0">{step}/{TOTAL_STEPS}</span>
-          {SKIPPABLE.includes(step) && (
-            <button onClick={next}
-              className="flex items-center gap-1 text-xs text-white/40 hover:text-white/60 transition-colors">
-              Skip <SkipForward className="w-3 h-3"/>
-            </button>
-          )}
         </div>
       )}
 
@@ -353,35 +342,34 @@ export function Onboarding() {
 
             <div className="space-y-2">
               <p className="text-white/60 text-sm font-medium">Country</p>
-              <div className="relative">
-                <button
-                  onClick={() => setShowCountries(p => !p)}
-                  className="w-full flex items-center justify-between bg-white/8 border border-white/12 rounded-2xl px-4 py-3.5 text-sm text-left hover:bg-white/12 transition-colors">
-                  <span className={country ? 'text-white' : 'text-white/30'}>{country || 'Select country'}</span>
-                  <ChevronRight className={`w-4 h-4 text-white/30 transition-transform ${showCountries ? 'rotate-90' : ''}`}/>
-                </button>
-                {showCountries && (
-                  <div className="absolute z-50 top-full mt-1 w-full max-h-52 overflow-y-auto bg-gray-900 border border-white/10 rounded-2xl shadow-2xl">
-                    {COUNTRIES_LIST.map(c => (
-                      <button key={c} onClick={() => { setCountry(c); setShowCountries(false); }}
-                        className={`w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${c === country ? 'text-blue-300 bg-blue-600/10' : 'text-white'}`}>
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div className="grid grid-cols-2 gap-2">
+                {COUNTRY_OPTIONS.map(({ label, code }) => (
+                  <button key={code}
+                    onClick={() => { setCountryCode(code); setCity(''); setProvince(''); }}
+                    className={`py-3 px-4 rounded-2xl border text-sm font-semibold transition-all active:scale-[0.98] ${countryCode === code ? 'bg-blue-600 border-blue-500 text-white' : 'bg-white/8 border-white/12 text-white/60 hover:border-white/30'}`}>
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="space-y-2">
-              <p className="text-white/60 text-sm font-medium">City</p>
-              <input
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                placeholder="Toronto, Vancouver, New York…"
-                className="w-full bg-white/8 border border-white/12 text-white placeholder-white/25 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400/60 transition-colors"
-              />
-            </div>
+            {countryCode && (
+              <div className="space-y-2">
+                <p className="text-white/60 text-sm font-medium">City</p>
+                <SmartAddressInput
+                  value={city}
+                  onInputChange={setCity}
+                  onAddressSelect={(_, parts) => {
+                    if (parts?.city) setCity(parts.city);
+                    if (parts?.province) setProvince(parts.province);
+                  }}
+                  mode="city"
+                  countryCode={countryCode}
+                  placeholder={countryCode === 'CA' ? 'Toronto, Vancouver…' : 'New York, Los Angeles…'}
+                  className="w-full bg-white/8 border border-white/12 text-white placeholder-white/25 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400/60 transition-colors"
+                />
+              </div>
+            )}
 
             <button onClick={next} disabled={!canStep2}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
@@ -518,7 +506,7 @@ export function Onboarding() {
             </div>
             <button onClick={next}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
-              {photoPreview ? 'Looks good →' : 'Skip for now →'}
+              {photoPreview ? 'Looks good →' : 'Continue →'}
             </button>
           </div>
         )}
@@ -542,7 +530,7 @@ export function Onboarding() {
             </div>
             <button onClick={next}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
-              {bio.trim() ? 'Continue →' : 'Skip for now →'}
+              Continue →
             </button>
           </div>
         )}
@@ -600,7 +588,7 @@ export function Onboarding() {
                   `@${username}`,
                   ACCOUNT_TYPES.find(a => a.value === accountType)?.label || null,
                   primaryRole || null,
-                  [city, country].filter(Boolean).join(', ') || null,
+                  [city, countryCode === 'CA' ? 'Canada' : countryCode === 'US' ? 'United States' : ''].filter(Boolean).join(', ') || null,
                 ] as (string | null)[]).filter(Boolean).map((val, i) => (
                   <div key={i} className="flex items-center gap-2.5">
                     <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0"/>

@@ -212,7 +212,13 @@ export const authApi = {
         .maybeSingle();
 
       if (profileByEmail) {
-        // Account exists → wrong password
+        // Profile exists — could be wrong password OR unconfirmed Supabase account.
+        // Try resending signup confirmation: succeeds (no error) only when the account
+        // is unconfirmed, so we can distinguish the two cases.
+        const { error: resendErr } = await supabase.auth.resend({ type: 'signup', email: email.toLowerCase() });
+        if (!resendErr) {
+          throw new Error('Your email address is not confirmed yet. We just resent the confirmation link — please check your inbox, click the link, then sign in again.');
+        }
         throw new Error('Incorrect password. Please try again or reset your password.');
       }
 
