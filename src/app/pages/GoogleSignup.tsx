@@ -5,11 +5,7 @@
  * Entry:  /google-signup  (redirected from OAuthCallback)
  * Guard:  must have an active Supabase auth session; if not, redirect to /login
  *
- * What this page does NOT do:
- *   - Ask the user to sign in with Google again
- *   - Ask for a password
- *   - Send an email verification code (Google already verified the email)
- *   - Create the account automatically (only on explicit "Create Account" click)
+ * Everyone starts as a Creator. Account type is not asked during signup.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router';
@@ -27,12 +23,6 @@ const CANADIAN_PROVINCES = [
   'Alberta','British Columbia','Manitoba','New Brunswick',
   'Newfoundland and Labrador','Northwest Territories','Nova Scotia',
   'Nunavut','Ontario','Prince Edward Island','Quebec','Saskatchewan','Yukon',
-];
-
-const ACCOUNT_TYPES: { id: string; label: string; description: string }[] = [
-  { id: 'creator', label: 'Creator',        description: 'Film, offer services, rent gear' },
-  { id: 'renter',  label: 'Client',          description: 'Hire creatives, book services'   },
-  { id: 'both',    label: 'Both',            description: 'Create and hire on Filmons'       },
 ];
 
 // ── Background ────────────────────────────────────────────────────────────────
@@ -69,18 +59,15 @@ export function GoogleSignup() {
   const { completeLogin } = useAuth();
 
   // ── Google session data (read-only, from Supabase auth) ───────────────────
-  const [authId,      setAuthId]      = useState('');
-  const [googleEmail, setGoogleEmail] = useState('');
-  const [googleName,  setGoogleName]  = useState('');
-  const [googleAvatar,setGoogleAvatar]= useState('');
-  const [sessionOk,   setSessionOk]   = useState<boolean | null>(null); // null = loading
+  const [authId,       setAuthId]       = useState('');
+  const [googleEmail,  setGoogleEmail]  = useState('');
+  const [googleName,   setGoogleName]   = useState('');
+  const [googleAvatar, setGoogleAvatar] = useState('');
+  const [sessionOk,    setSessionOk]    = useState<boolean | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        setSessionOk(false);
-        return;
-      }
+      if (!session) { setSessionOk(false); return; }
       const u = session.user;
       setAuthId(u.id);
       setGoogleEmail(u.email?.toLowerCase() ?? '');
@@ -90,7 +77,6 @@ export function GoogleSignup() {
     });
   }, []);
 
-  // Redirect to login if no active Supabase session
   useEffect(() => {
     if (sessionOk === false) navigate('/login', { replace: true });
   }, [sessionOk, navigate]);
@@ -98,7 +84,6 @@ export function GoogleSignup() {
   // ── Required fields ────────────────────────────────────────────────────────
   const [username,       setUsername]       = useState('');
   const [usernameStatus, setUsernameStatus] = useState<'idle'|'checking'|'ok'|'taken'>('idle');
-  const [accountType,    setAccountType]    = useState('');   // 'creator'|'renter'|'both'
   const [country,        setCountry]        = useState('Canada');
   const [province,       setProvince]       = useState('');
   const [city,           setCity]           = useState('');
@@ -133,7 +118,6 @@ export function GoogleSignup() {
   // ── Validation ────────────────────────────────────────────────────────────
   const canSubmit =
     usernameStatus === 'ok' &&
-    accountType !== '' &&
     country.trim() !== '' &&
     province.trim() !== '' &&
     city.trim() !== '' &&
@@ -145,45 +129,42 @@ export function GoogleSignup() {
     if (!canSubmit) return;
     setLoading(true);
     try {
-      const dbAccountType = accountType === 'both' ? 'creator' : accountType as 'creator' | 'renter';
-      const locationStr   = `${city}, ${province}`;
+      const locationStr = `${city}, ${province}`;
 
       const profileRow: Record<string, any> = {
-        id:                  authId,
-        email:               googleEmail,
-        name:                googleName,
+        id:                   authId,
+        email:                googleEmail,
+        name:                 googleName,
         username,
-        avatar_url:          googleAvatar || null,
-        avatar:              googleAvatar || null,
-        account_type:        dbAccountType,
-        account_mode:        dbAccountType,
-        primary_role:        primaryRole,
-        secondary_roles:     secondaryRoles,
-        bio:                 bio.trim()       || null,
-        location:            locationStr,
+        avatar_url:           googleAvatar || null,
+        avatar:               googleAvatar || null,
+        account_type:         'creator',
+        account_mode:         'creator',
+        primary_role:         primaryRole,
+        secondary_roles:      secondaryRoles,
+        bio:                  bio.trim()       || null,
+        location:             locationStr,
         city,
         province,
         country,
-        website:             website.trim()   || null,
-        instagram:           instagram.trim() || null,
-        youtube:             youtube.trim()   || null,
-        tiktok:              tiktok.trim()    || null,
-        linkedin:            linkedin.trim()  || null,
-        is_verified:         false,
-        email_verified:      true,            // Google already verified
-        verification_status: 'not_started',
+        website:              website.trim()   || null,
+        instagram:            instagram.trim() || null,
+        youtube:              youtube.trim()   || null,
+        tiktok:               tiktok.trim()    || null,
+        linkedin:             linkedin.trim()  || null,
+        is_verified:          false,
+        email_verified:       true,
+        verification_status:  'not_started',
         profile_setup_percentage: 30,
         profile_meta: {
-          provider:   'google',
-          googleId:   authId,
-          providers:  ['google'],
-          marketplaceIntents: accountType === 'both' ? ['Offer Services','Hire Creatives'] : [],
+          provider:  'google',
+          googleId:  authId,
+          providers: ['google'],
         },
-        created_at:  new Date().toISOString(),
-        updated_at:  new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
-      // Insert profile
       const { data: created, error: insertErr } = await supabase
         .from('profiles')
         .insert(profileRow)
@@ -192,7 +173,6 @@ export function GoogleSignup() {
 
       if (insertErr) throw new Error(insertErr.message);
 
-      // Create reputation & verification records
       await Promise.allSettled([
         supabase.from('reputation_scores').upsert(
           { user_id: authId, reliability_score: 0, reliability_level: 'new_user' },
@@ -204,15 +184,14 @@ export function GoogleSignup() {
         ),
       ]);
 
-      // Build the client User object
       const newUser: User = {
         id:                 authId,
         email:              googleEmail,
         name:               googleName,
         username,
         avatar:             googleAvatar || undefined,
-        accountType:        dbAccountType as any,
-        accountMode:        dbAccountType as any,
+        accountType:        'creator' as any,
+        accountMode:        'creator' as any,
         isVerified:         false,
         verificationStatus: 'not_started',
         following:          [],
@@ -237,10 +216,8 @@ export function GoogleSignup() {
     setLoading(false);
   };
 
-  // ── Shared input style ────────────────────────────────────────────────────
   const iCls = 'w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all';
 
-  // ── Loading / guard ───────────────────────────────────────────────────────
   if (sessionOk === null) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-gray-950">
@@ -248,9 +225,8 @@ export function GoogleSignup() {
       </div>
     );
   }
-  if (sessionOk === false) return null; // redirecting
+  if (sessionOk === false) return null;
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden">
       <CinematicBg/>
@@ -266,14 +242,14 @@ export function GoogleSignup() {
         <div className="flex-1 flex justify-center">
           <FilmonsLogo iconSize={26} theme="dark"/>
         </div>
-        <div className="w-16"/> {/* spacer */}
+        <div className="w-16"/>
       </div>
 
       {/* Scrollable body */}
       <div className="relative z-10 flex-1 overflow-y-auto px-5 pb-12">
 
         {/* Google branding badge */}
-        <div className="flex items-center justify-center gap-2.5 mb-6 mt-1">
+        <div className="flex items-center justify-center mb-6 mt-1">
           <div className="flex items-center gap-2 bg-white/8 border border-white/15 rounded-full px-4 py-2">
             <GoogleLogo size={16}/>
             <span className="text-white/70 text-xs font-semibold">Signing up with Google</span>
@@ -289,9 +265,7 @@ export function GoogleSignup() {
         {/* ── Pre-filled Google data (read-only) ─────────────────────────── */}
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6 space-y-3">
           <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">From your Google account</p>
-
           <div className="flex items-center gap-3">
-            {/* Avatar */}
             {googleAvatar ? (
               <img src={googleAvatar} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-white/20 shrink-0"/>
             ) : (
@@ -299,7 +273,6 @@ export function GoogleSignup() {
                 <span className="text-white text-xl font-black">{googleName?.[0]?.toUpperCase() || 'G'}</span>
               </div>
             )}
-            {/* Name + Email */}
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm truncate">{googleName || 'Google User'}</p>
               <div className="flex items-center gap-1.5 mt-0.5">
@@ -310,13 +283,10 @@ export function GoogleSignup() {
                 </span>
               </div>
             </div>
-            <div className="shrink-0">
-              <GoogleLogo size={18}/>
-            </div>
+            <div className="shrink-0"><GoogleLogo size={18}/></div>
           </div>
-
           <p className="text-[11px] text-white/25 leading-relaxed">
-            Your name, email, and profile photo are provided by Google and cannot be changed here. You can update them in your profile settings later.
+            Your name, email, and profile photo are provided by Google. You can update them in profile settings later.
           </p>
         </div>
 
@@ -342,9 +312,9 @@ export function GoogleSignup() {
                 usernameStatus === 'taken'    ? 'text-red-400'   :
                 usernameStatus === 'checking' ? 'text-white/30'  : 'text-transparent'
               }`}>
-                {usernameStatus === 'ok'       ? '✓ available'  :
-                 usernameStatus === 'taken'    ? '✗ taken'      :
-                 usernameStatus === 'checking' ? 'checking…'    : ''}
+                {usernameStatus === 'ok'       ? '✓ available' :
+                 usernameStatus === 'taken'    ? '✗ taken'     :
+                 usernameStatus === 'checking' ? 'checking…'   : ''}
               </span>
             </div>
             {usernameStatus === 'taken' && (
@@ -352,7 +322,6 @@ export function GoogleSignup() {
                 That username is taken. Try adding numbers or underscores.
               </p>
             )}
-            {/* Suggestions */}
             {googleName && usernameStatus !== 'ok' && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {[
@@ -372,45 +341,18 @@ export function GoogleSignup() {
             )}
           </div>
 
-          {/* Account Type */}
-          <div>
-            <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">
-              Account Type <span className="text-red-400">*</span>
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {ACCOUNT_TYPES.map(at => {
-                const on = accountType === at.id;
-                return (
-                  <button
-                    key={at.id}
-                    onClick={() => setAccountType(at.id)}
-                    className={`flex flex-col items-center gap-1 px-2 py-3 rounded-2xl border-2 text-center transition-all active:scale-95 ${
-                      on ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:border-white/25'
-                    }`}
-                  >
-                    <span className={`text-xs font-black ${on ? 'text-white' : 'text-white/60'}`}>{at.label}</span>
-                    <span className="text-[9px] text-white/30 leading-tight">{at.description}</span>
-                    {on && <Check className="w-3 h-3 text-blue-400 mt-0.5"/>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Location */}
           <div>
             <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">
               Location <span className="text-red-400">*</span>
             </p>
             <div className="space-y-2.5">
-              {/* Country */}
               <input
                 value={country}
                 onChange={e => setCountry(e.target.value)}
                 placeholder="Country"
                 className={iCls}
               />
-              {/* Province / State */}
               <div className="relative">
                 <select
                   value={province}
@@ -426,7 +368,6 @@ export function GoogleSignup() {
                 </select>
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none"/>
               </div>
-              {/* City */}
               <input
                 value={city}
                 onChange={e => setCity(e.target.value)}
@@ -450,7 +391,7 @@ export function GoogleSignup() {
             />
           </div>
 
-          {/* ── Optional fields (collapsible) ──────────────────────────── */}
+          {/* Optional fields (collapsible) */}
           <button
             onClick={() => setShowOptional(v => !v)}
             className="w-full flex items-center justify-between py-3 border border-white/10 rounded-2xl px-4 text-white/50 hover:text-white/80 hover:border-white/20 transition-all text-sm font-semibold"
@@ -472,11 +413,11 @@ export function GoogleSignup() {
                 <span className="text-[10px] text-white/25">{bio.length}/300</span>
               </div>
               {[
-                { label: '🌐 Website',   value: website,   set: setWebsite,   ph: 'https://yoursite.com'    },
-                { label: '📸 Instagram', value: instagram, set: setInstagram, ph: '@handle or URL'          },
-                { label: '▶️ YouTube',   value: youtube,   set: setYoutube,   ph: 'Channel URL or @handle'  },
-                { label: '🎵 TikTok',    value: tiktok,    set: setTiktok,    ph: '@handle'                 },
-                { label: '💼 LinkedIn',  value: linkedin,  set: setLinkedin,  ph: 'linkedin.com/in/...'     },
+                { label: '🌐 Website',   value: website,   set: setWebsite,   ph: 'https://yoursite.com'   },
+                { label: '📸 Instagram', value: instagram, set: setInstagram, ph: '@handle or URL'         },
+                { label: '▶️ YouTube',   value: youtube,   set: setYoutube,   ph: 'Channel URL or @handle' },
+                { label: '🎵 TikTok',    value: tiktok,    set: setTiktok,    ph: '@handle'                },
+                { label: '💼 LinkedIn',  value: linkedin,  set: setLinkedin,  ph: 'linkedin.com/in/...'    },
               ].map(f => (
                 <div key={f.label}>
                   <p className="text-[10px] font-black text-white/25 uppercase tracking-widest mb-1.5">{f.label}</p>
@@ -487,13 +428,12 @@ export function GoogleSignup() {
           )}
         </div>
 
-        {/* ── Required field legend ─────────────────────────────────────── */}
         <p className="text-[10px] text-white/20 mt-4 px-1">
           <span className="text-red-400">*</span> Required field
         </p>
 
-        {/* ── Validation summary ────────────────────────────────────────── */}
-        {!canSubmit && (username || accountType || province || city || primaryRole) && (
+        {/* Validation summary */}
+        {!canSubmit && (username || province || city || primaryRole) && (
           <div className="mt-4 bg-white/5 border border-white/10 rounded-xl px-4 py-3 space-y-1.5">
             <p className="text-[11px] font-bold text-white/50">Still needed:</p>
             {usernameStatus !== 'ok' && (
@@ -502,14 +442,13 @@ export function GoogleSignup() {
                 {usernameStatus === 'taken' ? 'Choose a different username' : 'Enter a valid username (3+ characters)'}
               </div>
             )}
-            {!accountType && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Select an account type</div>}
             {!province    && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Select a province or state</div>}
             {!city        && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Enter your city</div>}
             {!primaryRole && <div className="flex items-center gap-2 text-[11px] text-white/40"><X className="w-3 h-3 text-red-400 shrink-0"/>Select a primary role</div>}
           </div>
         )}
 
-        {/* ── Create Account button ─────────────────────────────────────── */}
+        {/* Create Account button */}
         <button
           onClick={handleCreate}
           disabled={!canSubmit}
@@ -521,7 +460,6 @@ export function GoogleSignup() {
           }
         </button>
 
-        {/* Cancel */}
         <p className="text-center text-xs text-white/25 mt-4">
           Already have an account?{' '}
           <Link to="/login" className="text-blue-400 font-semibold hover:underline">Sign in</Link>
