@@ -1104,6 +1104,9 @@ export function Profile() {
               )}
             </div>
             {user.username && <p className="text-sm text-gray-400">@{user.username}</p>}
+            {primaryRole && (
+              <p className="text-xs font-semibold text-blue-600 mt-0.5">{primaryRole}</p>
+            )}
             <div className="mt-1">
               {rep && showRentalBadge && <ReliabilityBadge score={rep.reliability_score} level={rep.reliability_level} accountType={user.accountType} size="sm"/>}
             </div>

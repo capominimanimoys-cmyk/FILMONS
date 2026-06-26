@@ -276,7 +276,11 @@ export const authApi = {
     // Try edge function first
     try {
       const { user } = await call<any>(`/users/${cached.id}`);
-      if (user) { saveSession(user); return { user }; }
+      if (user) {
+        // Merge with cached so fields the edge fn doesn't return (e.g. primaryRole) are preserved
+        const merged = { ...cached, ...user } as User;
+        saveSession(merged); return { user: merged };
+      }
     } catch { /* edge function blocked — try Supabase direct */ }
     // Fallback: read directly from profiles table
     try {
