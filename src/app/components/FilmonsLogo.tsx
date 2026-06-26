@@ -9,8 +9,10 @@ export function FilmonsLogo({ iconSize = 28, theme = 'light', className = '' }: 
   const uid = `fl-${Math.round(iconSize)}`;
   const rx = Math.round(32 * 0.28);
 
+  const textSize = Math.round(iconSize * 0.62);
+
   return (
-    <div className={`flex items-center select-none ${className}`}>
+    <div className={`flex items-center gap-2 select-none ${className}`}>
       {/* Icon — SVG so gradients render crisply at any size */}
       <svg
         width={iconSize}
@@ -59,6 +61,19 @@ export function FilmonsLogo({ iconSize = 28, theme = 'light', className = '' }: 
         />
       </svg>
 
+      {/* Wordmark */}
+      <span
+        style={{
+          fontSize:    textSize,
+          fontWeight:  900,
+          letterSpacing: '0.04em',
+          lineHeight:  1,
+          color:       isDark ? '#F1F5F9' : '#0F172A',
+          fontFamily:  '"Inter", "Helvetica Neue", Arial, sans-serif',
+        }}
+      >
+        FILMONS
+      </span>
     </div>
   );
 }
