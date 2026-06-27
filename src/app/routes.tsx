@@ -52,6 +52,7 @@ import { SearchPage } from './pages/SearchPage';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
+import { Portfolio } from './pages/Portfolio';
 
 export const router = createBrowserRouter([
   {
@@ -97,6 +98,7 @@ export const router = createBrowserRouter([
       { path: 'my-orders', Component: MyOrders },
       { path: 'listing/:id', Component: ListingDetail },
       { path: 'search', Component: SearchPage },
+      { path: 'portfolio', Component: Portfolio },
       { path: 'profile', Component: Profile },
       { path: 'verification', Component: Verification },
       { path: 'refund-policy', Component: RefundPolicy },

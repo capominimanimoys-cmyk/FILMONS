@@ -526,7 +526,8 @@ export function Profile() {
 
   const [tab, setTab] = useState<Tab>(() => {
     const t = searchParams.get('tab') as Tab;
-    return TABS.find(x => x.id === t) ? t : 'portfolio';
+    if (!t || t === 'portfolio') return 'listings';
+    return TABS.find(x => x.id === t) ? t : 'listings';
   });
 
   // Content state
@@ -882,6 +883,7 @@ export function Profile() {
   };
 
   const switchTab = (t: Tab) => {
+    if (t === 'portfolio') { navigate('/portfolio'); return; }
     setTab(t);
     setSearchParams({ tab: t });
   };

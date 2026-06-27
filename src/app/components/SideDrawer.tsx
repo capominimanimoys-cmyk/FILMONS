@@ -152,7 +152,7 @@ export function SideDrawer({ onClose }: Props) {
 
               <div className="mb-1">
                 <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Professional</p>
-                <SectionRow icon={Layers}      label="Portfolio"    to="/profile?tab=portfolio" />
+                <SectionRow icon={Layers}      label="Portfolio"    to="/portfolio" />
                 <SectionRow icon={ShieldCheck} label="Verification" to="/verification"          />
                 <SectionRow icon={BarChart2}   label="Analytics"    to="/dashboard"             />
               </div>
