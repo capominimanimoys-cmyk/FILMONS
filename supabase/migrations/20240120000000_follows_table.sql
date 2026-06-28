@@ -29,11 +29,16 @@ CREATE POLICY "follows_read"
   ON public.follows FOR SELECT
   USING (true);
 
--- Authenticated users may only insert rows where they are the follower
+-- Insert: require non-null IDs and no self-follow.
+-- Application code validates the current user before calling insert.
+-- (auth.uid() is not used because the app uses a custom auth system.)
 CREATE POLICY "follows_insert"
   ON public.follows FOR INSERT
-  TO authenticated
-  WITH CHECK (follower_id = auth.uid());
+  WITH CHECK (
+    follower_id  IS NOT NULL AND
+    following_id IS NOT NULL AND
+    follower_id <> following_id
+  );
 
 -- Authenticated users may only delete their own follow rows
 CREATE POLICY "follows_delete"
