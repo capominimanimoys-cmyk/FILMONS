@@ -294,29 +294,27 @@ export function HostProfile() {
   const [portfolioItems,   setPortfolioItems]   = useState<PortfolioItem[]>([]);
   const [reliabilityLevel, setReliabilityLevel] = useState<string>('new_user');
   const [reliabilityScore, setReliabilityScore] = useState<number>(0);
-  const [following,      setFollowing]      = useState(false);
-  const [confirmUnfollow,setConfirmUnfollow]= useState(false);
+  const [following,        setFollowing]        = useState(false);
+  const [confirmUnfollow,  setConfirmUnfollow]  = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [followLoading,  setFollowLoading]  = useState(false);
-  const [loading,        setLoading]        = useState(true);
-  const [tab,            setTab]            = useState<Tab>('portfolio');
-  const [listView,       setListView]       = useState(false);
-  const [portfolioFilter,setPortfolioFilter]= useState('All');
-  const [showFollowers,  setShowFollowers]  = useState<'followers'|'following'|null>(null);
-  const [followerUsers,  setFollowerUsers]  = useState<any[]>([]);
-  const [followingUsers, setFollowingUsers] = useState<any[]>([]);
-  const [showTrustSheet, setShowTrustSheet] = useState(false);
+  const [followLoading,    setFollowLoading]    = useState(false);
+  const [followerCount,    setFollowerCount]    = useState<number | null>(null);
+  const [followingCount,   setFollowingCount]   = useState<number | null>(null);
+  const [loading,          setLoading]          = useState(true);
+  const [tab,              setTab]              = useState<Tab>('portfolio');
+  const [listView,         setListView]         = useState(false);
+  const [portfolioFilter,  setPortfolioFilter]  = useState('All');
+  const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
+  const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
+  const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
+  const [showTrustSheet,   setShowTrustSheet]   = useState(false);
 
   const isOwn = me?.id === userId;
 
   useEffect(() => {
     if (isOwn) { navigate('/profile', { replace: true }); return; }
     if (userId) loadProfile(userId);
-  }, [userId, isOwn]);
-
-  useEffect(() => {
-    if (me && host) setFollowing((me.following || []).includes(host.id));
-  }, [me, host]);
+  }, [userId, isOwn]); // eslint-disable-line
 
   const loadProfile = async (uid: string) => {
     setLoading(true);
@@ -337,42 +335,68 @@ export function HostProfile() {
       setReviews(hostReviews);
       setPortfolioItems(hostPortfolio);
 
-      const { data: freshProfile } = await supabase
-        .from('profiles').select('followers, following').eq('id', uid).single();
-      if (freshProfile) {
-        const freshFollowers = freshProfile.followers || hostData?.followers || [];
-        const freshFollowing = freshProfile.following || hostData?.following || [];
-        setHost(h => h ? { ...h, followers: freshFollowers, following: freshFollowing } : h);
+      // ── Fetch follower/following counts + follow status from follows table ──
+      const followQueries: Promise<any>[] = [
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
+      ];
+      if (me?.id) {
+        followQueries.push(
+          supabase.from('follows').select('*', { count: 'exact', head: true })
+            .eq('follower_id', me.id).eq('following_id', uid)
+        );
+      }
+      const [fcRes, fgRes, amFollowingRes] = await Promise.all(followQueries);
+      setFollowerCount(fcRes.count ?? null);
+      setFollowingCount(fgRes.count ?? null);
+      if (amFollowingRes !== undefined) setFollowing((amFollowingRes.count ?? 0) > 0);
 
-        if (freshFollowers.length) {
-          supabase.from('profiles')
-            .select('id, name, username, avatar_url, account_type, is_verified, bio')
-            .in('id', freshFollowers.slice(0, 50))
-            .then(({ data }) => {
-              setFollowerUsers((data || []).map((r: any) => ({
-                id: r.id, name: r.name, username: r.username,
-                avatar: r.avatar_url, accountType: r.account_type,
-                isVerified: r.is_verified, bio: r.bio,
-              })));
-            }, () => {});
-        }
-        if (freshFollowing.length) {
-          supabase.from('profiles')
-            .select('id, name, username, avatar_url, account_type, is_verified, bio')
-            .in('id', freshFollowing.slice(0, 50))
-            .then(({ data }) => {
-              setFollowingUsers((data || []).map((r: any) => ({
-                id: r.id, name: r.name, username: r.username,
-                avatar: r.avatar_url, accountType: r.account_type,
-                isVerified: r.is_verified, bio: r.bio,
-              })));
-            }, () => {});
-        }
+      // ── Load follower/following user lists for the modal ──────────────────
+      const [followerRows, followingRows] = await Promise.all([
+        supabase.from('follows').select('follower_id').eq('following_id', uid).limit(50),
+        supabase.from('follows').select('following_id').eq('follower_id', uid).limit(50),
+      ]);
+      const followerIds  = (followerRows.data  || []).map((r: any) => r.follower_id).filter(Boolean);
+      const followingIds = (followingRows.data || []).map((r: any) => r.following_id).filter(Boolean);
+
+      if (followerIds.length) {
+        supabase.from('profiles')
+          .select('id, name, username, avatar_url, account_type, is_verified, bio')
+          .in('id', followerIds)
+          .then(({ data }) => {
+            setFollowerUsers((data || []).map((r: any) => ({
+              id: r.id, name: r.name, username: r.username,
+              avatar: r.avatar_url, accountType: r.account_type,
+              isVerified: r.is_verified, bio: r.bio,
+            })));
+          }, () => {});
+      }
+      if (followingIds.length) {
+        supabase.from('profiles')
+          .select('id, name, username, avatar_url, account_type, is_verified, bio')
+          .in('id', followingIds)
+          .then(({ data }) => {
+            setFollowingUsers((data || []).map((r: any) => ({
+              id: r.id, name: r.name, username: r.username,
+              avatar: r.avatar_url, accountType: r.account_type,
+              isVerified: r.is_verified, bio: r.bio,
+            })));
+          }, () => {});
       }
     } catch {
       toast.error('Could not load profile');
       setLoading(false);
     }
+  };
+
+  /** Refresh follower/following counts from the follows table after a follow/unfollow. */
+  const refreshCounts = async (uid: string) => {
+    const [fcRes, fgRes] = await Promise.all([
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
+    ]);
+    setFollowerCount(fcRes.count ?? null);
+    setFollowingCount(fgRes.count ?? null);
   };
 
   const handleFollow = async () => {
@@ -382,14 +406,20 @@ export function HostProfile() {
       if (following) {
         await socialApi.unfollow(host!.id);
         setFollowing(false);
-        setHost(prev => prev ? { ...prev, followers: (prev.followers || []).filter(id => id !== me.id) } : prev);
+        setFollowerCount(c => (c !== null ? Math.max(0, c - 1) : null));
       } else {
         await socialApi.follow(host!.id);
         setFollowing(true);
-        setHost(prev => prev ? { ...prev, followers: [...(prev.followers || []), me.id] } : prev);
+        setFollowerCount(c => (c !== null ? c + 1 : null));
       }
-    } catch { toast.error('Could not update follow status'); }
-    setFollowLoading(false);
+      // Refresh authoritative counts from DB
+      refreshCounts(host!.id).catch(() => {});
+    } catch (err: any) {
+      toast.error('Unable to follow this user. Please try again.');
+      console.error('[handleFollow] error:', err?.message);
+    } finally {
+      setFollowLoading(false);
+    }
   };
 
   const handleFollowClick = () => {
@@ -553,12 +583,12 @@ export function HostProfile() {
               </span>
               <button onClick={() => setShowFollowers('followers')}
                 className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followerUsers.length || (host.followers||[]).length}{' '}
+                {followerCount ?? followerUsers.length ?? (host.followers||[]).length}{' '}
                 <span className="font-normal text-gray-500">followers</span>
               </button>
               <button onClick={() => setShowFollowers('following')}
                 className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followingUsers.length || (host.following||[]).length}{' '}
+                {followingCount ?? followingUsers.length ?? (host.following||[]).length}{' '}
                 <span className="font-normal text-gray-500">following</span>
               </button>
             </div>

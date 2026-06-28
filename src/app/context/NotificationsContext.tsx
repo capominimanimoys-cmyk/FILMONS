@@ -15,6 +15,7 @@ import {
 import { useAuth } from './AuthContext';
 import * as notifStore from '../lib/notifications';
 import { Notification } from '../types';
+import { toast } from 'sonner';
 
 interface NotificationsState {
   notifications: Notification[];
@@ -95,6 +96,16 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [user?.id]); // eslint-disable-line
 
+  // ── Toast helper — shown for push/realtime arrivals ──────────────────────────
+  const showToast = useCallback((notif: Notification) => {
+    const actor = notif.fromUserName || 'Someone';
+    if (notif.type === 'new_follower') {
+      toast(`${actor} started following you`, { duration: 4000 });
+    } else if (notif.type === 'message_received' || notif.type === 'new_message' || notif.type === 'message') {
+      toast(`New message from ${actor}`, { duration: 3500 });
+    }
+  }, []);
+
   // ── Realtime + same-device event + polling fallback ───────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -104,15 +115,17 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       if (seenIds.current.has(notif.id)) return;
       seenIds.current.add(notif.id);
       addOne(notif);
+      showToast(notif);
     });
 
-    // Same-device push() events (e.g., user comments on own friend's post while on same device)
+    // Same-device push() events (e.g., follow from same browser tab)
     const onPush = (e: Event) => {
       const notif = (e as CustomEvent<Notification>).detail;
       if (notif.toUserId !== user.id) return;
       if (seenIds.current.has(notif.id)) return;
       seenIds.current.add(notif.id);
       addOne(notif);
+      showToast(notif);
     };
     window.addEventListener('filmons:notif', onPush);
 

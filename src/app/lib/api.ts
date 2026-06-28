@@ -1875,62 +1875,147 @@ export const commentsApi = {
 // SOCIAL API
 // ============================================
 export const socialApi = {
-  follow: async (targetUserId: string): Promise<User> => {
+  /**
+   * Follow targetUserId.
+   * Inserts a row into public.follows and pushes a new_follower notification
+   * to the target user. A unique-violation (23505) means already following —
+   * treated as success, no duplicate notification created.
+   */
+  follow: async (targetUserId: string): Promise<void> => {
     const currentUser = authApi.getCurrentUser();
     if (!currentUser) throw new Error('Not authenticated');
     if (currentUser.id === targetUserId) throw new Error('Cannot follow yourself');
-    const { user } = await call<any>(`/users/${targetUserId}/follow`, {
-      method: 'POST',
-      body: JSON.stringify({ currentUserId: currentUser.id }),
-    });
-    // Update session
-    saveSession(user);
 
-    // ── Notification: tell target they have a new follower ────────────────
-    // If the target was already following the current user, it's a follow-back.
-    const isFollowBack = (currentUser.followers || []).includes(targetUserId);
-    notifs.push(targetUserId, {
-      type: 'new_follower',
-      fromUserId:    currentUser.id,
-      fromUserName:  currentUser.name,
-      fromUserAvatar: currentUser.avatar,
-      followBack: isFollowBack,
-    });
+    console.log('[follow] follower_id:', currentUser.id, 'following_id:', targetUserId);
 
-    return user;
+    const { error } = await supabase
+      .from('follows')
+      .insert({ follower_id: currentUser.id, following_id: targetUserId });
+
+    console.log('[follow] insert result:', error?.code ?? 'ok', error?.message ?? '');
+
+    if (error && error.code !== '23505') {
+      // 23505 = unique violation = already following → not an error
+      throw new Error(error.message);
+    }
+
+    const isNew = !error; // no duplicate
+
+    if (isNew) {
+      // Notify only the person being followed, never the follower
+      notifs.push(targetUserId, {
+        type:           'new_follower',
+        fromUserId:     currentUser.id,
+        fromUserName:   currentUser.name,
+        fromUserAvatar: currentUser.avatar,
+      });
+      console.log('[follow] notification pushed for', targetUserId);
+    }
+
+    // Update local session so isFollowing() stays accurate
+    const freshFollowing = Array.from(
+      new Set([...(currentUser.following || []), targetUserId])
+    );
+    saveSession({ ...currentUser, following: freshFollowing });
   },
 
-  unfollow: async (targetUserId: string): Promise<User> => {
+  /**
+   * Unfollow targetUserId.
+   * Deletes the follow row from public.follows.
+   * No notification is created for unfollows.
+   */
+  unfollow: async (targetUserId: string): Promise<void> => {
     const currentUser = authApi.getCurrentUser();
     if (!currentUser) throw new Error('Not authenticated');
-    const { user } = await call<any>(`/users/${targetUserId}/unfollow`, {
-      method: 'POST',
-      body: JSON.stringify({ currentUserId: currentUser.id }),
-    });
-    saveSession(user);
-    return user;
+
+    console.log('[unfollow] follower_id:', currentUser.id, 'following_id:', targetUserId);
+
+    const { error } = await supabase
+      .from('follows')
+      .delete()
+      .eq('follower_id', currentUser.id)
+      .eq('following_id', targetUserId);
+
+    console.log('[unfollow] delete result:', error?.code ?? 'ok', error?.message ?? '');
+
+    if (error) throw new Error(error.message);
+
+    // Update local session
+    const freshFollowing = (currentUser.following || []).filter(id => id !== targetUserId);
+    saveSession({ ...currentUser, following: freshFollowing });
   },
 
-  isFollowing: (currentUserId: string, targetUserId: string): boolean => {
+  /** Synchronous check against local session cache (fast, no network). */
+  isFollowing: (_currentUserId: string, targetUserId: string): boolean => {
     const user = loadSession();
     return user?.following?.includes(targetUserId) ?? false;
   },
 
+  /** Returns the follower count for a user from the follows table. */
+  getFollowerCount: async (userId: string): Promise<number> => {
+    const { count } = await supabase
+      .from('follows')
+      .select('*', { count: 'exact', head: true })
+      .eq('following_id', userId);
+    return count ?? 0;
+  },
+
+  /** Returns the following count for a user from the follows table. */
+  getFollowingCount: async (userId: string): Promise<number> => {
+    const { count } = await supabase
+      .from('follows')
+      .select('*', { count: 'exact', head: true })
+      .eq('follower_id', userId);
+    return count ?? 0;
+  },
+
+  /** Check from follows table whether currentUser is following targetUserId. */
+  checkIsFollowing: async (currentUserId: string, targetUserId: string): Promise<boolean> => {
+    const { count } = await supabase
+      .from('follows')
+      .select('*', { count: 'exact', head: true })
+      .eq('follower_id', currentUserId)
+      .eq('following_id', targetUserId);
+    return (count ?? 0) > 0;
+  },
+
   getFollowers: async (userId: string): Promise<User[]> => {
     try {
-      const { user } = await call<any>(`/users/${userId}`);
-      if (!user?.followers?.length) return [];
-      const all = await authApi.getAllUsers();
-      return all.filter(u => user.followers.includes(u.id));
+      const { data } = await supabase
+        .from('follows')
+        .select('follower_id')
+        .eq('following_id', userId);
+      const ids = (data || []).map((r: any) => r.follower_id).filter(Boolean);
+      if (!ids.length) return [];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, username, avatar_url, account_type, is_verified, bio')
+        .in('id', ids);
+      return (profiles || []).map((r: any) => ({
+        id: r.id, name: r.name, username: r.username,
+        avatar: r.avatar_url, accountType: r.account_type,
+        isVerified: r.is_verified, bio: r.bio,
+      }));
     } catch { return []; }
   },
 
   getFollowing: async (userId: string): Promise<User[]> => {
     try {
-      const { user } = await call<any>(`/users/${userId}`);
-      if (!user?.following?.length) return [];
-      const all = await authApi.getAllUsers();
-      return all.filter(u => user.following.includes(u.id));
+      const { data } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', userId);
+      const ids = (data || []).map((r: any) => r.following_id).filter(Boolean);
+      if (!ids.length) return [];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, username, avatar_url, account_type, is_verified, bio')
+        .in('id', ids);
+      return (profiles || []).map((r: any) => ({
+        id: r.id, name: r.name, username: r.username,
+        avatar: r.avatar_url, accountType: r.account_type,
+        isVerified: r.is_verified, bio: r.bio,
+      }));
     } catch { return []; }
   },
 };
