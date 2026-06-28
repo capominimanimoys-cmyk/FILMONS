@@ -123,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const update = () => {
       import('../../lib/supabase').then(({ supabase }) =>
         supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user!.id)
+          .then(() => {}, () => {}) // silence if column doesn't exist yet
       ).catch(() => {});
     };
     update(); // on mount / login
