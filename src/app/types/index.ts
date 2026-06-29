@@ -36,6 +36,7 @@ export interface User {
   primaryRole?: string;
   profileSetupCompleted?: boolean;
   profileSetupPercentage?: number;
+  emailVerified?: boolean;
 }
 
 export interface Comment {

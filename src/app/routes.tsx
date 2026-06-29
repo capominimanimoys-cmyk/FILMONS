@@ -53,6 +53,7 @@ import { OAuthCallback } from './pages/OAuthCallback';
 import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
 import { Portfolio } from './pages/Portfolio';
+import { VerifyEmail } from './pages/VerifyEmail';
 
 export const router = createBrowserRouter([
   {
@@ -116,5 +117,6 @@ export const router = createBrowserRouter([
   { path: '/reset-password',    Component: ResetPassword  },
   { path: '/auth/callback',    Component: OAuthCallback  },
   { path: '/google-signup',    Component: GoogleSignup   },
-  { path: '/onboarding',  Component: CompleteProfile },
+  { path: '/onboarding',    Component: CompleteProfile },
+  { path: '/verify-email',  Component: VerifyEmail     },
 ]);

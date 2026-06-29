@@ -29,6 +29,11 @@ export function Root() {
   const hideTopBar = NO_TOPBAR_PAGES.includes(location.pathname);
   const hideFooter = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
 
+  // Enforce email verification before anything else
+  if (isAuthenticated && user?.emailVerified === false) {
+    return <Navigate to="/verify-email" replace />;
+  }
+
   // Enforce onboarding: authenticated users who haven't completed setup
   if (isAuthenticated && isOnboardingIncomplete(user)) {
     return <Navigate to="/onboarding" state={{ showReminder: true }} replace />;

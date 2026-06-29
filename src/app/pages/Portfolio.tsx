@@ -6,6 +6,7 @@ import { authApi, socialApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
+import { CreatorCardSheet } from '../components/CreatorCardSheet';
 import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
@@ -1524,25 +1525,32 @@ export function Portfolio() {
         />
       )}
 
-      {/* ── Share sheet ── */}
-      {shareTarget && (
+      {/* ── Share: portfolio → Creator Card directly; album/item → ShareSheet ── */}
+      {shareTarget && shareTarget.type === 'portfolio' ? (
+        <CreatorCardSheet
+          name={profile.name}
+          username={profile.username}
+          primaryRole={profile.primaryRole}
+          location={profile.location || [profile.city, profile.province].filter(Boolean).join(', ') || undefined}
+          avatarUrl={profile.avatar}
+          coverUrl={profile.coverPhoto}
+          shareUrl={getShareUrl(shareTarget)}
+          displayUrl={getShareDisplayUrl(shareTarget)}
+          portfolioItems={items.slice(0, 4).map(i => i.thumbnail_url || i.media_url).filter(Boolean) as string[]}
+          followerCount={profile.followers?.length ?? 0}
+          worksCount={items.length}
+          isVerified={profile.isVerified ?? false}
+          isCreatorPlus={profile.accountType === 'creator_plus'}
+          onClose={() => setShareTarget(null)}
+        />
+      ) : shareTarget ? (
         <ShareSheet
           url={getShareUrl(shareTarget)}
           displayUrl={getShareDisplayUrl(shareTarget)}
           heading={getShareHeading(shareTarget)}
           onClose={() => setShareTarget(null)}
-          creatorCard={shareTarget.type === 'portfolio' ? {
-            name:        profile.name,
-            username:    profile.username,
-            primaryRole: profile.primaryRole,
-            location:    profile.location || [profile.city, profile.province].filter(Boolean).join(', ') || undefined,
-            avatarUrl:   profile.avatar,
-            coverUrl:    profile.coverPhoto,
-            shareUrl:    getShareUrl(shareTarget),
-            displayUrl:  getShareDisplayUrl(shareTarget),
-          } : undefined}
         />
-      )}
+      ) : null}
 
       {/* ── Add to album sheet (owner only) ── */}
       {addToAlbumTarget && isOwner && (
