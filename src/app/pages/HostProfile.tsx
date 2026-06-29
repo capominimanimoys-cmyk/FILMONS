@@ -320,6 +320,11 @@ export function HostProfile() {
     setLoading(true);
     try {
       const hostData = await authApi.getUserById(uid);
+      // Bust browser image cache for avatar/cover — same Storage path is reused on each upload
+      if (hostData?.avatar) {
+        const base = hostData.avatar.split('?')[0];
+        hostData.avatar = `${base}?t=${Date.now()}`;
+      }
       setHost(hostData);
       setLoading(false);
 

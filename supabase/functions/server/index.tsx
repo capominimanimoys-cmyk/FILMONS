@@ -2249,13 +2249,17 @@ app.post("/make-server-ec8fe879/upload-photo", async (c) => {
       data: { publicUrl },
     } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
 
-    // Cache URL in KV so mergePhotos always has it
-    await kv.set(`photo:${type}:${userId}`, publicUrl);
+    // Append cache-buster so browsers always fetch the latest image
+    // (same storage path is reused on every upload, so the base URL never changes)
+    const versionedUrl = `${publicUrl}?t=${Date.now()}`;
+
+    // Cache versioned URL in KV so mergePhotos always has it
+    await kv.set(`photo:${type}:${userId}`, versionedUrl);
 
     console.log(
-      `[storage] ${type} uploaded for ${userId} → ${publicUrl}`,
+      `[storage] ${type} uploaded for ${userId} → ${versionedUrl}`,
     );
-    return c.json({ url: publicUrl });
+    return c.json({ url: versionedUrl });
   } catch (e: any) {
     console.error("[storage] upload-photo error:", e);
     return c.json({ error: String(e?.message ?? e) }, 500);
