@@ -1,106 +1,369 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
+import { authApi, socialApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import {
-  getPortfolioItems,
-  deletePortfolioItem,
-  toggleFeatured,
-  type PortfolioItem,
+  getPortfolioItems, deletePortfolioItem, toggleFeatured,
+  type PortfolioItem, type WorkType,
 } from '../lib/portfolioApi';
+import { supabase } from '../../lib/supabase';
+import type { User } from '../types';
+import { toast } from 'sonner';
 import {
   Star, StarOff, MapPin, Film, Music2, FileText,
   Link as LinkIcon, MoreVertical, Trash2, ExternalLink,
-  Plus, Loader2,
+  Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
+  Play, CheckCircle2, Users, MessageSquare, Briefcase,
+  Grid3X3, AlignJustify, Layers, LayoutList, Monitor,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Template = 'masonry' | 'grid' | 'cinematic' | 'service' | 'minimal';
-type TabType  = 'all' | 'photos' | 'videos' | 'audio' | 'projects';
+type TabType  = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts';
 
-const TEMPLATES: { id: Template; label: string }[] = [
-  { id: 'masonry',   label: 'Masonry'    },
-  { id: 'grid',      label: 'Clean Grid' },
-  { id: 'cinematic', label: 'Cinematic'  },
-  { id: 'service',   label: 'Service'    },
-  { id: 'minimal',   label: 'Minimal'    },
+const TEMPLATES: { id: Template; label: string; Icon: any }[] = [
+  { id: 'masonry',   label: 'Masonry',   Icon: Layers },
+  { id: 'grid',      label: 'Grid',      Icon: Grid3X3 },
+  { id: 'cinematic', label: 'Cinematic', Icon: Monitor },
+  { id: 'service',   label: 'Service',   Icon: LayoutList },
+  { id: 'minimal',   label: 'Minimal',   Icon: AlignJustify },
 ];
 
 const TABS: { id: TabType; label: string }[] = [
-  { id: 'all',      label: 'All'      },
-  { id: 'photos',   label: 'Photos'   },
-  { id: 'videos',   label: 'Videos'   },
-  { id: 'audio',    label: 'Audio'    },
-  { id: 'projects', label: 'Projects' },
+  { id: 'all',          label: 'All'          },
+  { id: 'photos',       label: 'Photos'       },
+  { id: 'videos',       label: 'Videos'       },
+  { id: 'reels',        label: 'Reels'        },
+  { id: 'audio',        label: 'Audio'        },
+  { id: 'projects',     label: 'Projects'     },
+  { id: 'case_studies', label: 'Case Studies' },
+  { id: 'bts',          label: 'BTS'          },
 ];
 
-// ── Shared card props ─────────────────────────────────────────────────────────
+function filterByTab(item: PortfolioItem, tab: TabType): boolean {
+  if (tab === 'all') return true;
+  const wt = item.work_type;
+  const mt = item.media_type;
+  if (tab === 'photos')       return wt === 'photo'      || (!wt && mt === 'image');
+  if (tab === 'videos')       return wt === 'video'      || (!wt && mt === 'video');
+  if (tab === 'reels')        return wt === 'reel';
+  if (tab === 'audio')        return wt === 'audio'      || (!wt && mt === 'audio');
+  if (tab === 'projects')     return wt === 'project';
+  if (tab === 'case_studies') return wt === 'case_study';
+  if (tab === 'bts')          return wt === 'bts';
+  return true;
+}
+
+// ── Full-screen item viewer ───────────────────────────────────────────────────
+function PortfolioViewer({
+  items, startIndex, onClose,
+}: { items: PortfolioItem[]; startIndex: number; onClose: () => void }) {
+  const [idx, setIdx] = useState(startIndex);
+  const touchX = useRef(0);
+  const item = items[idx];
+
+  const prev = useCallback(() => setIdx(i => Math.max(0, i - 1)), []);
+  const next = useCallback(() => setIdx(i => Math.min(items.length - 1, i + 1)), [items.length]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft')  prev();
+      if (e.key === 'ArrowRight') next();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose, prev, next]);
+
+  // Prevent body scroll while viewer is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  if (!item) return null;
+
+  const wt     = item.work_type;
+  const isVideo = wt === 'video' || wt === 'reel' || (!wt && item.media_type === 'video');
+  const isAudio = wt === 'audio'                  || (!wt && item.media_type === 'audio');
+  const isLink  = wt === 'link'                   || (!wt && item.media_type === 'link');
+  const thumb   = item.thumbnail_url || item.media_url;
+
+  const workTypeLabel: Record<WorkType, string> = {
+    photo: 'Photo', video: 'Video', reel: 'Reel', audio: 'Audio',
+    project: 'Project', case_study: 'Case Study', bts: 'BTS', link: 'Link',
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex flex-col bg-black"
+      onTouchStart={e => { touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={e => {
+        const dx = touchX.current - e.changedTouches[0].clientX;
+        if (Math.abs(dx) > 50) { dx > 0 ? next() : prev(); }
+      }}
+    >
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 shrink-0 z-10">
+        <button
+          onClick={onClose}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <span className="text-white/50 text-xs font-semibold tabular-nums">
+          {idx + 1} / {items.length}
+        </span>
+        <button
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
+          onClick={() => {
+            if (navigator.share) {
+              navigator.share({ title: item.title, url: window.location.href }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(window.location.href);
+              toast.success('Link copied');
+            }
+          }}
+        >
+          <Share2 className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Media — takes upper ~58% of screen */}
+      <div className="flex-1 flex items-center justify-center relative min-h-0 px-4">
+        {idx > 0 && (
+          <button
+            onClick={prev}
+            className="absolute left-2 z-10 w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+        )}
+
+        <div className="w-full h-full flex items-center justify-center">
+          {isVideo && item.media_url ? (
+            <video
+              src={item.media_url}
+              controls
+              playsInline
+              autoPlay
+              className="max-w-full max-h-full rounded-xl object-contain"
+            />
+          ) : isAudio ? (
+            <div className="w-full max-w-xs flex flex-col items-center gap-5">
+              <div className="w-28 h-28 rounded-3xl bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center shadow-2xl">
+                {thumb
+                  ? <img src={thumb} alt="" className="w-full h-full object-cover rounded-3xl" />
+                  : <Music2 className="w-14 h-14 text-white/80" />
+                }
+              </div>
+              {item.media_url && <audio controls src={item.media_url} className="w-full" />}
+            </div>
+          ) : isLink ? (
+            <div className="flex flex-col items-center gap-6">
+              {thumb ? (
+                <img src={thumb} alt="" className="max-w-full max-h-[40vh] rounded-xl object-contain" />
+              ) : (
+                <div className="w-24 h-24 rounded-2xl bg-white/10 flex items-center justify-center">
+                  <LinkIcon className="w-12 h-12 text-white/40" />
+                </div>
+              )}
+              {item.external_link && (
+                <a
+                  href={item.external_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold text-sm"
+                >
+                  <ExternalLink className="w-4 h-4" /> Open Link
+                </a>
+              )}
+            </div>
+          ) : thumb ? (
+            <img
+              src={thumb}
+              alt={item.title}
+              className="max-w-full max-h-full rounded-xl object-contain"
+            />
+          ) : (
+            <div className="w-32 h-32 rounded-3xl bg-white/5 flex items-center justify-center">
+              <FileText className="w-14 h-14 text-white/20" />
+            </div>
+          )}
+        </div>
+
+        {idx < items.length - 1 && (
+          <button
+            onClick={next}
+            className="absolute right-2 z-10 w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+
+      {/* Info panel — white card at bottom */}
+      <div
+        className="shrink-0 bg-white rounded-t-3xl px-5 pt-5 pb-8"
+        style={{ maxHeight: '42vh', overflowY: 'auto' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+
+        {/* Work-type label + featured */}
+        <div className="flex items-center gap-2 mb-2">
+          {wt && (
+            <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
+              {workTypeLabel[wt] ?? wt}
+            </span>
+          )}
+          {item.is_featured && (
+            <span className="flex items-center gap-1 text-[10px] font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
+              <Star className="w-3 h-3 fill-amber-500 text-amber-500" /> Featured
+            </span>
+          )}
+        </div>
+
+        {/* Title */}
+        <h2 className="font-black text-gray-900 text-xl leading-tight mb-2">{item.title}</h2>
+
+        {/* Meta chips */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {item.category && (
+            <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1 rounded-full font-semibold">
+              {item.category}
+            </span>
+          )}
+          {item.role && (
+            <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{item.role}</span>
+          )}
+          {item.client_name && (
+            <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{item.client_name}</span>
+          )}
+          {item.year && (
+            <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{item.year}</span>
+          )}
+        </div>
+
+        {/* Description */}
+        {item.description && (
+          <p className="text-sm text-gray-600 leading-relaxed mb-3">{item.description}</p>
+        )}
+
+        {/* Tools */}
+        {item.tools && item.tools.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {item.tools.map(t => (
+              <span key={t} className="text-[11px] bg-gray-900 text-white px-2 py-0.5 rounded-full">{t}</span>
+            ))}
+          </div>
+        )}
+
+        {/* External link */}
+        {item.external_link && !isLink && (
+          <a
+            href={item.external_link}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-bold"
+          >
+            <ExternalLink className="w-3.5 h-3.5" /> View full project
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Portfolio card ────────────────────────────────────────────────────────────
 interface CardProps {
   items:    PortfolioItem[];
   isOwner:  boolean;
-  onTap:    (item: PortfolioItem) => void;
+  onTap:    (item: PortfolioItem, index: number) => void;
   onToggle: (item: PortfolioItem) => void;
   onDelete: (id: string) => void;
 }
 
-// ── Portfolio item card ───────────────────────────────────────────────────────
-function PortfolioItemCard({
-  item, isOwner, onTap, onToggleFeatured, onDelete, aspectClass,
+function WorkTypeBadge({ wt }: { wt?: WorkType }) {
+  if (!wt || wt === 'photo') return null;
+  const labels: Record<WorkType, string> = {
+    video: 'VIDEO', reel: 'REEL', audio: 'AUDIO',
+    project: 'PROJECT', case_study: 'CASE', bts: 'BTS', link: 'LINK', photo: '',
+  };
+  return (
+    <span className="absolute top-2 left-2 text-[9px] font-black bg-black/60 text-white px-1.5 py-0.5 rounded-md tracking-wide">
+      {labels[wt]}
+    </span>
+  );
+}
+
+function ItemCard({
+  item, isOwner, onTap, onToggle, onDelete, className = '',
 }: {
-  item:             PortfolioItem;
-  isOwner:          boolean;
-  onTap:            () => void;
-  onToggleFeatured: () => void;
-  onDelete:         () => void;
-  aspectClass?:     string;
+  item: CardProps['items'][0];
+  isOwner: boolean;
+  onTap: () => void;
+  onToggle: () => void;
+  onDelete: () => void;
+  className?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const thumb   = item.thumbnail_url || item.media_url;
-  const isVideo = item.media_type === 'video';
-  const isAudio = item.media_type === 'audio';
-  const isLink  = item.media_type === 'link';
+  const wt      = item.work_type;
+  const isAudio = wt === 'audio' || item.media_type === 'audio';
+  const isLink  = wt === 'link'  || item.media_type === 'link';
+  const isVideo = wt === 'video' || wt === 'reel' || item.media_type === 'video';
 
   return (
     <div
-      className={`relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group ${aspectClass ?? 'aspect-square'}`}
+      className={`relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group ${className}`}
       onClick={onTap}
     >
-      {/* Thumbnail */}
+      {/* Media */}
       {thumb && !isAudio && !isLink ? (
         <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
       ) : (
         <div
-          className="w-full h-full flex items-center justify-center"
-          style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}
+          className="w-full h-full flex items-center justify-center min-h-[100px]"
+          style={{
+            background: isAudio
+              ? 'linear-gradient(135deg,#1e1040,#312e81)'
+              : isLink
+              ? 'linear-gradient(135deg,#eff6ff,#dbeafe)'
+              : 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
+          }}
         >
           {isAudio  ? <Music2   className="w-10 h-10 text-purple-300" />
-           : isLink ? <LinkIcon className="w-10 h-10 text-indigo-400" />
-           :          <FileText className="w-10 h-10 text-indigo-300" />}
+           : isLink  ? <LinkIcon  className="w-10 h-10 text-blue-400"   />
+           :           <FileText  className="w-10 h-10 text-slate-300"  />}
         </div>
       )}
 
-      {/* Video play badge */}
+      {/* Overlay badges */}
+      <WorkTypeBadge wt={wt} />
+
       {isVideo && (
         <div className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center">
-          <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <Play className="w-3.5 h-3.5 text-white fill-white ml-0.5" />
         </div>
       )}
 
-      {/* Featured star */}
-      {item.is_featured && (
-        <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center">
+      {item.is_featured && !isVideo && (
+        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center">
           <Star className="w-3 h-3 fill-white text-white" />
         </div>
       )}
 
-      {/* Bottom gradient + title */}
+      {/* Bottom gradient */}
       <div
-        className="absolute inset-x-0 bottom-0 p-2.5"
-        style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.75) 0%,transparent 100%)' }}
+        className="absolute inset-x-0 bottom-0 p-2.5 pointer-events-none"
+        style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 100%)' }}
       >
-        <p className="text-white text-[11px] font-black truncate">{item.title}</p>
-        {item.category && <p className="text-white/60 text-[9px] truncate">{item.category}</p>}
+        <p className="text-white text-[11px] font-black truncate leading-tight">{item.title}</p>
+        {item.category && <p className="text-white/55 text-[9px] truncate mt-0.5">{item.category}</p>}
       </div>
 
       {/* Owner context menu */}
@@ -108,26 +371,24 @@ function PortfolioItemCard({
         <>
           <button
             onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
-            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-10"
+            className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-10"
           >
             <MoreVertical className="w-4 h-4 text-white" />
           </button>
-
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setMenuOpen(false); }} />
               <div
-                className="absolute top-10 right-2 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[140px]"
+                className="absolute bottom-9 right-2 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]"
                 onClick={e => e.stopPropagation()}
               >
                 <button
-                  onClick={() => { setMenuOpen(false); onToggleFeatured(); }}
+                  onClick={() => { setMenuOpen(false); onToggle(); }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
                 >
                   {item.is_featured
                     ? <><StarOff className="w-3.5 h-3.5 text-gray-400" /> Unfeature</>
-                    : <><Star    className="w-3.5 h-3.5 text-amber-500" /> Feature</>
-                  }
+                    : <><Star    className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
                 </button>
                 <button
                   onClick={() => { setMenuOpen(false); if (window.confirm('Delete this item?')) onDelete(); }}
@@ -144,87 +405,24 @@ function PortfolioItemCard({
   );
 }
 
-// ── Detail lightbox ───────────────────────────────────────────────────────────
-function DetailSheet({ item, onClose }: { item: PortfolioItem; onClose: () => void }) {
-  const isVideo = item.media_type === 'video';
-  const isAudio = item.media_type === 'audio';
-  const isLink  = item.media_type === 'link';
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[60] bg-black/70" onClick={onClose} />
-      <div
-        className="fixed inset-x-0 bottom-0 z-[61] bg-white rounded-t-3xl overflow-hidden"
-        style={{ maxHeight: '92vh', paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 bg-gray-200 rounded-full" />
-        </div>
-
-        {isVideo && item.media_url && (
-          <video src={item.media_url} controls playsInline className="w-full max-h-64 bg-black object-contain" />
-        )}
-        {!isVideo && !isAudio && !isLink && (item.thumbnail_url || item.media_url) && (
-          <img src={item.thumbnail_url || item.media_url} alt={item.title} className="w-full max-h-72 object-cover" />
-        )}
-        {isAudio && item.media_url && (
-          <div
-            className="px-4 py-6 flex flex-col items-center gap-3"
-            style={{ background: 'linear-gradient(135deg,#1e1040,#312e81)' }}
-          >
-            <Music2 className="w-12 h-12 text-purple-300" />
-            <audio controls src={item.media_url} className="w-full" />
-          </div>
-        )}
-
-        <div className="px-4 pt-4 pb-6 space-y-3 overflow-y-auto" style={{ maxHeight: '50vh' }}>
-          {item.is_featured && (
-            <span className="flex items-center gap-1 text-xs font-black text-amber-500">
-              <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> Featured Work
-            </span>
-          )}
-          <h2 className="text-xl font-black text-gray-900">{item.title}</h2>
-          {item.description && <p className="text-sm text-gray-600 leading-relaxed">{item.description}</p>}
-
-          <div className="flex flex-wrap gap-2">
-            {item.category && (
-              <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1 rounded-full">{item.category}</span>
-            )}
-            {item.role && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{item.role}</span>
-            )}
-            {item.year && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{item.year}</span>
-            )}
-          </div>
-
-          {(isLink || item.external_link) && item.external_link && (
-            <a
-              href={item.external_link}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 text-sm font-semibold text-blue-600 bg-blue-50 px-4 py-3 rounded-2xl"
-            >
-              <ExternalLink className="w-4 h-4" /> Open Link
-            </a>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── Grid layouts ──────────────────────────────────────────────────────────────
+// ── Layouts ───────────────────────────────────────────────────────────────────
 function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
   return (
-    <div className="columns-2 sm:columns-3 gap-2">
-      {items.map(item => (
+    <div className="columns-2 sm:columns-3 lg:columns-4 gap-2">
+      {items.map((item, i) => (
         <div key={item.id} className="break-inside-avoid mb-2">
-          <PortfolioItemCard
+          <ItemCard
             item={item}
             isOwner={isOwner}
-            onTap={() => onTap(item)}
-            onToggleFeatured={() => onToggle(item)}
+            className={`aspect-auto ${
+              item.work_type === 'case_study' ? 'aspect-[3/4]' :
+              item.work_type === 'reel'       ? 'aspect-[9/16]' :
+              item.work_type === 'video'      ? 'aspect-video' :
+              i % 5 === 0                     ? 'aspect-[4/5]' :
+              i % 5 === 2                     ? 'aspect-[3/4]' : 'aspect-square'
+            }`}
+            onTap={() => onTap(item, i)}
+            onToggle={() => onToggle(item)}
             onDelete={() => onDelete(item.id)}
           />
         </div>
@@ -235,14 +433,15 @@ function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
 
 function GridLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      {items.map(item => (
-        <PortfolioItemCard
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+      {items.map((item, i) => (
+        <ItemCard
           key={item.id}
           item={item}
           isOwner={isOwner}
-          onTap={() => onTap(item)}
-          onToggleFeatured={() => onToggle(item)}
+          className="aspect-square"
+          onTap={() => onTap(item, i)}
+          onToggle={() => onToggle(item)}
           onDelete={() => onDelete(item.id)}
         />
       ))}
@@ -255,24 +454,25 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProp
   return (
     <div className="space-y-2">
       {first && (
-        <PortfolioItemCard
+        <ItemCard
           item={first}
           isOwner={isOwner}
-          aspectClass="aspect-video"
-          onTap={() => onTap(first)}
-          onToggleFeatured={() => onToggle(first)}
+          className="aspect-video w-full"
+          onTap={() => onTap(first, 0)}
+          onToggle={() => onToggle(first)}
           onDelete={() => onDelete(first.id)}
         />
       )}
       {rest.length > 0 && (
-        <div className="grid grid-cols-2 gap-2">
-          {rest.map(item => (
-            <PortfolioItemCard
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {rest.map((item, i) => (
+            <ItemCard
               key={item.id}
               item={item}
               isOwner={isOwner}
-              onTap={() => onTap(item)}
-              onToggleFeatured={() => onToggle(item)}
+              className="aspect-square"
+              onTap={() => onTap(item, i + 1)}
+              onToggle={() => onToggle(item)}
               onDelete={() => onDelete(item.id)}
             />
           ))}
@@ -282,92 +482,21 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProp
   );
 }
 
-function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
-  return (
-    <div className="space-y-2">
-      {items.map(item => {
-        const thumb = item.thumbnail_url || item.media_url;
-        const isAudio = item.media_type === 'audio';
-        const isLink  = item.media_type === 'link';
-        return (
-          <div
-            key={item.id}
-            className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => onTap(item)}
-          >
-            <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-              {thumb && !isAudio && !isLink ? (
-                <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
-              ) : (
-                <div
-                  className="w-full h-full flex items-center justify-center"
-                  style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}
-                >
-                  {isAudio  ? <Music2   className="w-7 h-7 text-purple-300" />
-                   : isLink ? <LinkIcon className="w-7 h-7 text-indigo-400" />
-                   :          <FileText className="w-7 h-7 text-indigo-300" />}
-                </div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0 py-0.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-bold text-gray-900 text-sm truncate">{item.title}</p>
-                  {item.category && (
-                    <p className="text-xs text-blue-600 font-semibold mt-0.5">{item.category}</p>
-                  )}
-                  {item.description && (
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">{item.description}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {item.is_featured && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-300" />}
-                  {isOwner && (
-                    <ServiceMenu item={item} onToggle={() => onToggle(item)} onDelete={() => onDelete(item.id)} />
-                  )}
-                </div>
-              </div>
-              {item.year && (
-                <p className="text-xs text-gray-400 mt-1.5">{item.year}</p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ServiceMenu({ item, onToggle, onDelete }: { item: PortfolioItem; onToggle: () => void; onDelete: () => void }) {
+function ServiceItemMenu({ item, onToggle, onDelete }: { item: PortfolioItem; onToggle: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <button
-        onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
-        className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100"
-      >
+      <button onClick={e => { e.stopPropagation(); setOpen(v => !v); }} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100">
         <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setOpen(false); }} />
-          <div
-            className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[140px]"
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              onClick={() => { setOpen(false); onToggle(); }}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
-            >
-              {item.is_featured
-                ? <><StarOff className="w-3.5 h-3.5 text-gray-400" /> Unfeature</>
-                : <><Star    className="w-3.5 h-3.5 text-amber-500" /> Feature</>
-              }
+          <div className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setOpen(false); onToggle(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
+              {item.is_featured ? <><StarOff className="w-3.5 h-3.5 text-gray-400" /> Unfeature</> : <><Star className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
             </button>
-            <button
-              onClick={() => { setOpen(false); if (window.confirm('Delete this item?')) onDelete(); }}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50"
-            >
+            <button onClick={() => { setOpen(false); if (window.confirm('Delete?')) onDelete(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50">
               <Trash2 className="w-3.5 h-3.5" /> Delete
             </button>
           </div>
@@ -377,44 +506,80 @@ function ServiceMenu({ item, onToggle, onDelete }: { item: PortfolioItem; onTogg
   );
 }
 
+function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => {
+        const thumb   = item.thumbnail_url || item.media_url;
+        const isAudio = item.work_type === 'audio' || item.media_type === 'audio';
+        const isLink  = item.work_type === 'link'  || item.media_type === 'link';
+        return (
+          <div
+            key={item.id}
+            className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => onTap(item, i)}
+          >
+            <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+              {thumb && !isAudio && !isLink ? (
+                <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center" style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}>
+                  {isAudio ? <Music2 className="w-7 h-7 text-purple-300" /> : isLink ? <LinkIcon className="w-7 h-7 text-indigo-400" /> : <FileText className="w-7 h-7 text-indigo-300" />}
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0 py-0.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-900 text-sm truncate">{item.title}</p>
+                  {item.category && <p className="text-xs text-blue-600 font-semibold mt-0.5">{item.category}</p>}
+                  {item.description && <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">{item.description}</p>}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {item.is_featured && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-300" />}
+                  {isOwner && <ServiceItemMenu item={item} onToggle={() => onToggle(item)} onDelete={() => onDelete(item.id)} />}
+                </div>
+              </div>
+              {(item.role || item.year) && (
+                <p className="text-xs text-gray-400 mt-1.5">{[item.role, item.year].filter(Boolean).join(' · ')}</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {items.map((item, i) => {
-        const thumb = item.thumbnail_url || item.media_url;
-        const isAudio = item.media_type === 'audio';
-        const isLink  = item.media_type === 'link';
+        const thumb   = item.thumbnail_url || item.media_url;
+        const isAudio = item.work_type === 'audio' || item.media_type === 'audio';
+        const isLink  = item.work_type === 'link'  || item.media_type === 'link';
         return (
           <div
             key={item.id}
             className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}
-            onClick={() => onTap(item)}
+            onClick={() => onTap(item, i)}
           >
             <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
               {thumb && !isAudio && !isLink ? (
                 <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
               ) : (
-                <div
-                  className="w-full h-full flex items-center justify-center"
-                  style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}
-                >
-                  {isAudio  ? <Music2   className="w-4 h-4 text-purple-300" />
-                   : isLink ? <LinkIcon className="w-4 h-4 text-indigo-400" />
-                   :          <FileText className="w-4 h-4 text-indigo-300" />}
+                <div className="w-full h-full flex items-center justify-center" style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}>
+                  {isAudio ? <Music2 className="w-4 h-4 text-purple-300" /> : isLink ? <LinkIcon className="w-4 h-4 text-indigo-400" /> : <FileText className="w-4 h-4 text-indigo-300" />}
                 </div>
               )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-gray-900 text-sm truncate">{item.title}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {[item.year, item.category].filter(Boolean).join(' · ')}
-              </p>
+              <p className="text-xs text-gray-400 mt-0.5">{[item.year, item.category].filter(Boolean).join(' · ')}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {item.is_featured && <Star className="w-4 h-4 text-amber-400 fill-amber-300" />}
-              {isOwner && (
-                <ServiceMenu item={item} onToggle={() => onToggle(item)} onDelete={() => onDelete(item.id)} />
-              )}
+              {isOwner && <ServiceItemMenu item={item} onToggle={() => onToggle(item)} onDelete={() => onDelete(item.id)} />}
             </div>
           </div>
         );
@@ -425,41 +590,93 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Portfolio() {
-  const { user, isAuthenticated } = useAuth();
+  const { userId: paramUserId } = useParams<{ userId?: string }>();
+  const { user: me } = useAuth();
   const navigate = useNavigate();
 
-  const [items,     setItems]     = useState<PortfolioItem[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [template,  setTemplate]  = useState<Template>(() =>
-    (localStorage.getItem('filmons_portfolio_template') as Template) ?? 'masonry'
+  // target profile
+  const [profile,  setProfile]  = useState<User | null>(null);
+  const [items,    setItems]    = useState<PortfolioItem[]>([]);
+  const [loading,  setLoading]  = useState(true);
+
+  // follow state (visitor view)
+  const [followerCount,  setFollowerCount]  = useState<number | null>(null);
+  const [followingCount, setFollowingCount] = useState<number | null>(null);
+  const [following,      setFollowing]      = useState(false);
+  const [followLoading,  setFollowLoading]  = useState(false);
+
+  // UI state
+  const [template,  setTemplate]  = useState<Template>(
+    () => (localStorage.getItem('filmons_portfolio_template') as Template) ?? 'masonry'
   );
-  const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [showAdd,   setShowAdd]   = useState(false);
-  const [detail,    setDetail]    = useState<PortfolioItem | null>(null);
+  const [activeTab, setActiveTab]  = useState<TabType>('all');
+  const [viewer,    setViewer]     = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
+  const [showAdd,   setShowAdd]    = useState(false);
+
+  const targetId = paramUserId ?? me?.id;
+  const isOwner  = !!me && !!targetId && me.id === targetId;
 
   useEffect(() => {
-    if (!user?.id) {
-      if (!isAuthenticated) navigate('/login', { replace: true });
+    if (!targetId) {
+      if (!me) navigate('/login', { replace: true });
       return;
     }
-    getPortfolioItems(user.id)
-      .then(data => setItems(data))
-      .finally(() => setLoading(false));
-  }, [user?.id]);
+    loadPage(targetId);
+  }, [targetId]); // eslint-disable-line
 
-  const changeTemplate = (t: Template) => {
-    setTemplate(t);
-    localStorage.setItem('filmons_portfolio_template', t);
+  const loadPage = async (uid: string) => {
+    setLoading(true);
+    try {
+      const [hostData, portfolioData] = await Promise.all([
+        authApi.getUserById(uid),
+        getPortfolioItems(uid),
+      ]);
+      if (hostData?.avatar) {
+        const base = hostData.avatar.split('?')[0];
+        hostData.avatar = `${base}?t=${Date.now()}`;
+      }
+      setProfile(hostData);
+      setItems(portfolioData);
+
+      // Follow counts
+      const followQueries: Promise<any>[] = [
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
+      ];
+      if (me?.id && me.id !== uid) {
+        followQueries.push(
+          supabase.from('follows').select('*', { count: 'exact', head: true })
+            .eq('follower_id', me.id).eq('following_id', uid)
+        );
+      }
+      const [fcRes, fgRes, amFollowingRes] = await Promise.all(followQueries);
+      setFollowerCount(fcRes.count ?? null);
+      setFollowingCount(fgRes.count ?? null);
+      if (amFollowingRes !== undefined) setFollowing((amFollowingRes.count ?? 0) > 0);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filtered = items.filter(item => {
-    if (activeTab === 'all')      return true;
-    if (activeTab === 'photos')   return item.media_type === 'image';
-    if (activeTab === 'videos')   return item.media_type === 'video';
-    if (activeTab === 'audio')    return item.media_type === 'audio';
-    if (activeTab === 'projects') return !!item.external_link || item.media_type === 'link';
-    return true;
-  });
+  const handleFollow = async () => {
+    if (!me) { navigate('/login'); return; }
+    setFollowLoading(true);
+    try {
+      if (following) {
+        await socialApi.unfollow(profile!.id);
+        setFollowing(false);
+        setFollowerCount(c => (c !== null ? Math.max(0, c - 1) : null));
+      } else {
+        await socialApi.follow(profile!.id);
+        setFollowing(true);
+        setFollowerCount(c => (c !== null ? c + 1 : null));
+      }
+    } catch {
+      toast.error('Unable to update follow status. Please try again.');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
 
   const handleToggle = async (item: PortfolioItem) => {
     await toggleFeatured(item.id, item.is_featured);
@@ -471,183 +688,286 @@ export function Portfolio() {
     setItems(prev => prev.filter(p => p.id !== id));
   };
 
-  if (!user) return null;
+  const changeTemplate = (t: Template) => {
+    setTemplate(t);
+    localStorage.setItem('filmons_portfolio_template', t);
+  };
+
+  const filtered = items.filter(item => filterByTab(item, activeTab));
+
+  const tabCount = (tab: TabType) => items.filter(i => filterByTab(i, tab)).length;
 
   const cardProps: CardProps = {
-    items:    filtered,
-    isOwner:  true,
-    onTap:    item => setDetail(item),
+    items: filtered,
+    isOwner,
+    onTap: (item, index) => {
+      const globalIndex = items.indexOf(item);
+      setViewer({ open: true, index: globalIndex >= 0 ? globalIndex : index });
+    },
     onToggle: handleToggle,
     onDelete: handleDelete,
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-500 font-medium mb-4">Portfolio not found</p>
+          <button onClick={() => navigate(-1)} className="text-blue-600 font-bold text-sm">Go back</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
 
-      {/* ── Cover + profile header ── */}
-      <div className="relative mb-1">
-        {/* Cover photo */}
-        <div className="h-44 relative overflow-hidden">
-          {user.coverPhoto ? (
-            <img src={user.coverPhoto} alt="Cover" className="w-full h-full object-cover" />
+      {/* ── Cover photo ── */}
+      <div className="relative">
+        <div className="h-48 overflow-hidden">
+          {profile.coverPhoto ? (
+            <img src={profile.coverPhoto} alt="Cover" className="w-full h-full object-cover" />
           ) : (
-            <div
-              className="w-full h-full"
-              style={{ background: 'linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)' }}
-            />
+            <div className="w-full h-full" style={{ background: 'linear-gradient(135deg,#0f0c29,#302b63,#24243e)' }} />
           )}
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom,transparent 40%,rgba(0,0,0,0.35) 100%)' }} />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom,transparent 30%,rgba(0,0,0,0.45) 100%)' }} />
         </div>
 
-        {/* Avatar + info row */}
-        <div className="max-w-lg mx-auto px-4">
-          <div className="flex items-end gap-3 -mt-11 mb-3">
-            <div className="border-[3px] border-white rounded-full shadow-xl shrink-0">
-              <UserAvatar user={user} size={76} />
-            </div>
-            <div className="flex-1 min-w-0 pb-1">
-              <h1 className="font-black text-gray-900 text-lg leading-tight truncate">
-                {user.name || user.username}
-              </h1>
-              {user.username && (
-                <p className="text-sm text-gray-400 leading-tight">@{user.username}</p>
-              )}
-              {user.primaryRole && (
-                <p className="text-xs font-bold text-blue-600 mt-0.5">{user.primaryRole}</p>
-              )}
-            </div>
-          </div>
-
-          {user.bio && (
-            <p className="text-sm text-gray-600 mb-2 leading-relaxed line-clamp-2">{user.bio}</p>
-          )}
-
-          <div className="flex items-center gap-4 mb-3 flex-wrap">
-            {(user.city || (user as any).location) && (
-              <span className="flex items-center gap-1 text-xs text-gray-400">
-                <MapPin className="w-3.5 h-3.5 shrink-0" />
-                {(user as any).location || [user.city, user.province].filter(Boolean).join(', ')}
-              </span>
-            )}
-            <span className="text-xs text-gray-500">
-              <span className="font-bold text-gray-800">{items.length}</span>
-              {' '}work{items.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          {/* Owner actions */}
-          <div className="flex gap-2 mb-5">
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2.5 rounded-2xl transition-all active:scale-95"
-              style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)', boxShadow: '0 4px 14px rgba(59,130,246,0.35)' }}
-            >
-              <Plus className="w-4 h-4" /> Add Work
-            </button>
-            <button
-              onClick={() => navigate('/settings/portfolio')}
-              className="flex items-center text-gray-600 text-sm font-semibold px-4 py-2.5 rounded-2xl border border-gray-200 bg-white transition-all active:scale-95 hover:bg-gray-50"
-            >
-              Settings
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Template selector ── */}
-      <div className="max-w-lg mx-auto px-4 mb-3">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          {TEMPLATES.map(t => (
-            <button
-              key={t.id}
-              onClick={() => changeTemplate(t.id)}
-              className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                template === t.id
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300 hover:text-gray-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Tab bar ── */}
-      <div className="max-w-lg mx-auto px-4 mb-4">
-        <div className="flex bg-white rounded-2xl p-1 shadow-sm border border-gray-100 overflow-x-auto no-scrollbar gap-0.5">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`flex-1 shrink-0 py-2 px-1 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
-                activeTab === t.id
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              {t.label}
-              {t.id !== 'all' && items.filter(i =>
-                t.id === 'photos'   ? i.media_type === 'image'
-                : t.id === 'videos' ? i.media_type === 'video'
-                : t.id === 'audio'  ? i.media_type === 'audio'
-                : !!i.external_link || i.media_type === 'link'
-              ).length > 0 && (
-                <span className={`ml-1 text-[10px] ${activeTab === t.id ? 'text-blue-200' : 'text-gray-400'}`}>
-                  {items.filter(i =>
-                    t.id === 'photos'   ? i.media_type === 'image'
-                    : t.id === 'videos' ? i.media_type === 'video'
-                    : t.id === 'audio'  ? i.media_type === 'audio'
-                    : !!i.external_link || i.media_type === 'link'
-                  ).length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Content ── */}
-      <div className="max-w-lg mx-auto px-4">
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-16 px-6">
-            <Film className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="font-black text-gray-900 mb-1 text-lg">
-              {activeTab === 'all' ? 'Build your creative portfolio' : `No ${activeTab} yet`}
-            </p>
-            <p className="text-sm text-gray-400 mb-6 max-w-xs mx-auto">
-              {activeTab === 'all'
-                ? 'Upload photos, videos, audio samples, or link to your best projects.'
-                : `Add your first ${activeTab === 'projects' ? 'project' : activeTab.slice(0, -1)} to get started.`}
-            </p>
-            {activeTab === 'all' && (
-              <button
-                onClick={() => setShowAdd(true)}
-                className="inline-flex items-center gap-2 bg-blue-600 text-white text-sm font-black px-5 py-3 rounded-2xl transition-all active:scale-95"
-                style={{ boxShadow: '0 6px 20px rgba(59,130,246,0.3)' }}
-              >
-                <Plus className="w-4 h-4" /> Add your first portfolio item
-              </button>
-            )}
-          </div>
-        ) : (
-          template === 'masonry'   ? <MasonryLayout   {...cardProps} /> :
-          template === 'grid'      ? <GridLayout       {...cardProps} /> :
-          template === 'cinematic' ? <CinematicLayout  {...cardProps} /> :
-          template === 'service'   ? <ServiceLayout    {...cardProps} /> :
-                                     <MinimalLayout    {...cardProps} />
+        {/* Back arrow */}
+        {paramUserId && (
+          <button
+            onClick={() => navigate(-1)}
+            className="absolute top-4 left-4 w-9 h-9 rounded-full bg-black/40 flex items-center justify-center text-white z-10"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
         )}
       </div>
 
-      {/* ── Detail lightbox ── */}
-      {detail && <DetailSheet item={detail} onClose={() => setDetail(null)} />}
+      {/* ── Profile header ── */}
+      <div className="max-w-2xl mx-auto px-4">
+        {/* Avatar + action buttons row */}
+        <div className="flex items-end justify-between -mt-12 mb-3 gap-2">
+          <div className="border-[3px] border-white rounded-full shadow-xl shrink-0">
+            <UserAvatar user={profile} size={80} />
+          </div>
 
-      {/* ── Add item sheet ── */}
-      {showAdd && (
+          {/* Visitor actions */}
+          {!isOwner && me && (
+            <div className="flex gap-2 pb-1">
+              <button
+                onClick={handleFollow}
+                disabled={followLoading}
+                className={`flex items-center gap-1.5 text-sm font-black px-4 py-2 rounded-2xl transition-all active:scale-95 disabled:opacity-60 ${
+                  following
+                    ? 'bg-gray-100 text-gray-700 border border-gray-200'
+                    : 'text-white'
+                }`}
+                style={following ? {} : { background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+              >
+                {followLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                {following ? 'Following' : 'Follow'}
+              </button>
+              <button
+                onClick={() => navigate(`/inbox?userId=${profile.id}`)}
+                className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> Message
+              </button>
+              <button
+                className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+                onClick={() => navigate(`/search?host=${profile.id}`)}
+              >
+                <Briefcase className="w-3.5 h-3.5" /> Hire
+              </button>
+            </div>
+          )}
+
+          {/* Owner actions */}
+          {isOwner && (
+            <div className="flex gap-2 pb-1">
+              <button
+                onClick={() => setShowAdd(true)}
+                className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2 rounded-2xl active:scale-95 transition-all"
+                style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+              >
+                <Plus className="w-4 h-4" /> Add Work
+              </button>
+              <button
+                onClick={() => navigate('/settings/portfolio')}
+                className="flex items-center text-gray-600 text-sm font-semibold px-4 py-2 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                Settings
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Name + role */}
+        <div className="mb-1">
+          <div className="flex items-center gap-1.5">
+            <h1 className="font-black text-gray-900 text-xl leading-tight">{profile.name}</h1>
+            {profile.isVerified && (
+              <CheckCircle2 className="w-5 h-5 text-blue-500 fill-blue-500 shrink-0" />
+            )}
+          </div>
+          {profile.username && (
+            <p className="text-sm text-gray-400">@{profile.username}</p>
+          )}
+          {profile.primaryRole && (
+            <p className="text-xs font-bold text-blue-600 mt-0.5">{profile.primaryRole}</p>
+          )}
+        </div>
+
+        {/* Bio */}
+        {profile.bio && (
+          <p className="text-sm text-gray-600 leading-relaxed mb-2 line-clamp-3">{profile.bio}</p>
+        )}
+
+        {/* Location */}
+        {(profile.location || profile.city) && (
+          <div className="flex items-center gap-1 text-xs text-gray-400 mb-3">
+            <MapPin className="w-3.5 h-3.5 shrink-0" />
+            {profile.location || [profile.city, profile.province].filter(Boolean).join(', ')}
+          </div>
+        )}
+
+        {/* Stats */}
+        <div className="flex items-center gap-5 mb-5">
+          <div className="text-center">
+            <p className="text-lg font-black text-gray-900 leading-none">{items.length}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Works</p>
+          </div>
+          <div className="w-px h-8 bg-gray-200" />
+          <button className="text-center" onClick={() => {}}>
+            <p className="text-lg font-black text-gray-900 leading-none">{followerCount ?? 0}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Followers</p>
+          </button>
+          <div className="w-px h-8 bg-gray-200" />
+          <button className="text-center" onClick={() => {}}>
+            <p className="text-lg font-black text-gray-900 leading-none">{followingCount ?? 0}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Following</p>
+          </button>
+          {items.length > 0 && (
+            <>
+              <div className="w-px h-8 bg-gray-200" />
+              <div className="text-center">
+                <p className="text-lg font-black text-gray-900 leading-none">
+                  {items.reduce((s, i) => s + (i.views_count ?? 0), 0)}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Views</p>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Layout selector (owner only) ── */}
+        {isOwner && (
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-3">
+            {TEMPLATES.map(t => (
+              <button
+                key={t.id}
+                onClick={() => changeTemplate(t.id)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  template === t.id
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <t.Icon className="w-3 h-3" />
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Tab bar ── */}
+        <div className="flex gap-0.5 overflow-x-auto no-scrollbar pb-1 mb-4">
+          {TABS.map(t => {
+            const count = t.id === 'all' ? items.length : tabCount(t.id);
+            if (t.id !== 'all' && count === 0) return null;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`shrink-0 flex items-center gap-1 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  activeTab === t.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white text-gray-500 border border-gray-100 hover:text-gray-800'
+                }`}
+              >
+                {t.label}
+                {count > 0 && (
+                  <span className={`text-[10px] ${activeTab === t.id ? 'text-blue-200' : 'text-gray-400'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Content ── */}
+        {filtered.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-16 px-6">
+            <Film className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+            {isOwner ? (
+              <>
+                <p className="font-black text-gray-900 mb-1 text-lg">
+                  {activeTab === 'all' ? 'Build your creative portfolio' : `No ${activeTab.replace('_', ' ')} yet`}
+                </p>
+                <p className="text-sm text-gray-400 mb-6 max-w-xs mx-auto">
+                  Upload photos, videos, audio samples, or link to your best projects.
+                </p>
+                {activeTab === 'all' && (
+                  <button
+                    onClick={() => setShowAdd(true)}
+                    className="inline-flex items-center gap-2 bg-blue-600 text-white text-sm font-black px-5 py-3 rounded-2xl active:scale-95 transition-all"
+                    style={{ boxShadow: '0 6px 20px rgba(59,130,246,0.3)' }}
+                  >
+                    <Plus className="w-4 h-4" /> Add your first work
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="font-black text-gray-900 mb-1 text-lg">
+                  {activeTab === 'all' ? "No portfolio work yet" : `No ${activeTab.replace('_', ' ')} yet`}
+                </p>
+                <p className="text-sm text-gray-400 max-w-xs mx-auto">
+                  This creator hasn&apos;t added {activeTab === 'all' ? 'portfolio work' : activeTab.replace('_', ' ')} yet.
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          template === 'masonry'   ? <MasonryLayout  {...cardProps} /> :
+          template === 'grid'      ? <GridLayout      {...cardProps} /> :
+          template === 'cinematic' ? <CinematicLayout {...cardProps} /> :
+          template === 'service'   ? <ServiceLayout   {...cardProps} /> :
+                                     <MinimalLayout   {...cardProps} />
+        )}
+      </div>
+
+      {/* ── Full-screen viewer ── */}
+      {viewer.open && (
+        <PortfolioViewer
+          items={items}
+          startIndex={viewer.index}
+          onClose={() => setViewer({ open: false, index: 0 })}
+        />
+      )}
+
+      {/* ── Add item sheet (owner only) ── */}
+      {showAdd && isOwner && (
         <AddPortfolioItemSheet
           onClose={() => setShowAdd(false)}
           onAdded={item => setItems(prev => [item, ...prev])}

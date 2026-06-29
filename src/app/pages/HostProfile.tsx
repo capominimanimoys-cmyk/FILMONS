@@ -654,45 +654,61 @@ export function HostProfile() {
           {/* ─── PORTFOLIO ────────────────────────────────────────────── */}
           {tab === 'portfolio' && (
             <div>
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mb-3">
-                {PORTFOLIO_FILTERS.map(f => (
-                  <button key={f} onClick={() => setPortfolioFilter(f)}
-                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 ${
-                      portfolioFilter === f ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
-                    }`}>
-                    {f}
-                  </button>
-                ))}
-              </div>
-
-              {filteredPortfolio.length === 0 ? (
-                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
-                  <Grid3X3 className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
-                  <p className="text-gray-500 font-medium">
-                    {portfolioFilter === 'All' ? 'No portfolio items yet' : `No ${portfolioFilter.toLowerCase()} yet`}
+              {/* "View Full Portfolio" CTA */}
+              <button
+                onClick={() => navigate(`/portfolio/${host!.id}`)}
+                className="w-full flex items-center justify-between bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl px-5 py-4 mb-4 shadow-md active:scale-[0.98] transition-all"
+              >
+                <div className="text-left">
+                  <p className="font-black text-sm">View Full Portfolio</p>
+                  <p className="text-xs text-blue-200 mt-0.5">
+                    {portfolioItems.length} work{portfolioItems.length !== 1 ? 's' : ''} · Photos, Videos, Projects & more
                   </p>
                 </div>
+                <svg className="w-5 h-5 text-blue-200 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6"/>
+                </svg>
+              </button>
+
+              {/* Preview grid (first 6 items) */}
+              {portfolioItems.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <Grid3X3 className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
+                  <p className="text-gray-500 font-medium">No portfolio items yet</p>
+                </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {filteredPortfolio.map(item => (
-                    <div key={item.id} className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 shadow-sm">
+                <div className="grid grid-cols-3 gap-2">
+                  {portfolioItems.slice(0, 6).map(item => (
+                    <div
+                      key={item.id}
+                      className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 shadow-sm cursor-pointer"
+                      onClick={() => navigate(`/portfolio/${host!.id}`)}
+                    >
                       {(item.thumbnail_url || item.media_url) ? (
                         <img src={item.thumbnail_url || item.media_url!} alt={item.title} className="w-full h-full object-cover"/>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl opacity-30">
-                          {item.media_type === 'video' ? <Video className="w-8 h-8 text-gray-400"/> : item.media_type === 'audio' ? <Music className="w-8 h-8 text-gray-400"/> : <ImageIcon className="w-8 h-8 text-gray-400"/>}
+                        <div className="w-full h-full flex items-center justify-center">
+                          {item.media_type === 'video' ? <Video className="w-8 h-8 text-gray-300"/> : item.media_type === 'audio' ? <Music className="w-8 h-8 text-gray-300"/> : <ImageIcon className="w-8 h-8 text-gray-300"/>}
                         </div>
                       )}
                       {item.is_featured && (
-                        <div className="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded-full">★</div>
+                        <div className="absolute top-1.5 right-1.5 bg-amber-400 text-[8px] font-black text-white px-1.5 py-0.5 rounded-full">★</div>
                       )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2.5">
-                        <p className="text-white text-[11px] font-semibold truncate">{item.title}</p>
-                        {item.category && <p className="text-white/60 text-[10px]">{item.category}</p>}
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/65 to-transparent p-2">
+                        <p className="text-white text-[10px] font-semibold truncate">{item.title}</p>
                       </div>
                     </div>
                   ))}
                 </div>
+              )}
+
+              {portfolioItems.length > 6 && (
+                <button
+                  onClick={() => navigate(`/portfolio/${host!.id}`)}
+                  className="w-full mt-3 py-3 rounded-2xl border border-gray-200 bg-white text-gray-600 text-sm font-bold hover:bg-gray-50 active:scale-[0.98] transition-all"
+                >
+                  See all {portfolioItems.length} works →
+                </button>
               )}
             </div>
           )}

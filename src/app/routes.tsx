@@ -99,6 +99,7 @@ export const router = createBrowserRouter([
       { path: 'listing/:id', Component: ListingDetail },
       { path: 'search', Component: SearchPage },
       { path: 'portfolio', Component: Portfolio },
+      { path: 'portfolio/:userId', Component: Portfolio },
       { path: 'profile', Component: Profile },
       { path: 'verification', Component: Verification },
       { path: 'refund-policy', Component: RefundPolicy },

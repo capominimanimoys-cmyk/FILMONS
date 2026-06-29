@@ -1,63 +1,77 @@
 /**
  * Filmons — AddPortfolioItemSheet
- * 3-step bottom sheet: Category → Details → Media
+ * 3-step bottom sheet: Work Type → Details → Media
  */
 import { useState, useRef } from 'react';
-import { X, ChevronLeft, Upload, Link as LinkIcon, Star, Play, Music2, Image as ImageIcon, Loader2, Film, Aperture, User, Gamepad2, Palette, Sparkles } from 'lucide-react';
+import {
+  X, ChevronLeft, Upload, Link as LinkIcon, Star, Play, Music2,
+  Image as ImageIcon, Loader2, Film, Aperture, Layers, FileText,
+  Video, Clapperboard,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
   PORTFOLIO_CATEGORIES, createPortfolioItem, uploadPortfolioMedia,
-  type MediaType, type PortfolioItem,
+  workTypeToMediaType, type WorkType, type PortfolioItem,
 } from '../lib/portfolioApi';
 
-type Step = 'category' | 'details' | 'media';
+type Step = 'type' | 'details' | 'media';
 
-type LucideIcon = React.ComponentType<{ className?: string }>;
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  'Film & Video':      Film,
-  'Photography':       Aperture,
-  'Modeling':          User,
-  'Gaming':            Gamepad2,
-  'Music & Audio':     Music2,
-  'Design & Creative': Palette,
-  'Other':             Sparkles,
-};
+interface WorkTypeOption {
+  id:     WorkType;
+  label:  string;
+  desc:   string;
+  Icon:   React.ComponentType<{ className?: string }>;
+  color:  string;
+}
+
+const WORK_TYPES: WorkTypeOption[] = [
+  { id: 'photo',      label: 'Photo',          desc: 'Images, portraits, stills',     Icon: Aperture,    color: '#3b82f6' },
+  { id: 'video',      label: 'Video',          desc: 'Films, commercials, clips',     Icon: Film,        color: '#8b5cf6' },
+  { id: 'reel',       label: 'Reel',           desc: 'Short-form vertical video',     Icon: Video,       color: '#ec4899' },
+  { id: 'audio',      label: 'Audio',          desc: 'Music, sound design, podcasts', Icon: Music2,      color: '#f59e0b' },
+  { id: 'project',    label: 'Project',        desc: 'Full creative project',         Icon: Layers,      color: '#10b981' },
+  { id: 'case_study', label: 'Case Study',     desc: 'Process & outcome breakdown',   Icon: FileText,    color: '#06b6d4' },
+  { id: 'bts',        label: 'Behind the Scenes', desc: 'Making-of content',          Icon: Clapperboard, color: '#f97316' },
+  { id: 'link',       label: 'External Link',  desc: 'YouTube, Vimeo, Behance…',     Icon: LinkIcon,    color: '#64748b' },
+];
 
 interface Props {
-  onClose:  () => void;
-  onAdded:  (item: PortfolioItem) => void;
+  onClose: () => void;
+  onAdded: (item: PortfolioItem) => void;
 }
 
 export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const { user } = useAuth();
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const [step,        setStep]        = useState<Step>('category');
+  const [step,        setStep]        = useState<Step>('type');
   const [saving,      setSaving]      = useState(false);
   const [uploading,   setUploading]   = useState(false);
 
-  // Form state
-  const [category,    setCategory]    = useState('');
+  // Work type
+  const [workType,    setWorkType]    = useState<WorkType>('photo');
+
+  // Details fields
   const [title,       setTitle]       = useState('');
   const [description, setDesc]        = useState('');
+  const [category,    setCategory]    = useState('');
   const [role,        setRole]        = useState('');
+  const [clientName,  setClientName]  = useState('');
   const [year,        setYear]        = useState(new Date().getFullYear().toString());
   const [isFeatured,  setIsFeatured]  = useState(false);
 
-  // Media state
-  const [mediaType,   setMediaType]   = useState<MediaType>('image');
+  // Media
   const [mediaUrl,    setMediaUrl]    = useState('');
-  const [thumbnailUrl,setThumbnailUrl]= useState('');
+  const [thumbnailUrl,setThumbUrl]    = useState('');
   const [externalLink,setExtLink]     = useState('');
   const [filePreview, setFilePreview] = useState('');
   const [fileName,    setFileName]    = useState('');
 
-  // ── File pick ─────────────────────────────────────────────────────────────
+  // ── File upload ───────────────────────────────────────────────────────────
   const handleFile = async (file: File) => {
-    const type: MediaType = file.type.startsWith('video/') ? 'video'
+    const type = file.type.startsWith('video/') ? 'video'
       : file.type.startsWith('audio/') ? 'audio' : 'image';
-    setMediaType(type);
     setFileName(file.name);
     if (type === 'image') setFilePreview(URL.createObjectURL(file));
     else setFilePreview('');
@@ -67,68 +81,83 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     setUploading(false);
     if (!result) { toast.error('Upload failed — try again'); return; }
     setMediaUrl(result.url);
-    if (result.thumbnailUrl) { setThumbnailUrl(result.thumbnailUrl); setFilePreview(result.thumbnailUrl); }
-    toast.success('Media uploaded');
+    if (result.thumbnailUrl) { setThumbUrl(result.thumbnailUrl); setFilePreview(result.thumbnailUrl); }
+    toast.success('Uploaded');
   };
 
   // ── Publish ───────────────────────────────────────────────────────────────
   const publish = async () => {
     if (!user) return;
     if (!title.trim()) { toast.error('Add a title'); return; }
-    if (!mediaUrl && !externalLink) { toast.error('Add media or a link'); return; }
+    if (workType !== 'link' && !mediaUrl && !externalLink) {
+      toast.error('Add media or a link');
+      return;
+    }
+
+    const mediaType = workType === 'link' || externalLink ? 'link' : workTypeToMediaType(workType);
 
     setSaving(true);
     const item = await createPortfolioItem(user.id, {
-      title:         title.trim(),
-      description:   description.trim() || undefined,
-      category,
-      role:          role.trim()  || undefined,
-      year:          year ? parseInt(year) : undefined,
-      media_type:    externalLink ? 'link' : mediaType,
-      media_url:     mediaUrl  || undefined,
+      work_type:    workType,
+      title:        title.trim(),
+      description:  description.trim() || undefined,
+      category:     category || '',
+      role:         role.trim() || undefined,
+      client_name:  clientName.trim() || undefined,
+      year:         year ? parseInt(year) : undefined,
+      media_type:   mediaType,
+      media_url:    mediaUrl || undefined,
       thumbnail_url: thumbnailUrl || undefined,
       external_link: externalLink || undefined,
-      is_featured:   isFeatured,
+      is_featured:  isFeatured,
     });
     setSaving(false);
 
-    if (!item) { toast.error('Could not save item — check if the portfolio_items table exists in Supabase'); return; }
-    toast.success('Portfolio item added!');
+    if (!item) {
+      toast.error('Could not save — run the portfolio_items migration in Supabase');
+      return;
+    }
+    toast.success('Added to portfolio!');
     onAdded(item);
     onClose();
   };
 
-  // ── Back ──────────────────────────────────────────────────────────────────
   const back = () => {
-    if (step === 'category') onClose();
-    if (step === 'details')  setStep('category');
-    if (step === 'media')    setStep('details');
+    if (step === 'type')    onClose();
+    if (step === 'details') setStep('type');
+    if (step === 'media')   setStep('details');
   };
 
-  const STEP_TITLES: Record<Step, string> = {
-    category: 'Category',
-    details:  'Details',
-    media:    'Add Media',
+  const STEP_LABELS: Record<Step, string> = {
+    type:    'Choose Type',
+    details: 'Details',
+    media:   'Add Media',
   };
+
+  const selectedType = WORK_TYPES.find(t => t.id === workType);
+
+  // Accept media based on work type
+  const accept = workType === 'audio' ? 'audio/*'
+    : workType === 'video' || workType === 'reel' ? 'video/*,image/*'
+    : workType === 'link' ? undefined
+    : 'image/*,video/*,audio/*';
 
   return (
     <>
       <style>{`
         @keyframes apiSlideUp {
-          from { transform: translateY(100%); opacity: 0.7; }
+          from { transform: translateY(100%); opacity: 0.8; }
           to   { transform: translateY(0);    opacity: 1;   }
         }
       `}</style>
 
-      {/* Backdrop */}
       <div className="fixed inset-0 z-[60] bg-black/50" onClick={onClose} />
 
-      {/* Sheet */}
       <div
         className="fixed inset-x-0 bottom-0 z-[61] bg-white rounded-t-3xl flex flex-col"
         style={{
           maxHeight: '92vh',
-          animation: 'apiSlideUp 0.32s cubic-bezier(0.32,0.72,0,1)',
+          animation: 'apiSlideUp 0.3s cubic-bezier(0.32,0.72,0,1)',
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
@@ -140,46 +169,51 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
           <button onClick={back} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-            {step === 'category'
+            {step === 'type'
               ? <X className="w-4 h-4 text-gray-600" />
               : <ChevronLeft className="w-4 h-4 text-gray-600" />}
           </button>
-          <p className="text-sm font-black text-gray-900">{STEP_TITLES[step]}</p>
-          {step !== 'category' && step !== 'media' && (
+          <p className="text-sm font-black text-gray-900">{STEP_LABELS[step]}</p>
+          {step === 'details' && (
             <button
-              onClick={() => setStep(step === 'details' ? 'media' : 'details')}
-              disabled={step === 'details' && !title.trim()}
-              className="text-sm font-black text-blue-600 disabled:text-gray-300"
+              onClick={() => { if (!title.trim()) { toast.error('Add a title'); return; } setStep('media'); }}
+              className="text-sm font-black text-blue-600"
             >
               Next
             </button>
           )}
           {step === 'media' && (
-            <button onClick={publish} disabled={saving}
-              className="text-sm font-black text-blue-600 disabled:text-gray-300">
-              {saving ? 'Saving…' : 'Add'}
+            <button onClick={publish} disabled={saving} className="text-sm font-black text-blue-600 disabled:text-gray-300">
+              {saving ? 'Saving…' : 'Publish'}
             </button>
           )}
-          {step === 'category' && <div className="w-9" />}
+          {step === 'type' && <div className="w-9" />}
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── STEP: CATEGORY ── */}
-          {step === 'category' && (
+          {/* ── STEP: TYPE ── */}
+          {step === 'type' && (
             <div className="px-4 pt-4 pb-8 space-y-2">
               <p className="text-xs text-gray-400 mb-4">What type of work are you adding?</p>
-              {PORTFOLIO_CATEGORIES.map(cat => (
+              {WORK_TYPES.map(wt => (
                 <button
-                  key={cat}
-                  onClick={() => { setCategory(cat); setStep('details'); }}
-                  className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
-                  style={{ background: '#f9fafb', border: '1px solid #f0f0f0' }}
+                  key={wt.id}
+                  onClick={() => { setWorkType(wt.id); setStep('details'); }}
+                  className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98] bg-gray-50 border border-gray-100 hover:border-gray-200"
                 >
-                  {(() => { const Icon = CATEGORY_ICONS[cat] ?? Sparkles; return <Icon className="w-7 h-7 shrink-0 text-gray-600"/>; })()}
-                  <span className="text-sm font-black text-gray-900">{cat}</span>
-                  <svg className="w-4 h-4 text-gray-300 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: `${wt.color}18` }}
+                  >
+                    <span style={{ color: wt.color }}><wt.Icon className="w-5 h-5" /></span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-black text-gray-900">{wt.label}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{wt.desc}</p>
+                  </div>
+                  <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6"/>
                   </svg>
                 </button>
@@ -188,13 +222,18 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
           )}
 
           {/* ── STEP: DETAILS ── */}
-          {step === 'details' && (
+          {step === 'details' && selectedType && (
             <div className="px-4 pt-4 pb-8 space-y-4">
-              {/* Category chip */}
+              {/* Type chip */}
               <div className="flex items-center gap-2">
-                {(() => { const Icon = CATEGORY_ICONS[category] ?? Sparkles; return <Icon className="w-5 h-5 text-blue-500"/>; })()}
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">{category}</span>
-                <button onClick={() => setStep('category')} className="text-xs text-gray-400 underline ml-auto">Change</button>
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: `${selectedType.color}18` }}
+                >
+                  <span style={{ color: selectedType.color }}><selectedType.Icon className="w-4 h-4" /></span>
+                </div>
+                <span className="text-sm font-black text-gray-900">{selectedType.label}</span>
+                <button onClick={() => setStep('type')} className="text-xs text-gray-400 underline ml-auto">Change</button>
               </div>
 
               {/* Title */}
@@ -203,7 +242,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 <input
                   value={title}
                   onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. Nike Campaign"
+                  placeholder="e.g. Nike Campaign Shoot"
                   maxLength={80}
                   className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
                 />
@@ -217,35 +256,59 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   onChange={e => setDesc(e.target.value)}
                   placeholder="Brief description of this work…"
                   rows={3}
-                  maxLength={300}
+                  maxLength={400}
                   className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none"
                 />
               </div>
 
-              {/* Role + Year */}
+              {/* Category */}
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Category</label>
+                <select
+                  value={category}
+                  onChange={e => setCategory(e.target.value)}
+                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
+                >
+                  <option value="">Select a category…</option>
+                  {PORTFOLIO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              {/* Role + Client */}
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">My Role</label>
                   <input
                     value={role}
                     onChange={e => setRole(e.target.value)}
-                    placeholder="e.g. Lead Model"
+                    placeholder="e.g. Director"
                     className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
                   />
                 </div>
-                <div className="w-24">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Year</label>
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Client / Brand</label>
                   <input
-                    value={year}
-                    onChange={e => setYear(e.target.value)}
-                    placeholder="2026"
-                    maxLength={4}
+                    value={clientName}
+                    onChange={e => setClientName(e.target.value)}
+                    placeholder="e.g. Nike"
                     className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
                   />
                 </div>
               </div>
 
-              {/* Featured toggle */}
+              {/* Year */}
+              <div className="w-28">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Year</label>
+                <input
+                  value={year}
+                  onChange={e => setYear(e.target.value)}
+                  placeholder="2026"
+                  maxLength={4}
+                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                />
+              </div>
+
+              {/* Feature toggle */}
               <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3.5">
                 <div className="flex items-center gap-2">
                   <Star className={`w-4 h-4 ${isFeatured ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} />
@@ -277,21 +340,20 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
             <div className="px-4 pt-4 pb-8 space-y-4">
               <p className="text-xs text-gray-400">Upload your work or paste an external link.</p>
 
-              {/* Upload options */}
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/*,video/*,audio/*"
+                accept={accept}
                 className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
               />
 
-              {/* Preview area */}
+              {/* Preview */}
               {filePreview && (
                 <div className="relative w-full aspect-video bg-gray-100 rounded-2xl overflow-hidden">
                   <img src={filePreview} alt="" className="w-full h-full object-cover" />
                   <button
-                    onClick={() => { setFilePreview(''); setMediaUrl(''); setThumbnailUrl(''); setFileName(''); }}
+                    onClick={() => { setFilePreview(''); setMediaUrl(''); setThumbUrl(''); setFileName(''); }}
                     className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center"
                   >
                     <X className="w-3.5 h-3.5 text-white" />
@@ -308,19 +370,21 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
 
               {fileName && !uploading && (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-100 rounded-2xl px-4 py-3">
-                  {mediaType === 'image' ? <ImageIcon className="w-4 h-4 text-green-600 shrink-0" />
-                    : mediaType === 'video' ? <Play className="w-4 h-4 text-green-600 shrink-0" />
-                    : <Music2 className="w-4 h-4 text-green-600 shrink-0" />}
+                  {workType === 'audio'
+                    ? <Music2 className="w-4 h-4 text-green-600 shrink-0" />
+                    : workType === 'video' || workType === 'reel'
+                    ? <Play className="w-4 h-4 text-green-600 shrink-0" />
+                    : <ImageIcon className="w-4 h-4 text-green-600 shrink-0" />}
                   <p className="text-xs font-semibold text-green-700 truncate">{fileName}</p>
                 </div>
               )}
 
-              {/* Upload button */}
-              {!mediaUrl && (
+              {/* Upload button (not for link-only type) */}
+              {!mediaUrl && workType !== 'link' && (
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
-                  className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+                  className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-60"
                   style={{ background: '#f9fafb', border: '1.5px dashed #d1d5db' }}
                 >
                   <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
@@ -328,13 +392,16 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   </div>
                   <div>
                     <p className="text-sm font-black text-gray-900">Upload File</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Images, Videos, Audio</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {workType === 'audio' ? 'Audio files (MP3, WAV, OGG)' :
+                       workType === 'video' || workType === 'reel' ? 'Video files (MP4, MOV)' :
+                       'Images, Videos, Audio'}
+                    </p>
                   </div>
                 </button>
               )}
 
-              {/* OR divider */}
-              {!mediaUrl && (
+              {!mediaUrl && workType !== 'link' && (
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-px bg-gray-100" />
                   <span className="text-xs text-gray-400 font-semibold">or</span>
@@ -344,7 +411,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
 
               {/* External link */}
               <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block flex items-center gap-1.5">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5 block">
                   <LinkIcon className="w-3 h-3" /> External Link
                 </label>
                 <input
@@ -357,14 +424,13 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 <p className="text-[11px] text-gray-400 mt-1.5">YouTube · Vimeo · Behance · IMDb · Website</p>
               </div>
 
-              {/* Save button */}
               <button
                 onClick={publish}
-                disabled={saving || uploading || (!mediaUrl && !externalLink)}
+                disabled={saving || uploading || (workType !== 'link' && !mediaUrl && !externalLink) || (workType === 'link' && !externalLink)}
                 className="w-full py-4 rounded-2xl font-black text-white text-sm transition-all active:scale-[0.98] disabled:opacity-40"
                 style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
               >
-                {saving ? 'Adding…' : 'Add to Portfolio'}
+                {saving ? 'Publishing…' : 'Publish to Portfolio'}
               </button>
             </div>
           )}

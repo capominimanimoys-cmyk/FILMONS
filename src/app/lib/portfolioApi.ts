@@ -7,20 +7,31 @@ import { supabase } from '../../lib/supabase';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link';
 
+/** Creative work classification (first-step selection in Add Work flow) */
+export type WorkType = 'photo' | 'video' | 'reel' | 'audio' | 'project' | 'case_study' | 'bts' | 'link';
+
 export interface PortfolioItem {
-  id:            string;
-  user_id:       string;
-  title:         string;
-  description?:  string;
-  category:      string;
-  role?:         string;
-  year?:         number;
-  media_type:    MediaType;
-  media_url?:    string;
+  id:             string;
+  user_id:        string;
+  work_type?:     WorkType;
+  title:          string;
+  description?:   string;
+  category:       string;
+  role?:          string;
+  year?:          number;
+  media_type:     MediaType;
+  media_url?:     string;
   thumbnail_url?: string;
   external_link?: string;
-  is_featured:   boolean;
-  created_at:    string;
+  is_featured:    boolean;
+  tags?:          string[];
+  tools?:         string[];
+  client_name?:   string;
+  views_count?:   number;
+  saves_count?:   number;
+  likes_count?:   number;
+  created_at:     string;
+  updated_at?:    string;
 }
 
 export const PORTFOLIO_CATEGORIES = [
@@ -30,8 +41,21 @@ export const PORTFOLIO_CATEGORIES = [
   'Gaming',
   'Music & Audio',
   'Design & Creative',
+  'Fashion',
+  'Commercial',
+  'Editorial',
+  'Documentary',
   'Other',
 ];
+
+/** Maps a WorkType to the underlying storage media_type */
+export function workTypeToMediaType(wt: WorkType): MediaType {
+  if (wt === 'photo' || wt === 'project' || wt === 'case_study' || wt === 'bts') return 'image';
+  if (wt === 'video' || wt === 'reel') return 'video';
+  if (wt === 'audio') return 'audio';
+  if (wt === 'link') return 'link';
+  return 'image';
+}
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 export async function getPortfolioItems(userId: string): Promise<PortfolioItem[]> {
@@ -92,9 +116,9 @@ export async function uploadPortfolioMedia(
   userId: string,
   file: File,
 ): Promise<{ url: string; thumbnailUrl?: string } | null> {
-  const isVideo  = file.type.startsWith('video/');
-  const isAudio  = file.type.startsWith('audio/');
-  const isImage  = file.type.startsWith('image/');
+  const isVideo = file.type.startsWith('video/');
+  const isAudio = file.type.startsWith('audio/');
+  const isImage = file.type.startsWith('image/');
 
   const bucket = isAudio ? 'audio' : 'posts';
   const folder = isVideo ? 'portfolio/videos' : isAudio ? userId : 'portfolio/images';
@@ -108,12 +132,10 @@ export async function uploadPortfolioMedia(
 
   const url = supabase.storage.from(bucket).getPublicUrl(data.path).data.publicUrl;
 
-  // Generate video thumbnail via canvas
   let thumbnailUrl: string | undefined;
   if (isVideo) {
     thumbnailUrl = await extractVideoFrame(file);
     if (thumbnailUrl) {
-      // Upload thumbnail
       const tb = await fetch(thumbnailUrl).then(r => r.blob());
       const tp = `portfolio/thumbs/${userId}-${Date.now()}.jpg`;
       const { data: td } = await supabase.storage.from('posts').upload(tp, tb, { contentType: 'image/jpeg', upsert: false });
