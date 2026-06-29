@@ -1531,6 +1531,16 @@ export function Portfolio() {
           displayUrl={getShareDisplayUrl(shareTarget)}
           heading={getShareHeading(shareTarget)}
           onClose={() => setShareTarget(null)}
+          creatorCard={shareTarget.type === 'portfolio' ? {
+            name:        profile.name,
+            username:    profile.username,
+            primaryRole: profile.primaryRole,
+            location:    profile.location || [profile.city, profile.province].filter(Boolean).join(', ') || undefined,
+            avatarUrl:   profile.avatar,
+            coverUrl:    profile.coverPhoto,
+            shareUrl:    getShareUrl(shareTarget),
+            displayUrl:  getShareDisplayUrl(shareTarget),
+          } : undefined}
         />
       )}
 

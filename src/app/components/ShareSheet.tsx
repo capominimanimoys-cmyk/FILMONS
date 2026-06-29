@@ -1,17 +1,25 @@
-import { X, Copy, Code } from 'lucide-react';
+import { useState } from 'react';
+import { X, Copy, Code, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { CreatorCardSheet, type CreatorCardProps } from './CreatorCardSheet';
 
 interface Props {
   /** Actual URL that gets copied and used in share links. */
-  url:        string;
+  url:         string;
   /** Pretty display URL shown in the text box (e.g. without protocol). */
   displayUrl?: string;
   /** Sheet heading — e.g. "Share Portfolio", "Share Album", "Share Work". */
-  heading?:   string;
-  onClose:    () => void;
+  heading?:    string;
+  onClose:     () => void;
+  /** If provided, enables the Creator Card option (portfolio/profile shares only). */
+  creatorCard?: CreatorCardProps;
 }
 
-export function ShareSheet({ url, displayUrl, heading = 'Share Portfolio', onClose }: Props) {
+export function ShareSheet({
+  url, displayUrl, heading = 'Share Portfolio', onClose, creatorCard,
+}: Props) {
+  const [showCreatorCard, setShowCreatorCard] = useState(false);
+
   const shown   = displayUrl ?? url.replace(/^https?:\/\//, '');
   const enc     = encodeURIComponent(url);
   const encText = encodeURIComponent(heading);
@@ -38,17 +46,24 @@ export function ShareSheet({ url, displayUrl, heading = 'Share Portfolio', onClo
     { label: 'Copy Link', emoji: '🔗', action: () => copy(url, 'Link copied.') },
   ];
 
+  if (showCreatorCard && creatorCard) {
+    return (
+      <CreatorCardSheet
+        {...creatorCard}
+        shareUrl={url}
+        displayUrl={displayUrl ?? url}
+        onClose={() => setShowCreatorCard(false)}
+      />
+    );
+  }
+
   return (
     <>
       <style>{`@keyframes ssUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
       <div className="fixed inset-0 z-[80] bg-black/50" onClick={onClose} />
       <div
         className="fixed inset-x-0 bottom-0 z-[81] bg-white rounded-t-3xl flex flex-col"
-        style={{
-          animation: 'ssUp 0.28s cubic-bezier(0.32,0.72,0,1)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-          maxHeight: '88vh',
-        }}
+        style={{ animation: 'ssUp 0.28s cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'env(safe-area-inset-bottom)', maxHeight: '88vh' }}
       >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 shrink-0">
@@ -64,6 +79,24 @@ export function ShareSheet({ url, displayUrl, heading = 'Share Portfolio', onClo
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+
+          {/* Creator Card CTA — shown when profile/portfolio share */}
+          {creatorCard && (
+            <button
+              onClick={() => setShowCreatorCard(true)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-gray-100 active:scale-[0.98] transition-all text-left"
+              style={{ background: 'linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#24243e 100%)' }}
+            >
+              <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                <ImageIcon className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-white">Creator Card</p>
+                <p className="text-xs text-white/50 mt-0.5">Generate a branded share image</p>
+              </div>
+              <span className="text-white/40 text-lg">›</span>
+            </button>
+          )}
 
           {/* URL bar */}
           <div className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3">

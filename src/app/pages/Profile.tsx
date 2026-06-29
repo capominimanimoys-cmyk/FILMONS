@@ -750,9 +750,9 @@ export function Profile() {
     } catch {}
   };
 
-  // V2: loadLiked / loadSaved / loadSounds / loadTagged / loadReposts remain available
-  // but are not triggered by any V1 tab.
-  useEffect(() => { /* V2 social tabs hooked here */ }, [tab]); // eslint-disable-line
+  useEffect(() => {
+    if (tab === 'liked' && user?.id) loadSaved();
+  }, [tab, user?.id]); // eslint-disable-line
 
   const loadTagged = async () => {
     if (!user?.id) return;
