@@ -1,12 +1,21 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router';
+import { useNavigate } from 'react-router';
 import {
-  ArrowLeft, Globe, Lock, Users, Upload, Eye, Share2,
-  QrCode, Grid3X3, Layers, Play, Maximize2, BookOpen,
-  CheckCircle, Sparkles,
+  ArrowLeft, Globe, Lock, Users, Upload,
+  Grid3X3, Layers, Play, Maximize2, BookOpen,
+  CheckCircle, Sparkles, Camera, Image as ImageIcon,
+  BarChart2, MessageSquare, Briefcase, ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+
+function readBool(key: string, def = true): boolean {
+  const v = localStorage.getItem(key);
+  return v === null ? def : v === 'true';
+}
+function saveBool(key: string, v: boolean) {
+  localStorage.setItem(key, String(v));
+}
 
 type Visibility = 'public' | 'private' | 'unlisted';
 type Theme = 'matte-black' | 'filmic' | 'cyberpunk' | 'editorial' | 'minimal' | 'neon';
@@ -37,6 +46,11 @@ export function PortfolioSettings() {
   const [theme,    setTheme]    = useState<Theme>('matte-black');
   const [layout,   setLayout]   = useState<Layout>('grid');
   const [hasPortfolio, setHasPortfolio] = useState(false);
+
+  // Display toggles — stored in localStorage, read by Portfolio.tsx when isOwner
+  const [showStats,   setShowStats]   = useState(() => readBool('filmons_portfolio_show_stats'));
+  const [showHire,    setShowHire]    = useState(() => readBool('filmons_portfolio_show_hire'));
+  const [showMessage, setShowMessage] = useState(() => readBool('filmons_portfolio_show_message'));
 
   const portfolioUrl = `filmons.com/@${user?.username || user?.name?.toLowerCase().replace(/\s/g,'') || 'you'}`;
 
@@ -168,6 +182,85 @@ export function PortfolioSettings() {
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
         {step === 'upload' || step === 'visibility' ? <p className="text-sm text-gray-500">Step 3 of 3 — Visibility</p> : null}
+
+        {/* View portfolio shortcut */}
+        <button
+          onClick={() => navigate(`/portfolio`)}
+          className="w-full flex items-center justify-between bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl px-5 py-4"
+        >
+          <div className="text-left">
+            <p className="font-black text-sm">View My Portfolio</p>
+            <p className="text-xs text-blue-200 mt-0.5">See how visitors see your work</p>
+          </div>
+          <ExternalLink className="w-4 h-4 shrink-0" />
+        </button>
+
+        {/* Profile media shortcuts */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50">
+            <p className="text-sm font-black text-gray-900">Profile Media</p>
+            <p className="text-xs text-gray-400 mt-0.5">Edit via your profile page</p>
+          </div>
+          <div className="divide-y divide-gray-50">
+            <button
+              onClick={() => navigate('/profile')}
+              className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-50 transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                <Camera className="w-5 h-5 text-blue-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900">Profile Photo</p>
+                <p className="text-xs text-gray-400 mt-0.5">Update your avatar</p>
+              </div>
+              <ArrowLeft className="w-4 h-4 text-gray-300 rotate-180 shrink-0" />
+            </button>
+            <button
+              onClick={() => navigate('/profile')}
+              className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-50 transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <ImageIcon className="w-5 h-5 text-indigo-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900">Cover Photo</p>
+                <p className="text-xs text-gray-400 mt-0.5">Change your portfolio banner</p>
+              </div>
+              <ArrowLeft className="w-4 h-4 text-gray-300 rotate-180 shrink-0" />
+            </button>
+          </div>
+        </div>
+
+        {/* Display toggles */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50">
+            <p className="text-sm font-black text-gray-900">Display Options</p>
+            <p className="text-xs text-gray-400 mt-0.5">Control what visitors see on your portfolio</p>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {([
+              { key: 'stats',   icon: BarChart2,     label: 'Follower & View Stats', sub: 'Show counts on your portfolio header', val: showStats,   set: (v: boolean) => { setShowStats(v);   saveBool('filmons_portfolio_show_stats', v);   } },
+              { key: 'hire',    icon: Briefcase,     label: 'Hire Button',           sub: 'Visitors can tap Hire to find your listings', val: showHire,    set: (v: boolean) => { setShowHire(v);    saveBool('filmons_portfolio_show_hire', v);    } },
+              { key: 'message', icon: MessageSquare, label: 'Message Button',        sub: 'Visitors can message you from your portfolio', val: showMessage, set: (v: boolean) => { setShowMessage(v); saveBool('filmons_portfolio_show_message', v); } },
+            ] as any[]).map(row => (
+              <div key={row.key} className="flex items-center gap-4 px-4 py-4">
+                <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                  <row.icon className="w-5 h-5 text-gray-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900">{row.label}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{row.sub}</p>
+                </div>
+                <button
+                  onClick={() => row.set(!row.val)}
+                  className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${row.val ? 'bg-blue-500' : 'bg-gray-200'}`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${row.val ? 'left-[22px]' : 'left-0.5'}`} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Portfolio URL preview */}
         {visibility === 'public' && (

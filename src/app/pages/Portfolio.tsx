@@ -6,7 +6,8 @@ import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
-  type PortfolioItem, type WorkType,
+  getAlbums, getAlbumItems, createAlbum, deleteAlbum,
+  type PortfolioItem, type WorkType, type PortfolioAlbum,
 } from '../lib/portfolioApi';
 import { supabase } from '../../lib/supabase';
 import type { User } from '../types';
@@ -17,11 +18,12 @@ import {
   Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
   Play, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, Layers, LayoutList, Monitor,
+  FolderOpen, Search, UserCheck,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Template = 'masonry' | 'grid' | 'cinematic' | 'service' | 'minimal';
-type TabType  = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts';
+type TabType  = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
 
 const TEMPLATES: { id: Template; label: string; Icon: any }[] = [
   { id: 'masonry',   label: 'Masonry',   Icon: Layers },
@@ -40,10 +42,11 @@ const TABS: { id: TabType; label: string }[] = [
   { id: 'projects',     label: 'Projects'     },
   { id: 'case_studies', label: 'Case Studies' },
   { id: 'bts',          label: 'BTS'          },
+  { id: 'albums',       label: 'Albums'       },
 ];
 
 function filterByTab(item: PortfolioItem, tab: TabType): boolean {
-  if (tab === 'all') return true;
+  if (tab === 'all' || tab === 'albums') return true;
   const wt = item.work_type;
   const mt = item.media_type;
   if (tab === 'photos')       return wt === 'photo'      || (!wt && mt === 'image');
@@ -54,6 +57,186 @@ function filterByTab(item: PortfolioItem, tab: TabType): boolean {
   if (tab === 'case_studies') return wt === 'case_study';
   if (tab === 'bts')          return wt === 'bts';
   return true;
+}
+
+// ── Followers / Following sheet ───────────────────────────────────────────────
+function FollowSheet({
+  userId, type, meId, onClose,
+}: {
+  userId: string;
+  type:   'followers' | 'following';
+  meId?:  string;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [search,      setSearch]      = useState('');
+  const [users,       setUsers]       = useState<any[]>([]);
+  const [meFollowing, setMeFollowing] = useState<Set<string>>(new Set());
+  const [loading,     setLoading]     = useState(true);
+  const [toggling,    setToggling]    = useState<string | null>(null);
+
+  useEffect(() => {
+    load();
+  }, [userId, type]); // eslint-disable-line
+
+  const load = async () => {
+    setLoading(true);
+    const idCol    = type === 'followers' ? 'follower_id'  : 'following_id';
+    const filterCol = type === 'followers' ? 'following_id' : 'follower_id';
+
+    const { data: rows } = await supabase
+      .from('follows')
+      .select(idCol)
+      .eq(filterCol, userId);
+
+    if (!rows?.length) { setLoading(false); return; }
+
+    const ids = rows.map((r: any) => r[idCol]);
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name, username, avatar, primary_role, is_verified')
+      .in('id', ids);
+
+    setUsers(profiles ?? []);
+
+    if (meId) {
+      const { data: myFollows } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', meId)
+        .in('following_id', ids);
+      setMeFollowing(new Set((myFollows ?? []).map((r: any) => r.following_id)));
+    }
+    setLoading(false);
+  };
+
+  const handleToggle = async (targetId: string) => {
+    if (!meId) { navigate('/login'); return; }
+    setToggling(targetId);
+    try {
+      if (meFollowing.has(targetId)) {
+        await socialApi.unfollow(targetId);
+        setMeFollowing(prev => { const s = new Set(prev); s.delete(targetId); return s; });
+      } else {
+        await socialApi.follow(targetId);
+        setMeFollowing(prev => new Set([...prev, targetId]));
+      }
+    } catch {
+      toast.error('Could not update follow status');
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const filtered = users.filter(u =>
+    !search ||
+    u.name?.toLowerCase().includes(search.toLowerCase()) ||
+    u.username?.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  return (
+    <>
+      <style>{`
+        @keyframes fsSlideUp {
+          from { transform: translateY(100%); }
+          to   { transform: translateY(0); }
+        }
+      `}</style>
+      <div className="fixed inset-0 z-[70] bg-black/50" onClick={onClose} />
+      <div
+        className="fixed inset-x-0 bottom-0 z-[71] bg-white rounded-t-3xl flex flex-col"
+        style={{ maxHeight: '80vh', animation: 'fsSlideUp 0.28s cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full" />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+          <h3 className="text-base font-black text-gray-900 capitalize">{type}</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+            <X className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+        {/* Search */}
+        <div className="px-4 py-2 shrink-0">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-2xl px-3 py-2.5">
+            <Search className="w-4 h-4 text-gray-400 shrink-0" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="flex-1 text-sm bg-transparent outline-none text-gray-900 placeholder-gray-400"
+            />
+          </div>
+        </div>
+        {/* List */}
+        <div className="flex-1 overflow-y-auto px-4 py-2">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-12">
+              <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">{search ? 'No results' : `No ${type} yet`}</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {filtered.map(u => {
+                const isMe   = u.id === meId;
+                const isFoll = meFollowing.has(u.id);
+                return (
+                  <div
+                    key={u.id}
+                    className="flex items-center gap-3 py-2.5 rounded-2xl hover:bg-gray-50 px-2 cursor-pointer"
+                    onClick={() => { onClose(); navigate(`/host/${u.id}`); }}
+                  >
+                    <div className="shrink-0">
+                      {u.avatar ? (
+                        <img src={u.avatar} alt={u.name} className="w-11 h-11 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center">
+                          <span className="text-white font-black text-sm">{u.name?.[0]?.toUpperCase() ?? '?'}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
+                        {u.is_verified && <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 fill-blue-500 shrink-0" />}
+                      </div>
+                      {u.username && <p className="text-xs text-gray-400 truncate">@{u.username}</p>}
+                      {u.primary_role && <p className="text-[11px] text-blue-600 truncate">{u.primary_role}</p>}
+                    </div>
+                    {!isMe && meId && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleToggle(u.id); }}
+                        disabled={toggling === u.id}
+                        className={`shrink-0 flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-xl transition-all disabled:opacity-50 ${
+                          isFoll
+                            ? 'bg-gray-100 text-gray-600 border border-gray-200'
+                            : 'text-white bg-blue-600'
+                        }`}
+                      >
+                        {toggling === u.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : isFoll
+                          ? <><UserCheck className="w-3 h-3" /> Following</>
+                          : <>+ Follow</>
+                        }
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
 }
 
 // ── Full-screen item viewer ───────────────────────────────────────────────────
@@ -69,15 +252,14 @@ function PortfolioViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowLeft')  prev();
-      if (e.key === 'ArrowRight') next();
+      if (e.key === 'Escape')      onClose();
+      if (e.key === 'ArrowLeft')   prev();
+      if (e.key === 'ArrowRight')  next();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, prev, next]);
 
-  // Prevent body scroll while viewer is open
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
@@ -85,7 +267,7 @@ function PortfolioViewer({
 
   if (!item) return null;
 
-  const wt     = item.work_type;
+  const wt      = item.work_type;
   const isVideo = wt === 'video' || wt === 'reel' || (!wt && item.media_type === 'video');
   const isAudio = wt === 'audio'                  || (!wt && item.media_type === 'audio');
   const isLink  = wt === 'link'                   || (!wt && item.media_type === 'link');
@@ -131,7 +313,7 @@ function PortfolioViewer({
         </button>
       </div>
 
-      {/* Media — takes upper ~58% of screen */}
+      {/* Media */}
       <div className="flex-1 flex items-center justify-center relative min-h-0 px-4">
         {idx > 0 && (
           <button
@@ -144,13 +326,7 @@ function PortfolioViewer({
 
         <div className="w-full h-full flex items-center justify-center">
           {isVideo && item.media_url ? (
-            <video
-              src={item.media_url}
-              controls
-              playsInline
-              autoPlay
-              className="max-w-full max-h-full rounded-xl object-contain"
-            />
+            <video src={item.media_url} controls playsInline autoPlay className="max-w-full max-h-full rounded-xl object-contain" />
           ) : isAudio ? (
             <div className="w-full max-w-xs flex flex-col items-center gap-5">
               <div className="w-28 h-28 rounded-3xl bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center shadow-2xl">
@@ -171,22 +347,14 @@ function PortfolioViewer({
                 </div>
               )}
               {item.external_link && (
-                <a
-                  href={item.external_link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold text-sm"
-                >
+                <a href={item.external_link} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold text-sm">
                   <ExternalLink className="w-4 h-4" /> Open Link
                 </a>
               )}
             </div>
           ) : thumb ? (
-            <img
-              src={thumb}
-              alt={item.title}
-              className="max-w-full max-h-full rounded-xl object-contain"
-            />
+            <img src={thumb} alt={item.title} className="max-w-full max-h-full rounded-xl object-contain" />
           ) : (
             <div className="w-32 h-32 rounded-3xl bg-white/5 flex items-center justify-center">
               <FileText className="w-14 h-14 text-white/20" />
@@ -204,16 +372,14 @@ function PortfolioViewer({
         )}
       </div>
 
-      {/* Info panel — white card at bottom */}
+      {/* Info panel */}
       <div
         className="shrink-0 bg-white rounded-t-3xl px-5 pt-5 pb-8"
         style={{ maxHeight: '42vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Handle */}
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
 
-        {/* Work-type label + featured */}
         <div className="flex items-center gap-2 mb-2">
           {wt && (
             <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
@@ -227,15 +393,11 @@ function PortfolioViewer({
           )}
         </div>
 
-        {/* Title */}
         <h2 className="font-black text-gray-900 text-xl leading-tight mb-2">{item.title}</h2>
 
-        {/* Meta chips */}
         <div className="flex flex-wrap gap-1.5 mb-3">
           {item.category && (
-            <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1 rounded-full font-semibold">
-              {item.category}
-            </span>
+            <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1 rounded-full font-semibold">{item.category}</span>
           )}
           {item.role && (
             <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{item.role}</span>
@@ -248,12 +410,10 @@ function PortfolioViewer({
           )}
         </div>
 
-        {/* Description */}
         {item.description && (
           <p className="text-sm text-gray-600 leading-relaxed mb-3">{item.description}</p>
         )}
 
-        {/* Tools */}
         {item.tools && item.tools.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-3">
             {item.tools.map(t => (
@@ -262,14 +422,9 @@ function PortfolioViewer({
           </div>
         )}
 
-        {/* External link */}
         {item.external_link && !isLink && (
-          <a
-            href={item.external_link}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-bold"
-          >
+          <a href={item.external_link} target="_blank" rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-bold">
             <ExternalLink className="w-3.5 h-3.5" /> View full project
           </a>
         )}
@@ -301,14 +456,15 @@ function WorkTypeBadge({ wt }: { wt?: WorkType }) {
 }
 
 function ItemCard({
-  item, isOwner, onTap, onToggle, onDelete, className = '',
+  item, isOwner, onTap, onToggle, onDelete, className = '', style,
 }: {
-  item: CardProps['items'][0];
-  isOwner: boolean;
-  onTap: () => void;
-  onToggle: () => void;
-  onDelete: () => void;
+  item:      CardProps['items'][0];
+  isOwner:   boolean;
+  onTap:     () => void;
+  onToggle:  () => void;
+  onDelete:  () => void;
   className?: string;
+  style?:    React.CSSProperties;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const thumb   = item.thumbnail_url || item.media_url;
@@ -320,9 +476,9 @@ function ItemCard({
   return (
     <div
       className={`relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group ${className}`}
+      style={style}
       onClick={onTap}
     >
-      {/* Media */}
       {thumb && !isAudio && !isLink ? (
         <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
       ) : (
@@ -336,13 +492,12 @@ function ItemCard({
               : 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
           }}
         >
-          {isAudio  ? <Music2   className="w-10 h-10 text-purple-300" />
-           : isLink  ? <LinkIcon  className="w-10 h-10 text-blue-400"   />
-           :           <FileText  className="w-10 h-10 text-slate-300"  />}
+          {isAudio ? <Music2   className="w-10 h-10 text-purple-300" />
+           : isLink ? <LinkIcon  className="w-10 h-10 text-blue-400"  />
+           :           <FileText  className="w-10 h-10 text-slate-300" />}
         </div>
       )}
 
-      {/* Overlay badges */}
       <WorkTypeBadge wt={wt} />
 
       {isVideo && (
@@ -357,7 +512,6 @@ function ItemCard({
         </div>
       )}
 
-      {/* Bottom gradient */}
       <div
         className="absolute inset-x-0 bottom-0 p-2.5 pointer-events-none"
         style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 100%)' }}
@@ -366,7 +520,6 @@ function ItemCard({
         {item.category && <p className="text-white/55 text-[9px] truncate mt-0.5">{item.category}</p>}
       </div>
 
-      {/* Owner context menu */}
       {isOwner && (
         <>
           <button
@@ -409,24 +562,28 @@ function ItemCard({
 function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
   return (
     <div className="columns-2 sm:columns-3 lg:columns-4 gap-2">
-      {items.map((item, i) => (
-        <div key={item.id} className="break-inside-avoid mb-2">
-          <ItemCard
-            item={item}
-            isOwner={isOwner}
-            className={`aspect-auto ${
-              item.work_type === 'case_study' ? 'aspect-[3/4]' :
-              item.work_type === 'reel'       ? 'aspect-[9/16]' :
-              item.work_type === 'video'      ? 'aspect-video' :
-              i % 5 === 0                     ? 'aspect-[4/5]' :
-              i % 5 === 2                     ? 'aspect-[3/4]' : 'aspect-square'
-            }`}
-            onTap={() => onTap(item, i)}
-            onToggle={() => onToggle(item)}
-            onDelete={() => onDelete(item.id)}
-          />
-        </div>
-      ))}
+      {items.map((item, i) => {
+        // Use stored aspect ratio if available, otherwise fall back to work-type heuristics
+        const ar = item.aspect_ratio ?? (
+          item.work_type === 'case_study' ? 3 / 4  :
+          item.work_type === 'reel'       ? 9 / 16 :
+          item.work_type === 'video'      ? 16 / 9 :
+          i % 5 === 0                     ? 4 / 5  :
+          i % 5 === 2                     ? 3 / 4  : 1
+        );
+        return (
+          <div key={item.id} className="break-inside-avoid mb-2">
+            <ItemCard
+              item={item}
+              isOwner={isOwner}
+              style={{ aspectRatio: ar }}
+              onTap={() => onTap(item, i)}
+              onToggle={() => onToggle(item)}
+              onDelete={() => onDelete(item.id)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -594,24 +751,36 @@ export function Portfolio() {
   const { user: me } = useAuth();
   const navigate = useNavigate();
 
-  // target profile
   const [profile,  setProfile]  = useState<User | null>(null);
   const [items,    setItems]    = useState<PortfolioItem[]>([]);
+  const [albums,   setAlbums]   = useState<PortfolioAlbum[]>([]);
   const [loading,  setLoading]  = useState(true);
 
-  // follow state (visitor view)
   const [followerCount,  setFollowerCount]  = useState<number | null>(null);
   const [followingCount, setFollowingCount] = useState<number | null>(null);
   const [following,      setFollowing]      = useState(false);
   const [followLoading,  setFollowLoading]  = useState(false);
 
-  // UI state
-  const [template,  setTemplate]  = useState<Template>(
-    () => (localStorage.getItem('filmons_portfolio_template') as Template) ?? 'masonry'
+  const [template,        setTemplate]        = useState<Template>(
+    () => (localStorage.getItem('filmons_portfolio_template') as Template) ?? 'masonry',
   );
-  const [activeTab, setActiveTab]  = useState<TabType>('all');
-  const [viewer,    setViewer]     = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
-  const [showAdd,   setShowAdd]    = useState(false);
+
+  // Owner-configured display preferences (set in PortfolioSettings, stored in localStorage)
+  const showStats   = localStorage.getItem('filmons_portfolio_show_stats')   !== 'false';
+  const showHire    = localStorage.getItem('filmons_portfolio_show_hire')     !== 'false';
+  const showMessage = localStorage.getItem('filmons_portfolio_show_message')  !== 'false';
+  const [activeTab,       setActiveTab]       = useState<TabType>('all');
+  const [viewer,          setViewer]          = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
+  const [showAdd,         setShowAdd]         = useState(false);
+  const [showFollowSheet, setShowFollowSheet] = useState<null | 'followers' | 'following'>(null);
+
+  // Albums
+  const [activeAlbum,   setActiveAlbum]   = useState<PortfolioAlbum | null>(null);
+  const [albumItems,    setAlbumItems]    = useState<PortfolioItem[]>([]);
+  const [albumLoading,  setAlbumLoading]  = useState(false);
+  const [showCreateAlbum, setShowCreateAlbum] = useState(false);
+  const [newAlbumTitle,  setNewAlbumTitle]  = useState('');
+  const [creatingAlbum,  setCreatingAlbum]  = useState(false);
 
   const targetId = paramUserId ?? me?.id;
   const isOwner  = !!me && !!targetId && me.id === targetId;
@@ -627,9 +796,10 @@ export function Portfolio() {
   const loadPage = async (uid: string) => {
     setLoading(true);
     try {
-      const [hostData, portfolioData] = await Promise.all([
+      const [hostData, portfolioData, albumData] = await Promise.all([
         authApi.getUserById(uid),
         getPortfolioItems(uid),
+        getAlbums(uid),
       ]);
       if (hostData?.avatar) {
         const base = hostData.avatar.split('?')[0];
@@ -637,8 +807,8 @@ export function Portfolio() {
       }
       setProfile(hostData);
       setItems(portfolioData);
+      setAlbums(albumData);
 
-      // Follow counts
       const followQueries: Promise<any>[] = [
         supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
         supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
@@ -646,7 +816,7 @@ export function Portfolio() {
       if (me?.id && me.id !== uid) {
         followQueries.push(
           supabase.from('follows').select('*', { count: 'exact', head: true })
-            .eq('follower_id', me.id).eq('following_id', uid)
+            .eq('follower_id', me.id).eq('following_id', uid),
         );
       }
       const [fcRes, fgRes, amFollowingRes] = await Promise.all(followQueries);
@@ -656,6 +826,36 @@ export function Portfolio() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openAlbum = async (album: PortfolioAlbum) => {
+    setActiveAlbum(album);
+    setAlbumLoading(true);
+    const results = await getAlbumItems(album.id);
+    setAlbumItems(results);
+    setAlbumLoading(false);
+  };
+
+  const handleCreateAlbum = async () => {
+    if (!me || !newAlbumTitle.trim()) return;
+    setCreatingAlbum(true);
+    const result = await createAlbum(me.id, { title: newAlbumTitle.trim(), visibility: 'public' });
+    setCreatingAlbum(false);
+    if (result) {
+      setAlbums(prev => [result, ...prev]);
+      setNewAlbumTitle('');
+      setShowCreateAlbum(false);
+      toast.success('Album created');
+    } else {
+      toast.error('Could not create album — run the portfolio_albums migration');
+    }
+  };
+
+  const handleDeleteAlbum = async (albumId: string) => {
+    if (!window.confirm('Delete this album?')) return;
+    await deleteAlbum(albumId);
+    setAlbums(prev => prev.filter(a => a.id !== albumId));
+    toast.success('Album deleted');
   };
 
   const handleFollow = async () => {
@@ -693,15 +893,15 @@ export function Portfolio() {
     localStorage.setItem('filmons_portfolio_template', t);
   };
 
-  const filtered = items.filter(item => filterByTab(item, activeTab));
-
-  const tabCount = (tab: TabType) => items.filter(i => filterByTab(i, tab)).length;
+  const filtered  = items.filter(item => filterByTab(item, activeTab));
+  const tabCount  = (tab: TabType) => tab === 'albums' ? albums.length : items.filter(i => filterByTab(i, tab)).length;
 
   const cardProps: CardProps = {
-    items: filtered,
+    items: activeTab === 'albums' && activeAlbum ? albumItems : filtered,
     isOwner,
     onTap: (item, index) => {
-      const globalIndex = items.indexOf(item);
+      const src = activeTab === 'albums' && activeAlbum ? albumItems : items;
+      const globalIndex = src.indexOf(item);
       setViewer({ open: true, index: globalIndex >= 0 ? globalIndex : index });
     },
     onToggle: handleToggle,
@@ -727,11 +927,14 @@ export function Portfolio() {
     );
   }
 
+  // ── Album detail view ─────────────────────────────────────────────────────
+  const showAlbumDetail = activeTab === 'albums' && activeAlbum;
+
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
 
       {/* ── Cover photo ── */}
-      <div className="relative">
+      <div className="relative z-0">
         <div className="h-48 overflow-hidden">
           {profile.coverPhoto ? (
             <img src={profile.coverPhoto} alt="Cover" className="w-full h-full object-cover" />
@@ -741,7 +944,6 @@ export function Portfolio() {
           <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom,transparent 30%,rgba(0,0,0,0.45) 100%)' }} />
         </div>
 
-        {/* Back arrow */}
         {paramUserId && (
           <button
             onClick={() => navigate(-1)}
@@ -753,10 +955,11 @@ export function Portfolio() {
       </div>
 
       {/* ── Profile header ── */}
-      <div className="max-w-2xl mx-auto px-4">
-        {/* Avatar + action buttons row */}
-        <div className="flex items-end justify-between -mt-12 mb-3 gap-2">
-          <div className="border-[3px] border-white rounded-full shadow-xl shrink-0">
+      <div className="relative z-10 max-w-2xl mx-auto px-4">
+
+        {/* Avatar + action buttons */}
+        <div className="flex items-end justify-between -mt-14 mb-3 gap-2">
+          <div className="relative z-20 border-[3px] border-white rounded-full shadow-xl shrink-0">
             <UserAvatar user={profile} size={80} />
           </div>
 
@@ -767,27 +970,29 @@ export function Portfolio() {
                 onClick={handleFollow}
                 disabled={followLoading}
                 className={`flex items-center gap-1.5 text-sm font-black px-4 py-2 rounded-2xl transition-all active:scale-95 disabled:opacity-60 ${
-                  following
-                    ? 'bg-gray-100 text-gray-700 border border-gray-200'
-                    : 'text-white'
+                  following ? 'bg-gray-100 text-gray-700 border border-gray-200' : 'text-white'
                 }`}
                 style={following ? {} : { background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
               >
                 {followLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
                 {following ? 'Following' : 'Follow'}
               </button>
-              <button
-                onClick={() => navigate(`/inbox?userId=${profile.id}`)}
-                className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
-              >
-                <MessageSquare className="w-3.5 h-3.5" /> Message
-              </button>
-              <button
-                className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
-                onClick={() => navigate(`/search?host=${profile.id}`)}
-              >
-                <Briefcase className="w-3.5 h-3.5" /> Hire
-              </button>
+              {showMessage && (
+                <button
+                  onClick={() => navigate(`/inbox?userId=${profile.id}`)}
+                  className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> Message
+                </button>
+              )}
+              {showHire && (
+                <button
+                  className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+                  onClick={() => navigate(`/search?host=${profile.id}`)}
+                >
+                  <Briefcase className="w-3.5 h-3.5" /> Hire
+                </button>
+              )}
             </div>
           )}
 
@@ -819,20 +1024,14 @@ export function Portfolio() {
               <CheckCircle2 className="w-5 h-5 text-blue-500 fill-blue-500 shrink-0" />
             )}
           </div>
-          {profile.username && (
-            <p className="text-sm text-gray-400">@{profile.username}</p>
-          )}
-          {profile.primaryRole && (
-            <p className="text-xs font-bold text-blue-600 mt-0.5">{profile.primaryRole}</p>
-          )}
+          {profile.username && <p className="text-sm text-gray-400">@{profile.username}</p>}
+          {profile.primaryRole && <p className="text-xs font-bold text-blue-600 mt-0.5">{profile.primaryRole}</p>}
         </div>
 
-        {/* Bio */}
         {profile.bio && (
           <p className="text-sm text-gray-600 leading-relaxed mb-2 line-clamp-3">{profile.bio}</p>
         )}
 
-        {/* Location */}
         {(profile.location || profile.city) && (
           <div className="flex items-center gap-1 text-xs text-gray-400 mb-3">
             <MapPin className="w-3.5 h-3.5 shrink-0" />
@@ -840,19 +1039,19 @@ export function Portfolio() {
           </div>
         )}
 
-        {/* Stats */}
-        <div className="flex items-center gap-5 mb-5">
+        {/* Stats — followers/following are tappable */}
+        {showStats && <div className="flex items-center gap-5 mb-5">
           <div className="text-center">
             <p className="text-lg font-black text-gray-900 leading-none">{items.length}</p>
             <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Works</p>
           </div>
           <div className="w-px h-8 bg-gray-200" />
-          <button className="text-center" onClick={() => {}}>
+          <button className="text-center" onClick={() => setShowFollowSheet('followers')}>
             <p className="text-lg font-black text-gray-900 leading-none">{followerCount ?? 0}</p>
             <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Followers</p>
           </button>
           <div className="w-px h-8 bg-gray-200" />
-          <button className="text-center" onClick={() => {}}>
+          <button className="text-center" onClick={() => setShowFollowSheet('following')}>
             <p className="text-lg font-black text-gray-900 leading-none">{followingCount ?? 0}</p>
             <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Following</p>
           </button>
@@ -867,10 +1066,10 @@ export function Portfolio() {
               </div>
             </>
           )}
-        </div>
+        </div>}
 
-        {/* ── Layout selector (owner only) ── */}
-        {isOwner && (
+        {/* Layout selector (owner, non-albums tab) */}
+        {isOwner && activeTab !== 'albums' && (
           <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-3">
             {TEMPLATES.map(t => (
               <button
@@ -889,15 +1088,16 @@ export function Portfolio() {
           </div>
         )}
 
-        {/* ── Tab bar ── */}
+        {/* Tab bar */}
         <div className="flex gap-0.5 overflow-x-auto no-scrollbar pb-1 mb-4">
           {TABS.map(t => {
-            const count = t.id === 'all' ? items.length : tabCount(t.id);
-            if (t.id !== 'all' && count === 0) return null;
+            const count = tabCount(t.id);
+            if (t.id !== 'all' && t.id !== 'albums' && count === 0) return null;
+            if (t.id === 'albums' && count === 0 && !isOwner) return null;
             return (
               <button
                 key={t.id}
-                onClick={() => setActiveTab(t.id)}
+                onClick={() => { setActiveTab(t.id); setActiveAlbum(null); }}
                 className={`shrink-0 flex items-center gap-1 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === t.id
                     ? 'bg-blue-600 text-white shadow-sm'
@@ -915,52 +1115,184 @@ export function Portfolio() {
           })}
         </div>
 
-        {/* ── Content ── */}
-        {filtered.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-16 px-6">
-            <Film className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-            {isOwner ? (
+        {/* ── Albums tab content ── */}
+        {activeTab === 'albums' && (
+          <>
+            {/* Album detail view */}
+            {showAlbumDetail ? (
               <>
-                <p className="font-black text-gray-900 mb-1 text-lg">
-                  {activeTab === 'all' ? 'Build your creative portfolio' : `No ${activeTab.replace('_', ' ')} yet`}
-                </p>
-                <p className="text-sm text-gray-400 mb-6 max-w-xs mx-auto">
-                  Upload photos, videos, audio samples, or link to your best projects.
-                </p>
-                {activeTab === 'all' && (
+                <div className="flex items-center gap-3 mb-4">
                   <button
-                    onClick={() => setShowAdd(true)}
-                    className="inline-flex items-center gap-2 bg-blue-600 text-white text-sm font-black px-5 py-3 rounded-2xl active:scale-95 transition-all"
-                    style={{ boxShadow: '0 6px 20px rgba(59,130,246,0.3)' }}
+                    onClick={() => setActiveAlbum(null)}
+                    className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
                   >
-                    <Plus className="w-4 h-4" /> Add your first work
+                    <ChevronLeft className="w-4 h-4 text-gray-600" />
                   </button>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-black text-gray-900 text-sm truncate">{activeAlbum.title}</h2>
+                    {activeAlbum.description && (
+                      <p className="text-xs text-gray-400 truncate">{activeAlbum.description}</p>
+                    )}
+                  </div>
+                </div>
+
+                {albumLoading ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                  </div>
+                ) : albumItems.length === 0 ? (
+                  <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-14 px-6">
+                    <FolderOpen className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                    <p className="font-black text-gray-900 mb-1">Empty album</p>
+                    <p className="text-sm text-gray-400">No items in this album yet.</p>
+                  </div>
+                ) : (
+                  <GridLayout {...cardProps} />
                 )}
               </>
             ) : (
+              /* Album grid */
               <>
-                <p className="font-black text-gray-900 mb-1 text-lg">
-                  {activeTab === 'all' ? "No portfolio work yet" : `No ${activeTab.replace('_', ' ')} yet`}
-                </p>
-                <p className="text-sm text-gray-400 max-w-xs mx-auto">
-                  This creator hasn&apos;t added {activeTab === 'all' ? 'portfolio work' : activeTab.replace('_', ' ')} yet.
-                </p>
+                {isOwner && (
+                  <div className="mb-4">
+                    {showCreateAlbum ? (
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+                        <input
+                          value={newAlbumTitle}
+                          onChange={e => setNewAlbumTitle(e.target.value)}
+                          placeholder="Album name…"
+                          maxLength={60}
+                          className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                          onKeyDown={e => { if (e.key === 'Enter') handleCreateAlbum(); }}
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleCreateAlbum}
+                            disabled={creatingAlbum || !newAlbumTitle.trim()}
+                            className="flex-1 py-3 rounded-2xl font-black text-white text-sm disabled:opacity-40"
+                            style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+                          >
+                            {creatingAlbum ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Album'}
+                          </button>
+                          <button
+                            onClick={() => { setShowCreateAlbum(false); setNewAlbumTitle(''); }}
+                            className="px-5 py-3 rounded-2xl font-bold text-gray-600 border border-gray-200 bg-white text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowCreateAlbum(true)}
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-gray-200 text-sm font-bold text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" /> New Album
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {albums.length === 0 ? (
+                  <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-14 px-6">
+                    <FolderOpen className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                    <p className="font-black text-gray-900 mb-1">No albums yet</p>
+                    <p className="text-sm text-gray-400 max-w-xs mx-auto">
+                      {isOwner ? 'Create albums to organise your portfolio.' : 'This creator has no albums yet.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {albums.map(album => {
+                      const coverItem = items.find(i => i.id === album.cover_item_id);
+                      const coverUrl  = coverItem?.thumbnail_url || coverItem?.media_url;
+                      return (
+                        <div
+                          key={album.id}
+                          className="relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group aspect-square"
+                          onClick={() => openAlbum(album)}
+                        >
+                          {coverUrl ? (
+                            <img src={coverUrl} alt={album.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#f1f5f9,#e2e8f0)' }}>
+                              <FolderOpen className="w-12 h-12 text-gray-300" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.75) 0%,transparent 55%)' }} />
+                          <div className="absolute inset-x-0 bottom-0 p-3">
+                            <p className="text-white font-black text-sm truncate leading-tight">{album.title}</p>
+                            <p className="text-white/60 text-[10px] mt-0.5">
+                              {album.visibility !== 'public' && `${album.visibility} · `}album
+                            </p>
+                          </div>
+                          {isOwner && (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleDeleteAlbum(album.id); }}
+                              className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-10"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-white" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             )}
-          </div>
-        ) : (
-          template === 'masonry'   ? <MasonryLayout  {...cardProps} /> :
-          template === 'grid'      ? <GridLayout      {...cardProps} /> :
-          template === 'cinematic' ? <CinematicLayout {...cardProps} /> :
-          template === 'service'   ? <ServiceLayout   {...cardProps} /> :
-                                     <MinimalLayout   {...cardProps} />
+          </>
+        )}
+
+        {/* ── Work grid / list content (non-albums tabs) ── */}
+        {activeTab !== 'albums' && (
+          filtered.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-16 px-6">
+              <Film className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+              {isOwner ? (
+                <>
+                  <p className="font-black text-gray-900 mb-1 text-lg">
+                    {activeTab === 'all' ? 'Build your creative portfolio' : `No ${activeTab.replace('_', ' ')} yet`}
+                  </p>
+                  <p className="text-sm text-gray-400 mb-6 max-w-xs mx-auto">
+                    Upload photos, videos, audio samples, or link to your best projects.
+                  </p>
+                  {activeTab === 'all' && (
+                    <button
+                      onClick={() => setShowAdd(true)}
+                      className="inline-flex items-center gap-2 bg-blue-600 text-white text-sm font-black px-5 py-3 rounded-2xl active:scale-95 transition-all"
+                      style={{ boxShadow: '0 6px 20px rgba(59,130,246,0.3)' }}
+                    >
+                      <Plus className="w-4 h-4" /> Add your first work
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="font-black text-gray-900 mb-1 text-lg">
+                    {activeTab === 'all' ? 'No portfolio work yet' : `No ${activeTab.replace('_', ' ')} yet`}
+                  </p>
+                  <p className="text-sm text-gray-400 max-w-xs mx-auto">
+                    This creator hasn&apos;t added {activeTab === 'all' ? 'portfolio work' : activeTab.replace('_', ' ')} yet.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            template === 'masonry'   ? <MasonryLayout  {...cardProps} /> :
+            template === 'grid'      ? <GridLayout      {...cardProps} /> :
+            template === 'cinematic' ? <CinematicLayout {...cardProps} /> :
+            template === 'service'   ? <ServiceLayout   {...cardProps} /> :
+                                       <MinimalLayout   {...cardProps} />
+          )
         )}
       </div>
 
       {/* ── Full-screen viewer ── */}
       {viewer.open && (
         <PortfolioViewer
-          items={items}
+          items={activeTab === 'albums' && activeAlbum ? albumItems : items}
           startIndex={viewer.index}
           onClose={() => setViewer({ open: false, index: 0 })}
         />
@@ -971,6 +1303,16 @@ export function Portfolio() {
         <AddPortfolioItemSheet
           onClose={() => setShowAdd(false)}
           onAdded={item => setItems(prev => [item, ...prev])}
+        />
+      )}
+
+      {/* ── Followers / Following sheet ── */}
+      {showFollowSheet && (
+        <FollowSheet
+          userId={targetId!}
+          type={showFollowSheet}
+          meId={me?.id}
+          onClose={() => setShowFollowSheet(null)}
         />
       )}
     </div>

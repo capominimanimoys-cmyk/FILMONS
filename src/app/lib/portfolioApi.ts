@@ -11,27 +11,45 @@ export type MediaType = 'image' | 'video' | 'audio' | 'link';
 export type WorkType = 'photo' | 'video' | 'reel' | 'audio' | 'project' | 'case_study' | 'bts' | 'link';
 
 export interface PortfolioItem {
+  id:                  string;
+  user_id:             string;
+  work_type?:          WorkType;
+  title:               string;
+  description?:        string;
+  category:            string;
+  role?:               string;
+  year?:               number;
+  media_type:          MediaType;
+  media_url?:          string;
+  media_url_original?: string;
+  thumbnail_url?:      string;
+  external_link?:      string;
+  is_featured:         boolean;
+  tags?:               string[];
+  tools?:              string[];
+  client_name?:        string;
+  views_count?:        number;
+  saves_count?:        number;
+  likes_count?:        number;
+  aspect_ratio?:       number;
+  width?:              number;
+  height?:             number;
+  created_at:          string;
+  updated_at?:         string;
+}
+
+export interface PortfolioAlbum {
   id:             string;
   user_id:        string;
-  work_type?:     WorkType;
   title:          string;
   description?:   string;
-  category:       string;
-  role?:          string;
-  year?:          number;
-  media_type:     MediaType;
-  media_url?:     string;
-  thumbnail_url?: string;
-  external_link?: string;
-  is_featured:    boolean;
-  tags?:          string[];
-  tools?:         string[];
-  client_name?:   string;
-  views_count?:   number;
-  saves_count?:   number;
-  likes_count?:   number;
+  cover_item_id?: string;
+  visibility:     'public' | 'followers' | 'private';
+  sort_order:     number;
   created_at:     string;
-  updated_at?:    string;
+  // client-side computed
+  cover_url?:     string;
+  item_count?:    number;
 }
 
 export const PORTFOLIO_CATEGORIES = [
@@ -168,4 +186,89 @@ function extractVideoFrame(file: File): Promise<string> {
     };
     video.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(''); };
   });
+}
+
+/** Read an image file's natural width and height. */
+export function readImageDimensions(file: File): Promise<{ width: number; height: number; aspect_ratio: number }> {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const img  = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight, aspect_ratio: img.naturalWidth / img.naturalHeight });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve({ width: 0, height: 0, aspect_ratio: 1 }); };
+    img.src = url;
+  });
+}
+
+// ── Album CRUD ────────────────────────────────────────────────────────────────
+export async function getAlbums(userId: string): Promise<PortfolioAlbum[]> {
+  try {
+    const { data, error } = await supabase
+      .from('portfolio_albums')
+      .select('*')
+      .eq('user_id', userId)
+      .order('sort_order')
+      .order('created_at', { ascending: false });
+    if (error) { console.warn('[albums] fetch error:', error.message); return []; }
+    return (data ?? []) as PortfolioAlbum[];
+  } catch { return []; }
+}
+
+export async function createAlbum(
+  userId: string,
+  data: Pick<PortfolioAlbum, 'title' | 'description' | 'visibility'>,
+): Promise<PortfolioAlbum | null> {
+  const { data: row, error } = await supabase
+    .from('portfolio_albums')
+    .insert({ ...data, user_id: userId })
+    .select()
+    .single();
+  if (error) { console.error('[albums] create error:', error.message); return null; }
+  return row as PortfolioAlbum;
+}
+
+export async function updateAlbum(
+  id: string,
+  updates: Partial<Pick<PortfolioAlbum, 'title' | 'description' | 'visibility' | 'cover_item_id'>>,
+): Promise<boolean> {
+  const { error } = await supabase.from('portfolio_albums').update(updates).eq('id', id);
+  if (error) { console.error('[albums] update error:', error.message); return false; }
+  return true;
+}
+
+export async function deleteAlbum(id: string): Promise<boolean> {
+  const { error } = await supabase.from('portfolio_albums').delete().eq('id', id);
+  if (error) { console.error('[albums] delete error:', error.message); return false; }
+  return true;
+}
+
+export async function getAlbumItems(albumId: string): Promise<PortfolioItem[]> {
+  try {
+    const { data, error } = await supabase
+      .from('portfolio_album_items')
+      .select('item_id, sort_order, portfolio_items(*)')
+      .eq('album_id', albumId)
+      .order('sort_order');
+    if (error) { console.warn('[albums] items error:', error.message); return []; }
+    return (data ?? []).map((r: any) => r.portfolio_items).filter(Boolean) as PortfolioItem[];
+  } catch { return []; }
+}
+
+export async function addItemToAlbum(albumId: string, itemId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('portfolio_album_items')
+    .insert({ album_id: albumId, item_id: itemId })
+    .select();
+  return !error;
+}
+
+export async function removeItemFromAlbum(albumId: string, itemId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('portfolio_album_items')
+    .delete()
+    .eq('album_id', albumId)
+    .eq('item_id', itemId);
+  return !error;
 }

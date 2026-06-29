@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
   PORTFOLIO_CATEGORIES, createPortfolioItem, uploadPortfolioMedia,
-  workTypeToMediaType, type WorkType, type PortfolioItem,
+  readImageDimensions, workTypeToMediaType, type WorkType, type PortfolioItem,
 } from '../lib/portfolioApi';
 
 type Step = 'type' | 'details' | 'media';
@@ -67,14 +67,24 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [externalLink,setExtLink]     = useState('');
   const [filePreview, setFilePreview] = useState('');
   const [fileName,    setFileName]    = useState('');
+  const [imgWidth,    setImgWidth]    = useState<number | undefined>(undefined);
+  const [imgHeight,   setImgHeight]   = useState<number | undefined>(undefined);
+  const [imgAr,       setImgAr]       = useState<number | undefined>(undefined);
 
   // ── File upload ───────────────────────────────────────────────────────────
   const handleFile = async (file: File) => {
-    const type = file.type.startsWith('video/') ? 'video'
-      : file.type.startsWith('audio/') ? 'audio' : 'image';
+    const isImg = file.type.startsWith('image/');
     setFileName(file.name);
-    if (type === 'image') setFilePreview(URL.createObjectURL(file));
+    if (isImg) setFilePreview(URL.createObjectURL(file));
     else setFilePreview('');
+
+    if (isImg) {
+      readImageDimensions(file).then(d => {
+        setImgWidth(d.width);
+        setImgHeight(d.height);
+        setImgAr(d.aspect_ratio);
+      });
+    }
 
     setUploading(true);
     const result = await uploadPortfolioMedia(user!.id, file);
@@ -110,6 +120,9 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       thumbnail_url: thumbnailUrl || undefined,
       external_link: externalLink || undefined,
       is_featured:  isFeatured,
+      width:        imgWidth,
+      height:       imgHeight,
+      aspect_ratio: imgAr,
     });
     setSaving(false);
 
