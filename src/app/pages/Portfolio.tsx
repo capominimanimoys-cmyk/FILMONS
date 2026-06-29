@@ -4,9 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import { authApi, socialApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
+import { ShareSheet } from '../components/ShareSheet';
+import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
-  getAlbums, getAlbumItems, createAlbum, deleteAlbum,
+  getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum,
   type PortfolioItem, type WorkType, type PortfolioAlbum,
 } from '../lib/portfolioApi';
 import { supabase } from '../../lib/supabase';
@@ -18,12 +20,16 @@ import {
   Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
   Play, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, Layers, LayoutList, Monitor,
-  FolderOpen, Search, UserCheck,
+  FolderOpen, Search, UserCheck, FolderPlus, Edit2,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Template = 'masonry' | 'grid' | 'cinematic' | 'service' | 'minimal';
-type TabType  = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
+type Template    = 'masonry' | 'grid' | 'cinematic' | 'service' | 'minimal';
+type TabType     = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
+type ShareTarget =
+  | { type: 'portfolio' }
+  | { type: 'album'; album: PortfolioAlbum }
+  | { type: 'item'; item: PortfolioItem };
 
 const TEMPLATES: { id: Template; label: string; Icon: any }[] = [
   { id: 'masonry',   label: 'Masonry',   Icon: Layers },
@@ -435,11 +441,13 @@ function PortfolioViewer({
 
 // ── Portfolio card ────────────────────────────────────────────────────────────
 interface CardProps {
-  items:    PortfolioItem[];
-  isOwner:  boolean;
-  onTap:    (item: PortfolioItem, index: number) => void;
-  onToggle: (item: PortfolioItem) => void;
-  onDelete: (id: string) => void;
+  items:        PortfolioItem[];
+  isOwner:      boolean;
+  onTap:        (item: PortfolioItem, index: number) => void;
+  onToggle:     (item: PortfolioItem) => void;
+  onDelete:     (id: string) => void;
+  onShare:      (item: PortfolioItem) => void;
+  onAddToAlbum: (item: PortfolioItem) => void;
 }
 
 function WorkTypeBadge({ wt }: { wt?: WorkType }) {
@@ -456,15 +464,17 @@ function WorkTypeBadge({ wt }: { wt?: WorkType }) {
 }
 
 function ItemCard({
-  item, isOwner, onTap, onToggle, onDelete, className = '', style,
+  item, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, className = '', style,
 }: {
-  item:      CardProps['items'][0];
-  isOwner:   boolean;
-  onTap:     () => void;
-  onToggle:  () => void;
-  onDelete:  () => void;
-  className?: string;
-  style?:    React.CSSProperties;
+  item:          CardProps['items'][0];
+  isOwner:       boolean;
+  onTap:         () => void;
+  onToggle:      () => void;
+  onDelete:      () => void;
+  onShare:       () => void;
+  onAddToAlbum:  () => void;
+  className?:    string;
+  style?:        React.CSSProperties;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const thumb   = item.thumbnail_url || item.media_url;
@@ -474,14 +484,12 @@ function ItemCard({
   const isVideo = wt === 'video' || wt === 'reel' || item.media_type === 'video';
 
   return (
-    // No overflow-hidden here — that would clip the dropdown menu.
-    // The inner media div handles its own clipping.
     <div
       className={`relative rounded-2xl bg-gray-100 cursor-pointer group ${className}`}
       style={style}
       onClick={onTap}
     >
-      {/* Media — clipped to card shape independently */}
+      {/* Media — clipped inside its own overflow-hidden layer */}
       <div className="absolute inset-0 rounded-2xl overflow-hidden">
         {thumb && !isAudio && !isLink ? (
           <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
@@ -503,7 +511,7 @@ function ItemCard({
         )}
       </div>
 
-      {/* Bottom gradient + title text — sits above media, non-interactive */}
+      {/* Bottom gradient + title */}
       <div
         className="absolute inset-x-0 bottom-0 p-2.5 pointer-events-none rounded-b-2xl z-[2]"
         style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 100%)' }}
@@ -512,7 +520,6 @@ function ItemCard({
         {item.category && <p className="text-white/55 text-[9px] truncate mt-0.5">{item.category}</p>}
       </div>
 
-      {/* Inline badges */}
       <WorkTypeBadge wt={wt} />
 
       {isVideo && (
@@ -520,27 +527,26 @@ function ItemCard({
           <Play className="w-3.5 h-3.5 text-white fill-white ml-0.5" />
         </div>
       )}
-
       {item.is_featured && !isVideo && (
         <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center z-[3]">
           <Star className="w-3 h-3 fill-white text-white" />
         </div>
       )}
 
-      {/* Three-dot menu — z-[20] so it's always above all overlays */}
+      {/* Three-dot — always visible (not hover-only) so mobile users can tap it */}
       {isOwner && (
-        <>
+        <div className="absolute bottom-2 right-2 z-[20]" onClick={e => e.stopPropagation()}>
           <button
-            onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
-            className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-[20]"
+            onClick={() => setMenuOpen(v => !v)}
+            className="w-7 h-7 rounded-full bg-black/55 flex items-center justify-center"
           >
             <MoreVertical className="w-4 h-4 text-white" />
           </button>
           {menuOpen && (
             <>
-              <div className="fixed inset-0 z-[40]" onClick={e => { e.stopPropagation(); setMenuOpen(false); }} />
+              <div className="fixed inset-0 z-[40]" onClick={() => setMenuOpen(false)} />
               <div
-                className="absolute bottom-9 right-2 z-[50] bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]"
+                className="absolute bottom-9 right-0 z-[50] bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[170px]"
                 onClick={e => e.stopPropagation()}
               >
                 <button
@@ -552,7 +558,23 @@ function ItemCard({
                     : <><Star    className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
                 </button>
                 <button
-                  onClick={() => { setMenuOpen(false); if (window.confirm('Delete this item?')) onDelete(); }}
+                  onClick={() => { setMenuOpen(false); onShare(); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-gray-500" /> Share
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onAddToAlbum(); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-gray-500" /> Add to Album
+                </button>
+                <div className="border-t border-gray-50" />
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (window.confirm('Delete this portfolio item? This action cannot be undone.')) onDelete();
+                  }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -560,18 +582,17 @@ function ItemCard({
               </div>
             </>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
 // ── Layouts ───────────────────────────────────────────────────────────────────
-function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
+function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
   return (
     <div className="columns-2 sm:columns-3 lg:columns-4 gap-2">
       {items.map((item, i) => {
-        // Use stored aspect ratio if available, otherwise fall back to work-type heuristics
         const ar = item.aspect_ratio ?? (
           item.work_type === 'case_study' ? 3 / 4  :
           item.work_type === 'reel'       ? 9 / 16 :
@@ -588,6 +609,8 @@ function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
               onTap={() => onTap(item, i)}
               onToggle={() => onToggle(item)}
               onDelete={() => onDelete(item.id)}
+              onShare={() => onShare(item)}
+              onAddToAlbum={() => onAddToAlbum(item)}
             />
           </div>
         );
@@ -596,7 +619,7 @@ function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
   );
 }
 
-function GridLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
+function GridLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
       {items.map((item, i) => (
@@ -608,13 +631,15 @@ function GridLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
           onTap={() => onTap(item, i)}
           onToggle={() => onToggle(item)}
           onDelete={() => onDelete(item.id)}
+          onShare={() => onShare(item)}
+          onAddToAlbum={() => onAddToAlbum(item)}
         />
       ))}
     </div>
   );
 }
 
-function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
+function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
   const [first, ...rest] = items;
   return (
     <div className="space-y-2">
@@ -626,6 +651,8 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProp
           onTap={() => onTap(first, 0)}
           onToggle={() => onToggle(first)}
           onDelete={() => onDelete(first.id)}
+          onShare={() => onShare(first)}
+          onAddToAlbum={() => onAddToAlbum(first)}
         />
       )}
       {rest.length > 0 && (
@@ -639,6 +666,8 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProp
               onTap={() => onTap(item, i + 1)}
               onToggle={() => onToggle(item)}
               onDelete={() => onDelete(item.id)}
+              onShare={() => onShare(item)}
+              onAddToAlbum={() => onAddToAlbum(item)}
             />
           ))}
         </div>
@@ -647,21 +676,45 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProp
   );
 }
 
-function ServiceItemMenu({ item, onToggle, onDelete }: { item: PortfolioItem; onToggle: () => void; onDelete: () => void }) {
+function ServiceItemMenu({
+  item, onToggle, onDelete, onShare, onAddToAlbum,
+}: {
+  item: PortfolioItem;
+  onToggle:     () => void;
+  onDelete:     () => void;
+  onShare:      () => void;
+  onAddToAlbum: () => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <button onClick={e => { e.stopPropagation(); setOpen(v => !v); }} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100">
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
+        className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100"
+      >
         <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setOpen(false); }} />
-          <div className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[40]" onClick={e => { e.stopPropagation(); setOpen(false); }} />
+          <div
+            className="absolute right-0 top-8 z-[50] bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[170px]"
+            onClick={e => e.stopPropagation()}
+          >
             <button onClick={() => { setOpen(false); onToggle(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
               {item.is_featured ? <><StarOff className="w-3.5 h-3.5 text-gray-400" /> Unfeature</> : <><Star className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
             </button>
-            <button onClick={() => { setOpen(false); if (window.confirm('Delete?')) onDelete(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50">
+            <button onClick={() => { setOpen(false); onShare(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
+              <Share2 className="w-3.5 h-3.5 text-gray-500" /> Share
+            </button>
+            <button onClick={() => { setOpen(false); onAddToAlbum(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
+              <FolderPlus className="w-3.5 h-3.5 text-gray-500" /> Add to Album
+            </button>
+            <div className="border-t border-gray-50" />
+            <button
+              onClick={() => { setOpen(false); if (window.confirm('Delete this portfolio item? This action cannot be undone.')) onDelete(); }}
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50"
+            >
               <Trash2 className="w-3.5 h-3.5" /> Delete
             </button>
           </div>
@@ -671,7 +724,7 @@ function ServiceItemMenu({ item, onToggle, onDelete }: { item: PortfolioItem; on
   );
 }
 
-function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
+function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
   return (
     <div className="space-y-2">
       {items.map((item, i) => {
@@ -702,7 +755,15 @@ function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {item.is_featured && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-300" />}
-                  {isOwner && <ServiceItemMenu item={item} onToggle={() => onToggle(item)} onDelete={() => onDelete(item.id)} />}
+                  {isOwner && (
+                    <ServiceItemMenu
+                      item={item}
+                      onToggle={() => onToggle(item)}
+                      onDelete={() => onDelete(item.id)}
+                      onShare={() => onShare(item)}
+                      onAddToAlbum={() => onAddToAlbum(item)}
+                    />
+                  )}
                 </div>
               </div>
               {(item.role || item.year) && (
@@ -716,7 +777,7 @@ function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
   );
 }
 
-function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps) {
+function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {items.map((item, i) => {
@@ -744,12 +805,87 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete }: CardProps)
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {item.is_featured && <Star className="w-4 h-4 text-amber-400 fill-amber-300" />}
-              {isOwner && <ServiceItemMenu item={item} onToggle={() => onToggle(item)} onDelete={() => onDelete(item.id)} />}
+              {isOwner && (
+                <ServiceItemMenu
+                  item={item}
+                  onToggle={() => onToggle(item)}
+                  onDelete={() => onDelete(item.id)}
+                  onShare={() => onShare(item)}
+                  onAddToAlbum={() => onAddToAlbum(item)}
+                />
+              )}
             </div>
           </div>
         );
       })}
     </div>
+  );
+}
+
+// ── Add to Album sheet ────────────────────────────────────────────────────────
+function AddToAlbumSheet({
+  item, albums, onClose,
+}: {
+  item:    PortfolioItem;
+  albums:  PortfolioAlbum[];
+  onClose: () => void;
+}) {
+  const [adding, setAdding] = useState<string | null>(null);
+
+  const handleAdd = async (albumId: string) => {
+    setAdding(albumId);
+    const ok = await addItemToAlbum(albumId, item.id);
+    setAdding(null);
+    if (ok) { toast.success('Added to album'); onClose(); }
+    else     { toast.error('Could not add to album'); }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[70] bg-black/50" onClick={onClose} />
+      <div
+        className="fixed inset-x-0 bottom-0 z-[71] bg-white rounded-t-3xl flex flex-col"
+        style={{ maxHeight: '80vh', animation: 'casUp 0.3s cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full" />
+        </div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+          <h3 className="text-sm font-black text-gray-900">Add to Album</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+            <X className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+        {albums.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center px-4 py-12">
+            <p className="text-sm text-gray-400 text-center">No albums yet. Create an album first.</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+            {albums.map(album => (
+              <button
+                key={album.id}
+                onClick={() => handleAdd(album.id)}
+                disabled={!!adding}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-gray-100 active:scale-[0.98] transition-all text-left disabled:opacity-60"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
+                  {album.cover_url
+                    ? <img src={album.cover_url} alt={album.title} className="w-full h-full object-cover" />
+                    : <FolderOpen className="w-5 h-5 text-gray-400" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{album.title}</p>
+                  <p className="text-xs text-gray-400 capitalize">{album.visibility}</p>
+                </div>
+                {adding === album.id && <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -783,12 +919,15 @@ export function Portfolio() {
   const [showFollowSheet, setShowFollowSheet] = useState<null | 'followers' | 'following'>(null);
 
   // Albums
-  const [activeAlbum,   setActiveAlbum]   = useState<PortfolioAlbum | null>(null);
-  const [albumItems,    setAlbumItems]    = useState<PortfolioItem[]>([]);
-  const [albumLoading,  setAlbumLoading]  = useState(false);
-  const [showCreateAlbum, setShowCreateAlbum] = useState(false);
-  const [newAlbumTitle,  setNewAlbumTitle]  = useState('');
-  const [creatingAlbum,  setCreatingAlbum]  = useState(false);
+  const [activeAlbum,      setActiveAlbum]      = useState<PortfolioAlbum | null>(null);
+  const [albumItems,       setAlbumItems]       = useState<PortfolioItem[]>([]);
+  const [albumLoading,     setAlbumLoading]     = useState(false);
+  const [showCreateAlbum,  setShowCreateAlbum]  = useState(false);
+  const [albumMenuId,      setAlbumMenuId]      = useState<string | null>(null);
+
+  // Share + add-to-album
+  const [shareTarget,      setShareTarget]      = useState<ShareTarget | null>(null);
+  const [addToAlbumTarget, setAddToAlbumTarget] = useState<PortfolioItem | null>(null);
 
   const targetId = paramUserId ?? me?.id;
   const isOwner  = !!me && !!targetId && me.id === targetId;
@@ -844,26 +983,34 @@ export function Portfolio() {
     setAlbumLoading(false);
   };
 
-  const handleCreateAlbum = async () => {
-    if (!me || !newAlbumTitle.trim()) return;
-    setCreatingAlbum(true);
-    const result = await createAlbum(me.id, { title: newAlbumTitle.trim(), visibility: 'public' });
-    setCreatingAlbum(false);
-    if (result) {
-      setAlbums(prev => [result, ...prev]);
-      setNewAlbumTitle('');
-      setShowCreateAlbum(false);
-      toast.success('Album created');
-    } else {
-      toast.error('Could not create album — run the portfolio_albums migration');
-    }
-  };
-
   const handleDeleteAlbum = async (albumId: string) => {
-    if (!window.confirm('Delete this album?')) return;
+    if (!window.confirm('Delete this album? Portfolio items inside this album will not be deleted.')) return;
+    setAlbumMenuId(null);
     await deleteAlbum(albumId);
     setAlbums(prev => prev.filter(a => a.id !== albumId));
     toast.success('Album deleted');
+  };
+
+  const getShareUrl = (target: ShareTarget): string => {
+    const origin = window.location.origin;
+    const base   = `${origin}/portfolio/${targetId}`;
+    if (target.type === 'portfolio') return base;
+    if (target.type === 'album')     return `${base}?album=${target.album.id}`;
+    return `${base}?item=${target.item.id}`;
+  };
+
+  const getShareDisplayUrl = (target: ShareTarget): string => {
+    const uname = profile?.username ? `@${profile.username}` : targetId;
+    const base  = `filmons.com/${uname}/portfolio`;
+    if (target.type === 'portfolio') return base;
+    if (target.type === 'album')     return `${base}/albums/${target.album.title.toLowerCase().replace(/\s+/g, '-')}`;
+    return `${base}/${(target as { type: 'item'; item: PortfolioItem }).item.title.toLowerCase().replace(/\s+/g, '-')}`;
+  };
+
+  const getShareHeading = (target: ShareTarget): string => {
+    if (target.type === 'portfolio') return 'Share Portfolio';
+    if (target.type === 'album')     return `Share "${target.album.title}"`;
+    return `Share "${(target as { type: 'item'; item: PortfolioItem }).item.title}"`;
   };
 
   const handleFollow = async () => {
@@ -912,8 +1059,10 @@ export function Portfolio() {
       const globalIndex = src.indexOf(item);
       setViewer({ open: true, index: globalIndex >= 0 ? globalIndex : index });
     },
-    onToggle: handleToggle,
-    onDelete: handleDelete,
+    onToggle:     handleToggle,
+    onDelete:     handleDelete,
+    onShare:      item => setShareTarget({ type: 'item', item }),
+    onAddToAlbum: item => setAddToAlbumTarget(item),
   };
 
   if (loading) {
@@ -1043,6 +1192,12 @@ export function Portfolio() {
                 {followLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
                 {following ? 'Following' : 'Follow'}
               </button>
+              <button
+                onClick={() => setShareTarget({ type: 'portfolio' })}
+                className="w-9 h-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
               {showMessage && (
                 <button
                   onClick={() => navigate(`/inbox?userId=${profile.id}`)}
@@ -1071,6 +1226,12 @@ export function Portfolio() {
                 style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
               >
                 <Plus className="w-4 h-4" /> Add Work
+              </button>
+              <button
+                onClick={() => setShareTarget({ type: 'portfolio' })}
+                className="w-9 h-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                <Share2 className="w-4 h-4" />
               </button>
               <button
                 onClick={() => navigate('/settings/portfolio')}
@@ -1170,42 +1331,12 @@ export function Portfolio() {
               <>
                 {isOwner && (
                   <div className="mb-4">
-                    {showCreateAlbum ? (
-                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-                        <input
-                          value={newAlbumTitle}
-                          onChange={e => setNewAlbumTitle(e.target.value)}
-                          placeholder="Album name…"
-                          maxLength={60}
-                          className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-                          onKeyDown={e => { if (e.key === 'Enter') handleCreateAlbum(); }}
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleCreateAlbum}
-                            disabled={creatingAlbum || !newAlbumTitle.trim()}
-                            className="flex-1 py-3 rounded-2xl font-black text-white text-sm disabled:opacity-40"
-                            style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
-                          >
-                            {creatingAlbum ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Album'}
-                          </button>
-                          <button
-                            onClick={() => { setShowCreateAlbum(false); setNewAlbumTitle(''); }}
-                            className="px-5 py-3 rounded-2xl font-bold text-gray-600 border border-gray-200 bg-white text-sm"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setShowCreateAlbum(true)}
-                        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-gray-200 text-sm font-bold text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
-                      >
-                        <Plus className="w-4 h-4" /> New Album
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setShowCreateAlbum(true)}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-gray-200 text-sm font-bold text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" /> New Album
+                    </button>
                   </div>
                 )}
 
@@ -1220,35 +1351,69 @@ export function Portfolio() {
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     {albums.map(album => {
-                      const coverItem = items.find(i => i.id === album.cover_item_id);
-                      const coverUrl  = coverItem?.thumbnail_url || coverItem?.media_url;
+                      const coverItem  = items.find(i => i.id === album.cover_item_id);
+                      const resolvedCover = album.cover_url || coverItem?.thumbnail_url || coverItem?.media_url;
+                      const menuOpen   = albumMenuId === album.id;
                       return (
                         <div
                           key={album.id}
-                          className="relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group aspect-square"
-                          onClick={() => openAlbum(album)}
+                          className="relative bg-gray-100 cursor-pointer aspect-square rounded-2xl"
+                          onClick={() => { if (!menuOpen) openAlbum(album); }}
                         >
-                          {coverUrl ? (
-                            <img src={coverUrl} alt={album.title} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#f1f5f9,#e2e8f0)' }}>
-                              <FolderOpen className="w-12 h-12 text-gray-300" />
+                          {/* media — clipped */}
+                          <div className="absolute inset-0 rounded-2xl overflow-hidden">
+                            {resolvedCover ? (
+                              <img src={resolvedCover} alt={album.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#f1f5f9,#e2e8f0)' }}>
+                                <FolderOpen className="w-12 h-12 text-gray-300" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.75) 0%,transparent 55%)' }} />
+                            <div className="absolute inset-x-0 bottom-0 p-3">
+                              <p className="text-white font-black text-sm truncate leading-tight">{album.title}</p>
+                              <p className="text-white/60 text-[10px] mt-0.5 capitalize">
+                                {album.visibility !== 'public' && `${album.visibility} · `}album
+                              </p>
                             </div>
-                          )}
-                          <div className="absolute inset-0" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.75) 0%,transparent 55%)' }} />
-                          <div className="absolute inset-x-0 bottom-0 p-3">
-                            <p className="text-white font-black text-sm truncate leading-tight">{album.title}</p>
-                            <p className="text-white/60 text-[10px] mt-0.5">
-                              {album.visibility !== 'public' && `${album.visibility} · `}album
-                            </p>
                           </div>
+
+                          {/* three-dot menu — outside clip */}
                           {isOwner && (
-                            <button
-                              onClick={e => { e.stopPropagation(); handleDeleteAlbum(album.id); }}
-                              className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-10"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-white" />
-                            </button>
+                            <div className="absolute top-2 right-2 z-10" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => setAlbumMenuId(menuOpen ? null : album.id)}
+                                className="w-7 h-7 rounded-full bg-black/50 flex items-center justify-center"
+                              >
+                                <MoreVertical className="w-3.5 h-3.5 text-white" />
+                              </button>
+                              {menuOpen && (
+                                <>
+                                  <div className="fixed inset-0 z-[19]" onClick={() => setAlbumMenuId(null)} />
+                                  <div className="absolute top-8 right-0 z-[20] bg-white rounded-2xl shadow-xl border border-gray-100 min-w-[160px] py-1.5 overflow-hidden">
+                                    <button
+                                      onClick={() => { setAlbumMenuId(null); toast('Edit album coming soon'); }}
+                                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 text-left"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5 text-gray-400" /> Edit Album
+                                    </button>
+                                    <button
+                                      onClick={() => { setAlbumMenuId(null); setShareTarget({ type: 'album', album }); }}
+                                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 text-left"
+                                    >
+                                      <Share2 className="w-3.5 h-3.5 text-gray-400" /> Share Album
+                                    </button>
+                                    <div className="h-px bg-gray-100 my-1" />
+                                    <button
+                                      onClick={() => handleDeleteAlbum(album.id)}
+                                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-red-50 text-sm text-red-500 text-left"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" /> Delete Album
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
@@ -1328,6 +1493,34 @@ export function Portfolio() {
           type={showFollowSheet}
           meId={me?.id}
           onClose={() => setShowFollowSheet(null)}
+        />
+      )}
+
+      {/* ── Create album sheet (owner only) ── */}
+      {showCreateAlbum && isOwner && (
+        <CreateAlbumSheet
+          existingItems={items}
+          onCreated={album => setAlbums(prev => [album, ...prev])}
+          onClose={() => setShowCreateAlbum(false)}
+        />
+      )}
+
+      {/* ── Share sheet ── */}
+      {shareTarget && (
+        <ShareSheet
+          url={getShareUrl(shareTarget)}
+          displayUrl={getShareDisplayUrl(shareTarget)}
+          heading={getShareHeading(shareTarget)}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
+
+      {/* ── Add to album sheet (owner only) ── */}
+      {addToAlbumTarget && isOwner && (
+        <AddToAlbumSheet
+          item={addToAlbumTarget}
+          albums={albums}
+          onClose={() => setAddToAlbumTarget(null)}
         />
       )}
     </div>

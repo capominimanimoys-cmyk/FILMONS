@@ -44,12 +44,11 @@ export interface PortfolioAlbum {
   title:          string;
   description?:   string;
   cover_item_id?: string;
+  cover_url?:     string;  // uploaded cover image URL (DB column, see migration 20240128)
   visibility:     'public' | 'followers' | 'private';
   sort_order:     number;
   created_at:     string;
-  // client-side computed
-  cover_url?:     string;
-  item_count?:    number;
+  item_count?:    number;  // client-side computed
 }
 
 export const PORTFOLIO_CATEGORIES = [
@@ -218,7 +217,7 @@ export async function getAlbums(userId: string): Promise<PortfolioAlbum[]> {
 
 export async function createAlbum(
   userId: string,
-  data: Pick<PortfolioAlbum, 'title' | 'description' | 'visibility'>,
+  data: Pick<PortfolioAlbum, 'title' | 'description' | 'visibility'> & { cover_url?: string },
 ): Promise<PortfolioAlbum | null> {
   const { data: row, error } = await supabase
     .from('portfolio_albums')
@@ -231,7 +230,7 @@ export async function createAlbum(
 
 export async function updateAlbum(
   id: string,
-  updates: Partial<Pick<PortfolioAlbum, 'title' | 'description' | 'visibility' | 'cover_item_id'>>,
+  updates: Partial<Pick<PortfolioAlbum, 'title' | 'description' | 'visibility' | 'cover_item_id' | 'cover_url'>>,
 ): Promise<boolean> {
   const { error } = await supabase.from('portfolio_albums').update(updates).eq('id', id);
   if (error) { console.error('[albums] update error:', error.message); return false; }
