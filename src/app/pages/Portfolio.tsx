@@ -474,65 +474,73 @@ function ItemCard({
   const isVideo = wt === 'video' || wt === 'reel' || item.media_type === 'video';
 
   return (
+    // No overflow-hidden here — that would clip the dropdown menu.
+    // The inner media div handles its own clipping.
     <div
-      className={`relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group ${className}`}
+      className={`relative rounded-2xl bg-gray-100 cursor-pointer group ${className}`}
       style={style}
       onClick={onTap}
     >
-      {thumb && !isAudio && !isLink ? (
-        <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
-      ) : (
-        <div
-          className="w-full h-full flex items-center justify-center min-h-[100px]"
-          style={{
-            background: isAudio
-              ? 'linear-gradient(135deg,#1e1040,#312e81)'
-              : isLink
-              ? 'linear-gradient(135deg,#eff6ff,#dbeafe)'
-              : 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
-          }}
-        >
-          {isAudio ? <Music2   className="w-10 h-10 text-purple-300" />
-           : isLink ? <LinkIcon  className="w-10 h-10 text-blue-400"  />
-           :           <FileText  className="w-10 h-10 text-slate-300" />}
-        </div>
-      )}
+      {/* Media — clipped to card shape independently */}
+      <div className="absolute inset-0 rounded-2xl overflow-hidden">
+        {thumb && !isAudio && !isLink ? (
+          <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center min-h-[100px]"
+            style={{
+              background: isAudio
+                ? 'linear-gradient(135deg,#1e1040,#312e81)'
+                : isLink
+                ? 'linear-gradient(135deg,#eff6ff,#dbeafe)'
+                : 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
+            }}
+          >
+            {isAudio ? <Music2   className="w-10 h-10 text-purple-300" />
+             : isLink ? <LinkIcon  className="w-10 h-10 text-blue-400"  />
+             :           <FileText  className="w-10 h-10 text-slate-300" />}
+          </div>
+        )}
+      </div>
 
-      <WorkTypeBadge wt={wt} />
-
-      {isVideo && (
-        <div className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center">
-          <Play className="w-3.5 h-3.5 text-white fill-white ml-0.5" />
-        </div>
-      )}
-
-      {item.is_featured && !isVideo && (
-        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center">
-          <Star className="w-3 h-3 fill-white text-white" />
-        </div>
-      )}
-
+      {/* Bottom gradient + title text — sits above media, non-interactive */}
       <div
-        className="absolute inset-x-0 bottom-0 p-2.5 pointer-events-none"
+        className="absolute inset-x-0 bottom-0 p-2.5 pointer-events-none rounded-b-2xl z-[2]"
         style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 100%)' }}
       >
         <p className="text-white text-[11px] font-black truncate leading-tight">{item.title}</p>
         {item.category && <p className="text-white/55 text-[9px] truncate mt-0.5">{item.category}</p>}
       </div>
 
+      {/* Inline badges */}
+      <WorkTypeBadge wt={wt} />
+
+      {isVideo && (
+        <div className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center z-[3]">
+          <Play className="w-3.5 h-3.5 text-white fill-white ml-0.5" />
+        </div>
+      )}
+
+      {item.is_featured && !isVideo && (
+        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center z-[3]">
+          <Star className="w-3 h-3 fill-white text-white" />
+        </div>
+      )}
+
+      {/* Three-dot menu — z-[20] so it's always above all overlays */}
       {isOwner && (
         <>
           <button
             onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
-            className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-10"
+            className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/50 hidden group-hover:flex items-center justify-center z-[20]"
           >
             <MoreVertical className="w-4 h-4 text-white" />
           </button>
           {menuOpen && (
             <>
-              <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setMenuOpen(false); }} />
+              <div className="fixed inset-0 z-[40]" onClick={e => { e.stopPropagation(); setMenuOpen(false); }} />
               <div
-                className="absolute bottom-9 right-2 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]"
+                className="absolute bottom-9 right-2 z-[50] bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]"
                 onClick={e => e.stopPropagation()}
               >
                 <button
