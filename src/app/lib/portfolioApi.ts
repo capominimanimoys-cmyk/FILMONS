@@ -112,25 +112,27 @@ export async function toggleFeatured(id: string, current: boolean): Promise<bool
 }
 
 // ── Upload media to Supabase Storage ─────────────────────────────────────────
+// Uses the same bucket as avatar uploads (make-ec8fe879-photos) because it is
+// guaranteed to exist and have public access configured by the edge function.
+const PORTFOLIO_BUCKET = 'make-ec8fe879-photos';
+
 export async function uploadPortfolioMedia(
   userId: string,
   file: File,
 ): Promise<{ url: string; thumbnailUrl?: string } | null> {
   const isVideo = file.type.startsWith('video/');
   const isAudio = file.type.startsWith('audio/');
-  const isImage = file.type.startsWith('image/');
 
-  const bucket = isAudio ? 'audio' : 'posts';
-  const folder = isVideo ? 'portfolio/videos' : isAudio ? userId : 'portfolio/images';
-  const ext    = file.name.split('.').pop()?.toLowerCase() || 'bin';
-  const path   = `${folder}/${userId}-${Date.now()}.${ext}`;
+  const subfolder = isVideo ? 'portfolio/videos' : isAudio ? 'portfolio/audio' : 'portfolio/images';
+  const ext       = file.name.split('.').pop()?.toLowerCase() || 'bin';
+  const path      = `${subfolder}/${userId}-${Date.now()}.${ext}`;
 
   const { error, data } = await supabase.storage
-    .from(bucket)
+    .from(PORTFOLIO_BUCKET)
     .upload(path, file, { contentType: file.type, upsert: false });
   if (error) { console.error('[portfolio] upload error:', error.message); return null; }
 
-  const url = supabase.storage.from(bucket).getPublicUrl(data.path).data.publicUrl;
+  const url = supabase.storage.from(PORTFOLIO_BUCKET).getPublicUrl(data.path).data.publicUrl;
 
   let thumbnailUrl: string | undefined;
   if (isVideo) {
@@ -138,10 +140,10 @@ export async function uploadPortfolioMedia(
     if (thumbnailUrl) {
       const tb = await fetch(thumbnailUrl).then(r => r.blob());
       const tp = `portfolio/thumbs/${userId}-${Date.now()}.jpg`;
-      const { data: td } = await supabase.storage.from('posts').upload(tp, tb, { contentType: 'image/jpeg', upsert: false });
-      if (td) thumbnailUrl = supabase.storage.from('posts').getPublicUrl(td.path).data.publicUrl;
+      const { data: td } = await supabase.storage.from(PORTFOLIO_BUCKET).upload(tp, tb, { contentType: 'image/jpeg', upsert: false });
+      if (td) thumbnailUrl = supabase.storage.from(PORTFOLIO_BUCKET).getPublicUrl(td.path).data.publicUrl;
     }
-  } else if (isImage) {
+  } else if (!isAudio) {
     thumbnailUrl = url;
   }
 
