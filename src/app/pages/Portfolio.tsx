@@ -957,63 +957,11 @@ export function Portfolio() {
       {/* ── Profile header ── */}
       <div className="relative z-10 max-w-2xl mx-auto px-4">
 
-        {/* Avatar + action buttons */}
-        <div className="flex items-end justify-between -mt-14 mb-3 gap-2">
-          <div className="relative z-20 border-[3px] border-white rounded-full shadow-xl shrink-0">
+        {/* Avatar — pulled up to overlap bottom edge of cover */}
+        <div className="-mt-14 mb-3">
+          <div className="relative z-20 border-[3px] border-white rounded-full shadow-xl inline-block">
             <UserAvatar user={profile} size={80} />
           </div>
-
-          {/* Visitor actions */}
-          {!isOwner && me && (
-            <div className="flex gap-2 pb-1">
-              <button
-                onClick={handleFollow}
-                disabled={followLoading}
-                className={`flex items-center gap-1.5 text-sm font-black px-4 py-2 rounded-2xl transition-all active:scale-95 disabled:opacity-60 ${
-                  following ? 'bg-gray-100 text-gray-700 border border-gray-200' : 'text-white'
-                }`}
-                style={following ? {} : { background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
-              >
-                {followLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-                {following ? 'Following' : 'Follow'}
-              </button>
-              {showMessage && (
-                <button
-                  onClick={() => navigate(`/inbox?userId=${profile.id}`)}
-                  className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" /> Message
-                </button>
-              )}
-              {showHire && (
-                <button
-                  className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
-                  onClick={() => navigate(`/search?host=${profile.id}`)}
-                >
-                  <Briefcase className="w-3.5 h-3.5" /> Hire
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Owner actions */}
-          {isOwner && (
-            <div className="flex gap-2 pb-1">
-              <button
-                onClick={() => setShowAdd(true)}
-                className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2 rounded-2xl active:scale-95 transition-all"
-                style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
-              >
-                <Plus className="w-4 h-4" /> Add Work
-              </button>
-              <button
-                onClick={() => navigate('/settings/portfolio')}
-                className="flex items-center text-gray-600 text-sm font-semibold px-4 py-2 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 active:scale-95 transition-all"
-              >
-                Settings
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Name + role */}
@@ -1039,34 +987,93 @@ export function Portfolio() {
           </div>
         )}
 
-        {/* Stats — followers/following are tappable */}
-        {showStats && <div className="flex items-center gap-5 mb-5">
-          <div className="text-center">
-            <p className="text-lg font-black text-gray-900 leading-none">{items.length}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Works</p>
-          </div>
-          <div className="w-px h-8 bg-gray-200" />
-          <button className="text-center" onClick={() => setShowFollowSheet('followers')}>
-            <p className="text-lg font-black text-gray-900 leading-none">{followerCount ?? 0}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Followers</p>
-          </button>
-          <div className="w-px h-8 bg-gray-200" />
-          <button className="text-center" onClick={() => setShowFollowSheet('following')}>
-            <p className="text-lg font-black text-gray-900 leading-none">{followingCount ?? 0}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Following</p>
-          </button>
-          {items.length > 0 && (
-            <>
-              <div className="w-px h-8 bg-gray-200" />
+        {/* Stats + action buttons — same horizontal level */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+
+          {/* Stats row (conditional) */}
+          {showStats && (
+            <div className="flex items-center gap-5">
               <div className="text-center">
-                <p className="text-lg font-black text-gray-900 leading-none">
-                  {items.reduce((s, i) => s + (i.views_count ?? 0), 0)}
-                </p>
-                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Views</p>
+                <p className="text-lg font-black text-gray-900 leading-none">{items.length}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Works</p>
               </div>
-            </>
+              <div className="w-px h-8 bg-gray-200" />
+              <button className="text-center" onClick={() => setShowFollowSheet('followers')}>
+                <p className="text-lg font-black text-gray-900 leading-none">{followerCount ?? 0}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Followers</p>
+              </button>
+              <div className="w-px h-8 bg-gray-200" />
+              <button className="text-center" onClick={() => setShowFollowSheet('following')}>
+                <p className="text-lg font-black text-gray-900 leading-none">{followingCount ?? 0}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Following</p>
+              </button>
+              {items.length > 0 && (
+                <>
+                  <div className="w-px h-8 bg-gray-200" />
+                  <div className="text-center">
+                    <p className="text-lg font-black text-gray-900 leading-none">
+                      {items.reduce((s, i) => s + (i.views_count ?? 0), 0)}
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Views</p>
+                  </div>
+                </>
+              )}
+            </div>
           )}
-        </div>}
+
+          {/* Visitor action buttons */}
+          {!isOwner && me && (
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={handleFollow}
+                disabled={followLoading}
+                className={`flex items-center gap-1.5 text-sm font-black px-4 py-2 rounded-2xl transition-all active:scale-95 disabled:opacity-60 ${
+                  following ? 'bg-gray-100 text-gray-700 border border-gray-200' : 'text-white'
+                }`}
+                style={following ? {} : { background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+              >
+                {followLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                {following ? 'Following' : 'Follow'}
+              </button>
+              {showMessage && (
+                <button
+                  onClick={() => navigate(`/inbox?userId=${profile.id}`)}
+                  className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> Message
+                </button>
+              )}
+              {showHire && (
+                <button
+                  onClick={() => navigate(`/search?host=${profile.id}`)}
+                  className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+                >
+                  <Briefcase className="w-3.5 h-3.5" /> Hire
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Owner action buttons */}
+          {isOwner && (
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => setShowAdd(true)}
+                className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2 rounded-2xl active:scale-95 transition-all"
+                style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+              >
+                <Plus className="w-4 h-4" /> Add Work
+              </button>
+              <button
+                onClick={() => navigate('/settings/portfolio')}
+                className="flex items-center text-gray-600 text-sm font-semibold px-4 py-2 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                Settings
+              </button>
+            </div>
+          )}
+
+        </div>
 
         {/* Layout selector (owner, non-albums tab) */}
         {isOwner && activeTab !== 'albums' && (
