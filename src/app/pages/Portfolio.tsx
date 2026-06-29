@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { authApi, socialApi } from '../lib/api';
@@ -477,11 +478,25 @@ function ItemCard({
   style?:        React.CSSProperties;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos,  setMenuPos]  = useState<{ bottom: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
   const thumb   = item.thumbnail_url || item.media_url;
   const wt      = item.work_type;
   const isAudio = wt === 'audio' || item.media_type === 'audio';
   const isLink  = wt === 'link'  || item.media_type === 'link';
   const isVideo = wt === 'video' || wt === 'reel' || item.media_type === 'video';
+
+  const openMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setMenuPos({ bottom: window.innerHeight - r.top + 4, right: window.innerWidth - r.right });
+    }
+    setMenuOpen(v => !v);
+  };
+
+  const closeMenu = () => { setMenuOpen(false); setMenuPos(null); };
 
   return (
     <div
@@ -533,24 +548,27 @@ function ItemCard({
         </div>
       )}
 
-      {/* Three-dot — always visible (not hover-only) so mobile users can tap it */}
+      {/* Three-dot button — portal-rendered dropdown escapes all stacking contexts */}
       {isOwner && (
-        <div className="absolute bottom-2 right-2 z-[20]" onClick={e => e.stopPropagation()}>
+        <div className="absolute bottom-2 right-2 z-[10]" onClick={e => e.stopPropagation()}>
           <button
-            onClick={() => setMenuOpen(v => !v)}
+            ref={btnRef}
+            onClick={openMenu}
             className="w-7 h-7 rounded-full bg-black/55 flex items-center justify-center"
           >
             <MoreVertical className="w-4 h-4 text-white" />
           </button>
-          {menuOpen && (
+
+          {menuOpen && menuPos && createPortal(
             <>
-              <div className="fixed inset-0 z-[40]" onClick={() => setMenuOpen(false)} />
+              <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={closeMenu} />
               <div
-                className="absolute bottom-9 right-0 z-[50] bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[170px]"
+                style={{ position: 'fixed', bottom: menuPos.bottom, right: menuPos.right, zIndex: 9999 }}
+                className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[170px]"
                 onClick={e => e.stopPropagation()}
               >
                 <button
-                  onClick={() => { setMenuOpen(false); onToggle(); }}
+                  onClick={() => { closeMenu(); onToggle(); }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
                 >
                   {item.is_featured
@@ -558,13 +576,13 @@ function ItemCard({
                     : <><Star    className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
                 </button>
                 <button
-                  onClick={() => { setMenuOpen(false); onShare(); }}
+                  onClick={() => { closeMenu(); onShare(); }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
                 >
                   <Share2 className="w-3.5 h-3.5 text-gray-500" /> Share
                 </button>
                 <button
-                  onClick={() => { setMenuOpen(false); onAddToAlbum(); }}
+                  onClick={() => { closeMenu(); onAddToAlbum(); }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
                 >
                   <FolderPlus className="w-3.5 h-3.5 text-gray-500" /> Add to Album
@@ -572,7 +590,7 @@ function ItemCard({
                 <div className="border-t border-gray-50" />
                 <button
                   onClick={() => {
-                    setMenuOpen(false);
+                    closeMenu();
                     if (window.confirm('Delete this portfolio item? This action cannot be undone.')) onDelete();
                   }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50"
@@ -580,7 +598,8 @@ function ItemCard({
                   <Trash2 className="w-3.5 h-3.5" /> Delete
                 </button>
               </div>
-            </>
+            </>,
+            document.body,
           )}
         </div>
       )}

@@ -252,57 +252,64 @@ export function CompleteProfile() {
         ...existingMeta,
         tools: selectedTools,
         links: { instagram, tiktok, youtube, vimeo, linkedin, website },
-        onboarding_completed: true,
       };
 
-      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
-      const restUrl = `https://${projectId}.supabase.co/rest/v1/profiles?id=eq.${user.id}`;
+      const locationStr = [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', ');
 
       const payload: Record<string, unknown> = {
-        username:                 username.toLowerCase(),
-        account_type:             accountType,
-        account_mode:             accountType,
-        location:                 [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', '),
-        city:                     city || null,
-        province:                 province || null,
-        primary_role:    primaryRole || null,
-        secondary_roles: secondaryRoles,
-        bio:             bio || null,
-        profile_meta:    mergedMeta,
-        updated_at:               new Date().toISOString(),
+        username:                  username.toLowerCase(),
+        account_type:              accountType,
+        account_mode:              accountType,
+        location:                  locationStr,
+        city:                      city || null,
+        province:                  province || null,
+        primary_role:              primaryRole || null,
+        secondary_roles:           secondaryRoles,
+        bio:                       bio || null,
+        profile_meta:              mergedMeta,
+        onboarding_completed:      true,
+        profile_setup_percentage:  100,
+        updated_at:                new Date().toISOString(),
       };
       if (finalAvatarUrl) {
         payload.avatar_url = finalAvatarUrl;
         payload.avatar     = finalAvatarUrl;
       }
 
-      const res = await fetch(restUrl, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type':  'application/json',
-          'apikey':        publicAnonKey,
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || 'Failed to save profile');
-      }
+      const { error: saveError } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', user.id);
+
+      if (saveError) throw new Error(saveError.message || 'Failed to save profile');
+
+      // Verify the flag was persisted before navigating
+      const { data: saved } = await supabase
+        .from('profiles')
+        .select('onboarding_completed')
+        .eq('id', user.id)
+        .single();
 
       await updateUser({
-        username:             username.toLowerCase(),
-        accountType:          accountType as any,
-        city:                 city || undefined,
-        province:             province || undefined,
-        primaryRole:          primaryRole || undefined,
+        username:              username.toLowerCase(),
+        accountType:           accountType as any,
+        city:                  city || undefined,
+        province:              province || undefined,
+        primaryRole:           primaryRole || undefined,
         profileSetupCompleted: true,
         ...(finalAvatarUrl ? { avatar: finalAvatarUrl } : {}),
-        bio:                  bio || undefined,
-        location:             [city, province, countryCode === 'CA' ? 'Canada' : 'United States'].filter(Boolean).join(', ') || undefined,
+        bio:                   bio || undefined,
+        location:              locationStr || undefined,
       } as any);
 
-      navigate('/', { replace: true });
+      if (saved?.onboarding_completed) {
+        navigate('/', { replace: true });
+      } else {
+        // Flag didn't persist — likely missing RLS UPDATE policy
+        // Navigate anyway so the user isn't stuck; log for debugging
+        console.warn('[onboarding] onboarding_completed not confirmed in DB — check RLS UPDATE policy on profiles');
+        navigate('/', { replace: true });
+      }
     } catch (e: any) {
       toast.error(e?.message || 'Could not save profile');
     } finally {
