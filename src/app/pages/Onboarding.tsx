@@ -273,7 +273,6 @@ export function CompleteProfile() {
       };
       if (finalAvatarUrl) {
         payload.avatar_url = finalAvatarUrl;
-        payload.avatar     = finalAvatarUrl;
       }
 
       const { error: saveError } = await supabase

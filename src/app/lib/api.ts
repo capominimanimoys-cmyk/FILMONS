@@ -370,7 +370,7 @@ export const authApi = {
     if (updates.bio         !== undefined) payload.bio            = updates.bio;
     if (updates.city        !== undefined) payload.city           = updates.city;
     if (updates.province    !== undefined) payload.province       = updates.province;
-    if (updates.avatar      !== undefined) { payload.avatar_url  = updates.avatar; payload.avatar = updates.avatar; }
+    if (updates.avatar      !== undefined) { payload.avatar_url  = updates.avatar; }
     if ((updates as any).coverPhoto   !== undefined) { payload.cover_photo = (updates as any).coverPhoto; payload.banner_url = (updates as any).coverPhoto; }
     if ((updates as any).website      !== undefined) payload.website      = (updates as any).website;
     if ((updates as any).youtube      !== undefined) payload.youtube      = (updates as any).youtube;
