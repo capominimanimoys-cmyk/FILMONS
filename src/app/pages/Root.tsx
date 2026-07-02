@@ -15,8 +15,11 @@ const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login'];
 
 function isOnboardingIncomplete(user: User | null): boolean {
   if (!user) return false;
+  // Trust the explicit flag first — set by Onboarding on save and by getMe from DB column
   if (user.profileSetupCompleted) return false;
-  return !(user.username && user.city && user.primaryRole);
+  // A user with a username has definitely been through onboarding at least once
+  if (user.username) return false;
+  return true;
 }
 
 export function Root() {

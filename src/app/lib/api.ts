@@ -287,7 +287,7 @@ export const authApi = {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified')
+        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed')
         .eq('id', cached.id)
         .single();
       if (data) {
@@ -308,7 +308,7 @@ export const authApi = {
           city:                 data.city                || cached.city,
           province:             data.province            || cached.province,
           primaryRole:          data.primary_role        || cached.primaryRole,
-          profileSetupCompleted: !!(getMeMeta.onboarding_completed) || cached.profileSetupCompleted,
+          profileSetupCompleted: !!(data.onboarding_completed) || !!(getMeMeta.onboarding_completed) || cached.profileSetupCompleted,
           emailVerified:        data.email_verified  ?? cached.emailVerified  ?? true,
           phoneVerified:        data.phone_verified  ?? cached.phoneVerified,
           following:            parsePgArray(data.following  ?? cached.following),

@@ -268,6 +268,7 @@ export function CompleteProfile() {
 
       const mergedMeta = {
         ...existingMeta,
+        onboarding_completed: true,
         tools: selectedTools,
         links: { instagram, tiktok, youtube, vimeo, linkedin, website },
       };
