@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Download, Share2, Copy, Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import QRCode from 'qrcode';
+import { VintageCardSheet } from './VintageCardSheet';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -580,6 +581,7 @@ async function renderCard(props: CreatorCardProps, format: Format): Promise<stri
 export function CreatorCardSheet({
   onClose, ...cardProps
 }: Props) {
+  const [template,   setTemplate]   = useState<'modern' | 'vintage'>('modern');
   const [format,    setFormat]    = useState<Format>('story');
   const [dataUrl,   setDataUrl]   = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -634,6 +636,15 @@ export function CreatorCardSheet({
 
   const fmt = FORMATS.find(f => f.id === format)!;
 
+  if (template === 'vintage') {
+    return (
+      <>
+        <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm" onClick={onClose} />
+        <VintageCardSheet {...cardProps} onBack={() => setTemplate('modern')} onClose={onClose} />
+      </>
+    );
+  }
+
   return (
     <>
       <style>{`
@@ -663,6 +674,22 @@ export function CreatorCardSheet({
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center">
             <X className="w-4 h-4 text-white/70" />
+          </button>
+        </div>
+
+        {/* Template selector */}
+        <div className="flex gap-2 px-4 pt-3 pb-1 shrink-0">
+          <button
+            onClick={() => setTemplate('modern')}
+            className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-white text-gray-900"
+          >
+            Modern
+          </button>
+          <button
+            onClick={() => setTemplate('vintage')}
+            className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-white/8 text-white/50 hover:bg-white/12 transition-all"
+          >
+            Vintage Editorial
           </button>
         </div>
 
