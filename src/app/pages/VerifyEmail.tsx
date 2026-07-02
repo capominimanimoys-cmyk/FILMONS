@@ -166,7 +166,7 @@ export function VerifyEmail() {
       });
 
       if (success) {
-        toast.success('New code sent!');
+        toast.success('New code sent! Also check your spam or junk folder.');
         setDigits(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
       } else {
@@ -232,9 +232,13 @@ export function VerifyEmail() {
           <div className="w-14 h-14 rounded-2xl bg-blue-600/20 flex items-center justify-center mb-5">
             <Mail className="w-7 h-7 text-blue-400" />
           </div>
-          <h1 className="text-2xl font-black text-white mb-2">Check your email</h1>
+          <h1 className="text-2xl font-black text-white mb-2">Verify your email</h1>
           <p className="text-white/40 text-sm text-center max-w-xs">
-            We sent a 6-digit code to <span className="text-white/70 font-semibold">{pending.email}</span>
+            We sent a 6-digit verification code to{' '}
+            <span className="text-white/70 font-semibold">{pending.email}</span>
+          </p>
+          <p className="text-white/30 text-xs text-center max-w-xs mt-2">
+            Didn't receive the email? Check your <span className="text-white/50">spam or junk folder</span>. It may take a few minutes to arrive.
           </p>
         </div>
 
@@ -275,12 +279,16 @@ export function VerifyEmail() {
             {resending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Resend Code'}
           </button>
 
+          <p className="text-[11px] text-white/25 text-center -mt-1">
+            Still haven't received it? Try resending or check spam.
+          </p>
+
           {!editEmail ? (
             <button
               onClick={() => setEditEmail(true)}
               className="w-full py-3 text-blue-400 text-sm font-semibold hover:text-blue-300 transition-colors"
             >
-              Wrong email? Change it
+              Change Email
             </button>
           ) : (
             <div className="space-y-2">

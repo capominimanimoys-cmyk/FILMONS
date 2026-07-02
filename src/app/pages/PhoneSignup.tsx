@@ -11,6 +11,7 @@ import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { supabase } from '../../lib/supabase';
 
 type Step = 1 | 2;
 
@@ -168,8 +169,12 @@ export function PhoneSignup() {
     setIsLoading(true);
     try {
       const user = await authApi.completePhoneSignup(fullPhone, otp);
-      updateUser(user);
-      toast.success('Welcome to Filmons! Let\'s set up your profile.');
+      // Mark phone as verified in the profiles table
+      if (user?.id) {
+        await supabase.from('profiles').update({ phone_verified: true }).eq('id', user.id);
+      }
+      updateUser({ ...user, phoneVerified: true });
+      toast.success('Phone verified! Let\'s set up your profile.');
       captureSnapshot();
       navigate('/onboarding', { replace: true });
     } catch (error) {
@@ -218,8 +223,8 @@ export function PhoneSignup() {
               <FilmonsLogo iconSize={36} theme="dark"/>
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white">Sign up with phone</h2>
-              <p className="text-white/40 text-sm mt-1">Enter your number to get started</p>
+              <h2 className="text-2xl font-black text-white">Create an account with your phone number</h2>
+              <p className="text-white/40 text-sm mt-1">We'll send you a verification code.</p>
             </div>
 
             {/* Country selector */}
@@ -271,7 +276,7 @@ export function PhoneSignup() {
               onClick={handleSendCode}
               disabled={phone.length < 7 || isLoading}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
-              {isLoading ? 'Sending code…' : 'Continue →'}
+              {isLoading ? 'Sending code…' : 'Send Verification Code'}
             </button>
 
             <p className="text-center text-xs text-white/30">
