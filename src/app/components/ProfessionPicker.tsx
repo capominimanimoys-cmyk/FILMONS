@@ -12,10 +12,10 @@ import { Icon } from './Icon';
 export const PROFESSIONS: { cat: string; items: string[] }[] = [
   { cat: 'Film & Video',  items: ['Director','Cinematographer','Camera Operator','Gaffer','Grip','Producer','Video Editor','Colorist','VFX Artist','Sound Designer','Steadicam Operator','Script Supervisor','Music Video Director','Documentary Filmmaker','Video Producer'] },
   { cat: 'Photography',   items: ['Photographer','Fashion Photographer','Retoucher','Studio Manager','Drone Photographer','Event Photographer','Portrait Photographer','Commercial Photographer','Product Photographer','Real Estate Photographer'] },
-  { cat: 'Music & Audio', items: ['Music Producer','Beatmaker','Mixing Engineer','Mastering Engineer','DJ','Composer','Sound Designer','Podcast Producer','Audio Engineer','Recording Artist'] },
+  { cat: 'Music & Audio', items: ['Music Producer','Beatmaker','Rapper','Singer','Songwriter','Mixing Engineer','Mastering Engineer','DJ','Composer','Sound Designer','Podcast Producer','Audio Engineer','Recording Artist','Vocalist'] },
   { cat: 'Social Media',  items: ['Content Creator','UGC Creator','YouTuber','Streamer','TikTok Creator','Podcast Host','Influencer','Brand Ambassador','Social Media Manager'] },
   { cat: 'Design',        items: ['Graphic Designer','Motion Designer','UI Designer','UX Designer','Creative Director','Brand Designer','Animator','Illustrator','3D Artist','Visual Artist'] },
-  { cat: 'Performance',   items: ['Actor','Voice Actor','Dancer','Choreographer','Comedian','Host','Model','Presenter','MC','Stunt Performer'] },
+  { cat: 'Performance',   items: ['Actor','Voice Actor','Dancer','Choreographer','Comedian','Host','Model','Presenter','MC','Stunt Performer','Spoken Word Artist'] },
   { cat: 'Writing',       items: ['Screenwriter','Copywriter','Story Editor','Blogger','Journalist','Lyricist','Narrative Designer','Script Doctor'] },
   { cat: 'Emerging',      items: ['AI Artist','Prompt Engineer','XR Designer','Virtual Production Artist','NFT Creator','Generative Artist','Technical Director'] },
 ];
