@@ -28,10 +28,28 @@ const ACCOUNT_TYPES: { value: AccType; label: string; description: string }[] = 
 ];
 
 const TOOLS = [
-  'Cinema Camera', 'DSLR / Mirrorless', 'Drone', 'Gimbal / Steadicam',
-  'Lighting Rig', 'Audio Equipment', 'Recording Studio', 'Green Screen',
+  // Cameras & capture
+  'Cinema Camera', 'DSLR / Mirrorless', 'Drone', 'Action Camera', 'Film Camera',
+  'Gimbal / Steadicam', 'Teleprompter',
+  // Lighting & studio
+  'Lighting Rig', 'Softbox', 'LED Panel', 'Ring Light', 'Green Screen', 'Studio Setup',
+  // Audio gear
+  'Condenser Microphone', 'Dynamic Microphone', 'Audio Interface', 'MIDI Controller',
+  'Studio Monitors', 'Headphones', 'Mixing Board',
+  // Recording & production spaces
+  'Recording Studio', 'Home Studio', 'Podcast Studio',
+  // Music production software (DAWs)
+  'FL Studio', 'Ableton Live', 'Logic Pro', 'Pro Tools', 'GarageBand',
+  'Cubase', 'Studio One', 'Reason', 'Reaper', 'Bitwig Studio',
+  // Video editing & post software
+  'Adobe Premiere Pro', 'Final Cut Pro', 'DaVinci Resolve', 'After Effects',
+  'Avid Media Composer',
+  // Design & animation software
+  'Adobe Photoshop', 'Adobe Illustrator', 'Adobe Lightroom', 'Capture One',
+  'Blender', 'Cinema 4D', 'Maya',
+  // Workstations & tech
   'Editing Suite', 'Color Grading Suite', '3D Workstation', 'VR / AR Equipment',
-  'Teleprompter', 'AI Tools',
+  'AI Tools',
 ];
 
 const COUNTRY_OPTIONS = [
