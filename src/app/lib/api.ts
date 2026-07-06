@@ -150,18 +150,47 @@ export const authApi = {
 
   // ── Sign in flow (phone) ───────────────────────────────────────────────────
   signinWithPhone: async (phone: string): Promise<{ needsVerification: boolean }> => {
-    const normalized = phone.replace(/\D/g, '');
-    const { user } = await call<any>(`/users/by-phone/${encodeURIComponent(normalized)}`);
-    if (!user) throw new Error('No account found with this phone number');
+    // DB stores phone as E.164 (+1XXXXXXXXXX). Query directly to avoid edge-function
+    // normalization stripping the leading '+' and causing a format mismatch.
+    const e164 = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('phone', e164)
+      .maybeSingle();
+    if (!data) throw new Error('No account found with this phone number');
     await authApi.sendPhoneOTP(phone);
     return { needsVerification: true };
   },
 
   completePhoneSignin: async (phone: string, code: string): Promise<User> => {
     await authApi.verifyPhoneOTP(phone, code);
-    const normalized = phone.replace(/\D/g, '');
-    const { user } = await call<any>(`/users/by-phone/${encodeURIComponent(normalized)}`);
-    if (!user) throw new Error('User not found');
+    const e164 = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
+    // Try edge function first, fall back to direct Supabase query
+    try {
+      const { user } = await call<any>(`/users/by-phone/${encodeURIComponent(e164)}`);
+      if (user) { saveSession(user); return user; }
+    } catch { /* fall through */ }
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('phone', e164)
+      .maybeSingle();
+    if (!data) throw new Error('User not found');
+    const meta: Record<string, any> = typeof data.profile_meta === 'string'
+      ? JSON.parse(data.profile_meta || '{}')
+      : (data.profile_meta || {});
+    const user: User = {
+      id: data.id, email: data.email, name: data.name || data.username || 'User',
+      username: data.username, avatar: data.avatar_url,
+      accountType: data.account_type, accountMode: data.account_mode,
+      isVerified: data.is_verified ?? false,
+      verificationStatus: data.verification_status ?? 'not_started',
+      profileSetupCompleted: !!(data.onboarding_completed) || !!(meta.onboarding_completed),
+      emailVerified: data.email_verified ?? true,
+      following: parsePgArray(data.following),
+      followers: parsePgArray(data.followers),
+    } as User;
     saveSession(user);
     return user;
   },
