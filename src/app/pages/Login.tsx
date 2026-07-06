@@ -85,7 +85,7 @@ export function Login() {
   const [mounted,  setMounted]  = useState(false);
 
   useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
-  useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/'); } }, [isAuthenticated]);
+  useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/', { replace: true }); } }, [isAuthenticated]);
 
   // Auto-advance splash after 2s (skipped when email is pre-filled)
   useEffect(() => {
