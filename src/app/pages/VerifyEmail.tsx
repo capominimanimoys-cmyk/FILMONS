@@ -37,7 +37,7 @@ function readPending(): PendingSignup | null {
 
 export function VerifyEmail() {
   const navigate   = useNavigate();
-  const { completeLogin } = useAuth();
+  const { completeLogin, user, isAuthenticated } = useAuth() as any;
   const [pending,   setPending]  = useState<PendingSignup | null>(null);
   const [digits,    setDigits]   = useState(['', '', '', '', '', '']);
   const [loading,   setLoading]  = useState(false);
@@ -48,10 +48,23 @@ export function VerifyEmail() {
 
   useEffect(() => {
     const p = readPending();
-    if (!p) { navigate('/create-account', { replace: true }); return; }
+    if (!p) {
+      if (isAuthenticated && user?.id) {
+        // Already logged in with no pending verification — fix the stuck loop by
+        // marking email as verified in the DB and going home.
+        supabase.from('profiles')
+          .update({ email_verified: true })
+          .eq('id', user.id)
+          .then(() => {});
+        navigate('/', { replace: true });
+      } else {
+        navigate('/create-account', { replace: true });
+      }
+      return;
+    }
     setPending(p);
     setNewEmail(p.email);
-  }, [navigate]);
+  }, [navigate, isAuthenticated, user?.id]);
 
   const code = digits.join('');
   const full  = code.length === 6;

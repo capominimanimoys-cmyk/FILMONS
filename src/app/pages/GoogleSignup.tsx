@@ -192,6 +192,7 @@ export function GoogleSignup() {
         tiktok:              tiktok.trim()   || null,
         is_verified:              false,
         verification_status:      'not_started',
+        email_verified:           true,
         onboarding_completed:     true,
         profile_setup_percentage: 100,
         profile_meta: {

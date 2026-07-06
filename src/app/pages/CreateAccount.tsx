@@ -131,13 +131,6 @@ export function CreateAccount() {
       </div>
 
       <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-14 pb-10">
-        {/* Sign In link — always visible at top, no scrolling required */}
-        <div className="flex justify-end mb-2">
-          <Link to="/login" className="text-blue-400 font-semibold text-sm hover:text-blue-300 transition-colors min-h-[44px] flex items-center">
-            Sign In
-          </Link>
-        </div>
-
         <div className="flex flex-col items-center mb-8">
           <FilmonsLogo iconSize={34} theme="dark" className="mb-7" />
           <h1 className="text-2xl font-black text-white mb-1">Create your account</h1>
