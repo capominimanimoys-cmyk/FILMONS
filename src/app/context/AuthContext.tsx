@@ -19,6 +19,15 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
 
+  // Guest mode — browse without an account
+  isGuest:        boolean;
+  enterGuestMode: () => void;
+  exitGuestMode:  () => void;
+  /** Show the guest auth prompt with an optional action-specific message */
+  guestPromptMsg:  string | null;
+  showGuestPrompt: (msg?: string) => void;
+  hideGuestPrompt: () => void;
+
   // Email/password (profiles table — no Supabase Auth)
   login:    (email: string, password: string) => Promise<string>;
   signup:   (
@@ -52,6 +61,7 @@ interface AuthContextType {
 
 // ── Session helpers ────────────────────────────────────────────────────────────
 const SESSION_KEY = 'filmons_current_user';
+const GUEST_KEY   = 'filmons_guest_mode';
 
 /** Parse Postgres array literal "{u1,u2}" → string[] (or passthrough real arrays) */
 function pgArr(v: any): string[] {
@@ -86,6 +96,12 @@ const _noop = () => Promise.resolve() as any;
 const defaultCtx: AuthContextType = {
   user:             null,
   isAuthenticated:  false,
+  isGuest:          false,
+  enterGuestMode:   () => {},
+  exitGuestMode:    () => {},
+  guestPromptMsg:   null,
+  showGuestPrompt:  () => {},
+  hideGuestPrompt:  () => {},
   login:            async () => '',
   signup:           async () => ({ user: null as unknown as User, verificationCode: '' }),
   completeLogin:    _noop,
@@ -103,6 +119,16 @@ const AuthContext = createContext<AuthContextType>(defaultCtx);
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Initialise from localStorage so the UI never flashes "logged out"
   const [user, setUser] = useState<User | null>(() => loadCached());
+
+  // Guest mode
+  const [isGuest,       setIsGuest]       = useState(() => localStorage.getItem(GUEST_KEY) === 'true');
+  const [guestPromptMsg, setGuestPromptMsg] = useState<string | null>(null);
+
+  const enterGuestMode = () => { localStorage.setItem(GUEST_KEY, 'true');  setIsGuest(true);  };
+  const exitGuestMode  = () => { localStorage.removeItem(GUEST_KEY);        setIsGuest(false); };
+
+  const showGuestPrompt = (msg = 'Create an account to continue') => setGuestPromptMsg(msg);
+  const hideGuestPrompt = () => setGuestPromptMsg(null);
 
   // Must be defined before useEffect so it's captured in closure
   const setAndCache = (u: User | null) => { const s = sanitizeUser(u); setUser(s); cache(s); };
@@ -139,8 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<string> => {
     const { user: found } = await authApi.signin(email, password);
     if (!found) throw new Error('Invalid credentials');
-    // Commit session immediately — Supabase Auth handles the real auth
     setAndCache(found);
+    exitGuestMode();
     seedDemoData(found.id);
     return '000000';
   };
@@ -168,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ) => {
     if (preloadedUser) {
       setAndCache(preloadedUser);
+      exitGuestMode();
       seedDemoData(preloadedUser.id);
       return;
     }
@@ -175,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (email) {
       const { user: found } = await authApi.signin(email, password || '');
       setAndCache(found);
+      exitGuestMode();
       seedDemoData(found.id);
       return;
     }
@@ -188,6 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await resp.json();
       if (data.user) {
         setAndCache(data.user);
+        exitGuestMode();
         seedDemoData(data.user.id);
       }
     }
@@ -249,6 +278,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user,
       isAuthenticated: !!user,
+      isGuest,
+      enterGuestMode,
+      exitGuestMode,
+      guestPromptMsg,
+      showGuestPrompt,
+      hideGuestPrompt,
       login,
       signup,
       completeLogin,

@@ -5,6 +5,8 @@ import { MobileBottomNav } from '../components/MobileBottomNav';
 import { Footer } from '../components/Footer';
 import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
+import { GuestBanner } from '../components/GuestBanner';
+import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
@@ -24,7 +26,7 @@ function isOnboardingIncomplete(user: User | null): boolean {
 
 export function Root() {
   const location = useLocation();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isGuest } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen,  setSearchOpen]  = useState(false);
 
@@ -32,7 +34,7 @@ export function Root() {
   const hideTopBar = NO_TOPBAR_PAGES.includes(location.pathname);
   const hideFooter = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
 
-  // Enforce email verification before anything else
+  // Enforce email verification before anything else (skip for guests — they have no user)
   if (isAuthenticated && user?.emailVerified === false) {
     return <Navigate to="/verify-email" replace />;
   }
@@ -55,6 +57,9 @@ export function Root() {
   return (
     <NotificationBannerProvider>
       <div className="min-h-screen flex flex-col">
+        {/* Guest mode banner — shown above everything when browsing without account */}
+        {isGuest && !isAuthenticated && <GuestBanner />}
+
         {sidebarOpen && <SideDrawer onClose={() => setSidebarOpen(false)} />}
 
         {!hideTopBar && (
@@ -78,6 +83,9 @@ export function Root() {
 
         {/* AI Search overlay — rendered above everything */}
         {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
+
+        {/* Guest auth prompt — rendered globally, triggered via showGuestPrompt() */}
+        <GuestAuthPrompt />
       </div>
     </NotificationBannerProvider>
   );

@@ -54,6 +54,9 @@ import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
 import { Portfolio } from './pages/Portfolio';
 import { VerifyEmail } from './pages/VerifyEmail';
+import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
+import { SignupPhone }        from './pages/SignupPhone';
+import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
 
 export const router = createBrowserRouter([
   {
@@ -112,11 +115,15 @@ export const router = createBrowserRouter([
   },
   // ── Auth routes — outside Root layout (no navbar/shell) ──────────────────
   { path: '/login',          Component: Login          },
+  { path: '/signin',         Component: Login          }, // alias
   { path: '/create-account',   Component: CreateAccount  },
   { path: '/forgot-password',  Component: ForgotPassword },
   { path: '/reset-password',    Component: ResetPassword  },
   { path: '/auth/callback',    Component: OAuthCallback  },
   { path: '/google-signup',    Component: GoogleSignup   },
-  { path: '/onboarding',    Component: CompleteProfile },
-  { path: '/verify-email',  Component: VerifyEmail     },
+  { path: '/onboarding',           Component: CompleteProfile    },
+  { path: '/verify-email',         Component: VerifyEmail        },
+  { path: '/email-already-exists', Component: EmailAlreadyExists },
+  { path: '/signup/phone',         Component: SignupPhone        },
+  { path: '/phone-already-exists', Component: PhoneAlreadyExists },
 ]);

@@ -8,7 +8,7 @@
  * supabase.auth.updateUser() sets the new password.
  */
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router';
+import { useNavigate, Link, useSearchParams } from 'react-router';
 import { ArrowLeft, Eye, EyeOff, Check, ShieldCheck, Monitor, CheckCircle2 } from 'lucide-react';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
@@ -44,10 +44,13 @@ function mask(email: string) {
 
 export function ForgotPassword() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth() as any;
 
+  const prefillEmail = searchParams.get('email') ?? '';
+
   const [step,     setStep]     = useState<Step>('email');
-  const [email,    setEmail]    = useState('');
+  const [email,    setEmail]    = useState(prefillEmail);
   const [otp,      setOtp]      = useState('');
   const [password, setPassword] = useState('');
   const [confirm,  setConfirm]  = useState('');

@@ -190,12 +190,15 @@ export function GoogleSignup() {
         instagram:           instagram.trim()|| null,
         youtube:             youtube.trim()  || null,
         tiktok:              tiktok.trim()   || null,
-        is_verified:         false,
-        verification_status: 'not_started',
+        is_verified:              false,
+        verification_status:      'not_started',
+        onboarding_completed:     true,
+        profile_setup_percentage: 100,
         profile_meta: {
-          provider:  'google',
-          googleId:  authId,
-          providers: ['google'],
+          provider:            'google',
+          googleId:            authId,
+          providers:           ['google'],
+          onboarding_completed: true,
           // Store extended location data (country, lat/lng) here since
           // the profiles table only has city + province columns
           location: {
@@ -235,19 +238,20 @@ export function GoogleSignup() {
       ]);
 
       const newUser: User = {
-        id:                 authId,
-        email:              googleEmail,
-        name:               googleName,
+        id:                   authId,
+        email:                googleEmail,
+        name:                 googleName,
         username,
-        avatar:             googleAvatar || undefined,
-        accountType:        'creator' as any,
-        accountMode:        'creator' as any,
-        isVerified:         false,
-        verificationStatus: 'not_started',
-        following:          [],
-        followers:          [],
-        bio:                bio.trim() || undefined,
-        location:           locationStr,
+        avatar:               googleAvatar || undefined,
+        accountType:          'creator' as any,
+        accountMode:          'creator' as any,
+        isVerified:           false,
+        verificationStatus:   'not_started',
+        following:            [],
+        followers:            [],
+        bio:                  bio.trim() || undefined,
+        location:             locationStr,
+        profileSetupCompleted: true,
         ...(created || {}),
       };
 

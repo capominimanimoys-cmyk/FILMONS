@@ -66,12 +66,19 @@ export function CreateAccount() {
 
       const { data: existing } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, profile_meta')
         .eq('email', normalEmail)
         .maybeSingle();
 
       if (existing) {
-        toast.error('An account with this email already exists. Please sign in.');
+        // Detect the original signup provider from profile_meta (never guess)
+        const meta     = existing.profile_meta as any;
+        const provider = meta?.provider as string | undefined;
+        const knownProvider = provider === 'google' || provider === 'apple' ? provider : null;
+
+        const params = new URLSearchParams({ email: normalEmail });
+        if (knownProvider) params.set('provider', knownProvider);
+        navigate(`/email-already-exists?${params.toString()}`);
         setLoading(false);
         return;
       }
@@ -292,20 +299,9 @@ export function CreateAccount() {
             Continue with Google
           </button>
 
-          {/* Apple */}
-          <button
-            onClick={() => handleOAuth('apple')}
-            className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl bg-white/10 border border-white/15 text-white text-sm font-bold hover:bg-white/15 active:scale-[0.98] transition-all min-h-[44px]"
-          >
-            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.34.07 2.27.74 3.06.8 1.16-.23 2.27-.93 3.51-.84 1.49.12 2.61.67 3.37 1.68-3.03 1.82-2.31 5.81.37 7.01-.56 1.5-1.3 2.97-2.31 4.23zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-            </svg>
-            Continue with Apple
-          </button>
-
           {/* Phone */}
           <button
-            onClick={() => navigate('/phone-signup')}
+            onClick={() => navigate('/signup/phone')}
             className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl bg-white/10 border border-white/15 text-white text-sm font-bold hover:bg-white/15 active:scale-[0.98] transition-all min-h-[44px]"
           >
             <Phone className="w-4 h-4 shrink-0" />

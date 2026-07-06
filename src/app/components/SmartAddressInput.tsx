@@ -11,6 +11,7 @@ import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner';
 
 const EDGE = `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879`;
+const MIN_CHARS = 3;
 
 export interface AddressComponents {
   formatted:     string;
@@ -42,6 +43,12 @@ export interface SmartAddressInputProps {
    * @param parts    Full address breakdown (city/province/postal/street)
    */
   onAddressSelect?: (display: string, parts: AddressComponents) => void;
+  /**
+   * Fired whenever the selection validity changes.
+   * true = user selected a real suggestion; false = user is typing free text.
+   * Use this to gate form submission — only allow submit when valid.
+   */
+  onValidityChange?: (valid: boolean) => void;
   mode?:          'city' | 'full';
   placeholder?:   string;
   label?:         string;
@@ -78,6 +85,7 @@ export function SmartAddressInput({
   value,
   onInputChange,
   onAddressSelect,
+  onValidityChange,
   mode        = 'city',
   placeholder,
   label,
@@ -95,14 +103,17 @@ export function SmartAddressInput({
   const [showDrop,      setShowDrop]      = useState(false);
   const [isSearching,   setIsSearching]   = useState(false);
   const [isDetecting,   setIsDetecting]   = useState(false);
-  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isFocused,     setIsFocused]     = useState(false);
+  const timerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
   useEffect(() => {
     const h = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node))
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setShowDrop(false);
+        setIsFocused(false);
+      }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -117,7 +128,11 @@ export function SmartAddressInput({
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchPredictions = useCallback(async (text: string) => {
-    if (!text.trim() || text.length < 3) { setPredictions([]); setShowDrop(false); return; }
+    if (!text.trim() || text.trim().length < MIN_CHARS) {
+      setPredictions([]);
+      setShowDrop(false);
+      return;
+    }
 
     // Cancel any previous in-flight request
     abortRef.current?.abort();
@@ -195,8 +210,15 @@ export function SmartAddressInput({
 
   const handleChange = (val: string) => {
     onInputChange(val);
+    onValidityChange?.(false); // free-text input — not a confirmed selection
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => fetchPredictions(val), 350);
+    // Clear immediately if below minimum, otherwise debounce the API call
+    if (val.trim().length < MIN_CHARS) {
+      setPredictions([]);
+      setShowDrop(false);
+    } else {
+      timerRef.current = setTimeout(() => fetchPredictions(val), 350);
+    }
   };
 
   const handleSelect = useCallback(async (p: Prediction) => {
@@ -211,6 +233,7 @@ export function SmartAddressInput({
         : p.description;
       onInputChange(display);
       onAddressSelect?.(display, parts);
+      onValidityChange?.(true);
       return;
     }
 
@@ -242,10 +265,12 @@ export function SmartAddressInput({
 
       onInputChange(display);
       onAddressSelect?.(display, parts);
+      onValidityChange?.(true);
     } catch {
       onAddressSelect?.(p.description, { formatted: p.description, streetAddress: '', city: '', province: '', postalCode: '' });
+      onValidityChange?.(true);
     }
-  }, [mode, effectiveCountry, onInputChange, onAddressSelect]);
+  }, [mode, effectiveCountry, onInputChange, onAddressSelect, onValidityChange]);
 
   const handleGPS = () => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported in your browser.'); return; }
@@ -276,6 +301,7 @@ export function SmartAddressInput({
             : result.formatted_address;
           onInputChange(display);
           onAddressSelect?.(display, parts);
+          onValidityChange?.(true);
           toast.success('📍 Location detected!', { description: display });
         } catch {
           toast.error('Failed to detect location. Please enter manually.');
@@ -306,6 +332,9 @@ export function SmartAddressInput({
     );
   };
 
+  const trimmedLen = value.trim().length;
+  const showMinHint = isFocused && trimmedLen > 0 && trimmedLen < MIN_CHARS;
+
   return (
     <div className={`space-y-1.5 ${className}`}>
       {label && (
@@ -319,7 +348,11 @@ export function SmartAddressInput({
             type="text"
             value={value}
             onChange={(e) => handleChange(e.target.value)}
-            onFocus={() => predictions.length > 0 && setShowDrop(true)}
+            onFocus={() => {
+              setIsFocused(true);
+              if (predictions.length > 0) setShowDrop(true);
+            }}
+            onBlur={() => setIsFocused(false)}
             placeholder={placeholder ?? (mode === 'city' ? 'e.g. Toronto, ON' : 'Start typing your address…')}
             disabled={disabled}
             className={`w-full pl-9 pr-9 py-3.5 text-sm rounded-2xl outline-none transition disabled:opacity-50 ${
@@ -335,13 +368,25 @@ export function SmartAddressInput({
             ) : value ? (
               <button
                 type="button"
-                onClick={() => { onInputChange(''); setPredictions([]); setShowDrop(false); }}
+                onClick={() => {
+                  onInputChange('');
+                  setPredictions([]);
+                  setShowDrop(false);
+                  onValidityChange?.(false);
+                }}
                 className={dark ? 'text-white/30 hover:text-white/60' : 'text-gray-300 hover:text-gray-500'}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : null}
           </div>
+
+          {/* Minimum character hint */}
+          {showMinHint && (
+            <p className={`absolute top-full left-0 mt-1.5 text-xs px-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}>
+              Type at least {MIN_CHARS} characters to search.
+            </p>
+          )}
 
           {/* Suggestions dropdown */}
           {showDrop && predictions.length > 0 && (
