@@ -132,7 +132,9 @@ function DbTxRow({ tx }: { tx: any }) {
 // Account tier helpers
 const PLUS_TIERS = ['creator_plus', 'professional', 'business'];
 function isCreatorPlus(user: any): boolean {
-  return PLUS_TIERS.includes(user?.accountType || '') || PLUS_TIERS.includes(user?.accountMode || '');
+  if (PLUS_TIERS.includes(user?.accountType || '') || PLUS_TIERS.includes(user?.accountMode || '')) return true;
+  // Verified users always have Creator+ access even if the cached type is stale
+  return user?.verificationStatus === 'verified' || user?.isVerified === true;
 }
 
 // ── TransactionHistory ──────────────────────────────────────────────
@@ -833,15 +835,35 @@ function HostDashboardContent({ user }: { user: any }) {
 
 // ── Main export: router ────────────────────────────────────────────
 export function HostDashboard() {
-  const { user } = useAuth();
+  const { user, setUserDirectly } = useAuth();
   const navigate = useNavigate();
+  const [liveUser, setLiveUser] = useState<any>(user);
 
   useEffect(() => {
     if (!user) navigate('/login');
   }, [user, navigate]);
 
-  if (!user) return null;
-  // creator and renter → limited dashboard (orders + transactions + Creator+ upsell)
-  if (!isCreatorPlus(user)) return <CreatorDashboard user={user} />;
-  return <HostDashboardContent user={user} />;
+  // Always do a live DB check so stale cache never blocks access
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('profiles')
+      .select('account_type, account_mode, verification_status, is_verified')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        const rawType = data.account_type || user.accountType || 'creator';
+        const verified = data.verification_status === 'verified' || data.is_verified;
+        const resolvedType = (verified && !PLUS_TIERS.includes(rawType)) ? 'creator_plus' : rawType;
+        const updated = { ...user, accountType: resolvedType, accountMode: data.account_mode || resolvedType, verificationStatus: data.verification_status, isVerified: data.is_verified };
+        setLiveUser(updated);
+        if (resolvedType !== user.accountType) setUserDirectly(updated as any);
+      })
+      .catch(() => setLiveUser(user));
+  }, [user?.id]); // eslint-disable-line
+
+  if (!liveUser) return null;
+  if (!isCreatorPlus(liveUser)) return <CreatorDashboard user={liveUser} />;
+  return <HostDashboardContent user={liveUser} />;
 }

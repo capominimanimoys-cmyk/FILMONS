@@ -323,13 +323,23 @@ export const authApi = {
         const getMeMeta: Record<string, unknown> = data.profile_meta
           ? (typeof data.profile_meta === 'string' ? JSON.parse(data.profile_meta) : data.profile_meta)
           : {};
+        // If the account is verified but account_type hasn't been promoted yet, auto-upgrade to creator_plus
+        const rawType = data.account_type || cached.accountType || 'creator';
+        const isVerified = data.verification_status === 'verified' || data.is_verified;
+        const resolvedType = (isVerified && !['creator_plus','professional','business'].includes(rawType))
+          ? 'creator_plus' : rawType;
+        if (resolvedType !== rawType) {
+          // Silently persist the upgrade so subsequent loads are consistent
+          supabase.from('profiles').update({ account_type: 'creator_plus', account_mode: 'creator_plus' })
+            .eq('id', cached.id).then(() => {}, () => {});
+        }
         const fresh: User = {
           ...cached,
           name:                 data.name               || cached.name,
           username:             data.username            || cached.username,
           avatar:               data.avatar_url          || cached.avatar,
-          accountType:          data.account_type        || cached.accountType,
-          accountMode:          data.account_mode        || cached.accountMode,
+          accountType:          resolvedType,
+          accountMode:          data.account_mode || (resolvedType !== rawType ? 'creator_plus' : cached.accountMode),
           isVerified:           data.is_verified         ?? cached.isVerified,
           verificationStatus:   data.verification_status ?? cached.verificationStatus,
           bio:                  data.bio                 || cached.bio,
