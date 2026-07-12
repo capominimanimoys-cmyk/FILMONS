@@ -43,7 +43,7 @@ function CinematicBg() {
 
 function OtpInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
-  const digits = value.padEnd(6, '').slice(0, 6).split('');
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] || '');
 
   const focus = (i: number) => refs.current[i]?.focus();
 
