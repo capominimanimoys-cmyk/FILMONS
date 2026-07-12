@@ -76,7 +76,12 @@ app.post("/make-server-ec8fe879/send-phone-otp", async (c) => {
     ).toString();
 
     // Store code in KV with timestamp for 10-minute expiry
-    await kv.set(kvKey, { code, createdAt: Date.now() });
+    await Promise.race([
+      kv.set(kvKey, { code, createdAt: Date.now() }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("KV store timed out")), 15000)
+      ),
+    ]);
 
     console.log(
       `[OTP] Storing code for key="${kvKey}" code="${code}"`,
@@ -225,7 +230,12 @@ app.post(
       const digits = String(phone).replace(/\D/g, "");
       const kvKey = `otp:${digits}`;
 
-      const raw = await kv.get(kvKey);
+      const raw = await Promise.race([
+        kv.get(kvKey),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("KV lookup timed out")), 15000)
+        ),
+      ]);
 
       console.log(
         `[OTP] Verify — key="${kvKey}" received="${code}" raw=${JSON.stringify(raw)}`,

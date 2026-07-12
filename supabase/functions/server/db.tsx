@@ -10,26 +10,29 @@ export function sql() {
   if (!_sql) {
     // Force session pooler port — direct port 5432 is blocked in Edge Functions
     const rawUrl = Deno.env.get("SUPABASE_DB_URL")!;
-    // Force port 6543 (session pooler). Strip ?options= params that session poolers
-    // reject as "unsupported startup parameter" (e.g. statement_timeout).
+    // Force port 6543 (session pooler). Strip ALL query params — PgBouncer
+    // rejects unknown startup parameters like statement_timeout, options, etc.
     let dbUrl = rawUrl.replace(/:5432\b/, ":6543");
     try {
       const u = new URL(dbUrl);
-      u.searchParams.delete("options");
+      u.search = "";
       dbUrl = u.toString();
     } catch { /* non-URL format — leave as-is */ }
     _sql = postgres(dbUrl, {
-      port:            6543,
-      max:             3,
-      idle_timeout:    10,
-      connect_timeout: 8,
-      ssl:             "require",
-      prepare:         false,
-      fetch_types:     false,
-      connection:      {
+      port:              6543,
+      max:               3,
+      idle_timeout:      10,
+      connect_timeout:   8,
+      ssl:               "require",
+      prepare:           false,
+      fetch_types:       false,
+      // Explicitly disable these or PgBouncer rejects them as startup parameters
+      statement_timeout: false,
+      lock_timeout:      false,
+      connection:        {
         application_name: "filmons-edge",
       },
-      onnotice:        () => {},
+      onnotice:          () => {},
     });
   }
   return _sql;
