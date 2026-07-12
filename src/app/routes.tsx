@@ -57,6 +57,7 @@ import { VerifyEmail } from './pages/VerifyEmail';
 import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
 import { SignupPhone }        from './pages/SignupPhone';
 import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
+import { ShareCard }          from './pages/ShareCard';
 
 export const router = createBrowserRouter([
   {
@@ -105,6 +106,7 @@ export const router = createBrowserRouter([
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },
       { path: 'profile', Component: Profile },
+      { path: 'share-card', Component: ShareCard },
       { path: 'verification', Component: Verification },
       { path: 'refund-policy', Component: RefundPolicy },
       { path: 'privacy-policy', Component: PrivacyPolicy },
