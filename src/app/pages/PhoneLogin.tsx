@@ -92,8 +92,8 @@ function OtpInput({ value, onChange }: { value: string; onChange: (v: string) =>
           onKeyDown={e => handleKey(i, e)}
           onFocus={e => e.target.select()}
           className={`w-12 h-14 text-center text-xl font-black rounded-2xl outline-none transition-all border-2 caret-blue-400
-            ${d ? 'bg-white/15 border-blue-400 text-white' : 'bg-white/10 border-white/30 text-white'}
-            focus:border-blue-400 focus:bg-white/15`}
+            ${d ? 'bg-blue-600/30 border-blue-400 text-white' : 'bg-slate-700 border-slate-400 text-white'}
+            focus:border-blue-400 focus:bg-blue-600/20`}
         />
       ))}
     </div>
