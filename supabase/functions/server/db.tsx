@@ -1,6 +1,7 @@
 /**
  * db.tsx — Minimal shared postgres connection.
- * Uses session pooler URL (port 6543) - set SUPABASE_DB_URL to pooler URL.
+ * Uses session pooler URL (port 6543, NOT 5432 which is blocked in Edge Functions).
+ * Query params stripped from URL — PgBouncer rejects startup params like statement_timeout.
  */
 import postgres from "npm:postgres";
 

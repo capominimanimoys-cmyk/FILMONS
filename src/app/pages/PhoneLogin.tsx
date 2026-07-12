@@ -150,6 +150,14 @@ export function PhoneLogin() {
       const msg = error instanceof Error ? error.message : 'Failed to send code';
       if (msg.includes('No account found')) {
         toast.error('No account found', { description: 'Please sign up first.' });
+      } else if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('timed out')) {
+        // SMS may have been sent before the server timed out — advance anyway
+        toast.warning('Server took too long to respond', {
+          description: 'If you received a code, enter it below. Otherwise tap resend.',
+        });
+        setOtp('');
+        setOtpKey(k => k + 1);
+        setStep(2);
       } else {
         toast.error('Failed to send code', { description: msg });
       }
