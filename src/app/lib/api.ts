@@ -104,6 +104,34 @@ function saveSession(user: User | null) {
   else localStorage.removeItem(SESSION_KEY);
 }
 
+/** Map a raw `profiles` DB row to the app's User type. */
+function profileRowToUser(data: Record<string, any>): User {
+  const meta: Record<string, any> = typeof data.profile_meta === 'string'
+    ? JSON.parse(data.profile_meta || '{}')
+    : (data.profile_meta || {});
+  return {
+    id:                   data.id,
+    email:                data.email,
+    name:                 data.name || data.username || 'User',
+    username:             data.username,
+    avatar:               data.avatar_url,
+    accountType:          data.account_type,
+    accountMode:          data.account_mode,
+    isVerified:           data.is_verified ?? false,
+    verificationStatus:   data.verification_status ?? 'not_started',
+    profileSetupCompleted: !!(data.onboarding_completed) || !!(meta.onboarding_completed),
+    emailVerified:        data.email_verified ?? true,
+    phoneVerified:        data.phone_verified ?? false,
+    bio:                  data.bio,
+    location:             data.location,
+    city:                 data.city,
+    province:             data.province,
+    primaryRole:          data.primary_role,
+    following:            parsePgArray(data.following),
+    followers:            parsePgArray(data.followers),
+  } as User;
+}
+
 // ============================================
 // AUTH API
 // ============================================
@@ -148,49 +176,103 @@ export const authApi = {
     return user;
   },
 
+  // ── Phone number normalisation ────────────────────────────────────────────
+  // All values ("2369798647", "+1 236 979-8647", etc.) become digits-only "12369798647".
+  // This must match the normalisation used in account_identities.provider_identifier.
+  normalizePhone: (value: string): string => {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 10) return `1${digits}`;          // assume North-American
+    if (digits.length === 11 && digits.startsWith('1')) return digits;
+    return digits;
+  },
+
   // ── Sign in flow (phone) ───────────────────────────────────────────────────
   signinWithPhone: async (phone: string): Promise<{ needsVerification: boolean }> => {
-    // DB stores phone as E.164 (+1XXXXXXXXXX). Query directly to avoid edge-function
-    // normalization stripping the leading '+' and causing a format mismatch.
-    const e164 = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
-    const { data } = await supabase
+    const digits = authApi.normalizePhone(phone);
+    const e164   = `+${digits}`;
+    console.log(`[auth] signinWithPhone digits=${digits} e164=${e164}`);
+
+    // 1. Check account_identities — canonical, handles account-linking
+    const { data: identity } = await supabase
+      .from('account_identities')
+      .select('profile_id')
+      .eq('provider', 'phone')
+      .eq('provider_identifier', digits)
+      .maybeSingle();
+
+    if (identity?.profile_id) {
+      console.log(`[auth] signinWithPhone → identity found profile=${identity.profile_id}`);
+      await authApi.sendPhoneOTP(phone);
+      return { needsVerification: true };
+    }
+
+    // 2. Fall back: check profiles.phone directly (for rows that pre-date account_identities)
+    const { data: profile } = await supabase
       .from('profiles')
       .select('id')
       .eq('phone', e164)
       .maybeSingle();
-    if (!data) throw new Error('No account found with this phone number');
-    await authApi.sendPhoneOTP(phone);
-    return { needsVerification: true };
+
+    if (profile?.id) {
+      console.log(`[auth] signinWithPhone → profile.phone match id=${profile.id}`);
+      // Back-fill the identity so future logins use the fast path
+      supabase.from('account_identities').insert({
+        profile_id: profile.id, provider: 'phone', provider_identifier: digits,
+      }).then(() => {}, () => {});
+      await authApi.sendPhoneOTP(phone);
+      return { needsVerification: true };
+    }
+
+    throw new Error('No account found with this phone number');
   },
 
   completePhoneSignin: async (phone: string, code: string): Promise<User> => {
     await authApi.verifyPhoneOTP(phone, code);
-    const e164 = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
-    // Try edge function first, fall back to direct Supabase query
+    const digits = authApi.normalizePhone(phone);
+    const e164   = `+${digits}`;
+    console.log(`[auth] completePhoneSignin digits=${digits} e164=${e164}`);
+
+    // 1. Try edge function (checks account_identities internally)
     try {
       const { user } = await call<any>(`/users/by-phone/${encodeURIComponent(e164)}`);
-      if (user) { saveSession(user); return user; }
+      if (user) {
+        console.log(`[auth] completePhoneSignin → edge fn returned profile=${user.id}`);
+        saveSession(user);
+        return user;
+      }
     } catch { /* fall through */ }
+
+    // 2. Check account_identities directly (client-side, no edge fn)
+    const { data: identity } = await supabase
+      .from('account_identities')
+      .select('profile_id')
+      .eq('provider', 'phone')
+      .eq('provider_identifier', digits)
+      .maybeSingle();
+
+    if (identity?.profile_id) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', identity.profile_id)
+        .single();
+      if (data) {
+        console.log(`[auth] completePhoneSignin → identity resolved profile=${data.id}`);
+        const user = profileRowToUser(data);
+        saveSession(user);
+        return user;
+      }
+    }
+
+    // 3. Fall back to profiles.phone column
     const { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('phone', e164)
       .maybeSingle();
     if (!data) throw new Error('User not found');
-    const meta: Record<string, any> = typeof data.profile_meta === 'string'
-      ? JSON.parse(data.profile_meta || '{}')
-      : (data.profile_meta || {});
-    const user: User = {
-      id: data.id, email: data.email, name: data.name || data.username || 'User',
-      username: data.username, avatar: data.avatar_url,
-      accountType: data.account_type, accountMode: data.account_mode,
-      isVerified: data.is_verified ?? false,
-      verificationStatus: data.verification_status ?? 'not_started',
-      profileSetupCompleted: !!(data.onboarding_completed) || !!(meta.onboarding_completed),
-      emailVerified: data.email_verified ?? true,
-      following: parsePgArray(data.following),
-      followers: parsePgArray(data.followers),
-    } as User;
+    console.log(`[auth] completePhoneSignin → profiles.phone fallback profile=${data.id}`);
+    const user = profileRowToUser(data);
     saveSession(user);
     return user;
   },

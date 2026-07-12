@@ -148,6 +148,25 @@ export async function getByEmail(email: string) {
 export async function getByPhone(phone: string) {
   const normalized = normalizePhone(phone);
   try {
+    // Check account_identities first — this is the canonical source for
+    // which profile owns a given phone number (handles account linking).
+    const identity = await sql()`
+      SELECT profile_id FROM account_identities
+      WHERE provider = 'phone' AND provider_identifier = ${normalized}
+      LIMIT 1
+    `;
+    if (identity[0]?.profile_id) {
+      const rows = await sql()`SELECT * FROM profiles WHERE id = ${identity[0].profile_id} LIMIT 1`;
+      if (rows[0]) {
+        console.log(`[profiles] getByPhone → resolved via account_identities profile=${identity[0].profile_id}`);
+        return rowToUser(rows[0]);
+      }
+    }
+  } catch (e) {
+    console.warn("[profiles] getByPhone identity lookup failed, falling back:", e);
+  }
+  // Fall back to direct profiles.phone column comparison
+  try {
     const rows = await sql()`
       SELECT * FROM profiles
       WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${normalized}
@@ -413,6 +432,21 @@ async function ensurePublicUser(id: string, email?: string, name?: string): Prom
   }
 }
 
+// ── Upsert identity record after profile creation ─────────────────────────────
+async function upsertIdentity(profileId: string, provider: string, identifier: string): Promise<void> {
+  if (!identifier) return;
+  try {
+    await sql()`
+      INSERT INTO account_identities (profile_id, provider, provider_identifier)
+      VALUES (${profileId}, ${provider}, ${identifier})
+      ON CONFLICT (provider, provider_identifier) DO NOTHING
+    `;
+    console.log(`[profiles] identity linked: provider=${provider} identifier=${identifier} → profile=${profileId}`);
+  } catch (e) {
+    console.warn("[profiles] upsertIdentity non-fatal:", e);
+  }
+}
+
 // ── Public create ─────────────────────────────────────────────────────────────
 export async function create(data: any): Promise<any> {
   let id = (data.id && isUUID(data.id)) ? data.id : genId();
@@ -422,7 +456,12 @@ export async function create(data: any): Promise<any> {
 
   for (let attempt = 0; attempt <= OPTIONAL_COLS.size + 1; attempt++) {
     try {
-      return await execCreate(payload);
+      const created = await execCreate(payload);
+      // Record identity links so future lookups resolve to this canonical profile
+      const createdId = created?.id || id;
+      if (data.email) await upsertIdentity(createdId, "email", data.email.toLowerCase());
+      if (data.phone) await upsertIdentity(createdId, "phone", normalizePhone(data.phone));
+      return created;
     } catch (e: any) {
       // ── Missing column → exclude and retry ──────────────────────────────
       if (e?.code === "42703") {
