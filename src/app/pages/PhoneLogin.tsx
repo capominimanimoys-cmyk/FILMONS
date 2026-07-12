@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { ArrowLeft, CheckCircle, Smartphone } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Smartphone, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -78,7 +78,7 @@ function OtpInput({ value, onChange }: { value: string; onChange: (v: string) =>
   useEffect(() => { focus(0); }, []);
 
   return (
-    <div className="flex gap-2 justify-center" onPaste={handlePaste}>
+    <div className="flex gap-2.5 justify-center" onPaste={handlePaste}>
       {digits.map((d, i) => (
         <input
           key={i}
@@ -91,8 +91,8 @@ function OtpInput({ value, onChange }: { value: string; onChange: (v: string) =>
           onChange={e => handleChange(i, e)}
           onKeyDown={e => handleKey(i, e)}
           onFocus={e => e.target.select()}
-          className={`w-12 h-14 text-center text-xl font-black rounded-2xl outline-none transition-all border-2
-            ${d ? 'bg-white/15 border-blue-400 text-white' : 'bg-white/8 border-white/20 text-white/30'}
+          className={`w-12 h-14 text-center text-xl font-black rounded-2xl outline-none transition-all border-2 caret-blue-400
+            ${d ? 'bg-white/15 border-blue-400 text-white' : 'bg-white/10 border-white/25 text-white'}
             focus:border-blue-400 focus:bg-white/15`}
         />
       ))}
@@ -150,6 +150,8 @@ export function PhoneLogin() {
       const msg = error instanceof Error ? error.message : 'Failed to send code';
       if (msg.includes('No account found')) {
         toast.error('No account found', { description: 'Please sign up first.' });
+      } else if (msg.includes('timed out')) {
+        toast.error('Taking longer than usual', { description: 'The SMS service is slow right now — please try again.' });
       } else {
         toast.error('Failed to send code', { description: msg });
       }
@@ -275,7 +277,9 @@ export function PhoneLogin() {
               onClick={handleSendCode}
               disabled={phone.length < 7 || isLoading}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
-              {isLoading ? 'Sending code…' : 'Continue →'}
+              {isLoading
+                ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/>Sending code…</span>
+                : 'Continue →'}
             </button>
 
             <p className="text-center text-xs text-white/30">
