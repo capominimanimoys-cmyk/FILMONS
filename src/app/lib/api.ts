@@ -115,7 +115,7 @@ export const authApi = {
     await call('/send-phone-otp', {
       method: 'POST',
       body: JSON.stringify({ phone: formatted }),
-    });
+    }, 30_000); // Twilio can take up to 10s; extra headroom for edge cold-start
     console.log('✅ OTP sent to:', formatted);
   },
 
@@ -124,7 +124,7 @@ export const authApi = {
     await call('/verify-phone-otp', {
       method: 'POST',
       body: JSON.stringify({ phone: formatted, code }),
-    });
+    }, 30_000); // Postgres cold-start can add 10-20s on first hit
     console.log('✅ Phone verified:', formatted);
   },
 
