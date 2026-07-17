@@ -34,13 +34,9 @@ type Theme   = typeof THEMES[number];
 const TEMPLATES = [
   { id: 4, label: 'Minimal'   },
   { id: 2, label: 'Full Bleed'},
-  { id: 1, label: 'Portrait'  },
-  { id: 3, label: 'Editorial' },
-  { id: 5, label: 'Glass'     },
-  { id: 6, label: 'Cinematic' },
 ] as const;
 
-type TemplateId = 1 | 2 | 3 | 4 | 5 | 6;
+type TemplateId = 2 | 4;
 
 // ── Shared card props ─────────────────────────────────────────────────────────
 interface CardUser {
@@ -76,66 +72,6 @@ function Photo({ src, alt, style }: { src: string; alt: string; style: React.CSS
 // ── Gradient helper ───────────────────────────────────────────────────────────
 const grad = (t: Theme, deg = 155) =>
   `linear-gradient(${deg}deg, ${t.a} 0%, ${t.b} 28%, ${t.c} 65%, ${t.d} 100%)`;
-
-// ── T1 — Portrait  (large photo top, text below) ─────────────────────────────
-function T1({ theme, user, isExport: X }: CP) {
-  const p   = X ? '52px' : '5%';
-  const role = user.primaryRole || 'Creator';
-  const city = user.city || 'Worldwide';
-
-  return (
-    <div style={{
-      width: X ? EW : '100%', height: X ? EH : undefined, aspectRatio: X ? undefined : '2/3',
-      background: grad(theme), display: 'flex', flexDirection: 'column',
-      padding: p, gap: X ? '28px' : '2.8%',
-      overflow: 'hidden', fontFamily: SF,
-    }}>
-      {/* Photo: ~59% of card height */}
-      <div style={{
-        height: X ? `${Math.round(EH * 0.59)}px` : '59%', flexShrink: 0,
-        borderRadius: X ? 24 : 'clamp(12px, 2.4%, 24px)',
-        overflow: 'hidden',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3)',
-      }}>
-        <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
-      </div>
-
-      {/* Content below photo */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 0 }}>
-        <div>
-          <p style={{ margin: 0, color: 'white', fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.1,
-            fontSize: X ? 52 : 'clamp(18px, 5.2%, 52px)' }}>{user.name}</p>
-          <p style={{ margin: `${X ? '5px' : '0.5%'} 0 ${X ? '18px' : '1.8%'}`,
-            color: 'rgba(255,255,255,0.4)', fontWeight: 400,
-            fontSize: X ? 24 : 'clamp(9px, 2.4%, 24px)' }}>@{user.username}</p>
-
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.38)',
-            fontSize: X ? 19 : 'clamp(7px, 1.9%, 19px)' }}>Hi, I'm a</p>
-          <p style={{ margin: `${X ? '2px' : '0.2%'} 0 ${X ? '14px' : '1.4%'}`,
-            color: 'white', fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.05,
-            fontSize: X ? 44 : 'clamp(15px, 4.4%, 44px)' }}>{role}</p>
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)',
-            fontSize: X ? 19 : 'clamp(7px, 1.9%, 19px)' }}>{city}</p>
-        </div>
-
-        <div style={{
-          borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: X ? '18px' : '1.8%',
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-        }}>
-          <div>
-            <p style={{ margin: `0 0 ${X ? '4px' : '0.4%'}`, color: 'rgba(255,255,255,0.28)',
-              fontSize: X ? 15 : 'clamp(6px, 1.5%, 15px)' }}>🔗 View my Filmons portfolio</p>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.65)', fontWeight: 600,
-              fontSize: X ? 20 : 'clamp(7px, 2%, 20px)' }}>filmons.app/{user.username}</p>
-          </div>
-          <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.16em',
-            color: 'rgba(255,255,255,0.18)', fontSize: X ? 14 : 'clamp(5px, 1.4%, 14px)',
-            textTransform: 'uppercase' as const }}>FILMONS</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── T2 — Full Bleed  (photo edge-to-edge, gradient text overlay) ──────────────
 function T2({ theme, user, isExport: X }: CP) {
@@ -179,68 +115,6 @@ function T2({ theme, user, isExport: X }: CP) {
         <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: `0 0 ${X ? '18px' : '1.8%'}` }} />
         <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontWeight: 500,
           fontSize: X ? 19 : 'clamp(7px, 1.9%, 19px)' }}>filmons.app/{user.username}</p>
-      </div>
-    </div>
-  );
-}
-
-// ── T3 — Editorial  (role as enormous headline — the aesthetic risk) ───────────
-function T3({ theme, user, isExport: X }: CP) {
-  const p    = X ? '52px' : '5%';
-  const role = (user.primaryRole || 'Creator').toUpperCase();
-  const city = user.city || 'Worldwide';
-
-  return (
-    <div style={{
-      width: X ? EW : '100%', height: X ? EH : undefined, aspectRatio: X ? undefined : '2/3',
-      background: grad(theme), display: 'flex', flexDirection: 'column',
-      overflow: 'hidden', fontFamily: SF,
-    }}>
-      {/* Photo — top 44% */}
-      <div style={{
-        height: X ? `${Math.round(EH * 0.44)}px` : '44%', flexShrink: 0,
-        overflow: 'hidden', position: 'relative',
-      }}>
-        <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, height: '40%',
-          background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.22))',
-        }} />
-      </div>
-
-      {/* Editorial body */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-        padding: p, paddingTop: X ? '38px' : '3.8%',
-      }}>
-        <div>
-          {/* Role name at 90px — deliberately large, clips for very long strings */}
-          <p style={{
-            margin: `0 0 ${X ? '18px' : '1.8%'}`,
-            color: 'white', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 0.88,
-            fontSize: X ? 90 : 'clamp(28px, 9%, 90px)',
-            overflow: 'hidden',
-          }}>{role}</p>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '14px' : '1.4%', margin: `0 0 ${X ? '14px' : '1.4%'}` }}>
-            <div style={{ width: X ? '36px' : '3.6%', height: '1.5px', background: 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.13em',
-              textTransform: 'uppercase' as const, fontSize: X ? 13 : 'clamp(5px, 1.3%, 13px)' }}>Creator Profile</p>
-          </div>
-
-          <p style={{ margin: `0 0 ${X ? '3px' : '0.3%'}`, color: 'white', fontWeight: 700,
-            letterSpacing: '-0.01em', fontSize: X ? 38 : 'clamp(13px, 3.8%, 38px)' }}>{user.name}</p>
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.38)',
-            fontSize: X ? 21 : 'clamp(8px, 2.1%, 21px)' }}>@{user.username} · {city}</p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.38)',
-            fontSize: X ? 18 : 'clamp(7px, 1.8%, 18px)' }}>filmons.app/{user.username}</p>
-          <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.16em',
-            color: 'rgba(255,255,255,0.16)', fontSize: X ? 14 : 'clamp(5px, 1.4%, 14px)',
-            textTransform: 'uppercase' as const }}>FILMONS</span>
-        </div>
       </div>
     </div>
   );
@@ -303,143 +177,9 @@ function T4({ theme, user, isExport: X }: CP) {
   );
 }
 
-// ── T5 — Glass  (photo in frosted frame, glass info cards below) ──────────────
-function T5({ theme, user, isExport: X }: CP) {
-  const p    = X ? '44px' : '4.4%';
-  const role = user.primaryRole || 'Creator';
-  const city = user.city || 'Worldwide';
-
-  const glass: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.08)',
-    border: '1px solid rgba(255,255,255,0.14)',
-  };
-
-  return (
-    <div style={{
-      width: X ? EW : '100%', height: X ? EH : undefined, aspectRatio: X ? undefined : '2/3',
-      background: grad(theme, 148), display: 'flex', flexDirection: 'column',
-      padding: p, gap: X ? '18px' : '1.8%',
-      overflow: 'hidden', fontFamily: SF,
-    }}>
-      {/* Photo in glass frame */}
-      <div style={{
-        ...glass,
-        height: X ? `${Math.round(EH * 0.53)}px` : '53%', flexShrink: 0,
-        borderRadius: X ? 22 : 'clamp(10px, 2.2%, 22px)',
-        overflow: 'hidden',
-        padding: X ? '10px' : '1%',
-      }}>
-        <div style={{ width: '100%', height: '100%', borderRadius: X ? 13 : 'clamp(5px, 1.3%, 13px)', overflow: 'hidden' }}>
-          <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
-        </div>
-      </div>
-
-      {/* Name glass card */}
-      <div style={{ ...glass, borderRadius: X ? 18 : 'clamp(8px, 1.8%, 18px)', padding: X ? '18px 22px' : '1.8% 2.2%' }}>
-        <p style={{ margin: `0 0 ${X ? '3px' : '0.3%'}`, color: 'white', fontWeight: 700, letterSpacing: '-0.01em',
-          fontSize: X ? 44 : 'clamp(15px, 4.4%, 44px)' }}>{user.name}</p>
-        <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)',
-          fontSize: X ? 21 : 'clamp(8px, 2.1%, 21px)' }}>@{user.username}</p>
-      </div>
-
-      {/* Role + location glass card */}
-      <div style={{
-        ...glass, borderRadius: X ? 18 : 'clamp(8px, 1.8%, 18px)', padding: X ? '15px 22px' : '1.5% 2.2%',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div>
-          <p style={{ margin: `0 0 ${X ? '2px' : '0.2%'}`, color: 'rgba(255,255,255,0.35)',
-            fontSize: X ? 16 : 'clamp(6px, 1.6%, 16px)' }}>Hi, I'm a</p>
-          <p style={{ margin: 0, color: 'white', fontWeight: 800, letterSpacing: '-0.01em',
-            fontSize: X ? 29 : 'clamp(10px, 2.9%, 29px)' }}>{role}</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ margin: `0 0 ${X ? '2px' : '0.2%'}`, color: 'rgba(255,255,255,0.35)',
-            fontSize: X ? 15 : 'clamp(6px, 1.5%, 15px)' }}>Based in</p>
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)', fontWeight: 600,
-            fontSize: X ? 20 : 'clamp(7px, 2%, 20px)' }}>{city}</p>
-        </div>
-      </div>
-
-      {/* Portfolio link + logo */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <p style={{ margin: 0, color: 'rgba(255,255,255,0.38)',
-          fontSize: X ? 18 : 'clamp(7px, 1.8%, 18px)' }}>filmons.app/{user.username}</p>
-        <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.16em',
-          color: 'rgba(255,255,255,0.16)', fontSize: X ? 14 : 'clamp(5px, 1.4%, 14px)',
-          textTransform: 'uppercase' as const }}>FILMONS</span>
-      </div>
-    </div>
-  );
-}
-
-// ── T6 — Cinematic  (letterbox bars, film-credits typography) ─────────────────
-function T6({ theme, user, isExport: X }: CP) {
-  const role = user.primaryRole || 'Creator';
-  const city = user.city || 'Worldwide';
-
-  // Heights: top bar 10% | photo 44% | bottom bar 10% | credits 36%
-  const barH   = X ? Math.round(EH * 0.10) : undefined;
-  const photoH = X ? Math.round(EH * 0.44) : undefined;
-
-  return (
-    <div style={{
-      width: X ? EW : '100%', height: X ? EH : undefined, aspectRatio: X ? undefined : '2/3',
-      background: '#040404', display: 'flex', flexDirection: 'column',
-      overflow: 'hidden', fontFamily: SF,
-    }}>
-      {/* Top letterbox */}
-      <div style={{
-        height: X ? `${barH}px` : '10%', background: '#000', flexShrink: 0,
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        paddingBottom: X ? '14px' : '1.4%',
-      }}>
-        <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.22em',
-          color: 'rgba(255,255,255,0.55)', fontSize: X ? 14 : 'clamp(5px, 1.4%, 14px)',
-          textTransform: 'uppercase' as const }}>FILMONS PRESENTS</span>
-      </div>
-
-      {/* Photo */}
-      <div style={{ height: X ? `${photoH}px` : '44%', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
-        <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
-        {/* Subtle theme-colored grade overlay */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: `linear-gradient(135deg, ${theme.c}1a 0%, transparent 55%, ${theme.d}14 100%)`,
-        }} />
-      </div>
-
-      {/* Bottom letterbox */}
-      <div style={{ height: X ? `${barH}px` : '10%', background: '#000', flexShrink: 0 }} />
-
-      {/* Credits */}
-      <div style={{
-        flex: 1,
-        background: `linear-gradient(158deg, ${theme.a} 0%, ${theme.b} 55%, ${theme.c}66 100%)`,
-        display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        padding: X ? '44px 52px' : '4.4% 5.2%', gap: X ? '9px' : '0.9%',
-      }}>
-        <p style={{ margin: 0, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.22em',
-          textTransform: 'uppercase' as const, fontSize: X ? 12 : 'clamp(4px, 1.2%, 12px)' }}>Directed by</p>
-        <p style={{ margin: `0 0 ${X ? '14px' : '1.4%'}`, color: 'white', fontWeight: 800, letterSpacing: '-0.015em',
-          lineHeight: 1.08, fontSize: X ? 58 : 'clamp(19px, 5.8%, 58px)' }}>{user.name}</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: X ? '14px' : '1.4%' }}>
-          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)',
-            fontSize: X ? 17 : 'clamp(6px, 1.7%, 17px)', whiteSpace: 'nowrap' as const }}>
-            {role} · {city}</p>
-          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-        </div>
-        <p style={{ margin: `${X ? '10px' : '1%'} 0 0`, color: 'rgba(255,255,255,0.35)',
-          fontSize: X ? 17 : 'clamp(6px, 1.7%, 17px)' }}>filmons.app/{user.username}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── Template renderer map ──────────────────────────────────────────────────────
 const RENDERERS: Record<TemplateId, React.ComponentType<CP>> = {
-  1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6,
+  2: T2, 4: T4,
 };
 
 // ── Theme swatch ──────────────────────────────────────────────────────────────
