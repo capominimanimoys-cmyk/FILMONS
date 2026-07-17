@@ -21,6 +21,7 @@ jobs:
         run: |
           mkdir -p supabase/functions/make-server-ec8fe879
           cp -r supabase/functions/server/* supabase/functions/make-server-ec8fe879/
+          cp supabase/functions/make-server-ec8fe879/index.tsx supabase/functions/make-server-ec8fe879/index.ts
 
       - name: Deploy
         run: supabase functions deploy make-server-ec8fe879 --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
