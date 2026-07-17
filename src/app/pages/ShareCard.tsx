@@ -32,10 +32,10 @@ type Theme   = typeof THEMES[number];
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 const TEMPLATES = [
-  { id: 1, label: 'Portrait'  },
-  { id: 2, label: 'Full Bleed'},
-  { id: 3, label: 'Editorial' },
   { id: 4, label: 'Minimal'   },
+  { id: 2, label: 'Full Bleed'},
+  { id: 1, label: 'Portrait'  },
+  { id: 3, label: 'Editorial' },
   { id: 5, label: 'Glass'     },
   { id: 6, label: 'Cinematic' },
 ] as const;
@@ -475,7 +475,7 @@ export function ShareCard() {
   const navigate    = useNavigate();
   const exportRef   = useRef<HTMLDivElement>(null);
   const [themeId,    setThemeId]    = useState<ThemeId>('green');
-  const [templateId, setTemplateId] = useState<TemplateId>(1);
+  const [templateId, setTemplateId] = useState<TemplateId>(4);
   const [exporting,  setExporting]  = useState(false);
   const [visible,    setVisible]    = useState(false);
   const [leaving,    setLeaving]    = useState(false);
