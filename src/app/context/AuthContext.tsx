@@ -266,6 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setUserDirectly = (u: User) => {
     setAndCache(u);
+    exitGuestMode();
   };
 
   // ── Logout ────────────────────────────────────────────────────────────────
