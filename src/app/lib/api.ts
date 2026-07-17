@@ -125,6 +125,7 @@ function profileRowToUser(data: Record<string, any>): User {
     bio:                  data.bio,
     location:             data.location,
     city:                 data.city,
+    phone:                data.phone,
     province:             data.province,
     primaryRole:          data.primary_role,
     following:            parsePgArray(data.following),
@@ -258,6 +259,11 @@ export const authApi = {
         .single();
       if (data) {
         console.log(`[auth] completePhoneSignin → identity resolved profile=${data.id}`);
+        // Back-fill profiles.phone if it was never set (e.g. linked via account_identities only)
+        if (!data.phone) {
+          supabase.from('profiles').update({ phone: e164 }).eq('id', data.id).then(() => {}, () => {});
+          data.phone = e164;
+        }
         const user = profileRowToUser(data);
         saveSession(user);
         return user;
