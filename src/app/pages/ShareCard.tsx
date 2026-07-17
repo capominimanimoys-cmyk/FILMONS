@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { ArrowLeft, Download } from 'lucide-react';
 import { toPng } from 'html-to-image';
@@ -477,6 +477,15 @@ export function ShareCard() {
   const [themeId,    setThemeId]    = useState<ThemeId>('green');
   const [templateId, setTemplateId] = useState<TemplateId>(1);
   const [exporting,  setExporting]  = useState(false);
+  const [visible,    setVisible]    = useState(false);
+  const [leaving,    setLeaving]    = useState(false);
+
+  useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
+
+  const goBack = () => {
+    setLeaving(true);
+    setTimeout(() => navigate(-1), 320);
+  };
 
   const theme  = THEMES.find(t => t.id === themeId) ?? THEMES[5];
   const CardFn = RENDERERS[templateId];
@@ -513,12 +522,15 @@ export function ShareCard() {
   }, [exporting, userData.username]);
 
   return (
-    <div className="min-h-screen bg-[#050505] pb-24">
+    <div
+      className="min-h-screen bg-[#050505] pb-24 transition-transform duration-300 ease-out"
+      style={{ transform: visible && !leaving ? 'translateY(0)' : 'translateY(100%)' }}
+    >
 
       {/* Header */}
       <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => { captureSnapshot(); navigate(-1); }}
+          onClick={() => { captureSnapshot(); goBack(); }}
           className="w-8 h-8 flex items-center justify-center text-white/35 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4"/>
