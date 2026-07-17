@@ -122,7 +122,7 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
 
 export function PhoneLogin() {
   const navigate = useNavigate();
-  const { updateUser } = useAuth();
+  const { setUserDirectly } = useAuth();
 
   const [step, setStep]                         = useState<1 | 2>(1);
   const [mounted, setMounted]                   = useState(false);
@@ -133,7 +133,14 @@ export function PhoneLogin() {
   const [otpKey, setOtpKey]                     = useState(0);
   const [isLoading, setIsLoading]               = useState(false);
 
-  useEffect(() => { setTimeout(() => setMounted(true), 80); }, []);
+  useEffect(() => {
+    setTimeout(() => setMounted(true), 80);
+    // Pre-warm edge function so OTP send is instant when user taps the button
+    fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/health`,
+      { headers: { Authorization: `Bearer ${publicAnonKey}` } },
+    ).catch(() => {});
+  }, []);
 
   const fullPhone = `${country.dial}${phone.replace(/\D/g, '')}`;
 
@@ -170,7 +177,7 @@ export function PhoneLogin() {
     setIsLoading(true);
     try {
       const user = await authApi.completePhoneSignin(fullPhone, otp);
-      updateUser(user);
+      setUserDirectly(user);
 
       fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/send-login-sms`,
