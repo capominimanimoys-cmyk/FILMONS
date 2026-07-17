@@ -1,0 +1,9 @@
+[project]
+id = "snajrdvcwsbjqefaftsj"
+
+[api]
+enabled = true
+port = 54321
+
+[functions.make-server-ec8fe879]
+verify_jwt = false
