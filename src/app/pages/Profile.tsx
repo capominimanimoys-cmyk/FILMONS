@@ -1072,11 +1072,7 @@ export function Profile() {
               <Settings className="w-3.5 h-3.5" />
             </button>
             {/* Share profile */}
-            <button onClick={async () => {
-              const url = `${window.location.origin}/host/${user.id}`;
-              if (navigator.share) { try { await navigator.share({ title: user.name, url }); } catch {} }
-              else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
-            }}
+            <button onClick={() => navigate('/share-card')}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors shrink-0"
               title="Share">
               <Share2 className="w-3.5 h-3.5" />
