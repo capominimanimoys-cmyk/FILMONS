@@ -545,7 +545,7 @@ export function ShareCard() {
           {exporting
             ? <div className="w-3 h-3 border-2 border-gray-950 border-t-transparent rounded-full animate-spin"/>
             : <Download className="w-3 h-3"/>}
-          Export PNG
+          Save Image
         </button>
       </div>
 
