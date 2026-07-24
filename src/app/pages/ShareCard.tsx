@@ -210,15 +210,17 @@ export function ShareCard() {
 
       <div className="max-w-sm mx-auto px-4 pt-5 space-y-4">
 
-        {/* Hidden export target — offscreen, exact pixel dimensions */}
-        <div
-          ref={exportRef}
-          style={{
-            position: 'absolute', left: '-9999px', top: '-9999px',
-            width: `${EW}px`, height: `${EH}px`, pointerEvents: 'none',
-          }}
-        >
-          <ProfileCard user={userData} isExport />
+        {/* Hidden export target — the ref'd node must carry no hiding styles of its
+            own (html-to-image serializes its inline style verbatim, so offscreen
+            positioning or opacity on the captured node itself yields a blank export);
+            the hiding lives on this outer wrapper instead. */}
+        <div style={{
+          position: 'fixed', left: 0, top: 0, width: 0, height: 0,
+          overflow: 'hidden', pointerEvents: 'none',
+        }}>
+          <div ref={exportRef} style={{ width: `${EW}px`, height: `${EH}px` }}>
+            <ProfileCard user={userData} isExport />
+          </div>
         </div>
 
         {/* Preview */}
