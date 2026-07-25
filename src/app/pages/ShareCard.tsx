@@ -1,18 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Download, Users, Briefcase, BadgeCheck, Plus } from 'lucide-react';
+import { ArrowLeft, Download, Users, Briefcase, Layers, BadgeCheck } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
+import { getPortfolioItems } from '../lib/portfolioApi';
 
 // ── Export dimensions (portrait 2:3) ──────────────────────────────────────────
 const EW = 1080;
 const EH = 1620;
 
-// ── Font stack ────────────────────────────────────────────────────────────────
-const SF = "-apple-system,'SF Pro Display',BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
-
-const ACCENT = '#2563eb';
+// ── Font stacks ───────────────────────────────────────────────────────────────
+const SF   = "-apple-system,'SF Pro Display',BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+const NEUE = "'Neue Montreal','SF Pro Display',-apple-system,sans-serif";
 
 // ── Shared card props ─────────────────────────────────────────────────────────
 interface CardUser {
@@ -22,6 +22,7 @@ interface CardUser {
   bio: string;
   primaryRole: string;
   followers: number;
+  projects: number;
   isVerified: boolean;
 }
 
@@ -59,6 +60,7 @@ function ProfileCard({ user, isExport: X }: CP) {
     }}>
       {/* Photo — inset with rounded corners, top-heavy */}
       <div style={{
+        position: 'relative',
         margin: X ? '44px 44px 0' : '4% 4% 0',
         height: X ? '900px' : '55.5%',
         flexShrink: 0,
@@ -66,6 +68,13 @@ function ProfileCard({ user, isExport: X }: CP) {
         overflow: 'hidden',
       }}>
         <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
+        {/* FILMONS wordmark */}
+        <div style={{ position: 'absolute', top: X ? '28px' : '3%', left: X ? '28px' : '3%' }}>
+          <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.18em',
+            color: 'rgba(255,255,255,0.85)', fontSize: X ? 16 : 'clamp(6px, 1.6%, 16px)',
+            textTransform: 'uppercase' as const,
+            textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>FILMONS</span>
+        </div>
       </div>
 
       {/* Content */}
@@ -93,35 +102,28 @@ function ProfileCard({ user, isExport: X }: CP) {
             lineHeight: 1.4, fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>{user.bio}</p>
         )}
 
-        {/* Stats row: followers + primary role + Follow button */}
+        {/* Stats row: followers + primary role + projects */}
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          display: 'flex', alignItems: 'center', gap: X ? '28px' : '2.8%',
           marginTop: X ? '40px' : '4%',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '28px' : '2.8%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
-              <Users size={X ? 24 : undefined} style={!X ? { width: '2.4%', height: '2.4%' } : undefined}
-                color="#9ca3af" strokeWidth={2} />
-              <span style={{ color: '#0f1115', fontWeight: 700,
-                fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>{user.followers}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
-              <Briefcase size={X ? 24 : undefined} style={!X ? { width: '2.4%', height: '2.4%' } : undefined}
-                color="#9ca3af" strokeWidth={2} />
-              <span style={{ color: '#0f1115', fontWeight: 700,
-                fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>{role}</span>
-            </div>
-          </div>
-
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%',
-            background: '#f1f2f4', borderRadius: '999px',
-            padding: X ? '14px 22px' : '1.4% 2.2%',
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
+            <Users size={X ? 24 : undefined} style={!X ? { width: '2.4%', height: '2.4%' } : undefined}
+              color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#0f1115', fontWeight: 700,
-              fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>Follow</span>
-            <Plus size={X ? 20 : undefined} style={!X ? { width: '2%', height: '2%' } : undefined}
-              color="#0f1115" strokeWidth={2.5} />
+              fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>{user.followers}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
+            <Briefcase size={X ? 24 : undefined} style={!X ? { width: '2.4%', height: '2.4%' } : undefined}
+              color="#9ca3af" strokeWidth={2} />
+            <span style={{ color: '#0f1115', fontWeight: 700,
+              fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>{role}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
+            <Layers size={X ? 24 : undefined} style={!X ? { width: '2.4%', height: '2.4%' } : undefined}
+              color="#9ca3af" strokeWidth={2} />
+            <span style={{ color: '#0f1115', fontWeight: 700,
+              fontSize: X ? 26 : 'clamp(9px, 2.6%, 26px)' }}>{user.projects}</span>
           </div>
         </div>
 
@@ -140,8 +142,14 @@ export function ShareCard() {
   const [exporting,  setExporting]  = useState(false);
   const [visible,    setVisible]    = useState(false);
   const [leaving,    setLeaving]    = useState(false);
+  const [projects,   setProjects]   = useState(0);
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    getPortfolioItems(user.id).then(items => setProjects(items.length));
+  }, [user?.id]);
 
   const goBack = () => {
     setLeaving(true);
@@ -155,6 +163,7 @@ export function ShareCard() {
     bio:         user?.bio         || '',
     primaryRole: user?.primaryRole || 'Creator',
     followers:   user?.followers?.length || 0,
+    projects,
     isVerified:  !!user?.isVerified,
   };
 
