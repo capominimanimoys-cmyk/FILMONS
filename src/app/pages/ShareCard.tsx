@@ -1,9 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import {
-  ArrowLeft, Download, Copy, Share2, Check,
-  Users, Briefcase, Layers, MapPin, BadgeCheck, Link as LinkIcon,
-} from 'lucide-react';
+import { ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +12,7 @@ import { getPortfolioItems } from '../lib/portfolioApi';
 const EW = 1080;
 
 // ── Font stacks ───────────────────────────────────────────────────────────────
-const SF   = "-apple-system,'SF Pro Display',BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+const SF   = "-apple-system,'SF Pro Text','SF Pro Display',BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
 const NEUE = "'Neue Montreal','SF Pro Display',-apple-system,sans-serif";
 
 // ── Shared card props ─────────────────────────────────────────────────────────
@@ -62,6 +59,19 @@ function VBar({ X }: { X?: boolean }) {
   return <span style={{ width: '1px', alignSelf: 'stretch', background: '#e5e7eb', margin: X ? '2px 0' : '0.2% 0' }} />;
 }
 
+// ── A labelled stat column (label above value), equal-width via flex:1 ────────
+function Stat({ label, value, X }: { label: string; value: string | number; X?: boolean }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <p style={{ margin: 0, color: '#9ca3af', fontWeight: 500,
+        fontSize: X ? 18 : 'clamp(6px, 1.7%, 18px)' }}>{label}</p>
+      <p style={{ margin: X ? '4px 0 0' : '0.4% 0 0', color: '#0f1115', fontWeight: 600,
+        fontSize: X ? 28 : 'clamp(9px, 2.6%, 28px)', whiteSpace: 'nowrap',
+        overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</p>
+    </div>
+  );
+}
+
 // ── Profile card — a white card floating on a soft gray canvas. Height is
 //    entirely content-driven: no forced aspect ratio, no bottom-anchored
 //    stats row, so there's never leftover empty space. ─────────────────────────
@@ -74,35 +84,35 @@ function ProfileCard({ user, isExport: X }: CP) {
       padding: X ? '44px' : '4.4%', fontFamily: SF,
     }}>
       <div style={{
-        background: '#ffffff', borderRadius: '32px',
-        overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
+        background: '#ffffff', borderRadius: '34px',
+        overflow: 'hidden', boxShadow: '0 28px 80px rgba(0,0,0,0.10)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '22px 28px 0' : '2.2% 2.8% 0' }}>
+        <div style={{ padding: X ? '32px 42px 0' : '3% 3.9% 0' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
-            color: '#0f1115', fontSize: X ? 20 : 'clamp(8px, 2%, 20px)',
+            color: '#0f1115', fontSize: X ? 22 : 'clamp(8px, 2%, 22px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
-        {/* Hero photo — portrait-friendly 4:3, face kept centered via object-position */}
+        {/* Hero photo — ~70% of the card via a near-square aspect ratio */}
         <div style={{
-          margin: X ? '10px 28px 0' : '1% 2.8% 0',
-          aspectRatio: '4 / 3',
-          borderRadius: '24px',
+          margin: X ? '20px 42px 0' : '1.9% 3.9% 0',
+          aspectRatio: '1 / 1',
+          borderRadius: '26px',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
         </div>
 
-        {/* Info — tight, content-driven spacing */}
-        <div style={{ padding: X ? '16px 28px 32px' : '1.6% 2.8% 3.2%' }}>
+        {/* Info — generous, premium spacing */}
+        <div style={{ padding: X ? '36px 42px 42px' : '3.3% 3.9% 3.9%' }}>
           {/* Name + verified badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
-            <p style={{ margin: 0, color: '#0f1115', fontWeight: 800, letterSpacing: '-0.02em',
-              fontSize: X ? 40 : 'clamp(14px, 4%, 40px)' }}>{user.name}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '10px' : '0.9%' }}>
+            <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
+              fontSize: X ? 60 : 'clamp(20px, 5.6%, 60px)' }}>{user.name}</p>
             {user.isVerified && (
               <BadgeCheck
-                size={X ? 26 : 20} style={{ flexShrink: 0 }}
+                size={X ? 36 : 28} style={{ flexShrink: 0 }}
                 color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
               />
             )}
@@ -110,48 +120,30 @@ function ProfileCard({ user, isExport: X }: CP) {
 
           {/* Bio */}
           {user.bio && (
-            <p style={{ margin: X ? '4px 0 0' : '0.4% 0 0', color: '#6b7280', fontWeight: 500,
-              lineHeight: 1.5, fontSize: X ? 21 : 'clamp(8px, 2.1%, 21px)' }}>{user.bio}</p>
+            <p style={{ margin: X ? '14px 0 0' : '1.3% 0 0', color: '#6b7280', fontWeight: 400,
+              lineHeight: 1.5, fontSize: X ? 26 : 'clamp(9px, 2.4%, 26px)' }}>{user.bio}</p>
           )}
 
           {/* Link row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%',
-            marginTop: X ? '7px' : '0.7%' }}>
-            <LinkIcon size={X ? 16 : 13} color="#9ca3af" strokeWidth={2} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '9px' : '0.8%',
+            marginTop: X ? '14px' : '1.3%' }}>
+            <LinkIcon size={X ? 20 : 15} color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
-              fontSize: X ? 20 : 'clamp(7px, 2%, 20px)' }}>filmons.app/{user.username}</span>
+              fontSize: X ? 24 : 'clamp(8px, 2.2%, 24px)' }}>filmons.app/{user.username}</span>
           </div>
 
-          {/* Stats row — icons use a fixed numeric `size` (not CSS %) in both
-              modes: percentage width/height on an <svg> whose ancestor chain
-              has no explicit height resolves to 0 per spec, which some
-              browsers (Safari) honor strictly, rendering the icon invisible
-              even though Chromium quietly falls back to the intrinsic size. */}
+          {/* Stats — equal-width labelled columns, divider only before location */}
           <div style={{
-            marginTop: X ? '9px' : '0.9%',
-            display: 'flex', alignItems: 'center', flexWrap: 'wrap',
-            gap: X ? '16px' : '1.6%', color: '#0f1115',
-            fontSize: X ? 20 : 'clamp(7px, 2%, 20px)', fontWeight: 700,
+            marginTop: X ? '28px' : '2.6%',
+            display: 'flex', alignItems: 'flex-start',
           }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-              <Users size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
-              {user.followers}
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-              <Briefcase size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
-              {role}
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-              <Layers size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
-              {user.projects}
-            </span>
+            <Stat label="Followers" value={user.followers} X={X} />
+            <Stat label="Role" value={role} X={X} />
+            <Stat label="Projects" value={user.projects} X={X} />
             {user.location && (
               <>
                 <VBar X={X} />
-                <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-                  <MapPin size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
-                  {user.location}
-                </span>
+                <Stat label="Location" value={user.location} X={X} />
               </>
             )}
           </div>
@@ -167,12 +159,9 @@ export function ShareCard() {
   const navigate    = useNavigate();
   const exportRef   = useRef<HTMLDivElement>(null);
   const [exporting,  setExporting]  = useState(false);
-  const [visible,    setVisible]    = useState(false);
   const [leaving,    setLeaving]    = useState(false);
   const [projects,   setProjects]   = useState(0);
   const [copied,     setCopied]     = useState(false);
-
-  useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -250,11 +239,27 @@ export function ShareCard() {
     setExporting(false);
   }, [exporting, userData.username]);
 
+  const actionBtn = 'flex items-center gap-1.5 px-4 py-2.5 bg-black/[0.04] hover:bg-black/[0.07] ' +
+    'text-gray-900 text-xs font-semibold rounded-full transition-all active:scale-95 disabled:opacity-40';
+
   return (
     <div
-      className="min-h-screen flex flex-col bg-[#F5F5F3] pb-24 transition-transform duration-300 ease-out"
-      style={{ transform: visible && !leaving ? 'translateX(0)' : 'translateX(100%)' }}
+      className="min-h-screen flex flex-col bg-[#F5F5F3] pb-24"
+      style={{ animation: `${leaving ? 'shareCardExit' : 'shareCardEnter'} var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both` }}
     >
+      {/* CSS transitions on this element are silently neutralized by the
+          global `*` rule in theme.css (its transition-property/-duration
+          wins over any Tailwind transition-* utility here because Tailwind
+          v4 utilities live inside `@layer utilities`, and per the CSS
+          Cascade Layers spec, unlayered rules always beat layered ones
+          regardless of specificity). Every other slide-in sheet in this app
+          sidesteps that by using a keyframe `animation` instead of a
+          `transition` — animations aren't touched by that rule — so this
+          does the same. */}
+      <style>{`
+        @keyframes shareCardEnter { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @keyframes shareCardExit  { from { transform: translateX(0); } to { transform: translateX(100%); } }
+      `}</style>
 
       {/* Header */}
       <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 shrink-0">
@@ -265,30 +270,6 @@ export function ShareCard() {
           <ArrowLeft className="w-4 h-4"/>
         </button>
         <h1 className="text-sm font-bold text-white flex-1 tracking-wide">Share Card</h1>
-        <button
-          onClick={copyLink}
-          title="Copy link"
-          className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white/70 hover:bg-white/15 hover:text-white transition-all active:scale-95 shrink-0"
-        >
-          {copied ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
-        </button>
-        <button
-          onClick={shareLink}
-          title="Share link"
-          className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white/70 hover:bg-white/15 hover:text-white transition-all active:scale-95 shrink-0"
-        >
-          <Share2 className="w-3.5 h-3.5"/>
-        </button>
-        <button
-          onClick={exportCard}
-          disabled={exporting}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-950 text-xs font-bold rounded-lg disabled:opacity-40 transition-all active:scale-95 shrink-0"
-        >
-          {exporting
-            ? <div className="w-3 h-3 border-2 border-gray-950 border-t-transparent rounded-full animate-spin"/>
-            : <Download className="w-3 h-3"/>}
-          Save Image
-        </button>
       </div>
 
       {/* Hidden export target — the ref'd node must carry no hiding styles of its
@@ -310,8 +291,26 @@ export function ShareCard() {
           renders its own light gray padding, white card, radius and soft
           shadow, so the on-screen preview matches the export 1:1. */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10">
-        <div style={{ width: '88vw', maxWidth: '560px' }}>
+        <div style={{ width: '88vw', maxWidth: '630px' }}>
           <ProfileCard user={userData} />
+        </div>
+
+        {/* Actions — below the card, clear background with dark text */}
+        <div className="flex items-center justify-center gap-2.5 mt-6">
+          <button onClick={copyLink} className={actionBtn}>
+            {copied ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
+            Copy Link
+          </button>
+          <button onClick={shareLink} className={actionBtn}>
+            <Share2 className="w-3.5 h-3.5"/>
+            Share Link
+          </button>
+          <button onClick={exportCard} disabled={exporting} className={actionBtn}>
+            {exporting
+              ? <div className="w-3.5 h-3.5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"/>
+              : <Download className="w-3.5 h-3.5"/>}
+            Save Image
+          </button>
         </div>
 
         <p className="text-center text-[9px] text-black/25 leading-relaxed tracking-wide mt-4">
