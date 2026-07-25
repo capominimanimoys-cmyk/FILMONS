@@ -253,7 +253,7 @@ export function ShareCard() {
   return (
     <div
       className="min-h-screen flex flex-col bg-[#F5F5F3] pb-24 transition-transform duration-300 ease-out"
-      style={{ transform: visible && !leaving ? 'translateY(0)' : 'translateY(100%)' }}
+      style={{ transform: visible && !leaving ? 'translateX(0)' : 'translateX(100%)' }}
     >
 
       {/* Header */}
