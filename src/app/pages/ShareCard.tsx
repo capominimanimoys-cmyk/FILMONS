@@ -84,10 +84,10 @@ function ProfileCard({ user, isExport: X }: CP) {
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
-        {/* Hero photo — ~60-65% of the card via a fixed aspect ratio */}
+        {/* Hero photo — portrait-friendly 4:3, face kept centered via object-position */}
         <div style={{
           margin: X ? '10px 28px 0' : '1% 2.8% 0',
-          aspectRatio: '2 / 1',
+          aspectRatio: '4 / 3',
           borderRadius: '24px',
           overflow: 'hidden',
         }}>
@@ -95,7 +95,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         </div>
 
         {/* Info — tight, content-driven spacing */}
-        <div style={{ padding: X ? '16px 28px 24px' : '1.6% 2.8% 2.4%' }}>
+        <div style={{ padding: X ? '16px 28px 32px' : '1.6% 2.8% 3.2%' }}>
           {/* Name + verified badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 800, letterSpacing: '-0.02em',
@@ -309,8 +309,8 @@ export function ShareCard() {
           with generous whitespace. The card itself (via ProfileCard) already
           renders its own light gray padding, white card, radius and soft
           shadow, so the on-screen preview matches the export 1:1. */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10">
-        <div style={{ width: '88vw', maxWidth: '440px' }}>
+      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10">
+        <div style={{ width: '88vw', maxWidth: '560px' }}>
           <ProfileCard user={userData} />
         </div>
 
