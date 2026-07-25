@@ -102,8 +102,7 @@ function ProfileCard({ user, isExport: X }: CP) {
               fontSize: X ? 40 : 'clamp(14px, 4%, 40px)' }}>{user.name}</p>
             {user.isVerified && (
               <BadgeCheck
-                size={X ? 26 : undefined}
-                style={!X ? { width: '2.6%', height: '2.6%', flexShrink: 0 } : undefined}
+                size={X ? 26 : 20} style={{ flexShrink: 0 }}
                 color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
               />
             )}
@@ -118,13 +117,16 @@ function ProfileCard({ user, isExport: X }: CP) {
           {/* Link row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%',
             marginTop: X ? '7px' : '0.7%' }}>
-            <LinkIcon size={X ? 16 : undefined} style={!X ? { width: '1.6%', height: '1.6%' } : undefined}
-              color="#9ca3af" strokeWidth={2} />
+            <LinkIcon size={X ? 16 : 13} color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
               fontSize: X ? 20 : 'clamp(7px, 2%, 20px)' }}>filmons.app/{user.username}</span>
           </div>
 
-          {/* Stats row */}
+          {/* Stats row — icons use a fixed numeric `size` (not CSS %) in both
+              modes: percentage width/height on an <svg> whose ancestor chain
+              has no explicit height resolves to 0 per spec, which some
+              browsers (Safari) honor strictly, rendering the icon invisible
+              even though Chromium quietly falls back to the intrinsic size. */}
           <div style={{
             marginTop: X ? '9px' : '0.9%',
             display: 'flex', alignItems: 'center', flexWrap: 'wrap',
@@ -132,26 +134,22 @@ function ProfileCard({ user, isExport: X }: CP) {
             fontSize: X ? 20 : 'clamp(7px, 2%, 20px)', fontWeight: 700,
           }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-              <Users size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
-                color="#9ca3af" strokeWidth={2} />
+              <Users size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
               {user.followers}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-              <Briefcase size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
-                color="#9ca3af" strokeWidth={2} />
+              <Briefcase size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
               {role}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-              <Layers size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
-                color="#9ca3af" strokeWidth={2} />
+              <Layers size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
               {user.projects}
             </span>
             {user.location && (
               <>
                 <VBar X={X} />
                 <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-                  <MapPin size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
-                    color="#9ca3af" strokeWidth={2} />
+                  <MapPin size={X ? 19 : 15} color="#9ca3af" strokeWidth={2} />
                   {user.location}
                 </span>
               </>
@@ -180,6 +178,16 @@ export function ShareCard() {
     if (!user?.id) return;
     getPortfolioItems(user.id).then(items => setProjects(items.length));
   }, [user?.id]);
+
+  // index.html sets no background on <html>/<body> (defaults to white), so
+  // mobile Safari's overscroll bounce reveals white at the edges even though
+  // this page's own container is fully painted. Match body to the page bg
+  // for the lifetime of this page only.
+  useEffect(() => {
+    const prev = document.body.style.backgroundColor;
+    document.body.style.backgroundColor = '#F5F5F3';
+    return () => { document.body.style.backgroundColor = prev; };
+  }, []);
 
   const goBack = () => {
     setLeaving(true);
@@ -228,7 +236,7 @@ export function ShareCard() {
         pixelRatio: 1,
         quality:  0.98,
         skipFonts: false,
-        backgroundColor: '#F6F6F4',
+        backgroundColor: '#F5F5F3',
         fetchRequestInit: { cache: 'no-cache' as RequestCache },
         style: { transform: 'none' },
       });
