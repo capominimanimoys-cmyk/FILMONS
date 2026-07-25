@@ -4,7 +4,7 @@ import {
   ArrowLeft, Download, Copy, Share2, Check,
   Users, Briefcase, Layers, MapPin, BadgeCheck, Link as LinkIcon,
 } from 'lucide-react';
-import { toPng, toJpeg } from 'html-to-image';
+import { toPng } from 'html-to-image';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
@@ -33,16 +33,17 @@ interface CardUser {
 
 interface CP { user: CardUser; isExport?: boolean; }
 
-// ── Photo element — handles missing avatar. Plain center positioning (rather
-//    than top-anchored) so an arbitrary uncropped photo doesn't clip the
-//    subject's head — there's no face-detection here, but centering is the
-//    safest general default absent one. ───────────────────────────────────────
+// ── Photo element — handles missing avatar. object-position biases toward the
+//    upper-third (38%) rather than pure top or pure center: most portraits
+//    have headroom above the subject, so 'top' clips the face and plain
+//    'center' still crops close on tall photos. There's no real face
+//    detection here — this is a heuristic, not a guarantee for every photo. ───
 function Photo({ src, alt, style }: { src: string; alt: string; style: React.CSSProperties }) {
   if (src) {
     return (
       <img
         src={src} alt={alt} crossOrigin="anonymous"
-        style={{ ...style, objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+        style={{ ...style, objectFit: 'cover', objectPosition: 'center 38%', display: 'block' }}
       />
     );
   }
@@ -69,40 +70,40 @@ function ProfileCard({ user, isExport: X }: CP) {
 
   return (
     <div style={{
-      width: X ? EW : '100%', background: '#eef0f2',
-      padding: X ? '56px' : '5.2%', fontFamily: SF,
+      width: X ? EW : '100%', background: '#F5F5F3',
+      padding: X ? '44px' : '4.4%', fontFamily: SF,
     }}>
       <div style={{
-        background: '#ffffff', borderRadius: X ? '32px' : '3%',
-        overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.12), 0 6px 20px rgba(0,0,0,0.06)',
+        background: '#ffffff', borderRadius: '32px',
+        overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '28px 32px 0' : '2.6% 3% 0' }}>
+        <div style={{ padding: X ? '22px 28px 0' : '2.2% 2.8% 0' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
-            color: '#0f1115', fontSize: X ? 22 : 'clamp(8px, 2.2%, 22px)',
+            color: '#0f1115', fontSize: X ? 20 : 'clamp(8px, 2%, 20px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
         {/* Hero photo — ~60-65% of the card via a fixed aspect ratio */}
         <div style={{
-          margin: X ? '14px 32px 0' : '1.3% 3% 0',
-          aspectRatio: '1 / 1.1',
-          borderRadius: X ? '28px' : '2.6%',
+          margin: X ? '10px 28px 0' : '1% 2.8% 0',
+          aspectRatio: '2 / 1',
+          borderRadius: '24px',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
         </div>
 
         {/* Info — tight, content-driven spacing */}
-        <div style={{ padding: X ? '18px 32px 30px' : '1.7% 3% 2.8%' }}>
+        <div style={{ padding: X ? '16px 28px 24px' : '1.6% 2.8% 2.4%' }}>
           {/* Name + verified badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 800, letterSpacing: '-0.02em',
-              fontSize: X ? 42 : 'clamp(15px, 4.2%, 42px)' }}>{user.name}</p>
+              fontSize: X ? 40 : 'clamp(14px, 4%, 40px)' }}>{user.name}</p>
             {user.isVerified && (
               <BadgeCheck
-                size={X ? 28 : undefined}
-                style={!X ? { width: '2.8%', height: '2.8%', flexShrink: 0 } : undefined}
+                size={X ? 26 : undefined}
+                style={!X ? { width: '2.6%', height: '2.6%', flexShrink: 0 } : undefined}
                 color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
               />
             )}
@@ -110,25 +111,25 @@ function ProfileCard({ user, isExport: X }: CP) {
 
           {/* Bio */}
           {user.bio && (
-            <p style={{ margin: X ? '6px 0 0' : '0.6% 0 0', color: '#6b7280', fontWeight: 500,
-              lineHeight: 1.5, fontSize: X ? 22 : 'clamp(8px, 2.2%, 22px)' }}>{user.bio}</p>
+            <p style={{ margin: X ? '4px 0 0' : '0.4% 0 0', color: '#6b7280', fontWeight: 500,
+              lineHeight: 1.5, fontSize: X ? 21 : 'clamp(8px, 2.1%, 21px)' }}>{user.bio}</p>
           )}
 
           {/* Link row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%',
-            marginTop: X ? '12px' : '1.2%' }}>
-            <LinkIcon size={X ? 17 : undefined} style={!X ? { width: '1.7%', height: '1.7%' } : undefined}
+            marginTop: X ? '7px' : '0.7%' }}>
+            <LinkIcon size={X ? 16 : undefined} style={!X ? { width: '1.6%', height: '1.6%' } : undefined}
               color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
-              fontSize: X ? 21 : 'clamp(7px, 2.1%, 21px)' }}>filmons.app/{user.username}</span>
+              fontSize: X ? 20 : 'clamp(7px, 2%, 20px)' }}>filmons.app/{user.username}</span>
           </div>
 
           {/* Stats row */}
           <div style={{
-            marginTop: X ? '18px' : '1.7%',
+            marginTop: X ? '9px' : '0.9%',
             display: 'flex', alignItems: 'center', flexWrap: 'wrap',
-            gap: X ? '18px' : '1.8%', color: '#0f1115',
-            fontSize: X ? 21 : 'clamp(7px, 2.1%, 21px)', fontWeight: 700,
+            gap: X ? '16px' : '1.6%', color: '#0f1115',
+            fontSize: X ? 20 : 'clamp(7px, 2%, 20px)', fontWeight: 700,
           }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
               <Users size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
@@ -167,7 +168,6 @@ export function ShareCard() {
   const { user }   = useAuth();
   const navigate    = useNavigate();
   const exportRef   = useRef<HTMLDivElement>(null);
-  const [format,     setFormat]     = useState<'png' | 'jpeg'>('png');
   const [exporting,  setExporting]  = useState(false);
   const [visible,    setVisible]    = useState(false);
   const [leaving,    setLeaving]    = useState(false);
@@ -222,37 +222,34 @@ export function ShareCard() {
       // fixed export width so the downloaded image matches the preview
       // exactly, with no cropping and no leftover space.
       const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
-      const opts = {
+      const dataUrl = await toPng(exportRef.current, {
         width:    EW,
         height,
         pixelRatio: 1,
         quality:  0.98,
         skipFonts: false,
-        backgroundColor: '#eef0f2',
+        backgroundColor: '#F6F6F4',
         fetchRequestInit: { cache: 'no-cache' as RequestCache },
         style: { transform: 'none' },
-      };
-      const dataUrl = format === 'jpeg'
-        ? await toJpeg(exportRef.current, opts)
-        : await toPng(exportRef.current, opts);
+      });
       const a    = document.createElement('a');
       a.href     = dataUrl;
-      a.download = `filmons-${userData.username}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+      a.download = `filmons-${userData.username}.png`;
       a.click();
     } catch (e) {
       console.error('Export failed:', e);
     }
     setExporting(false);
-  }, [exporting, userData.username, format]);
+  }, [exporting, userData.username]);
 
   return (
     <div
-      className="min-h-screen bg-[#050505] pb-24 transition-transform duration-300 ease-out"
+      className="min-h-screen flex flex-col bg-[#F5F5F3] pb-24 transition-transform duration-300 ease-out"
       style={{ transform: visible && !leaving ? 'translateY(0)' : 'translateY(100%)' }}
     >
 
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 shrink-0">
         <button
           onClick={() => { captureSnapshot(); goBack(); }}
           className="w-8 h-8 flex items-center justify-center text-white/35 hover:text-white transition-colors"
@@ -286,50 +283,32 @@ export function ShareCard() {
         </button>
       </div>
 
-      <div className="max-w-sm mx-auto px-4 pt-5 space-y-4">
+      {/* Hidden export target — the ref'd node must carry no hiding styles of its
+          own (html-to-image serializes its inline style verbatim, so offscreen
+          positioning or opacity on the captured node itself yields a blank export);
+          the hiding lives on this outer wrapper instead. Height is left auto so
+          the node lays out at its true content height for measurement. */}
+      <div style={{
+        position: 'fixed', left: 0, top: 0, width: 0, height: 0,
+        overflow: 'hidden', pointerEvents: 'none',
+      }}>
+        <div ref={exportRef} style={{ width: `${EW}px` }}>
+          <ProfileCard user={userData} isExport />
+        </div>
+      </div>
 
-        {/* Hidden export target — the ref'd node must carry no hiding styles of its
-            own (html-to-image serializes its inline style verbatim, so offscreen
-            positioning or opacity on the captured node itself yields a blank export);
-            the hiding lives on this outer wrapper instead. Height is left auto so
-            the node lays out at its true content height for measurement. */}
-        <div style={{
-          position: 'fixed', left: 0, top: 0, width: 0, height: 0,
-          overflow: 'hidden', pointerEvents: 'none',
-        }}>
-          <div ref={exportRef} style={{ width: `${EW}px` }}>
-            <ProfileCard user={userData} isExport />
-          </div>
+      {/* Canvas — the card floats centered, both horizontally and vertically,
+          with generous whitespace. The card itself (via ProfileCard) already
+          renders its own light gray padding, white card, radius and soft
+          shadow, so the on-screen preview matches the export 1:1. */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10">
+        <div style={{ width: '88vw', maxWidth: '440px' }}>
+          <ProfileCard user={userData} />
         </div>
 
-        {/* Preview — the card itself (via ProfileCard) already renders the
-            floating gray canvas, white card, radius and shadow, so the
-            on-screen preview matches the export 1:1. */}
-        <ProfileCard user={userData} />
-
-        {/* Export format */}
-        <div className="rounded-xl bg-white/[0.04] border border-white/[0.07] p-4">
-          <p className="text-[9px] font-semibold text-white/20 uppercase tracking-[0.18em] mb-3">Format</p>
-          <div className="grid grid-cols-2 gap-2">
-            {(['png', 'jpeg'] as const).map(f => (
-              <button
-                key={f} type="button" onClick={() => setFormat(f)}
-                className={`py-2 px-2.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition-all ${
-                  format === f
-                    ? 'bg-white text-gray-950'
-                    : 'bg-white/5 text-white/40 hover:bg-white/8 hover:text-white/70'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <p className="text-center text-[9px] text-white/15 leading-relaxed tracking-wide pb-1">
+        <p className="text-center text-[9px] text-black/25 leading-relaxed tracking-wide mt-4">
           1080px wide · Instagram · Stories · LinkedIn · X · WhatsApp
         </p>
-
       </div>
     </div>
   );
