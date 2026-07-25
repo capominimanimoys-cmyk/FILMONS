@@ -10,9 +10,9 @@ import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { getPortfolioItems } from '../lib/portfolioApi';
 
-// ── Export dimensions (portrait 2:3) ──────────────────────────────────────────
+// ── Export width — height is content-driven (measured at export time) so the
+//    card never carries unnecessary empty space. ─────────────────────────────
 const EW = 1080;
-const EH = 1620;
 
 // ── Font stacks ───────────────────────────────────────────────────────────────
 const SF   = "-apple-system,'SF Pro Display',BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
@@ -33,13 +33,16 @@ interface CardUser {
 
 interface CP { user: CardUser; isExport?: boolean; }
 
-// ── Photo element — handles missing avatar ────────────────────────────────────
+// ── Photo element — handles missing avatar. Plain center positioning (rather
+//    than top-anchored) so an arbitrary uncropped photo doesn't clip the
+//    subject's head — there's no face-detection here, but centering is the
+//    safest general default absent one. ───────────────────────────────────────
 function Photo({ src, alt, style }: { src: string; alt: string; style: React.CSSProperties }) {
   if (src) {
     return (
       <img
         src={src} alt={alt} crossOrigin="anonymous"
-        style={{ ...style, objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
+        style={{ ...style, objectFit: 'cover', objectPosition: 'center', display: 'block' }}
       />
     );
   }
@@ -58,99 +61,101 @@ function VBar({ X }: { X?: boolean }) {
   return <span style={{ width: '1px', alignSelf: 'stretch', background: '#e5e7eb', margin: X ? '2px 0' : '0.2% 0' }} />;
 }
 
-// ── Profile card — white body, the photo is the only source of color ──────────
+// ── Profile card — a white card floating on a soft gray canvas. Height is
+//    entirely content-driven: no forced aspect ratio, no bottom-anchored
+//    stats row, so there's never leftover empty space. ─────────────────────────
 function ProfileCard({ user, isExport: X }: CP) {
   const role = user.primaryRole || 'Creator';
 
   return (
     <div style={{
-      width: X ? EW : '100%', height: X ? EH : undefined, aspectRatio: X ? undefined : '2/3',
-      background: '#ffffff', display: 'flex', flexDirection: 'column',
-      overflow: 'hidden', fontFamily: SF,
+      width: X ? EW : '100%', background: '#eef0f2',
+      padding: X ? '56px' : '5.2%', fontFamily: SF,
     }}>
-      {/* Header — FILMONS wordmark, never over the photo */}
-      <div style={{ padding: X ? '40px 44px 0' : '4% 4.4% 0' }}>
-        <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
-          color: '#0f1115', fontSize: X ? 24 : 'clamp(8px, 2.4%, 24px)',
-          textTransform: 'uppercase' as const }}>FILMONS</span>
-      </div>
-
-      {/* Hero photo */}
       <div style={{
-        margin: X ? '20px 44px 0' : '2% 4.4% 0',
-        height: X ? '840px' : '51.8%',
-        flexShrink: 0,
-        borderRadius: X ? '36px' : '3.3%',
-        overflow: 'hidden',
+        background: '#ffffff', borderRadius: X ? '32px' : '3%',
+        overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.12), 0 6px 20px rgba(0,0,0,0.06)',
       }}>
-        <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
-      </div>
-
-      {/* Info */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        padding: X ? '32px 56px 44px' : '3.2% 5.2% 4.4%',
-      }}>
-        {/* Name + verified badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
-          <p style={{ margin: 0, color: '#0f1115', fontWeight: 800, letterSpacing: '-0.02em',
-            fontSize: X ? 44 : 'clamp(15px, 4.4%, 44px)' }}>{user.name}</p>
-          {user.isVerified && (
-            <BadgeCheck
-              size={X ? 30 : undefined}
-              style={!X ? { width: '3%', height: '3%', flexShrink: 0 } : undefined}
-              color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
-            />
-          )}
+        {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
+        <div style={{ padding: X ? '28px 32px 0' : '2.6% 3% 0' }}>
+          <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
+            color: '#0f1115', fontSize: X ? 22 : 'clamp(8px, 2.2%, 22px)',
+            textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
-        {/* Bio */}
-        {user.bio && (
-          <p style={{ margin: X ? '10px 0 0' : '1% 0 0', color: '#6b7280', fontWeight: 500,
-            lineHeight: 1.5, fontSize: X ? 23 : 'clamp(8px, 2.3%, 23px)' }}>{user.bio}</p>
-        )}
-
-        {/* Link row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%',
-          marginTop: X ? '12px' : '1.2%' }}>
-          <LinkIcon size={X ? 18 : undefined} style={!X ? { width: '1.8%', height: '1.8%' } : undefined}
-            color="#9ca3af" strokeWidth={2} />
-          <span style={{ color: '#6b7280', fontWeight: 500,
-            fontSize: X ? 22 : 'clamp(8px, 2.2%, 22px)' }}>filmons.app/{user.username}</span>
-        </div>
-
-        {/* Stats row — pinned near the bottom */}
+        {/* Hero photo — ~60-65% of the card via a fixed aspect ratio */}
         <div style={{
-          marginTop: 'auto', paddingTop: X ? '32px' : '3.2%',
-          display: 'flex', alignItems: 'center', flexWrap: 'wrap',
-          gap: X ? '18px' : '1.8%', color: '#0f1115',
-          fontSize: X ? 22 : 'clamp(8px, 2.2%, 22px)', fontWeight: 700,
+          margin: X ? '14px 32px 0' : '1.3% 3% 0',
+          aspectRatio: '1 / 1.1',
+          borderRadius: X ? '28px' : '2.6%',
+          overflow: 'hidden',
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-            <Users size={X ? 20 : undefined} style={!X ? { width: '2%', height: '2%' } : undefined}
-              color="#9ca3af" strokeWidth={2} />
-            {user.followers}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-            <Briefcase size={X ? 20 : undefined} style={!X ? { width: '2%', height: '2%' } : undefined}
-              color="#9ca3af" strokeWidth={2} />
-            {role}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-            <Layers size={X ? 20 : undefined} style={!X ? { width: '2%', height: '2%' } : undefined}
-              color="#9ca3af" strokeWidth={2} />
-            {user.projects}
-          </span>
-          {user.location && (
-            <>
-              <VBar X={X} />
-              <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
-                <MapPin size={X ? 20 : undefined} style={!X ? { width: '2%', height: '2%' } : undefined}
-                  color="#9ca3af" strokeWidth={2} />
-                {user.location}
-              </span>
-            </>
+          <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
+        </div>
+
+        {/* Info — tight, content-driven spacing */}
+        <div style={{ padding: X ? '18px 32px 30px' : '1.7% 3% 2.8%' }}>
+          {/* Name + verified badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%' }}>
+            <p style={{ margin: 0, color: '#0f1115', fontWeight: 800, letterSpacing: '-0.02em',
+              fontSize: X ? 42 : 'clamp(15px, 4.2%, 42px)' }}>{user.name}</p>
+            {user.isVerified && (
+              <BadgeCheck
+                size={X ? 28 : undefined}
+                style={!X ? { width: '2.8%', height: '2.8%', flexShrink: 0 } : undefined}
+                color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
+              />
+            )}
+          </div>
+
+          {/* Bio */}
+          {user.bio && (
+            <p style={{ margin: X ? '6px 0 0' : '0.6% 0 0', color: '#6b7280', fontWeight: 500,
+              lineHeight: 1.5, fontSize: X ? 22 : 'clamp(8px, 2.2%, 22px)' }}>{user.bio}</p>
           )}
+
+          {/* Link row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.8%',
+            marginTop: X ? '12px' : '1.2%' }}>
+            <LinkIcon size={X ? 17 : undefined} style={!X ? { width: '1.7%', height: '1.7%' } : undefined}
+              color="#9ca3af" strokeWidth={2} />
+            <span style={{ color: '#6b7280', fontWeight: 500,
+              fontSize: X ? 21 : 'clamp(7px, 2.1%, 21px)' }}>filmons.app/{user.username}</span>
+          </div>
+
+          {/* Stats row */}
+          <div style={{
+            marginTop: X ? '18px' : '1.7%',
+            display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+            gap: X ? '18px' : '1.8%', color: '#0f1115',
+            fontSize: X ? 21 : 'clamp(7px, 2.1%, 21px)', fontWeight: 700,
+          }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
+              <Users size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
+                color="#9ca3af" strokeWidth={2} />
+              {user.followers}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
+              <Briefcase size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
+                color="#9ca3af" strokeWidth={2} />
+              {role}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
+              <Layers size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
+                color="#9ca3af" strokeWidth={2} />
+              {user.projects}
+            </span>
+            {user.location && (
+              <>
+                <VBar X={X} />
+                <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%' }}>
+                  <MapPin size={X ? 19 : undefined} style={!X ? { width: '1.9%', height: '1.9%' } : undefined}
+                    color="#9ca3af" strokeWidth={2} />
+                  {user.location}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -167,6 +172,7 @@ export function ShareCard() {
   const [visible,    setVisible]    = useState(false);
   const [leaving,    setLeaving]    = useState(false);
   const [projects,   setProjects]   = useState(0);
+  const [copied,     setCopied]     = useState(false);
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
@@ -174,8 +180,6 @@ export function ShareCard() {
     if (!user?.id) return;
     getPortfolioItems(user.id).then(items => setProjects(items.length));
   }, [user?.id]);
-
-  const [copied, setCopied] = useState(false);
 
   const goBack = () => {
     setLeaving(true);
@@ -214,15 +218,19 @@ export function ShareCard() {
     if (!exportRef.current || exporting) return;
     setExporting(true);
     try {
+      // Height is content-driven — measure the actual rendered height at the
+      // fixed export width so the downloaded image matches the preview
+      // exactly, with no cropping and no leftover space.
+      const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
       const opts = {
         width:    EW,
-        height:   EH,
+        height,
         pixelRatio: 1,
         quality:  0.98,
         skipFonts: false,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#eef0f2',
         fetchRequestInit: { cache: 'no-cache' as RequestCache },
-        style: { transform: 'none', borderRadius: '0' },
+        style: { transform: 'none' },
       };
       const dataUrl = format === 'jpeg'
         ? await toJpeg(exportRef.current, opts)
@@ -283,23 +291,21 @@ export function ShareCard() {
         {/* Hidden export target — the ref'd node must carry no hiding styles of its
             own (html-to-image serializes its inline style verbatim, so offscreen
             positioning or opacity on the captured node itself yields a blank export);
-            the hiding lives on this outer wrapper instead. */}
+            the hiding lives on this outer wrapper instead. Height is left auto so
+            the node lays out at its true content height for measurement. */}
         <div style={{
           position: 'fixed', left: 0, top: 0, width: 0, height: 0,
           overflow: 'hidden', pointerEvents: 'none',
         }}>
-          <div ref={exportRef} style={{ width: `${EW}px`, height: `${EH}px` }}>
+          <div ref={exportRef} style={{ width: `${EW}px` }}>
             <ProfileCard user={userData} isExport />
           </div>
         </div>
 
-        {/* Preview */}
-        <div
-          className="w-full rounded-2xl overflow-hidden"
-          style={{ boxShadow: '0 32px 80px rgba(0,0,0,0.5), 0 4px 20px rgba(0,0,0,0.6)' }}
-        >
-          <ProfileCard user={userData} />
-        </div>
+        {/* Preview — the card itself (via ProfileCard) already renders the
+            floating gray canvas, white card, radius and shadow, so the
+            on-screen preview matches the export 1:1. */}
+        <ProfileCard user={userData} />
 
         {/* Export format */}
         <div className="rounded-xl bg-white/[0.04] border border-white/[0.07] p-4">
@@ -321,7 +327,7 @@ export function ShareCard() {
         </div>
 
         <p className="text-center text-[9px] text-white/15 leading-relaxed tracking-wide pb-1">
-          1080 × 1620 · Portrait · Instagram · Stories · LinkedIn · X · WhatsApp
+          1080px wide · Instagram · Stories · LinkedIn · X · WhatsApp
         </p>
 
       </div>
