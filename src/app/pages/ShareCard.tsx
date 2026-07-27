@@ -90,7 +90,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '38px 32px 0' : '3.5% 3% 0' }}>
+        <div style={{ padding: X ? '38px 44px 0' : '3.5% 4.1% 0' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
             color: '#0f1115', fontSize: X ? 24 : 'clamp(9px, 2.2%, 24px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
@@ -98,7 +98,7 @@ function ProfileCard({ user, isExport: X }: CP) {
 
         {/* Hero photo — 3:2, shorter than a 4:3 crop so info has real room */}
         <div style={{
-          margin: X ? '20px 32px 0' : '1.9% 3% 0',
+          margin: X ? '20px 44px 0' : '1.9% 4.1% 0',
           aspectRatio: '3 / 2',
           borderRadius: '26px',
           overflow: 'hidden',
@@ -107,7 +107,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         </div>
 
         {/* Info — one cohesive block: tight rhythm, content-driven */}
-        <div style={{ padding: X ? '24px 32px 48px' : '2.2% 3% 4.4%' }}>
+        <div style={{ padding: X ? '24px 44px 52px' : '2.2% 4.1% 4.8%' }}>
           {/* Name + verified badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: X ? '9px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
