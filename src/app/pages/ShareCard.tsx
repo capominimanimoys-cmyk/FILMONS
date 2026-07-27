@@ -92,7 +92,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '44px 56px 0' : '4.1% 5.2% 0', flexShrink: 0 }}>
+        <div style={{ padding: X ? '38px 44px 0' : '3.5% 4.1% 0', flexShrink: 0 }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
             color: '#0f1115', fontSize: X ? 24 : 'clamp(9px, 2.2%, 24px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
@@ -102,7 +102,7 @@ function ProfileCard({ user, isExport: X }: CP) {
             the card stretches to the frame instead of floating in empty
             space around it. */}
         <div style={{
-          margin: X ? '24px 56px 0' : '2.2% 5.2% 0',
+          margin: X ? '20px 44px 0' : '1.9% 4.1% 0',
           flex: 1, minHeight: 0,
           borderRadius: '36px',
           overflow: 'hidden',
@@ -111,7 +111,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         </div>
 
         {/* Info — one cohesive block: tight rhythm, content-driven */}
-        <div style={{ padding: X ? '28px 56px 60px' : '2.6% 5.2% 5.6%', flexShrink: 0 }}>
+        <div style={{ padding: X ? '24px 44px 52px' : '2.2% 4.1% 4.8%', flexShrink: 0 }}>
           {/* Name + verified badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: X ? '9px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
@@ -355,7 +355,7 @@ export function ShareCard() {
         </div>
 
         {/* Actions — right under the card, clear background with dark text */}
-        <div className="flex items-center justify-center gap-2.5 mt-3">
+        <div className="flex items-center justify-center gap-2.5 mt-0">
           <button onClick={copyLink} className={actionBtn}>
             {copied ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
             Copy Link
