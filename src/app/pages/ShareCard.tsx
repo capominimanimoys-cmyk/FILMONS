@@ -215,6 +215,36 @@ export function ShareCard() {
     location:    user?.location || user?.city || '',
   };
 
+  // html-to-image re-fetches every <img> src itself to embed it in the
+  // export (a plain <img> display doesn't need CORS, but that internal
+  // fetch() does) — per its own docs, a failed fetch just renders that area
+  // blank rather than erroring, which is exactly "photo missing from the
+  // downloaded image" while the live preview looks fine. Pre-fetch the
+  // avatar into a data URL ourselves so the export node never depends on
+  // html-to-image being able to re-fetch it at all.
+  const [avatarDataUrl, setAvatarDataUrl] = useState('');
+  useEffect(() => {
+    const src = userData.avatar;
+    if (!src) { setAvatarDataUrl(''); return; }
+    let cancelled = false;
+    fetch(src, { cache: 'no-cache' })
+      .then(res => { if (!res.ok) throw new Error(`avatar fetch ${res.status}`); return res.blob(); })
+      .then(blob => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      }))
+      .then(dataUrl => { if (!cancelled) setAvatarDataUrl(dataUrl); })
+      .catch(err => {
+        console.error('[ShareCard] avatar prefetch for export failed:', err);
+        if (!cancelled) setAvatarDataUrl('');
+      });
+    return () => { cancelled = true; };
+  }, [userData.avatar]);
+
+  const exportUserData: CardUser = { ...userData, avatar: avatarDataUrl || userData.avatar };
+
   const exportCard = useCallback(async () => {
     if (!exportRef.current || exporting) return;
     setExporting(true);
@@ -229,6 +259,7 @@ export function ShareCard() {
         pixelRatio: 1,
         quality:  0.98,
         skipFonts: false,
+        cacheBust: true,
         backgroundColor: '#F5F5F3',
         fetchRequestInit: { cache: 'no-cache' as RequestCache },
         style: { transform: 'none' },
@@ -307,7 +338,7 @@ export function ShareCard() {
         overflow: 'hidden', pointerEvents: 'none',
       }}>
         <div ref={exportRef} style={{ width: `${EW}px` }}>
-          <ProfileCard user={userData} isExport />
+          <ProfileCard user={exportUserData} isExport />
         </div>
       </div>
 
