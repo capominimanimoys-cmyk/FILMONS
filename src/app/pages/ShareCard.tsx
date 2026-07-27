@@ -63,18 +63,13 @@ function VBar({ X }: { X?: boolean }) {
 }
 
 // ── A stat: small icon + value, no text label — cleaner for a scannable card ──
-// `flexShrink: 0` on the outer span alone isn't enough to stop the inner text
-// from being clipped: a flex item's automatic min-width resolves to 0 (not
-// its content size) once it has `overflow` other than `visible`, so the old
-// ellipsis styles let this span shrink and truncate ("Creator" -> "Creat…")
-// despite the parent claiming not to shrink. No overflow/ellipsis here at
-// all — full text, never truncated; the row wraps whole stats instead.
 function Stat({ icon: Icon, value, X }: { icon: typeof Users; value: string | number; X?: boolean }) {
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%', flexShrink: 0 }}>
       <Icon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} style={{ flexShrink: 0 }} />
-      <span style={{ color: '#0f1115', fontWeight: 600, flexShrink: 0,
-        fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)', whiteSpace: 'nowrap' }}>{value}</span>
+      <span style={{ color: '#0f1115', fontWeight: 600,
+        fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)', whiteSpace: 'nowrap',
+        overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
     </span>
   );
 }
@@ -101,10 +96,10 @@ function ProfileCard({ user, isExport: X }: CP) {
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
-        {/* Hero photo — 2:3 portrait */}
+        {/* Hero photo — 3:2, shorter than a 4:3 crop so info has real room */}
         <div style={{
           margin: X ? '16px 40px 0' : '1.5% 3.7% 0',
-          aspectRatio: '2 / 3',
+          aspectRatio: '3 / 2',
           borderRadius: '24px',
           overflow: 'hidden',
         }}>
