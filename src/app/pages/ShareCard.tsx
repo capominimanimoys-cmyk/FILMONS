@@ -65,11 +65,10 @@ function VBar({ X }: { X?: boolean }) {
 // ── A stat: small icon + value, no text label — cleaner for a scannable card ──
 function Stat({ icon: Icon, value, X }: { icon: typeof Users; value: string | number; X?: boolean }) {
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%', flexShrink: 0 }}>
-      <Icon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} style={{ flexShrink: 0 }} />
-      <span style={{ color: '#0f1115', fontWeight: 600,
-        fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)', whiteSpace: 'nowrap',
-        overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
+    <span style={{ display: 'flex', alignItems: 'center', gap: X ? '7px' : '0.6%', flexShrink: 0 }}>
+      <Icon size={X ? 19 : 16} color="#9ca3af" strokeWidth={2} style={{ flexShrink: 0 }} />
+      <span style={{ color: '#0f1115', fontWeight: 600, flexShrink: 0,
+        fontSize: X ? 23 : 'clamp(8px, 2.1%, 23px)', whiteSpace: 'nowrap' }}>{value}</span>
     </span>
   );
 }
@@ -91,31 +90,31 @@ function ProfileCard({ user, isExport: X }: CP) {
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '30px 40px 0' : '2.8% 3.7% 0' }}>
+        <div style={{ padding: X ? '38px 32px 0' : '3.5% 3% 0' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
-            color: '#0f1115', fontSize: X ? 21 : 'clamp(8px, 1.9%, 21px)',
+            color: '#0f1115', fontSize: X ? 24 : 'clamp(9px, 2.2%, 24px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
         {/* Hero photo — 3:2, shorter than a 4:3 crop so info has real room */}
         <div style={{
-          margin: X ? '16px 40px 0' : '1.5% 3.7% 0',
+          margin: X ? '20px 32px 0' : '1.9% 3% 0',
           aspectRatio: '3 / 2',
-          borderRadius: '24px',
+          borderRadius: '26px',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
         </div>
 
         {/* Info — one cohesive block: tight rhythm, content-driven */}
-        <div style={{ padding: X ? '18px 40px 40px' : '1.7% 3.7% 3.7%' }}>
+        <div style={{ padding: X ? '24px 32px 48px' : '2.2% 3% 4.4%' }}>
           {/* Name + verified badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.7%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '9px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
-              fontSize: X ? 42 : 'clamp(15px, 3.9%, 42px)' }}>{user.name}</p>
+              fontSize: X ? 50 : 'clamp(18px, 4.6%, 50px)' }}>{user.name}</p>
             {user.isVerified && (
               <BadgeCheck
-                size={X ? 26 : 21} style={{ flexShrink: 0 }}
+                size={X ? 30 : 24} style={{ flexShrink: 0 }}
                 color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
               />
             )}
@@ -123,23 +122,23 @@ function ProfileCard({ user, isExport: X }: CP) {
 
           {/* Bio */}
           {user.bio && (
-            <p style={{ margin: X ? '8px 0 0' : '0.7% 0 0', color: '#6b7280', fontWeight: 400,
-              lineHeight: 1.5, fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)' }}>{user.bio}</p>
+            <p style={{ margin: X ? '10px 0 0' : '0.9% 0 0', color: '#6b7280', fontWeight: 400,
+              lineHeight: 1.5, fontSize: X ? 23 : 'clamp(8px, 2.1%, 23px)' }}>{user.bio}</p>
           )}
 
           {/* Link row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '7px' : '0.6%',
-            marginTop: X ? '8px' : '0.7%' }}>
-            <LinkIcon size={X ? 15 : 12} color="#9ca3af" strokeWidth={2} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.7%',
+            marginTop: X ? '10px' : '0.9%' }}>
+            <LinkIcon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
-              fontSize: X ? 18 : 'clamp(6px, 1.7%, 18px)' }}>filmons.app/{user.username}</span>
+              fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)' }}>filmons.app/{user.username}</span>
           </div>
 
           {/* Stats — icon + value, single row, divider only before location */}
           <div style={{
-            marginTop: X ? '16px' : '1.5%',
+            marginTop: X ? '20px' : '1.9%',
             display: 'flex', alignItems: 'center', flexWrap: 'wrap',
-            gap: X ? '16px' : '1.5%',
+            gap: X ? '18px' : '1.7%',
           }}>
             <Stat icon={Users} value={user.followers} X={X} />
             <Stat icon={Briefcase} value={role} X={X} />
@@ -347,12 +346,12 @@ export function ShareCard() {
           renders its own light gray padding, white card, radius and soft
           shadow, so the on-screen preview matches the export 1:1. */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10">
-        <div style={{ width: '90vw', maxWidth: '580px' }}>
+        <div style={{ width: '92vw', maxWidth: '640px' }}>
           <ProfileCard user={userData} />
         </div>
 
-        {/* Actions — below the card, clear background with dark text */}
-        <div className="flex items-center justify-center gap-2.5 mt-6">
+        {/* Actions — right under the card, clear background with dark text */}
+        <div className="flex items-center justify-center gap-2.5 mt-2">
           <button onClick={copyLink} className={actionBtn}>
             {copied ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
             Copy Link
