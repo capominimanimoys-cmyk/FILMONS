@@ -13,7 +13,7 @@ import type { User } from '../types';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login'];
 const NO_FOOTER_PAGES = ['/login', '/phone-signup', '/phone-login', '/inbox', '/feed', '/reels'];
-const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login'];
+const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
 
 function isOnboardingIncomplete(user: User | null): boolean {
   if (!user) return false;

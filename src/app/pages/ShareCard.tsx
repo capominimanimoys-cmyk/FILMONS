@@ -261,15 +261,15 @@ export function ShareCard() {
         @keyframes shareCardExit  { from { transform: translateX(0); } to { transform: translateX(100%); } }
       `}</style>
 
-      {/* Header */}
-      <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 shrink-0">
+      {/* Header — transparent, sits directly on the page's light background */}
+      <div className="sticky top-0 z-30 bg-transparent px-4 py-3 flex items-center gap-3 shrink-0">
         <button
           onClick={() => { captureSnapshot(); goBack(); }}
-          className="w-8 h-8 flex items-center justify-center text-white/35 hover:text-white transition-colors"
+          className="w-8 h-8 flex items-center justify-center text-gray-900/50 hover:text-gray-900 transition-colors"
         >
           <ArrowLeft className="w-4 h-4"/>
         </button>
-        <h1 className="text-sm font-bold text-white flex-1 tracking-wide">Share Card</h1>
+        <h1 className="text-sm font-bold text-gray-900 flex-1 tracking-wide">Share Card</h1>
       </div>
 
       {/* Hidden export target — the ref'd node must carry no hiding styles of its
@@ -316,3 +316,4 @@ export function ShareCard() {
     </div>
   );
 }
+
