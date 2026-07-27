@@ -1,7 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon } from 'lucide-react';
-import { toPng } from 'html-to-image';
+import {
+  ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon,
+  Users, Briefcase, Layers, MapPin,
+} from 'lucide-react';
+import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
@@ -59,16 +62,15 @@ function VBar({ X }: { X?: boolean }) {
   return <span style={{ width: '1px', alignSelf: 'stretch', background: '#e5e7eb', margin: X ? '2px 0' : '0.2% 0' }} />;
 }
 
-// ── A labelled stat column (label above value), equal-width via flex:1 ────────
-function Stat({ label, value, X }: { label: string; value: string | number; X?: boolean }) {
+// ── A stat: small icon + value, no text label — cleaner for a scannable card ──
+function Stat({ icon: Icon, value, X }: { icon: typeof Users; value: string | number; X?: boolean }) {
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <p style={{ margin: 0, color: '#9ca3af', fontWeight: 500,
-        fontSize: X ? 16 : 'clamp(6px, 1.5%, 16px)' }}>{label}</p>
-      <p style={{ margin: X ? '4px 0 0' : '0.4% 0 0', color: '#0f1115', fontWeight: 600,
-        fontSize: X ? 24 : 'clamp(8px, 2.2%, 24px)', whiteSpace: 'nowrap',
-        overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</p>
-    </div>
+    <span style={{ display: 'flex', alignItems: 'center', gap: X ? '6px' : '0.6%', flexShrink: 0 }}>
+      <Icon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} style={{ flexShrink: 0 }} />
+      <span style={{ color: '#0f1115', fontWeight: 600,
+        fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)', whiteSpace: 'nowrap',
+        overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
+    </span>
   );
 }
 
@@ -81,38 +83,38 @@ function ProfileCard({ user, isExport: X }: CP) {
   return (
     <div style={{
       width: X ? EW : '100%', background: '#F5F5F3',
-      padding: X ? '40px' : '3.7%', fontFamily: SF,
+      padding: X ? '32px' : '3%', fontFamily: SF,
     }}>
       <div style={{
         background: '#ffffff', borderRadius: '34px',
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '32px 44px 0' : '3% 4.1% 0' }}>
+        <div style={{ padding: X ? '30px 40px 0' : '2.8% 3.7% 0' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
-            color: '#0f1115', fontSize: X ? 22 : 'clamp(8px, 2%, 22px)',
+            color: '#0f1115', fontSize: X ? 21 : 'clamp(8px, 1.9%, 21px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
-        {/* Hero photo — 4:3 so the info section has room to breathe */}
+        {/* Hero photo — 3:2, shorter than a 4:3 crop so info has real room */}
         <div style={{
-          margin: X ? '20px 44px 0' : '1.9% 4.1% 0',
-          aspectRatio: '4 / 3',
-          borderRadius: '26px',
+          margin: X ? '16px 40px 0' : '1.5% 3.7% 0',
+          aspectRatio: '3 / 2',
+          borderRadius: '24px',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
         </div>
 
-        {/* Info — tighter vertical rhythm, more generous edge padding */}
-        <div style={{ padding: X ? '26px 44px 56px' : '2.4% 4.1% 5.2%' }}>
+        {/* Info — one cohesive block: tight rhythm, content-driven */}
+        <div style={{ padding: X ? '18px 40px 40px' : '1.7% 3.7% 3.7%' }}>
           {/* Name + verified badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '9px' : '0.8%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.7%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
-              fontSize: X ? 48 : 'clamp(17px, 4.4%, 48px)' }}>{user.name}</p>
+              fontSize: X ? 42 : 'clamp(15px, 3.9%, 42px)' }}>{user.name}</p>
             {user.isVerified && (
               <BadgeCheck
-                size={X ? 30 : 24} style={{ flexShrink: 0 }}
+                size={X ? 26 : 21} style={{ flexShrink: 0 }}
                 color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
               />
             )}
@@ -120,30 +122,31 @@ function ProfileCard({ user, isExport: X }: CP) {
 
           {/* Bio */}
           {user.bio && (
-            <p style={{ margin: X ? '10px 0 0' : '0.9% 0 0', color: '#6b7280', fontWeight: 400,
-              lineHeight: 1.5, fontSize: X ? 22 : 'clamp(8px, 2%, 22px)' }}>{user.bio}</p>
+            <p style={{ margin: X ? '8px 0 0' : '0.7% 0 0', color: '#6b7280', fontWeight: 400,
+              lineHeight: 1.5, fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)' }}>{user.bio}</p>
           )}
 
           {/* Link row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.7%',
-            marginTop: X ? '10px' : '0.9%' }}>
-            <LinkIcon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '7px' : '0.6%',
+            marginTop: X ? '8px' : '0.7%' }}>
+            <LinkIcon size={X ? 15 : 12} color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
-              fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)' }}>filmons.app/{user.username}</span>
+              fontSize: X ? 18 : 'clamp(6px, 1.7%, 18px)' }}>filmons.app/{user.username}</span>
           </div>
 
-          {/* Stats — equal-width labelled columns, divider only before location */}
+          {/* Stats — icon + value, single row, divider only before location */}
           <div style={{
-            marginTop: X ? '20px' : '1.9%',
-            display: 'flex', alignItems: 'flex-start',
+            marginTop: X ? '16px' : '1.5%',
+            display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+            gap: X ? '16px' : '1.5%',
           }}>
-            <Stat label="Followers" value={user.followers} X={X} />
-            <Stat label="Role" value={role} X={X} />
-            <Stat label="Projects" value={user.projects} X={X} />
+            <Stat icon={Users} value={user.followers} X={X} />
+            <Stat icon={Briefcase} value={role} X={X} />
+            <Stat icon={Layers} value={user.projects} X={X} />
             {user.location && (
               <>
                 <VBar X={X} />
-                <Stat label="Location" value={user.location} X={X} />
+                <Stat icon={MapPin} value={user.location} X={X} />
               </>
             )}
           </div>
@@ -219,7 +222,7 @@ export function ShareCard() {
       // fixed export width so the downloaded image matches the preview
       // exactly, with no cropping and no leftover space.
       const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
-      const dataUrl = await toPng(exportRef.current, {
+      const blob = await toBlob(exportRef.current, {
         width:    EW,
         height,
         pixelRatio: 1,
@@ -229,12 +232,33 @@ export function ShareCard() {
         fetchRequestInit: { cache: 'no-cache' as RequestCache },
         style: { transform: 'none' },
       });
-      const a    = document.createElement('a');
-      a.href     = dataUrl;
-      a.download = `filmons-${userData.username}.png`;
-      a.click();
+      if (!blob) throw new Error('toBlob returned null');
+
+      const filename = `filmons-${userData.username}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+
+      // Mobile Safari (and several Android browsers) ignore the <a download>
+      // attribute for blob/data URLs — tapping the link just opens/navigates
+      // to the image instead of saving it. The native share sheet (which
+      // includes "Save Image" / "Save to Photos") is the reliable path on
+      // mobile, so prefer it whenever the browser can share a file.
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: filename });
+        } catch (e) {
+          if ((e as Error)?.name !== 'AbortError') throw e; // user cancelled — not an error
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href     = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (e) {
       console.error('Export failed:', e);
+      toast.error('Could not save image');
     }
     setExporting(false);
   }, [exporting, userData.username]);
@@ -291,7 +315,7 @@ export function ShareCard() {
           renders its own light gray padding, white card, radius and soft
           shadow, so the on-screen preview matches the export 1:1. */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10">
-        <div style={{ width: '88vw', maxWidth: '630px' }}>
+        <div style={{ width: '90vw', maxWidth: '580px' }}>
           <ProfileCard user={userData} />
         </div>
 
