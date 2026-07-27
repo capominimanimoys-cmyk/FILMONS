@@ -74,16 +74,17 @@ function Stat({ icon: Icon, value, X }: { icon: typeof Users; value: string | nu
   );
 }
 
-// ── Profile card — a white card floating on a soft gray canvas. Height is
-//    entirely content-driven: no forced aspect ratio, no bottom-anchored
-//    stats row, so there's never leftover empty space. ─────────────────────────
+// ── Profile card — a white card floating on a soft gray canvas. Only the
+//    canvas (background) is pinned to a 2:3 ratio; the white card itself
+//    stays content-sized and is centered vertically within it. ───────────────
 function ProfileCard({ user, isExport: X }: CP) {
   const role = user.primaryRole || 'Creator';
 
   return (
     <div style={{
-      width: X ? EW : '100%', background: '#F5F5F3',
+      width: X ? EW : '100%', aspectRatio: '2 / 3', background: '#F5F5F3',
       padding: X ? '32px' : '3%', fontFamily: SF,
+      display: 'flex', flexDirection: 'column', justifyContent: 'center',
     }}>
       <div style={{
         background: '#ffffff', borderRadius: '34px',
@@ -218,9 +219,9 @@ export function ShareCard() {
     if (!exportRef.current || exporting) return;
     setExporting(true);
     try {
-      // Height is content-driven — measure the actual rendered height at the
-      // fixed export width so the downloaded image matches the preview
-      // exactly, with no cropping and no leftover space.
+      // Canvas is pinned to a 2:3 ratio via CSS aspect-ratio, so the actual
+      // rendered height already reflects that (EW * 1.5) — measuring rather
+      // than hardcoding keeps this correct if the ratio ever changes.
       const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
       const blob = await toBlob(exportRef.current, {
         width:    EW,
