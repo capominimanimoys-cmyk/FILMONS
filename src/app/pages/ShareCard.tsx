@@ -88,7 +88,7 @@ function ProfileCard({ user, isExport: X }: CP) {
     }}>
       <div style={{
         flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
-        background: '#ffffff', borderRadius: '34px',
+        background: '#ffffff', borderRadius: '48px',
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
@@ -104,7 +104,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         <div style={{
           margin: X ? '20px 44px 0' : '1.9% 4.1% 0',
           flex: 1, minHeight: 0,
-          borderRadius: '26px',
+          borderRadius: '36px',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
@@ -355,7 +355,7 @@ export function ShareCard() {
         </div>
 
         {/* Actions — right under the card, clear background with dark text */}
-        <div className="flex items-center justify-center gap-2.5 mt-2">
+        <div className="flex items-center justify-center gap-2.5 mt-0">
           <button onClick={copyLink} className={actionBtn}>
             {copied ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
             Copy Link
