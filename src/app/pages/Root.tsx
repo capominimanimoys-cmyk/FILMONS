@@ -14,6 +14,9 @@ import type { User } from '../types';
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login'];
 const NO_FOOTER_PAGES = ['/login', '/phone-signup', '/phone-login', '/inbox', '/feed', '/reels'];
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
+// These pages render their own fixed bottom action bar (Back/Next, Save, etc.) —
+// the global MobileBottomNav sits on top of it (higher z-index) and hides it.
+const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing'];
 
 function isOnboardingIncomplete(user: User | null): boolean {
   if (!user) return false;
@@ -30,9 +33,10 @@ export function Root() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen,  setSearchOpen]  = useState(false);
 
-  const hideAll    = NO_NAV_PAGES.includes(location.pathname);
-  const hideTopBar = NO_TOPBAR_PAGES.includes(location.pathname);
-  const hideFooter = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
+  const hideAll      = NO_NAV_PAGES.includes(location.pathname);
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
+  const hideFooter   = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
+  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p));
 
   // Enforce email verification before anything else (skip for guests — they have no user)
   if (isAuthenticated && user?.emailVerified === false) {
@@ -79,7 +83,7 @@ export function Root() {
           </div>
         )}
 
-        <MobileBottomNav />
+        {!hideBottomNav && <MobileBottomNav />}
 
         {/* AI Search overlay — rendered above everything */}
         {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
