@@ -82,34 +82,34 @@ function ProfileCard({ user, isExport: X }: CP) {
   return (
     <div style={{
       width: X ? EW : '100%', aspectRatio: '2 / 3', background: '#F5F5F3',
-      padding: X ? '32px' : '3%', fontFamily: SF,
-      display: 'flex', flexDirection: 'column', justifyContent: 'center',
+      padding: X ? '32px' : '3%', paddingBottom: X ? '32px' : '0.5%', fontFamily: SF,
+      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
     }}>
       <div style={{
-        background: '#ffffff', borderRadius: '48px',
+        background: '#ffffff', borderRadius: '64px',
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
-        {/* FILMONS wordmark — inside the card, top-left, never over the photo */}
-        <div style={{ padding: X ? '38px 44px 0' : '3.5% 4.1% 0' }}>
+        {/* FILMONS wordmark — inside the card, centered, never over the photo */}
+        <div style={{ padding: X ? '38px 44px 0' : '3.5% 4.1% 0', textAlign: 'center' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
             color: '#0f1115', fontSize: X ? 24 : 'clamp(9px, 2.2%, 24px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
         </div>
 
-        {/* Hero photo — 3:2, shorter than a 4:3 crop so info has real room */}
+        {/* Hero photo — 16:10, shorter than 3:2 so the card sits lower overall */}
         <div style={{
-          margin: X ? '20px 44px 0' : '1.9% 4.1% 0',
-          aspectRatio: '3 / 2',
+          margin: X ? '18px 44px 0' : '1.7% 4.1% 0',
+          aspectRatio: '16 / 10',
           borderRadius: '36px',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
         </div>
 
-        {/* Info — one cohesive block: tight rhythm, content-driven */}
-        <div style={{ padding: X ? '24px 44px 52px' : '2.2% 4.1% 4.8%' }}>
+        {/* Info — one cohesive block: tight rhythm, content-driven, center-aligned */}
+        <div style={{ padding: X ? '18px 44px 36px' : '1.7% 4.1% 3.3%', textAlign: 'center' }}>
           {/* Name + verified badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '9px' : '0.8%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: X ? '9px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
               fontSize: X ? 50 : 'clamp(18px, 4.6%, 50px)' }}>{user.name}</p>
             {user.isVerified && (
@@ -127,7 +127,7 @@ function ProfileCard({ user, isExport: X }: CP) {
           )}
 
           {/* Link row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: X ? '8px' : '0.7%',
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: X ? '8px' : '0.7%',
             marginTop: X ? '10px' : '0.9%' }}>
             <LinkIcon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
@@ -137,7 +137,7 @@ function ProfileCard({ user, isExport: X }: CP) {
           {/* Stats — icon + value, single row, divider only before location */}
           <div style={{
             marginTop: X ? '20px' : '1.9%',
-            display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap',
             gap: X ? '18px' : '1.7%',
           }}>
             <Stat icon={Users} value={user.followers} X={X} />
