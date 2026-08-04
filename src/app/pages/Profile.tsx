@@ -14,7 +14,7 @@ import {
   Globe, Link as LinkIcon, X, Settings, Bookmark,
   FileText, ThumbsUp, Package, Info, Grid3X3,
   Plus, Trash2, ChevronDown, ChevronUp, Check,
-  Instagram, Youtube, Edit3, Share2, QrCode, Repeat2,
+  Instagram, Youtube, Edit3, Share2, Repeat2,
   Film, Music2, User, ExternalLink, MoreVertical,
 } from 'lucide-react';
 import { reviewsApi, listingsApi, postsApi, savedPostsApi } from '../lib/api';
@@ -27,7 +27,6 @@ import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
 import { reliabilityApi, ReputationScore, isCreatorPlus } from '../lib/reliabilityApi';
 import { AvatarActionSheet, AvatarFullScreen } from '../components/AvatarActionSheet';
-import { ProfileQRCode } from '../components/ProfileQRCode';
 import { PostComposer } from '../components/PostComposer';
 import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
@@ -564,7 +563,6 @@ export function Profile() {
   });
   const [showCoverSheet,   setShowCoverSheet]   = useState(false);
   const [showAvatarFull,   setShowAvatarFull]   = useState(false);
-  const [showQR,           setShowQR]           = useState(false);
   const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
   const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
@@ -1076,12 +1074,6 @@ export function Profile() {
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors shrink-0"
               title="Share">
               <Share2 className="w-3.5 h-3.5" />
-            </button>
-            {/* QR Code */}
-            <button onClick={() => setShowQR(true)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors shrink-0"
-              title="QR Code">
-              <QrCode className="w-3.5 h-3.5" />
             </button>
             {/* Edit profile */}
             <button onClick={() => switchTab('about')}
@@ -1977,16 +1969,6 @@ export function Profile() {
           onClose={() => setShowAvatarFull(false)}
           onChangePhoto={f => { handleAvatarFile(f); setShowAvatarFull(false); }}
           onDelete={() => { handleDeleteAvatar(); setShowAvatarFull(false); }}
-        />
-      )}
-
-      {/* ── QR Code modal ── */}
-      {showQR && (
-        <ProfileQRCode
-          userId={user.id}
-          name={user.name}
-          avatar={user.avatar}
-          onClose={() => setShowQR(false)}
         />
       )}
 
