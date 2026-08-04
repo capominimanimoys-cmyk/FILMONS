@@ -1,13 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
-  ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon,
+  ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon, Loader2,
 } from 'lucide-react';
 import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { getPortfolioItems } from '../lib/portfolioApi';
+import { authApi } from '../lib/api';
+import { supabase } from '../../lib/supabase';
 
 // ── Export width — height is content-driven (measured at export time) so the
 //    card never carries unnecessary empty space. ─────────────────────────────
@@ -165,17 +167,46 @@ function ProfileCard({ user, isExport: X }: CP) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function ShareCard() {
-  const { user }   = useAuth();
-  const navigate    = useNavigate();
+  const { user: me } = useAuth();
+  const navigate      = useNavigate();
+  const [searchParams] = useSearchParams();
   const exportRef   = useRef<HTMLDivElement>(null);
   const [exporting,  setExporting]  = useState(false);
   const [leaving,    setLeaving]    = useState(false);
   const [projects,   setProjects]   = useState(0);
   const [copied,     setCopied]     = useState(false);
 
+  // Sharing someone else's profile (from their host page / portfolio) passes
+  // ?userId=<id> — falls back to the logged-in user's own card otherwise.
+  const viewUserId = searchParams.get('userId');
+  const isOther     = !!viewUserId && viewUserId !== me?.id;
+  const [otherUser,    setOtherUser]    = useState<any>(null);
+  const [otherLoading, setOtherLoading] = useState(isOther);
+  useEffect(() => {
+    if (!isOther) { setOtherUser(null); setOtherLoading(false); return; }
+    let cancelled = false;
+    setOtherLoading(true);
+    authApi.getUserById(viewUserId!).then(u => {
+      if (!cancelled) { setOtherUser(u); setOtherLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [viewUserId, isOther]);
+
+  const user = isOther ? otherUser : me;
+
   useEffect(() => {
     if (!user?.id) return;
     getPortfolioItems(user.id).then(items => setProjects(items.length));
+  }, [user?.id]);
+
+  // Live follower count from the follows table — profiles.followers is a
+  // legacy array column that follow/unfollow no longer writes to, so it
+  // drifts (same fix as Profile.tsx / HostProfile.tsx).
+  const [followerCount, setFollowerCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!user?.id) { setFollowerCount(null); return; }
+    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id)
+      .then(({ count }) => setFollowerCount(count ?? null));
   }, [user?.id]);
 
   // index.html sets no background on <html>/<body> (defaults to white), so
@@ -215,7 +246,7 @@ export function ShareCard() {
     avatar:      user?.avatar      || '',
     bio:         user?.bio         || '',
     primaryRole: user?.primaryRole || 'Creator',
-    followers:   user?.followers?.length || 0,
+    followers:   followerCount ?? (user?.followers?.length || 0),
     projects,
     isVerified:  !!user?.isVerified,
     location:    user?.location || user?.city || '',
@@ -314,6 +345,14 @@ export function ShareCard() {
 
   const navBtn = 'w-8 h-8 flex items-center justify-center rounded-full text-gray-900/60 ' +
     'hover:text-gray-900 hover:bg-black/[0.05] transition-colors active:scale-95 disabled:opacity-40';
+
+  if (otherLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F5F3]">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div

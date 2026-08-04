@@ -6,7 +6,6 @@ import { authApi, socialApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
-import { CreatorCardSheet } from '../components/CreatorCardSheet';
 import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
@@ -29,7 +28,6 @@ import {
 type Template    = 'masonry' | 'grid' | 'cinematic' | 'service' | 'minimal';
 type TabType     = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
 type ShareTarget =
-  | { type: 'portfolio' }
   | { type: 'album'; album: PortfolioAlbum }
   | { type: 'item'; item: PortfolioItem };
 
@@ -1014,23 +1012,20 @@ export function Portfolio() {
   const getShareUrl = (target: ShareTarget): string => {
     const origin = window.location.origin;
     const base   = `${origin}/portfolio/${targetId}`;
-    if (target.type === 'portfolio') return base;
-    if (target.type === 'album')     return `${base}?album=${target.album.id}`;
+    if (target.type === 'album') return `${base}?album=${target.album.id}`;
     return `${base}?item=${target.item.id}`;
   };
 
   const getShareDisplayUrl = (target: ShareTarget): string => {
     const uname = profile?.username ? `@${profile.username}` : targetId;
     const base  = `filmons.com/${uname}/portfolio`;
-    if (target.type === 'portfolio') return base;
-    if (target.type === 'album')     return `${base}/albums/${target.album.title.toLowerCase().replace(/\s+/g, '-')}`;
-    return `${base}/${(target as { type: 'item'; item: PortfolioItem }).item.title.toLowerCase().replace(/\s+/g, '-')}`;
+    if (target.type === 'album') return `${base}/albums/${target.album.title.toLowerCase().replace(/\s+/g, '-')}`;
+    return `${base}/${target.item.title.toLowerCase().replace(/\s+/g, '-')}`;
   };
 
   const getShareHeading = (target: ShareTarget): string => {
-    if (target.type === 'portfolio') return 'Share Portfolio';
-    if (target.type === 'album')     return `Share "${target.album.title}"`;
-    return `Share "${(target as { type: 'item'; item: PortfolioItem }).item.title}"`;
+    if (target.type === 'album') return `Share "${target.album.title}"`;
+    return `Share "${target.item.title}"`;
   };
 
   const handleFollow = async () => {
@@ -1213,7 +1208,7 @@ export function Portfolio() {
                 {following ? 'Following' : 'Follow'}
               </button>
               <button
-                onClick={() => setShareTarget({ type: 'portfolio' })}
+                onClick={() => navigate(`/share-card?userId=${profile.id}`)}
                 className="w-9 h-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 active:scale-95 transition-all"
               >
                 <Share2 className="w-4 h-4" />
@@ -1248,7 +1243,7 @@ export function Portfolio() {
                 <Plus className="w-4 h-4" /> Add Work
               </button>
               <button
-                onClick={() => setShareTarget({ type: 'portfolio' })}
+                onClick={() => navigate(`/share-card?userId=${profile.id}`)}
                 className="w-9 h-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 active:scale-95 transition-all"
               >
                 <Share2 className="w-4 h-4" />
@@ -1525,32 +1520,15 @@ export function Portfolio() {
         />
       )}
 
-      {/* ── Share: portfolio → Creator Card directly; album/item → ShareSheet ── */}
-      {shareTarget && shareTarget.type === 'portfolio' ? (
-        <CreatorCardSheet
-          name={profile.name}
-          username={profile.username}
-          primaryRole={profile.primaryRole}
-          location={profile.location || [profile.city, profile.province].filter(Boolean).join(', ') || undefined}
-          avatarUrl={profile.avatar}
-          coverUrl={profile.coverPhoto}
-          shareUrl={getShareUrl(shareTarget)}
-          displayUrl={getShareDisplayUrl(shareTarget)}
-          portfolioItems={items.slice(0, 4).map(i => i.thumbnail_url || i.media_url).filter(Boolean) as string[]}
-          followerCount={profile.followers?.length ?? 0}
-          worksCount={items.length}
-          isVerified={profile.isVerified ?? false}
-          isCreatorPlus={profile.accountType === 'creator_plus'}
-          onClose={() => setShareTarget(null)}
-        />
-      ) : shareTarget ? (
+      {/* ── Share: album/item → ShareSheet (portfolio-level share now goes to the ShareCard page directly) ── */}
+      {shareTarget && (
         <ShareSheet
           url={getShareUrl(shareTarget)}
           displayUrl={getShareDisplayUrl(shareTarget)}
           heading={getShareHeading(shareTarget)}
           onClose={() => setShareTarget(null)}
         />
-      ) : null}
+      )}
 
       {/* ── Add to album sheet (owner only) ── */}
       {addToAlbumTarget && isOwner && (
