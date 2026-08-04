@@ -33,7 +33,10 @@ function CinematicBg() {
             animationDelay: `${i * 0.8}s`,
           }}/>
       ))}
-      <style>{`@keyframes float { from { transform: translateY(0px); } to { transform: translateY(-20px); } }`}</style>
+      <style>{`
+        @keyframes float { from { transform: translateY(0px); } to { transform: translateY(-20px); } }
+        @keyframes loginPageEnter { from { transform: translateX(100%); } to { transform: translateX(0); } }
+      `}</style>
     </div>
   );
 }
@@ -134,7 +137,8 @@ export function Login() {
   // ── SPLASH ──────────────────────────────────────────────────────────────
   if (screen === 'splash') {
     return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden">
+      <div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden"
+        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className={`relative z-10 flex flex-col items-center gap-4 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <FilmonsLogo iconSize={48} theme="dark"/>
@@ -149,7 +153,8 @@ export function Login() {
   // ── METHOD SELECTOR ──────────────────────────────────────────────────────
   if (screen === 'method') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 flex flex-col overflow-hidden"
+        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 py-safe">
           {/* Logo top */}
@@ -197,7 +202,8 @@ export function Login() {
   // ── EMAIL LOGIN ──────────────────────────────────────────────────────────
   if (screen === 'email') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 flex flex-col overflow-hidden"
+        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5">
           <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
@@ -268,7 +274,8 @@ export function Login() {
   // ── EMAIL NOT FOUND ──────────────────────────────────────────────────────
   if (screen === 'email_not_found') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 flex flex-col overflow-hidden"
+        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
           {/* Back */}
@@ -354,7 +361,8 @@ export function Login() {
 
   // ── SECURITY / OTP ───────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 flex flex-col overflow-hidden"
+        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
       <CinematicBg/>
       <div className="relative z-10 flex flex-col h-full px-5">
         <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
