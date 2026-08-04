@@ -319,7 +319,33 @@ export function HostProfile() {
   const loadProfile = async (uid: string) => {
     setLoading(true);
     try {
-      const hostData = await authApi.getUserById(uid);
+      // Kick off every independent query at once — none of these actually
+      // depend on each other's results (only "profiles for these follower/
+      // following ids" below depends on something, and that something is
+      // the id-list queries also started here), so staging them one Promise.all
+      // after another was pure serial wait for no reason.
+      const followCountQueries: Promise<any>[] = [
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
+        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
+      ];
+      if (me?.id) {
+        followCountQueries.push(
+          supabase.from('follows').select('*', { count: 'exact', head: true })
+            .eq('follower_id', me.id).eq('following_id', uid)
+        );
+      }
+
+      const hostPromise          = authApi.getUserById(uid);
+      const listingsPromise      = listingsApi.getUserListings(uid).catch(() => []);
+      const reviewsPromise       = reviewsApi.getUserReviews(uid).catch(() => []);
+      const portfolioPromise     = getPortfolioItems(uid).catch(() => []);
+      const repScorePromise      = supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single();
+      const followCountsPromise  = Promise.all(followCountQueries);
+      const followerRowsPromise  = supabase.from('follows').select('follower_id').eq('following_id', uid).limit(50);
+      const followingRowsPromise = supabase.from('follows').select('following_id').eq('follower_id', uid).limit(50);
+
+      // Paint the header as soon as the host resolves, without waiting on the rest.
+      const hostData = await hostPromise;
       // Bust browser image cache for avatar/cover — same Storage path is reused on each upload
       if (hostData?.avatar) {
         const base = hostData.avatar.split('?')[0];
@@ -328,39 +354,19 @@ export function HostProfile() {
       setHost(hostData);
       setLoading(false);
 
-      const [hostListings, hostReviews, hostPortfolio, repScore] = await Promise.all([
-        listingsApi.getUserListings(uid).catch(() => []),
-        reviewsApi.getUserReviews(uid).catch(() => []),
-        getPortfolioItems(uid).catch(() => []),
-        supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single(),
-      ]);
+      const [hostListings, hostReviews, hostPortfolio, repScore, [fcRes, fgRes, amFollowingRes], followerRows, followingRows] =
+        await Promise.all([listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followCountsPromise, followerRowsPromise, followingRowsPromise]);
+
       if (repScore.data?.reliability_level) setReliabilityLevel(repScore.data.reliability_level);
       if (repScore.data?.reliability_score != null) setReliabilityScore(repScore.data.reliability_score);
       setListings(hostListings);
       setReviews(hostReviews);
       setPortfolioItems(hostPortfolio);
 
-      // ── Fetch follower/following counts + follow status from follows table ──
-      const followQueries: Promise<any>[] = [
-        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
-        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
-      ];
-      if (me?.id) {
-        followQueries.push(
-          supabase.from('follows').select('*', { count: 'exact', head: true })
-            .eq('follower_id', me.id).eq('following_id', uid)
-        );
-      }
-      const [fcRes, fgRes, amFollowingRes] = await Promise.all(followQueries);
       setFollowerCount(fcRes.count ?? null);
       setFollowingCount(fgRes.count ?? null);
       if (amFollowingRes !== undefined) setFollowing((amFollowingRes.count ?? 0) > 0);
 
-      // ── Load follower/following user lists for the modal ──────────────────
-      const [followerRows, followingRows] = await Promise.all([
-        supabase.from('follows').select('follower_id').eq('following_id', uid).limit(50),
-        supabase.from('follows').select('following_id').eq('follower_id', uid).limit(50),
-      ]);
       const followerIds  = (followerRows.data  || []).map((r: any) => r.follower_id).filter(Boolean);
       const followingIds = (followingRows.data || []).map((r: any) => r.following_id).filter(Boolean);
 
@@ -445,13 +451,8 @@ export function HostProfile() {
     navigate(`/inbox?with=${host?.id}`);
   };
 
-  const handleShare = async () => {
-    const url = `${window.location.origin}/host/${userId}`;
-    if (navigator.share) {
-      try { await navigator.share({ title: host?.name || 'Filmons profile', url }); return; } catch {}
-    }
-    await navigator.clipboard.writeText(url);
-    toast.success('Profile link copied!');
+  const handleShare = () => {
+    navigate(`/share-card?userId=${userId}`);
   };
 
   if (loading) return (
@@ -486,8 +487,8 @@ export function HostProfile() {
   return (
     <div className="min-h-screen bg-gray-100">
 
-      {/* ── Back button ── */}
-      <div className="fixed top-14 left-3 z-30">
+      {/* ── Back button — sits a bit below the h-14 TopBar so it doesn't crowd it ── */}
+      <div className="fixed top-20 left-3 z-30">
         <button onClick={() => { captureSnapshot(); navigate(-1); }}
           className="w-9 h-9 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white active:scale-90 transition-transform">
           <ArrowLeft className="w-4 h-4" />

@@ -566,6 +566,8 @@ export function Profile() {
   const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
   const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
+  const [followerCount,    setFollowerCount]    = useState<number | null>(null);
+  const [followingCount,   setFollowingCount]   = useState<number | null>(null);
 
   // Media upload
   const avatarRef = useRef<HTMLInputElement>(null);
@@ -969,13 +971,21 @@ export function Profile() {
 
   const handleLikeToggled = (p: Post) => updatePost(p.id, p);
 
-  // Load follower/following user objects from DB when requested
+  // Load follower/following user objects from the `follows` table — the
+  // authoritative source. profiles.followers/following are legacy array
+  // columns that follow/unfollow never writes to anymore, so they drift
+  // from reality (this is also why the header count below uses the same
+  // `follows`-table counts instead of those arrays).
   const loadFollowUsers = async () => {
     if (!user) return;
-    const followerIds  = user.followers || [];
-    const followingIds = user.following || [];
+    const [followerRows, followingRows] = await Promise.all([
+      supabase.from('follows').select('follower_id').eq('following_id', user.id).limit(50),
+      supabase.from('follows').select('following_id').eq('follower_id', user.id).limit(50),
+    ]);
+    const followerIds  = (followerRows.data  || []).map((r: any) => r.follower_id).filter(Boolean);
+    const followingIds = (followingRows.data || []).map((r: any) => r.following_id).filter(Boolean);
     const ids = [...new Set([...followerIds, ...followingIds])];
-    if (!ids.length) return;
+    if (!ids.length) { setFollowerUsers([]); setFollowingUsers([]); return; }
     const { data } = await supabase
       .from('profiles')
       .select('id, name, username, avatar_url, account_type, is_verified, bio')
@@ -994,6 +1004,19 @@ export function Profile() {
   useEffect(() => {
     if (showFollowers) loadFollowUsers();
   }, [showFollowers]);
+
+  // Header follower/following counts — fetched on mount so they're correct
+  // before the modal is ever opened, same `follows`-table source as above.
+  useEffect(() => {
+    if (!user?.id) return;
+    Promise.all([
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
+    ]).then(([fc, fg]) => {
+      setFollowerCount(fc.count ?? null);
+      setFollowingCount(fg.count ?? null);
+    });
+  }, [user?.id]);
 
   if (!user) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -1110,11 +1133,11 @@ export function Profile() {
               </button>
               <button onClick={() => setShowFollowers('followers')}
                 className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followerUsers.length || (user.followers||[]).length} <span className="font-normal text-gray-500">{T('profile.followers')}</span>
+                {followerCount ?? followerUsers.length} <span className="font-normal text-gray-500">{T('profile.followers')}</span>
               </button>
               <button onClick={() => setShowFollowers('following')}
                 className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followingUsers.length || (user.following||[]).length} <span className="font-normal text-gray-500">{T('profile.following')}</span>
+                {followingCount ?? followingUsers.length} <span className="font-normal text-gray-500">{T('profile.following')}</span>
               </button>
             </div>
           </div>
