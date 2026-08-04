@@ -81,19 +81,19 @@ function Stat({ label, value, X }: { label: string; value: string | number; X?: 
 }
 
 // ── Profile card — a white card floating on a soft gray canvas. Only the
-//    canvas (background) is pinned to a 2:3 ratio; the white card itself
+//    canvas (background) is pinned to a 9:16 ratio; the white card itself
 //    stays content-sized (shorter) and is centered vertically within it. ─────
 function ProfileCard({ user, isExport: X }: CP) {
   const role = user.primaryRole || 'Creator';
 
   return (
     <div style={{
-      width: X ? EW : '100%', aspectRatio: '2 / 3', background: '#F5F5F3',
-      padding: X ? '32px 64px' : '3% 6%', fontFamily: SF,
+      width: X ? EW : '100%', aspectRatio: '9 / 16', background: '#F5F5F3',
+      padding: X ? '32px 162px' : '3% 15%', fontFamily: SF,
       display: 'flex', flexDirection: 'column', justifyContent: 'center',
     }}>
       <div style={{
-        background: '#ffffff', borderRadius: '80px',
+        background: '#ffffff', borderRadius: X ? '80px' : '7.4%',
         overflow: 'hidden', boxShadow: '0px 5px 15px rgba(0, 0, 0, 0.35)',
       }}>
         {/* FILMONS wordmark — inside the card, left-aligned, never over the photo */}
@@ -107,7 +107,7 @@ function ProfileCard({ user, isExport: X }: CP) {
         <div style={{
           margin: X ? '22px 56px 0' : '2% 5.2% 0',
           aspectRatio: '16 / 10',
-          borderRadius: '44px',
+          borderRadius: X ? '44px' : '4.1%',
           overflow: 'hidden',
         }}>
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} exportMode={X} />
@@ -266,8 +266,8 @@ export function ShareCard() {
       // failed to) before capturing — otherwise a click that lands mid-fetch
       // would export against the not-yet-embedded remote URL.
       await avatarReadyRef.current;
-      // Canvas is pinned to a 2:3 ratio via CSS aspect-ratio, so the actual
-      // rendered height already reflects that (EW * 1.5) — measuring rather
+      // Canvas is pinned to a 9:16 ratio via CSS aspect-ratio, so the actual
+      // rendered height already reflects that (EW * 16/9) — measuring rather
       // than hardcoding keeps this correct if the ratio ever changes.
       const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
       const blob = await toBlob(exportRef.current, {
@@ -312,8 +312,8 @@ export function ShareCard() {
     setExporting(false);
   }, [exporting, userData.username]);
 
-  const actionBtn = 'flex items-center gap-1.5 px-4 py-2.5 bg-black/[0.04] hover:bg-black/[0.07] ' +
-    'text-gray-900 text-xs font-semibold rounded-full transition-all active:scale-95 disabled:opacity-40';
+  const navBtn = 'w-8 h-8 flex items-center justify-center rounded-full text-gray-900/60 ' +
+    'hover:text-gray-900 hover:bg-black/[0.05] transition-colors active:scale-95 disabled:opacity-40';
 
   return (
     <div
@@ -343,6 +343,21 @@ export function ShareCard() {
           <ArrowLeft className="w-4 h-4"/>
         </button>
         <h1 className="text-sm font-bold text-gray-900 flex-1 tracking-wide">Share Card</h1>
+
+        {/* Actions — right side of the same nav bar */}
+        <div className="flex items-center gap-1">
+          <button onClick={copyLink} title="Copy Link" className={navBtn}>
+            {copied ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
+          </button>
+          <button onClick={shareLink} title="Share Link" className={navBtn}>
+            <Share2 className="w-4 h-4"/>
+          </button>
+          <button onClick={exportCard} disabled={exporting} title="Save Image" className={navBtn}>
+            {exporting
+              ? <div className="w-3.5 h-3.5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"/>
+              : <Download className="w-4 h-4"/>}
+          </button>
+        </div>
       </div>
 
       {/* Hidden export target — the ref'd node must carry no hiding styles of its
@@ -364,26 +379,8 @@ export function ShareCard() {
           renders its own light gray padding, white card, radius and soft
           shadow, so the on-screen preview matches the export 1:1. */}
       <div className="flex-1 flex flex-col items-center justify-center p-3 md:p-6">
-        <div style={{ width: '97vw', maxWidth: '760px' }}>
+        <div style={{ width: '100%', maxWidth: '760px' }}>
           <ProfileCard user={userData} />
-        </div>
-
-        {/* Actions — right under the card, clear background with dark text */}
-        <div className="flex items-center justify-center gap-2.5 mt-0">
-          <button onClick={copyLink} className={actionBtn}>
-            {copied ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
-            Copy Link
-          </button>
-          <button onClick={shareLink} className={actionBtn}>
-            <Share2 className="w-3.5 h-3.5"/>
-            Share Link
-          </button>
-          <button onClick={exportCard} disabled={exporting} className={actionBtn}>
-            {exporting
-              ? <div className="w-3.5 h-3.5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"/>
-              : <Download className="w-3.5 h-3.5"/>}
-            Save Image
-          </button>
         </div>
       </div>
     </div>
