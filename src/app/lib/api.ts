@@ -1041,6 +1041,7 @@ export const reviewsApi = {
         .order('created_at', { ascending: false });
       return (data || []).map((r: any) => ({
         id: r.id, listingId: r.listing_id, userId: r.user_id,
+        reviewedUserId: r.reviewed_user_id || undefined,
         rating: r.rating, comment: r.comment || r.content || '',
         createdAt: r.created_at,
       }));
@@ -1056,6 +1057,7 @@ export const reviewsApi = {
         .order('created_at', { ascending: false });
       return (data || []).map((r: any) => ({
         id: r.id, listingId: r.listing_id, userId: r.user_id,
+        reviewedUserId: r.reviewed_user_id || undefined,
         rating: r.rating, comment: r.comment || r.content || '',
         createdAt: r.created_at,
       }));
@@ -1063,16 +1065,26 @@ export const reviewsApi = {
   },
 
   create: async (review: Partial<Review>): Promise<Review> => {
+    // A DB trigger on `reviews` reads NEW.reviewed_user_id (used to update the
+    // reviewed user's reputation score) — without it every insert fails with
+    // "record NEW has no field reviewed_user_id" and silently falls through
+    // to the edge function below, which writes to a KV store the read paths
+    // (getListingReviews/getUserReviews) never look at. Always send it.
     try {
       const { data, error } = await supabase.from('reviews').insert({
-        listing_id: review.listingId,
-        user_id:    review.userId,
-        rating:     review.rating,
-        comment:    review.comment,
+        listing_id:       review.listingId,
+        user_id:          review.userId,
+        reviewed_user_id: review.reviewedUserId,
+        rating:           review.rating,
+        comment:          review.comment,
       }).select().single();
       if (!error && data) return data;
-    } catch {}
-    // Fallback edge function
+      console.error('[reviewsApi.create] Supabase insert failed:', error);
+    } catch (e) {
+      console.error('[reviewsApi.create] Supabase insert threw:', e);
+    }
+    // Fallback edge function — last resort only; reviews created this way
+    // won't show up in getListingReviews/getUserReviews (different store).
     const { review: created } = await call<any>('/reviews', {
       method: 'POST', body: JSON.stringify(review),
     });

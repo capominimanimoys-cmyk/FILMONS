@@ -106,7 +106,7 @@ export function ListingDetail() {
     if (!comment) { toast.error('Please enter a comment'); return; }
     setSubmitting(true);
     try {
-      await reviewsApi.create({ listingId: listing?.id, userId: user.id, rating, comment });
+      await reviewsApi.create({ listingId: listing?.id, userId: user.id, reviewedUserId: listing?.userId, rating, comment });
       toast.success('Review submitted!');
       setComment(''); setRating(5);
       loadListing(id!);

@@ -154,6 +154,7 @@ export interface Review {
   listingId: string;
   userId: string;
   userName: string;
+  reviewedUserId?: string;
   rating: number;
   comment: string;
   createdAt: string;
