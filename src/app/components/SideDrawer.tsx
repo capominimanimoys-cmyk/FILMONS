@@ -215,10 +215,6 @@ export function SideDrawer({ onClose }: Props) {
               <span>Log out</span>
             </button>
           )}
-
-          <div className="px-4 pb-4">
-            <p className="text-[10px] text-gray-300 font-semibold">Filmons V1</p>
-          </div>
         </div>
       </div>
     </>
