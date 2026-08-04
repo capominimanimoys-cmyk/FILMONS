@@ -9,6 +9,7 @@ export function MobileBottomNav() {
   const location = useLocation();
   const { user, isAuthenticated } = useAuth();
   const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const [dimmed, setDimmed] = useState(false);
 
   useEffect(() => {
     if (!user) { setUnreadMsgs(0); return; }
@@ -19,6 +20,28 @@ export function MobileBottomNav() {
     window.addEventListener('filmons:unread-changed', update);
     return () => { clearInterval(t); window.removeEventListener('filmons:unread-changed', update); };
   }, [user?.id]);
+
+  // Fade toward translucent while the user is actively scrolling down (out of
+  // the way of content), back to fully opaque near the top or on scroll-up —
+  // a small +/-4px deadzone keeps it from flickering on sub-pixel deltas.
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        if (y < 24) setDimmed(false);
+        else if (y > lastY + 4) setDimmed(true);
+        else if (y < lastY - 4) setDimmed(false);
+        lastY = y;
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const tabs = [
     { to: '/',                                   Icon: Home,          label: 'Home',     badge: 0,          isPrimary: false },
@@ -36,6 +59,8 @@ export function MobileBottomNav() {
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
         paddingBottom: 'env(safe-area-inset-bottom)',
+        opacity: dimmed ? 0.4 : 1,
+        transition: 'opacity 220ms ease',
       }}
     >
       <div className="flex items-end">
