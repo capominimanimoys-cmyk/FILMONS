@@ -553,11 +553,6 @@ export function EditListing() {
     { value: 'other',                label: 'Other',             emoji: '⭐' },
   ];
 
-  const paymentOptions = [
-    { id: 'Credit/Debit Card', label: 'Credit/Debit Card',  icon: '💳' },
-    { id: 'FP',                label: 'FP (Filmons Points)', icon: '⚡' },
-  ];
-
   const contactMethodDefs = [
     { type: 'whatsapp',  label: 'WhatsApp',  icon: <MessageCircle className="w-4 h-4 text-green-600" />,  placeholder: '+1 416-555-0123' },
     { type: 'instagram', label: 'Instagram', icon: <Instagram className="w-4 h-4 text-pink-600" />,       placeholder: '@username' },
@@ -996,24 +991,6 @@ export function EditListing() {
                 <span className="text-[11px] text-gray-400 font-medium">{videoPreviews.length}/10</span>
               </label>
             )}
-          </div>
-        </Section>
-
-        {/* ── Payment Methods ── */}
-        <Section icon="💳" title="Accepted Payment Methods">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {paymentOptions.map(opt => {
-              const selected = paymentMethods.includes(opt.id);
-              return (
-                <button key={opt.id} type="button"
-                  onClick={() => setPaymentMethods(prev => selected ? prev.filter(m => m !== opt.id) : [...prev, opt.id])}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 transition-all ${selected ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
-                  <span className="text-base">{opt.icon}</span>
-                  <span className="flex-1 text-left text-xs font-medium">{opt.label}</span>
-                  {selected && <CheckCircle className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
-                </button>
-              );
-            })}
           </div>
         </Section>
 

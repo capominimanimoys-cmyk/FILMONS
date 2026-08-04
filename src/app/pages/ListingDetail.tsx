@@ -441,17 +441,6 @@ export function ListingDetail() {
                 </div>
               </div>
 
-              {/* Payment methods */}
-              {listing.paymentMethods && listing.paymentMethods.length > 0 && (
-                <div className="bg-gray-50 rounded-2xl p-4">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Accepted payments</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {listing.paymentMethods.map(m => (
-                      <span key={m} className="text-xs bg-white border border-gray-200 text-gray-700 px-2.5 py-1 rounded-full font-medium">{m}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
