@@ -17,94 +17,7 @@ function distanceLabel(km: number) {
   return km < 1 ? `${(km*1000).toFixed(0)} m` : `${km.toFixed(1)} km`;
 }
 
-// ── Action menu (three-dot) ───────────────────────────────────────────────────
-function ActionMenu({ listing, saved, onSave, onClose }: {
-  listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    // Animate in
-    requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)));
-    // Close on outside click
-    const h = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) close(); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  const close = useCallback(() => {
-    setVisible(false);
-    setTimeout(onClose, 180);
-  }, [onClose]);
-
-  const share = async () => {
-    const url = `${window.location.origin}/listing/${listing.id}`;
-    if (navigator.share) { try { await navigator.share({ title: listing.title, url }); } catch {} }
-    else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
-    close();
-  };
-
-  const actions = [
-    {
-      icon: <Bookmark className="w-4 h-4" />,
-      label: saved ? 'Remove from saved' : 'Save listing',
-      color: 'text-gray-800',
-      action: () => { onSave(); close(); },
-    },
-    {
-      icon: <Share2 className="w-4 h-4" />,
-      label: 'Share listing',
-      color: 'text-gray-800',
-      action: share,
-    },
-    {
-      icon: <EyeOff className="w-4 h-4" />,
-      label: 'Hide listing',
-      color: 'text-gray-600',
-      action: () => { toast('Listing hidden'); close(); },
-    },
-    {
-      icon: <Flag className="w-4 h-4" />,
-      label: 'Report listing',
-      color: 'text-red-500',
-      action: () => { toast.info('Report submitted — thank you'); close(); },
-    },
-  ];
-
-  return (
-    // Full-screen backdrop
-    <div className="fixed inset-0 z-[60]" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
-      {/* Menu card */}
-      <div
-        ref={menuRef}
-        style={{
-          opacity:   visible ? 1 : 0,
-          transform: visible ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(-6px)',
-          transition: 'opacity 180ms ease, transform 200ms cubic-bezier(0.34,1.4,0.64,1)',
-          transformOrigin: 'top right',
-          position: 'absolute',
-          top: 0, right: 0,
-          minWidth: '200px',
-        }}
-        className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
-      >
-        {actions.map((a, i) => (
-          <button
-            key={i}
-            onMouseDown={e => { e.stopPropagation(); a.action(); }}
-            onTouchStart={e => { e.stopPropagation(); a.action(); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold hover:bg-gray-50 active:bg-gray-100 transition-colors text-left ${a.color} ${i > 0 ? 'border-t border-gray-50' : ''}`}
-          >
-            {a.icon}{a.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Bottom sheet menu (mobile long-press) ─────────────────────────────────────
+// ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
 function BottomMenuSheet({ listing, saved, onSave, onClose }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
 }) {
@@ -204,8 +117,7 @@ export function ListingCard({ listing, onClick, className = '' }: ListingCardPro
     return savedListingsApi.isSavedSync(user.id, listing.id);
   });
   const [saving,  setSaving]  = useState(false);
-  const [menu,    setMenu]    = useState(false);   // three-dot dropdown
-  const [sheet,   setSheet]   = useState(false);   // long-press bottom sheet
+  const [sheet,   setSheet]   = useState(false);   // three-dot click + long-press both open this
 
   // Long-press detection
   const pressTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -277,8 +189,7 @@ export function ListingCard({ listing, onClick, className = '' }: ListingCardPro
 
   return (
     <>
-      {/* Menus */}
-      {menu  && <div className="relative"><ActionMenu listing={listing} saved={saved} onSave={() => handleSave()} onClose={() => setMenu(false)}/></div>}
+      {/* Menu */}
       {sheet && <BottomMenuSheet listing={listing} saved={saved} onSave={() => handleSave()} onClose={() => setSheet(false)}/>}
 
       <div
@@ -320,28 +231,16 @@ export function ListingCard({ listing, onClick, className = '' }: ListingCardPro
             />
           </button>
 
-          {/* ── Three-dot menu — desktop hover / always on mobile ── */}
+          {/* ── Three-dot menu — desktop hover / always on mobile — opens the same bottom-to-top sheet as long-press ── */}
           <div className="absolute top-2 right-2">
             <button
-              onClick={e => { e.stopPropagation(); setMenu(m => !m); }}
+              onClick={e => { e.stopPropagation(); setSheet(true); }}
               aria-label="More options"
               className="w-8 h-8 flex items-center justify-center rounded-full bg-black/25 backdrop-blur-sm transition-all duration-200 active:scale-90 md:opacity-0 md:group-hover:opacity-100"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               <MoreHorizontal className="w-4 h-4 text-white" />
             </button>
-
-            {/* Dropdown menu (desktop) */}
-            {menu && (
-              <div style={{ position: 'absolute', top: '36px', right: 0, zIndex: 50 }}>
-                <ActionMenu
-                  listing={listing}
-                  saved={saved}
-                  onSave={() => handleSave()}
-                  onClose={() => setMenu(false)}
-                />
-              </div>
-            )}
           </div>
 
           {/* Distance */}
