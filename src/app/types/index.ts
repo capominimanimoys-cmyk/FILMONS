@@ -38,6 +38,8 @@ export interface User {
   profileSetupPercentage?: number;
   emailVerified?:  boolean;
   phoneVerified?:  boolean;
+  /** Parsed `profiles.profile_meta` JSON — skills, gear, socials, secondary roles, etc. */
+  profileMeta?: Record<string, any>;
 }
 
 export interface Comment {

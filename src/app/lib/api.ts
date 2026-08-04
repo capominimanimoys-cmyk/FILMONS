@@ -130,6 +130,7 @@ function profileRowToUser(data: Record<string, any>): User {
     primaryRole:          data.primary_role,
     following:            parsePgArray(data.following),
     followers:            parsePgArray(data.followers),
+    profileMeta:          meta,
   } as User;
 }
 
@@ -459,14 +460,12 @@ export const authApi = {
     // getOne/getAll/getUserListings elsewhere in this file.
     try {
       const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      if (data) {
-        return {
-          id: data.id, email: data.email, name: data.name || data.username || '',
-          username: data.username, avatar: data.avatar_url || data.avatar,
-          accountType: data.account_type || 'renter',
-          following: parsePgArray(data.following), followers: parsePgArray(data.followers),
-        } as User;
-      }
+      // Was hand-mapping just id/email/name/username/avatar/accountType/
+      // followers/following here — bio, location, city, province,
+      // primaryRole, isVerified, and profileMeta (skills/gear/socials/etc.)
+      // all silently came back undefined, which is why host profile pages
+      // looked empty for fields the user had actually filled in.
+      if (data) return profileRowToUser(data);
     } catch {}
     try {
       const { user } = await call<any>(`/users/${userId}`);
