@@ -7,6 +7,8 @@ import {
   MapPin, DollarSign, Clock, CheckCircle, ChevronRight,
   MessageCircle, Instagram, Facebook, Mail, Phone,
   Search, Loader2, Navigation, Sparkles,
+  Layers, Bookmark, Pencil, FileText, Award, Tag,
+  Package, ClipboardList, Undo2, Image as ImageIcon, Film, Truck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ContactMethod, Listing, PricingPackage } from '../types';
@@ -595,7 +597,7 @@ export function EditListing() {
 
         {/* ── Service Category ── */}
         {listingType === 'service' && (
-          <Section icon="🎭" title="Service Category" required>
+          <Section icon={<Layers className="w-4 h-4" />} title="Service Category" required>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {serviceCategories.map(cat => (
                 <button key={cat.value} type="button"
@@ -613,7 +615,7 @@ export function EditListing() {
 
         {/* ── Listing Mode ── */}
         {listingType === 'gear' && (
-          <Section icon="🔖" title="Listing Mode" required>
+          <Section icon={<Bookmark className="w-4 h-4" />} title="Listing Mode" required>
             <div className="grid grid-cols-2 gap-3">
               {[
                 { value: 'rent', emoji: '🔄', label: 'For Rent', sub: 'Daily rental rate' },
@@ -636,27 +638,27 @@ export function EditListing() {
         )}
 
         {/* ── Title ── */}
-        <Section icon="✏️" title="Title" required>
+        <Section icon={<Pencil className="w-4 h-4" />} title="Title" required>
           <input type="text" placeholder="e.g. Sony A7 III Camera Body" value={title} onChange={e => setTitle(e.target.value)} required
             className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-300 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
         </Section>
 
         {/* ── Description ── */}
-        <Section icon="📝" title="Description" required>
+        <Section icon={<FileText className="w-4 h-4" />} title="Description" required>
           <textarea placeholder="Describe your listing in detail…" rows={4} value={description} onChange={e => setDescription(e.target.value)} required
             className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-300 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
         </Section>
 
         {/* ── Qualifications ── */}
         {listingType === 'service' && (
-          <Section icon="🏆" title="Credentials & Qualifications">
+          <Section icon={<Award className="w-4 h-4" />} title="Credentials & Qualifications">
             <textarea placeholder="e.g. 10+ years of experience, film school graduate…" rows={3} value={qualification} onChange={e => setQualification(e.target.value)}
               className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-300 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
           </Section>
         )}
 
         {/* ── Tags ── */}
-        <Section icon="🏷️" title="Tags">
+        <Section icon={<Tag className="w-4 h-4" />} title="Tags">
           <div className="flex gap-2">
             <input type="text" placeholder="e.g. camera, sony, 4k" value={tagInput} onChange={e => setTagInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
@@ -676,7 +678,7 @@ export function EditListing() {
         </Section>
 
         {/* ── Price ── */}
-        <Section icon="💰" title={listingType === 'gear' ? (listingMode === 'sale' ? 'Sale Price (CAD)' : 'Price per Day (CAD)') : 'Hourly Rate (CAD)'} required>
+        <Section icon={<DollarSign className="w-4 h-4" />} title={listingType === 'gear' ? (listingMode === 'sale' ? 'Sale Price (CAD)' : 'Price per Day (CAD)') : 'Hourly Rate (CAD)'} required>
           <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
             <DollarSign className="w-4 h-4 text-gray-400 shrink-0" />
             <input type="number" min="0" step="0.01" placeholder="0.00" value={price} onChange={e => setPrice(e.target.value)} required
@@ -687,7 +689,7 @@ export function EditListing() {
 
         {/* ── Pricing Packages ── */}
         {listingType === 'service' && (
-          <Section icon="📦" title="Pricing Packages">
+          <Section icon={<Package className="w-4 h-4" />} title="Pricing Packages">
             <p className="text-xs text-gray-400 mb-4">Create custom tiers — e.g. Half Day, Full Day, Weekend Bundle</p>
             {pricingPackages.length > 0 && (
               <div className="space-y-3 mb-4">
@@ -745,7 +747,7 @@ export function EditListing() {
         )}
 
         {/* ── Location (with smart search + detector) ── */}
-        <Section icon="📍" title="Location" required>
+        <Section icon={<MapPin className="w-4 h-4" />} title="Location" required>
 
           {/* Smart address search bar */}
           <div ref={suggestionsRef} className="relative mb-4">
@@ -869,11 +871,17 @@ export function EditListing() {
         </Section>
 
         {/* ── Availability ── */}
-        <Section icon="🕐" title="Availability">
+        <Section icon={<Clock className="w-4 h-4" />} title="Availability">
           {listingType === 'service' ? (
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Available Days</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Available Days</p>
+                  <button type="button" onClick={() => setAvailableDays(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'])}
+                    className="text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full px-2.5 py-1 transition-colors shrink-0">
+                    7j/7
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(day => {
                     const selected = availableDays.includes(day);
@@ -888,18 +896,24 @@ export function EditListing() {
                 </div>
               </div>
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Working Hours</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Working Hours</p>
+                  <button type="button" onClick={() => { setStartTime('00:00'); setEndTime('23:59'); }}
+                    className="text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full px-2.5 py-1 transition-colors shrink-0">
+                    24h/24
+                  </button>
+                </div>
                 <div className="flex items-center gap-3">
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <label className="text-[11px] text-gray-400 mb-1 block">Start</label>
                     <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
-                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors" />
+                      className="w-full min-w-0 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors" />
                   </div>
-                  <span className="text-gray-400 font-bold mt-4">→</span>
-                  <div className="flex-1">
+                  <span className="text-gray-400 font-bold mt-4 shrink-0">→</span>
+                  <div className="flex-1 min-w-0">
                     <label className="text-[11px] text-gray-400 mb-1 block">End</label>
                     <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
-                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors" />
+                      className="w-full min-w-0 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors" />
                   </div>
                 </div>
                 {startTime && endTime && <p className="text-xs text-gray-500 mt-2">Available {availableDays.join(', ')} · {startTime} – {endTime}</p>}
@@ -927,21 +941,21 @@ export function EditListing() {
         </Section>
 
         {/* ── Requirements ── */}
-        <Section icon="📋" title="Requirements">
+        <Section icon={<ClipboardList className="w-4 h-4" />} title="Requirements">
           <textarea placeholder={listingType === 'service' ? 'e.g. Client must provide specific equipment…' : 'e.g. Valid ID required, $200 deposit…'}
             rows={3} value={requirements} onChange={e => setRequirements(e.target.value)}
             className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-300 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
         </Section>
 
         {/* ── Cancellation ── */}
-        <Section icon="↩️" title="Cancellation Policy">
+        <Section icon={<Undo2 className="w-4 h-4" />} title="Cancellation Policy">
           <textarea placeholder="e.g. Free cancellation up to 24 hours before the booking…"
             rows={3} value={cancellation} onChange={e => setCancellation(e.target.value)}
             className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-300 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
         </Section>
 
         {/* ── Images ── */}
-        <Section icon="🖼️" title={listingType === 'gear' ? 'Equipment Photos' : 'Portfolio Images'}>
+        <Section icon={<ImageIcon className="w-4 h-4" />} title={listingType === 'gear' ? 'Equipment Photos' : 'Portfolio Images'}>
           <p className="text-xs text-gray-400 mb-3">Up to 10 images · Max 5MB each</p>
           <div className="grid grid-cols-3 gap-3">
             {imagePreviews.map((preview, i) => (
@@ -968,7 +982,7 @@ export function EditListing() {
         </Section>
 
         {/* ── Videos ── */}
-        <Section icon="🎬" title={listingType === 'gear' ? 'Equipment Videos' : 'Portfolio Videos'}>
+        <Section icon={<Film className="w-4 h-4" />} title={listingType === 'gear' ? 'Equipment Videos' : 'Portfolio Videos'}>
           <p className="text-xs text-gray-400 mb-3">Up to 10 videos · Max 50MB each</p>
           <div className="grid grid-cols-3 gap-3">
             {videoPreviews.map((preview, i) => (
@@ -995,7 +1009,7 @@ export function EditListing() {
         </Section>
 
         {/* ── Fulfilment ── */}
-        <Section icon="🚚" title="Fulfilment Options">
+        <Section icon={<Truck className="w-4 h-4" />} title="Fulfilment Options">
           <div className="grid grid-cols-2 gap-3">
             {[{ value: 'pickup', emoji: '📍', label: 'Pickup', sub: 'Buyer collects in person' }, { value: 'delivery', emoji: '🚚', label: 'Delivery', sub: 'You deliver or ship' }].map(opt => {
               const selected = deliveryOptions.includes(opt.value);
@@ -1025,7 +1039,7 @@ export function EditListing() {
         </Section>
 
         {/* ── Contact Methods ── */}
-        <Section icon="📞" title="Contact Methods">
+        <Section icon={<Phone className="w-4 h-4" />} title="Contact Methods">
           <p className="text-xs text-gray-400 mb-4">Let buyers know how to reach you outside of Filmons</p>
           <div className="space-y-2">
             {contactMethodDefs.map(def => {
@@ -1075,11 +1089,11 @@ export function EditListing() {
   );
 }
 
-function Section({ icon, title, required, children }: { icon: string; title: string; required?: boolean; children: React.ReactNode }) {
+function Section({ icon, title, required, children }: { icon: React.ReactNode; title: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="px-4 pt-4 pb-1 flex items-center gap-2.5">
-        <span className="text-lg">{icon}</span>
+        <span className="text-blue-500 shrink-0">{icon}</span>
         <h3 className="text-sm font-bold text-gray-800">{title}</h3>
         {required && <span className="text-red-400 text-sm font-bold">*</span>}
       </div>
