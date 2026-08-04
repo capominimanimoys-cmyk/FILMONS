@@ -38,11 +38,17 @@ interface CP { user: CardUser; isExport?: boolean; }
 //    have headroom above the subject, so 'top' clips the face and plain
 //    'center' still crops close on tall photos. There's no real face
 //    detection here — this is a heuristic, not a guarantee for every photo. ───
-function Photo({ src, alt, style }: { src: string; alt: string; style: React.CSSProperties }) {
+function Photo({ src, alt, style, exportMode }: { src: string; alt: string; style: React.CSSProperties; exportMode?: boolean }) {
   if (src) {
+    // crossOrigin is only needed on the hidden export copy, as a last-resort
+    // fallback for html-to-image's own re-fetch (see the avatar prefetch
+    // effect below) — the visible on-screen copy never captures to canvas,
+    // so it's left off there to avoid it ever failing to load a photo whose
+    // host doesn't answer CORS preflights.
+    const cors = exportMode && !src.startsWith('data:') ? { crossOrigin: 'anonymous' as const } : {};
     return (
       <img
-        src={src} alt={alt} crossOrigin="anonymous"
+        src={src} alt={alt} {...cors}
         style={{ ...style, objectFit: 'cover', objectPosition: 'center 38%', display: 'block' }}
       />
     );
@@ -82,15 +88,15 @@ function ProfileCard({ user, isExport: X }: CP) {
   return (
     <div style={{
       width: X ? EW : '100%', aspectRatio: '2 / 3', background: '#F5F5F3',
-      padding: X ? '32px' : '3%', paddingBottom: X ? '32px' : '0.5%', fontFamily: SF,
-      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      padding: X ? '32px' : '3%', fontFamily: SF,
+      display: 'flex', flexDirection: 'column', justifyContent: 'center',
     }}>
       <div style={{
-        background: '#ffffff', borderRadius: '64px',
+        background: '#ffffff', borderRadius: '80px',
         overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
       }}>
         {/* FILMONS wordmark — inside the card, centered, never over the photo */}
-        <div style={{ padding: X ? '38px 44px 0' : '3.5% 4.1% 0', textAlign: 'center' }}>
+        <div style={{ padding: X ? '46px 56px 0' : '4.3% 5.2% 0', textAlign: 'center' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
             color: '#0f1115', fontSize: X ? 24 : 'clamp(9px, 2.2%, 24px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
@@ -98,16 +104,16 @@ function ProfileCard({ user, isExport: X }: CP) {
 
         {/* Hero photo — 16:10, shorter than 3:2 so the card sits lower overall */}
         <div style={{
-          margin: X ? '18px 44px 0' : '1.7% 4.1% 0',
+          margin: X ? '22px 56px 0' : '2% 5.2% 0',
           aspectRatio: '16 / 10',
-          borderRadius: '36px',
+          borderRadius: '44px',
           overflow: 'hidden',
         }}>
-          <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} />
+          <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} exportMode={X} />
         </div>
 
         {/* Info — one cohesive block: tight rhythm, content-driven, center-aligned */}
-        <div style={{ padding: X ? '18px 44px 36px' : '1.7% 4.1% 3.3%', textAlign: 'center' }}>
+        <div style={{ padding: X ? '22px 56px 46px' : '2% 5.2% 4.3%', textAlign: 'center' }}>
           {/* Name + verified badge */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: X ? '9px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
@@ -222,11 +228,17 @@ export function ShareCard() {
   // avatar into a data URL ourselves so the export node never depends on
   // html-to-image being able to re-fetch it at all.
   const [avatarDataUrl, setAvatarDataUrl] = useState('');
+  // exportCard awaits this before capturing, so a click that lands before the
+  // prefetch below has settled still waits for it instead of racing off the
+  // stale (pre-fetch) avatar URL.
+  const avatarReadyRef = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     const src = userData.avatar;
     if (!src) { setAvatarDataUrl(''); return; }
     let cancelled = false;
-    fetch(src, { cache: 'no-cache' })
+    let markReady: () => void = () => {};
+    avatarReadyRef.current = new Promise(resolve => { markReady = resolve; });
+    fetch(src)
       .then(res => { if (!res.ok) throw new Error(`avatar fetch ${res.status}`); return res.blob(); })
       .then(blob => new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -238,7 +250,8 @@ export function ShareCard() {
       .catch(err => {
         console.error('[ShareCard] avatar prefetch for export failed:', err);
         if (!cancelled) setAvatarDataUrl('');
-      });
+      })
+      .finally(() => markReady());
     return () => { cancelled = true; };
   }, [userData.avatar]);
 
@@ -248,6 +261,10 @@ export function ShareCard() {
     if (!exportRef.current || exporting) return;
     setExporting(true);
     try {
+      // Make sure the avatar has resolved to a data URL (or definitively
+      // failed to) before capturing — otherwise a click that lands mid-fetch
+      // would export against the not-yet-embedded remote URL.
+      await avatarReadyRef.current;
       // Canvas is pinned to a 2:3 ratio via CSS aspect-ratio, so the actual
       // rendered height already reflects that (EW * 1.5) — measuring rather
       // than hardcoding keeps this correct if the ratio ever changes.
