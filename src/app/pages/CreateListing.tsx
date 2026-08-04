@@ -1376,25 +1376,41 @@ export function CreateListing() {
   const handlePublish = async () => {
     if (!user) return;
     if (!form.title.trim()||!form.city.trim()) { toast.error('Title and city are required'); return; }
-    try {
-      setIsSubmitting(true);
-      const payload = buildPayload();
 
-      // Upload new images
-      let imageUrls = [...form.existingImages];
-      if (form.imageFiles.length) {
-        toast.info('Uploading images…');
+    setIsSubmitting(true);
+
+    // Upload new images/videos *before* the try/catch below — a failure here
+    // must stop the publish, not fall through to the "publish anyway via
+    // edge function" recovery path, which would silently succeed minus the
+    // media and leave the user thinking everything worked.
+    let imageUrls = [...form.existingImages];
+    if (form.imageFiles.length) {
+      toast.info('Uploading images…');
+      try {
         const results = await Promise.all(form.imageFiles.map(f=>listingsApi.uploadImage(f)));
         imageUrls = [...imageUrls, ...results.map((r:any)=>r.imageUrl)];
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Image upload failed');
+        setIsSubmitting(false);
+        return;
       }
+    }
 
-      // Upload new videos
-      let videoUrls = [...form.existingVideos];
-      if (form.videoFiles.length) {
-        toast.info('Uploading videos…');
+    let videoUrls = [...form.existingVideos];
+    if (form.videoFiles.length) {
+      toast.info('Uploading videos…');
+      try {
         const results = await Promise.all(form.videoFiles.map(f=>listingsApi.uploadVideo(f)));
         videoUrls = [...videoUrls, ...results.map((r:any)=>r.videoUrl)];
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Video upload failed');
+        setIsSubmitting(false);
+        return;
       }
+    }
+
+    try {
+      const payload = buildPayload();
 
       // Direct Supabase insert
       const { data, error } = await supabase.from('listings').insert({

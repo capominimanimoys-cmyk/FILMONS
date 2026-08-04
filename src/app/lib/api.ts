@@ -995,23 +995,23 @@ export const listingsApi = {
   },
 
   uploadVideo: async (file: File): Promise<{ videoUrl: string }> => {
-    try {
-      const ext  = file.name.split('.').pop() || 'mp4';
-      const path = `listings/videos/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-      const { data, error } = await supabase.storage
-        .from('listings')
-        .upload(path, file, { contentType: file.type, upsert: true });
-      if (!error && data) {
-        const { data: pub } = supabase.storage.from('listings').getPublicUrl(data.path);
-        if (pub?.publicUrl) return { videoUrl: pub.publicUrl };
-      }
-    } catch {}
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve({ videoUrl: reader.result as string });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+    const ext  = file.name.split('.').pop() || 'mp4';
+    const path = `listings/videos/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const { data, error } = await supabase.storage
+      .from('listings')
+      .upload(path, file, { contentType: file.type, upsert: true });
+    if (error || !data) {
+      // No base64 fallback here on purpose — unlike images, a video encoded
+      // as a data: URL is easily 50-100MB+ of text, which reliably hangs
+      // the browser and/or blows past the request size limit on the
+      // listings insert/update. Surface the real error instead of quietly
+      // "succeeding" with a broken listing.
+      console.error('[uploadVideo] storage upload failed:', error);
+      throw new Error(error?.message || 'Video upload failed — check the "listings" storage bucket exists and allows video files');
+    }
+    const { data: pub } = supabase.storage.from('listings').getPublicUrl(data.path);
+    if (!pub?.publicUrl) throw new Error('Video uploaded but no public URL was returned');
+    return { videoUrl: pub.publicUrl };
   },
 
   delete: async (id: string): Promise<void> => {

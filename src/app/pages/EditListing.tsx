@@ -163,7 +163,10 @@ export function EditListing() {
       return () => clearTimeout(t);
     }
     if (id) loadListing(id);
-  }, [isAuthenticated, user, navigate, id]);
+    // user (not user?.id) would re-run this — and re-fetch the whole listing
+    // a second time — every time AuthContext hands back a new object
+    // reference for the same account, e.g. its post-mount getMe() refresh.
+  }, [isAuthenticated, user?.id, navigate, id]); // eslint-disable-line
 
   const loadListing = async (listingId: string) => {
     try {
