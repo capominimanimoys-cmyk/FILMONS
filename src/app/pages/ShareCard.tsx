@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon,
-  Users, Briefcase, Layers, MapPin,
 } from 'lucide-react';
 import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
@@ -68,13 +67,15 @@ function VBar({ X }: { X?: boolean }) {
   return <span style={{ width: '1px', alignSelf: 'stretch', background: '#e5e7eb', margin: X ? '2px 0' : '0.2% 0' }} />;
 }
 
-// ── A stat: small icon + value, no text label — cleaner for a scannable card ──
-function Stat({ icon: Icon, value, X }: { icon: typeof Users; value: string | number; X?: boolean }) {
+// ── A stat: small uppercase label over a big value — no icon ──────────────────
+function Stat({ label, value, X }: { label: string; value: string | number; X?: boolean }) {
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: X ? '7px' : '0.6%', flexShrink: 0 }}>
-      <Icon size={X ? 19 : 16} color="#9ca3af" strokeWidth={2} style={{ flexShrink: 0 }} />
-      <span style={{ color: '#0f1115', fontWeight: 600, flexShrink: 0,
-        fontSize: X ? 23 : 'clamp(8px, 2.1%, 23px)', whiteSpace: 'nowrap' }}>{value}</span>
+    <span style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <span style={{ color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase' as const,
+        letterSpacing: '0.04em', whiteSpace: 'nowrap',
+        fontSize: X ? 13 : 'clamp(6px, 1.2%, 13px)' }}>{label}</span>
+      <span style={{ color: '#0f1115', fontWeight: 800, whiteSpace: 'nowrap',
+        fontSize: X ? 34 : 'clamp(12px, 3.1%, 34px)' }}>{value}</span>
     </span>
   );
 }
@@ -88,15 +89,15 @@ function ProfileCard({ user, isExport: X }: CP) {
   return (
     <div style={{
       width: X ? EW : '100%', aspectRatio: '2 / 3', background: '#F5F5F3',
-      padding: X ? '32px' : '3%', fontFamily: SF,
+      padding: X ? '32px 64px' : '3% 6%', fontFamily: SF,
       display: 'flex', flexDirection: 'column', justifyContent: 'center',
     }}>
       <div style={{
         background: '#ffffff', borderRadius: '80px',
-        overflow: 'hidden', boxShadow: '0 20px 56px rgba(0,0,0,0.08)',
+        overflow: 'hidden', boxShadow: '0px 5px 15px rgba(0, 0, 0, 0.35)',
       }}>
-        {/* FILMONS wordmark — inside the card, centered, never over the photo */}
-        <div style={{ padding: X ? '46px 56px 0' : '4.3% 5.2% 0', textAlign: 'center' }}>
+        {/* FILMONS wordmark — inside the card, left-aligned, never over the photo */}
+        <div style={{ padding: X ? '46px 56px 0' : '4.3% 5.2% 0', textAlign: 'left' }}>
           <span style={{ fontFamily: NEUE, fontWeight: 800, letterSpacing: '0.06em',
             color: '#0f1115', fontSize: X ? 24 : 'clamp(9px, 2.2%, 24px)',
             textTransform: 'uppercase' as const }}>FILMONS</span>
@@ -112,10 +113,10 @@ function ProfileCard({ user, isExport: X }: CP) {
           <Photo src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%' }} exportMode={X} />
         </div>
 
-        {/* Info — one cohesive block: tight rhythm, content-driven, center-aligned */}
-        <div style={{ padding: X ? '22px 56px 46px' : '2% 5.2% 4.3%', textAlign: 'center' }}>
+        {/* Info — one cohesive block: tight rhythm, content-driven, left-aligned */}
+        <div style={{ padding: X ? '22px 56px 46px' : '2% 5.2% 4.3%', textAlign: 'left' }}>
           {/* Name + verified badge */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: X ? '9px' : '0.8%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: X ? '9px' : '0.8%' }}>
             <p style={{ margin: 0, color: '#0f1115', fontWeight: 700, letterSpacing: '-0.02em',
               fontSize: X ? 50 : 'clamp(18px, 4.6%, 50px)' }}>{user.name}</p>
             {user.isVerified && (
@@ -133,26 +134,26 @@ function ProfileCard({ user, isExport: X }: CP) {
           )}
 
           {/* Link row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: X ? '8px' : '0.7%',
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: X ? '8px' : '0.7%',
             marginTop: X ? '10px' : '0.9%' }}>
             <LinkIcon size={X ? 17 : 14} color="#9ca3af" strokeWidth={2} />
             <span style={{ color: '#6b7280', fontWeight: 500,
               fontSize: X ? 20 : 'clamp(7px, 1.9%, 20px)' }}>filmons.app/{user.username}</span>
           </div>
 
-          {/* Stats — icon + value, single row, divider only before location */}
+          {/* Stats — label over a big value, single row, divider only before location */}
           <div style={{
             marginTop: X ? '20px' : '1.9%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap',
-            gap: X ? '18px' : '1.7%',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', flexWrap: 'wrap',
+            gap: X ? '28px' : '2.6%',
           }}>
-            <Stat icon={Users} value={user.followers} X={X} />
-            <Stat icon={Briefcase} value={role} X={X} />
-            <Stat icon={Layers} value={user.projects} X={X} />
+            <Stat label="Followers" value={user.followers} X={X} />
+            <Stat label="Role" value={role} X={X} />
+            <Stat label="Works" value={user.projects} X={X} />
             {user.location && (
               <>
                 <VBar X={X} />
-                <Stat icon={MapPin} value={user.location} X={X} />
+                <Stat label="Location" value={user.location} X={X} />
               </>
             )}
           </div>
