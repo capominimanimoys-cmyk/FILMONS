@@ -6,7 +6,7 @@ import {
   ArrowLeft, ChevronRight, ChevronLeft, Upload, Trash2, Plus, X,
   Check, DollarSign, MapPin, Clock, Image as ImageIcon, Video,
   CheckCircle, Camera, Briefcase, Building2, Users, Tag,
-  Star, Shield, CreditCard, Calendar, Info, Eye, Globe,
+  Star, Shield, Calendar, Info, Eye, Globe,
   Loader2, Zap, AlertCircle, Film,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -142,11 +142,6 @@ const CATEGORIES: Record<ListingKind, string[]> = {
 };
 
 const PROVINCES = ['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'];
-
-const PAYMENT_OPTIONS = [
-  'Credit Card', 'Debit Card', 'Apple Pay', 'Google Pay',
-  'PayPal', 'Stripe', 'E-Transfer', 'Cash', 'Bank Transfer',
-];
 
 const PAYMENT_TIMING = ['Full Payment Upfront', 'Deposit + Balance', 'On Pickup / Delivery', 'Custom'];
 const CANCELLATION_POLICIES = ['Flexible (Full refund 24h before)', 'Moderate (Full refund 7 days before)', 'Strict (50% refund only)', 'Custom'];
@@ -742,33 +737,12 @@ function Step5({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
 
 // ── Step 6 — Payment Methods ───────────────────────────────────────────────────
 function Step6({ form, set }: { form: FormState; set: (f: Partial<FormState>) => void }) {
-  const toggle = (method: string) => {
-    set({ acceptedPayments: form.acceptedPayments.includes(method)
-      ? form.acceptedPayments.filter(m=>m!==method)
-      : [...form.acceptedPayments, method]
-    });
-  };
   return (
     <div className="space-y-4">
       <div className="text-center mb-6">
         <h2 className="text-xl font-black text-gray-900">Payment Methods</h2>
         <p className="text-sm text-gray-500 mt-1">How can people pay you?</p>
       </div>
-
-      <SectionCard title="Accepted Payments" icon={<CreditCard className="w-4 h-4"/>}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {PAYMENT_OPTIONS.map(opt=>{
-            const selected=form.acceptedPayments.includes(opt);
-            return (
-              <button key={opt} type="button" onClick={()=>toggle(opt)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 text-left transition-all ${selected?'border-blue-500 bg-blue-50 text-blue-700':'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
-                {selected?<CheckCircle className="w-4 h-4 text-blue-500 shrink-0"/>:<div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0"/>}
-                <span className="text-xs font-medium">{opt}</span>
-              </button>
-            );
-          })}
-        </div>
-      </SectionCard>
 
       <SectionCard title="Payment Timing" icon={<Clock className="w-4 h-4"/>}>
         <div className="space-y-2">
@@ -1448,8 +1422,11 @@ export function CreateListing() {
           city: payload.city, province: payload.province||undefined,
           postalCode: payload.postal_code||undefined,
           streetAddress: payload.street_address||undefined,
-          images: [...form.existingImages,...form.imagePreviews],
-          videos: [...form.existingVideos,...form.videoPreviews],
+          // Use the already-uploaded URLs, not the local base64 previews —
+          // listingsApi.create() strips any non-"http" entry, which would
+          // silently empty images/videos if previews leaked in here.
+          images: imageUrls,
+          videos: videoUrls,
           listingType: payload.listing_type,
           listingMode: payload.listing_mode as any,
           paymentMethods: payload.payment_methods,
