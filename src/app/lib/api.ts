@@ -391,16 +391,9 @@ export const authApi = {
   getMe: async (): Promise<{ user: User }> => {
     const cached = loadSession();
     if (!cached) throw new Error('Not authenticated');
-    // Try edge function first
-    try {
-      const { user } = await call<any>(`/users/${cached.id}`);
-      if (user) {
-        // Merge with cached so fields the edge fn doesn't return (e.g. primaryRole) are preserved
-        const merged = { ...cached, ...user } as User;
-        saveSession(merged); return { user: merged };
-      }
-    } catch { /* edge function blocked — try Supabase direct */ }
-    // Fallback: read directly from profiles table
+    // Direct Supabase first — the edge function can take up to its 12s
+    // timeout to fail, which delayed this background refresh (and the
+    // profile field updates it carries) on every page mount.
     try {
       const { data } = await supabase
         .from('profiles')
@@ -444,6 +437,15 @@ export const authApi = {
         saveSession(fresh);
         return { user: fresh };
       }
+    } catch { /* Supabase blocked — try the edge function */ }
+    // Fallback: edge function
+    try {
+      const { user } = await call<any>(`/users/${cached.id}`);
+      if (user) {
+        // Merge with cached so fields the edge fn doesn't return (e.g. primaryRole) are preserved
+        const merged = { ...cached, ...user } as User;
+        saveSession(merged); return { user: merged };
+      }
     } catch { /* use cached */ }
     return { user: cached };
   },
@@ -451,18 +453,26 @@ export const authApi = {
   getCurrentUser: (): User | null => loadSession(),
 
   getUserById: async (userId: string): Promise<User | null> => {
+    // Direct Supabase first — the edge function can take up to its 12s
+    // timeout to fail, which made every page that shows a host profile
+    // (listing detail, etc.) feel stuck. Same direct-first pattern as
+    // getOne/getAll/getUserListings elsewhere in this file.
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      if (data) {
+        return {
+          id: data.id, email: data.email, name: data.name || data.username || '',
+          username: data.username, avatar: data.avatar_url || data.avatar,
+          accountType: data.account_type || 'renter',
+          following: parsePgArray(data.following), followers: parsePgArray(data.followers),
+        } as User;
+      }
+    } catch {}
     try {
       const { user } = await call<any>(`/users/${userId}`);
       return user || null;
     } catch {
-      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      if (!data) return null;
-      return {
-        id: data.id, email: data.email, name: data.name || data.username || '',
-        username: data.username, avatar: data.avatar_url || data.avatar,
-        accountType: data.account_type || 'renter',
-        following: parsePgArray(data.following), followers: parsePgArray(data.followers),
-      } as User;
+      return null;
     }
   },
 

@@ -84,14 +84,16 @@ export function ListingDetail() {
   const loadListing = async (listingId: string) => {
     try {
       setLoading(true);
-      const data = await listingsApi.getOne(listingId);
-      setListing(data);
-      const [hostData, reviewData] = await Promise.all([
-        authApi.getUserById(data.userId),
+      // Reviews only need the id from the route, not the listing itself —
+      // fetch them alongside the listing instead of waiting on it first.
+      const [data, reviewData] = await Promise.all([
+        listingsApi.getOne(listingId),
         reviewsApi.getListingReviews(listingId),
       ]);
-      setHost(hostData);
+      setListing(data);
       setReviews(reviewData);
+      const hostData = await authApi.getUserById(data.userId);
+      setHost(hostData);
     } catch (error: any) {
       toast.error(error?.message || 'Listing not found');
     } finally {
