@@ -1,6 +1,11 @@
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  // Wildcard rather than an explicit list — some antivirus/corporate proxies
+  // inject extra request headers (e.g. `x-connection-encrypted`) that
+  // aren't in a fixed allow-list, which fails the CORS preflight before the
+  // request is ever sent. Safe as '*' here since nothing on this endpoint
+  // relies on credentialed (cookie-based) requests.
+  'Access-Control-Allow-Headers': '*',
 };
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';

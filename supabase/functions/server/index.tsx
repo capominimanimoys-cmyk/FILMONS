@@ -31,7 +31,12 @@ app.use(
   "*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Authorization", "apikey", "x-client-info"],
+    // Wildcard rather than a fixed list — some antivirus/corporate proxies
+    // inject extra request headers (e.g. `x-connection-encrypted`) that
+    // aren't in a fixed allow-list, which fails the CORS preflight before
+    // the request is ever sent. Safe as "*" since nothing here relies on
+    // credentialed (cookie-based) requests.
+    allowHeaders: ["*"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
   }),
 );
