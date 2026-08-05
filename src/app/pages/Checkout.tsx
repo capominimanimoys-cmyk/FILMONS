@@ -351,7 +351,7 @@ export function Checkout() {
         const result = await res.json();
         toast.dismiss('checkout-verify');
         if (!res.ok || result.error) {
-          console.error('[stripe-charge/verify] failed:', { sessionId, status: res.status, result });
+          console.error(`[stripe-charge/verify] failed: sessionId=${sessionId} status=${res.status} result=${JSON.stringify(result)}`);
           toast.error(result.error || 'Payment verification failed');
           return;
         }
