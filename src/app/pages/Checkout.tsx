@@ -382,7 +382,23 @@ export function Checkout() {
             listing_title:  pay.listingTitle,
           },
         });
-        if (error || !data?.url) { toast.error(data?.error || 'Could not start payment'); setStripeRedirecting(false); return; }
+        if (error || !data?.url) {
+          // supabase-js only resolves `data` on a 2xx response — on the
+          // 400/500s stripe-charge returns for real errors ("Stripe not
+          // configured", Stripe's own validation message, etc.), `data` is
+          // null and the actual reason lives on error.context (the raw
+          // Response), not error.message. Without unpacking it, every
+          // failure just showed "Could not start payment" with no way to
+          // tell a Stripe rejection from a missing secret key.
+          let msg = data?.error || 'Could not start payment';
+          if (!data?.error && (error as any)?.context?.json) {
+            try { const body = await (error as any).context.json(); if (body?.error) msg = body.error; } catch {}
+          }
+          console.error('[stripe-charge] failed:', error, data);
+          toast.error(msg);
+          setStripeRedirecting(false);
+          return;
+        }
         window.location.href = data.url;
       } catch (e: any) {
         toast.error(`Payment error: ${e?.message}`);
