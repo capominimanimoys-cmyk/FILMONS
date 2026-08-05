@@ -30,6 +30,128 @@ function getListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
 }
 
+// sessionStorage key for the signed-agreement data a card payment needs to
+// survive the full-page redirect to Stripe and back (see finalizeOrder below).
+const pendingAgreementKey = (sessionId: string) => `filmons_pending_agreement_${sessionId}`;
+
+// ── Shared order finalisation ────────────────────────────────────────────────
+// Both payment paths (FP/cash — synchronous — and card — after the Stripe
+// redirect returns) need to do the exact same thing once money has actually
+// moved: send the renter+host their agreement/receipt emails, and write the
+// order + both sides' transactions. Previously only the FP/cash path did
+// this; the card path's post-redirect handler wrote a couple of ad-hoc
+// transaction rows and nothing else, so card payments never created an
+// `orders` row and never sent the confirmation emails.
+async function finalizeOrder(params: {
+  pay: { listingTitle?: string; listingType?: string; listingMode?: string; startDate?: string; duration?: number; durationType?: string };
+  totalAmount: number;
+  selectedMethod: string;
+  signedAgreement: SignedAgreementData;
+  hostUser: { id?: string; name?: string; email?: string } | null;
+  user: { id?: string; name?: string } | null;
+  convId: string;
+  msgId: string;
+  hostEarnings: number; // amount credited to the host — callers decide the platform fee, if any
+}) {
+  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, hostEarnings } = params;
+  const today = new Date().toISOString().split('T')[0];
+  const signedAt = new Date().toLocaleString('en-CA', { timeZone: 'America/Toronto' }) + ' EST';
+  const sharedParams = {
+    ref_no: sa.refNo, today, signed_at: signedAt,
+    renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
+    host_name: hostUser?.name || '—', listing_title: pay.listingTitle,
+    listing_type: pay.listingType || 'Rental', start_date: pay.startDate || '—',
+    duration: `${pay.duration || 1} ${pay.durationType || 'day(s)'}`,
+    payment_method: selectedMethod, total_amount: `$${totalAmount.toFixed(2)}`,
+    year: String(new Date().getFullYear()),
+  };
+
+  emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templates.rentalAgreement, {
+    ...sharedParams,
+    to_email: sa.renterEmail, to_name: sa.renterName,
+    agreement_url: sa.agreementUrl, receipt_url: sa.receiptUrl,
+    greeting_message: 'Your payment is confirmed. Your rental agreement and receipt are ready.',
+    id_photo_url: sa.idUrl, proof_url: sa.proofUrl,
+    reply_to: EMAILJS_CONFIG.filmons.email,
+  }, EMAILJS_CONFIG.publicKey).catch(e => console.warn('Renter email failed:', e));
+
+  emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templates.rentalAgreement, {
+    ...sharedParams,
+    to_email: hostUser?.email || EMAILJS_CONFIG.filmons.email, to_name: hostUser?.name || 'Host',
+    agreement_url: sa.hostAgreementUrl, receipt_url: sa.receiptUrl,
+    greeting_message: `${sa.renterName} has paid. Rental agreement and receipt are attached.`,
+    id_photo_url: sa.idUrl, proof_url: sa.proofUrl, reply_to: sa.renterEmail,
+  }, EMAILJS_CONFIG.publicKey).catch(e => console.warn('Host email failed:', e));
+
+  const orderId = `ORD-${sa.refNo}`;
+  const txId    = `tx_${sa.refNo}_${Date.now()}`;
+
+  await supabase.from('transactions').insert({
+    id:            txId,
+    user_id:       user?.id,
+    type:          'order_payment',
+    fp_amount:     0,
+    cad_amount:    -totalAmount,
+    description:   `Payment for ${pay.listingTitle}`,
+    status:        'completed',
+    payment_method: selectedMethod,
+    order_id:      orderId,
+    listing_title: pay.listingTitle,
+    counterpart_id:   hostUser?.id,
+    counterpart_name: hostUser?.name || null,
+    metadata: {
+      listing_type: pay.listingType,
+      start_date:   pay.startDate,
+      duration:     pay.duration,
+      duration_type: pay.durationType,
+      ref_no:       sa.refNo,
+      receipt_no:   sa.receiptNo,
+    },
+  }).then(() => supabase.from('orders').insert({
+    id:                orderId,
+    type:              (pay.listingType === 'Service' ? 'service' : pay.listingMode === 'sale' ? 'sale' : 'rental'),
+    status:            'paid',
+    renter_id:         user?.id,
+    host_id:           hostUser?.id,
+    renter_name:       sa.renterName,
+    renter_email:      sa.renterEmail,
+    host_name:         hostUser?.name || null,
+    listing_title:     pay.listingTitle,
+    listing_type:      pay.listingType || 'Rental',
+    start_date:        pay.startDate || null,
+    duration:          pay.duration || 1,
+    duration_type:     pay.durationType || 'day',
+    total_amount:      totalAmount,
+    payment_method:    selectedMethod,
+    currency:          'CAD',
+    transaction_id:    txId,
+    agreement_id:      sa.refNo,
+    receipt_id:        sa.receiptNo,
+    conversation_id:   convId,
+    message_id:        msgId,
+    agreement_url:     sa.agreementUrl,
+    host_agreement_url: sa.hostAgreementUrl,
+    receipt_url:       sa.receiptUrl,
+    paid_at:           new Date().toISOString(),
+  })).catch(e => console.warn('Order/transaction save failed:', e));
+
+  if (hostUser?.id) {
+    supabase.from('transactions').insert({
+      user_id:       hostUser.id,
+      type:          'order_earning',
+      fp_amount:     0,
+      cad_amount:    hostEarnings,
+      description:   `Earning from ${pay.listingTitle}`,
+      status:        'completed',
+      order_id:      orderId,
+      listing_title: pay.listingTitle,
+      counterpart_id:   user?.id,
+      counterpart_name: sa.renterName,
+      metadata: { ref_no: sa.refNo },
+    }).catch(() => {});
+  }
+}
+
 import { PaymentLogo } from '../components/PaymentLogos';
 import { StripeCardForm } from '../components/StripeCardForm';
 
@@ -214,7 +336,10 @@ export function Checkout() {
   useEffect(() => {
     const checkoutSuccess = params.get('checkout_success');
     const sessionId       = params.get('session_id');
-    if (checkoutSuccess !== '1' || !sessionId || !user) return;
+    // Also wait for `msg` (loaded async from convId/msgId) — it carries
+    // paymentRequest details finalizeOrder needs, and without this guard
+    // the effect could run before that load finishes.
+    if (checkoutSuccess !== '1' || !sessionId || !user || !msg) return;
 
     (async () => {
       toast.loading('Verifying payment…', { id: 'checkout-verify' });
@@ -234,12 +359,28 @@ export function Checkout() {
             `Card payment for "${msg?.paymentRequest?.listingTitle || 'listing'}"`,
             { method: 'Credit/Debit Card', stripe_session: sessionId }
           );
-          supabase.from('transactions').insert([
-            { user_id: user.id, type: 'order_payment', fp_amount: 0, cad_amount: -(result.cad_amount), description: `Card payment for "${msg?.paymentRequest?.listingTitle}"`, status: 'completed', payment_method: 'stripe', stripe_session_id: sessionId, counterpart_id: hostUser.id },
-            { user_id: hostUser.id, type: 'order_earning', fp_amount: 0, cad_amount: result.cad_amount, description: `Payment for "${msg?.paymentRequest?.listingTitle}"`, status: 'completed', payment_method: 'stripe', stripe_session_id: sessionId, counterpart_id: user.id },
-          ]).catch(() => {});
           window.dispatchEvent(new CustomEvent('filmons:wallet:updated', { detail: { userId: hostUser.id } }));
         }
+
+        // Restore what handlePay stashed before the Stripe redirect wiped
+        // React state, and run the same order/transactions/email flow the
+        // FP/cash path runs synchronously. Without this, card payments
+        // never wrote an `orders` row and never sent the confirmation
+        // emails — only the ad-hoc transaction rows above happened.
+        const key = pendingAgreementKey(sessionId);
+        const pending = sessionStorage.getItem(key);
+        if (pending) {
+          sessionStorage.removeItem(key);
+          try {
+            const { signedAgreement: sa, totalAmount: paidAmount, selectedMethod: method } = JSON.parse(pending);
+            await finalizeOrder({
+              pay: msg.paymentRequest!, totalAmount: paidAmount, selectedMethod: method,
+              signedAgreement: sa, hostUser, user, convId, msgId,
+              hostEarnings: result.cad_amount, // full amount — no platform fee for card payments, matching prior behaviour
+            });
+          } catch (e) { console.warn('finalizeOrder failed:', e); }
+        }
+
         setStep('done');
         window.history.replaceState({}, '', `${window.location.pathname}?conv=${convId}&msg=${msgId}`);
         toast.success('✅ Payment confirmed!');
@@ -248,7 +389,7 @@ export function Checkout() {
         toast.error(`Verification failed: ${e?.message}`);
       }
     })();
-  }, [params.get('checkout_success'), user?.id, hostUser?.id]);
+  }, [params.get('checkout_success'), user?.id, hostUser?.id, msg]);
   const [deliveryAddress, setDeliveryAddress] = useState<AddressFields>({ street: '', city: '', province: '', postal: '' });
   const [submitting, setSubmitting] = useState(false);
   // ── Load payment request ───────────────────────────────────────
@@ -399,6 +540,17 @@ export function Checkout() {
           setStripeRedirecting(false);
           return;
         }
+        // Stripe Checkout is a full-page redirect — every bit of React state
+        // (signedAgreement included) is gone once the browser comes back.
+        // Stash what finalizeOrder needs, keyed by the session id so the
+        // checkout_success handler below can restore it after verifying payment.
+        if (signedAgreement && data.session_id) {
+          try {
+            sessionStorage.setItem(pendingAgreementKey(data.session_id), JSON.stringify({
+              signedAgreement, totalAmount, selectedMethod,
+            }));
+          } catch { /* storage full/unavailable — finalizeOrder just won't run on return */ }
+        }
         window.location.href = data.url;
       } catch (e: any) {
         toast.error(`Payment error: ${e?.message}`);
@@ -490,110 +642,10 @@ export function Checkout() {
 
     // ── After payment: send emails + save to orders table ──────────
     if (signedAgreement) {
-      const sa = signedAgreement;
-      const today = new Date().toISOString().split('T')[0];
-      const signedAt = new Date().toLocaleString('en-CA', { timeZone: 'America/Toronto' }) + ' EST';
-      const sharedParams = {
-        ref_no: sa.refNo, today, signed_at: signedAt,
-        renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
-        host_name: hostUser?.name || '—', listing_title: pay.listingTitle,
-        listing_type: pay.listingType || 'Rental', start_date: pay.startDate || '—',
-        duration: `${pay.duration||1} ${pay.durationType||'day(s)'}`,
-        payment_method: selectedMethod, total_amount: `$${totalAmount.toFixed(2)}`,
-        year: String(new Date().getFullYear()),
-      };
-      // Email to renter — with their own document links
-      emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templates.rentalAgreement, {
-        ...sharedParams,
-        to_email: sa.renterEmail, to_name: sa.renterName,
-        agreement_url: sa.agreementUrl, receipt_url: sa.receiptUrl,
-        greeting_message: 'Your payment is confirmed. Your rental agreement and receipt are ready.',
-        id_photo_url: sa.idUrl,    // renter can access their own ID
-        proof_url: sa.proofUrl,    // renter can access their own proof
-        reply_to: EMAILJS_CONFIG.filmons.email,
-      }, EMAILJS_CONFIG.publicKey).catch(e => console.warn('Renter email failed:', e));
-
-      // Email to host
-      emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templates.rentalAgreement, {
-        ...sharedParams,
-        to_email: hostUser?.email || EMAILJS_CONFIG.filmons.email, to_name: hostUser?.name || 'Host',
-        agreement_url: sa.hostAgreementUrl, receipt_url: sa.receiptUrl,
-        greeting_message: `${sa.renterName} has paid. Rental agreement and receipt are attached.`,
-        id_photo_url: sa.idUrl, proof_url: sa.proofUrl, reply_to: sa.renterEmail,
-      }, EMAILJS_CONFIG.publicKey).catch(e => console.warn('Host email failed:', e));
-
-      // Save transaction first, then order with transaction_id
-      const orderId = `ORD-${sa.refNo}`;
-      const txId    = `tx_${sa.refNo}_${Date.now()}`;
-
-      supabase.from('transactions').insert({
-        id:            txId,
-        user_id:       user?.id,
-        type:          'order_payment',
-        fp_amount:     0,
-        cad_amount:    -totalAmount,
-        description:   `Payment for ${pay.listingTitle}`,
-        status:        'completed',
-        payment_method: selectedMethod,
-        order_id:      orderId,
-        listing_title: pay.listingTitle,
-        counterpart_id:   hostUser?.id,
-        counterpart_name: hostUser?.name || null,
-        metadata: {
-          listing_type: pay.listingType,
-          start_date:   pay.startDate,
-          duration:     pay.duration,
-          duration_type: pay.durationType,
-          ref_no:       sa.refNo,
-          receipt_no:   sa.receiptNo,
-        },
-      }).then(() => {
-        // Save order with transaction reference
-        return supabase.from('orders').insert({
-          id:                orderId,
-          type:              (pay.listingType === 'Service' ? 'service' : pay.listingMode === 'sale' ? 'sale' : 'rental'),
-          status:            'paid',
-          renter_id:         user?.id,
-          host_id:           hostUser?.id,
-          renter_name:       sa.renterName,
-          renter_email:      sa.renterEmail,
-          host_name:         hostUser?.name || null,
-          listing_title:     pay.listingTitle,
-          listing_type:      pay.listingType || 'Rental',
-          start_date:        pay.startDate || null,
-          duration:          pay.duration || 1,
-          duration_type:     pay.durationType || 'day',
-          total_amount:      totalAmount,
-          payment_method:    selectedMethod,
-          currency:          'CAD',
-          transaction_id:    txId,
-          agreement_id:      sa.refNo,
-          receipt_id:        sa.receiptNo,
-          conversation_id:   convId,
-          message_id:        msgId,
-          agreement_url:     sa.agreementUrl,
-          host_agreement_url: sa.hostAgreementUrl,
-          receipt_url:       sa.receiptUrl,
-          paid_at:           new Date().toISOString(),
-        });
-      }).catch(e => console.warn('Order/transaction save failed:', e));
-
-      // Also save earning transaction for host
-      if (hostUser?.id) {
-        supabase.from('transactions').insert({
-          user_id:       hostUser.id,
-          type:          'order_earning',
-          fp_amount:     0,
-          cad_amount:    totalAmount * 0.9, // 10% platform fee
-          description:   `Earning from ${pay.listingTitle}`,
-          status:        'completed',
-          order_id:      orderId,
-          listing_title: pay.listingTitle,
-          counterpart_id:   user?.id,
-          counterpart_name: sa.renterName,
-          metadata: { ref_no: sa.refNo },
-        }).catch(() => {});
-      }
+      finalizeOrder({
+        pay, totalAmount, selectedMethod, signedAgreement, hostUser, user, convId, msgId,
+        hostEarnings: totalAmount * 0.9, // 10% platform fee
+      }).catch(e => console.warn('finalizeOrder failed:', e));
     }
   };
 
