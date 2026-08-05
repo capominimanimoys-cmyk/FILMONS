@@ -72,7 +72,8 @@ Deno.serve(async (req) => {
     // rows using the cad_amount this returns). Requiring fp_amount to be
     // truthy rejected every real cash payment as "Missing metadata" before
     // any transaction was ever written.
-    if (!userId) return new Response(JSON.stringify({ error: 'Missing metadata' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    // TEMP DEBUG — remove once the "Missing metadata" root cause is found.
+    if (!userId) return new Response(JSON.stringify({ error: 'Missing metadata', debug_metadata: session.metadata, debug_session_id: session.id }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     // Check if already credited (idempotency)
     const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/transactions?stripe_session_id=eq.${sessionId}&select=id`, {
