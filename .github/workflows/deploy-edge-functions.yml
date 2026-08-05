@@ -23,7 +23,17 @@ jobs:
           cp -r supabase/functions/server/* supabase/functions/make-server-ec8fe879/
           cp supabase/functions/make-server-ec8fe879/index.tsx supabase/functions/make-server-ec8fe879/index.ts
 
-      - name: Deploy
+      - name: Deploy make-server-ec8fe879
         run: supabase functions deploy make-server-ec8fe879 --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # This step used to be missing entirely, which meant every push to
+      # supabase/functions/stripe-charge/** ran this workflow (its path
+      # matches the trigger above) but never actually redeployed it — the
+      # step below only ever touched make-server-ec8fe879. Fixes to
+      # stripe-charge silently never went live until manually deployed.
+      - name: Deploy stripe-charge
+        run: supabase functions deploy stripe-charge --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
