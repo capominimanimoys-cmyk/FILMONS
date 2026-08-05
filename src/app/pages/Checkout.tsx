@@ -350,7 +350,11 @@ export function Checkout() {
         );
         const result = await res.json();
         toast.dismiss('checkout-verify');
-        if (!res.ok || result.error) { toast.error(result.error || 'Payment verification failed'); return; }
+        if (!res.ok || result.error) {
+          console.error('[stripe-charge/verify] failed:', { sessionId, status: res.status, result });
+          toast.error(result.error || 'Payment verification failed');
+          return;
+        }
 
         // Credit host's CAD wallet
         if (hostUser?.id && result.cad_amount > 0) {
