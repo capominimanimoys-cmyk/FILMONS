@@ -319,9 +319,7 @@ export function Checkout() {
   const msgId  = params.get('msg')  || '';
 
   const [step, setStep] = useState<Step>('review');
-  // TEMP(test-checkout): defaults to true to skip the sign-agreement gate
-  // while testing checkout. Revert to `useState(false)` before shipping.
-  const [agreementAccepted, setAgreementAccepted] = useState(true);
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
   const [showAgreementModal, setShowAgreementModal] = useState(false);
   const [signedAgreement, setSignedAgreement] = useState<SignedAgreementData | null>(null);
   const [cardData, setCardData] = useState<any>(null);
