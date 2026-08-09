@@ -7,7 +7,7 @@ import { sendEmail } from '../lib/emailjs-config';
 import {
   ShieldCheck, ArrowLeft, ChevronRight, ChevronLeft, ChevronDown,
   Check, Upload, Camera, FileText, User, MapPin, CreditCard, AlertCircle,
-  Eye, CheckCircle, X, Loader2, Info, Search, Navigation,
+  Eye, CheckCircle, X, Loader2, Info, Search, Navigation, XCircle,
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from "../../lib/supabase";
@@ -262,12 +262,45 @@ function FileUploadZone({ label, accept, value, onChange }: {
   );
 }
 
+// ── Step hero — shared gradient header card for every step ──────────
+function StepHero({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
+  return (
+    <div
+      className="relative overflow-hidden rounded-[28px] p-5 text-white shadow-lg shadow-blue-900/10"
+      style={{ background: 'linear-gradient(135deg,#2563eb 0%,#4338ca 55%,#3730a3 100%)' }}
+    >
+      <div className="absolute -top-10 -right-8 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="absolute -bottom-12 -left-6 w-32 h-32 bg-indigo-300/20 rounded-full blur-2xl pointer-events-none" />
+      <div className="relative flex items-center gap-3.5">
+        <div className="w-11 h-11 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center ring-1 ring-white/25 shrink-0">
+          {icon}
+        </div>
+        <div>
+          <h2 className="text-lg font-bold tracking-tight">{title}</h2>
+          <p className="text-blue-100/90 text-xs mt-0.5">{subtitle}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Guideline row — icon-badged do/don't line, used in place of emoji bullets ──
+function GuidelineRow({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2.5 text-sm text-gray-700">
+      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ok ? 'bg-green-100' : 'bg-red-100'}`}>
+        {ok ? <Check className="w-3 h-3 text-green-600" /> : <XCircle className="w-3 h-3 text-red-500" />}
+      </div>
+      <span>{children}</span>
+    </div>
+  );
+}
+
 export function Verification() {
   const { user, isAuthenticated, updateUser } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
-  const [submitting, setSubmitting] = useState(false);
 
   // Step 1: Personal info
   const [legalName, setLegalName] = useState('');
@@ -610,7 +643,7 @@ export function Verification() {
   if (!user) return null;
   if (user.isVerified) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto"><ShieldCheck className="w-10 h-10 text-green-600"/></div>
           <h2 className="text-2xl font-bold text-gray-900">Already Verified</h2>
@@ -623,7 +656,7 @@ export function Verification() {
 
   if (user.verificationStatus === 'pending') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto"><Loader2 className="w-10 h-10 text-amber-500 animate-spin"/></div>
           <h2 className="text-2xl font-bold text-gray-900">Review in Progress</h2>
@@ -638,7 +671,7 @@ export function Verification() {
     const localReqs = (() => { try { return JSON.parse(localStorage.getItem('verificationRequests') || '[]'); } catch { return []; } })();
     const myReq = localReqs.find((r: any) => r.userId === user.id);
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto"><X className="w-10 h-10 text-red-500"/></div>
           <h2 className="text-2xl font-bold text-gray-900">Verification Denied</h2>
@@ -654,7 +687,7 @@ export function Verification() {
     const localReqs = (() => { try { return JSON.parse(localStorage.getItem('verificationRequests') || '[]'); } catch { return []; } })();
     const myReq = localReqs.find((r: any) => r.userId === user.id);
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto"><Upload className="w-10 h-10 text-orange-500"/></div>
           <h2 className="text-2xl font-bold text-gray-900">New Documents Required</h2>
@@ -667,21 +700,25 @@ export function Verification() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
       {/* Header */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => step > 1 ? setStep(s => s - 1) : navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-gray-900">Creator+ Verification</h1>
-            <p className="text-xs text-gray-400">Step {step} of {STEPS.length} — {STEPS[step-1].label}</p>
+      <div className="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-10">
+        <div className="max-w-lg mx-auto px-4 py-3">
+          <div className="flex items-center gap-3">
+            <button onClick={() => step > 1 ? setStep(s => s - 1) : navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors shrink-0">
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base font-bold text-gray-900">Creator+ Verification</h1>
+              <p className="text-xs text-gray-400 truncate">{STEPS[step-1].label}</p>
+            </div>
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full shrink-0">{step}/{STEPS.length}</span>
           </div>
-          <div className="flex items-center gap-1">
-            {STEPS.map(s => (
-              <div key={s.id} className={`h-1.5 rounded-full transition-all ${s.id < step ? 'w-4 bg-green-400' : s.id === step ? 'w-8 bg-blue-600' : 'w-4 bg-gray-200'}`} />
-            ))}
+          <div className="mt-2.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${(step / STEPS.length) * 100}%`, background: 'linear-gradient(90deg,#3b82f6,#4f46e5)' }}
+            />
           </div>
         </div>
       </div>
@@ -691,12 +728,7 @@ export function Verification() {
         {/* ── Step 1: Personal Information ── */}
         {step === 1 && (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><User className="w-5 h-5 text-white"/></div>
-                <div><h2 className="text-lg font-bold">Personal Information</h2><p className="text-blue-200 text-xs">Provide your legal details for identity verification</p></div>
-              </div>
-            </div>
+            <StepHero icon={<User className="w-5 h-5"/>} title="Personal Information" subtitle="Provide your legal details for identity verification" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               <div className="space-y-1.5">
@@ -829,12 +861,7 @@ export function Verification() {
         {/* ── Step 2: Document Upload ── */}
         {step === 2 && (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><Upload className="w-5 h-5"/></div>
-                <div><h2 className="text-lg font-bold">Document Upload</h2><p className="text-blue-200 text-xs">Upload your proof of address and government ID</p></div>
-              </div>
-            </div>
+            <StepHero icon={<Upload className="w-5 h-5"/>} title="Document Upload" subtitle="Upload your proof of address and government ID" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-5">
               <div>
@@ -856,12 +883,7 @@ export function Verification() {
         {/* ── Step 3: Consent & Legal ── */}
         {step === 3 && (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><ShieldCheck className="w-5 h-5"/></div>
-                <div><h2 className="text-lg font-bold">Consent & Legal Agreements</h2><p className="text-blue-200 text-xs">Please read and agree to the following terms</p></div>
-              </div>
-            </div>
+            <StepHero icon={<ShieldCheck className="w-5 h-5"/>} title="Consent & Legal Agreements" subtitle="Please read and agree to the following terms" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               {[
@@ -899,17 +921,12 @@ export function Verification() {
         {/* ── Step 4: Permissions ── */}
         {step === 4 && (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><Camera className="w-5 h-5"/></div>
-                <div><h2 className="text-lg font-bold">App Permissions</h2><p className="text-blue-200 text-xs">We need access to complete your verification</p></div>
-              </div>
-            </div>
+            <StepHero icon={<Camera className="w-5 h-5"/>} title="App Permissions" subtitle="We need access to complete your verification" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               {[
                 {
-                  key: 'camera', granted: cameraGranted, icon: '📷', title: 'Camera Access',
+                  key: 'camera', granted: cameraGranted, icon: Camera, title: 'Camera Access',
                   desc: 'Required to take your ID photos and verification selfie.',
                   onGrant: async () => {
                     try {
@@ -920,13 +937,15 @@ export function Verification() {
                   }
                 },
                 {
-                  key: 'storage', granted: storageGranted, icon: '💾', title: 'Storage Access',
+                  key: 'storage', granted: storageGranted, icon: Upload, title: 'Storage Access',
                   desc: 'Required to upload existing photos of your documents.',
                   onGrant: () => { setStorageGranted(true); toast.success('Storage access granted!'); }
                 },
               ].map(item => (
-                <div key={item.key} className={`flex items-start gap-3 p-4 rounded-xl border-2 ${item.granted ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                  <span className="text-2xl shrink-0">{item.icon}</span>
+                <div key={item.key} className={`flex items-center gap-3.5 p-4 rounded-2xl border-2 transition-colors ${item.granted ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.granted ? 'bg-green-100' : 'bg-blue-50'}`}>
+                    <item.icon className={`w-5 h-5 ${item.granted ? 'text-green-600' : 'text-blue-500'}`} />
+                  </div>
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-gray-800">{item.title}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{item.desc}</p>
@@ -952,48 +971,29 @@ export function Verification() {
         {/* ── Step 5: Instructions ── */}
         {step === 5 && (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><Eye className="w-5 h-5"/></div>
-                <div><h2 className="text-lg font-bold">Before You Continue</h2><p className="text-blue-200 text-xs">Read these guidelines for a successful verification</p></div>
-              </div>
-            </div>
+            <StepHero icon={<Eye className="w-5 h-5"/>} title="Before You Continue" subtitle="Read these guidelines for a successful verification" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               <div>
-                <h3 className="text-sm font-bold text-gray-800 mb-3">📄 Document Guidelines</h3>
-                <div className="space-y-2">
-                  {[
-                    '✅ Use a valid, unexpired government-issued ID',
-                    '✅ Ensure the document is well-lit and fully visible',
-                    '✅ Avoid glare, shadows, or blurry images',
-                    '✅ Capture all four corners of the document',
-                    '✅ Make sure all text is legible',
-                    '❌ Do not cover any part of the document',
-                    '❌ Do not use expired documents',
-                  ].map(tip => (
-                    <div key={tip} className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="shrink-0">{tip.slice(0,2)}</span>
-                      <span>{tip.slice(2)}</span>
-                    </div>
-                  ))}
+                <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-blue-500"/>Document Guidelines</h3>
+                <div className="space-y-2.5">
+                  <GuidelineRow ok>Use a valid, unexpired government-issued ID</GuidelineRow>
+                  <GuidelineRow ok>Ensure the document is well-lit and fully visible</GuidelineRow>
+                  <GuidelineRow ok>Avoid glare, shadows, or blurry images</GuidelineRow>
+                  <GuidelineRow ok>Capture all four corners of the document</GuidelineRow>
+                  <GuidelineRow ok>Make sure all text is legible</GuidelineRow>
+                  <GuidelineRow ok={false}>Do not cover any part of the document</GuidelineRow>
+                  <GuidelineRow ok={false}>Do not use expired documents</GuidelineRow>
                 </div>
               </div>
               <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-bold text-gray-800 mb-3">🤳 Selfie Guidelines</h3>
-                <div className="space-y-2">
-                  {[
-                    '✅ Face the camera directly in good lighting',
-                    '✅ Remove glasses and hats if possible',
-                    '✅ Keep a neutral expression',
-                    '✅ Position your face within the oval frame',
-                    '✅ You may be asked to blink or turn your head slightly',
-                  ].map(tip => (
-                    <div key={tip} className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="shrink-0">{tip.slice(0,2)}</span>
-                      <span>{tip.slice(2)}</span>
-                    </div>
-                  ))}
+                <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><Camera className="w-4 h-4 text-blue-500"/>Selfie Guidelines</h3>
+                <div className="space-y-2.5">
+                  <GuidelineRow ok>Face the camera directly in good lighting</GuidelineRow>
+                  <GuidelineRow ok>Remove glasses and hats if possible</GuidelineRow>
+                  <GuidelineRow ok>Keep a neutral expression</GuidelineRow>
+                  <GuidelineRow ok>Position your face within the oval frame</GuidelineRow>
+                  <GuidelineRow ok>You may be asked to blink or turn your head slightly</GuidelineRow>
                 </div>
               </div>
               <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2">
@@ -1007,12 +1007,7 @@ export function Verification() {
         {/* ── Step 6: Selfie ── */}
         {step === 6 && (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><Camera className="w-5 h-5"/></div>
-                <div><h2 className="text-lg font-bold">Face Verification</h2><p className="text-blue-200 text-xs">Take a selfie to verify your identity</p></div>
-              </div>
-            </div>
+            <StepHero icon={<Camera className="w-5 h-5"/>} title="Face Verification" subtitle="Take a selfie to verify your identity" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               {selfieUrl ? (
@@ -1070,10 +1065,11 @@ export function Verification() {
         {/* Navigation */}
         <button
           onClick={handleNext}
-          disabled={submitting}
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-2xl py-4 transition-colors shadow-sm"
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 text-white font-bold rounded-2xl py-4 transition-all shadow-lg shadow-blue-600/25 hover:shadow-blue-600/35 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:hover:translate-y-0 disabled:shadow-none"
+          style={{ background: 'linear-gradient(135deg,#2563eb,#4338ca)' }}
         >
-          {submitting ? (
+          {loading ? (
             <><Loader2 className="w-5 h-5 animate-spin"/>Submitting verification…</>
           ) : step === 6 ? (
             <><ShieldCheck className="w-5 h-5"/>Submit for Review</>
