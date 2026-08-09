@@ -156,6 +156,7 @@ export interface Review {
   listingId: string;
   userId: string;
   userName: string;
+  userAvatar?: string;
   reviewedUserId?: string;
   rating: number;
   comment: string;
@@ -283,6 +284,7 @@ export type NotificationType =
   | 'service_booked' | 'booking_accepted' | 'booking_rejected'
   | 'payment_received' | 'payment_released'
   | 'marketplace_order' | 'marketplace_booking' | 'marketplace_reply'
+  | 'review_received'
   // Profile & Trust
   | 'profile_completion' | 'trust_level_update'
   // System

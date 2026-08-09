@@ -51,6 +51,7 @@ function _notifTitle(type: string, actorName: string): string {
     case 'marketplace_order':   return `${actorName} placed a new order`;
     case 'marketplace_booking': return `${actorName} requested a booking`;
     case 'marketplace_reply':   return `${actorName} replied to your inquiry`;
+    case 'review_received':     return `${actorName} left a review on your listing`;
     case 'profile_completion':  return 'Your profile is now 80% complete';
     case 'trust_level_update':  return 'Your trust level has increased';
     case 'account_verified':    return 'Your account has been verified';

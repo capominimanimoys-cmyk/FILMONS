@@ -9,6 +9,7 @@ import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
   UserPlus, UserCheck, Share2, Package, Grid3X3, List, LayoutGrid, Globe, X,
   Video, Music, Image as ImageIcon, Sprout, Briefcase, Trophy,
+  User as UserIcon,
 } from 'lucide-react';
 
 type LucideIcon = React.ComponentType<{ className?: string }>;
@@ -337,7 +338,8 @@ export function HostProfile() {
 
       const hostPromise          = authApi.getUserById(uid);
       const listingsPromise      = listingsApi.getUserListings(uid).catch(() => []);
-      const reviewsPromise       = reviewsApi.getUserReviews(uid).catch(() => []);
+      // Received reviews (about this host), not reviews they wrote about others.
+      const reviewsPromise       = reviewsApi.getReceivedReviews(uid).catch(() => []);
       const portfolioPromise     = getPortfolioItems(uid).catch(() => []);
       const repScorePromise      = supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single();
       const followCountsPromise  = Promise.all(followCountQueries);
@@ -754,13 +756,19 @@ export function HostProfile() {
                   {reviews.map(r => (
                     <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">{r.userName || 'Anonymous'}</p>
-                          {(r as any).createdAt && (
-                            <p className="text-[11px] text-gray-400">
-                              {new Date((r as any).createdAt).toLocaleDateString('en-CA', { year: 'numeric', month: 'short' })}
-                            </p>
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          {r.userAvatar
+                            ? <img src={r.userAvatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0"/>
+                            : <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0"><UserIcon className="w-4 h-4 text-gray-400"/></div>
+                          }
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{r.userName || 'Anonymous'}</p>
+                            {(r as any).createdAt && (
+                              <p className="text-[11px] text-gray-400">
+                                {new Date((r as any).createdAt).toLocaleDateString('en-CA', { year: 'numeric', month: 'short' })}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <Stars rating={r.rating}/>
                       </div>

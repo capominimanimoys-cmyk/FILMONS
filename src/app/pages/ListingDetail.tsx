@@ -1,6 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router';
 import { useState, useEffect, useCallback } from 'react';
 import { listingsApi, authApi, reviewsApi } from '../lib/api';
+import { push as pushNotification } from '../lib/notifications';
 import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
@@ -107,6 +108,14 @@ export function ListingDetail() {
     setSubmitting(true);
     try {
       await reviewsApi.create({ listingId: listing?.id, userId: user.id, reviewedUserId: listing?.userId, rating, comment });
+      if (listing?.userId) {
+        pushNotification(listing.userId, {
+          type: 'review_received',
+          fromUserId: user.id,
+          fromUserName: user.name || 'Someone',
+          fromUserAvatar: user.avatar,
+        });
+      }
       toast.success('Review submitted!');
       setComment(''); setRating(5);
       loadListing(id!);

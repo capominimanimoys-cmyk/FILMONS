@@ -548,7 +548,9 @@ export function Profile() {
   const [showMusicUploader, setShowMusicUploader] = useState(false);
   const [savedListings,   setSavedListings]   = useState<any[]>([]);
   const [likedCreators,   setLikedCreators]   = useState<any[]>([]);
-  const [reviews,       setReviews]       = useState<Review[]>([]);
+  const [reviews,         setReviews]         = useState<Review[]>([]); // Reviews Given (written by me)
+  const [receivedReviews, setReceivedReviews] = useState<Review[]>([]); // Reviews Received (about me)
+  const [reviewsView,     setReviewsView]     = useState<'received' | 'given'>('received');
   const [loading,       setLoading]       = useState(true);
   const [showCompose,      setShowCompose]      = useState(false);
   const [showAvatarSheet,  setShowAvatarSheet]  = useState(false);
@@ -676,15 +678,17 @@ export function Profile() {
     if (!user) return;
     setLoading(true);
     try {
-      const [myPosts, myListings, myReviews, myPortfolio] = await Promise.all([
+      const [myPosts, myListings, myReviews, myReceivedReviews, myPortfolio] = await Promise.all([
         postsApi.getUserPosts(user.id).catch(() => []),
         listingsApi.getUserListings(user.id).catch(() => []),
         reviewsApi.getUserReviews(user.id).catch(() => []),
+        reviewsApi.getReceivedReviews(user.id).catch(() => []),
         getPortfolioItems(user.id).catch(() => []),
       ]);
       setPosts(myPosts);
       setListings(myListings);
       setReviews(myReviews);
+      setReceivedReviews(myReceivedReviews);
       setPortfolioItems(myPortfolio);
       mergePosts(myPosts);
     } finally { setLoading(false); }
@@ -1025,7 +1029,10 @@ export function Profile() {
   );
 
   const isCreatorPlus = user.accountType === 'business';
-  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+  // Your rating badge is your reputation as rated by others — Reviews
+  // Received, not the reviews you've written about other people/listings.
+  const avgRating = receivedReviews.length > 0
+    ? receivedReviews.reduce((s, r) => s + r.rating, 0) / receivedReviews.length : 0;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -1126,7 +1133,7 @@ export function Profile() {
             {user.bio && <p className="text-sm text-gray-600 mt-1 max-w-lg leading-relaxed">{user.bio}</p>}
             <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
               {user.city && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{user.city}</span>}
-              {reviews.length > 0 && <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />{avgRating.toFixed(1)} ({reviews.length})</span>}
+              {receivedReviews.length > 0 && <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />{avgRating.toFixed(1)} ({receivedReviews.length})</span>}
               <button onClick={() => switchTab('listings')}
                 className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
                 {listings.length} <span className="font-normal text-gray-500">listings</span>
@@ -1812,12 +1819,33 @@ export function Profile() {
           {/* REVIEWS */}
           {tab === 'reviews' && (
             <div className="max-w-2xl mx-auto space-y-4">
-              {reviews.length===0
+              {/* Received (about me) vs Given (written by me) — these are
+                  different data sets (reviewed_user_id vs user_id) and must
+                  not be conflated into one undifferentiated list. */}
+              <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
+                {(['received','given'] as const).map(v => (
+                  <button key={v} onClick={() => setReviewsView(v)}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      reviewsView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                    }`}>
+                    {v === 'received' ? `Received (${receivedReviews.length})` : `Given (${reviews.length})`}
+                  </button>
+                ))}
+              </div>
+
+              {(reviewsView === 'received' ? receivedReviews : reviews).length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Star className="w-10 h-10 text-gray-200 mx-auto mb-3"/><p className="text-gray-500">No reviews yet</p></div>
-                : reviews.map(r=>(
+                : (reviewsView === 'received' ? receivedReviews : reviews).map(r=>(
                     <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="font-semibold text-sm text-gray-900">{r.userName||'Anonymous'}</p>
+                        {reviewsView === 'received' ? (
+                          <div className="flex items-center gap-2.5">
+                            {r.userAvatar
+                              ? <img src={r.userAvatar} alt="" className="w-7 h-7 rounded-full object-cover"/>
+                              : <div className="w-7 h-7 rounded-full bg-gray-100"/>}
+                            <p className="font-semibold text-sm text-gray-900">{r.userName || 'Anonymous'}</p>
+                          </div>
+                        ) : <span />}
                         <div className="flex gap-0.5">{[...Array(5)].map((_,i)=><Star key={i} className={`w-3.5 h-3.5 ${i<r.rating?'text-yellow-400 fill-yellow-400':'text-gray-200'}`}/>)}</div>
                       </div>
                       <p className="text-sm text-gray-600">{r.comment}</p>

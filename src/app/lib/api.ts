@@ -1030,36 +1030,58 @@ export const listingsApi = {
 // ============================================
 // REVIEWS API
 // ============================================
+
+/** Shared row→Review mapper + reviewer name/avatar hydration (a `reviews`
+ *  row only stores user_id — without this every review rendered as
+ *  "Anonymous" with no avatar). */
+async function fetchReviewRows(applyFilter: (q: any) => any): Promise<Review[]> {
+  const { data } = await applyFilter(
+    supabase.from('reviews').select('*').order('created_at', { ascending: false })
+  );
+  const rows: any[] = data || [];
+  if (!rows.length) return [];
+
+  const reviewerIds = [...new Set(rows.map(r => r.user_id).filter(Boolean))];
+  const { data: profiles } = await supabase
+    .from('profiles').select('id, name, username, avatar_url').in('id', reviewerIds);
+  const byId = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+  return rows.map((r: any) => {
+    const p = byId.get(r.user_id);
+    return {
+      id: r.id, listingId: r.listing_id, userId: r.user_id,
+      userName:   p?.name || p?.username || 'Anonymous',
+      userAvatar: p?.avatar_url || undefined,
+      reviewedUserId: r.reviewed_user_id || undefined,
+      rating: r.rating, comment: r.comment || r.content || '',
+      createdAt: r.created_at,
+    } as Review;
+  });
+}
+
 export const reviewsApi = {
   getListingReviews: async (listingId: string): Promise<Review[]> => {
     try {
-      const { data } = await supabase
-        .from('reviews')
-        .select('*')
-        .eq('listing_id', listingId)
-        .order('created_at', { ascending: false });
-      return (data || []).map((r: any) => ({
-        id: r.id, listingId: r.listing_id, userId: r.user_id,
-        reviewedUserId: r.reviewed_user_id || undefined,
-        rating: r.rating, comment: r.comment || r.content || '',
-        createdAt: r.created_at,
-      }));
+      const rows = await fetchReviewRows(q => q.eq('listing_id', listingId));
+      return rows;
     } catch { return []; }
   },
 
+  // Reviews this user WROTE (as the reviewer) — "Reviews Given".
   getUserReviews: async (userId: string): Promise<Review[]> => {
     try {
-      const { data } = await supabase
-        .from('reviews')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      return (data || []).map((r: any) => ({
-        id: r.id, listingId: r.listing_id, userId: r.user_id,
-        reviewedUserId: r.reviewed_user_id || undefined,
-        rating: r.rating, comment: r.comment || r.content || '',
-        createdAt: r.created_at,
-      }));
+      const rows = await fetchReviewRows(q => q.eq('user_id', userId));
+      return rows;
+    } catch { return []; }
+  },
+
+  // Reviews WRITTEN ABOUT this user (they're the listing owner being rated)
+  // — "Reviews Received". This is what a public profile's reputation/star
+  // rating should be computed from, not getUserReviews above.
+  getReceivedReviews: async (userId: string): Promise<Review[]> => {
+    try {
+      const rows = await fetchReviewRows(q => q.eq('reviewed_user_id', userId));
+      return rows;
     } catch { return []; }
   },
 
