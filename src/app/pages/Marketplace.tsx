@@ -147,7 +147,7 @@ export function Marketplace() {
               <div className="absolute right-0 top-full mt-2 z-50 w-56 bg-gray-900 text-white rounded-2xl shadow-2xl p-3 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity">
                 <p className="text-xs font-black mb-1">Creator+ Required</p>
                 <p className="text-[11px] text-gray-300 mb-2.5 leading-snug">Hosting listings requires a Creator+ account.</p>
-                <button onClick={() => { captureSnapshot(); navigate('/creator-plus-steps'); }}
+                <button onClick={() => { captureSnapshot(); navigate('/verification'); }}
                   className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white text-[11px] font-bold rounded-xl pointer-events-auto transition-colors">
                   Upgrade Now ⚡
                 </button>

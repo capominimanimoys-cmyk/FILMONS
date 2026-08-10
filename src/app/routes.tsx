@@ -34,7 +34,6 @@ import { ReviewsSettings }        from './pages/ReviewsSettings';
 import { DeviceSettings }         from './pages/DeviceSettings';
 import { AccountUpgrade }          from './pages/AccountUpgrade';
 import { CreatorPlusRequired }       from './pages/CreatorPlusRequired';
-import { CreatorPlusAccountSteps }   from './pages/CreatorPlusAccountSteps';
 import { ProfessionalAccountSteps }  from './pages/ProfessionalAccountSteps';
 import { BusinessAccountSteps }      from './pages/BusinessAccountSteps';
 import { VerificationStatusPage }    from './pages/VerificationStatusPage';
@@ -80,7 +79,6 @@ export const router = createBrowserRouter([
       { path: 'settings/devices',        Component: DeviceSettings         },
       { path: 'account/upgrade',          Component: AccountUpgrade         },
       { path: 'creator-plus-required',    Component: CreatorPlusRequired        },
-      { path: 'creator-plus-steps',       Component: CreatorPlusAccountSteps    },
       { path: 'professional-account-steps',Component: ProfessionalAccountSteps  },
       { path: 'business-account-steps',   Component: BusinessAccountSteps       },
       { path: 'verification-status',       Component: VerificationStatusPage      },

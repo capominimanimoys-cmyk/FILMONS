@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from 'react-router';
-import { ArrowLeft, Lock, Check, ChevronRight, Star, Building2, Zap, CreditCard } from 'lucide-react';
+import { CheckCircle, Star, Building2, Zap, CreditCard } from 'lucide-react';
 
 const ACCOUNT_INFO = {
   wallet: {
@@ -119,105 +119,28 @@ export function CreatorPlusRequired() {
   const info        = ACCOUNT_INFO[type] ?? ACCOUNT_INFO.professional;
 
   return (
-    <div className="min-h-screen bg-gray-950">
-
-      {/* ── Top bar ── */}
-      <div className="sticky top-14 z-20 bg-gray-950/90 backdrop-blur-sm border-b border-white/5 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)}
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="w-4 h-4 text-white"/>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-5">
+        <div className={`w-20 h-20 bg-gradient-to-br ${info.gradient} rounded-3xl flex items-center justify-center mx-auto`}>
+          <info.Icon className="w-10 h-10 text-white" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-gray-900">{info.label}</h2>
+          <p className="text-gray-500 text-sm mt-2 leading-relaxed">{info.lockNote}</p>
+        </div>
+        <div className="bg-blue-50 rounded-2xl p-4 space-y-2 text-sm text-left">
+          {info.extras.slice(0, 4).map(f => (
+            <div key={f.label} className="flex items-center gap-2 text-blue-800">
+              <CheckCircle className="w-4 h-4 text-blue-500 shrink-0" />{f.label}
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => navigate(type === 'listings' || type === 'wallet' ? '/verification' : '/account/upgrade')}
+          className={`w-full bg-gradient-to-r ${info.gradient} text-white font-black rounded-2xl py-4 hover:opacity-90 transition-opacity`}>
+          {info.requiresLabel} →
         </button>
-        <h1 className="text-base font-black text-white">{info.label}</h1>
-      </div>
-
-      <div className="max-w-lg mx-auto px-4 pt-6 pb-32 space-y-4">
-
-        {/* ── Hero card ── */}
-        <div className={`rounded-2xl overflow-hidden bg-gradient-to-br ${info.gradient} shadow-2xl ${info.glow}`}>
-          <div className="px-5 pt-6 pb-5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center shrink-0">
-                <info.Icon className="w-7 h-7 text-white"/>
-              </div>
-              <div>
-                <p className="text-xl font-black text-white">{info.label}</p>
-                <p className={`text-sm ${info.textAccent}`}>{info.tagline}</p>
-              </div>
-            </div>
-
-            {/* Audience chips */}
-            <div className="flex flex-wrap gap-1.5">
-              {info.audience.map(a => (
-                <span key={a} className="text-[10px] font-semibold bg-white/15 text-white px-2.5 py-1 rounded-full">
-                  {a}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Lock banner */}
-          <div className="mx-3 mb-3 bg-black/30 backdrop-blur-sm rounded-xl px-4 py-3 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-amber-400/20 flex items-center justify-center shrink-0 mt-0.5">
-              <Lock className="w-4 h-4 text-amber-300"/>
-            </div>
-            <div>
-              <p className="text-xs font-black text-white mb-0.5">
-                {type === 'professional' || type === 'business' ? 'Professional required' : 'Creator+ required'}
-              </p>
-              <p className={`text-[11px] leading-relaxed ${info.textAccent} opacity-80`}>
-                {info.lockNote}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* ── What you get ── */}
-        <div className="rounded-2xl border border-white/5 bg-gray-900 overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/5">
-            <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">What {info.label} adds</p>
-          </div>
-          <div className="p-4 space-y-3">
-            {info.extras.map(f => (
-              <div key={f.label} className="flex items-start gap-3">
-                <div className={`w-6 h-6 rounded-full ${info.accent} flex items-center justify-center shrink-0 mt-0.5`}>
-                  <Check className="w-3.5 h-3.5 text-white"/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white/80">{f.label}</p>
-                  <p className="text-xs text-white/30">{f.sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Requirements ── */}
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-          <p className="text-[10px] font-black text-amber-400/60 uppercase tracking-widest mb-1.5">Requirements</p>
-          <div className="flex flex-wrap gap-1.5">
-            {info.requires.split(' · ').map(r => (
-              <span key={r} className="text-[11px] font-semibold text-amber-300/70 bg-amber-400/10 border border-amber-400/15 px-2.5 py-1 rounded-full">
-                {r}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* ── CTAs ── */}
-        <div className="space-y-2 pt-2">
-          <button
-            onClick={() => navigate(type === 'listings' || type === 'wallet' ? '/creator-plus-steps' : '/account/upgrade')}
-            className={`w-full py-4 text-white font-black text-sm rounded-2xl shadow-xl active:scale-[0.98] transition-all bg-gradient-to-r ${info.gradient}`}>
-            {info.requiresLabel} →
-          </button>
-          <button
-            onClick={() => navigate('/account/upgrade')}
-            className="w-full py-3 bg-white/5 border border-white/10 text-white/60 font-semibold text-sm rounded-2xl hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
-            View all account tiers
-            <ChevronRight className="w-4 h-4 text-white/30"/>
-          </button>
-        </div>
-
+        <button onClick={() => navigate(-1)} className="text-gray-400 text-sm hover:text-gray-600">Go back</button>
       </div>
     </div>
   );

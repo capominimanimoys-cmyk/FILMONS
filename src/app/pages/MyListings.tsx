@@ -200,7 +200,7 @@ export function MyListings() {
               ))}
             </div>
             <button
-              onClick={() => { captureSnapshot(); navigate('/creator-plus-steps'); }}
+              onClick={() => { captureSnapshot(); navigate('/verification'); }}
               className="w-full py-3 bg-white text-blue-700 font-black text-sm rounded-xl hover:bg-blue-50 active:scale-[0.98] transition-all shadow-sm">
               Upgrade Now — It's Free ⚡
             </button>

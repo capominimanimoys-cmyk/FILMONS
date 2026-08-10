@@ -103,7 +103,7 @@ export function AccountUpgrade() {
   const upgrade = (id: AccountTier) => {
     if (id === current) { toast.info('This is your current plan'); return; }
     if (tierRank(id) < tierRank(current)) { toast.info('Contact support to downgrade'); return; }
-    if (id === 'creator_plus') { captureSnapshot(); navigate('/creator-plus-steps'); return; }
+    if (id === 'creator_plus') { captureSnapshot(); navigate('/verification'); return; }
     if (id === 'professional') { captureSnapshot(); navigate('/professional-account-steps'); return; }
     if (id === 'business') { captureSnapshot(); navigate('/business-account-steps'); return; }
     toast.info(`${TIERS.find(t=>t.id===id)?.label} upgrade — payment flow coming soon`);
