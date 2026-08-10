@@ -23,15 +23,50 @@ const STEPS = [
   { id: 6, label: 'Selfie',          icon: Camera     },
 ];
 
-const ID_TYPES = [
-  "Driver's Licence",
-  "Passport",
-  "Provincial Health Card",
-  "Permanent Resident Card",
-  "Canadian Citizenship Card",
-  "Tribal ID",
-];
+// ── ID type options — depend on where the ID was actually issued, not where
+//    the creator lives. Canada/US get their normal government-issued photo
+//    ID set; anything else gets the narrower set we can realistically
+//    verify (passport, or a national ID card where the country's format is
+//    known) — we deliberately don't accept foreign driver's licences, or
+//    ask for health/SIN/citizenship cards for a routine Creator+ check.
+function idTypeOptions(idCountry: string): { value: string; recommended?: boolean }[] {
+  if (idCountry === 'Canada') return [
+    { value: "Driver's Licence", recommended: true }, { value: 'Canadian Passport' }, { value: 'Provincial/Territorial Photo ID' },
+  ];
+  if (idCountry === 'United States') return [
+    { value: "Driver's License", recommended: true }, { value: 'U.S. Passport' }, { value: 'State-Issued Photo ID' },
+  ];
+  return [{ value: 'Passport', recommended: true }, { value: 'National Identity Card' }];
+}
 const CA_PROVINCES = ['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'];
+const US_STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA',
+  'ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK',
+  'OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+];
+// Nominatim returns the full province/state name regardless of country —
+// one combined lookup covers both without needing to branch on country.
+const REGION_NAME_TO_ABBR: Record<string,string> = {
+  'ontario':'ON','quebec':'QC','british columbia':'BC','alberta':'AB',
+  'manitoba':'MB','saskatchewan':'SK','nova scotia':'NS','new brunswick':'NB',
+  'prince edward island':'PE','newfoundland and labrador':'NL',
+  'northwest territories':'NT','nunavut':'NU','yukon':'YT',
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+  'colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA',
+  'hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS',
+  'kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA',
+  'michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT',
+  'nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM',
+  'new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK',
+  'oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',
+  'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT',
+  'virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY',
+  'district of columbia':'DC',
+};
+function regionAbbrev(addr: any): string {
+  const name = (addr.state || '').toLowerCase();
+  return REGION_NAME_TO_ABBR[name] || addr.state_code || addr.state || '';
+}
 
 const ALL_COUNTRIES = [
   'Canada', 'United States',
@@ -309,9 +344,16 @@ export function Verification() {
   const [city, setCity] = useState('');
   const [province, setProvince] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [issuingCountry, setIssuingCountry] = useState('Canada');
+  // Residence, ID-issuing country, and (implicitly) nationality are kept as
+  // separate concepts — an immigrant, international student, or permanent
+  // resident can live here without holding a Canadian/US ID, so residence
+  // must never be assumed to equal ID country.
+  const [residenceCountry, setResidenceCountry] = useState<'Canada' | 'United States' | ''>('');
+  const [idCountrySame, setIdCountrySame] = useState(true); // ID issued by residence country?
+  const [otherIdCountry, setOtherIdCountry] = useState(''); // only used when idCountrySame is false
+  const issuingCountry = idCountrySame ? residenceCountry : otherIdCountry;
   const [idType, setIdType] = useState('');
-  const [loading, setLoading] = useState(false); 
+  const [loading, setLoading] = useState(false);
 
   // Address autocomplete
   const [addrSearch, setAddrSearch]           = useState('');
@@ -347,6 +389,12 @@ export function Verification() {
     if (user) { setLegalName(user.name || ''); }
   }, [isAuthenticated, user]);
 
+  // Available ID types differ per issuing country — drop a selection that
+  // no longer applies (e.g. switching from Canada to "different country").
+  useEffect(() => {
+    if (idType && !idTypeOptions(issuingCountry).some(o => o.value === idType)) setIdType('');
+  }, [issuingCountry]); // eslint-disable-line
+
   useEffect(() => {
     return () => { cameraStream?.getTracks().forEach(t => t.stop()); };
   }, [cameraStream]);
@@ -379,8 +427,9 @@ export function Verification() {
       setAddrSearching(true);
       try {
         // Use Nominatim for address search (free, no edge function needed)
+        const cc = residenceCountry === 'United States' ? 'us' : 'ca';
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&countrycodes=ca&format=json&addressdetails=1&limit=6`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&countrycodes=${cc}&format=json&addressdetails=1&limit=6`,
           { headers: { 'Accept-Language': 'en', 'User-Agent': 'FilmonsApp/1.0' } }
         );
         const results = await res.json();
@@ -399,7 +448,7 @@ export function Verification() {
       } catch { setAddrSuggestions([]); }
       finally { setAddrSearching(false); }
     }, 400);
-  }, []);
+  }, [residenceCountry]);
 
   const handleAddrSelect = useCallback(async (s: any) => {
     setAddrSearch(s.structured_formatting?.main_text || s.description);
@@ -412,16 +461,7 @@ export function Verification() {
       const streetName = addr.road || '';
       const street     = [streetNum, streetName].filter(Boolean).join(' ');
       const city       = addr.city || addr.town || addr.village || addr.municipality || '';
-      const province   = (() => {
-        const p = (addr.state || '').toLowerCase();
-        const map: Record<string,string> = {
-          'ontario':'ON','quebec':'QC','british columbia':'BC','alberta':'AB',
-          'manitoba':'MB','saskatchewan':'SK','nova scotia':'NS','new brunswick':'NB',
-          'prince edward island':'PE','newfoundland and labrador':'NL',
-          'northwest territories':'NT','nunavut':'NU','yukon':'YT',
-        };
-        return map[p] || addr.state_code || addr.state || '';
-      })();
+      const province   = regionAbbrev(addr);
       const postal = (addr.postcode || '').replace(' ','').toUpperCase();
       setStreetAddr(street || s.structured_formatting?.main_text || '');
       setCity(city);
@@ -450,8 +490,9 @@ export function Verification() {
         const data = await res.json();
         const addr = data.address || {};
 
-        if (addr.country_code && addr.country_code !== 'ca') {
-          toast.error('Location must be in Canada.');
+        const expectedCC = residenceCountry === 'United States' ? 'us' : 'ca';
+        if (addr.country_code && addr.country_code !== expectedCC) {
+          toast.error(`Location must be in ${residenceCountry || 'your country of residence'}.`);
           return;
         }
 
@@ -459,16 +500,7 @@ export function Verification() {
         const streetName = addr.road || '';
         const street     = [streetNum, streetName].filter(Boolean).join(' ');
         const city       = addr.city || addr.town || addr.village || addr.municipality || '';
-        const province   = (() => {
-          const p = (addr.state || '').toLowerCase();
-          const map: Record<string,string> = {
-            'ontario':'ON','quebec':'QC','british columbia':'BC','alberta':'AB',
-            'manitoba':'MB','saskatchewan':'SK','nova scotia':'NS','new brunswick':'NB',
-            'prince edward island':'PE','newfoundland and labrador':'NL',
-            'northwest territories':'NT','nunavut':'NU','yukon':'YT',
-          };
-          return map[p] || addr.state_code || addr.state || '';
-        })();
+        const province   = regionAbbrev(addr);
         const postal     = (addr.postcode || '').replace(' ','').toUpperCase();
 
         setStreetAddr(street);
@@ -486,7 +518,7 @@ export function Verification() {
       if (err.code === 1) toast.error('Location access denied. Please allow location in browser settings.');
       else toast.error('Could not get your location.');
     }, { timeout: 10000, maximumAge: 60000 });
-  }, []);
+  }, [residenceCountry]);
 
   const highlightAddr = (text: string) => {
     if (!addrSearch.trim()) return <span>{text}</span>;
@@ -528,11 +560,13 @@ export function Verification() {
 
   const handleNext = () => {
     if (step === 1) {
+      if (!residenceCountry) { toast.error('Please select your country of residence'); return; }
       if (!legalName.trim()) { toast.error('Legal name is required'); return; }
       if (!dob) { toast.error('Date of birth is required'); return; }
       if (!city.trim()) { toast.error('City is required'); return; }
-      if (!province) { toast.error('Province is required'); return; }
-      if (!postalCode.trim()) { toast.error('Postal code is required'); return; }
+      if (!province) { toast.error(residenceCountry === 'United States' ? 'State is required' : 'Province is required'); return; }
+      if (!postalCode.trim()) { toast.error(residenceCountry === 'United States' ? 'ZIP code is required' : 'Postal code is required'); return; }
+      if (!idCountrySame && !otherIdCountry) { toast.error('Please select the country that issued your ID'); return; }
       if (!idType) { toast.error('Please select an ID type'); return; }
     }
     if (step === 2) {
@@ -579,7 +613,7 @@ export function Verification() {
       id: recordId, userId: user.id, userName: user.name,
       userEmail: user.email || '', userPhone: user.phone || '',
       phoneVerified: false, emailVerified: true, fullName: legalName,
-      dob, streetAddr, city, province, postalCode, issuingCountry, idType,
+      dob, streetAddr, city, province, postalCode, residenceCountry, issuingCountry, idType,
       govIdPhoto: govIdUrl, utilityBillPhoto: utilityUrl, selfiePhoto: selfieUp,
       status: 'pending' as const, submittedAt, reviewedAt: null, reviewedBy: null,
     };
@@ -595,7 +629,7 @@ export function Verification() {
       const metadata = {
         userName: user.name, phone: user.phone || '',
         dob, streetAddr, city, province, postalCode,
-        issuingCountry, idType,
+        residenceCountry, issuingCountry, idType,
         govIdUrl, utilityBillUrl: utilityUrl, selfieUrl: selfieUp,
       };
       const { error: dbErr } = await supabase
@@ -731,6 +765,24 @@ export function Verification() {
             <StepHero icon={<User className="w-5 h-5"/>} title="Personal Information" subtitle="Provide your legal details for identity verification" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              {/* Country of residence comes first and drives the address
+                  search + province/state field below — kept to just the two
+                  launch markets rather than a 190-country list, since that's
+                  a separate question from where the creator's ID is from. */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Country of Residence *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setResidenceCountry('Canada')}
+                    className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${residenceCountry === 'Canada' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    🇨🇦 Canada
+                  </button>
+                  <button type="button" onClick={() => setResidenceCountry('United States')}
+                    className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${residenceCountry === 'United States' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    🇺🇸 United States
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Full Legal Name *</label>
                 <input value={legalName} onChange={e=>setLegalName(e.target.value)} placeholder="As it appears on your ID"
@@ -744,7 +796,7 @@ export function Verification() {
 
               {/* Smart address autocomplete */}
               <div className="space-y-3">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Residential Address (Canada)</label>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Residential Address{residenceCountry ? ` (${residenceCountry})` : ''}</label>
                 <div ref={addrSugRef} className="relative">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -758,7 +810,7 @@ export function Verification() {
                       value={addrSearch}
                       onChange={e => handleAddrSearch(e.target.value)}
                       onFocus={() => addrSuggestions.length > 0 && setAddrShowSug(true)}
-                      placeholder="Search your street address in Canada…"
+                      placeholder={`Search your street address in ${residenceCountry || 'your country'}…`}
                       className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                     />
                   </div>
@@ -812,16 +864,16 @@ export function Verification() {
                             className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase">Prov.</label>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase">{residenceCountry === 'United States' ? 'State' : 'Prov.'}</label>
                           <select value={province} onChange={e => setProvince(e.target.value)}
                             className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
                             <option value="">--</option>
-                            {CA_PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+                            {(residenceCountry === 'United States' ? US_STATES : CA_PROVINCES).map(p => <option key={p} value={p}>{p}</option>)}
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase">Postal</label>
-                          <input value={postalCode} onChange={e => setPostalCode(e.target.value.toUpperCase())} maxLength={7}
+                          <label className="text-[10px] font-bold text-gray-500 uppercase">{residenceCountry === 'United States' ? 'ZIP' : 'Postal'}</label>
+                          <input value={postalCode} onChange={e => setPostalCode(e.target.value.toUpperCase())} maxLength={residenceCountry === 'United States' ? 5 : 7}
                             className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                         </div>
                       </div>
@@ -839,20 +891,41 @@ export function Verification() {
                 )}
               </div>
 
+              {/* Country that issued the ID — defaults to "same as residence"
+                  since that's the common case, but residence and ID country
+                  are genuinely different concepts (immigrants, international
+                  students, and permanent residents may hold a foreign ID). */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Country of ID *</label>
-                <select value={issuingCountry} onChange={e=>setIssuingCountry(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-                  {ALL_COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Country that Issued Your ID *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setIdCountrySame(true)} disabled={!residenceCountry}
+                    className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${idCountrySame ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    Same as residence{residenceCountry ? ` (${residenceCountry === 'Canada' ? '🇨🇦' : '🇺🇸'} ${residenceCountry})` : ''}
+                  </button>
+                  <button type="button" onClick={() => setIdCountrySame(false)}
+                    className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${!idCountrySame ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    🌎 Different country
+                  </button>
+                </div>
+                {!idCountrySame && (
+                  <select value={otherIdCountry} onChange={e=>setOtherIdCountry(e.target.value)}
+                    className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                    <option value="">Select the country that issued your ID…</option>
+                    {ALL_COUNTRIES.filter(c => c !== 'Canada' && c !== 'United States').map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
               </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">ID Type *</label>
-                <select value={idType} onChange={e=>setIdType(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-                  <option value="">Select ID type</option>
-                  {ID_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                <select value={idType} onChange={e=>setIdType(e.target.value)} disabled={!issuingCountry}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white disabled:bg-gray-50 disabled:text-gray-400">
+                  <option value="">{issuingCountry ? 'Select ID type' : 'Select a country above first'}</option>
+                  {idTypeOptions(issuingCountry).map(o=><option key={o.value} value={o.value}>{o.value}{o.recommended ? ' (Recommended)' : ''}</option>)}
                 </select>
+                {issuingCountry && issuingCountry !== 'Canada' && issuingCountry !== 'United States' && (
+                  <p className="text-xs text-gray-400">Foreign driver's licences aren't accepted yet — a passport or national ID card is required.</p>
+                )}
               </div>
             </div>
           </>
