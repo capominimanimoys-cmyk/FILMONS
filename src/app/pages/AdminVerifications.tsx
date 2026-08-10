@@ -34,53 +34,31 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fpApi, FP } from "../lib/fpSystem";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
-
-// ── Server helpers ─────────────────────────────────────────────────
-const _BASE = `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879`;
-const _H = {
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${publicAnonKey}`,
-};
-async function _sGet(path: string) {
-  const r = await fetch(`${_BASE}${path}`, { headers: _H });
-  return r.json();
-}
-async function _sPut(path: string, body: any) {
-  const r = await fetch(`${_BASE}${path}`, {
-    method: "PUT",
-    headers: _H,
-    body: JSON.stringify(body),
-  });
-  return r.json();
-}
+import { signVerificationDoc } from "../../lib/upload";
 
 // ── Types ──────────────────────────────────────────────────────────
+// Mirrors identity_verifications (+ joined profiles for contact info).
+// Document fields are storage PATHS, not URLs — resolve with SignedImg.
 interface VerificationRequest {
   id: string;
   userId: string;
   userName: string;
   userEmail: string;
   userPhone: string;
-  phoneVerified: boolean;
-  emailVerified: boolean;
   fullName: string;
   dob?: string;
   streetAddr?: string;
   city?: string;
   province?: string;
   postalCode?: string;
+  residenceCountry?: string;
   issuingCountry?: string;
   idType?: string;
-  utilityBillPhoto?: string;
-  govIdPhoto?: string;
-  selfiePhoto?: string;
-  // legacy
-  idNumber?: string;
-  idPhoto?: string;
+  idFrontPath?: string;
+  proofAddressPath?: string;
+  selfiePath?: string;
   status: "pending" | "approved" | "denied" | "rejected" | "needs_resubmission";
   rejectionReason?: string;
-  adminNotes?: string;
   submittedAt: string;
   reviewedAt: string | null;
   reviewedBy: string | null;
@@ -168,18 +146,39 @@ function loadWalletTxs(): WalletTx[] {
 // ── Sub-components ────────────────────────────────────────────────
 
 function PhotoViewer({
-  src,
+  path,
   label,
 }: {
-  src?: string;
+  path?: string;
   label: string;
 }) {
   const [open, setOpen] = useState(false);
-  if (!src) {
+  // `path` is a storage path (verification-documents bucket, private) or,
+  // for older/failed-upload rows, a raw base64 string — either way we need
+  // a real URL to render. Signed URLs expire, so mint one fresh here rather
+  // than trusting anything persisted.
+  const [src, setSrc] = useState<string | null>(null);
+  const [loadingUrl, setLoadingUrl] = useState(false);
+
+  useEffect(() => {
+    if (!path) { setSrc(null); return; }
+    if (path.startsWith('data:')) { setSrc(path); return; } // legacy base64 fallback
+    setLoadingUrl(true);
+    signVerificationDoc(path, 600).then(url => { setSrc(url); setLoadingUrl(false); });
+  }, [path]);
+
+  if (!path) {
     return (
       <div className="h-28 flex flex-col items-center justify-center bg-gray-50 border border-dashed border-gray-200 rounded-xl gap-2">
         <FileText className="w-6 h-6 text-gray-300" />
         <p className="text-xs text-gray-400">Not uploaded</p>
+      </div>
+    );
+  }
+  if (loadingUrl || !src) {
+    return (
+      <div className="h-28 flex flex-col items-center justify-center bg-gray-50 border border-gray-100 rounded-xl gap-2">
+        <RefreshCw className="w-5 h-5 text-gray-300 animate-spin" />
       </div>
     );
   }
@@ -229,6 +228,34 @@ function PhotoViewer({
         </div>
       )}
     </>
+  );
+}
+
+// Small document thumbnail for the list view — resolves its own signed URL
+// from a storage path (or renders the base64 fallback directly).
+function SignedThumb({ path, label }: { path?: string; label: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!path) { setSrc(null); return; }
+    if (path.startsWith('data:')) { setSrc(path); return; }
+    signVerificationDoc(path, 600).then(setSrc);
+  }, [path]);
+
+  if (!path) {
+    return (
+      <div className="w-14 h-14 rounded-lg border border-dashed border-gray-200 flex flex-col items-center justify-center gap-0.5">
+        <FileText className="w-4 h-4 text-gray-300" />
+        <span className="text-[8px] text-gray-300 font-semibold">{label}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="w-14 h-14 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 relative">
+      {src && <img src={src} alt={label} className="w-full h-full object-cover" />}
+      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] text-center py-0.5 font-semibold">
+        {label}
+      </div>
+    </div>
   );
 }
 
@@ -315,62 +342,51 @@ export function AdminVerifications() {
 
   const loadAll = async () => {
     // ── VERIFICATIONS ─────────────────────────────────────────────
-    // Query Supabase directly (bypasses edge function host allowlist)
+    // identity_verifications holds the KYC data; profiles (embedded via
+    // the user_id FK) supplies contact info for display only.
     let serverReqs: VerificationRequest[] = [];
     try {
       const { data, error } = await supabase
-        .from('verification_requests')
-        .select('*')
+        .from('identity_verifications')
+        .select('*, profiles(name, email, phone)')
         .order('submitted_at', { ascending: false });
 
       if (!error && data) {
         serverReqs = data.map((row: any) => {
-          const m = (typeof row.metadata === 'string'
-            ? (() => { try { return JSON.parse(row.metadata); } catch { return {}; } })()
-            : row.metadata) || {};
+          const profile = row.profiles || {};
           return {
             id:               row.id,
             userId:           row.user_id,
-            userName:         m.userName    || row.full_name || '',
-            userEmail:        row.email     || m.email       || '',
-            userPhone:        m.phone       || '',
-            phoneVerified:    m.phoneVerified ?? false,
-            emailVerified:    m.emailVerified ?? false,
-            fullName:         row.full_name  || m.fullName   || '',
-            dob:              m.dob          || undefined,
-            streetAddr:       m.streetAddr   || m.address?.streetAddr || undefined,
-            city:             m.city         || m.address?.city       || undefined,
-            province:         m.province     || m.address?.province   || undefined,
-            postalCode:       m.postalCode   || m.address?.postalCode || undefined,
-            issuingCountry:   m.issuingCountry || undefined,
-            idType:           m.idType        || undefined,
-            govIdPhoto:       m.govIdUrl      || m.govIdPhoto    || undefined,
-            utilityBillPhoto: m.utilityBillUrl || m.utilityBillPhoto || undefined,
-            selfiePhoto:      m.selfieUrl     || m.selfiePhoto   || undefined,
-            status:           row.status      || 'pending',
-            rejectionReason:  m.rejectionReason || undefined,
-            adminNotes:       m.adminNotes     || undefined,
-            submittedAt:      row.submitted_at || new Date().toISOString(),
-            reviewedAt:       row.reviewed_at  || null,
-            reviewedBy:       row.reviewed_by  || null,
+            userName:         profile.name || [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
+            userEmail:        profile.email || '',
+            userPhone:        profile.phone || '',
+            fullName:         [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
+            dob:              row.date_of_birth || undefined,
+            streetAddr:       row.address_line1 || undefined,
+            city:             row.city || undefined,
+            province:         row.province_state || undefined,
+            postalCode:       row.postal_code || undefined,
+            residenceCountry: row.country_of_residence || undefined,
+            issuingCountry:   row.id_issuing_country || undefined,
+            idType:           row.id_type || undefined,
+            idFrontPath:      row.id_front_path || undefined,
+            proofAddressPath: row.proof_address_path || undefined,
+            selfiePath:       row.selfie_path || undefined,
+            status:           row.status || 'pending',
+            rejectionReason:  row.rejection_reason || undefined,
+            submittedAt:      row.submitted_at || row.created_at,
+            reviewedAt:       row.reviewed_at || null,
+            reviewedBy:       row.reviewed_by || null,
           } as VerificationRequest;
         });
+      } else if (error) {
+        console.warn('identity_verifications query failed:', error.message);
       }
     } catch (e) {
-      console.warn('Supabase direct query failed:', e);
+      console.warn('identity_verifications query threw:', e);
     }
 
-    // Merge with localStorage (catches submissions that failed to reach server)
-    const localReqs: VerificationRequest[] = (() => {
-      try { return JSON.parse(localStorage.getItem('verificationRequests') || '[]'); } catch { return []; }
-    })();
-
-    const merged = [...serverReqs];
-    localReqs.forEach((r: any) => {
-      if (!merged.some((s: any) => s.id === r.id)) merged.push(r);
-    });
-    merged.sort((a: any, b: any) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-    setRequests(merged);
+    setRequests(serverReqs);
 
     // ── WALLET ─────────────────────────────────────────────────────
     setWalletTxs(loadWalletTxs());
@@ -436,34 +452,18 @@ export function AdminVerifications() {
     const now = new Date().toISOString();
 
     try {
-      // ── Update Supabase table directly ────────────────────────
+      // ── Update identity_verifications directly ────────────────
       const patch: any = {
-        status:      status,
+        status,
         reviewed_at: now,
         reviewed_by: "Admin",
       };
-      if (reason) {
-        // Merge rejection reason into metadata
-        const { data: existing } = await supabase
-          .from('verification_requests')
-          .select('metadata')
-          .eq('id', request.id)
-          .single();
-        const currentMeta = (typeof existing?.metadata === 'string'
-          ? (() => { try { return JSON.parse(existing.metadata); } catch { return {}; } })()
-          : existing?.metadata) || {};
-        patch.metadata = { ...currentMeta, rejectionReason: reason, adminNotes: reason };
-      }
+      if (status === 'approved') patch.verified_at = now;
+      if (reason) patch.rejection_reason = reason;
       await supabase
-        .from('verification_requests')
+        .from('identity_verifications')
         .update(patch)
         .eq('id', request.id);
-
-      // Also try edge function (non-blocking, may be blocked)
-      fetch(`${_BASE}/verifications/${request.id}/decision`, {
-        method: "POST", headers: _H,
-        body: JSON.stringify({ status, reviewedAt: now, reviewedBy: "Admin", userId: request.userId, rejectionReason: reason }),
-      }).catch(() => {});
 
       // ── Update profiles table directly ────────────────────────
       const profilePatch: any = { verification_status: status };
@@ -493,14 +493,6 @@ export function AdminVerifications() {
           localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, ...patch }));
         }
       } catch {}
-
-      // Update verificationRequests cache
-      const localReqs: any[] = JSON.parse(localStorage.getItem("verificationRequests") || "[]");
-      localStorage.setItem("verificationRequests", JSON.stringify(
-        localReqs.map(r => r.id === request.id
-          ? { ...r, status, reviewedAt: now, reviewedBy: "Admin", rejectionReason: reason || r.rejectionReason }
-          : r)
-      ));
 
       // ── Send email to user ─────────────────────────────────────
       await sendUserEmail(request, status, reason);
@@ -883,45 +875,12 @@ export function AdminVerifications() {
                       {/* Document preview thumbnails */}
                       <div className="flex gap-2 mb-3">
                         {[
-                          {
-                            src: req.govIdPhoto || req.idPhoto,
-                            label: "Gov ID",
-                          },
-                          {
-                            src: req.utilityBillPhoto,
-                            label: "Utility",
-                          },
-                          {
-                            src: req.selfiePhoto,
-                            label: "Selfie",
-                          },
-                        ].map((doc) =>
-                          doc.src ? (
-                            <div
-                              key={doc.label}
-                              className="w-14 h-14 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 relative"
-                            >
-                              <img
-                                src={doc.src}
-                                alt={doc.label}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] text-center py-0.5 font-semibold">
-                                {doc.label}
-                              </div>
-                            </div>
-                          ) : (
-                            <div
-                              key={doc.label}
-                              className="w-14 h-14 rounded-lg border border-dashed border-gray-200 flex flex-col items-center justify-center gap-0.5"
-                            >
-                              <FileText className="w-4 h-4 text-gray-300" />
-                              <span className="text-[8px] text-gray-300 font-semibold">
-                                {doc.label}
-                              </span>
-                            </div>
-                          ),
-                        )}
+                          { path: req.idFrontPath, label: "Gov ID" },
+                          { path: req.proofAddressPath, label: "Utility" },
+                          { path: req.selfiePath, label: "Selfie" },
+                        ].map((doc) => (
+                          <SignedThumb key={doc.label} path={doc.path} label={doc.label} />
+                        ))}
                       </div>
 
                       <p className="text-[11px] text-gray-400 mb-3">
@@ -1552,18 +1511,14 @@ export function AdminVerifications() {
                       <Mail className="w-4 h-4 text-blue-500" />
                     }
                     label="Email"
-                    value={`${selectedRequest.userEmail}${selectedRequest.emailVerified ? " ✓ verified" : ""}`}
+                    value={selectedRequest.userEmail}
                   />
                   <InfoRow
                     icon={
                       <Phone className="w-4 h-4 text-blue-500" />
                     }
                     label="Phone"
-                    value={
-                      selectedRequest.userPhone
-                        ? `${selectedRequest.userPhone}${selectedRequest.phoneVerified ? " ✓ verified" : ""}`
-                        : undefined
-                    }
+                    value={selectedRequest.userPhone || undefined}
                   />
                   <InfoRow
                     icon={
@@ -1650,10 +1605,7 @@ export function AdminVerifications() {
                       Government ID
                     </p>
                     <PhotoViewer
-                      src={
-                        selectedRequest.govIdPhoto ||
-                        selectedRequest.idPhoto
-                      }
+                      path={selectedRequest.idFrontPath}
                       label="Gov ID"
                     />
                   </div>
@@ -1662,7 +1614,7 @@ export function AdminVerifications() {
                       Utility Bill
                     </p>
                     <PhotoViewer
-                      src={selectedRequest.utilityBillPhoto}
+                      path={selectedRequest.proofAddressPath}
                       label="Utility Bill"
                     />
                   </div>
@@ -1671,7 +1623,7 @@ export function AdminVerifications() {
                       Selfie
                     </p>
                     <PhotoViewer
-                      src={selectedRequest.selfiePhoto}
+                      path={selectedRequest.selfiePath}
                       label="Selfie"
                     />
                   </div>

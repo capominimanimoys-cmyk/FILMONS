@@ -11,7 +11,7 @@ import {
   Phone, Home, Briefcase,
 } from 'lucide-react';
 import { supabase } from "../../lib/supabase";
-import { uploadImage } from "../../lib/upload";
+import { uploadVerificationDoc } from "../../lib/upload";
 
 const STEPS = [
   { id: 1, label: 'Personal Information', icon: User       },
@@ -430,10 +430,22 @@ export function Verification() {
   const [consentData, setConsentData] = useState(false);
   const [consentPrivacy, setConsentPrivacy] = useState(false);
 
+  // The live identity_verifications row for this user — used to show why a
+  // submission was rejected/needs new documents. Fetched from the DB
+  // (rather than localStorage) so it's correct across devices/sessions.
+  const [myVerification, setMyVerification] = useState<any>(null);
+
   useEffect(() => {
     if (!isAuthenticated) navigate('/login');
     if (user) { setLegalName(user.name || ''); }
   }, [isAuthenticated, user]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase.from('identity_verifications').select('*').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => setMyVerification(data))
+      .catch(() => {});
+  }, [user?.id]);
 
   // Available ID types differ per issuing country — drop a selection that
   // no longer applies (e.g. switching from Canada to a different country).
@@ -677,66 +689,72 @@ export function Verification() {
     setLoading(true);
 
     const submittedAt = new Date().toISOString();
-    const recordId = `ver-${user.id}-${Date.now()}`;
+    const [legalFirstName, ...restName] = legalName.trim().split(/\s+/);
+    const legalLastName = restName.join(' ');
 
-    // 1. Upload documents (await — don't navigate until done)
-    let govIdUrl   = govId;
-    let utilityUrl = utilityBill;
-    let selfieUp   = selfieUrl;
-    try {
-      const ts = Date.now();
-      const [a, b, c] = await Promise.all([
-        uploadImage(govId,       `${user.id}/gov-id-${ts}.jpg`),
-        uploadImage(utilityBill, `${user.id}/utility-${ts}.jpg`),
-        uploadImage(selfieUrl,   `${user.id}/selfie-${ts}.jpg`),
-      ]);
-      govIdUrl = a; utilityUrl = b; selfieUp = c;
-    } catch (uploadErr) {
-      console.warn('Storage upload failed — using base64:', uploadErr);
-    }
+    // 1. Upload documents to the private verification-documents bucket —
+    // store the stable PATH, never a signed URL (those expire) and never
+    // the raw bytes in the DB. Falls back to the base64 string if the
+    // upload genuinely fails, so the submission still goes through.
+    const ts = Date.now();
+    const [idFrontPath, proofAddressPath, selfiePath] = await Promise.all([
+      uploadVerificationDoc(govId,       `${user.id}/id-front-${ts}.jpg`),
+      uploadVerificationDoc(utilityBill, `${user.id}/proof-address-${ts}.jpg`),
+      uploadVerificationDoc(selfieUrl,   `${user.id}/selfie-${ts}.jpg`),
+    ]).catch(uploadErr => {
+      console.warn('Verification document upload failed — using base64 fallback:', uploadErr);
+      return [govId, utilityBill, selfieUrl];
+    });
 
-    // 2. Save to localStorage immediately
-    const localRecord = {
-      id: recordId, userId: user.id, userName: user.name,
-      userEmail: user.email || '', userPhone: phone,
-      phoneVerified, emailVerified: true, fullName: legalName,
-      dob, streetAddr, city, province, postalCode, residenceCountry, issuingCountry, idType,
-      roles: selectedRoles, skills: skillsText, portfolioUrl,
-      govIdPhoto: govIdUrl, utilityBillPhoto: utilityUrl, selfiePhoto: selfieUp,
-      status: 'pending' as const, submittedAt, reviewedAt: null, reviewedBy: null,
-    };
+    // 2. Structured row in identity_verifications — sensitive KYC data
+    // stays out of profiles entirely, one column per field instead of a
+    // JSON metadata blob.
     try {
-      const existing = JSON.parse(localStorage.getItem('verificationRequests') || '[]');
-      localStorage.setItem('verificationRequests', JSON.stringify(
-        [localRecord, ...existing.filter((r: any) => r.userId !== user.id)]
-      ));
-    } catch {}
-
-    // 3. Write directly to Supabase table (bypasses blocked edge function)
-    try {
-      const metadata = {
-        userName: user.name, phone,
-        dob, streetAddr, city, province, postalCode,
-        residenceCountry, issuingCountry, idType,
-        roles: selectedRoles, skills: skillsText, portfolioUrl,
-        govIdUrl, utilityBillUrl: utilityUrl, selfieUrl: selfieUp,
-      };
       const { error: dbErr } = await supabase
-        .from('verification_requests')
+        .from('identity_verifications')
         .upsert({
-          id:           recordId,
-          user_id:      user.id,
-          full_name:    legalName,
-          email:        user.email || '',
-          status:       'pending',
-          submitted_at: submittedAt,
-          metadata,
+          user_id:                 user.id,
+          status:                  'pending',
+          legal_first_name:        legalFirstName || null,
+          legal_last_name:         legalLastName || null,
+          date_of_birth:           dob || null,
+          country_of_residence:    residenceCountry || null,
+          address_line1:           streetAddr || null,
+          city:                    city || null,
+          province_state:         province || null,
+          postal_code:             postalCode || null,
+          id_issuing_country:      issuingCountry || null,
+          id_type:                 idType || null,
+          proof_of_address_type:   'Utility Bill / Bank Statement',
+          id_front_path:           idFrontPath,
+          proof_address_path:      proofAddressPath,
+          selfie_path:             selfiePath,
+          submitted_at:            submittedAt,
         }, { onConflict: 'user_id' });
 
-      if (dbErr) console.warn('Supabase insert error:', dbErr.message);
-      else       console.log('✅ Verification saved to verification_requests');
+      if (dbErr) console.warn('identity_verifications upsert error:', dbErr.message);
+      else       console.log('✅ Verification saved to identity_verifications');
     } catch (dbErr) {
-      console.warn('Supabase insert failed — data preserved in localStorage:', dbErr);
+      console.warn('identity_verifications upsert failed:', dbErr);
+    }
+
+    // 3. Professional info (role/skills/portfolio) isn't identity/KYC data
+    // — it belongs on the public profile, not mixed into the verification
+    // record.
+    if (selectedRoles.length || skillsText.trim() || portfolioUrl.trim()) {
+      try {
+        const { data: existingProfile } = await supabase
+          .from('profiles').select('profile_meta').eq('id', user.id).single();
+        const existingMeta = (typeof existingProfile?.profile_meta === 'string'
+          ? (() => { try { return JSON.parse(existingProfile.profile_meta); } catch { return {}; } })()
+          : existingProfile?.profile_meta) || {};
+        await supabase.from('profiles').update({
+          primary_role: selectedRoles[0] || null,
+          profile_meta: { ...existingMeta, skills: skillsText || undefined, portfolioUrl: portfolioUrl || undefined, secondaryRoles: selectedRoles.slice(1) },
+        }).eq('id', user.id);
+      } catch (e) {
+        console.warn('Saving professional info failed:', e);
+      }
     }
 
     // 4. Update local session
@@ -791,14 +809,12 @@ export function Verification() {
   }
 
   if (user.verificationStatus === 'rejected' || user.verificationStatus === 'denied') {
-    const localReqs = (() => { try { return JSON.parse(localStorage.getItem('verificationRequests') || '[]'); } catch { return []; } })();
-    const myReq = localReqs.find((r: any) => r.userId === user.id);
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto"><X className="w-10 h-10 text-red-500"/></div>
           <h2 className="text-2xl font-bold text-gray-900">Verification Denied</h2>
-          {myReq?.rejectionReason && <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-red-600 mb-1">Reason</p><p className="text-sm text-red-700">{myReq.rejectionReason}</p></div>}
+          {myVerification?.rejection_reason && <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-red-600 mb-1">Reason</p><p className="text-sm text-red-700">{myVerification.rejection_reason}</p></div>}
           <p className="text-gray-500 text-sm">Please review the reason and resubmit with corrected documents.</p>
           <button onClick={() => { try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} window.location.reload(); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3">Resubmit Verification</button>
         </div>
@@ -807,14 +823,12 @@ export function Verification() {
   }
 
   if (user.verificationStatus === 'needs_resubmission') {
-    const localReqs = (() => { try { return JSON.parse(localStorage.getItem('verificationRequests') || '[]'); } catch { return []; } })();
-    const myReq = localReqs.find((r: any) => r.userId === user.id);
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto"><Upload className="w-10 h-10 text-orange-500"/></div>
           <h2 className="text-2xl font-bold text-gray-900">New Documents Required</h2>
-          {myReq?.rejectionReason && <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-orange-600 mb-1">Admin note</p><p className="text-sm text-orange-700">{myReq.rejectionReason}</p></div>}
+          {myVerification?.rejection_reason && <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-orange-600 mb-1">Admin note</p><p className="text-sm text-orange-700">{myVerification.rejection_reason}</p></div>}
           <p className="text-gray-500 text-sm">The admin has requested new documents. You can continue from where you left off.</p>
           <button onClick={() => { setStep(4); try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl py-3">Upload New Documents</button>
         </div>
