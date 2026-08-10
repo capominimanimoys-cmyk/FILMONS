@@ -7,20 +7,32 @@ import { sendEmail } from '../lib/emailjs-config';
 import {
   ShieldCheck, ArrowLeft, ChevronRight, ChevronLeft, ChevronDown,
   Check, Upload, Camera, FileText, User, MapPin, CreditCard, AlertCircle,
-  Eye, CheckCircle, X, Loader2, Info, Search, Navigation, XCircle,
+  CheckCircle, X, Loader2, Info, Search, Navigation, XCircle,
+  Phone, Home, Briefcase,
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from "../../lib/supabase";
 import { uploadImage } from "../../lib/upload";
 
-
 const STEPS = [
-  { id: 1, label: 'Personal Info',   icon: User       },
-  { id: 2, label: 'Documents',       icon: FileText   },
-  { id: 3, label: 'Consent',         icon: ShieldCheck },
-  { id: 4, label: 'Permissions',     icon: Camera     },
-  { id: 5, label: 'Instructions',    icon: Eye        },
-  { id: 6, label: 'Selfie',          icon: Camera     },
+  { id: 1, label: 'Personal Information', icon: User       },
+  { id: 2, label: 'Contact',              icon: Phone      },
+  { id: 3, label: 'Location',             icon: MapPin     },
+  { id: 4, label: 'Proof of Address',     icon: Home       },
+  { id: 5, label: 'Identity',             icon: CreditCard },
+  { id: 6, label: 'Face Verification',    icon: Camera     },
+  { id: 7, label: 'Professional',         icon: Briefcase  },
+  { id: 8, label: 'Review',               icon: CheckCircle},
+];
+
+const ROLE_CATEGORIES = [
+  { label: 'Film & Video',  roles: ['Director','Cinematographer','Camera Operator','Gaffer','Grip','Producer','Video Editor','Colorist','VFX Artist','Sound Designer'] },
+  { label: 'Photography',   roles: ['Photographer','Fashion Photographer','Retoucher','Studio Manager','Drone Photographer'] },
+  { label: 'Music & Audio', roles: ['Music Producer','Beatmaker','Mixing Engineer','DJ','Composer'] },
+  { label: 'Social Media',  roles: ['Content Creator','UGC Creator','YouTuber','Streamer','Podcast Producer'] },
+  { label: 'Design',        roles: ['Graphic Designer','UI Designer','Motion Designer','Creative Director'] },
+  { label: 'Animation/3D',  roles: ['3D Animator','Unreal Engine Artist','Blender Artist','Technical Artist'] },
+  { label: 'Writing',       roles: ['Screenwriter','Copywriter','Story Editor','Narrative Designer'] },
+  { label: 'Performing',    roles: ['Actor','Voice Actor','Dancer','Choreographer'] },
 ];
 
 // ── ID type options — depend on where the ID was actually issued, not where
@@ -29,14 +41,21 @@ const STEPS = [
 //    verify (passport, or a national ID card where the country's format is
 //    known) — we deliberately don't accept foreign driver's licences, or
 //    ask for health/SIN/citizenship cards for a routine Creator+ check.
-function idTypeOptions(idCountry: string): { value: string; recommended?: boolean }[] {
+function idTypeOptions(idCountry: string): { value: string; icon: string; recommended?: boolean }[] {
   if (idCountry === 'Canada') return [
-    { value: "Driver's Licence", recommended: true }, { value: 'Canadian Passport' }, { value: 'Provincial/Territorial Photo ID' },
+    { value: "Driver's Licence", icon: '🪪', recommended: true },
+    { value: 'Canadian Passport', icon: '🛂' },
+    { value: 'Provincial/Territorial Photo ID', icon: '🪪' },
   ];
   if (idCountry === 'United States') return [
-    { value: "Driver's License", recommended: true }, { value: 'U.S. Passport' }, { value: 'State-Issued Photo ID' },
+    { value: "Driver's License", icon: '🪪', recommended: true },
+    { value: 'U.S. Passport', icon: '🛂' },
+    { value: 'State-Issued Photo ID', icon: '🪪' },
   ];
-  return [{ value: 'Passport', recommended: true }, { value: 'National Identity Card' }];
+  return [
+    { value: 'Passport', icon: '🛂', recommended: true },
+    { value: 'National Identity Card', icon: '🪪' },
+  ];
 }
 const CA_PROVINCES = ['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'];
 const US_STATES = [
@@ -331,31 +350,49 @@ function GuidelineRow({ ok, children }: { ok: boolean; children: React.ReactNode
   );
 }
 
+// ── Review row — label/value pair used on the final summary step ──────
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start justify-between gap-3 py-1.5">
+      <span className="text-xs text-gray-400 shrink-0">{label}</span>
+      <span className="text-sm font-semibold text-gray-800 text-right">{value}</span>
+    </div>
+  );
+}
+
 export function Verification() {
   const { user, isAuthenticated, updateUser } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
 
-  // Step 1: Personal info
+  // Step 1: Personal
   const [legalName, setLegalName] = useState('');
   const [dob, setDob] = useState('');
+  // Residence, ID-issuing country, and (implicitly) nationality are kept as
+  // separate concepts — an immigrant, international student, or permanent
+  // resident can live here without holding a Canadian/US ID, so residence
+  // must never be assumed to equal ID country. The ID-country question is
+  // fully standalone (Canada / US / Other), not relative to residence.
+  const [residenceCountry, setResidenceCountry] = useState<'Canada' | 'United States' | ''>('');
+
+  // Step 2: Contact — email is always verified by the time a user can reach
+  // this page (Root.tsx redirects unverified emails to /verify-email before
+  // any other route, this one included), so only phone needs an inline flow.
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [phoneVerified, setPhoneVerified] = useState(!!user?.phoneVerified);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+
+  // Step 3: Location
   const [streetAddr, setStreetAddr] = useState('');
   const [city, setCity] = useState('');
   const [province, setProvince] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  // Residence, ID-issuing country, and (implicitly) nationality are kept as
-  // separate concepts — an immigrant, international student, or permanent
-  // resident can live here without holding a Canadian/US ID, so residence
-  // must never be assumed to equal ID country.
-  const [residenceCountry, setResidenceCountry] = useState<'Canada' | 'United States' | ''>('');
-  const [idCountrySame, setIdCountrySame] = useState(true); // ID issued by residence country?
-  const [otherIdCountry, setOtherIdCountry] = useState(''); // only used when idCountrySame is false
-  const issuingCountry = idCountrySame ? residenceCountry : otherIdCountry;
-  const [idType, setIdType] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  // Address autocomplete
   const [addrSearch, setAddrSearch]           = useState('');
   const [addrSuggestions, setAddrSuggestions] = useState<any[]>([]);
   const [addrShowSug, setAddrShowSug]         = useState(false);
@@ -364,25 +401,34 @@ export function Verification() {
   const addrTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addrSugRef  = useRef<HTMLDivElement>(null);
 
-  // Step 2: Documents
+  // Step 4: Proof of Address
   const [utilityBill, setUtilityBill] = useState('');
+
+  // Step 5: Identity
+  const [idCountryChoice, setIdCountryChoice] = useState<'Canada' | 'United States' | 'Other' | ''>('');
+  // The actual issuing country when idCountryChoice is 'Other' — stores the
+  // real country name (e.g. "France", "Nigeria"), never the literal "Other".
+  const [otherIdCountry, setOtherIdCountry] = useState('');
+  const issuingCountry = idCountryChoice === 'Other' ? otherIdCountry : idCountryChoice;
+  const [idType, setIdType] = useState('');
   const [govId, setGovId] = useState('');
 
-  // Step 3: Consent
-  const [consentId, setConsentId] = useState(false);
-  const [consentData, setConsentData] = useState(false);
-  const [consentPrivacy, setConsentPrivacy] = useState(false);
-
-  // Step 4: Permissions
-  const [cameraGranted, setCameraGranted] = useState(false);
-  const [storageGranted, setStorageGranted] = useState(false);
-
-  // Step 6: Selfie
+  // Step 6: Face Verification
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [selfieUrl, setSelfieUrl] = useState('');
   const [cameraError, setCameraError] = useState('');
+
+  // Step 7: Professional (optional)
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [skillsText, setSkillsText]       = useState('');
+  const [portfolioUrl, setPortfolioUrl]   = useState('');
+
+  // Step 8: Review & consent
+  const [consentId, setConsentId] = useState(false);
+  const [consentData, setConsentData] = useState(false);
+  const [consentPrivacy, setConsentPrivacy] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) navigate('/login');
@@ -390,7 +436,7 @@ export function Verification() {
   }, [isAuthenticated, user]);
 
   // Available ID types differ per issuing country — drop a selection that
-  // no longer applies (e.g. switching from Canada to "different country").
+  // no longer applies (e.g. switching from Canada to a different country).
   useEffect(() => {
     if (idType && !idTypeOptions(issuingCountry).some(o => o.value === idType)) setIdType('');
   }, [issuingCountry]); // eslint-disable-line
@@ -416,6 +462,34 @@ export function Verification() {
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  // ── Phone OTP ──────────────────────────────────────────────────────
+  const sendOtp = async () => {
+    if (!phone.trim()) { toast.error('Enter your phone number'); return; }
+    setOtpSending(true);
+    try {
+      await authApi.sendPhoneOTP(phone);
+      setOtpSent(true);
+      toast.success('Verification code sent!');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to send code');
+    }
+    setOtpSending(false);
+  };
+
+  const verifyOtp = async () => {
+    if (!otpCode.trim()) { toast.error('Enter the code you received'); return; }
+    setOtpVerifying(true);
+    try {
+      await authApi.verifyPhoneOTP(phone, otpCode);
+      setPhoneVerified(true);
+      updateUser?.({ phone, phoneVerified: true } as any);
+      toast.success('Phone verified!');
+    } catch (e: any) {
+      toast.error(e?.message || 'Invalid code — please try again');
+    }
+    setOtpVerifying(false);
+  };
 
   // Address autocomplete handlers
   const handleAddrSearch = useCallback((val: string) => {
@@ -558,30 +632,43 @@ export function Verification() {
     setCameraStream(null);
   };
 
+  const toggleRole = (role: string) => setSelectedRoles(prev =>
+    prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role].slice(0, 3)
+  );
+
   const handleNext = () => {
     if (step === 1) {
       if (!residenceCountry) { toast.error('Please select your country of residence'); return; }
       if (!legalName.trim()) { toast.error('Legal name is required'); return; }
       if (!dob) { toast.error('Date of birth is required'); return; }
+    }
+    if (step === 2) {
+      if (!phoneVerified) { toast.error('Please verify your phone number to continue'); return; }
+    }
+    if (step === 3) {
       if (!city.trim()) { toast.error('City is required'); return; }
       if (!province) { toast.error(residenceCountry === 'United States' ? 'State is required' : 'Province is required'); return; }
       if (!postalCode.trim()) { toast.error(residenceCountry === 'United States' ? 'ZIP code is required' : 'Postal code is required'); return; }
-      if (!idCountrySame && !otherIdCountry) { toast.error('Please select the country that issued your ID'); return; }
-      if (!idType) { toast.error('Please select an ID type'); return; }
-    }
-    if (step === 2) {
-      if (!utilityBill) { toast.error('Please upload proof of address (utility bill)'); return; }
-      if (!govId) { toast.error('Please upload your government ID'); return; }
-    }
-    if (step === 3) {
-      if (!consentId || !consentData || !consentPrivacy) { toast.error('Please agree to all terms to continue'); return; }
     }
     if (step === 4) {
-      if (!cameraGranted || !storageGranted) { toast.error('Please grant both permissions to continue'); return; }
+      if (!utilityBill) { toast.error('Please upload proof of address'); return; }
     }
-    if (step < 6) { setStep(s => s + 1); return; }
-    // Step 6: Submit
-    handleSubmit();
+    if (step === 5) {
+      if (!idCountryChoice) { toast.error('Please select the country that issued your ID'); return; }
+      if (idCountryChoice === 'Other' && !otherIdCountry) { toast.error('Please select the issuing country'); return; }
+      if (!idType) { toast.error('Please select an ID type'); return; }
+      if (!govId) { toast.error('Please upload your government ID'); return; }
+    }
+    if (step === 6) {
+      if (!selfieUrl) { toast.error('Please take a selfie first'); return; }
+    }
+    // Step 7 (Professional) is optional — no validation.
+    if (step === 8) {
+      if (!consentId || !consentData || !consentPrivacy) { toast.error('Please agree to all terms to continue'); return; }
+      handleSubmit();
+      return;
+    }
+    setStep(s => s + 1);
   };
 
   const handleSubmit = async () => {
@@ -611,9 +698,10 @@ export function Verification() {
     // 2. Save to localStorage immediately
     const localRecord = {
       id: recordId, userId: user.id, userName: user.name,
-      userEmail: user.email || '', userPhone: user.phone || '',
-      phoneVerified: false, emailVerified: true, fullName: legalName,
+      userEmail: user.email || '', userPhone: phone,
+      phoneVerified, emailVerified: true, fullName: legalName,
       dob, streetAddr, city, province, postalCode, residenceCountry, issuingCountry, idType,
+      roles: selectedRoles, skills: skillsText, portfolioUrl,
       govIdPhoto: govIdUrl, utilityBillPhoto: utilityUrl, selfiePhoto: selfieUp,
       status: 'pending' as const, submittedAt, reviewedAt: null, reviewedBy: null,
     };
@@ -627,9 +715,10 @@ export function Verification() {
     // 3. Write directly to Supabase table (bypasses blocked edge function)
     try {
       const metadata = {
-        userName: user.name, phone: user.phone || '',
+        userName: user.name, phone,
         dob, streetAddr, city, province, postalCode,
         residenceCountry, issuingCountry, idType,
+        roles: selectedRoles, skills: skillsText, portfolioUrl,
         govIdUrl, utilityBillUrl: utilityUrl, selfieUrl: selfieUp,
       };
       const { error: dbErr } = await supabase
@@ -727,7 +816,7 @@ export function Verification() {
           <h2 className="text-2xl font-bold text-gray-900">New Documents Required</h2>
           {myReq?.rejectionReason && <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-orange-600 mb-1">Admin note</p><p className="text-sm text-orange-700">{myReq.rejectionReason}</p></div>}
           <p className="text-gray-500 text-sm">The admin has requested new documents. You can continue from where you left off.</p>
-          <button onClick={() => { setStep(2); try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl py-3">Upload New Documents</button>
+          <button onClick={() => { setStep(4); try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl py-3">Upload New Documents</button>
         </div>
       </div>
     );
@@ -765,10 +854,9 @@ export function Verification() {
             <StepHero icon={<User className="w-5 h-5"/>} title="Personal Information" subtitle="Provide your legal details for identity verification" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              {/* Country of residence comes first and drives the address
-                  search + province/state field below — kept to just the two
-                  launch markets rather than a 190-country list, since that's
-                  a separate question from where the creator's ID is from. */}
+              {/* Country of residence is kept to just the two launch markets
+                  rather than a 190-country list — separate question from
+                  where the creator's ID is from (asked later, in Identity). */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Country of Residence *</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -793,291 +881,254 @@ export function Verification() {
                 <DobCalendar value={dob} onChange={setDob} />
                 <p className="text-xs text-gray-400">You must be at least 18 years old to use Creator+.</p>
               </div>
+            </div>
+          </>
+        )}
 
-              {/* Smart address autocomplete */}
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Residential Address{residenceCountry ? ` (${residenceCountry})` : ''}</label>
-                <div ref={addrSugRef} className="relative">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                    {addrSearching
-                      ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 animate-spin" />
-                      : addrSearch
-                        ? <button type="button" onClick={() => { setAddrSearch(''); setStreetAddr(''); setCity(''); setProvince(''); setPostalCode(''); setAddrFilled(false); setAddrSuggestions([]); setAddrShowSug(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
-                        : null
-                    }
-                    <input
-                      value={addrSearch}
-                      onChange={e => handleAddrSearch(e.target.value)}
-                      onFocus={() => addrSuggestions.length > 0 && setAddrShowSug(true)}
-                      placeholder={`Search your street address in ${residenceCountry || 'your country'}…`}
-                      className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-                    />
-                  </div>
-                  {addrShowSug && addrSuggestions.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
-                      {addrSuggestions.map(s => (
-                        <button key={s.place_id} type="button"
-                          onMouseDown={e => { e.preventDefault(); handleAddrSelect(s); }}
-                          className="w-full flex items-start gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left group"
-                        >
-                          <MapPin className="w-4 h-4 text-blue-400 shrink-0 mt-0.5 group-hover:text-blue-600" />
-                          <div className="min-w-0">
-                            <p className="text-sm text-gray-800 font-medium truncate">
-                              {highlightAddr(s.structured_formatting?.main_text || s.description)}
-                            </p>
-                            {s.structured_formatting?.secondary_text && (
-                              <p className="text-xs text-gray-400 truncate mt-0.5">{s.structured_formatting.secondary_text}</p>
-                            )}
-                          </div>
-                        </button>
-                      ))}
-                      <div className="px-4 py-2 border-t border-gray-100 text-[10px] text-gray-400">Powered by Google Maps</div>
-                    </div>
-                  )}
+        {/* ── Step 2: Contact ── */}
+        {step === 2 && (
+          <>
+            <StepHero icon={<Phone className="w-5 h-5"/>} title="Contact" subtitle="Confirm your email and verify your phone number" />
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              {/* Email — always verified by the time this page is reachable */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Email</label>
+                <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+                  <span className="flex-1 text-sm text-gray-700 truncate">{user.email}</span>
+                  <span className="flex items-center gap-1 text-xs font-bold text-green-600 shrink-0">
+                    <CheckCircle className="w-3.5 h-3.5"/> Verified
+                  </span>
                 </div>
+              </div>
 
-                {/* GPS button */}
-                <button type="button" onClick={handleAddrGPS}
-                  className="flex items-center gap-2 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-xl px-3 py-2 transition-colors"
-                >
-                  <Navigation className="w-3.5 h-3.5" /> Use my current location
-                </button>
-
-                {/* Filled address fields */}
-                {addrFilled && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-xs font-bold text-green-700">Address confirmed</span>
+              {/* Phone — verify inline via OTP */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Phone Number *</label>
+                {phoneVerified ? (
+                  <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                    <span className="flex-1 text-sm font-semibold text-green-800">{phone}</span>
+                    <span className="flex items-center gap-1 text-xs font-bold text-green-600 shrink-0">
+                      <CheckCircle className="w-3.5 h-3.5"/> Verified
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+1 (555) 123-4567" disabled={otpSent}
+                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-400"/>
+                      {!otpSent && (
+                        <button type="button" onClick={sendOtp} disabled={otpSending}
+                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors shrink-0">
+                          {otpSending ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Send Code'}
+                        </button>
+                      )}
                     </div>
-                    <div className="grid grid-cols-1 gap-2">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase">Street</label>
-                        <input value={streetAddr} onChange={e => setStreetAddr(e.target.value)}
+                    {otpSent && (
+                      <div className="flex gap-2 mt-2">
+                        <input value={otpCode} onChange={e=>setOtpCode(e.target.value)} placeholder="Enter 6-digit code" maxLength={6}
+                          className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+                        <button type="button" onClick={verifyOtp} disabled={otpVerifying}
+                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors shrink-0">
+                          {otpVerifying ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Verify'}
+                        </button>
+                      </div>
+                    )}
+                    {otpSent && (
+                      <button type="button" onClick={sendOtp} disabled={otpSending} className="text-xs text-blue-600 hover:text-blue-800 font-semibold">
+                        Resend code
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 3: Location ── */}
+        {step === 3 && (
+          <>
+            <StepHero icon={<MapPin className="w-5 h-5"/>} title="Location" subtitle="Where do you currently live?" />
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Residential Address{residenceCountry ? ` (${residenceCountry})` : ''}</label>
+              <div ref={addrSugRef} className="relative">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  {addrSearching
+                    ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 animate-spin" />
+                    : addrSearch
+                      ? <button type="button" onClick={() => { setAddrSearch(''); setStreetAddr(''); setCity(''); setProvince(''); setPostalCode(''); setAddrFilled(false); setAddrSuggestions([]); setAddrShowSug(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+                      : null
+                  }
+                  <input
+                    value={addrSearch}
+                    onChange={e => handleAddrSearch(e.target.value)}
+                    onFocus={() => addrSuggestions.length > 0 && setAddrShowSug(true)}
+                    placeholder={`Search your street address in ${residenceCountry || 'your country'}…`}
+                    className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  />
+                </div>
+                {addrShowSug && addrSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
+                    {addrSuggestions.map(s => (
+                      <button key={s.place_id} type="button"
+                        onMouseDown={e => { e.preventDefault(); handleAddrSelect(s); }}
+                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left group"
+                      >
+                        <MapPin className="w-4 h-4 text-blue-400 shrink-0 mt-0.5 group-hover:text-blue-600" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-800 font-medium truncate">
+                            {highlightAddr(s.structured_formatting?.main_text || s.description)}
+                          </p>
+                          {s.structured_formatting?.secondary_text && (
+                            <p className="text-xs text-gray-400 truncate mt-0.5">{s.structured_formatting.secondary_text}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                    <div className="px-4 py-2 border-t border-gray-100 text-[10px] text-gray-400">Powered by Google Maps</div>
+                  </div>
+                )}
+              </div>
+
+              {/* GPS button */}
+              <button type="button" onClick={handleAddrGPS}
+                className="flex items-center gap-2 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-xl px-3 py-2 transition-colors"
+              >
+                <Navigation className="w-3.5 h-3.5" /> Use my current location
+              </button>
+
+              {/* Filled address fields */}
+              {addrFilled && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <span className="text-xs font-bold text-green-700">Address confirmed</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Street</label>
+                      <input value={streetAddr} onChange={e => setStreetAddr(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1 col-span-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">City</label>
+                        <input value={city} onChange={e => setCity(e.target.value)}
                           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="space-y-1 col-span-1">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase">City</label>
-                          <input value={city} onChange={e => setCity(e.target.value)}
-                            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase">{residenceCountry === 'United States' ? 'State' : 'Prov.'}</label>
-                          <select value={province} onChange={e => setProvince(e.target.value)}
-                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
-                            <option value="">--</option>
-                            {(residenceCountry === 'United States' ? US_STATES : CA_PROVINCES).map(p => <option key={p} value={p}>{p}</option>)}
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-500 uppercase">{residenceCountry === 'United States' ? 'ZIP' : 'Postal'}</label>
-                          <input value={postalCode} onChange={e => setPostalCode(e.target.value.toUpperCase())} maxLength={residenceCountry === 'United States' ? 5 : 7}
-                            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                        </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">{residenceCountry === 'United States' ? 'State' : 'Prov.'}</label>
+                        <select value={province} onChange={e => setProvince(e.target.value)}
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                          <option value="">--</option>
+                          {(residenceCountry === 'United States' ? US_STATES : CA_PROVINCES).map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">{residenceCountry === 'United States' ? 'ZIP' : 'Postal'}</label>
+                        <input value={postalCode} onChange={e => setPostalCode(e.target.value.toUpperCase())} maxLength={residenceCountry === 'United States' ? 5 : 7}
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Manual fallback toggle */}
-                {!addrFilled && (
-                  <button type="button" onClick={() => setAddrFilled(true)}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
-                  >
-                    Enter address manually
-                  </button>
-                )}
+              {/* Manual fallback toggle */}
+              {!addrFilled && (
+                <button type="button" onClick={() => setAddrFilled(true)}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+                >
+                  Enter address manually
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── Step 4: Proof of Address ── */}
+        {step === 4 && (
+          <>
+            <StepHero icon={<Home className="w-5 h-5"/>} title="Proof of Address" subtitle="Upload a document confirming the address you entered" />
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
+              <p className="text-xs text-gray-500">A recent utility bill, bank statement, or government mail (within 3 months)</p>
+              <FileUploadZone label="Utility Bill / Proof of Address" accept="image/*,.pdf"
+                value={utilityBill || null} onChange={(url) => setUtilityBill(url)} />
+              <div className="space-y-1.5 pt-1">
+                <GuidelineRow ok>Ensure the document is well-lit and fully visible</GuidelineRow>
+                <GuidelineRow ok>Address on the document must match what you entered</GuidelineRow>
               </div>
+            </div>
+          </>
+        )}
 
-              {/* Country that issued the ID — defaults to "same as residence"
-                  since that's the common case, but residence and ID country
-                  are genuinely different concepts (immigrants, international
-                  students, and permanent residents may hold a foreign ID). */}
+        {/* ── Step 5: Identity ── */}
+        {step === 5 && (
+          <>
+            <StepHero icon={<CreditCard className="w-5 h-5"/>} title="Identity" subtitle="Tell us where your ID is from, then upload it" />
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              {/* Country that issued the ID — standalone question, not
+                  relative to residence (immigrants, international students,
+                  and permanent residents may hold a foreign ID). When
+                  "Other" is picked, otherIdCountry stores the real country
+                  name (e.g. "France"), never the literal "Other". */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Country that Issued Your ID *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setIdCountrySame(true)} disabled={!residenceCountry}
-                    className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${idCountrySame ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                    Same as residence{residenceCountry ? ` (${residenceCountry === 'Canada' ? '🇨🇦' : '🇺🇸'} ${residenceCountry})` : ''}
+                <div className="grid grid-cols-3 gap-2">
+                  <button type="button" onClick={() => setIdCountryChoice('Canada')}
+                    className={`px-2 py-2.5 rounded-xl text-xs sm:text-sm font-semibold border-2 transition-all ${idCountryChoice === 'Canada' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    🇨🇦 Canada
                   </button>
-                  <button type="button" onClick={() => setIdCountrySame(false)}
-                    className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${!idCountrySame ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                    🌎 Different country
+                  <button type="button" onClick={() => setIdCountryChoice('United States')}
+                    className={`px-2 py-2.5 rounded-xl text-xs sm:text-sm font-semibold border-2 transition-all ${idCountryChoice === 'United States' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    🇺🇸 United States
+                  </button>
+                  <button type="button" onClick={() => setIdCountryChoice('Other')}
+                    className={`px-2 py-2.5 rounded-xl text-xs sm:text-sm font-semibold border-2 transition-all ${idCountryChoice === 'Other' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    🌍 Other
                   </button>
                 </div>
-                {!idCountrySame && (
-                  <select value={otherIdCountry} onChange={e=>setOtherIdCountry(e.target.value)}
-                    className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-                    <option value="">Select the country that issued your ID…</option>
-                    {ALL_COUNTRIES.filter(c => c !== 'Canada' && c !== 'United States').map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                {idCountryChoice === 'Other' && (
+                  <div className="space-y-1 mt-2">
+                    <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Select Issuing Country</label>
+                    <select value={otherIdCountry} onChange={e=>setOtherIdCountry(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                      <option value="">Choose country…</option>
+                      {ALL_COUNTRIES.filter(c => c !== 'Canada' && c !== 'United States').map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
                 )}
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">ID Type *</label>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Choose Your ID Type *</label>
                 <select value={idType} onChange={e=>setIdType(e.target.value)} disabled={!issuingCountry}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white disabled:bg-gray-50 disabled:text-gray-400">
                   <option value="">{issuingCountry ? 'Select ID type' : 'Select a country above first'}</option>
-                  {idTypeOptions(issuingCountry).map(o=><option key={o.value} value={o.value}>{o.value}{o.recommended ? ' (Recommended)' : ''}</option>)}
+                  {idTypeOptions(issuingCountry).map(o=><option key={o.value} value={o.value}>{o.icon} {o.value}{o.recommended ? ' — Recommended' : ''}</option>)}
                 </select>
                 {issuingCountry && issuingCountry !== 'Canada' && issuingCountry !== 'United States' && (
                   <p className="text-xs text-gray-400">Foreign driver's licences aren't accepted yet — a passport or national ID card is required.</p>
                 )}
               </div>
-            </div>
-          </>
-        )}
 
-        {/* ── Step 2: Document Upload ── */}
-        {step === 2 && (
-          <>
-            <StepHero icon={<Upload className="w-5 h-5"/>} title="Document Upload" subtitle="Upload your proof of address and government ID" />
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-5">
-              <div>
-                <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><MapPin className="w-4 h-4 text-blue-500"/>Proof of Address</h3>
-                <p className="text-xs text-gray-500 mb-3">A recent utility bill, bank statement, or government mail (within 3 months)</p>
-                <FileUploadZone label="Utility Bill / Proof of Address" accept="image/*,.pdf"
-                  value={utilityBill || null} onChange={(url) => setUtilityBill(url)} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500"/>Government ID</h3>
-                <p className="text-xs text-gray-500 mb-3">Upload a clear photo of your {idType || 'government ID'} — front and back if applicable</p>
-                <FileUploadZone label="Government ID Photo" accept="image/*,.pdf"
-                  value={govId || null} onChange={(url) => setGovId(url)} />
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── Step 3: Consent & Legal ── */}
-        {step === 3 && (
-          <>
-            <StepHero icon={<ShieldCheck className="w-5 h-5"/>} title="Consent & Legal Agreements" subtitle="Please read and agree to the following terms" />
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              {[
-                {
-                  key: 'consentId', checked: consentId, onChange: setConsentId,
-                  title: 'Identity Verification Terms',
-                  body: 'I agree to provide accurate and truthful identity information. I understand that providing false information is grounds for account termination and may result in legal consequences.'
-                },
-                {
-                  key: 'consentData', checked: consentData, onChange: setConsentData,
-                  title: 'Data Processing Consent (KYC/AML)',
-                  body: 'I consent to the collection, processing, and storage of my personal data for the purpose of Know Your Customer (KYC) and Anti-Money Laundering (AML) compliance, in accordance with applicable Canadian privacy laws (PIPEDA).'
-                },
-                {
-                  key: 'consentPrivacy', checked: consentPrivacy, onChange: setConsentPrivacy,
-                  title: 'Privacy Policy Agreement',
-                  body: 'I have read and accept the Filmons Privacy Policy. I understand how my data will be used, retained, and protected, and that I can request deletion at any time.'
-                },
-              ].map(item => (
-                <button key={item.key} type="button" onClick={() => item.onChange(!item.checked)}
-                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all ${item.checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${item.checked ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
-                    {item.checked && <Check className="w-3 h-3 text-white"/>}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">{item.title}</p>
-                    <p className="text-xs text-gray-500 leading-relaxed mt-1">{item.body}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ── Step 4: Permissions ── */}
-        {step === 4 && (
-          <>
-            <StepHero icon={<Camera className="w-5 h-5"/>} title="App Permissions" subtitle="We need access to complete your verification" />
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              {[
-                {
-                  key: 'camera', granted: cameraGranted, icon: Camera, title: 'Camera Access',
-                  desc: 'Required to take your ID photos and verification selfie.',
-                  onGrant: async () => {
-                    try {
-                      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                      stream.getTracks().forEach(t => t.stop());
-                      setCameraGranted(true); toast.success('Camera access granted!');
-                    } catch { toast.error('Camera access denied. Please enable it in your browser settings.'); }
-                  }
-                },
-                {
-                  key: 'storage', granted: storageGranted, icon: Upload, title: 'Storage Access',
-                  desc: 'Required to upload existing photos of your documents.',
-                  onGrant: () => { setStorageGranted(true); toast.success('Storage access granted!'); }
-                },
-              ].map(item => (
-                <div key={item.key} className={`flex items-center gap-3.5 p-4 rounded-2xl border-2 transition-colors ${item.granted ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.granted ? 'bg-green-100' : 'bg-blue-50'}`}>
-                    <item.icon className={`w-5 h-5 ${item.granted ? 'text-green-600' : 'text-blue-500'}`} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-gray-800">{item.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{item.desc}</p>
-                  </div>
-                  {item.granted ? (
-                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center shrink-0"><Check className="w-4 h-4 text-white"/></div>
-                  ) : (
-                    <button onClick={item.onGrant} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shrink-0">
-                      Grant
-                    </button>
-                  )}
+              {idType && (
+                <div className="pt-1">
+                  <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500"/>Upload Your {idType}</h3>
+                  <FileUploadZone label="Government ID Photo" accept="image/*,.pdf"
+                    value={govId || null} onChange={(url) => setGovId(url)} />
                 </div>
-              ))}
-
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start gap-2">
-                <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5"/>
-                <p className="text-xs text-blue-700">Your data is encrypted and never shared with third parties without your consent.</p>
-              </div>
+              )}
             </div>
           </>
         )}
 
-        {/* ── Step 5: Instructions ── */}
-        {step === 5 && (
-          <>
-            <StepHero icon={<Eye className="w-5 h-5"/>} title="Before You Continue" subtitle="Read these guidelines for a successful verification" />
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              <div>
-                <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-blue-500"/>Document Guidelines</h3>
-                <div className="space-y-2.5">
-                  <GuidelineRow ok>Use a valid, unexpired government-issued ID</GuidelineRow>
-                  <GuidelineRow ok>Ensure the document is well-lit and fully visible</GuidelineRow>
-                  <GuidelineRow ok>Avoid glare, shadows, or blurry images</GuidelineRow>
-                  <GuidelineRow ok>Capture all four corners of the document</GuidelineRow>
-                  <GuidelineRow ok>Make sure all text is legible</GuidelineRow>
-                  <GuidelineRow ok={false}>Do not cover any part of the document</GuidelineRow>
-                  <GuidelineRow ok={false}>Do not use expired documents</GuidelineRow>
-                </div>
-              </div>
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><Camera className="w-4 h-4 text-blue-500"/>Selfie Guidelines</h3>
-                <div className="space-y-2.5">
-                  <GuidelineRow ok>Face the camera directly in good lighting</GuidelineRow>
-                  <GuidelineRow ok>Remove glasses and hats if possible</GuidelineRow>
-                  <GuidelineRow ok>Keep a neutral expression</GuidelineRow>
-                  <GuidelineRow ok>Position your face within the oval frame</GuidelineRow>
-                  <GuidelineRow ok>You may be asked to blink or turn your head slightly</GuidelineRow>
-                </div>
-              </div>
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5"/>
-                <p className="text-xs text-amber-700">Your selfie is compared against your government ID to confirm your identity. Data is processed securely.</p>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── Step 6: Selfie ── */}
+        {/* ── Step 6: Face Verification ── */}
         {step === 6 && (
           <>
             <StepHero icon={<Camera className="w-5 h-5"/>} title="Face Verification" subtitle="Take a selfie to verify your identity" />
@@ -1127,10 +1178,132 @@ export function Verification() {
                 </>
               )}
 
+              <div className="space-y-1.5">
+                <GuidelineRow ok>Face the camera directly in good lighting</GuidelineRow>
+                <GuidelineRow ok>Remove glasses and hats if possible</GuidelineRow>
+                <GuidelineRow ok>Position your face within the oval frame</GuidelineRow>
+              </div>
+
               <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex items-start gap-2">
                 <Info className="w-4 h-4 text-gray-400 shrink-0 mt-0.5"/>
-                <p className="text-xs text-gray-500">Your selfie is securely transmitted for identity matching. It is not stored on your device.</p>
+                <p className="text-xs text-gray-500">Your selfie is compared against your government ID and is not stored on your device.</p>
               </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 7: Professional ── */}
+        {step === 7 && (
+          <>
+            <StepHero icon={<Briefcase className="w-5 h-5"/>} title="Professional" subtitle="Optional — helps renters and clients find you" />
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              {selectedRoles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pb-3 border-b border-gray-50">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest w-full mb-1">Selected ({selectedRoles.length}/3)</p>
+                  {selectedRoles.map(r => (
+                    <button key={r} type="button" onClick={() => toggleRole(r)}
+                      className="flex items-center gap-1 text-xs bg-blue-600 text-white px-2.5 py-1 rounded-full font-semibold">
+                      {r} <span className="opacity-70 ml-0.5">×</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="space-y-3 max-h-[38vh] overflow-y-auto pr-1">
+                {ROLE_CATEGORIES.map(cat => (
+                  <div key={cat.label}>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{cat.label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cat.roles.map(role => {
+                        const sel = selectedRoles.includes(role);
+                        return (
+                          <button key={role} type="button" onClick={() => toggleRole(role)}
+                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-all ${
+                              sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'}`}>
+                            {role}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1.5 pt-3 border-t border-gray-50">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Skills / Services</label>
+                <textarea value={skillsText} onChange={e=>setSkillsText(e.target.value)} rows={2}
+                  placeholder="e.g. Wedding photography, drone cinematography, color grading…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"/>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Portfolio / Reel URL</label>
+                <input value={portfolioUrl} onChange={e=>setPortfolioUrl(e.target.value)}
+                  placeholder="filmons.com/@you · vimeo.com/… · behance.net/…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 8: Review & Submit ── */}
+        {step === 8 && (
+          <>
+            <StepHero icon={<CheckCircle className="w-5 h-5"/>} title="Review" subtitle="Confirm your information before submitting" />
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 divide-y divide-gray-50">
+              <div className="pb-2">
+                <ReviewRow label="Legal Name" value={legalName} />
+                <ReviewRow label="Date of Birth" value={dob} />
+                <ReviewRow label="Residence" value={residenceCountry} />
+              </div>
+              <div className="py-2">
+                <ReviewRow label="Email" value={user.email || ''} />
+                <ReviewRow label="Phone" value={phoneVerified ? `${phone} ✓` : phone} />
+              </div>
+              <div className="py-2">
+                <ReviewRow label="Address" value={[streetAddr, city, province, postalCode].filter(Boolean).join(', ')} />
+              </div>
+              <div className="py-2">
+                <ReviewRow label="ID Country" value={issuingCountry} />
+                <ReviewRow label="ID Type" value={idType} />
+              </div>
+              {selectedRoles.length > 0 && (
+                <div className="pt-2">
+                  <ReviewRow label="Role" value={selectedRoles.join(', ')} />
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              {[
+                {
+                  key: 'consentId', checked: consentId, onChange: setConsentId,
+                  title: 'Identity Verification Terms',
+                  body: 'I agree to provide accurate and truthful identity information. I understand that providing false information is grounds for account termination and may result in legal consequences.'
+                },
+                {
+                  key: 'consentData', checked: consentData, onChange: setConsentData,
+                  title: 'Data Processing Consent (KYC/AML)',
+                  body: 'I consent to the collection, processing, and storage of my personal data for the purpose of Know Your Customer (KYC) and Anti-Money Laundering (AML) compliance, in accordance with applicable Canadian privacy laws (PIPEDA).'
+                },
+                {
+                  key: 'consentPrivacy', checked: consentPrivacy, onChange: setConsentPrivacy,
+                  title: 'Privacy Policy Agreement',
+                  body: 'I have read and accept the Filmons Privacy Policy. I understand how my data will be used, retained, and protected, and that I can request deletion at any time.'
+                },
+              ].map(item => (
+                <button key={item.key} type="button" onClick={() => item.onChange(!item.checked)}
+                  className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all ${item.checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${item.checked ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
+                    {item.checked && <Check className="w-3 h-3 text-white"/>}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                    <p className="text-xs text-gray-500 leading-relaxed mt-1">{item.body}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </>
         )}
@@ -1144,7 +1317,7 @@ export function Verification() {
         >
           {loading ? (
             <><Loader2 className="w-5 h-5 animate-spin"/>Submitting verification…</>
-          ) : step === 6 ? (
+          ) : step === 8 ? (
             <><ShieldCheck className="w-5 h-5"/>Submit for Review</>
           ) : (
             <>Continue<ChevronRight className="w-5 h-5"/></>
@@ -1152,7 +1325,7 @@ export function Verification() {
         </button>
 
         <p className="text-xs text-gray-400 text-center">
-          {step < 6 ? `Step ${step} of 6 — ${STEPS[step-1].label}` : 'Your information is reviewed by our team within 1–3 business days'}
+          {step < 8 ? `Step ${step} of 8 — ${STEPS[step-1].label}` : 'Your information is reviewed by our team within 1–3 business days'}
         </p>
       </div>
     </div>
