@@ -797,6 +797,13 @@ function Step7({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
 
       {form.kind !== 'equipment-sale' && form.kind !== 'job' && (
         <SectionCard title="Available Days" icon={<Calendar className="w-4 h-4"/>}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400">Select the days you're available</span>
+            <button type="button" onClick={()=>set({availableDays:[...DAYS]})}
+              className="text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full px-2.5 py-1 transition-colors shrink-0">
+              7j/7
+            </button>
+          </div>
           <div className="flex flex-wrap gap-2">
             {DAYS.map(day=>{
               const sel=form.availableDays.includes(day);
@@ -808,6 +815,13 @@ function Step7({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
                 </button>
               );
             })}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400">Hours</span>
+            <button type="button" onClick={()=>set({startTime:'00:00',endTime:'23:59'})}
+              className="text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full px-2.5 py-1 transition-colors shrink-0">
+              24h/24
+            </button>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field>
