@@ -9,7 +9,7 @@ import { listingsApi } from '../lib/api';
 import { PageWrapper } from '../components/PageWrapper';
 import { SectionHeader } from '../components/SectionHeader';
 import { EmptyState } from '../components/EmptyState';
-import { Plus, Film, Trash2, Edit, Link2, MapPin, Lock, Zap, Search, X } from 'lucide-react';
+import { Plus, Film, Trash2, Edit, Link2, MapPin, Lock, CheckCircle, Search, X } from 'lucide-react';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { Listing } from '../types';
@@ -176,35 +176,30 @@ export function MyListings() {
         )
       }
     >
-      {/* Creator+ required banner */}
+      {/* Creator+ required — same card language as the Wallet/CreatorPlusRequired gate */}
       {isCreator && (
-        <div className="mb-5 rounded-2xl overflow-hidden shadow-sm">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 px-5 py-5">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                <Lock className="w-5 h-5 text-white"/>
-              </div>
-              <div>
-                <p className="text-base font-black text-white">Creator+ Account Required</p>
-                <p className="text-sm text-blue-100 mt-0.5 leading-snug">
-                  Hosting gear rentals, studios, and services requires a verified Creator+ account.
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 mb-4">
-              {['Host gear rentals', 'List creative services', 'Receive direct payouts', 'Marketplace booking system'].map(f => (
-                <div key={f} className="flex items-center gap-1.5">
-                  <Zap className="w-3 h-3 text-blue-300 shrink-0"/>
-                  <span className="text-[11px] text-blue-100">{f}</span>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => { captureSnapshot(); navigate('/verification'); }}
-              className="w-full py-3 bg-white text-blue-700 font-black text-sm rounded-xl hover:bg-blue-50 active:scale-[0.98] transition-all shadow-sm">
-              Upgrade Now — It's Free ⚡
-            </button>
+        <div className="mb-5 bg-white rounded-3xl shadow-sm border border-gray-100 p-6 text-center space-y-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8 text-white"/>
           </div>
+          <div>
+            <p className="text-lg font-black text-gray-900">Creator+ Account Required</p>
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+              Hosting gear rentals, studios, and services requires a verified Creator+ account.
+            </p>
+          </div>
+          <div className="bg-blue-50 rounded-2xl p-4 space-y-2 text-sm text-left">
+            {['Host gear rentals', 'List creative services', 'Receive direct payouts', 'Marketplace booking system'].map(f => (
+              <div key={f} className="flex items-center gap-2 text-blue-800">
+                <CheckCircle className="w-4 h-4 text-blue-500 shrink-0"/>{f}
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => { captureSnapshot(); navigate('/verification'); }}
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-black rounded-2xl py-4 hover:opacity-90 transition-opacity">
+            Upgrade Now — It's Free ⚡
+          </button>
         </div>
       )}
 

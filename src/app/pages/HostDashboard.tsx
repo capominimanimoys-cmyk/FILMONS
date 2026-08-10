@@ -186,39 +186,30 @@ function TransactionHistory({ userId }: { userId: string }) {
   );
 }
 
-// ── Creator+ Required Card ────────────────────────────────────────────────────
+// ── Creator+ Required Card — same card language as the Wallet/
+//    CreatorPlusRequired gate (centered gradient icon badge on white,
+//    not a full-bleed colored banner). ──────────────────────────────
 function CreatorPlusRequired({ feature, color='blue', navigate }: { feature: string; color?: string; navigate: (p:string)=>void }) {
   const grad = color==='emerald'
     ? 'from-emerald-600 to-teal-700'
     : color==='purple'
     ? 'from-purple-600 to-indigo-700'
     : 'from-blue-600 to-indigo-700';
-  const ring = color==='emerald' ? 'bg-emerald-100 text-emerald-600' : color==='purple' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600';
-  const btn  = color==='emerald'
-    ? 'from-emerald-600 to-teal-700'
-    : color==='purple' ? 'from-purple-600 to-indigo-700' : 'from-blue-600 to-indigo-700';
   return (
-    <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-      <div className={`bg-gradient-to-br ${grad} px-6 py-8 text-white text-center relative overflow-hidden`}>
-        <div className="absolute -top-6 -right-6 w-28 h-28 bg-white/10 rounded-full"/>
-        <div className="absolute -bottom-8 -left-8 w-36 h-36 bg-white/5 rounded-full"/>
-        <div className="relative z-10">
-          <div className="w-16 h-16 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/30">
-            <Lock className="w-8 h-8 text-white"/>
-          </div>
-          <h2 className="text-xl font-black mb-1">{feature}</h2>
-          <p className="text-white/70 text-sm">Creator+ Required</p>
-        </div>
+    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 text-center space-y-4">
+      <div className={`w-16 h-16 bg-gradient-to-br ${grad} rounded-3xl flex items-center justify-center mx-auto`}>
+        <Lock className="w-8 h-8 text-white"/>
       </div>
-      <div className="px-6 py-5 space-y-4">
-        <p className="text-sm text-gray-500 text-center leading-relaxed">
-          <strong>Creator+</strong> accounts unlock {feature.toLowerCase()}, listings, payouts, and the full marketplace.
+      <div>
+        <h2 className="text-lg font-black text-gray-900">{feature}</h2>
+        <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+          <strong className="text-gray-700">Creator+</strong> accounts unlock {feature.toLowerCase()}, listings, payouts, and the full marketplace.
         </p>
-        <button onClick={()=>navigate('/verification')}
-          className={`w-full bg-gradient-to-r ${btn} text-white font-bold rounded-xl py-3 transition-all shadow-md`}>
-          Upgrade to Creator+ →
-        </button>
       </div>
+      <button onClick={()=>navigate('/verification')}
+        className={`w-full bg-gradient-to-r ${grad} text-white font-black rounded-2xl py-4 hover:opacity-90 transition-opacity`}>
+        Upgrade to Creator+ →
+      </button>
     </div>
   );
 }
