@@ -18,6 +18,12 @@ export const EMAILJS_CONFIG = {
     welcome:                'template_welcome',
     passwordReset:          'template_password_reset',
     messageNotification:    'template_d5zpvid',
+    // ⚠️ Not yet created in the EmailJS dashboard — new-device sign-in
+    // emails will silently fail (sendEmail() swallows the error) until a
+    // template with this exact ID exists there, with these merge fields:
+    // to_email, to_name, device, location, ip_address, sign_in_method, date,
+    // secure_account_url.
+    newDeviceSignIn:        'template_new_device_signin',
   },
   filmons: {
     email:    'filmons481@gmail.com',
@@ -65,4 +71,14 @@ export const sendWelcomeEmail = (email: string, name: string) =>
 export const sendPasswordResetEmail = (email: string, name: string, resetLink: string) =>
   sendEmail(EMAILJS_CONFIG.templates.passwordReset, {
     to_email: email, to_name: name, user_name: name, reset_link: resetLink,
+  });
+
+export const sendNewDeviceSignInEmail = (email: string, name: string, info: {
+  device: string; location: string; ipAddress: string; signInMethod: string; date: string;
+}) =>
+  sendEmail(EMAILJS_CONFIG.templates.newDeviceSignIn, {
+    to_email: email, to_name: name, user_name: name,
+    device: info.device, location: info.location, ip_address: info.ipAddress,
+    sign_in_method: info.signInMethod, date: info.date,
+    secure_account_url: `${window.location.origin}/settings/security`,
   });

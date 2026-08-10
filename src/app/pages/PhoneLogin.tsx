@@ -177,7 +177,7 @@ export function PhoneLogin() {
     setIsLoading(true);
     try {
       const user = await authApi.completePhoneSignin(fullPhone, otp);
-      setUserDirectly(user);
+      setUserDirectly(user, 'phone');
 
       fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/send-login-sms`,

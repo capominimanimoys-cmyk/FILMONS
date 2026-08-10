@@ -150,7 +150,7 @@ export function VerifyEmail() {
         following:            [],
       };
 
-      await completeLogin(pending.email, pending.password, undefined, user);
+      await completeLogin(pending.email, pending.password, undefined, user, 'email');
       sessionStorage.removeItem(PENDING_SIGNUP_KEY);
       navigate('/onboarding', { replace: true });
     } catch (e: any) {

@@ -41,6 +41,7 @@ import { HelpCenter }              from './pages/HelpCenter';
 import { Settings } from './pages/Settings';
 import { LanguageSettings } from './pages/LanguageSettings';
 import { SecuritySettings } from './pages/SecuritySettings';
+import { ActiveDevices } from './pages/ActiveDevices';
 import { PortfolioSettings } from './pages/PortfolioSettings';
 import { DiscoverySettings } from './pages/DiscoverySettings';
 import { CreatorPreferencesSettings } from './pages/CreatorPreferencesSettings';
@@ -86,6 +87,7 @@ export const router = createBrowserRouter([
       { path: 'settings',                      Component: Settings                    },
       { path: 'settings/language',             Component: LanguageSettings              },
       { path: 'settings/security',             Component: SecuritySettings              },
+      { path: 'settings/security/active-devices', Component: ActiveDevices              },
       { path: 'settings/portfolio',            Component: PortfolioSettings             },
       { path: 'settings/discovery',            Component: DiscoverySettings             },
       { path: 'settings/creator-preferences',  Component: CreatorPreferencesSettings    },

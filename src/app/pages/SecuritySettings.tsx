@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  ArrowLeft, Lock, Shield, Smartphone, Eye, EyeOff,
-  LogOut, AlertTriangle, CheckCircle, ChevronRight, Monitor, Tablet, Mail, Link2, Phone,
+  ArrowLeft, Lock, Shield, Eye, EyeOff,
+  AlertTriangle, CheckCircle, ChevronRight, Monitor, Mail, Link2, Phone,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { securitySettingsApi } from '../lib/settingsApi';
-import { registerDevice, getDevices, logoutDevice, logoutAllOtherDevices, timeAgo, type ActiveDevice } from '../lib/devicesApi';
+import { getDevices, type ActiveDevice } from '../lib/devicesApi';
 import { supabase } from '../../lib/supabase';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
@@ -72,26 +72,10 @@ const [showPw,  setShowPw]  = useState(false);
   const [devices, setDevices] = useState<ActiveDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
 
-  // Load and register device
   useEffect(() => {
     if (!user?.id) return;
-    registerDevice(user.id).then(() =>
-      getDevices(user.id).then(d => { setDevices(d); setDevicesLoading(false); })
-    ).catch(() => setDevicesLoading(false));
+    getDevices(user.id).then(d => { setDevices(d); setDevicesLoading(false); }).catch(() => setDevicesLoading(false));
   }, [user?.id]);
-
-  const handleLogoutDevice = async (id: string) => {
-    await logoutDevice(id);
-    setDevices(prev => prev.filter(d => d.id !== id));
-    toast.success('Device logged out');
-  };
-
-  const handleLogoutAll = async () => {
-    if (!user?.id) return;
-    await logoutAllOtherDevices(user.id);
-    setDevices(prev => prev.filter(d => d.is_current));
-    toast.success('All other devices logged out');
-  };
 
 
   return (
@@ -231,68 +215,18 @@ const [showPw,  setShowPw]  = useState(false);
           </div>
         </Section>
 
-        {/* Active Devices */}
+        {/* Active Devices — summary only; full management lives on its own page */}
         <Section title="Active Devices" icon={<Monitor className="w-4 h-4 text-gray-600"/>}>
-          <div className="p-4 space-y-3">
-            {devicesLoading ? (
-              <div className="space-y-2">
-                {[1,2].map(i => <div key={i} className="h-16 rounded-xl bg-gray-100 animate-pulse"/>)}
-              </div>
-            ) : devices.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-4">No active devices found</p>
-            ) : (
-              devices.map(d => {
-                const DeviceIcon = d.device_type === 'mobile' ? Smartphone : d.device_type === 'tablet' ? Tablet : Monitor;
-                return (
-                  <div key={d.id} className={`rounded-2xl border p-4 transition-all ${
-                    d.is_current ? 'border-blue-200 bg-blue-50' : 'border-gray-100 bg-gray-50'
-                  }`}>
-                    <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        d.is_current ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                        <DeviceIcon className={`w-5 h-5 ${d.is_current ? 'text-blue-600' : 'text-gray-500'}`}/>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-bold text-gray-900">{d.device_name}</p>
-                          {d.is_current && (
-                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-600 text-white">
-                              Current Session
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {d.browser} · {d.os}
-                        </p>
-                        {(d.city || d.country) && (
-                          <p className="text-xs text-gray-400">
-                            {[d.city, d.country].filter(Boolean).join(', ')}
-                          </p>
-                        )}
-                        <p className="text-[11px] text-gray-400 mt-0.5">
-                          Last active: {timeAgo(d.last_active_at)}
-                        </p>
-                      </div>
-                    </div>
-                    {!d.is_current && (
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => handleLogoutDevice(d.id)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-red-200 text-red-500 text-xs font-bold rounded-xl hover:bg-red-50 transition-colors">
-                          <LogOut className="w-3.5 h-3.5"/> Log Out Device
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-            {devices.filter(d => !d.is_current).length > 0 && (
-              <button onClick={handleLogoutAll}
-                className="w-full py-2.5 border border-red-200 text-red-500 text-xs font-bold rounded-xl hover:bg-red-50 transition-colors">
-                Log out all other devices
-              </button>
-            )}
-          </div>
+          <button onClick={() => navigate('/settings/security/active-devices')}
+            className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-left">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">
+                {devicesLoading ? 'Loading…' : `${devices.length} device${devices.length === 1 ? '' : 's'} signed in`}
+              </p>
+              <p className="text-xs text-gray-400">See where you're signed in and sign out devices you don't recognize</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+          </button>
         </Section>
 
         {/* Alerts */}

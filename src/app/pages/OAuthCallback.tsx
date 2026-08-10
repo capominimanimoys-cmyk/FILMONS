@@ -114,7 +114,7 @@ export function OAuthCallback() {
 
       if (byId) {
         const u = rowToUser(byId);
-        await completeLogin(undefined, undefined, undefined, u);
+        await completeLogin(undefined, undefined, undefined, u, provider);
         toast.success('Welcome back.');
         navigate(isComplete(u) ? '/' : '/onboarding', { replace: true });
         return;
@@ -146,7 +146,7 @@ export function OAuthCallback() {
           }
 
           const u = rowToUser(byEmail);
-          await completeLogin(undefined, undefined, undefined, u);
+          await completeLogin(undefined, undefined, undefined, u, provider);
 
           toast.success(alreadyLinked ? 'Welcome back.' : 'Google account linked — welcome back!', {
             description: alreadyLinked ? undefined : "We've connected your Google account to your existing Filmons account.",

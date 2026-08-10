@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { User } from '../types';
 import { authApi } from '../lib/api';
 import { seedDemoData } from '../lib/initializeData';
+import { registerDevice, checkCurrentDeviceStatus } from '../lib/devicesApi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -44,7 +45,8 @@ interface AuthContextType {
     email?:         string,
     password?:      string,
     phone?:         string,
-    preloadedUser?: User
+    preloadedUser?: User,
+    signInMethod?:  string
   ) => Promise<void>;
 
   // Phone OTP (Supabase Auth / Twilio)
@@ -55,7 +57,10 @@ interface AuthContextType {
 
   // Profile management
   updateUser: (updates: Partial<User>) => Promise<void>;
-  setUserDirectly: (u: User) => void;   // update state without an extra API round-trip
+  // update state without an extra API round-trip; pass signInMethod only
+  // when this really is a fresh sign-in (not a plain profile-field patch) —
+  // it's what tells the Active Devices system to register/notify.
+  setUserDirectly: (u: User, signInMethod?: string) => void;
   logout:     () => Promise<void>;
 }
 
@@ -144,13 +149,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Update last_seen every 2 minutes while app is open so the notification system
   // can detect if the receiver is currently active (skips email/SMS if online).
+  // Piggybacks a check for remote sign-out on the same cadence: this app has
+  // no real backend session to invalidate instantly (see devicesApi.ts), so
+  // "you were signed out from another device" is only ever detected on the
+  // next heartbeat or window focus, not the moment it happens.
   useEffect(() => {
     if (!user?.id) return;
+    const uid = user.id;
     const update = () => {
       import('../../lib/supabase').then(({ supabase }) =>
-        supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user!.id)
+        supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', uid)
           .then(() => {}, () => {}) // silence if column doesn't exist yet
       ).catch(() => {});
+      checkCurrentDeviceStatus(uid).then(stillActive => {
+        if (!stillActive) {
+          setAndCache(null);
+          import('sonner').then(({ toast }) => toast.info('You were signed out from another device.')).catch(() => {});
+        }
+      }).catch(() => {});
     };
     update(); // on mount / login
     const interval = setInterval(update, 2 * 60 * 1000);
@@ -168,6 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAndCache(found);
     exitGuestMode();
     seedDemoData(found.id);
+    registerDevice(found.id, 'email').catch(() => {});
     return '000000';
   };
 
@@ -190,12 +207,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email?:         string,
     password?:      string,
     phone?:         string,
-    preloadedUser?: User
+    preloadedUser?: User,
+    signInMethod?:  string
   ) => {
     if (preloadedUser) {
       setAndCache(preloadedUser);
       exitGuestMode();
       seedDemoData(preloadedUser.id);
+      registerDevice(preloadedUser.id, signInMethod || 'email').catch(() => {});
       return;
     }
 
@@ -204,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAndCache(found);
       exitGuestMode();
       seedDemoData(found.id);
+      registerDevice(found.id, signInMethod || 'email').catch(() => {});
       return;
     }
 
@@ -218,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAndCache(data.user);
         exitGuestMode();
         seedDemoData(data.user.id);
+        registerDevice(data.user.id, signInMethod || 'phone').catch(() => {});
       }
     }
   };
@@ -264,9 +285,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAndCache(updated);
   };
 
-  const setUserDirectly = (u: User) => {
+  const setUserDirectly = (u: User, signInMethod?: string) => {
     setAndCache(u);
     exitGuestMode();
+    if (signInMethod) registerDevice(u.id, signInMethod).catch(() => {});
   };
 
   // ── Logout ────────────────────────────────────────────────────────────────

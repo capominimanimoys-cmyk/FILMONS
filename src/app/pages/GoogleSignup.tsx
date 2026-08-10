@@ -256,7 +256,7 @@ export function GoogleSignup() {
         ...(created || {}),
       };
 
-      await completeLogin(undefined, undefined, undefined, newUser);
+      await completeLogin(undefined, undefined, undefined, newUser, 'google');
       setSuccess(true);
 
     } catch (e: any) {
