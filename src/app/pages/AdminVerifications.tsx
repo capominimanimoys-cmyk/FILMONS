@@ -31,6 +31,8 @@ import {
   Zap,
   ShoppingBag,
   Rocket,
+  ArrowRight,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fpApi, FP } from "../lib/fpSystem";
@@ -39,6 +41,8 @@ import { signVerificationDoc } from "../../lib/upload";
 // ── Types ──────────────────────────────────────────────────────────
 // Mirrors identity_verifications (+ joined profiles for contact info).
 // Document fields are storage PATHS, not URLs — resolve with SignedImg.
+type VerificationStatus = "pending" | "under_review" | "changes_requested" | "approved" | "denied";
+
 interface VerificationRequest {
   id: string;
   userId: string;
@@ -48,17 +52,21 @@ interface VerificationRequest {
   fullName: string;
   dob?: string;
   streetAddr?: string;
+  unit?: string;
   city?: string;
   province?: string;
   postalCode?: string;
   residenceCountry?: string;
   issuingCountry?: string;
   idType?: string;
+  idExpiryDate?: string;
   idFrontPath?: string;
-  proofAddressPath?: string;
+  idBackPath?: string;
+  proofOfAddressPath?: string;
   selfiePath?: string;
-  status: "pending" | "approved" | "denied" | "rejected" | "needs_resubmission";
-  rejectionReason?: string;
+  status: VerificationStatus;
+  decisionReason?: string;
+  documentsDeletedAt?: string | null;
   submittedAt: string;
   reviewedAt: string | null;
   reviewedBy: string | null;
@@ -231,34 +239,6 @@ function PhotoViewer({
   );
 }
 
-// Small document thumbnail for the list view — resolves its own signed URL
-// from a storage path (or renders the base64 fallback directly).
-function SignedThumb({ path, label }: { path?: string; label: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    if (!path) { setSrc(null); return; }
-    if (path.startsWith('data:')) { setSrc(path); return; }
-    signVerificationDoc(path, 600).then(setSrc);
-  }, [path]);
-
-  if (!path) {
-    return (
-      <div className="w-14 h-14 rounded-lg border border-dashed border-gray-200 flex flex-col items-center justify-center gap-0.5">
-        <FileText className="w-4 h-4 text-gray-300" />
-        <span className="text-[8px] text-gray-300 font-semibold">{label}</span>
-      </div>
-    );
-  }
-  return (
-    <div className="w-14 h-14 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 relative">
-      {src && <img src={src} alt={label} className="w-full h-full object-cover" />}
-      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] text-center py-0.5 font-semibold">
-        {label}
-      </div>
-    </div>
-  );
-}
-
 function InfoRow({
   icon,
   label,
@@ -292,6 +272,7 @@ export function AdminVerifications() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [adminName, setAdminName] = useState("");
   const [activeTab, setActiveTab] = useState<
     "verifications" | "wallet"
   >("verifications");
@@ -303,21 +284,28 @@ export function AdminVerifications() {
   const [selectedRequest, setSelectedRequest] =
     useState<VerificationRequest | null>(null);
   const [filter, setFilter] = useState<
-    "all" | "pending" | "approved" | "denied" | "rejected" | "needs_resubmission"
+    "all" | VerificationStatus
   >("pending");
 
-  // Rejection / resubmission modal
+  // Deny / request-changes modal
   const [showRejectModal, setShowRejectModal] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState<{ request: VerificationRequest; type: 'rejected' | 'needs_resubmission' } | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<{ request: VerificationRequest; type: 'denied' | 'changes_requested' } | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
-  const REJECTION_PRESETS = [
-    'Blurry or unreadable ID',
-    'Expired document',
-    'Name mismatch between ID and selfie',
-    'Incomplete document — front and back required',
-    'Selfie does not match ID photo',
-    'Document not accepted in your region',
-    'Suspected duplicate account',
+  const DENY_PRESETS = [
+    'ID unreadable',
+    'ID expired',
+    "Information doesn't match",
+    'Invalid proof of address',
+    "Selfie doesn't match",
+    'Unsupported document',
+    'Suspected fraudulent document',
+    'Other',
+  ];
+  const CHANGES_PRESETS = [
+    'Upload a clearer ID',
+    'Upload a newer proof of address',
+    'ID back is missing',
+    "Information doesn't match",
   ];
 
   // Wallet state
@@ -336,6 +324,7 @@ export function AdminVerifications() {
     );
     if (adminAuth === "true") {
       setIsAuthenticated(true);
+      setAdminName(sessionStorage.getItem("adminName") || "Admin");
       loadAll().catch(console.error);
     }
   }, []);
@@ -355,28 +344,32 @@ export function AdminVerifications() {
         serverReqs = data.map((row: any) => {
           const profile = row.profiles || {};
           return {
-            id:               row.id,
-            userId:           row.user_id,
-            userName:         profile.name || [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
-            userEmail:        profile.email || '',
-            userPhone:        profile.phone || '',
-            fullName:         [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
-            dob:              row.date_of_birth || undefined,
-            streetAddr:       row.address_line1 || undefined,
-            city:             row.city || undefined,
-            province:         row.province_state || undefined,
-            postalCode:       row.postal_code || undefined,
-            residenceCountry: row.country_of_residence || undefined,
-            issuingCountry:   row.id_issuing_country || undefined,
-            idType:           row.id_type || undefined,
-            idFrontPath:      row.id_front_path || undefined,
-            proofAddressPath: row.proof_address_path || undefined,
-            selfiePath:       row.selfie_path || undefined,
-            status:           row.status || 'pending',
-            rejectionReason:  row.rejection_reason || undefined,
-            submittedAt:      row.submitted_at || row.created_at,
-            reviewedAt:       row.reviewed_at || null,
-            reviewedBy:       row.reviewed_by || null,
+            id:                 row.id,
+            userId:             row.user_id,
+            userName:           profile.name || [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
+            userEmail:          profile.email || '',
+            userPhone:          profile.phone || '',
+            fullName:           [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
+            dob:                row.date_of_birth || undefined,
+            streetAddr:         row.address_line1 || undefined,
+            unit:               row.address_line2 || undefined,
+            city:               row.city || undefined,
+            province:           row.province_state || undefined,
+            postalCode:         row.postal_code || undefined,
+            residenceCountry:   row.country_of_residence || undefined,
+            issuingCountry:     row.id_issuing_country || undefined,
+            idType:             row.id_type || undefined,
+            idExpiryDate:       row.id_expiry_date || undefined,
+            idFrontPath:        row.id_front_path || undefined,
+            idBackPath:         row.id_back_path || undefined,
+            proofOfAddressPath: row.proof_of_address_path || undefined,
+            selfiePath:         row.selfie_path || undefined,
+            status:             row.status || 'pending',
+            decisionReason:     row.decision_reason || undefined,
+            documentsDeletedAt: row.documents_deleted_at || null,
+            submittedAt:        row.submitted_at || row.created_at,
+            reviewedAt:         row.reviewed_at || null,
+            reviewedBy:         row.reviewed_by || null,
           } as VerificationRequest;
         });
       } else if (error) {
@@ -405,8 +398,11 @@ export function AdminVerifications() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
+      const name = adminName.trim() || "Admin";
       setIsAuthenticated(true);
+      setAdminName(name);
       sessionStorage.setItem("adminAuthenticated", "true");
+      sessionStorage.setItem("adminName", name);
       loadAll().catch(console.error);
       toast.success("Admin access granted");
     } else {
@@ -417,14 +413,15 @@ export function AdminVerifications() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem("adminAuthenticated");
+    sessionStorage.removeItem("adminName");
     setPassword("");
     toast.info("Logged out");
   };
 
-  const sendUserEmail = async (request: VerificationRequest, status: string, reason?: string) => {
+  const sendUserEmail = async (request: VerificationRequest, status: VerificationStatus, reason?: string) => {
     if (!request.userEmail) return;
     const isApproved = status === 'approved';
-    const isResubmit = status === 'needs_resubmission';
+    const isChanges = status === 'changes_requested';
     emailjs.send(
       EMAILJS_CONFIG.serviceId,
       EMAILJS_CONFIG.templates.verificationSubmission,
@@ -432,76 +429,65 @@ export function AdminVerifications() {
         to_email:    request.userEmail,
         to_name:     request.userName || request.fullName,
         user_name:   request.userName || request.fullName,
-        status:      isApproved ? 'Approved ✅' : isResubmit ? 'New Documents Required 📄' : 'Denied ❌',
+        status:      isApproved ? 'Approved ✅' : isChanges ? 'Changes Requested 📄' : 'Denied ❌',
         message:     isApproved
-          ? 'Congratulations! Your identity has been verified and your account has been upgraded to Creator+. All Creator+ features are now unlocked.'
-          : isResubmit
-          ? `The admin has reviewed your submission and needs updated documents:\n\n${reason || 'Please resubmit with clearer documents.'}\n\nLog in and visit the Verification page to upload new documents.`
-          : `Your verification request was denied.\n\nReason: ${reason || 'Please review your documents and resubmit.'}\n\nYou may resubmit after correcting the issue.`,
+          ? 'Congratulations! Your identity has been verified and your Creator+ account is now verified. All Creator+ features are now unlocked.'
+          : isChanges
+          ? `The admin reviewed your submission and needs a correction:\n\n${reason || 'Please review and resubmit.'}\n\nLog in and visit the Verification page to continue.`
+          : `Your verification was unsuccessful.\n\nReason: ${reason || 'Please review your documents and resubmit.'}\n\nYou may resubmit after correcting the issue.`,
         site_url:    window.location.origin,
       },
       EMAILJS_CONFIG.publicKey
     ).catch(e => console.warn('User email failed:', e));
   };
 
+  // Opening the review page moves a fresh application out of the "pending"
+  // queue and into "under_review" so other admins can see it's being looked
+  // at — a non-destructive, reversible transition, unlike the three final
+  // decisions below, so it's fine to do directly from the client. Also logs
+  // the access for the audit trail the spec requires.
+  const openReview = async (request: VerificationRequest) => {
+    setSelectedRequest(request);
+    if (request.status === 'pending') {
+      await supabase.from('identity_verifications').update({ status: 'under_review' }).eq('id', request.id);
+      await supabase.from('profiles').update({ verification_status: 'under_review' }).eq('id', request.userId);
+      setSelectedRequest({ ...request, status: 'under_review' });
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'under_review' } : r));
+    }
+    await supabase.from('verification_audit_log').insert({
+      verification_id: request.id,
+      user_id: request.userId,
+      admin_identifier: adminName || 'Admin',
+      action: 'viewed_document',
+      detail: 'Opened review',
+    });
+  };
+
+  // Approve / Deny both delete the submitted documents from storage as the
+  // final decision lands — that has to happen server-side (a client-side
+  // delete call is skippable), so this goes through the verification-decision
+  // Edge Function (service-role key) instead of writing the table directly.
+  // Request Changes keeps documents in place, but is routed the same way for
+  // one consistent, auditable decision path.
   const handleDecision = async (
     request: VerificationRequest,
-    status: "approved" | "rejected" | "needs_resubmission",
+    action: "approve" | "changes_requested" | "deny",
     reason?: string,
   ) => {
-    const now = new Date().toISOString();
-
     try {
-      // ── Update identity_verifications directly ────────────────
-      const patch: any = {
-        status,
-        reviewed_at: now,
-        reviewed_by: "Admin",
-      };
-      if (status === 'approved') patch.verified_at = now;
-      if (reason) patch.rejection_reason = reason;
-      await supabase
-        .from('identity_verifications')
-        .update(patch)
-        .eq('id', request.id);
+      const { data, error } = await supabase.functions.invoke('verification-decision', {
+        body: { verificationId: request.id, action, reason, adminIdentifier: adminName || 'Admin' },
+      });
+      if (error || !data?.success) throw error || new Error(data?.error || 'Decision failed');
 
-      // ── Update profiles table directly ────────────────────────
-      const profilePatch: any = { verification_status: status };
-      if (status === "approved") {
-        profilePatch.is_verified  = true;
-        profilePatch.account_type = "business";
-        profilePatch.account_mode = "business";
-      } else if (status === "rejected" || status === "denied") {
-        profilePatch.is_verified = false;
-      }
-      await supabase.from('profiles').update(profilePatch).eq('id', request.userId);
-      const lsUsers: any[] = JSON.parse(localStorage.getItem("filmons_users") || "[]");
-      localStorage.setItem("filmons_users", JSON.stringify(lsUsers.map(u => {
-        if (u.id !== request.userId) return u;
-        const patch: any = { verificationStatus: status };
-        if (status === "approved") { patch.isVerified = true; patch.accountType = "business"; patch.accountMode = "business"; }
-        return { ...u, ...patch };
-      })));
-
-      // Update current session if same user
-      try {
-        const SESSION_KEY = "filmons_current_user";
-        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-        if (session?.id === request.userId) {
-          const patch: any = { verificationStatus: status };
-          if (status === "approved") { patch.isVerified = true; patch.accountType = "business"; patch.accountMode = "business"; }
-          localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, ...patch }));
-        }
-      } catch {}
-
-      // ── Send email to user ─────────────────────────────────────
+      const status: VerificationStatus = action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'changes_requested';
       await sendUserEmail(request, status, reason);
 
       toast.success(
         status === "approved"
           ? `✅ ${request.userName} approved — upgraded to Creator+`
-          : status === "needs_resubmission"
-          ? `📄 Resubmission requested from ${request.userName}`
+          : status === "changes_requested"
+          ? `📄 Changes requested from ${request.userName}`
           : `❌ ${request.userName} denied`,
       );
 
@@ -516,7 +502,7 @@ export function AdminVerifications() {
     }
   };
 
-  const openRejectModal = (request: VerificationRequest, type: 'rejected' | 'needs_resubmission') => {
+  const openRejectModal = (request: VerificationRequest, type: 'denied' | 'changes_requested') => {
     setRejectTarget({ request, type });
     setRejectionReason('');
     setShowRejectModal(true);
@@ -526,9 +512,10 @@ export function AdminVerifications() {
     (r) => filter === "all" || r.status === filter,
   );
   const pendingCount = requests.filter(r => r.status === "pending").length;
+  const underReviewCount = requests.filter(r => r.status === "under_review").length;
+  const changesRequestedCount = requests.filter(r => r.status === "changes_requested").length;
   const approvedCount = requests.filter(r => r.status === "approved").length;
-  const deniedCount = requests.filter(r => r.status === "rejected" || r.status === "denied").length;
-  const resubmitCount = requests.filter(r => r.status === "needs_resubmission").length;
+  const deniedCount = requests.filter(r => r.status === "denied").length;
 
   const paidTxs = walletTxs.filter((t) => t.status === "paid");
   const pendingTxs = walletTxs.filter(
@@ -569,6 +556,13 @@ export function AdminVerifications() {
             </p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
+            <input
+              type="text"
+              value={adminName}
+              onChange={(e) => setAdminName(e.target.value)}
+              placeholder="Your name (for the review record)"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
@@ -685,7 +679,7 @@ export function AdminVerifications() {
         {activeTab === "verifications" && (
           <>
             {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
               {[
                 {
                   label: "Total",
@@ -698,12 +692,21 @@ export function AdminVerifications() {
                 },
                 {
                   label: "Pending",
-                  value: pendingCount,
+                  value: pendingCount + underReviewCount,
                   icon: (
                     <Clock className="w-5 h-5 text-amber-500" />
                   ),
                   bg: "bg-amber-50",
                   action: () => setFilter("pending"),
+                },
+                {
+                  label: "Changes Requested",
+                  value: changesRequestedCount,
+                  icon: (
+                    <RefreshCw className="w-5 h-5 text-orange-500" />
+                  ),
+                  bg: "bg-orange-50",
+                  action: () => setFilter("changes_requested"),
                 },
                 {
                   label: "Approved",
@@ -752,6 +755,8 @@ export function AdminVerifications() {
                 [
                   "all",
                   "pending",
+                  "under_review",
+                  "changes_requested",
                   "approved",
                   "denied",
                 ] as const
@@ -761,19 +766,21 @@ export function AdminVerifications() {
                   onClick={() => setFilter(f)}
                   className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors capitalize border ${
                     filter === f
-                      ? f === "pending"
+                      ? f === "pending" || f === "under_review"
                         ? "bg-amber-500 text-white border-amber-500"
-                        : f === "approved"
-                          ? "bg-green-600 text-white border-green-600"
-                          : f === "denied"
-                            ? "bg-red-600 text-white border-red-600"
-                            : "bg-blue-600 text-white border-blue-600"
+                        : f === "changes_requested"
+                          ? "bg-orange-500 text-white border-orange-500"
+                          : f === "approved"
+                            ? "bg-green-600 text-white border-green-600"
+                            : f === "denied"
+                              ? "bg-red-600 text-white border-red-600"
+                              : "bg-blue-600 text-white border-blue-600"
                       : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
                   }`}
                 >
                   {f === "all"
                     ? `All (${requests.length})`
-                    : `${f.charAt(0).toUpperCase() + f.slice(1)} (${requests.filter((r) => r.status === f).length})`}
+                    : `${f.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} (${requests.filter((r) => r.status === f).length})`}
                 </button>
               ))}
             </div>
@@ -796,8 +803,7 @@ export function AdminVerifications() {
                 {filteredRequests.map((req) => (
                   <div
                     key={req.id}
-                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-                    onClick={() => setSelectedRequest(req)}
+                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
                   >
                     <div className="p-4">
                       <div className="flex items-start justify-between mb-3">
@@ -812,113 +818,62 @@ export function AdminVerifications() {
                               {req.userName}
                             </p>
                             <p className="text-xs text-gray-400">
-                              {req.userEmail}
+                              @{req.userName?.toLowerCase().replace(/\s+/g, '') || req.userId.slice(0, 8)}
                             </p>
                           </div>
                         </div>
                         <span
-                          className={`text-[11px] font-black px-2.5 py-1 rounded-full uppercase ${
-                            req.status === "pending"
+                          className={`text-[11px] font-black px-2.5 py-1 rounded-full uppercase whitespace-nowrap ${
+                            req.status === "pending" || req.status === "under_review"
                               ? "bg-amber-100 text-amber-700"
-                              : req.status === "approved"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
+                              : req.status === "changes_requested"
+                                ? "bg-orange-100 text-orange-700"
+                                : req.status === "approved"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-red-100 text-red-700"
                           }`}
                         >
-                          {req.status}
+                          {req.status.replace('_', ' ')}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                        {req.fullName && (
+                        <div className="flex items-center gap-1.5 text-gray-500">
+                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                          <span>
+                            Submitted{" "}
+                            {new Date(req.submittedAt).toLocaleDateString("en-CA", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </span>
+                        </div>
+                        {req.residenceCountry && (
                           <div className="flex items-center gap-1.5 text-gray-500">
-                            <User className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="truncate">
-                              {req.fullName}
-                            </span>
+                            <Globe className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="truncate">{req.residenceCountry}</span>
+                          </div>
+                        )}
+                        {req.issuingCountry && (
+                          <div className="flex items-center gap-1.5 text-gray-500">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="truncate">ID: {req.issuingCountry}</span>
                           </div>
                         )}
                         {req.idType && (
                           <div className="flex items-center gap-1.5 text-gray-500">
                             <CreditCard className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="truncate">
-                              {req.idType}
-                            </span>
-                          </div>
-                        )}
-                        {req.city && (
-                          <div className="flex items-center gap-1.5 text-gray-500">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="truncate">
-                              {[req.city, req.province]
-                                .filter(Boolean)
-                                .join(", ")}
-                            </span>
-                          </div>
-                        )}
-                        {req.dob && (
-                          <div className="flex items-center gap-1.5 text-gray-500">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            <span>
-                              {new Date(
-                                req.dob + "T00:00:00",
-                              ).toLocaleDateString("en-CA", {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
+                            <span className="truncate">{req.idType}</span>
                           </div>
                         )}
                       </div>
 
-                      {/* Document preview thumbnails */}
-                      <div className="flex gap-2 mb-3">
-                        {[
-                          { path: req.idFrontPath, label: "Gov ID" },
-                          { path: req.proofAddressPath, label: "Utility" },
-                          { path: req.selfiePath, label: "Selfie" },
-                        ].map((doc) => (
-                          <SignedThumb key={doc.label} path={doc.path} label={doc.label} />
-                        ))}
-                      </div>
-
-                      <p className="text-[11px] text-gray-400 mb-3">
-                        Submitted{" "}
-                        {new Date(
-                          req.submittedAt,
-                        ).toLocaleDateString("en-CA", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-
-                      {req.status === "pending" && (
-                        <div className="flex gap-2">
-                          <button
-                            className="flex-1 flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl py-2 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); handleDecision(req, "approved"); }}
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" /> Approve
-                          </button>
-                          <button
-                            className="flex-1 flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl py-2 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); openRejectModal(req, 'rejected'); }}
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Deny
-                          </button>
-                          <button
-                            className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl py-2 px-2 transition-colors"
-                            title="Request new documents"
-                            onClick={(e) => { e.stopPropagation(); openRejectModal(req, 'needs_resubmission'); }}
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      <button
+                        className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl py-2.5 transition-colors"
+                        onClick={() => openReview(req)}
+                      >
+                        Review Verification <ArrowRight className="w-4 h-4" />
+                      </button>
                       {req.reviewedAt && (
                         <p className="text-[11px] text-gray-400 mt-2">
                           Reviewed{" "}
@@ -1455,7 +1410,9 @@ export function AdminVerifications() {
                   ? "bg-green-50"
                   : selectedRequest.status === "denied"
                     ? "bg-red-50"
-                    : "bg-amber-50"
+                    : selectedRequest.status === "changes_requested"
+                      ? "bg-orange-50"
+                      : "bg-amber-50"
               }`}
             >
               <div className="flex items-center gap-3">
@@ -1470,14 +1427,16 @@ export function AdminVerifications() {
                   </h2>
                   <span
                     className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase ${
-                      selectedRequest.status === "pending"
+                      selectedRequest.status === "pending" || selectedRequest.status === "under_review"
                         ? "bg-amber-200 text-amber-800"
-                        : selectedRequest.status === "approved"
-                          ? "bg-green-200 text-green-800"
-                          : "bg-red-200 text-red-800"
+                        : selectedRequest.status === "changes_requested"
+                          ? "bg-orange-200 text-orange-800"
+                          : selectedRequest.status === "approved"
+                            ? "bg-green-200 text-green-800"
+                            : "bg-red-200 text-red-800"
                     }`}
                   >
-                    {selectedRequest.status}
+                    {selectedRequest.status.replace('_', ' ')}
                   </span>
                 </div>
               </div>
@@ -1559,7 +1518,7 @@ export function AdminVerifications() {
                       <MapPin className="w-4 h-4 text-red-400" />
                     }
                     label="Street Address"
-                    value={selectedRequest.streetAddr}
+                    value={[selectedRequest.streetAddr, selectedRequest.unit].filter(Boolean).join(', ')}
                   />
                   <InfoRow
                     icon={
@@ -1590,6 +1549,13 @@ export function AdminVerifications() {
                     label="ID Type"
                     value={selectedRequest.idType}
                   />
+                  <InfoRow
+                    icon={
+                      <Calendar className="w-4 h-4 text-indigo-500" />
+                    }
+                    label="ID Expiry"
+                    value={selectedRequest.idExpiryDate}
+                  />
                 </div>
               </section>
 
@@ -1599,35 +1565,54 @@ export function AdminVerifications() {
                   <Camera className="w-3.5 h-3.5" /> Submitted
                   Documents
                 </h3>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                      Government ID
-                    </p>
-                    <PhotoViewer
-                      path={selectedRequest.idFrontPath}
-                      label="Gov ID"
-                    />
+                {selectedRequest.documentsDeletedAt ? (
+                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 text-center">
+                    <Trash2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-gray-600">Identity documents removed</p>
+                    <p className="text-xs text-gray-400 mt-1">The submitted documents were securely removed after the verification decision.</p>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                      Utility Bill
-                    </p>
-                    <PhotoViewer
-                      path={selectedRequest.proofAddressPath}
-                      label="Utility Bill"
-                    />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
+                        ID Front
+                      </p>
+                      <PhotoViewer
+                        path={selectedRequest.idFrontPath}
+                        label="ID Front"
+                      />
+                    </div>
+                    {selectedRequest.idBackPath && (
+                      <div>
+                        <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
+                          ID Back
+                        </p>
+                        <PhotoViewer
+                          path={selectedRequest.idBackPath}
+                          label="ID Back"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
+                        Proof of Address
+                      </p>
+                      <PhotoViewer
+                        path={selectedRequest.proofOfAddressPath}
+                        label="Proof of Address"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
+                        Selfie
+                      </p>
+                      <PhotoViewer
+                        path={selectedRequest.selfiePath}
+                        label="Selfie"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                      Selfie
-                    </p>
-                    <PhotoViewer
-                      path={selectedRequest.selfiePath}
-                      label="Selfie"
-                    />
-                  </div>
-                </div>
+                )}
               </section>
 
               {/* Timeline */}
@@ -1660,26 +1645,26 @@ export function AdminVerifications() {
                 )}
               </section>
 
-              {/* Actions */}
-              {selectedRequest.status === "pending" && (
+              {/* Actions — only while the application is still active (not a final decision yet) */}
+              {(selectedRequest.status === "pending" || selectedRequest.status === "under_review") && (
                 <div className="flex gap-3 flex-wrap">
                   <button
                     className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
-                    onClick={() => handleDecision(selectedRequest, "approved")}
+                    onClick={() => handleDecision(selectedRequest, "approve")}
                   >
                     <CheckCircle className="w-5 h-5" /> Approve Creator+
                   </button>
                   <button
                     className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
-                    onClick={() => openRejectModal(selectedRequest, 'rejected')}
+                    onClick={() => openRejectModal(selectedRequest, 'denied')}
                   >
                     <XCircle className="w-5 h-5" /> Deny
                   </button>
                   <button
                     className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl py-3 transition-colors"
-                    onClick={() => openRejectModal(selectedRequest, 'needs_resubmission')}
+                    onClick={() => openRejectModal(selectedRequest, 'changes_requested')}
                   >
-                    <RefreshCw className="w-4 h-4" /> Request New Documents
+                    <RefreshCw className="w-4 h-4" /> Request Changes
                   </button>
                 </div>
               )}
@@ -1701,13 +1686,13 @@ export function AdminVerifications() {
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3">
-              {rejectTarget.type === 'needs_resubmission'
+              {rejectTarget.type === 'changes_requested'
                 ? <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center"><RefreshCw className="w-5 h-5 text-orange-600"/></div>
                 : <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center"><XCircle className="w-5 h-5 text-red-600"/></div>
               }
               <div>
                 <h3 className="font-black text-gray-900 text-base">
-                  {rejectTarget.type === 'needs_resubmission' ? 'Request New Documents' : 'Deny Verification'}
+                  {rejectTarget.type === 'changes_requested' ? 'Request Changes' : 'Deny Verification'}
                 </h3>
                 <p className="text-xs text-gray-400">{rejectTarget.request.userName}</p>
               </div>
@@ -1718,7 +1703,7 @@ export function AdminVerifications() {
               <textarea
                 value={rejectionReason}
                 onChange={e => setRejectionReason(e.target.value)}
-                placeholder="Explain why this verification is being denied or what documents are needed…"
+                placeholder={rejectTarget.type === 'changes_requested' ? 'Tell the user exactly what needs to be corrected…' : 'Explain why this verification is being denied…'}
                 rows={3}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
               />
@@ -1727,7 +1712,7 @@ export function AdminVerifications() {
             <div>
               <p className="text-xs font-semibold text-gray-400 mb-2">Quick reasons</p>
               <div className="flex flex-wrap gap-1.5">
-                {REJECTION_PRESETS.map(p => (
+                {(rejectTarget.type === 'changes_requested' ? CHANGES_PRESETS : DENY_PRESETS).map(p => (
                   <button key={p} onClick={() => setRejectionReason(p)}
                     className="text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors">
                     {p}
@@ -1736,6 +1721,12 @@ export function AdminVerifications() {
               </div>
             </div>
 
+            {rejectTarget.type === 'denied' && (
+              <p className="text-xs text-gray-400">
+                Approving or denying permanently deletes the submitted documents from storage once this decision is saved.
+              </p>
+            )}
+
             <div className="flex gap-3 pt-2">
               <button onClick={() => { setShowRejectModal(false); setRejectionReason(''); }}
                 className="flex-1 py-3 border border-gray-200 rounded-2xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
@@ -1743,11 +1734,11 @@ export function AdminVerifications() {
               </button>
               <button
                 disabled={!rejectionReason.trim()}
-                onClick={() => handleDecision(rejectTarget.request, rejectTarget.type, rejectionReason.trim())}
+                onClick={() => handleDecision(rejectTarget.request, rejectTarget.type === 'changes_requested' ? 'changes_requested' : 'deny', rejectionReason.trim())}
                 className={`flex-1 py-3 rounded-2xl text-sm font-bold text-white transition-colors disabled:opacity-40 ${
-                  rejectTarget.type === 'needs_resubmission' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-600 hover:bg-red-700'
+                  rejectTarget.type === 'changes_requested' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-600 hover:bg-red-700'
                 }`}>
-                {rejectTarget.type === 'needs_resubmission' ? 'Request Documents' : 'Deny & Notify'}
+                {rejectTarget.type === 'changes_requested' ? 'Request Changes' : 'Deny & Notify'}
               </button>
             </div>
 

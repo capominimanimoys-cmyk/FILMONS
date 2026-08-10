@@ -8,31 +8,18 @@ import {
   ShieldCheck, ArrowLeft, ChevronRight, ChevronLeft, ChevronDown,
   Check, Upload, Camera, FileText, User, MapPin, CreditCard, AlertCircle,
   CheckCircle, X, Loader2, Info, Search, Navigation, XCircle,
-  Phone, Home, Briefcase,
+  Phone, Home, Lock,
 } from 'lucide-react';
 import { supabase } from "../../lib/supabase";
 import { uploadVerificationDoc } from "../../lib/upload";
 
 const STEPS = [
   { id: 1, label: 'Personal Information', icon: User       },
-  { id: 2, label: 'Contact',              icon: Phone      },
-  { id: 3, label: 'Location',             icon: MapPin     },
-  { id: 4, label: 'Proof of Address',     icon: Home       },
-  { id: 5, label: 'Identity',             icon: CreditCard },
-  { id: 6, label: 'Face Verification',    icon: Camera     },
-  { id: 7, label: 'Professional',         icon: Briefcase  },
-  { id: 8, label: 'Review',               icon: CheckCircle},
-];
-
-const ROLE_CATEGORIES = [
-  { label: 'Film & Video',  roles: ['Director','Cinematographer','Camera Operator','Gaffer','Grip','Producer','Video Editor','Colorist','VFX Artist','Sound Designer'] },
-  { label: 'Photography',   roles: ['Photographer','Fashion Photographer','Retoucher','Studio Manager','Drone Photographer'] },
-  { label: 'Music & Audio', roles: ['Music Producer','Beatmaker','Mixing Engineer','DJ','Composer'] },
-  { label: 'Social Media',  roles: ['Content Creator','UGC Creator','YouTuber','Streamer','Podcast Producer'] },
-  { label: 'Design',        roles: ['Graphic Designer','UI Designer','Motion Designer','Creative Director'] },
-  { label: 'Animation/3D',  roles: ['3D Animator','Unreal Engine Artist','Blender Artist','Technical Artist'] },
-  { label: 'Writing',       roles: ['Screenwriter','Copywriter','Story Editor','Narrative Designer'] },
-  { label: 'Performing',    roles: ['Actor','Voice Actor','Dancer','Choreographer'] },
+  { id: 2, label: 'Location',             icon: MapPin     },
+  { id: 3, label: 'Proof of Address',     icon: Home       },
+  { id: 4, label: 'Identity',             icon: CreditCard },
+  { id: 5, label: 'Selfie',               icon: Camera     },
+  { id: 6, label: 'Review',               icon: CheckCircle},
 ];
 
 // ── ID type options — depend on where the ID was actually issued, not where
@@ -57,6 +44,10 @@ function idTypeOptions(idCountry: string): { value: string; icon: string; recomm
     { value: 'National Identity Card', icon: '🪪' },
   ];
 }
+// Passports don't have a second photo page worth capturing — every other ID
+// type in idTypeOptions() is a card with a back side we actually need.
+const idRequiresBack = (idType: string) => !!idType && !idType.toLowerCase().includes('passport');
+
 const CA_PROVINCES = ['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'];
 const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA',
@@ -338,6 +329,16 @@ function StepHero({ icon, title, subtitle }: { icon: React.ReactNode; title: str
   );
 }
 
+// ── Privacy note — reused across steps that collect sensitive data ──
+function PrivacyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex items-start gap-2">
+      <Lock className="w-4 h-4 text-gray-400 shrink-0 mt-0.5"/>
+      <p className="text-xs text-gray-500">{children}</p>
+    </div>
+  );
+}
+
 // ── Guideline row — icon-badged do/don't line, used in place of emoji bullets ──
 function GuidelineRow({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
@@ -368,8 +369,9 @@ export function Verification() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // Step 1: Personal
-  const [legalName, setLegalName] = useState('');
+  // Step 1: Personal Information (incl. contact)
+  const [legalFirstName, setLegalFirstName] = useState('');
+  const [legalLastName, setLegalLastName] = useState('');
   const [dob, setDob] = useState('');
   // Residence, ID-issuing country, and (implicitly) nationality are kept as
   // separate concepts — an immigrant, international student, or permanent
@@ -377,10 +379,9 @@ export function Verification() {
   // must never be assumed to equal ID country. The ID-country question is
   // fully standalone (Canada / US / Other), not relative to residence.
   const [residenceCountry, setResidenceCountry] = useState<'Canada' | 'United States' | ''>('');
-
-  // Step 2: Contact — email is always verified by the time a user can reach
-  // this page (Root.tsx redirects unverified emails to /verify-email before
-  // any other route, this one included), so only phone needs an inline flow.
+  // Email is always verified by the time a user can reach this page (Root.tsx
+  // redirects unverified emails to /verify-email before any other route,
+  // this one included), so only phone needs an inline verify flow.
   const [phone, setPhone] = useState(user?.phone || '');
   const [phoneVerified, setPhoneVerified] = useState(!!user?.phoneVerified);
   const [otpSent, setOtpSent] = useState(false);
@@ -388,8 +389,9 @@ export function Verification() {
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
 
-  // Step 3: Location
+  // Step 2: Location
   const [streetAddr, setStreetAddr] = useState('');
+  const [unit, setUnit] = useState('');
   const [city, setCity] = useState('');
   const [province, setProvince] = useState('');
   const [postalCode, setPostalCode] = useState('');
@@ -401,43 +403,44 @@ export function Verification() {
   const addrTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addrSugRef  = useRef<HTMLDivElement>(null);
 
-  // Step 4: Proof of Address
-  const [utilityBill, setUtilityBill] = useState('');
+  // Step 3: Proof of Address
+  const [proofOfAddress, setProofOfAddress] = useState('');
 
-  // Step 5: Identity
+  // Step 4: Identity
   const [idCountryChoice, setIdCountryChoice] = useState<'Canada' | 'United States' | 'Other' | ''>('');
   // The actual issuing country when idCountryChoice is 'Other' — stores the
   // real country name (e.g. "France", "Nigeria"), never the literal "Other".
   const [otherIdCountry, setOtherIdCountry] = useState('');
   const issuingCountry = idCountryChoice === 'Other' ? otherIdCountry : idCountryChoice;
   const [idType, setIdType] = useState('');
-  const [govId, setGovId] = useState('');
+  const [govIdFront, setGovIdFront] = useState('');
+  const [govIdBack, setGovIdBack] = useState('');
+  const [idExpiryDate, setIdExpiryDate] = useState('');
 
-  // Step 6: Face Verification
+  // Step 5: Selfie / Face Verification
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [selfieUrl, setSelfieUrl] = useState('');
   const [cameraError, setCameraError] = useState('');
 
-  // Step 7: Professional (optional)
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  const [skillsText, setSkillsText]       = useState('');
-  const [portfolioUrl, setPortfolioUrl]   = useState('');
-
-  // Step 8: Review & consent
+  // Step 6: Review & consent
   const [consentId, setConsentId] = useState(false);
   const [consentData, setConsentData] = useState(false);
   const [consentPrivacy, setConsentPrivacy] = useState(false);
 
   // The live identity_verifications row for this user — used to show why a
-  // submission was rejected/needs new documents. Fetched from the DB
-  // (rather than localStorage) so it's correct across devices/sessions.
+  // submission needs changes/was denied. Fetched from the DB (rather than
+  // localStorage) so it's correct across devices/sessions.
   const [myVerification, setMyVerification] = useState<any>(null);
 
   useEffect(() => {
     if (!isAuthenticated) navigate('/login');
-    if (user) { setLegalName(user.name || ''); }
+    if (user) {
+      const [f, ...rest] = (user.name || '').trim().split(/\s+/);
+      setLegalFirstName(f || '');
+      setLegalLastName(rest.join(' '));
+    }
   }, [isAuthenticated, user]);
 
   useEffect(() => {
@@ -452,6 +455,12 @@ export function Verification() {
   useEffect(() => {
     if (idType && !idTypeOptions(issuingCountry).some(o => o.value === idType)) setIdType('');
   }, [issuingCountry]); // eslint-disable-line
+
+  // Drop a stale back-of-ID photo if the newly chosen type doesn't need one
+  // (e.g. switching from Driver's Licence to Passport).
+  useEffect(() => {
+    if (govIdBack && !idRequiresBack(idType)) setGovIdBack('');
+  }, [idType]); // eslint-disable-line
 
   useEffect(() => {
     return () => { cameraStream?.getTracks().forEach(t => t.stop()); };
@@ -644,38 +653,35 @@ export function Verification() {
     setCameraStream(null);
   };
 
-  const toggleRole = (role: string) => setSelectedRoles(prev =>
-    prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role].slice(0, 3)
-  );
-
   const handleNext = () => {
     if (step === 1) {
       if (!residenceCountry) { toast.error('Please select your country of residence'); return; }
-      if (!legalName.trim()) { toast.error('Legal name is required'); return; }
+      if (!legalFirstName.trim()) { toast.error('Legal first name is required'); return; }
+      if (!legalLastName.trim()) { toast.error('Legal last name is required'); return; }
       if (!dob) { toast.error('Date of birth is required'); return; }
-    }
-    if (step === 2) {
       if (!phoneVerified) { toast.error('Please verify your phone number to continue'); return; }
     }
-    if (step === 3) {
+    if (step === 2) {
+      if (!streetAddr.trim()) { toast.error('Street address is required'); return; }
       if (!city.trim()) { toast.error('City is required'); return; }
       if (!province) { toast.error(residenceCountry === 'United States' ? 'State is required' : 'Province is required'); return; }
       if (!postalCode.trim()) { toast.error(residenceCountry === 'United States' ? 'ZIP code is required' : 'Postal code is required'); return; }
     }
-    if (step === 4) {
-      if (!utilityBill) { toast.error('Please upload proof of address'); return; }
+    if (step === 3) {
+      if (!proofOfAddress) { toast.error('Please upload proof of address'); return; }
     }
-    if (step === 5) {
+    if (step === 4) {
       if (!idCountryChoice) { toast.error('Please select the country that issued your ID'); return; }
       if (idCountryChoice === 'Other' && !otherIdCountry) { toast.error('Please select the issuing country'); return; }
       if (!idType) { toast.error('Please select an ID type'); return; }
-      if (!govId) { toast.error('Please upload your government ID'); return; }
+      if (!govIdFront) { toast.error('Please upload the front of your ID'); return; }
+      if (idRequiresBack(idType) && !govIdBack) { toast.error('Please upload the back of your ID'); return; }
+      if (!idExpiryDate) { toast.error('Please enter the ID expiration date'); return; }
     }
-    if (step === 6) {
+    if (step === 5) {
       if (!selfieUrl) { toast.error('Please take a selfie first'); return; }
     }
-    // Step 7 (Professional) is optional — no validation.
-    if (step === 8) {
+    if (step === 6) {
       if (!consentId || !consentData || !consentPrivacy) { toast.error('Please agree to all terms to continue'); return; }
       handleSubmit();
       return;
@@ -689,21 +695,20 @@ export function Verification() {
     setLoading(true);
 
     const submittedAt = new Date().toISOString();
-    const [legalFirstName, ...restName] = legalName.trim().split(/\s+/);
-    const legalLastName = restName.join(' ');
 
     // 1. Upload documents to the private verification-documents bucket —
     // store the stable PATH, never a signed URL (those expire) and never
     // the raw bytes in the DB. Falls back to the base64 string if the
     // upload genuinely fails, so the submission still goes through.
     const ts = Date.now();
-    const [idFrontPath, proofAddressPath, selfiePath] = await Promise.all([
-      uploadVerificationDoc(govId,       `${user.id}/id-front-${ts}.jpg`),
-      uploadVerificationDoc(utilityBill, `${user.id}/proof-address-${ts}.jpg`),
-      uploadVerificationDoc(selfieUrl,   `${user.id}/selfie-${ts}.jpg`),
+    const [idFrontPath, idBackPath, proofAddressPath, selfiePath] = await Promise.all([
+      uploadVerificationDoc(govIdFront,     `${user.id}/id-front-${ts}.jpg`),
+      govIdBack ? uploadVerificationDoc(govIdBack, `${user.id}/id-back-${ts}.jpg`) : Promise.resolve(''),
+      uploadVerificationDoc(proofOfAddress, `${user.id}/proof-address-${ts}.jpg`),
+      uploadVerificationDoc(selfieUrl,      `${user.id}/selfie-${ts}.jpg`),
     ]).catch(uploadErr => {
       console.warn('Verification document upload failed — using base64 fallback:', uploadErr);
-      return [govId, utilityBill, selfieUrl];
+      return [govIdFront, govIdBack, proofOfAddress, selfieUrl];
     });
 
     // 2. Structured row in identity_verifications — sensitive KYC data
@@ -715,21 +720,28 @@ export function Verification() {
         .upsert({
           user_id:                 user.id,
           status:                  'pending',
-          legal_first_name:        legalFirstName || null,
-          legal_last_name:         legalLastName || null,
+          legal_first_name:        legalFirstName.trim() || null,
+          legal_last_name:         legalLastName.trim() || null,
           date_of_birth:           dob || null,
           country_of_residence:    residenceCountry || null,
           address_line1:           streetAddr || null,
+          address_line2:           unit || null,
           city:                    city || null,
-          province_state:         province || null,
+          province_state:          province || null,
           postal_code:             postalCode || null,
           id_issuing_country:      issuingCountry || null,
           id_type:                 idType || null,
-          proof_of_address_type:   'Utility Bill / Bank Statement',
+          id_expiry_date:          idExpiryDate || null,
+          proof_of_address_type:   'Utility bill / bank statement / lease',
           id_front_path:           idFrontPath,
-          proof_address_path:      proofAddressPath,
+          id_back_path:            idBackPath || null,
+          proof_of_address_path:   proofAddressPath,
           selfie_path:             selfiePath,
           submitted_at:            submittedAt,
+          reviewed_at:             null,
+          verified_at:             null,
+          decision_reason:         null,
+          documents_deleted_at:    null,
         }, { onConflict: 'user_id' });
 
       if (dbErr) console.warn('identity_verifications upsert error:', dbErr.message);
@@ -738,26 +750,7 @@ export function Verification() {
       console.warn('identity_verifications upsert failed:', dbErr);
     }
 
-    // 3. Professional info (role/skills/portfolio) isn't identity/KYC data
-    // — it belongs on the public profile, not mixed into the verification
-    // record.
-    if (selectedRoles.length || skillsText.trim() || portfolioUrl.trim()) {
-      try {
-        const { data: existingProfile } = await supabase
-          .from('profiles').select('profile_meta').eq('id', user.id).single();
-        const existingMeta = (typeof existingProfile?.profile_meta === 'string'
-          ? (() => { try { return JSON.parse(existingProfile.profile_meta); } catch { return {}; } })()
-          : existingProfile?.profile_meta) || {};
-        await supabase.from('profiles').update({
-          primary_role: selectedRoles[0] || null,
-          profile_meta: { ...existingMeta, skills: skillsText || undefined, portfolioUrl: portfolioUrl || undefined, secondaryRoles: selectedRoles.slice(1) },
-        }).eq('id', user.id);
-      } catch (e) {
-        console.warn('Saving professional info failed:', e);
-      }
-    }
-
-    // 4. Update local session
+    // 3. Update local session
     try {
       const SESSION_KEY = 'filmons_current_user';
       const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
@@ -768,17 +761,18 @@ export function Verification() {
       ));
     } catch {}
 
-    // 5. Email admin
+    // 4. Email admin
+    const fullLegalName = [legalFirstName, legalLastName].filter(Boolean).join(' ');
     sendEmail('template_rd3nhik', {
       to_email: 'filmons481@gmail.com', to_name: 'Admin',
-      user_name: legalName || user.name, user_email: user.email || '',
+      user_name: fullLegalName || user.name, user_email: user.email || '',
       user_id: user.id, id_type: idType, city, province,
       submitted_at: new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }),
       admin_url: `${window.location.origin}/admin-verifications`,
     }).catch(e => console.warn('Admin email failed:', e));
 
     setLoading(false);
-    toast.success('Verification submitted! Our team will review within 1–3 business days.');
+    toast.success("Verification submitted! We'll notify you when a decision has been made.");
     setTimeout(() => navigate('/profile'), 1500);
   };
   if (!user) return null;
@@ -795,26 +789,26 @@ export function Verification() {
     );
   }
 
-  if (user.verificationStatus === 'pending') {
+  if (user.verificationStatus === 'pending' || user.verificationStatus === 'under_review') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto"><Loader2 className="w-10 h-10 text-amber-500 animate-spin"/></div>
-          <h2 className="text-2xl font-bold text-gray-900">Review in Progress</h2>
-          <p className="text-gray-500 text-sm">Your verification is being reviewed by our team. This typically takes 1–3 business days.</p>
+          <h2 className="text-2xl font-bold text-gray-900">Verification Submitted</h2>
+          <p className="text-gray-500 text-sm">Your Creator+ verification has been submitted for review. We'll notify you when a decision has been made.</p>
           <button onClick={() => navigate('/profile')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3">Back to Profile</button>
         </div>
       </div>
     );
   }
 
-  if (user.verificationStatus === 'rejected' || user.verificationStatus === 'denied') {
+  if (user.verificationStatus === 'denied' || user.verificationStatus === 'rejected') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto"><X className="w-10 h-10 text-red-500"/></div>
           <h2 className="text-2xl font-bold text-gray-900">Verification Denied</h2>
-          {myVerification?.rejection_reason && <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-red-600 mb-1">Reason</p><p className="text-sm text-red-700">{myVerification.rejection_reason}</p></div>}
+          {myVerification?.decision_reason && <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-red-600 mb-1">Reason</p><p className="text-sm text-red-700">{myVerification.decision_reason}</p></div>}
           <p className="text-gray-500 text-sm">Please review the reason and resubmit with corrected documents.</p>
           <button onClick={() => { try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} window.location.reload(); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3">Resubmit Verification</button>
         </div>
@@ -822,15 +816,15 @@ export function Verification() {
     );
   }
 
-  if (user.verificationStatus === 'needs_resubmission') {
+  if (user.verificationStatus === 'changes_requested' || user.verificationStatus === 'needs_resubmission') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%)' }}>
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto"><Upload className="w-10 h-10 text-orange-500"/></div>
-          <h2 className="text-2xl font-bold text-gray-900">New Documents Required</h2>
-          {myVerification?.rejection_reason && <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-orange-600 mb-1">Admin note</p><p className="text-sm text-orange-700">{myVerification.rejection_reason}</p></div>}
-          <p className="text-gray-500 text-sm">The admin has requested new documents. You can continue from where you left off.</p>
-          <button onClick={() => { setStep(4); try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl py-3">Upload New Documents</button>
+          <h2 className="text-2xl font-bold text-gray-900">Changes Requested</h2>
+          {myVerification?.decision_reason && <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-orange-600 mb-1">What needs to change</p><p className="text-sm text-orange-700">{myVerification.decision_reason}</p></div>}
+          <p className="text-gray-500 text-sm">The admin has requested a correction. You can continue from where you left off.</p>
+          <button onClick={() => { setStep(3); try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl py-3">Continue Verification</button>
         </div>
       </div>
     );
@@ -865,7 +859,7 @@ export function Verification() {
         {/* ── Step 1: Personal Information ── */}
         {step === 1 && (
           <>
-            <StepHero icon={<User className="w-5 h-5"/>} title="Personal Information" subtitle="Provide your legal details for identity verification" />
+            <StepHero icon={<User className="w-5 h-5"/>} title="Personal Information" subtitle="Your legal details, for identity verification only" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               {/* Country of residence is kept to just the two launch markets
@@ -885,27 +879,25 @@ export function Verification() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Full Legal Name *</label>
-                <input value={legalName} onChange={e=>setLegalName(e.target.value)} placeholder="As it appears on your ID"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Legal First Name *</label>
+                  <input value={legalFirstName} onChange={e=>setLegalFirstName(e.target.value)} placeholder="As it appears on your ID"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Legal Last Name *</label>
+                  <input value={legalLastName} onChange={e=>setLegalLastName(e.target.value)} placeholder="As it appears on your ID"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+                </div>
               </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Date of Birth *</label>
                 <DobCalendar value={dob} onChange={setDob} />
                 <p className="text-xs text-gray-400">You must be at least 18 years old to use Creator+.</p>
               </div>
-            </div>
-          </>
-        )}
 
-        {/* ── Step 2: Contact ── */}
-        {step === 2 && (
-          <>
-            <StepHero icon={<Phone className="w-5 h-5"/>} title="Contact" subtitle="Confirm your email and verify your phone number" />
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              {/* Email — always verified by the time this page is reachable */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Email</label>
                 <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
@@ -916,7 +908,6 @@ export function Verification() {
                 </div>
               </div>
 
-              {/* Phone — verify inline via OTP */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Phone Number *</label>
                 {phoneVerified ? (
@@ -956,17 +947,29 @@ export function Verification() {
                   </>
                 )}
               </div>
+
+              <PrivacyNote>
+                This information is private and will never appear publicly, unless you separately choose to display it on your profile.
+              </PrivacyNote>
             </div>
           </>
         )}
 
-        {/* ── Step 3: Location ── */}
-        {step === 3 && (
+        {/* ── Step 2: Location ── */}
+        {step === 2 && (
           <>
             <StepHero icon={<MapPin className="w-5 h-5"/>} title="Location" subtitle="Where do you currently live?" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Residential Address{residenceCountry ? ` (${residenceCountry})` : ''}</label>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Country</label>
+                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold text-gray-700">
+                  {residenceCountry === 'United States' ? '🇺🇸' : '🇨🇦'} {residenceCountry}
+                  <span className="text-xs text-gray-400 font-normal ml-auto">Same as your country of residence</span>
+                </div>
+              </div>
+
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Street Address *</label>
               <div ref={addrSugRef} className="relative">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -1027,6 +1030,11 @@ export function Verification() {
                       <input value={streetAddr} onChange={e => setStreetAddr(e.target.value)}
                         className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Apartment / Unit (optional)</label>
+                      <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Apt, suite, unit…"
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                    </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div className="space-y-1 col-span-1">
                         <label className="text-[10px] font-bold text-gray-500 uppercase">City</label>
@@ -1059,29 +1067,38 @@ export function Verification() {
                   Enter address manually
                 </button>
               )}
+
+              <PrivacyNote>
+                Your exact address is private and will never be displayed on your public Filmons profile.
+              </PrivacyNote>
             </div>
           </>
         )}
 
-        {/* ── Step 4: Proof of Address ── */}
-        {step === 4 && (
+        {/* ── Step 3: Proof of Address ── */}
+        {step === 3 && (
           <>
             <StepHero icon={<Home className="w-5 h-5"/>} title="Proof of Address" subtitle="Upload a document confirming the address you entered" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
-              <p className="text-xs text-gray-500">A recent utility bill, bank statement, or government mail (within 3 months)</p>
-              <FileUploadZone label="Utility Bill / Proof of Address" accept="image/*,.pdf"
-                value={utilityBill || null} onChange={(url) => setUtilityBill(url)} />
+              <p className="text-xs text-gray-500">
+                Accepted: utility bill, bank statement, credit card statement, government correspondence, or a lease / rental agreement — dated within the last 3 months, showing your legal name, residential address, and the issuer.
+              </p>
+              <FileUploadZone label="Proof of Address Document" accept="image/*,.pdf"
+                value={proofOfAddress || null} onChange={(url) => setProofOfAddress(url)} />
               <div className="space-y-1.5 pt-1">
                 <GuidelineRow ok>Ensure the document is well-lit and fully visible</GuidelineRow>
-                <GuidelineRow ok>Address on the document must match what you entered</GuidelineRow>
+                <GuidelineRow ok>Name and address on the document must match what you entered</GuidelineRow>
               </div>
+              <PrivacyNote>
+                Your proof of address is private and used only for Creator+ verification.
+              </PrivacyNote>
             </div>
           </>
         )}
 
-        {/* ── Step 5: Identity ── */}
-        {step === 5 && (
+        {/* ── Step 4: Identity ── */}
+        {step === 4 && (
           <>
             <StepHero icon={<CreditCard className="w-5 h-5"/>} title="Identity" subtitle="Tell us where your ID is from, then upload it" />
 
@@ -1132,20 +1149,34 @@ export function Verification() {
               </div>
 
               {idType && (
-                <div className="pt-1">
-                  <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500"/>Upload Your {idType}</h3>
-                  <FileUploadZone label="Government ID Photo" accept="image/*,.pdf"
-                    value={govId || null} onChange={(url) => setGovId(url)} />
+                <div className="pt-1 space-y-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500"/>Front of {idType}</h3>
+                    <FileUploadZone label="ID Front" accept="image/*,.pdf"
+                      value={govIdFront || null} onChange={(url) => setGovIdFront(url)} />
+                  </div>
+                  {idRequiresBack(idType) && (
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500"/>Back of {idType}</h3>
+                      <FileUploadZone label="ID Back" accept="image/*,.pdf"
+                        value={govIdBack || null} onChange={(url) => setGovIdBack(url)} />
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">ID Expiration Date *</label>
+                    <input type="date" value={idExpiryDate} onChange={e => setIdExpiryDate(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+                  </div>
                 </div>
               )}
             </div>
           </>
         )}
 
-        {/* ── Step 6: Face Verification ── */}
-        {step === 6 && (
+        {/* ── Step 5: Selfie / Face Verification ── */}
+        {step === 5 && (
           <>
-            <StepHero icon={<Camera className="w-5 h-5"/>} title="Face Verification" subtitle="Take a selfie to verify your identity" />
+            <StepHero icon={<Camera className="w-5 h-5"/>} title="Selfie" subtitle="Take a selfie to verify your identity" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
               {selfieUrl ? (
@@ -1198,76 +1229,21 @@ export function Verification() {
                 <GuidelineRow ok>Position your face within the oval frame</GuidelineRow>
               </div>
 
-              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex items-start gap-2">
-                <Info className="w-4 h-4 text-gray-400 shrink-0 mt-0.5"/>
-                <p className="text-xs text-gray-500">Your selfie is compared against your government ID and is not stored on your device.</p>
-              </div>
+              <PrivacyNote>
+                Your selfie is compared against your government ID for identity matching. It remains private and will never appear on your public Filmons profile.
+              </PrivacyNote>
             </div>
           </>
         )}
 
-        {/* ── Step 7: Professional ── */}
-        {step === 7 && (
-          <>
-            <StepHero icon={<Briefcase className="w-5 h-5"/>} title="Professional" subtitle="Optional — helps renters and clients find you" />
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              {selectedRoles.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pb-3 border-b border-gray-50">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest w-full mb-1">Selected ({selectedRoles.length}/3)</p>
-                  {selectedRoles.map(r => (
-                    <button key={r} type="button" onClick={() => toggleRole(r)}
-                      className="flex items-center gap-1 text-xs bg-blue-600 text-white px-2.5 py-1 rounded-full font-semibold">
-                      {r} <span className="opacity-70 ml-0.5">×</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="space-y-3 max-h-[38vh] overflow-y-auto pr-1">
-                {ROLE_CATEGORIES.map(cat => (
-                  <div key={cat.label}>
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{cat.label}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {cat.roles.map(role => {
-                        const sel = selectedRoles.includes(role);
-                        return (
-                          <button key={role} type="button" onClick={() => toggleRole(role)}
-                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-all ${
-                              sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'}`}>
-                            {role}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-1.5 pt-3 border-t border-gray-50">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Skills / Services</label>
-                <textarea value={skillsText} onChange={e=>setSkillsText(e.target.value)} rows={2}
-                  placeholder="e.g. Wedding photography, drone cinematography, color grading…"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"/>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Portfolio / Reel URL</label>
-                <input value={portfolioUrl} onChange={e=>setPortfolioUrl(e.target.value)}
-                  placeholder="filmons.com/@you · vimeo.com/… · behance.net/…"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── Step 8: Review & Submit ── */}
-        {step === 8 && (
+        {/* ── Step 6: Review & Submit ── */}
+        {step === 6 && (
           <>
             <StepHero icon={<CheckCircle className="w-5 h-5"/>} title="Review" subtitle="Confirm your information before submitting" />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 divide-y divide-gray-50">
               <div className="pb-2">
-                <ReviewRow label="Legal Name" value={legalName} />
+                <ReviewRow label="Legal Name" value={[legalFirstName, legalLastName].filter(Boolean).join(' ')} />
                 <ReviewRow label="Date of Birth" value={dob} />
                 <ReviewRow label="Residence" value={residenceCountry} />
               </div>
@@ -1276,17 +1252,13 @@ export function Verification() {
                 <ReviewRow label="Phone" value={phoneVerified ? `${phone} ✓` : phone} />
               </div>
               <div className="py-2">
-                <ReviewRow label="Address" value={[streetAddr, city, province, postalCode].filter(Boolean).join(', ')} />
+                <ReviewRow label="Address" value={[streetAddr, unit, city, province, postalCode].filter(Boolean).join(', ')} />
               </div>
-              <div className="py-2">
+              <div className="pt-2">
                 <ReviewRow label="ID Country" value={issuingCountry} />
                 <ReviewRow label="ID Type" value={idType} />
+                <ReviewRow label="ID Expiry" value={idExpiryDate} />
               </div>
-              {selectedRoles.length > 0 && (
-                <div className="pt-2">
-                  <ReviewRow label="Role" value={selectedRoles.join(', ')} />
-                </div>
-              )}
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
@@ -1331,15 +1303,15 @@ export function Verification() {
         >
           {loading ? (
             <><Loader2 className="w-5 h-5 animate-spin"/>Submitting verification…</>
-          ) : step === 8 ? (
-            <><ShieldCheck className="w-5 h-5"/>Submit for Review</>
+          ) : step === STEPS.length ? (
+            <><ShieldCheck className="w-5 h-5"/>Submit for Verification</>
           ) : (
             <>Continue<ChevronRight className="w-5 h-5"/></>
           )}
         </button>
 
         <p className="text-xs text-gray-400 text-center">
-          {step < 8 ? `Step ${step} of 8 — ${STEPS[step-1].label}` : 'Your information is reviewed by our team within 1–3 business days'}
+          {step < STEPS.length ? `Step ${step} of ${STEPS.length} — ${STEPS[step-1].label}` : 'Your information is reviewed by our team within 1–3 business days'}
         </p>
       </div>
     </div>
