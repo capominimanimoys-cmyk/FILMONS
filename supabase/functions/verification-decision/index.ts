@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     });
 
     await updateProfile(row.user_id, approved
-      ? { verification_status: 'approved', is_verified: true, creator_plus_verified: true, account_type: 'business', account_mode: 'business' }
+      ? { verification_status: 'approved', is_verified: true, creator_plus_verified: true, account_type: 'creator_plus', account_mode: 'creator_plus' }
       : { verification_status: 'denied', is_verified: false });
 
     await deleteStorageObjects(docPaths);
