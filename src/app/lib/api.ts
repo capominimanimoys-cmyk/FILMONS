@@ -609,6 +609,14 @@ export const authApi = {
 let _listingsCache: Listing[] | null = null;
 let _listingsCacheAt = 0; // reset to force re-fetch with fixed image parsing
 
+// `rowVal || metaVal || []` is a trap: an array is truthy even when empty,
+// so `[] || metaVal` always evaluates to `[]` and the metadata fallback
+// (where pricingPackages/images actually live when the dedicated column was
+// never populated) never runs. Use .length to decide instead.
+function firstNonEmpty<T>(rowVal: T[] | null | undefined, metaVal: T[] | null | undefined): T[] {
+  return (rowVal && rowVal.length) ? rowVal : (metaVal || []);
+}
+
 export const listingsApi = {
   getAll: async (): Promise<Listing[]> => {
     // Return in-memory cache if fresh (< 60 seconds) and has data
@@ -643,8 +651,8 @@ export const listingsApi = {
       })();
 
       // Images: prefer dedicated column, fall back to metadata
-      const images = extractUrls(row.images) || extractUrls(meta.images) || extractUrls(meta.mediaUrls) || [];
-      const videos = extractUrls(row.videos) || extractUrls(meta.videos) || [];
+      const images = firstNonEmpty(extractUrls(row.images), extractUrls(meta.images).length ? extractUrls(meta.images) : extractUrls(meta.mediaUrls));
+      const videos = firstNonEmpty(extractUrls(row.videos), extractUrls(meta.videos));
 
       return {
         id:              row.id,
@@ -656,11 +664,11 @@ export const listingsApi = {
         listingType:     row.listing_type || 'gear',
         listingMode:     row.listing_mode || 'rent',
         serviceCategory: row.service_category,
-        tags:            row.tags            || meta.tags      || [],
+        tags:            firstNonEmpty(row.tags, meta.tags),
         images,
         videos,
-        contactMethods:  row.contact_methods || meta.contactMethods || [],
-        pricingPackages: row.pricing_packages || meta.pricingPackages || [],
+        contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
+        pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
         createdAt:       row.created_at,
         isSold:          row.is_sold || false,
         soldAt:          row.sold_at || undefined,
@@ -727,6 +735,9 @@ export const listingsApi = {
           try { return JSON.parse(data.metadata); } catch { return {}; }
         })();
         return {
+          // Spread metadata first — many optional fields (weeklyRate, securityDeposit,
+          // etc.) only ever live here. Explicit fields below always win over it.
+          ...(meta),
           id:              data.id,
           userId:          data.user_id,
           title:           data.title,
@@ -737,16 +748,13 @@ export const listingsApi = {
           listingMode:     data.listing_mode,
           serviceCategory: data.service_category,
           tags:            data.tags             || [],
-          images:          toStringArray(extractUrls(data.images) || extractUrls(meta.images) || data.media_urls || []),
-          videos:          extractUrls(data.videos) || extractUrls(meta.videos) || [],
-          contactMethods:  data.contact_methods  || [],
-          pricingPackages: data.pricing_packages || [],
+          images:          toStringArray(firstNonEmpty(extractUrls(data.images), extractUrls(meta.images).length ? extractUrls(meta.images) : toStringArray(data.media_urls))),
+          videos:          firstNonEmpty(extractUrls(data.videos), extractUrls(meta.videos)),
+          contactMethods:  firstNonEmpty(data.contact_methods, meta.contactMethods),
+          pricingPackages: firstNonEmpty(data.pricing_packages, meta.pricingPackages),
           createdAt:       data.created_at,
           isSold:          data.is_sold          || false,
           soldAt:          data.sold_at          || undefined,
-          ...(meta),
-          id: data.id,
-          userId: data.user_id,
         } as Listing;
       }
       if (error) console.warn('getOne Supabase error:', error.message);
@@ -774,26 +782,29 @@ export const listingsApi = {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        const listings = data.map((row: any) => ({
-          id:              row.id,
-          userId:          row.user_id,
-          title:           row.title,
-          description:     row.description,
-          price:           row.price,
-          city:            row.city,
-          listingType:     row.listing_type,
-          listingMode:     row.listing_mode,
-          serviceCategory: row.service_category,
-          tags:            row.tags            || [],
-          images:          row.images          || [],
-          videos:          row.videos          || [],
-          contactMethods:  row.contact_methods || [],
-          pricingPackages: row.pricing_packages || [],
-          createdAt:       row.created_at,
-          ...(row.metadata || {}),
-          id: row.id,
-          userId: row.user_id,
-        } as Listing));
+        const listings = data.map((row: any) => {
+          const meta = row.metadata || {};
+          return {
+            // Spread metadata first (weeklyRate, securityDeposit, etc. only
+            // ever live here) — explicit fields below always win over it.
+            ...meta,
+            id:              row.id,
+            userId:          row.user_id,
+            title:           row.title,
+            description:     row.description,
+            price:           row.price,
+            city:            row.city,
+            listingType:     row.listing_type,
+            listingMode:     row.listing_mode,
+            serviceCategory: row.service_category,
+            tags:            row.tags            || [],
+            images:          row.images          || [],
+            videos:          row.videos          || [],
+            contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
+            pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
+            createdAt:       row.created_at,
+          } as Listing;
+        });
         return listings;
       }
     } catch {}
@@ -849,10 +860,16 @@ export const listingsApi = {
       if (!isValidUUID) {
         toast.error(`DB skipped: user_id "${currentUser.id}" is not a UUID. Please log out and back in.`);
       } else {
-        // Strip base64 data from metadata (keeps only URLs, prevents memory limit)
+        // Strip base64 data from metadata (keeps only URLs, prevents memory limit).
+        // pricingPackages/contactMethods are folded in explicitly below rather than
+        // written as their own pricing_packages/contact_methods columns — those
+        // columns aren't part of the tracked schema (only images/videos/metadata
+        // are), and an insert referencing an unknown column fails the *entire* row,
+        // silently dropping everything (media included) into the localStorage-only
+        // fallback below.
         const safeMetadata = listing ? Object.fromEntries(
           Object.entries(listing).filter(([k]) => !['images','videos','govIdPhoto','utilityBillPhoto','selfiePhoto'].includes(k))
-        ) : null;
+        ) : {};
 
         const { data, error } = await supabase
           .from('listings')
@@ -869,9 +886,11 @@ export const listingsApi = {
             tags:             newListing.tags             || [],
             images:           (newListing.images || []).filter((img: string) => img.startsWith('http')),
             videos:           (newListing.videos || []).filter((v: string) => v.startsWith('http')),
-            contact_methods:  newListing.contactMethods   || [],
-            pricing_packages: newListing.pricingPackages  || [],
-            metadata:         safeMetadata,
+            metadata: {
+              ...safeMetadata,
+              pricingPackages: newListing.pricingPackages || [],
+              contactMethods:  newListing.contactMethods  || [],
+            },
             created_at:       newListing.createdAt,
           })
           .select()

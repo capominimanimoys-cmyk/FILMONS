@@ -1476,6 +1476,11 @@ export function CreateListing() {
           cancellation: payload.cancellation||undefined,
           workingHours: payload.working_hours||undefined,
           qualification: payload.qualification||undefined,
+          // Was previously omitted entirely — pricingPackages and the rest of
+          // the step 4/5/9 fields (securityDeposit, skills, etc.) only ever
+          // live in payload.metadata, so without this they were silently
+          // dropped whenever the direct insert failed and this fallback ran.
+          ...payload.metadata,
         } as any);
         localStorage.removeItem(DRAFT_KEY);
         toast.success('Listing published!');
