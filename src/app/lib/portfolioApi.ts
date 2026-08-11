@@ -34,6 +34,9 @@ export interface PortfolioItem {
   aspect_ratio?:       number;
   width?:              number;
   height?:             number;
+  sort_order?:         number;
+  comments_count?:     number;
+  download_allowed?:   boolean;
   created_at:          string;
   updated_at?:         string;
 }
@@ -49,6 +52,49 @@ export interface PortfolioAlbum {
   sort_order:     number;
   created_at:     string;
   item_count?:    number;  // client-side computed
+}
+
+export type PortfolioVisibility = 'public' | 'followers' | 'private';
+export type PortfolioLayout     = 'grid' | 'large_cards' | 'minimal' | 'editorial';
+export type PortfolioSortOrder  = 'newest' | 'oldest' | 'recently_updated' | 'custom';
+export type PortfolioDownloads  = 'off' | 'individual' | 'selected';
+
+export interface PortfolioSettings {
+  id:                         string;
+  user_id:                    string;
+  visibility:                 PortfolioVisibility;
+  layout:                     PortfolioLayout;
+  sort_order:                 PortfolioSortOrder;
+  show_about:                 boolean;
+  show_message_button:       boolean;
+  show_hire_button:           boolean;
+  show_collaboration_button: boolean;
+  show_services:              boolean;
+  show_marketplace_listings: boolean;
+  allow_downloads:            PortfolioDownloads;
+  allow_likes:                 boolean;
+  allow_comments:              boolean;
+  show_view_count:             boolean;
+  cover_path:                  string | null;
+  cover_position_y:            number;
+  max_featured:                number;
+  updated_at:                  string;
+}
+
+export const DEFAULT_PORTFOLIO_SETTINGS: Omit<PortfolioSettings, 'id' | 'user_id' | 'updated_at'> = {
+  visibility: 'public', layout: 'grid', sort_order: 'newest',
+  show_about: true, show_message_button: true, show_hire_button: true,
+  show_collaboration_button: false, show_services: false, show_marketplace_listings: false,
+  allow_downloads: 'off', allow_likes: true, allow_comments: true, show_view_count: true,
+  cover_path: null, cover_position_y: 50, max_featured: 6,
+};
+
+export interface PortfolioComment {
+  id:         string;
+  item_id:    string;
+  user_id:    string;
+  body:       string;
+  created_at: string;
 }
 
 export const PORTFOLIO_CATEGORIES = [
@@ -270,4 +316,140 @@ export async function removeItemFromAlbum(albumId: string, itemId: string): Prom
     .eq('album_id', albumId)
     .eq('item_id', itemId);
   return !error;
+}
+
+export async function moveItemBetweenAlbums(itemId: string, fromAlbumId: string, toAlbumId: string): Promise<boolean> {
+  const removed = await removeItemFromAlbum(fromAlbumId, itemId);
+  const added   = await addItemToAlbum(toAlbumId, itemId);
+  return removed && added;
+}
+
+export async function reorderAlbums(order: { id: string; sort_order: number }[]): Promise<boolean> {
+  const results = await Promise.all(
+    order.map(({ id, sort_order }) => supabase.from('portfolio_albums').update({ sort_order }).eq('id', id)),
+  );
+  return results.every(r => !r.error);
+}
+
+/** Deletes an album AND every portfolio item inside it (the "remove work too" choice). */
+export async function deleteAlbumCascadeItems(albumId: string): Promise<boolean> {
+  const { data, error: fetchError } = await supabase
+    .from('portfolio_album_items')
+    .select('item_id')
+    .eq('album_id', albumId);
+  if (fetchError) { console.error('[albums] cascade fetch error:', fetchError.message); return false; }
+
+  const itemIds = (data ?? []).map((r: any) => r.item_id as string);
+  if (itemIds.length > 0) {
+    const { error: delItemsError } = await supabase.from('portfolio_items').delete().in('id', itemIds);
+    if (delItemsError) { console.error('[albums] cascade delete items error:', delItemsError.message); return false; }
+  }
+  return deleteAlbum(albumId);
+}
+
+// ── Portfolio settings ───────────────────────────────────────────────────────
+export async function getPortfolioSettings(userId: string): Promise<PortfolioSettings | null> {
+  try {
+    const { data, error } = await supabase
+      .from('portfolio_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) { console.warn('[portfolio settings] fetch error:', error.message); return null; }
+    return data as PortfolioSettings | null;
+  } catch { return null; }
+}
+
+export async function upsertPortfolioSettings(
+  userId: string,
+  updates: Partial<Omit<PortfolioSettings, 'id' | 'user_id' | 'updated_at'>>,
+): Promise<PortfolioSettings | null> {
+  const { data, error } = await supabase
+    .from('portfolio_settings')
+    .upsert({ user_id: userId, ...updates }, { onConflict: 'user_id' })
+    .select()
+    .single();
+  if (error) { console.error('[portfolio settings] upsert error:', error.message); return null; }
+  return data as PortfolioSettings;
+}
+
+export async function resetPortfolioSettings(userId: string): Promise<PortfolioSettings | null> {
+  return upsertPortfolioSettings(userId, DEFAULT_PORTFOLIO_SETTINGS);
+}
+
+export async function uploadPortfolioCover(userId: string, file: File): Promise<string | null> {
+  const result = await uploadPortfolioMedia(userId, file);
+  return result?.url ?? null;
+}
+
+// ── Item ordering ─────────────────────────────────────────────────────────────
+export async function updateItemsOrder(items: { id: string; sort_order: number }[]): Promise<boolean> {
+  const results = await Promise.all(
+    items.map(({ id, sort_order }) => supabase.from('portfolio_items').update({ sort_order }).eq('id', id)),
+  );
+  return results.every(r => !r.error);
+}
+
+export async function setItemDownloadAllowed(itemId: string, allowed: boolean): Promise<boolean> {
+  const { error } = await supabase.from('portfolio_items').update({ download_allowed: allowed }).eq('id', itemId);
+  return !error;
+}
+
+// ── Engagement: likes, comments, views ───────────────────────────────────────
+export async function isItemLiked(itemId: string, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('portfolio_item_likes')
+    .select('item_id')
+    .eq('item_id', itemId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return !!data;
+}
+
+export async function toggleItemLike(itemId: string, userId: string, currentlyLiked: boolean): Promise<boolean> {
+  if (currentlyLiked) {
+    const { error } = await supabase
+      .from('portfolio_item_likes')
+      .delete()
+      .eq('item_id', itemId)
+      .eq('user_id', userId);
+    return !error;
+  }
+  const { error } = await supabase
+    .from('portfolio_item_likes')
+    .insert({ item_id: itemId, user_id: userId });
+  return !error;
+}
+
+export async function getItemComments(itemId: string): Promise<PortfolioComment[]> {
+  try {
+    const { data, error } = await supabase
+      .from('portfolio_item_comments')
+      .select('*')
+      .eq('item_id', itemId)
+      .order('created_at', { ascending: true });
+    if (error) { console.warn('[portfolio comments] fetch error:', error.message); return []; }
+    return (data ?? []) as PortfolioComment[];
+  } catch { return []; }
+}
+
+export async function addItemComment(itemId: string, userId: string, body: string): Promise<PortfolioComment | null> {
+  const { data, error } = await supabase
+    .from('portfolio_item_comments')
+    .insert({ item_id: itemId, user_id: userId, body })
+    .select()
+    .single();
+  if (error) { console.error('[portfolio comments] create error:', error.message); return null; }
+  return data as PortfolioComment;
+}
+
+export async function deleteItemComment(commentId: string): Promise<boolean> {
+  const { error } = await supabase.from('portfolio_item_comments').delete().eq('id', commentId);
+  return !error;
+}
+
+export async function incrementItemView(itemId: string): Promise<void> {
+  try {
+    await supabase.rpc('increment_portfolio_item_views', { p_item_id: itemId });
+  } catch { /* best-effort */ }
 }

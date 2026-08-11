@@ -10,7 +10,11 @@ import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
   getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum,
+  getPortfolioSettings, upsertPortfolioSettings, DEFAULT_PORTFOLIO_SETTINGS,
+  isItemLiked, toggleItemLike, getItemComments, addItemComment,
+  incrementItemView,
   type PortfolioItem, type WorkType, type PortfolioAlbum,
+  type PortfolioSettings, type PortfolioLayout, type PortfolioComment,
 } from '../lib/portfolioApi';
 import { supabase } from '../../lib/supabase';
 import type { User } from '../types';
@@ -20,23 +24,22 @@ import {
   Link as LinkIcon, MoreVertical, Trash2, ExternalLink,
   Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
   Play, CheckCircle2, Users, MessageSquare, Briefcase,
-  Grid3X3, AlignJustify, Layers, LayoutList, Monitor,
+  Grid3X3, AlignJustify, LayoutList, Monitor,
   FolderOpen, Search, UserCheck, FolderPlus, Edit2,
+  Heart, MessageCircle, Download, Eye, Lock, Send,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Template    = 'masonry' | 'grid' | 'cinematic' | 'service' | 'minimal';
 type TabType     = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
 type ShareTarget =
   | { type: 'album'; album: PortfolioAlbum }
   | { type: 'item'; item: PortfolioItem };
 
-const TEMPLATES: { id: Template; label: string; Icon: any }[] = [
-  { id: 'masonry',   label: 'Masonry',   Icon: Layers },
-  { id: 'grid',      label: 'Grid',      Icon: Grid3X3 },
-  { id: 'cinematic', label: 'Cinematic', Icon: Monitor },
-  { id: 'service',   label: 'Service',   Icon: LayoutList },
-  { id: 'minimal',   label: 'Minimal',   Icon: AlignJustify },
+const LAYOUTS: { id: PortfolioLayout; label: string; Icon: any }[] = [
+  { id: 'grid',        label: 'Grid',        Icon: Grid3X3 },
+  { id: 'large_cards', label: 'Large cards', Icon: Monitor },
+  { id: 'editorial',   label: 'Editorial',   Icon: LayoutList },
+  { id: 'minimal',     label: 'Minimal',     Icon: AlignJustify },
 ];
 
 const TABS: { id: TabType; label: string }[] = [
@@ -63,6 +66,17 @@ function filterByTab(item: PortfolioItem, tab: TabType): boolean {
   if (tab === 'case_studies') return wt === 'case_study';
   if (tab === 'bts')          return wt === 'bts';
   return true;
+}
+
+function sortItems(items: PortfolioItem[], order: PortfolioSettings['sort_order']): PortfolioItem[] {
+  const sorted = [...items].sort((a, b) => {
+    if (order === 'oldest')           return +new Date(a.created_at) - +new Date(b.created_at);
+    if (order === 'recently_updated') return +new Date(b.updated_at ?? b.created_at) - +new Date(a.updated_at ?? a.created_at);
+    if (order === 'custom')           return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    return +new Date(b.created_at) - +new Date(a.created_at); // newest
+  });
+  // Featured work always surfaces first, regardless of chosen order.
+  return sorted.sort((a, b) => (b.is_featured ? 1 : 0) - (a.is_featured ? 1 : 0));
 }
 
 // ── Followers / Following sheet ───────────────────────────────────────────────
@@ -247,14 +261,66 @@ function FollowSheet({
 
 // ── Full-screen item viewer ───────────────────────────────────────────────────
 function PortfolioViewer({
-  items, startIndex, onClose,
-}: { items: PortfolioItem[]; startIndex: number; onClose: () => void }) {
+  items, startIndex, onClose, settings, meId,
+}: {
+  items: PortfolioItem[]; startIndex: number; onClose: () => void;
+  settings: PortfolioSettings; meId?: string;
+}) {
   const [idx, setIdx] = useState(startIndex);
   const touchX = useRef(0);
   const item = items[idx];
 
+  const [liked,       setLiked]       = useState(false);
+  const [likesCount,  setLikesCount]  = useState(0);
+  const [viewsCount,  setViewsCount]  = useState(0);
+  const [showComments,setShowComments]= useState(false);
+  const [comments,    setComments]    = useState<PortfolioComment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const viewedRef = useRef<Set<string>>(new Set());
+
   const prev = useCallback(() => setIdx(i => Math.max(0, i - 1)), []);
   const next = useCallback(() => setIdx(i => Math.min(items.length - 1, i + 1)), [items.length]);
+
+  useEffect(() => {
+    if (!item) return;
+    setLikesCount(item.likes_count ?? 0);
+    setViewsCount(item.views_count ?? 0);
+    setShowComments(false);
+    setComments([]);
+    setLiked(false);
+    if (settings.allow_likes && meId) isItemLiked(item.id, meId).then(setLiked);
+    if (!viewedRef.current.has(item.id)) {
+      viewedRef.current.add(item.id);
+      incrementItemView(item.id);
+      setViewsCount(v => v + 1);
+    }
+  }, [item?.id]); // eslint-disable-line
+
+  const handleLike = async () => {
+    if (!meId) { toast.error('Log in to like this'); return; }
+    const next = !liked;
+    setLiked(next);
+    setLikesCount(c => Math.max(0, c + (next ? 1 : -1)));
+    const ok = await toggleItemLike(item.id, meId, liked);
+    if (!ok) { setLiked(!next); setLikesCount(c => Math.max(0, c + (next ? -1 : 1))); }
+  };
+
+  const openComments = async () => {
+    setShowComments(v => !v);
+    if (!showComments && comments.length === 0) setComments(await getItemComments(item.id));
+  };
+
+  const submitComment = async () => {
+    if (!meId) { toast.error('Log in to comment'); return; }
+    const body = commentText.trim();
+    if (!body) return;
+    setCommentText('');
+    const created = await addItemComment(item.id, meId, body);
+    if (created) setComments(prev => [...prev, created]);
+  };
+
+  const canDownload = settings.allow_downloads === 'individual'
+    || (settings.allow_downloads === 'selected' && !!item?.download_allowed);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -304,19 +370,32 @@ function PortfolioViewer({
         <span className="text-white/50 text-xs font-semibold tabular-nums">
           {idx + 1} / {items.length}
         </span>
-        <button
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
-          onClick={() => {
-            if (navigator.share) {
-              navigator.share({ title: item.title, url: window.location.href }).catch(() => {});
-            } else {
-              navigator.clipboard.writeText(window.location.href);
-              toast.success('Link copied');
-            }
-          }}
-        >
-          <Share2 className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {canDownload && item.media_url && (
+            <a
+              href={item.media_url}
+              download
+              target="_blank"
+              rel="noreferrer"
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
+            >
+              <Download className="w-5 h-5" />
+            </a>
+          )}
+          <button
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({ title: item.title, url: window.location.href }).catch(() => {});
+              } else {
+                navigator.clipboard.writeText(window.location.href);
+                toast.success('Link copied');
+              }
+            }}
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Media */}
@@ -430,9 +509,54 @@ function PortfolioViewer({
 
         {item.external_link && !isLink && (
           <a href={item.external_link} target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-bold">
+            className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-bold mb-3">
             <ExternalLink className="w-3.5 h-3.5" /> View full project
           </a>
+        )}
+
+        {/* Engagement row */}
+        {(settings.allow_likes || settings.allow_comments || settings.show_view_count) && (
+          <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
+            {settings.allow_likes && (
+              <button onClick={handleLike} className="flex items-center gap-1.5">
+                <Heart className={`w-5 h-5 ${liked ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
+                <span className="text-sm font-bold text-gray-700">{likesCount}</span>
+              </button>
+            )}
+            {settings.allow_comments && (
+              <button onClick={openComments} className="flex items-center gap-1.5">
+                <MessageCircle className="w-5 h-5 text-gray-400" />
+                <span className="text-sm font-bold text-gray-700">{comments.length || item.comments_count || ''}</span>
+              </button>
+            )}
+            {settings.show_view_count && (
+              <span className="flex items-center gap-1.5 ml-auto text-gray-400">
+                <Eye className="w-4 h-4" />
+                <span className="text-xs font-semibold">{viewsCount}</span>
+              </span>
+            )}
+          </div>
+        )}
+
+        {settings.allow_comments && showComments && (
+          <div className="pt-3 space-y-3">
+            {comments.length === 0 && <p className="text-xs text-gray-400">No comments yet.</p>}
+            {comments.map(c => (
+              <p key={c.id} className="text-sm text-gray-700"><span className="font-bold">{c.user_id === meId ? 'You' : 'User'}</span> — {c.body}</p>
+            ))}
+            <div className="flex items-center gap-2">
+              <input
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitComment(); }}
+                placeholder="Add a comment…"
+                className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-300"
+              />
+              <button onClick={submitComment} className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
+                <Send className="w-4 h-4 text-white" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -607,36 +731,6 @@ function ItemCard({
 }
 
 // ── Layouts ───────────────────────────────────────────────────────────────────
-function MasonryLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
-  return (
-    <div className="columns-2 sm:columns-3 lg:columns-4 gap-2">
-      {items.map((item, i) => {
-        const ar = item.aspect_ratio ?? (
-          item.work_type === 'case_study' ? 3 / 4  :
-          item.work_type === 'reel'       ? 9 / 16 :
-          item.work_type === 'video'      ? 16 / 9 :
-          i % 5 === 0                     ? 4 / 5  :
-          i % 5 === 2                     ? 3 / 4  : 1
-        );
-        return (
-          <div key={item.id} className="break-inside-avoid mb-2">
-            <ItemCard
-              item={item}
-              isOwner={isOwner}
-              style={{ aspectRatio: ar }}
-              onTap={() => onTap(item, i)}
-              onToggle={() => onToggle(item)}
-              onDelete={() => onDelete(item.id)}
-              onShare={() => onShare(item)}
-              onAddToAlbum={() => onAddToAlbum(item)}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function GridLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -923,14 +1017,13 @@ export function Portfolio() {
   const [following,      setFollowing]      = useState(false);
   const [followLoading,  setFollowLoading]  = useState(false);
 
-  const [template,        setTemplate]        = useState<Template>(
-    () => (localStorage.getItem('filmons_portfolio_template') as Template) ?? 'masonry',
-  );
-
-  // Owner-configured display preferences (set in PortfolioSettings, stored in localStorage)
-  const showStats   = localStorage.getItem('filmons_portfolio_show_stats')   !== 'false';
-  const showHire    = localStorage.getItem('filmons_portfolio_show_hire')     !== 'false';
-  const showMessage = localStorage.getItem('filmons_portfolio_show_message')  !== 'false';
+  // Owner-configured display preferences — read from the DB, scoped to whoever's
+  // portfolio is being viewed (previously these leaked in from the *viewer's own*
+  // localStorage, so a visitor's settings overrode what they saw on other people's
+  // portfolios).
+  const [settings, setSettings] = useState<PortfolioSettings>({
+    ...DEFAULT_PORTFOLIO_SETTINGS, id: '', user_id: '', updated_at: '',
+  });
   const [activeTab,       setActiveTab]       = useState<TabType>('all');
   const [viewer,          setViewer]          = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [showAdd,         setShowAdd]         = useState(false);
@@ -961,18 +1054,20 @@ export function Portfolio() {
   const loadPage = async (uid: string) => {
     setLoading(true);
     try {
-      const [hostData, portfolioData, albumData] = await Promise.all([
+      const [hostData, portfolioData, albumData, settingsData] = await Promise.all([
         authApi.getUserById(uid),
         getPortfolioItems(uid),
         getAlbums(uid),
+        getPortfolioSettings(uid),
       ]);
       if (hostData?.avatar) {
         const base = hostData.avatar.split('?')[0];
         hostData.avatar = `${base}?t=${Date.now()}`;
       }
       setProfile(hostData);
-      setItems(portfolioData);
+      setItems(sortItems(portfolioData, settingsData?.sort_order ?? DEFAULT_PORTFOLIO_SETTINGS.sort_order));
       setAlbums(albumData);
+      setSettings(settingsData ?? { ...DEFAULT_PORTFOLIO_SETTINGS, id: '', user_id: uid, updated_at: '' });
 
       const followQueries: Promise<any>[] = [
         supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
@@ -1049,8 +1144,15 @@ export function Portfolio() {
   };
 
   const handleToggle = async (item: PortfolioItem) => {
+    if (!item.is_featured) {
+      const featuredCount = items.filter(i => i.is_featured).length;
+      if (featuredCount >= settings.max_featured) {
+        toast.error(`You can only feature up to ${settings.max_featured} projects. Adjust this in Portfolio Settings.`);
+        return;
+      }
+    }
     await toggleFeatured(item.id, item.is_featured);
-    setItems(prev => prev.map(p => p.id === item.id ? { ...p, is_featured: !p.is_featured } : p));
+    setItems(prev => sortItems(prev.map(p => p.id === item.id ? { ...p, is_featured: !p.is_featured } : p), settings.sort_order));
   };
 
   const handleDelete = async (id: string) => {
@@ -1058,9 +1160,9 @@ export function Portfolio() {
     setItems(prev => prev.filter(p => p.id !== id));
   };
 
-  const changeTemplate = (t: Template) => {
-    setTemplate(t);
-    localStorage.setItem('filmons_portfolio_template', t);
+  const changeLayout = async (l: PortfolioLayout) => {
+    setSettings(prev => ({ ...prev, layout: l }));
+    if (me?.id) await upsertPortfolioSettings(me.id, { layout: l });
   };
 
   const filtered  = items.filter(item => filterByTab(item, activeTab));
@@ -1099,6 +1201,33 @@ export function Portfolio() {
     );
   }
 
+  // Visitors only ever see a portfolio if it's public, or they're an approved
+  // follower on a followers-only one. The owner always sees their own.
+  const canView = isOwner || settings.visibility === 'public' || (settings.visibility === 'followers' && following);
+  if (!canView) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+        <div className="text-center">
+          <Lock className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <p className="font-black text-gray-900 mb-1">
+            {settings.visibility === 'private' ? 'This portfolio is private' : 'Followers only'}
+          </p>
+          <p className="text-sm text-gray-400 max-w-xs mx-auto mb-4">
+            {settings.visibility === 'private'
+              ? 'Only the creator can view this portfolio.'
+              : 'Only approved followers can view this portfolio.'}
+          </p>
+          {settings.visibility === 'followers' && !following && me && (
+            <button onClick={handleFollow} disabled={followLoading}
+              className="text-sm font-black text-white bg-blue-600 px-5 py-2.5 rounded-2xl disabled:opacity-60">
+              {followLoading ? 'Following…' : 'Follow'}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ── Album detail view ─────────────────────────────────────────────────────
   const showAlbumDetail = activeTab === 'albums' && activeAlbum;
 
@@ -1108,7 +1237,10 @@ export function Portfolio() {
       {/* ── Cover photo ── */}
       <div className="relative z-0">
         <div className="h-48 overflow-hidden">
-          {profile.coverPhoto ? (
+          {settings.cover_path ? (
+            <img src={settings.cover_path} alt="Cover" className="w-full h-full object-cover"
+              style={{ objectPosition: `50% ${settings.cover_position_y}%` }} />
+          ) : profile.coverPhoto ? (
             <img src={profile.coverPhoto} alt="Cover" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full" style={{ background: 'linear-gradient(135deg,#0f0c29,#302b63,#24243e)' }} />
@@ -1159,12 +1291,46 @@ export function Portfolio() {
           </div>
         )}
 
+        {/* About — role/skills/experience/education/collaboration. Never shows
+            email, phone, address or verification documents. */}
+        {settings.show_about && (
+          (profile as any).skills?.length > 0 || (profile as any).collab_prefs?.length > 0
+            || (profile as any).years_exp || (profile as any).occupation
+        ) && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-4 space-y-3">
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">About</p>
+            {((profile as any).occupation || (profile as any).years_exp) && (
+              <p className="text-sm text-gray-700">
+                {(profile as any).occupation}
+                {(profile as any).occupation && (profile as any).years_exp ? ' · ' : ''}
+                {(profile as any).years_exp ? `${(profile as any).years_exp} yrs experience` : ''}
+              </p>
+            )}
+            {(profile as any).skills?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {(profile as any).skills.map((s: string) => (
+                  <span key={s} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{s}</span>
+                ))}
+              </div>
+            )}
+            {(profile as any).collab_prefs?.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Open to</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(profile as any).collab_prefs.map((c: string) => (
+                    <span key={c} className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">{c}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Stats + action buttons — same horizontal level */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
 
-          {/* Stats row (conditional) */}
-          {showStats && (
-            <div className="flex items-center gap-5">
+          {/* Stats row */}
+          <div className="flex items-center gap-5">
               <div className="text-center">
                 <p className="text-lg font-black text-gray-900 leading-none">{items.length}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Works</p>
@@ -1179,7 +1345,7 @@ export function Portfolio() {
                 <p className="text-lg font-black text-gray-900 leading-none">{followingCount ?? 0}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Following</p>
               </button>
-              {items.length > 0 && (
+              {items.length > 0 && settings.show_view_count && (
                 <>
                   <div className="w-px h-8 bg-gray-200" />
                   <div className="text-center">
@@ -1190,8 +1356,7 @@ export function Portfolio() {
                   </div>
                 </>
               )}
-            </div>
-          )}
+          </div>
 
           {/* Visitor action buttons */}
           {!isOwner && me && (
@@ -1213,7 +1378,7 @@ export function Portfolio() {
               >
                 <Share2 className="w-4 h-4" />
               </button>
-              {showMessage && (
+              {settings.show_message_button && (
                 <button
                   onClick={() => navigate(`/inbox?userId=${profile.id}`)}
                   className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
@@ -1221,7 +1386,7 @@ export function Portfolio() {
                   <MessageSquare className="w-3.5 h-3.5" /> Message
                 </button>
               )}
-              {showHire && (
+              {settings.show_hire_button && (
                 <button
                   onClick={() => navigate(`/search?host=${profile.id}`)}
                   className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
@@ -1262,18 +1427,18 @@ export function Portfolio() {
         {/* Layout selector (owner, non-albums tab) */}
         {isOwner && activeTab !== 'albums' && (
           <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-3">
-            {TEMPLATES.map(t => (
+            {LAYOUTS.map(l => (
               <button
-                key={t.id}
-                onClick={() => changeTemplate(t.id)}
+                key={l.id}
+                onClick={() => changeLayout(l.id)}
                 className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  template === t.id
+                  settings.layout === l.id
                     ? 'bg-gray-900 text-white'
                     : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <t.Icon className="w-3 h-3" />
-                {t.label}
+                <l.Icon className="w-3 h-3" />
+                {l.label}
               </button>
             ))}
           </div>
@@ -1475,11 +1640,10 @@ export function Portfolio() {
               )}
             </div>
           ) : (
-            template === 'masonry'   ? <MasonryLayout  {...cardProps} /> :
-            template === 'grid'      ? <GridLayout      {...cardProps} /> :
-            template === 'cinematic' ? <CinematicLayout {...cardProps} /> :
-            template === 'service'   ? <ServiceLayout   {...cardProps} /> :
-                                       <MinimalLayout   {...cardProps} />
+            settings.layout === 'grid'        ? <GridLayout      {...cardProps} /> :
+            settings.layout === 'large_cards' ? <CinematicLayout {...cardProps} /> :
+            settings.layout === 'editorial'   ? <ServiceLayout   {...cardProps} /> :
+                                                 <MinimalLayout   {...cardProps} />
           )
         )}
       </div>
@@ -1490,6 +1654,8 @@ export function Portfolio() {
           items={activeTab === 'albums' && activeAlbum ? albumItems : items}
           startIndex={viewer.index}
           onClose={() => setViewer({ open: false, index: 0 })}
+          settings={settings}
+          meId={me?.id}
         />
       )}
 
