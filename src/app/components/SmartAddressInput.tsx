@@ -11,7 +11,8 @@ import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner';
 
 const EDGE = `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879`;
-const MIN_CHARS = 3;
+const MIN_CHARS = 1;
+const DEBOUNCE_MS = 200;
 
 export interface AddressComponents {
   formatted:     string;
@@ -22,6 +23,7 @@ export interface AddressComponents {
   country?:      string; // ISO short code, e.g. 'CA' or 'US'
   lat?:          number;
   lng?:          number;
+  placeId?:      string;
 }
 
 interface Prediction {
@@ -104,8 +106,10 @@ export function SmartAddressInput({
   const [isSearching,   setIsSearching]   = useState(false);
   const [isDetecting,   setIsDetecting]   = useState(false);
   const [isFocused,     setIsFocused]     = useState(false);
+  const [activeIndex,   setActiveIndex]   = useState(-1);
   const timerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef     = useRef<HTMLInputElement>(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -124,6 +128,9 @@ export function SmartAddressInput({
     return () => { abortRef.current?.abort(); };
   }, []);
 
+  // Reset keyboard-active row whenever the result set changes
+  useEffect(() => { setActiveIndex(-1); }, [predictions]);
+
   // Keep a ref to the current in-flight request so we can abort it on new input
   const abortRef = useRef<AbortController | null>(null);
 
@@ -140,6 +147,7 @@ export function SmartAddressInput({
     abortRef.current = ctrl;
 
     setIsSearching(true);
+    setShowDrop(true); // open immediately so the "Searching…" state is visible, not just the eventual results
     let usedFallback = false;
     try {
       const countryParam = effectiveCountry ? `&country=${effectiveCountry.toLowerCase()}` : '';
@@ -192,14 +200,15 @@ export function SmartAddressInput({
                   country,
                   lat:           parseFloat(r.lat),
                   lng:           parseFloat(r.lon),
+                  placeId:       String(r.place_id),
                 },
               };
             });
             setPredictions(preds);
-            setShowDrop(preds.length > 0);
+            setShowDrop(true); // keep the dropdown open even on zero results, so "No locations found" can render
           }
         } catch (nomErr: any) {
-          if (nomErr?.name !== 'AbortError') setPredictions([]);
+          if (nomErr?.name !== 'AbortError') { setPredictions([]); setShowDrop(true); }
         }
       }
       void usedFallback; // suppress unused-variable warning
@@ -217,7 +226,7 @@ export function SmartAddressInput({
       setPredictions([]);
       setShowDrop(false);
     } else {
-      timerRef.current = setTimeout(() => fetchPredictions(val), 350);
+      timerRef.current = setTimeout(() => fetchPredictions(val), DEBOUNCE_MS);
     }
   };
 
@@ -258,7 +267,7 @@ export function SmartAddressInput({
         }
       }
 
-      const parts = parseComps(comps, mode, geometry);
+      const parts = { ...parseComps(comps, mode, geometry), placeId: p.place_id };
       const display = mode === 'city'
         ? (parts.city && parts.province ? `${parts.city}, ${parts.province}` : p.description)
         : p.description;
@@ -271,6 +280,25 @@ export function SmartAddressInput({
       onValidityChange?.(true);
     }
   }, [mode, effectiveCountry, onInputChange, onAddressSelect, onValidityChange]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDrop || predictions.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(i => (i + 1) % predictions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(i => (i - 1 + predictions.length) % predictions.length);
+    } else if (e.key === 'Enter') {
+      if (activeIndex >= 0 && activeIndex < predictions.length) {
+        e.preventDefault();
+        handleSelect(predictions[activeIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setShowDrop(false);
+      setActiveIndex(-1);
+    }
+  };
 
   const handleGPS = () => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported in your browser.'); return; }
@@ -332,8 +360,11 @@ export function SmartAddressInput({
     );
   };
 
-  const trimmedLen = value.trim().length;
-  const showMinHint = isFocused && trimmedLen > 0 && trimmedLen < MIN_CHARS;
+  // showDrop is the single source of truth for whether the panel is open —
+  // set true the moment a search starts (not just when results land) and on
+  // a completed search even with zero results, so the "Searching…" and "No
+  // locations found" states below actually get a chance to render.
+  const dropdownVisible = showDrop;
 
   return (
     <div className={`space-y-1.5 ${className}`}>
@@ -345,16 +376,27 @@ export function SmartAddressInput({
         <div className="relative flex-1">
           <MapPin className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none z-10 ${dark ? 'text-white/40' : 'text-gray-400'}`} />
           <input
+            ref={inputRef}
             type="text"
             value={value}
             onChange={(e) => handleChange(e.target.value)}
+            onKeyDown={handleKeyDown}
             onFocus={() => {
               setIsFocused(true);
+              // Only reopen with results already in hand — merely tapping back
+              // into a field with valid text shouldn't flash "No locations
+              // found" before any new search has actually run.
               if (predictions.length > 0) setShowDrop(true);
+              // Nudge the input into view above the mobile keyboard so the
+              // dropdown that opens below it isn't hidden behind it.
+              window.setTimeout(() => inputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250);
             }}
             onBlur={() => setIsFocused(false)}
             placeholder={placeholder ?? (mode === 'city' ? 'e.g. Toronto, ON' : 'Start typing your address…')}
             disabled={disabled}
+            role="combobox"
+            aria-expanded={dropdownVisible}
+            aria-autocomplete="list"
             className={`w-full pl-9 pr-9 py-3.5 text-sm rounded-2xl outline-none transition disabled:opacity-50 ${
               dark
                 ? 'bg-white/10 border border-white/20 text-white placeholder-white/40 focus:border-blue-400'
@@ -381,40 +423,44 @@ export function SmartAddressInput({
             ) : null}
           </div>
 
-          {/* Minimum character hint */}
-          {showMinHint && (
-            <p className={`absolute top-full left-0 mt-1.5 text-xs px-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}>
-              Type at least {MIN_CHARS} characters to search.
-            </p>
-          )}
-
           {/* Suggestions dropdown */}
-          {showDrop && predictions.length > 0 && (
-            <div className={`absolute z-50 top-full left-0 right-0 mt-1 rounded-2xl shadow-xl overflow-hidden ${
+          {dropdownVisible && (
+            <div className={`absolute z-50 top-full left-0 right-0 mt-1 rounded-2xl shadow-xl overflow-hidden max-h-72 overflow-y-auto ${
               dark ? 'bg-gray-900 border border-white/15' : 'bg-white border border-gray-200'
             }`}>
-              {predictions.map((p) => (
-                <button
-                  key={p.place_id}
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); handleSelect(p); }}
-                  className={`w-full text-left flex items-start gap-3 px-4 py-3 transition-colors border-b last:border-0 group ${
-                    dark
-                      ? 'hover:bg-white/10 border-white/5 text-white/80'
-                      : 'hover:bg-blue-50 border-gray-50 text-gray-800'
-                  }`}
-                >
-                  <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${dark ? 'text-white/30 group-hover:text-blue-400' : 'text-gray-400 group-hover:text-blue-500'}`} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {highlight(p.structured_formatting?.main_text ?? p.description)}
-                    </p>
-                    {p.structured_formatting?.secondary_text && (
-                      <p className={`text-xs truncate ${dark ? 'text-white/40' : 'text-gray-400'}`}>{p.structured_formatting.secondary_text}</p>
-                    )}
-                  </div>
-                </button>
-              ))}
+              {predictions.length === 0 ? (
+                <p className={`px-4 py-3.5 text-sm ${dark ? 'text-white/40' : 'text-gray-400'}`}>
+                  {isSearching ? 'Searching locations…' : 'No locations found'}
+                </p>
+              ) : (
+                predictions.map((p, i) => (
+                  <button
+                    key={p.place_id}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); handleSelect(p); }}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    className={`w-full text-left flex items-start gap-3 px-4 py-3 transition-colors border-b last:border-0 group ${
+                      i === activeIndex
+                        ? (dark ? 'bg-white/10' : 'bg-blue-50')
+                        : ''
+                    } ${
+                      dark
+                        ? 'hover:bg-white/10 border-white/5 text-white/80'
+                        : 'hover:bg-blue-50 border-gray-50 text-gray-800'
+                    }`}
+                  >
+                    <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${dark ? 'text-white/30 group-hover:text-blue-400' : 'text-gray-400 group-hover:text-blue-500'}`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {highlight(p.structured_formatting?.main_text ?? p.description)}
+                      </p>
+                      {p.structured_formatting?.secondary_text && (
+                        <p className={`text-xs truncate ${dark ? 'text-white/40' : 'text-gray-400'}`}>{p.structured_formatting.secondary_text}</p>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>

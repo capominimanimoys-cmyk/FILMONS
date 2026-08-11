@@ -525,7 +525,7 @@ export function CompleteProfile() {
                   mode="city"
                   countryCode={countryCode}
                   placeholder={countryCode === 'CA' ? 'Toronto, Vancouver…' : 'New York, Los Angeles…'}
-                  className="w-full bg-white/8 border border-white/12 text-white placeholder-white/25 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400/60 transition-colors"
+                  variant="dark"
                 />
               </div>
             )}
