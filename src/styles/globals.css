@@ -26,3 +26,15 @@ body {
     font-size: 16px !important;
   }
 }
+
+/* ── Keep inputs from pushing sibling content (e.g. a "CAD" unit label)
+   outside their flex row ──────────────────────────────────────────────
+   Flex items default to min-width: auto, meaning they won't shrink below
+   their own content's intrinsic width. Bumping inputs to 16px above made
+   that intrinsic width wider inside compact rows like [icon][input][CAD],
+   so on narrow screens the input refused to shrink and shoved the unit
+   label outside the bordered container. min-width: 0 lets it shrink
+   normally; it's a no-op for inputs that aren't flex children. */
+input, textarea, select {
+  min-width: 0;
+}
