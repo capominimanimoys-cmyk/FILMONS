@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
+import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { supabase } from '../../lib/supabase';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -47,6 +48,13 @@ interface FormState {
   existingVideos: string[];
   videoPreviews: string[];
   videoFiles: File[];
+  // Cover — set when the cover photo (images[0]) came from a video frame
+  // rather than a direct upload. coverVideoUrl is whichever of
+  // existingVideos/videoPreviews the frame was captured from.
+  coverSource: 'upload' | 'video_frame';
+  coverVideoUrl: string;
+  coverTimestamp: number;
+  coverPositionY: number;
   // Step 4 Pricing
   dailyRate: string;
   weeklyRate: string;
@@ -173,6 +181,7 @@ function defaultForm(): FormState {
     description: '', tags: [], tagInput: '',
     existingImages: [], imagePreviews: [], imageFiles: [],
     existingVideos: [], videoPreviews: [], videoFiles: [],
+    coverSource: 'upload', coverVideoUrl: '', coverTimestamp: 0, coverPositionY: 50,
     dailyRate: '', weeklyRate: '', monthlyRate: '', salePrice: '',
     acceptOffers: false, negotiable: false, startingPrice: '', hourlyRate: '',
     securityDeposit: '', lateFee: '', minDuration: '', cleaningFee: '',
@@ -549,6 +558,31 @@ function Step3({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
   const allImages=[...form.existingImages,...form.imagePreviews];
   const allVideos=[...form.existingVideos,...form.videoPreviews];
 
+  // ── Cover-from-video ──
+  const [coverPickerVideo, setCoverPickerVideo] = useState<{ url: string; isRemote: boolean } | null>(null);
+  const [replaceConfirm, setReplaceConfirm] = useState<{ blob: Blob; timestamp: number; positionY: number } | null>(null);
+
+  const applyCoverFrame = (blob: Blob, timestamp: number, positionY: number) => {
+    const file = new File([blob], `cover-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    const preview = URL.createObjectURL(blob);
+    set({
+      imageFiles: [file, ...form.imageFiles],
+      imagePreviews: [preview, ...form.imagePreviews],
+      coverSource: 'video_frame',
+      coverVideoUrl: coverPickerVideo?.url || '',
+      coverTimestamp: timestamp,
+      coverPositionY: positionY,
+    });
+    setCoverPickerVideo(null);
+    setReplaceConfirm(null);
+    toast.success('Cover updated');
+  };
+
+  const handleCoverConfirm = (blob: Blob, timestamp: number, positionY: number) => {
+    if (allImages.length > 0) { setReplaceConfirm({ blob, timestamp, positionY }); return; }
+    applyCoverFrame(blob, timestamp, positionY);
+  };
+
   return (
     <div className="space-y-4">
       <div className="text-center mb-6">
@@ -584,16 +618,27 @@ function Step3({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
       <SectionCard title="Videos" icon={<Video className="w-4 h-4"/>}>
         <input ref={vidInput} type="file" accept="video/mp4,video/quicktime,video/x-msvideo" multiple className="hidden" onChange={handleVideos}/>
         <div className="grid grid-cols-3 gap-2.5">
-          {allVideos.map((src,i)=>(
-            <div key={i} className="relative aspect-square rounded-xl overflow-hidden group">
-              <video src={src} className="w-full h-full object-cover"/>
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <button type="button" onClick={()=>removeVideo(i)} className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600">
-                  <Trash2 className="w-3.5 h-3.5 text-white"/>
-                </button>
+          {allVideos.map((src,i)=>{
+            const isRemote = i < form.existingVideos.length;
+            const isCoverSource = form.coverSource === 'video_frame' && form.coverVideoUrl === src;
+            return (
+              <div key={i} className="relative aspect-square rounded-xl overflow-hidden group">
+                <video src={src} className="w-full h-full object-cover"/>
+                {isCoverSource && (
+                  <div className="absolute top-1 left-1 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">Cover source</div>
+                )}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button type="button" onClick={()=>setCoverPickerVideo({ url: src, isRemote })}
+                    className="w-8 h-8 bg-white rounded-full flex items-center justify-center hover:bg-gray-100" title="Choose cover from video">
+                    <Camera className="w-3.5 h-3.5 text-gray-700"/>
+                  </button>
+                  <button type="button" onClick={()=>removeVideo(i)} className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600">
+                    <Trash2 className="w-3.5 h-3.5 text-white"/>
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {allVideos.length<5&&(
             <button type="button" onClick={()=>vidInput.current?.click()}
               className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/50 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer">
@@ -604,6 +649,34 @@ function Step3({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
         </div>
         <p className="text-[11px] text-gray-400">Max 5 videos · 100MB each · MP4/MOV</p>
       </SectionCard>
+
+      {coverPickerVideo && (
+        <VideoCoverPicker
+          videoUrl={coverPickerVideo.url}
+          isRemote={coverPickerVideo.isRemote}
+          onCancel={()=>setCoverPickerVideo(null)}
+          onConfirm={handleCoverConfirm}
+        />
+      )}
+
+      {replaceConfirm && (
+        <>
+          <div className="fixed inset-0 z-[92] bg-black/50" onClick={()=>setReplaceConfirm(null)} />
+          <div className="fixed inset-x-4 bottom-6 z-[93] bg-white rounded-3xl p-5 max-w-sm mx-auto">
+            <p className="font-black text-gray-900 mb-1">Replace listing cover?</p>
+            <p className="text-xs text-gray-400 mb-4">This video frame will replace your current listing cover.</p>
+            <div className="space-y-2">
+              <button onClick={()=>applyCoverFrame(replaceConfirm.blob, replaceConfirm.timestamp, replaceConfirm.positionY)}
+                className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">
+                Replace cover
+              </button>
+              <button onClick={()=>setReplaceConfirm(null)} className="w-full py-2.5 text-sm font-semibold text-gray-400">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1358,6 +1431,10 @@ export function CreateListing() {
       brand: form.brand||null,
       model: form.model||null,
       subcategory: form.subcategory||null,
+      coverSource: form.coverSource,
+      coverVideoUrl: form.coverSource==='video_frame' ? form.coverVideoUrl : null,
+      coverTimestamp: form.coverSource==='video_frame' ? form.coverTimestamp : null,
+      coverPositionY: form.coverPositionY,
     };
 
     const searchKeywords = [

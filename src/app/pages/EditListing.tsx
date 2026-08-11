@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi } from '../lib/api';
 import {
-  X, Upload, ArrowLeft, Plus, Trash2, Video,
+  X, Upload, ArrowLeft, Plus, Trash2, Video, Camera,
   MapPin, DollarSign, Clock, CheckCircle, ChevronRight,
   MessageCircle, Instagram, Facebook, Mail, Phone,
   Search, Loader2, Navigation, Sparkles,
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { ContactMethod, Listing, PricingPackage } from '../types';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabase';
+import { VideoCoverPicker } from '../components/VideoCoverPicker';
 
 const EDGE_FN = `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879`;
 
@@ -123,6 +124,13 @@ export function EditListing() {
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [videoPreviews, setVideoPreviews] = useState<string[]>([]);
   const [existingVideoUrls, setExistingVideoUrls] = useState<string[]>([]);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverSource, setCoverSource] = useState<'upload' | 'video_frame'>('upload');
+  const [coverVideoUrl, setCoverVideoUrl] = useState('');
+  const [coverTimestamp, setCoverTimestamp] = useState(0);
+  const [coverPositionY, setCoverPositionY] = useState(50);
+  const [coverPickerVideo, setCoverPickerVideo] = useState<{ url: string; isRemote: boolean } | null>(null);
+  const [replaceCoverConfirm, setReplaceCoverConfirm] = useState<{ blob: Blob; timestamp: number; positionY: number } | null>(null);
 
   // Service
   const [qualification, setQualification] = useState('');
@@ -200,6 +208,12 @@ export function EditListing() {
       if (listing.deliveryPrice != null) setDeliveryPrice(listing.deliveryPrice.toString());
       if (listing.images?.length) { setExistingImageUrls(listing.images); setImagePreviews(listing.images); }
       if (listing.videos?.length) { setExistingVideoUrls(listing.videos); setVideoPreviews(listing.videos); }
+      if ((listing as any).coverSource === 'video_frame') {
+        setCoverSource('video_frame');
+        setCoverVideoUrl((listing as any).coverVideoUrl || '');
+        setCoverTimestamp((listing as any).coverTimestamp || 0);
+      }
+      if ((listing as any).coverPositionY != null) setCoverPositionY((listing as any).coverPositionY);
       if (listing.contactMethods?.length) {
         const methods = new Set<string>();
         const inputs: Record<string, string> = { whatsapp: '', instagram: '', facebook: '', email: '', phone: '' };
@@ -391,6 +405,32 @@ export function EditListing() {
     }
   };
 
+  // ── Cover-from-video ── new images are appended (never reordered — existing
+  // photos must always stay before new files, see handleRemoveImage's index
+  // math), so the cover isn't "images[0]" here. Instead we track the exact
+  // File used as cover and resolve it to its real uploaded URL at save time,
+  // writing it into the listing's dedicated `image` column (ListingCard/
+  // getOne already check that column before falling back to images[0]).
+  const applyCoverFrame = (blob: Blob, timestamp: number, positionY: number) => {
+    const file = new File([blob], `cover-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    const preview = URL.createObjectURL(blob);
+    setImageFiles(prev => [...prev, file]);
+    setImagePreviews(prev => [...prev, preview]);
+    setCoverFile(file);
+    setCoverSource('video_frame');
+    setCoverVideoUrl(coverPickerVideo?.url || '');
+    setCoverTimestamp(timestamp);
+    setCoverPositionY(positionY);
+    setCoverPickerVideo(null);
+    setReplaceCoverConfirm(null);
+    toast.success('Cover updated');
+  };
+
+  const handleCoverConfirm = (blob: Blob, timestamp: number, positionY: number) => {
+    if (imagePreviews.length > 0) { setReplaceCoverConfirm({ blob, timestamp, positionY }); return; }
+    applyCoverFrame(blob, timestamp, positionY);
+  };
+
   const handleAddTag = () => {
     const t = tagInput.trim().toLowerCase();
     if (t && !tags.includes(t)) { setTags([...tags, t]); setTagInput(''); }
@@ -430,6 +470,7 @@ export function EditListing() {
       setIsSubmitting(true);
       let imageUrls = existingImageUrls;
       let videoUrls = existingVideoUrls;
+      let resolvedCoverUrl: string | null = null;
 
       if (imageFiles.length > 0) {
         setIsUploadingMedia(true);
@@ -437,6 +478,10 @@ export function EditListing() {
         try {
           const results = await Promise.all(imageFiles.map(f => listingsApi.uploadImage(f)));
           imageUrls = [...existingImageUrls, ...results.map(r => r.imageUrl)];
+          if (coverFile) {
+            const coverIdx = imageFiles.indexOf(coverFile);
+            if (coverIdx >= 0) resolvedCoverUrl = results[coverIdx].imageUrl;
+          }
         } catch (err) {
           toast.error(`Image upload failed: ${err instanceof Error ? err.message : 'Unknown'}`);
           setIsSubmitting(false); setIsUploadingMedia(false); return;
@@ -487,7 +532,15 @@ export function EditListing() {
           contactMethods:  selectedContactMethods.length > 0 ? selectedContactMethods : undefined,
           pricingPackages: listingType === 'service' ? pricingPackages : undefined,
           qualification:   listingType === 'service' ? qualification : undefined,
+          coverSource,
+          coverVideoUrl: coverSource === 'video_frame' ? coverVideoUrl : undefined,
+          coverTimestamp: coverSource === 'video_frame' ? coverTimestamp : undefined,
+          coverPositionY,
         }),
+        // Only touch the dedicated cover column when a new video-frame cover
+        // was picked this session — otherwise leave whatever cover the
+        // listing already had (images[0] convention) untouched.
+        ...(resolvedCoverUrl ? { image: resolvedCoverUrl } : {}),
       };
 
       const { error } = await supabase
@@ -508,6 +561,7 @@ export function EditListing() {
             contactMethods: selectedContactMethods,
             pricingPackages, qualification, blockedDates,
             availableDays, serviceStartTime: startTime, serviceEndTime: endTime,
+            ...(resolvedCoverUrl ? { image: resolvedCoverUrl } : {}),
           } as any);
         } catch (fallbackErr) {
           throw new Error(`Save failed: ${error.message}`);
@@ -988,19 +1042,30 @@ export function EditListing() {
         <Section icon={<Film className="w-4 h-4" />} title={listingType === 'gear' ? 'Equipment Videos' : 'Portfolio Videos'}>
           <p className="text-xs text-gray-400 mb-3">Up to 10 videos · Max 50MB each</p>
           <div className="grid grid-cols-3 gap-3">
-            {videoPreviews.map((preview, i) => (
-              <div key={i} className="relative aspect-square rounded-xl overflow-hidden group">
-                <video src={preview} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <button type="button" onClick={() => handleRemoveVideo(i)} className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white hover:bg-red-600">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+            {videoPreviews.map((preview, i) => {
+              const isRemote = i < existingVideoUrls.length;
+              const isCoverSource = coverSource === 'video_frame' && coverVideoUrl === preview;
+              return (
+                <div key={i} className="relative aspect-square rounded-xl overflow-hidden group">
+                  <video src={preview} className="w-full h-full object-cover" />
+                  {isCoverSource && (
+                    <div className="absolute top-1 left-1 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">Cover source</div>
+                  )}
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button type="button" onClick={() => setCoverPickerVideo({ url: preview, isRemote })}
+                      className="w-8 h-8 bg-white rounded-full flex items-center justify-center hover:bg-gray-100" title="Choose cover from video">
+                      <Camera className="w-3.5 h-3.5 text-gray-700" />
+                    </button>
+                    <button type="button" onClick={() => handleRemoveVideo(i)} className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white hover:bg-red-600">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {i < existingVideoUrls.length && (
+                    <div className="absolute bottom-1 left-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full">saved</div>
+                  )}
                 </div>
-                {i < existingVideoUrls.length && (
-                  <div className="absolute bottom-1 left-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full">saved</div>
-                )}
-              </div>
-            ))}
+              );
+            })}
             {videoPreviews.length < 10 && (
               <label htmlFor="vid-edit" className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/50 cursor-pointer flex flex-col items-center justify-center gap-1 transition-all">
                 <input type="file" id="vid-edit" accept="video/mp4,video/quicktime,video/x-msvideo" onChange={handleVideoChange} className="hidden" multiple />
@@ -1010,6 +1075,34 @@ export function EditListing() {
             )}
           </div>
         </Section>
+
+        {coverPickerVideo && (
+          <VideoCoverPicker
+            videoUrl={coverPickerVideo.url}
+            isRemote={coverPickerVideo.isRemote}
+            onCancel={() => setCoverPickerVideo(null)}
+            onConfirm={handleCoverConfirm}
+          />
+        )}
+
+        {replaceCoverConfirm && (
+          <>
+            <div className="fixed inset-0 z-[92] bg-black/50" onClick={() => setReplaceCoverConfirm(null)} />
+            <div className="fixed inset-x-4 bottom-6 z-[93] bg-white rounded-3xl p-5 max-w-sm mx-auto">
+              <p className="font-black text-gray-900 mb-1">Replace listing cover?</p>
+              <p className="text-xs text-gray-400 mb-4">This video frame will replace your current listing cover.</p>
+              <div className="space-y-2">
+                <button onClick={() => applyCoverFrame(replaceCoverConfirm.blob, replaceCoverConfirm.timestamp, replaceCoverConfirm.positionY)}
+                  className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">
+                  Replace cover
+                </button>
+                <button onClick={() => setReplaceCoverConfirm(null)} className="w-full py-2.5 text-sm font-semibold text-gray-400">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* ── Fulfilment ── */}
         <Section icon={<Truck className="w-4 h-4" />} title="Fulfilment Options">

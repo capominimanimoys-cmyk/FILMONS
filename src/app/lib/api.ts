@@ -665,6 +665,7 @@ export const listingsApi = {
         listingMode:     row.listing_mode || 'rent',
         serviceCategory: row.service_category,
         tags:            firstNonEmpty(row.tags, meta.tags),
+        image:           row.image || undefined,
         images,
         videos,
         contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
@@ -679,7 +680,7 @@ export const listingsApi = {
       // Only select columns that definitely exist — no is_sold/sold_at until SQL migration runs
       const { data, error } = await supabase
         .from('listings')
-        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata')
+        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, image, images, videos, contact_methods, pricing_packages, created_at, metadata')
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -748,6 +749,7 @@ export const listingsApi = {
           listingMode:     data.listing_mode,
           serviceCategory: data.service_category,
           tags:            data.tags             || [],
+          image:           data.image || undefined,
           images:          toStringArray(firstNonEmpty(extractUrls(data.images), extractUrls(meta.images).length ? extractUrls(meta.images) : toStringArray(data.media_urls))),
           videos:          firstNonEmpty(extractUrls(data.videos), extractUrls(meta.videos)),
           contactMethods:  firstNonEmpty(data.contact_methods, meta.contactMethods),
@@ -798,6 +800,7 @@ export const listingsApi = {
             listingMode:     row.listing_mode,
             serviceCategory: row.service_category,
             tags:            row.tags            || [],
+            image:           row.image || undefined,
             images:          row.images          || [],
             videos:          row.videos          || [],
             contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
