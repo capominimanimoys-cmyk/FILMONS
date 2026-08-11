@@ -316,7 +316,7 @@ export function ListingDetail() {
                         </div>
                         <div className="text-right shrink-0 ml-4">
                           <p className="text-xl font-black text-blue-600">${pkg.price}</p>
-                          <p className="text-xs text-gray-400">per hour</p>
+                          <p className="text-xs text-gray-400">CAD</p>
                         </div>
                       </div>
                     </div>

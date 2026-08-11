@@ -77,7 +77,7 @@ function AvailabilityCalendar({ blockedDates, onChange }: { blockedDates: string
         })}
       </div>
       {blockedDates.length > 0 && <div className="px-4 py-2 bg-red-50 border-t border-red-100 flex items-center justify-between"><p className="text-xs text-red-600 font-semibold">{blockedDates.length} date{blockedDates.length!==1?'s':''} marked unavailable</p><button type="button" onClick={() => onChange([])} className="text-xs text-red-400 hover:text-red-600 font-medium">Clear all</button></div>}
-      <div className="px-4 py-3 border-t border-gray-100"><button type="button" onClick={() => onChange([])} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-green-300 text-green-700 text-xs font-bold hover:bg-green-50 transition-colors">✅ Item available every day — clear all blocked dates</button></div>
+      <div className="px-4 py-3 border-t border-gray-100"><button type="button" onClick={() => onChange([])} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-green-300 text-green-700 text-xs font-bold hover:bg-green-50 transition-colors">✅ Item available every day, clear all blocked dates</button></div>
     </div>
   );
 }
@@ -313,7 +313,7 @@ export function EditListing() {
       },
       (err) => {
         setIsDetecting(false);
-        if (err.code === 1) toast.error('Location access denied — please enter your address manually');
+        if (err.code === 1) toast.error('Location access denied. Please enter your address manually');
         else toast.error('Could not get your location. Try again or enter manually.');
       },
       { timeout: 10000, enableHighAccuracy: true }
@@ -693,7 +693,7 @@ export function EditListing() {
         {/* ── Pricing Packages ── */}
         {listingType === 'service' && (
           <Section icon={<Package className="w-4 h-4" />} title="Pricing Packages">
-            <p className="text-xs text-gray-400 mb-4">Create custom tiers — e.g. Half Day, Full Day, Weekend Bundle</p>
+            <p className="text-xs text-gray-400 mb-4">Create custom tiers, e.g. Half Day, Full Day, Weekend Bundle</p>
             {pricingPackages.length > 0 && (
               <div className="space-y-3 mb-4">
                 {pricingPackages.map((pkg, index) => (
@@ -725,12 +725,12 @@ export function EditListing() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Price per Hour (CAD)</label>
+                      <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Price (CAD)</label>
                       <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 focus-within:border-blue-400 transition-all">
                         <DollarSign className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                         <input type="number" min="0" step="0.01" placeholder="0.00" value={pkg.price || ''} onChange={e => handleUpdatePricingPackage(index, 'price', parseFloat(e.target.value) || 0)}
                           className="flex-1 bg-transparent text-sm placeholder-gray-300 outline-none font-semibold" />
-                        <span className="text-xs text-gray-400 shrink-0">CAD/hr</span>
+                        <span className="text-xs text-gray-400 shrink-0">CAD</span>
                       </div>
                     </div>
                     <div>
@@ -854,7 +854,7 @@ export function EditListing() {
               <select value={province} onChange={e => setProvince(e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all appearance-none cursor-pointer">
                 <option value="">Province</option>
-                {PROVINCES.map(p => <option key={p.code} value={p.code}>{p.code} — {p.name}</option>)}
+                {PROVINCES.map(p => <option key={p.code} value={p.code}>{p.code} ({p.name})</option>)}
               </select>
             </div>
             <input type="text" placeholder="Postal code (e.g. M5V 2T6)" value={postalCode}
