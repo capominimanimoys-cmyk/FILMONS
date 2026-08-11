@@ -71,7 +71,6 @@ interface FormState {
   customRequirements: string;
   // Step 6 Payment
   acceptedPayments: string[];
-  paymentTiming: string;
   cancellationPolicy: string;
   refundPolicy: string;
   // Step 7 Availability
@@ -143,7 +142,6 @@ const CATEGORIES: Record<ListingKind, string[]> = {
 
 const PROVINCES = ['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'];
 
-const PAYMENT_TIMING = ['Full Payment Upfront', 'Deposit + Balance', 'On Pickup / Delivery', 'Custom'];
 const CANCELLATION_POLICIES = ['Flexible (Full refund 24h before)', 'Moderate (Full refund 7 days before)', 'Strict (50% refund only)', 'Custom'];
 const REFUND_POLICIES = ['Full Refund', 'Partial Refund', 'No Refund'];
 
@@ -155,6 +153,18 @@ const STEP_LABELS = [
 ];
 
 const DRAFT_KEY = 'filmons_create_listing_draft';
+// Session-scoped (cleared when the tab/window closes) — distinguishes "the
+// user is still actively working on this listing" from "they closed
+// everything and came back later." Moving between steps, auto-saving, or a
+// same-tab refresh never re-trips this; a genuinely new visit does.
+const DRAFT_RECOVERED_SHOWN_KEY = 'filmons_create_listing_draft_recovered_shown';
+
+/** A saved draft only counts as real, resumable progress if the user actually
+ *  did something — otherwise the very first auto-save of an untouched form
+ *  would "recover" as a draft on the next visit. */
+function isMeaningfulDraft(data: Partial<FormState> & { step?: number }): boolean {
+  return !!data.kind || !!data.title?.trim() || !!data.description?.trim() || (data.step ?? 1) > 1;
+}
 
 // ── Default state ────────────────────────────────────────────────────────────
 function defaultForm(): FormState {
@@ -170,7 +180,6 @@ function defaultForm(): FormState {
     depositRequired: false, insuranceRequired: false, govIdRequired: false,
     ageRequirement: '', agreementRequired: false, usageRules: '', customRequirements: '',
     acceptedPayments: ['Credit Card', 'Debit Card', 'E-Transfer'],
-    paymentTiming: 'Full Payment Upfront',
     cancellationPolicy: 'Moderate (Full refund 7 days before)',
     refundPolicy: 'Full Refund',
     blockedDates: [], availableDays: ['Mon','Tue','Wed','Thu','Fri'],
@@ -218,6 +227,26 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
       {...props}
       className={`w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-300 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none ${className || ''}`}
     />
+  );
+}
+
+// Hoisted to module scope — defining this inside Step4 gave it a new
+// function identity on every keystroke (Step4 re-renders whenever `form`
+// changes), so React treated each render's PriceField as a different
+// component type and remounted the underlying <input>, dropping focus and
+// closing the mobile keyboard after a single digit.
+function PriceField({ label, value, onChange, placeholder, unit }: { label: string; value: string; onChange: (v:string)=>void; placeholder?: string; unit?: string }) {
+  return (
+    <Field>
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+        <DollarSign className="w-4 h-4 text-gray-400 shrink-0"/>
+        <input type="number" inputMode="decimal" min="0" step="0.01" value={value} onChange={e=>onChange(e.target.value)}
+          placeholder={placeholder||'0.00'}
+          className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-300 outline-none font-semibold"/>
+        {unit&&<span className="text-xs text-gray-400 shrink-0 font-semibold">{unit}</span>}
+      </div>
+    </Field>
   );
 }
 
@@ -581,19 +610,6 @@ function Step3({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
 
 // ── Step 4 — Pricing ───────────────────────────────────────────────────────────
 function Step4({ form, set }: { form: FormState; set: (f: Partial<FormState>) => void }) {
-  const PriceField = ({ label, value, onChange, placeholder, unit }: { label: string; value: string; onChange: (v:string)=>void; placeholder?: string; unit?: string }) => (
-    <Field>
-      <Label>{label}</Label>
-      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-        <DollarSign className="w-4 h-4 text-gray-400 shrink-0"/>
-        <input type="number" min="0" step="0.01" value={value} onChange={e=>onChange(e.target.value)}
-          placeholder={placeholder||'0.00'}
-          className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-300 outline-none font-semibold"/>
-        {unit&&<span className="text-xs text-gray-400 shrink-0 font-semibold">{unit}</span>}
-      </div>
-    </Field>
-  );
-
   return (
     <div className="space-y-4">
       <div className="text-center mb-6">
@@ -743,20 +759,6 @@ function Step6({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
         <h2 className="text-xl font-black text-gray-900">Payment Methods</h2>
         <p className="text-sm text-gray-500 mt-1">How can people pay you?</p>
       </div>
-
-      <SectionCard title="Payment Timing" icon={<Clock className="w-4 h-4"/>}>
-        <div className="space-y-2">
-          {PAYMENT_TIMING.map(pt=>(
-            <button key={pt} type="button" onClick={()=>set({paymentTiming:pt})}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${form.paymentTiming===pt?'border-blue-500 bg-blue-50':'border-gray-200 bg-white hover:border-gray-300'}`}>
-              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${form.paymentTiming===pt?'border-blue-500 bg-blue-500':'border-gray-300'}`}>
-                {form.paymentTiming===pt&&<div className="w-2 h-2 rounded-full bg-white"/>}
-              </div>
-              <span className={`text-sm font-medium ${form.paymentTiming===pt?'text-blue-700':'text-gray-700'}`}>{pt}</span>
-            </button>
-          ))}
-        </div>
-      </SectionCard>
 
       <SectionCard title="Cancellation Policy" icon={<AlertCircle className="w-4 h-4"/>}>
         <div className="space-y-2">
@@ -1236,23 +1238,33 @@ export function CreateListing() {
   }, [isAuthenticated, user?.accountType]);
 
   // ── Draft recovery ──
+  // Runs once per mount. Only restores + announces a draft that represents
+  // real prior progress, and only announces it once per browser session —
+  // re-entering this same session (step nav, refresh, remounts) never shows
+  // the toast again; a genuinely new visit (draft still unfinished) does.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(DRAFT_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Only restore non-file fields (Files can't be serialized)
-        const { imageFiles, videoFiles, imagePreviews, videoPreviews, ...rest } = parsed;
-        void imageFiles; void videoFiles; void imagePreviews; void videoPreviews;
-        setFormRaw(prev => ({ ...prev, ...rest, imageFiles: [], videoFiles: [], imagePreviews: [], videoPreviews: [] }));
-        if (parsed.step) setStep(parsed.step);
-        toast('Draft recovered', { icon: '📋', duration: 3000 });
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (!isMeaningfulDraft(parsed)) { localStorage.removeItem(DRAFT_KEY); return; }
+
+      // Only restore non-file fields (Files can't be serialized)
+      const { imageFiles, videoFiles, imagePreviews, videoPreviews, ...rest } = parsed;
+      void imageFiles; void videoFiles; void imagePreviews; void videoPreviews;
+      setFormRaw(prev => ({ ...prev, ...rest, imageFiles: [], videoFiles: [], imagePreviews: [], videoPreviews: [] }));
+      if (parsed.step) setStep(parsed.step);
+
+      if (!sessionStorage.getItem(DRAFT_RECOVERED_SHOWN_KEY)) {
+        sessionStorage.setItem(DRAFT_RECOVERED_SHOWN_KEY, '1');
+        toast('Draft recovered', { icon: '📋', duration: 3000, description: 'Your unfinished listing has been restored.' });
       }
     } catch {}
   }, []);
 
-  // ── Auto-save (300ms debounce) ──
+  // ── Auto-save (300ms debounce, silent) ──
   useEffect(() => {
+    if (!isMeaningfulDraft(form) && step <= 1) return; // nothing worth persisting yet
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
     autoSaveRef.current = setTimeout(() => {
       try {
@@ -1311,7 +1323,6 @@ export function CreateListing() {
       agreementRequired: form.agreementRequired,
       usageRules: form.usageRules||null,
       customRequirements: form.customRequirements||null,
-      paymentTiming: form.paymentTiming,
       cancellationPolicy: form.cancellationPolicy,
       refundPolicy: form.refundPolicy,
       deliveryAvailable: form.deliveryAvailable,
