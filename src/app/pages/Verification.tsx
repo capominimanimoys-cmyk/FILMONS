@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from "../../lib/supabase";
 import { uploadVerificationDoc } from "../../lib/upload";
+import { claimIdentity } from "../lib/identity";
 
 const STEPS = [
   { id: 1, label: 'Personal Information', icon: User       },
@@ -500,11 +501,28 @@ export function Verification() {
 
   const verifyOtp = async () => {
     if (!otpCode.trim()) { toast.error('Enter the code you received'); return; }
+    if (!user?.id) return;
     setOtpVerifying(true);
     try {
       await authApi.verifyPhoneOTP(phone, otpCode);
+
+      // Claim before persisting — this phone must not already belong to a
+      // different Filmons account. Previously this only updated local
+      // client state and never wrote to profiles.phone at all.
+      const claim = await claimIdentity(user.id, 'phone', phone);
+      if (!claim.claimed) {
+        toast.error(claim.alreadyInUse
+          ? 'Phone number already in use — this phone number is already connected to another Filmons account.'
+          : (claim.error || 'Could not verify this phone number.'));
+        setOtpVerifying(false);
+        return;
+      }
+
+      const e164 = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
+      await supabase.from('profiles').update({ phone: e164, phone_verified: true }).eq('id', user.id);
+
       setPhoneVerified(true);
-      updateUser?.({ phone, phoneVerified: true } as any);
+      updateUser?.({ phone: e164, phoneVerified: true } as any);
       toast.success('Phone verified!');
     } catch (e: any) {
       toast.error(e?.message || 'Invalid code — please try again');

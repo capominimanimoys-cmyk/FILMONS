@@ -6,7 +6,6 @@ import { chatApi, listingsApi, authApi } from '../lib/api';
 import { ChatMessage, Listing } from '../types';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { toast } from 'sonner';
-import { cadWalletApi } from '../lib/fpSystem';
 import {
   ArrowLeft, CreditCard, MapPin, Truck, CheckCircle,
   CalendarDays, Clock, ShieldCheck, ChevronRight, Loader2,
@@ -490,16 +489,12 @@ export function Checkout() {
           return;
         }
 
-        // The host is credited net of the seller fee only — the buyer fee
-        // that makes up the rest of result.cad_amount is the renter's
-        // cost, not money the host ever sees.
-        const hostNet = (result.subtotal || 0); // seller_fee_amount is 0 until a seller fee is configured
-        if (hostUser?.id && hostNet > 0) {
-          cadWalletApi.onPaymentReceived(
-            hostUser.id, hostNet,
-            `Card payment for "${msg?.paymentRequest?.listingTitle || 'listing'}"`,
-            { method: 'Credit/Debit Card', stripe_session: sessionId }
-          );
+        // The host/Filmons wallets are credited server-side by the
+        // stripe-webhook Edge Function (triggered by Stripe's own
+        // checkout.session.completed event) — not from here. This just
+        // nudges any open wallet UI to refresh; the actual ledger write
+        // may land a moment before or after this client-side verify call.
+        if (hostUser?.id) {
           window.dispatchEvent(new CustomEvent('filmons:wallet:updated', { detail: { userId: hostUser.id } }));
         }
 
@@ -691,6 +686,9 @@ export function Checkout() {
             metadata_type:  'order_payment',
             host_id:        hostUser?.id,
             listing_title:  pay.listingTitle,
+            rental_end_date: pay.startDate && pay.duration
+              ? new Date(new Date(pay.startDate).getTime() + pay.duration * (pay.durationType === 'hour' ? 3600000 : 86400000)).toISOString()
+              : undefined,
           },
         });
         if (error || !data?.url) {
@@ -772,23 +770,25 @@ export function Checkout() {
       listingsApi.markListingSold(pay.listingId).catch(() => {});
     }
 
-    // 4. Credit the host's CAD wallet + notify them.
-    // (Card payments are handled by the Stripe redirect above and never
-    // reach this point — this covers payment methods like Debit Card/
-    // E-Transfer that are treated as immediately-confirmed real money.)
-    // Host is credited net of the seller fee only — the buyer fee baked
-    // into totalAmount is the renter's cost, not the host's.
-    const hostNet = quote ? quote.subtotal - quote.sellerFeeAmount : subtotal;
-    if (hostUser?.id && hostNet > 0) {
-      cadWalletApi.onPaymentReceived(
-        hostUser.id, hostNet,
-        `Payment for "${pay.listingTitle || 'listing'}" via ${selectedMethod}`,
-        { listingId: pay.listingId, buyerId: user?.id, msgId, convId, method: selectedMethod }
-      );
-      // Dispatch event so open wallet pages refresh live
-      window.dispatchEvent(new CustomEvent('filmons:wallet:updated', {
-        detail: { userId: hostUser.id, type: 'cad', amount: hostNet }
-      }));
+    // 4. Credit the host/Filmons wallets via the ledger.
+    // (Card payments are handled by the Stripe webhook and never reach
+    // this point — this covers payment methods like Debit Card/E-Transfer
+    // that are treated as immediately-confirmed real money. The frontend
+    // never assigns the split itself — finalize-cash-payment re-derives it
+    // server-side from the same shared calc, only the order/host
+    // references are supplied here.)
+    if (hostUser?.id && signedAgreement && quote) {
+      const orderId = `ORD-${signedAgreement.refNo}`;
+      const rentalEndDate = pay.startDate && pay.duration
+        ? new Date(new Date(pay.startDate).getTime() + pay.duration * (pay.durationType === 'hour' ? 3600000 : 86400000)).toISOString()
+        : undefined;
+      fetch(`https://${projectId}.supabase.co/functions/v1/finalize-cash-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ orderId, hostId: hostUser.id, subtotal: quote.subtotal, rentalEndDate }),
+      }).then(() => {
+        window.dispatchEvent(new CustomEvent('filmons:wallet:updated', { detail: { userId: hostUser.id } }));
+      }).catch(e => console.warn('finalize-cash-payment failed:', e));
     }
 
     setSubmitting(false);

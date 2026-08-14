@@ -11,7 +11,7 @@ import {
   ShoppingCart, Zap, X, CalendarDays, Lock,
 } from 'lucide-react';
 import { savedListingsApi } from '../lib/api';
-import { cadWalletApi } from '../lib/fpSystem';
+import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
 import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, CREATOR_TIERS } from '../lib/reliabilityApi';
@@ -505,40 +505,40 @@ function HostDashboardContent({ user }: { user: any }) {
           });
 
         const totalEarned = orders.reduce((s: number, o: any) => s + Number(o.total_amount || 0), 0);
-        const pending     = 0; // all paid at this point
-
-        // Wallet balance — real from cadWallet
-        const cadBalance = Math.max(cadWalletApi.getBalance(user.id), totalEarned);
 
         const reviews = getStoredReviews().filter(r => listings.some(l => l.id === r.listingId));
         const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
 
-        setStats({
-          balance: cadBalance, totalEarned, pending, cadBalance,
+        // Real wallet balance (pending vs available) — replaces the old
+        // Math.max(localStorage wallet, order total) approximation.
+        walletApi.getBalance(user.id).then(({ pending, available }) => {
+          setStats(prev => ({ ...prev, balance: available, cadBalance: available, pending }));
+        });
+
+        setStats(prev => ({
+          ...prev,
+          totalEarned,
           listingCount: listings.length,
           followers: user.followers?.length || 0,
           following: user.following?.length || 0,
           reviewCount: reviews.length, avgRating,
           activeRequests: 0,
-        });
+        }));
       })
-      .catch(() => {
-        // Fallback to localStorage wallet
-        const cadBalance = cadWalletApi.getBalance(user.id);
-        setStats(prev => ({ ...prev, cadBalance, balance: cadBalance }));
-      });
+      .catch(() => {});
 
     savedListingsApi.getSaved(user.id).then(ls => setSavedListings2(Array.isArray(ls) ? ls : [])).catch(() => setSavedListings2([]));
   }, [user]);
 
   useEffect(() => {
     const handler = () => {
-      const cadBalance = Math.max(cadWalletApi.getBalance(user.id), stats.totalEarned);
-      setStats(prev => ({ ...prev, cadBalance, balance: cadBalance }));
+      walletApi.getBalance(user.id).then(({ pending, available }) => {
+        setStats(prev => ({ ...prev, balance: available, cadBalance: available, pending }));
+      });
     };
     window.addEventListener('filmons:wallet:updated', handler);
     return () => window.removeEventListener('filmons:wallet:updated', handler);
-  }, [user.id, stats.totalEarned]);
+  }, [user.id]);
 
   const getListingIcon = (l: Listing) => {
     if (l.listingType === 'service') return <Camera className="w-4 h-4 text-purple-500" />;

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ArrowLeft, Lock, Shield, Eye, EyeOff,
-  AlertTriangle, CheckCircle, ChevronRight, Monitor, Mail, Link2, Phone,
+  AlertTriangle, CheckCircle, ChevronRight, Monitor, Mail, Link2, Phone, Loader2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { securitySettingsApi } from '../lib/settingsApi';
@@ -10,6 +10,192 @@ import { getDevices, type ActiveDevice } from '../lib/devicesApi';
 import { supabase } from '../../lib/supabase';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
+import { authApi } from '../lib/api';
+import { claimIdentity } from '../lib/identity';
+import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
+
+function genCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+// ── Change Email ──────────────────────────────────────────────────────────
+// New email → check availability → emailed code → verify → atomic claim →
+// persist. Blocks with "Email already in use" without revealing whose it is.
+function ChangeEmailFlow({ userId, currentEmail, onChanged }: { userId: string; currentEmail: string; onChanged: (email: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<'enter' | 'code'>('enter');
+  const [newEmail, setNewEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [sentCode, setSentCode] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const reset = () => { setOpen(false); setStep('enter'); setNewEmail(''); setCode(''); setSentCode(''); };
+
+  const sendCode = async () => {
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { toast.error('Enter a valid email address.'); return; }
+    if (trimmed === currentEmail?.toLowerCase()) { toast.error('That\'s already your email address.'); return; }
+    setLoading(true);
+    try {
+      const { claimed, alreadyInUse } = await claimIdentity(userId, 'email', trimmed);
+      if (!claimed && alreadyInUse) {
+        toast.error('Email already in use — this email address is already connected to another Filmons account.');
+        setLoading(false);
+        return;
+      }
+      const c = genCode();
+      setSentCode(c);
+      const { success } = await sendEmail(EMAILJS_CONFIG.templates.emailVerification, {
+        to_email: trimmed, to_name: '', verification_code: c, user_email: trimmed, expires_in: '10 minutes',
+      });
+      if (!success) { toast.error('Could not send verification code.'); setLoading(false); return; }
+      toast.success(`Code sent to ${trimmed}`);
+      setStep('code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verify = async () => {
+    if (code !== sentCode) { toast.error('Incorrect code.'); return; }
+    setLoading(true);
+    try {
+      const trimmed = newEmail.trim().toLowerCase();
+      const { error } = await supabase.from('profiles').update({ email: trimmed, email_verified: true }).eq('id', userId);
+      if (error) {
+        toast.error((error as any).code === '23505' ? 'Email already in use.' : 'Could not update email.');
+        setLoading(false);
+        return;
+      }
+      toast.success('Email updated.');
+      onChanged(trimmed);
+      reset();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} className="text-xs font-bold text-blue-600 hover:text-blue-700 shrink-0">Change</button>
+  );
+
+  return (
+    <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 mt-2 space-y-2">
+      {step === 'enter' ? (
+        <>
+          <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="New email address"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <div className="flex gap-2">
+            <button onClick={reset} className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold">Cancel</button>
+            <button onClick={sendCode} disabled={loading} className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Send code'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500">Enter the code sent to {newEmail}</p>
+          <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" inputMode="numeric"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 tracking-widest" />
+          <div className="flex gap-2">
+            <button onClick={reset} className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold">Cancel</button>
+            <button onClick={verify} disabled={loading || code.length !== 6} className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Verify & update'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Change Phone ──────────────────────────────────────────────────────────
+function ChangePhoneFlow({ userId, currentPhone, onChanged }: { userId: string; currentPhone: string | undefined; onChanged: (phone: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<'enter' | 'code'>('enter');
+  const [newPhone, setNewPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const reset = () => { setOpen(false); setStep('enter'); setNewPhone(''); setCode(''); };
+  const e164 = () => newPhone.startsWith('+') ? newPhone : `+${newPhone.replace(/\D/g, '')}`;
+
+  const sendCode = async () => {
+    const digits = newPhone.replace(/\D/g, '');
+    if (digits.length < 10) { toast.error('Enter a valid phone number.'); return; }
+    if (e164() === currentPhone) { toast.error('That\'s already your phone number.'); return; }
+    setLoading(true);
+    try {
+      const { claimed, alreadyInUse } = await claimIdentity(userId, 'phone', e164());
+      if (!claimed && alreadyInUse) {
+        toast.error('Phone number already in use — this phone number is already connected to another Filmons account.');
+        setLoading(false);
+        return;
+      }
+      await authApi.sendPhoneOTP(e164());
+      toast.success(`Code sent to ${e164()}`);
+      setStep('code');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not send verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verify = async () => {
+    if (code.length !== 6) { toast.error('Enter the 6-digit code.'); return; }
+    setLoading(true);
+    try {
+      await authApi.verifyPhoneOTP(e164(), code);
+      const { error } = await supabase.from('profiles').update({ phone: e164(), phone_verified: true }).eq('id', userId);
+      if (error) {
+        toast.error((error as any).code === '23505' ? 'Phone number already in use.' : 'Could not update phone number.');
+        setLoading(false);
+        return;
+      }
+      toast.success('Phone number updated.');
+      onChanged(e164());
+      reset();
+    } catch (e: any) {
+      toast.error(e?.message || 'Incorrect code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} className="text-xs font-bold text-blue-600 hover:text-blue-700 shrink-0">Change</button>
+  );
+
+  return (
+    <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 mt-2 space-y-2">
+      {step === 'enter' ? (
+        <>
+          <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="+1 (555) 123-4567"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <div className="flex gap-2">
+            <button onClick={reset} className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold">Cancel</button>
+            <button onClick={sendCode} disabled={loading} className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Send code'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500">Enter the code sent to {e164()}</p>
+          <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" inputMode="numeric"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 tracking-widest" />
+          <div className="flex gap-2">
+            <button onClick={reset} className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold">Cancel</button>
+            <button onClick={verify} disabled={loading || code.length !== 6} className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Verify & update'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function GoogleLogo() {
   return (
@@ -24,7 +210,7 @@ function GoogleLogo() {
 
 export function SecuritySettings() {
   const navigate  = useNavigate();
-  const { user }  = useAuth();
+  const { user, updateUser }  = useAuth() as any;
 
   useEffect(() => {
     if (!user?.id) return;
@@ -94,7 +280,7 @@ const [showPw,  setShowPw]  = useState(false);
         <Section title="Login Methods" icon={<Link2 className="w-4 h-4 text-gray-600"/>}>
           <div className="p-4 space-y-2.5">
             {/* Email & Password */}
-            <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-gray-50 border border-gray-100">
+            <div className="flex flex-wrap items-center gap-3 px-3 py-3 rounded-xl bg-gray-50 border border-gray-100">
               <div className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center shrink-0">
                 <Mail className="w-4 h-4 text-gray-600"/>
               </div>
@@ -105,11 +291,14 @@ const [showPw,  setShowPw]  = useState(false);
               {linkedProviders.includes('email') && (
                 <CheckCircle className="w-5 h-5 text-green-500 shrink-0"/>
               )}
+              {user?.id && (
+                <ChangeEmailFlow userId={user.id} currentEmail={user.email || ''} onChanged={email => updateUser?.({ email, emailVerified: true })} />
+              )}
             </div>
 
             {/* Phone */}
             {user?.phone ? (
-              <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-gray-50 border border-gray-100">
+              <div className="flex flex-wrap items-center gap-3 px-3 py-3 rounded-xl bg-gray-50 border border-gray-100">
                 <div className="w-8 h-8 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center shrink-0">
                   <Phone className="w-4 h-4 text-green-600"/>
                 </div>
@@ -118,6 +307,9 @@ const [showPw,  setShowPw]  = useState(false);
                   <p className="text-xs text-gray-400 truncate">{user.phone}</p>
                 </div>
                 <CheckCircle className="w-5 h-5 text-green-500 shrink-0"/>
+                {user?.id && (
+                  <ChangePhoneFlow userId={user.id} currentPhone={user.phone} onChanged={phone => updateUser?.({ phone, phoneVerified: true })} />
+                )}
               </div>
             ) : (
               <button onClick={() => window.location.href = '/phone-signup'}

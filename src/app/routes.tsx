@@ -6,7 +6,6 @@ import { Login }         from './pages/Login';
 import { CreateAccount }  from './pages/CreateAccount';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword }  from './pages/ResetPassword';
-import { PhoneSignup } from './pages/PhoneSignup';
 import { PhoneLogin } from './pages/PhoneLogin';
 import { CreateListing } from './pages/CreateListing';
 import { EditListing } from './pages/EditListing';
@@ -95,7 +94,7 @@ export const router = createBrowserRouter([
       { path: 'audio/search', Component: AudioPage },
       { path: 'audio/:id',    Component: AudioPage },
       { path: 'reels/:postId', Component: ReelFeed },
-      { path: 'phone-signup', Component: PhoneSignup },
+      { path: 'phone-signup', Component: SignupPhone },
       { path: 'phone-login', Component: PhoneLogin },
       { path: 'create-listing', Component: CreateListing },
       { path: 'edit-listing/:id', Component: EditListing },

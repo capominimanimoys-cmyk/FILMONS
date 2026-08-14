@@ -17,6 +17,7 @@ import { SmartAddressInput, AddressComponents } from '../components/SmartAddress
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { User } from '../types';
 import { toast } from 'sonner';
+import { claimIdentity } from '../lib/identity';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -224,8 +225,20 @@ export function GoogleSignup() {
 
       if (insertErr) {
         console.error('[GoogleSignup] profiles upsert error:', insertErr);
+        // 23505 on the lower(email) unique index — OAuthCallback already
+        // resolves existing accounts by email before ever routing here, so
+        // this only fires on a genuine race between two simultaneous
+        // first-time signups for the same address.
+        if ((insertErr as any).code === '23505') {
+          throw new Error('Email already in use — this email address is already connected to another Filmons account.');
+        }
         throw new Error(insertErr.message);
       }
+
+      // Best-effort: keep account_identities in sync for future sign-in
+      // linking.
+      claimIdentity(authId, 'email', googleEmail).catch(() => {});
+      claimIdentity(authId, 'google', authId).catch(() => {});
 
       await Promise.allSettled([
         supabase.from('reputation_scores').upsert(

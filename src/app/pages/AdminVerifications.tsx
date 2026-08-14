@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
 import { supabase } from '../../lib/supabase';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -291,6 +292,8 @@ export function AdminVerifications() {
   const [walletFilter, setWalletFilter] = useState<
     "all" | "paid" | "pending"
   >("all");
+  const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
+  const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
 
   const ADMIN_PASSWORD = "filmons2024";
 
@@ -359,6 +362,37 @@ export function AdminVerifications() {
 
     // ── WALLET ─────────────────────────────────────────────────────
     loadWalletTxs().then(setWalletTxs);
+
+    // ── PAYOUT REQUESTS ───────────────────────────────────────────
+    try {
+      const { data } = await supabase
+        .from('payout_requests')
+        .select('*, profiles(name, email)')
+        .order('requested_at', { ascending: false })
+        .limit(100);
+      setPayoutRequests(data || []);
+    } catch (e) {
+      console.warn('payout_requests query failed:', e);
+    }
+  };
+
+  const processPayout = async (payoutRequestId: string, action: 'paid' | 'rejected') => {
+    setProcessingPayoutId(payoutRequestId);
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ payoutRequestId, action, adminName }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || 'Failed');
+      toast.success(action === 'paid' ? 'Payout marked as paid' : 'Payout rejected');
+      loadAll().catch(console.error);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not process payout');
+    } finally {
+      setProcessingPayoutId(null);
+    }
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -876,7 +910,7 @@ export function AdminVerifications() {
                     Filmons Platform Wallet
                   </h2>
                   <p className="text-blue-200 text-xs">
-                    15% commission on all completed marketplace
+                    8% Filmons Fee on all completed marketplace
                     transactions
                   </p>
                 </div>
@@ -912,7 +946,7 @@ export function AdminVerifications() {
                     ${fmt(totalPayouts)}
                   </p>
                   <p className="text-blue-300 text-[11px] mt-0.5">
-                    85% of volume
+                    Net of Filmons Fee
                   </p>
                 </div>
                 <div className="bg-white/10 rounded-2xl p-4">
@@ -1011,6 +1045,43 @@ export function AdminVerifications() {
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* Payout requests queue */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+              <div className="px-5 py-4 border-b border-gray-50">
+                <h3 className="text-sm font-bold text-gray-900">Payout Requests</h3>
+                <p className="text-xs text-gray-400 mt-0.5">No automated payout provider is configured yet — process these manually (e-transfer, etc.), then mark paid here.</p>
+              </div>
+              {payoutRequests.length === 0 ? (
+                <div className="p-8 text-center text-sm text-gray-400">No payout requests yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {payoutRequests.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4 px-5 py-3.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{p.profiles?.name || p.host_id}</p>
+                        <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })} · {p.profiles?.email || ''}</p>
+                      </div>
+                      <span className="text-sm font-black text-gray-900 shrink-0">${fmt(Number(p.amount))}</span>
+                      {p.status === 'requested' || p.status === 'processing' ? (
+                        <div className="flex gap-1.5 shrink-0">
+                          <button onClick={() => processPayout(p.id, 'paid')} disabled={processingPayoutId === p.id}
+                            className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
+                            Mark Paid
+                          </button>
+                          <button onClick={() => processPayout(p.id, 'rejected')} disabled={processingPayoutId === p.id}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold disabled:opacity-50">
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <span className={`text-xs font-bold uppercase shrink-0 ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>{p.status}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Transaction list */}

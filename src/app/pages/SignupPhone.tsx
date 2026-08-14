@@ -18,6 +18,7 @@ import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { supabase } from '../../lib/supabase';
+import { claimIdentity } from '../lib/identity';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -252,6 +253,12 @@ export function SignupPhone() {
           profile_setup_percentage: 0,
           updated_at:               new Date().toISOString(),
         }, { onConflict: 'id' });
+
+        // Best-effort: keep account_identities in sync so future sign-in
+        // linking (Google, phone re-signin) resolves correctly. The
+        // profiles.phone unique index is the actual signup-time guard —
+        // this just populates the atomic-claim table for later use.
+        claimIdentity(user.id, 'phone', fullE164).catch(() => {});
       }
 
       // Update auth context — mark phone verified, onboarding not yet done

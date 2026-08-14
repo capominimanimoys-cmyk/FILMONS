@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
   // ── POST /stripe-charge — Create Checkout Session ─────────────
   try {
-    const { subtotal, customer_email, description, success_url, cancel_url, user_id } = await req.json();
+    const { subtotal, customer_email, description, success_url, cancel_url, user_id, host_id, rental_end_date } = await req.json();
 
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return new Response(JSON.stringify({ error: 'Stripe not configured' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -121,11 +121,14 @@ Deno.serve(async (req) => {
       // at 500 chars each, so the breakdown is spread across individual
       // string fields rather than one JSON blob.
       'metadata[user_id]':                              user_id || '',
+      'metadata[host_id]':                              host_id || '',
       'metadata[cad_amount]':                           String(breakdown.total),
       'metadata[subtotal]':                             String(breakdown.subtotal),
       'metadata[buyer_fee_rate]':                        String(breakdown.buyerFeeRate),
       'metadata[buyer_fee_amount]':                      String(breakdown.buyerFeeAmount),
+      'metadata[seller_fee_amount]':                     String(breakdown.sellerFeeAmount),
       'metadata[fee_config_version]':                    breakdown.feeConfigVersion,
+      'metadata[rental_end_date]':                       rental_end_date || '',
       'metadata[platform]':                             'filmons',
     });
 

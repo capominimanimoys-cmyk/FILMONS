@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { PENDING_SIGNUP_KEY } from './CreateAccount';
 import type { User } from '../types';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { claimIdentity } from '../lib/identity';
 
 interface PendingSignup {
   name: string;
@@ -117,7 +118,9 @@ export function VerifyEmail() {
         return;
       }
 
-      // Create the profile row — email_verified = true since we just verified
+      // Create the profile row — email_verified = true since we just verified.
+      // The unique index on lower(profiles.email) is the authoritative guard
+      // against a race with another concurrent signup for the same address.
       const { error: profileError } = await supabase.from('profiles').upsert({
         id:             authData.user.id,
         email:          pending.email,
@@ -130,10 +133,18 @@ export function VerifyEmail() {
       }, { onConflict: 'id' });
 
       if (profileError) {
-        toast.error('Account created but profile setup failed. Please contact support.');
+        if (profileError.code === '23505') {
+          toast.error('Email already in use — this email address is already connected to another Filmons account.');
+        } else {
+          toast.error('Account created but profile setup failed. Please contact support.');
+        }
         setLoading(false);
         return;
       }
+
+      // Best-effort: keep account_identities in sync for future sign-in
+      // linking (Google/phone resolving to this account by email).
+      claimIdentity(authData.user.id, 'email', pending.email).catch(() => {});
 
       // Build the initial User object and start the session
       const user: User = {
