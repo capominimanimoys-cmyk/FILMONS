@@ -1307,10 +1307,10 @@ export function AdminVerifications() {
                   />
                   <InfoRow
                     icon={
-                      <User className="w-4 h-4 text-gray-400" />
+                      <CreditCard className="w-4 h-4 text-gray-400" />
                     }
-                    label="User ID"
-                    value={selectedRequest.userId}
+                    label="Government ID Number"
+                    value={selectedRequest.idNumber}
                   />
                 </div>
               </section>
