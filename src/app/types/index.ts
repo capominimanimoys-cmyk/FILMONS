@@ -307,6 +307,7 @@ export interface Notification {
   commentContent?: string;
   // Messaging
   conversationId?: string;
+  messageId?: string;
   messageContent?: string;
   // Network
   followBack?: boolean;

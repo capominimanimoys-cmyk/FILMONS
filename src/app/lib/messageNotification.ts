@@ -179,82 +179,13 @@ async function dispatchSMS(receiver: Receiver, sender: Sender, preview: string, 
   await sendSMS(receiver.phone, `New Filmons message from ${sender.username || sender.name}: "${preview}"\n${link}`);
 }
 
-// ── Immediate email (no delay — for real-time Inbox notifications) ───────────
-//
-// Anti-spam: 1 email per receiver per conversation per 30 minutes.
-// Called from the Inbox Realtime handler when a message arrives for the user.
-
-const IMMEDIATE_SPAM_TTL = 30 * 60 * 1000;
-
-export function notifyImmediateEmail({
-  receiverId,
-  receiverEmail,
-  receiverName,
-  senderName,
-  senderId,
-  messageText,
-  conversationId,
-  isRequest,
-  kind,
-  listing,
-}: {
-  receiverId: string;
-  receiverEmail: string;
-  receiverName: string;
-  senderName: string;
-  senderId: string;
-  messageText: string;
-  conversationId: string;
-  isRequest: boolean;
-  kind?: MessageKind;
-  listing?: ListingContext;
-}): void {
-  if (!receiverEmail) return;
-  if (receiverId === senderId) return;
-
-  // Anti-spam guard
-  const key = `filmons_notif_imm_${receiverId}_${conversationId}`;
-  try {
-    const ts = localStorage.getItem(key);
-    if (ts && Date.now() - Number(ts) < IMMEDIATE_SPAM_TTL) return;
-    localStorage.setItem(key, String(Date.now()));
-  } catch {}
-
-  const resolvedKind: MessageKind = kind ?? (isRequest ? 'request' : 'direct');
-  const preview  = (messageText || (isRequest ? 'Message request' : 'New message')).slice(0, 120);
-  const subject  = buildSubject(senderName, resolvedKind, listing);
-  const convLink = `${window.location.origin}/inbox?conv=${conversationId}&with=${senderId}`;
-  const settingsUrl = `${window.location.origin}/settings/notifications`;
-
-  import('@emailjs/browser').then(async emailjs => {
-    try {
-      await emailjs.default.send(
-        EMAILJS_CONFIG.serviceId,
-        EMAILJS_CONFIG.templates.messageNotification,
-        {
-          to_email:          receiverEmail,
-          to_name:           receiverName,
-          from_name:         senderName,
-          subject,
-          message_preview:   preview,
-          is_request:        isRequest ? 'yes' : 'no',
-          conversation_link: convLink,
-          unsubscribe_url:   settingsUrl,
-          settings_url:      settingsUrl,
-          listing_title:     listing?.title    || '',
-          listing_price:     listing?.price    != null ? `$${listing.price}` : '',
-          listing_location:  listing?.location || '',
-          listing_id:        listing?.id       || '',
-        },
-        EMAILJS_CONFIG.publicKey,
-      );
-    } catch (e) {
-      console.warn('[msgNotif] immediate email failed:', e);
-    }
-  }).catch(() => {});
-}
-
 // ── Main entry (synchronous — schedules its own timers) ───────────────────────
+
+// In-memory guard against scheduling two independent 5-min/10-min timers for
+// the same message (e.g. a component re-render or a send retry calling this
+// twice) — the DB-level notification dedup (idx_notifications_message_dedup)
+// only protects the in-app/notifications-page row, not these timers.
+const scheduledMessageIds = new Set<string>();
 
 export function notifyReceiverForMessage({
   receiverId,
@@ -263,6 +194,7 @@ export function notifyReceiverForMessage({
   conversationId,
   kind = 'direct',
   listing,
+  messageId,
 }: {
   receiverId: string;
   sender: Sender;
@@ -270,8 +202,13 @@ export function notifyReceiverForMessage({
   conversationId: string;
   kind?: MessageKind;
   listing?: ListingContext;
+  messageId?: string;
 }): void {
   if (receiverId === sender.id) return;
+  if (messageId) {
+    if (scheduledMessageIds.has(messageId)) return;
+    scheduledMessageIds.add(messageId);
+  }
 
   const preview = (messageText || 'New message').slice(0, 120);
 

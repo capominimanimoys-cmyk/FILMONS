@@ -2521,6 +2521,7 @@ export const chatApi = {
         fromUserName:   senderName,
         fromUserAvatar: senderAvatar,
         conversationId,
+        messageId:      message.id,
         commentContent: content?.slice(0, 100),
       });
       // External notification — schedules email (5 min) + SMS (10 min) if unread
@@ -2530,6 +2531,7 @@ export const chatApi = {
           sender:         { id: senderId, name: senderName },
           messageText:    content,
           conversationId,
+          messageId:      message.id,
         });
       }).catch(() => {});
     }
@@ -3027,8 +3029,22 @@ export const chatApi = {
         fromUserName:   msg.senderName   || 'Someone',
         fromUserAvatar: msg.senderAvatar || undefined,
         conversationId: convId,
+        messageId:      id,
         commentContent: (msg.content || '').slice(0, 100) || undefined,
       } as any);
+      // Delayed email (5 min, only if still unread + offline) + SMS (10 min) —
+      // this is the path Inbox.tsx actually sends through; it was previously
+      // only wired into the unused sendMessage() local-first variant, so no
+      // message ever actually triggered this flow.
+      import('./messageNotification').then(mod => {
+        mod.notifyReceiverForMessage({
+          receiverId:     recipientId,
+          sender:         { id: msg.senderId, name: msg.senderName || 'Someone' },
+          messageText:    msg.content || '',
+          conversationId: convId,
+          messageId:      id,
+        });
+      }).catch(() => {});
     }
 
     return { ...msg, id, createdAt: now } as ChatMessage;

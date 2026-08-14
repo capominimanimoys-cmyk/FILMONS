@@ -4,7 +4,6 @@ import { useNavigate, Link, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord } from '../lib/api';
 import * as notifs from '../lib/notifications';
-import { notifyImmediateEmail } from '../lib/messageNotification';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Conversation, ChatMessage, User, Post, Listing, PricingPackage } from '../types';
@@ -1539,31 +1538,11 @@ export function Inbox() {
                     messages: [newMsg], unreadCount: 1,
                   }, ...p.filter(c => c.id !== convId)]);
 
-                  // Email for new message requests (brand-new conv arriving via Realtime)
-                  if (newMsg.senderId !== user?.id && user && convId !== activeId) {
-                    const isReq = row.is_request ?? false;
-                    const rr = newMsg.rentalRequest;
-                    const pr = newMsg.paymentRequest;
-                    const msgKind = isReq ? 'request'
-                      : newMsg.type === 'rental_request' ? (rr?.listingMode === 'sale' || rr?.durationType === 'purchase' ? 'marketplace' : (rr?.listingType === 'service' ? 'booking_inquiry' : 'rental_inquiry'))
-                      : newMsg.type === 'payment_request' ? 'marketplace'
-                      : 'direct';
-                    const listing = rr ? { id: rr.listingId, title: rr.listingTitle, location: undefined }
-                      : pr ? { id: pr.listingId, title: pr.listingTitle, price: pr.amount, location: undefined }
-                      : undefined;
-                    notifyImmediateEmail({
-                      receiverId:     user.id,
-                      receiverEmail:  user.email || '',
-                      receiverName:   user.name  || 'User',
-                      senderName:     newMsg.senderName || 'Someone',
-                      senderId:       newMsg.senderId || '',
-                      messageText:    newMsg.content || '',
-                      conversationId: convId,
-                      isRequest:      isReq,
-                      kind:           msgKind,
-                      listing,
-                    });
-                  }
+                  // Email is scheduled by the sender's client at send time
+                  // (chatApi.sendMessageToDB → notifyReceiverForMessage, 5min
+                  // delay + unread/offline check) — this realtime handler on
+                  // the receiver's side just needs to update local UI state,
+                  // not also trigger a notification.
                 }).catch(() => loadConversations());
               return prev;
             }
@@ -1579,30 +1558,8 @@ export function Inbox() {
             setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
           }
 
-          // Email notification: receiver only, and not when the conversation is already open
-          if (newMsg.senderId && newMsg.senderId !== user?.id && user && convId !== activeId) {
-            const rr = newMsg.rentalRequest;
-            const pr = newMsg.paymentRequest;
-            const msgKind = newMsg.type === 'rental_request'
-              ? (rr?.listingMode === 'sale' || rr?.durationType === 'purchase' ? 'marketplace' : (rr?.listingType === 'service' ? 'booking_inquiry' : 'rental_inquiry'))
-              : newMsg.type === 'payment_request' ? 'marketplace'
-              : 'direct';
-            const listing = rr ? { id: rr.listingId, title: rr.listingTitle, location: undefined }
-              : pr ? { id: pr.listingId, title: pr.listingTitle, price: pr.amount, location: undefined }
-              : undefined;
-            notifyImmediateEmail({
-              receiverId:     user.id,
-              receiverEmail:  user.email || '',
-              receiverName:   user.name  || 'User',
-              senderName:     newMsg.senderName || 'Someone',
-              senderId:       newMsg.senderId,
-              messageText:    newMsg.content || '',
-              conversationId: convId,
-              isRequest:      false,
-              kind:           msgKind,
-              listing,
-            });
-          }
+          // Same as above — the sender's client already scheduled the
+          // delayed email/SMS via notifyReceiverForMessage at send time.
         },
       )
       .subscribe();

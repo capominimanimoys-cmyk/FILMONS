@@ -80,6 +80,13 @@ async function _dbInsert(row: Record<string, unknown>): Promise<void> {
     console.log('[notifications] ✓ saved type:', row.type, '→', row.user_id);
     return;
   }
+  // Unique violation on (user_id, type, message_id) — this exact message
+  // already notified this recipient (a realtime reconnect/retry), not a
+  // real failure. See idx_notifications_message_dedup.
+  if (error.code === '23505' && row.message_id) {
+    console.log('[notifications] duplicate suppressed for message:', row.message_id);
+    return;
+  }
   console.error('[notifications] insert error:', error.code, '-', error.message);
 
   // FK violation on post_id → retry without post fields
@@ -170,6 +177,7 @@ export function push(
     post_image:      (notif as any).postImage      || null,
     comment_content: (notif as any).commentContent || null,
     conversation_id: (notif as any).conversationId || null,
+    message_id:      (notif as any).messageId      || null,
     is_read:         false,
   }).catch(e => console.warn('[notifications] push failed:', e));
 }
