@@ -1,3 +1,5 @@
+import { computeBreakdown } from '../_shared/pricing.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   // Wildcard rather than an explicit list — some antivirus/corporate proxies
@@ -67,6 +69,12 @@ Deno.serve(async (req) => {
 
     const userId = session.metadata?.user_id;
     const cadAmt = parseFloat(session.metadata?.cad_amount || '0');
+    const breakdown = {
+      subtotal:         parseFloat(session.metadata?.subtotal || '0'),
+      buyer_fee_rate:   parseFloat(session.metadata?.buyer_fee_rate || '0'),
+      buyer_fee_amount: parseFloat(session.metadata?.buyer_fee_amount || '0'),
+      fee_config_version: session.metadata?.fee_config_version || null,
+    };
 
     if (!userId) return new Response(JSON.stringify({ error: 'Missing metadata' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
 
@@ -76,34 +84,48 @@ Deno.serve(async (req) => {
     });
     const existing = await checkRes.json();
     if (existing?.length > 0) {
-      return new Response(JSON.stringify({ success: true, already_credited: true, cad_amount: cadAmt }), {
+      return new Response(JSON.stringify({ success: true, already_credited: true, cad_amount: cadAmt, ...breakdown }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       });
     }
 
-    return new Response(JSON.stringify({ success: true, cad_amount: cadAmt }), {
+    return new Response(JSON.stringify({ success: true, cad_amount: cadAmt, ...breakdown }), {
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
   }
 
   // ── POST /stripe-charge — Create Checkout Session ─────────────
   try {
-    const { amount_cad, customer_email, description, success_url, cancel_url, user_id } = await req.json();
+    const { subtotal, customer_email, description, success_url, cancel_url, user_id } = await req.json();
 
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return new Response(JSON.stringify({ error: 'Stripe not configured' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+    // The charge amount is never taken from the client — it's recomputed
+    // here from the same shared calc checkout-quote used to show the
+    // pre-payment breakdown, so what the renter saw and what they're
+    // actually charged can never drift apart. This is the amount before any
+    // Stripe-side adjustments — if Stripe Tax is enabled on this Stripe
+    // account, Stripe applies it on top of what's sent here.
+    const breakdown = await computeBreakdown({ subtotal });
+
     const params = new URLSearchParams({
       'mode':                                           'payment',
       'line_items[0][price_data][currency]':            'cad',
-      'line_items[0][price_data][unit_amount]':         String(Math.round(amount_cad * 100)),
+      'line_items[0][price_data][unit_amount]':         String(Math.round(breakdown.total * 100)),
       'line_items[0][price_data][product_data][name]':  description || 'Filmons Payment',
       'line_items[0][quantity]':                        '1',
       'success_url':                                    success_url,
       'cancel_url':                                     cancel_url,
-      // Store metadata for verification
+      // Store metadata for verification — Stripe metadata values are capped
+      // at 500 chars each, so the breakdown is spread across individual
+      // string fields rather than one JSON blob.
       'metadata[user_id]':                              user_id || '',
-      'metadata[cad_amount]':                           String(amount_cad),
+      'metadata[cad_amount]':                           String(breakdown.total),
+      'metadata[subtotal]':                             String(breakdown.subtotal),
+      'metadata[buyer_fee_rate]':                        String(breakdown.buyerFeeRate),
+      'metadata[buyer_fee_amount]':                      String(breakdown.buyerFeeAmount),
+      'metadata[fee_config_version]':                    breakdown.feeConfigVersion,
       'metadata[platform]':                             'filmons',
     });
 

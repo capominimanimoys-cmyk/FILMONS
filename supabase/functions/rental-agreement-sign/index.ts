@@ -45,6 +45,8 @@ async function insertAudit(row: Record<string, unknown>) {
   }).catch(() => {});
 }
 
+import { computeBreakdown } from '../_shared/pricing.ts';
+
 const AGREEMENT_TERMS_VERSION = '2026.1';
 
 Deno.serve(async (req) => {
@@ -133,6 +135,13 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     const agreementNumber = draft.agreement_number || `FLM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
 
+    // Freeze the real Filmons Fee breakdown at signing time, from the same
+    // shared calc checkout-quote/stripe-charge use — later fee config
+    // changes must never alter an already-signed agreement's snapshot. No
+    // tax is calculated here — Stripe handles applicable tax on its own.
+    const subtotalForSnapshot = Number(rentalDetails.amount ?? draft.pricing_snapshot?.amount ?? 0);
+    const pricingBreakdown = await computeBreakdown({ subtotal: subtotalForSnapshot });
+
     const signed = await patch('rental_agreements', `id=eq.${agreementId}`, {
       agreement_number: agreementNumber,
       host_id: hostId,
@@ -140,7 +149,7 @@ Deno.serve(async (req) => {
       verified_phone: profile.phone,
       rental_rules_snapshot: rulesSnapshot,
       rental_details_snapshot: rentalDetails,
-      pricing_snapshot: { amount: rentalDetails.amount ?? draft.pricing_snapshot?.amount ?? null, currency: 'CAD' },
+      pricing_snapshot: { ...pricingBreakdown, currency: 'CAD' },
       agreement_terms_version: AGREEMENT_TERMS_VERSION,
       id_verification_status: 'provided',
       address_verification_status: 'provided',

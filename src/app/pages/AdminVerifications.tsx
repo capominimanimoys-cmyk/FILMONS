@@ -69,9 +69,13 @@ interface VerificationRequest {
 
 interface WalletTx {
   id: string;
-  amount: number;
-  platformFee: number;
-  creatorPayout: number;
+  amount: number;      // total charged to the renter (subtotal + buyer fee) — Stripe handles tax separately, outside this figure
+  subtotal: number;
+  buyerFee: number;
+  sellerFee: number;
+  platformFee: number; // buyerFee + sellerFee — total Filmons fee revenue for this order
+  creatorPayout: number; // subtotal - sellerFee — what the host actually earns
+  feeConfigVersion?: string;
   title: string;
   status: "paid" | "pending";
   date: string;
@@ -80,7 +84,6 @@ interface WalletTx {
   method?: string;
 }
 
-const PLATFORM_FEE_PCT = 0.15; // 15% commission
 const fmt = (n: number) =>
   n.toLocaleString("en-CA", {
     minimumFractionDigits: 2,
@@ -88,59 +91,39 @@ const fmt = (n: number) =>
   });
 
 // ── Helpers ────────────────────────────────────────────────────────
-function loadWalletTxs(): WalletTx[] {
+// Real completed orders from Supabase — every `orders` row is only ever
+// created after payment succeeds (see Checkout.tsx's finalizeOrder), so
+// there's no "pending" order concept here; this previously reconstructed
+// numbers from localStorage chat history with a hardcoded 15% fee, which
+// only ever reflected the current browser and never matched what was
+// actually charged.
+async function loadWalletTxs(): Promise<WalletTx[]> {
   try {
-    const convs: any[] = JSON.parse(
-      localStorage.getItem("filmons_conversations") || "[]",
-    );
-    const users: any[] = JSON.parse(
-      localStorage.getItem("filmons_users") ||
-        localStorage.getItem("users") ||
-        "[]",
-    );
-    const getUser = (id: string) =>
-      users.find((u: any) => u.id === id);
-    const txs: WalletTx[] = [];
-    convs.forEach((conv: any) => {
-      conv.messages?.forEach((msg: any) => {
-        if (
-          msg.type === "payment_request" &&
-          msg.paymentRequest
-        ) {
-          const pr = msg.paymentRequest;
-          const amount = Number(pr.amount) || 0;
-          const fee = parseFloat(
-            (amount * PLATFORM_FEE_PCT).toFixed(2),
-          );
-          const payout = parseFloat(
-            (amount * (1 - PLATFORM_FEE_PCT)).toFixed(2),
-          );
-          const sender = getUser(msg.senderId);
-          const receiver = conv.participants
-            ?.filter((id: string) => id !== msg.senderId)
-            .map((id: string) => getUser(id))
-            .filter(Boolean)[0];
-          txs.push({
-            id: msg.id || `tx_${Math.random()}`,
-            amount,
-            platformFee: fee,
-            creatorPayout: payout,
-            title:
-              pr.description || pr.listingTitle || "Payment",
-            status: pr.status || "pending",
-            date: msg.createdAt || new Date().toISOString(),
-            hostName: sender?.name,
-            renterName: receiver?.name,
-            method: pr.paymentMethod,
-          });
-        }
-      });
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('paid_at', { ascending: false })
+      .limit(200);
+    if (error || !data) return [];
+    return data.map((r: any) => {
+      const subtotal = Number(r.subtotal ?? r.total_amount ?? 0);
+      const buyerFee = Number(r.buyer_fee_amount ?? 0);
+      const sellerFee = Number(r.seller_fee_amount ?? 0);
+      return {
+        id: r.id,
+        amount: Number(r.total_amount ?? 0),
+        subtotal, buyerFee, sellerFee,
+        platformFee: buyerFee + sellerFee,
+        creatorPayout: subtotal - sellerFee,
+        feeConfigVersion: r.fee_config_version || undefined,
+        title: r.listing_title || 'Payment',
+        status: 'paid',
+        date: r.paid_at || new Date().toISOString(),
+        hostName: r.host_name,
+        renterName: r.renter_name,
+        method: r.payment_method,
+      };
     });
-    txs.sort(
-      (a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
-    return txs;
   } catch {
     return [];
   }
@@ -375,7 +358,7 @@ export function AdminVerifications() {
     setRequests(serverReqs);
 
     // ── WALLET ─────────────────────────────────────────────────────
-    setWalletTxs(loadWalletTxs());
+    loadWalletTxs().then(setWalletTxs);
   };
 
   const handleLogin = (e: React.FormEvent) => {

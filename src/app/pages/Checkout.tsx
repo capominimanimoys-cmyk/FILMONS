@@ -36,6 +36,36 @@ function getListings(): Listing[] {
 // survive the full-page redirect to Stripe and back (see finalizeOrder below).
 const pendingAgreementKey = (sessionId: string) => `filmons_pending_agreement_${sessionId}`;
 
+// Server-computed price breakdown from the checkout-quote Edge Function —
+// the frontend never invents the Filmons Fee/total itself. Mirrors
+// PricingBreakdown in supabase/functions/_shared/pricing.ts. No tax is
+// calculated here — Stripe handles applicable tax on its own, separately.
+interface PriceQuote {
+  subtotal: number;
+  buyerFeeRate: number;
+  buyerFeeAmount: number;
+  sellerFeeRate: number;
+  sellerFeeAmount: number;
+  total: number;
+  feeConfigVersion: string;
+}
+
+async function fetchQuote(subtotal: number): Promise<PriceQuote | null> {
+  try {
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/checkout-quote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({ subtotal }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) { console.warn('[checkout-quote] failed:', data.error); return null; }
+    return data;
+  } catch (e) {
+    console.warn('[checkout-quote] failed:', e);
+    return null;
+  }
+}
+
 // ── Shared order finalisation ────────────────────────────────────────────────
 // Both payment paths (cash-equivalent methods — synchronous — and card —
 // after the Stripe redirect returns) need to do the exact same thing once
@@ -53,9 +83,12 @@ async function finalizeOrder(params: {
   user: { id?: string; name?: string } | null;
   convId: string;
   msgId: string;
-  hostEarnings: number; // amount credited to the host — callers decide the platform fee, if any
+  breakdown: PriceQuote; // server-computed subtotal/fee/total — the single source for what the host is owed and what gets persisted
 }) {
-  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, hostEarnings } = params;
+  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, breakdown } = params;
+  // Host is only ever charged the seller-side fee — the buyer fee is the
+  // renter's cost, not deducted from what the host earns.
+  const hostEarnings = breakdown.subtotal - breakdown.sellerFeeAmount;
   const today = new Date().toISOString().split('T')[0];
   const signedAt = new Date().toLocaleString('en-CA', { timeZone: 'America/Toronto' }) + ' EST';
 
@@ -101,6 +134,7 @@ async function finalizeOrder(params: {
         proof_of_address_type: agRow.proof_of_address_type,
         signature_data: signatureDataUrl,
         listing_title: pay.listingTitle || '—', total_amount: totalAmount,
+        subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
         payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
         duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
         host_name: hostUser?.name, host_email: hostUser?.email,
@@ -115,7 +149,8 @@ async function finalizeOrder(params: {
         host_name: hostUser?.name, host_email: hostUser?.email,
         listing_title: pay.listingTitle || '—', listing_type: pay.listingType,
         start_date: pay.startDate, duration: pay.duration, duration_type: pay.durationType,
-        total_amount: totalAmount, payment_method: selectedMethod,
+        total_amount: totalAmount, subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
+        payment_method: selectedMethod,
         issued_at: new Date().toISOString(),
       });
 
@@ -214,6 +249,12 @@ async function finalizeOrder(params: {
     conversation_id:   convId,
     message_id:        msgId,
     paid_at:           new Date().toISOString(),
+    subtotal:            breakdown.subtotal,
+    buyer_fee_rate:      breakdown.buyerFeeRate,
+    buyer_fee_amount:    breakdown.buyerFeeAmount,
+    seller_fee_rate:     breakdown.sellerFeeRate,
+    seller_fee_amount:   breakdown.sellerFeeAmount,
+    fee_config_version:  breakdown.feeConfigVersion,
   })).catch(e => console.warn('Order/transaction save failed:', e));
 
   if (hostUser?.id) {
@@ -410,6 +451,9 @@ export function Checkout() {
   const [selectedMethod, setSelectedMethod] = useState('');
   const [stripeRedirecting, setStripeRedirecting] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState('');
+  const [quote, setQuote] = useState<PriceQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [showFeeInfo, setShowFeeInfo] = useState(false);
 
   // Handle return from secure checkout after card payment
   useEffect(() => {
@@ -435,10 +479,13 @@ export function Checkout() {
           return;
         }
 
-        // Credit host's CAD wallet
-        if (hostUser?.id && result.cad_amount > 0) {
+        // The host is credited net of the seller fee only — the buyer fee
+        // that makes up the rest of result.cad_amount is the renter's
+        // cost, not money the host ever sees.
+        const hostNet = (result.subtotal || 0); // seller_fee_amount is 0 until a seller fee is configured
+        if (hostUser?.id && hostNet > 0) {
           cadWalletApi.onPaymentReceived(
-            hostUser.id, result.cad_amount,
+            hostUser.id, hostNet,
             `Card payment for "${msg?.paymentRequest?.listingTitle || 'listing'}"`,
             { method: 'Credit/Debit Card', stripe_session: sessionId }
           );
@@ -456,10 +503,14 @@ export function Checkout() {
           sessionStorage.removeItem(key);
           try {
             const { signedAgreement: sa, totalAmount: paidAmount, selectedMethod: method } = JSON.parse(pending);
+            const breakdown: PriceQuote = {
+              subtotal: result.subtotal || 0, buyerFeeRate: result.buyer_fee_rate || 0, buyerFeeAmount: result.buyer_fee_amount || 0,
+              sellerFeeRate: 0, sellerFeeAmount: 0,
+              total: result.cad_amount, feeConfigVersion: result.fee_config_version || 'unversioned',
+            };
             await finalizeOrder({
               pay: msg.paymentRequest!, totalAmount: paidAmount, selectedMethod: method,
-              signedAgreement: sa, hostUser, user, convId, msgId,
-              hostEarnings: result.cad_amount, // full amount — no platform fee for card payments, matching prior behaviour
+              signedAgreement: sa, hostUser, user, convId, msgId, breakdown,
             });
           } catch (e) { console.warn('finalizeOrder failed:', e); }
         }
@@ -532,6 +583,26 @@ export function Checkout() {
     load();
   }, [convId, msgId]);
 
+  // Server-computed price breakdown (Filmons Fee) — refetched whenever the
+  // base amount or delivery selection changes. The frontend never invents
+  // this total; stripe-charge independently recomputes the same number
+  // server-side at charge time, so what's shown here and what's actually
+  // charged can never drift apart. No tax is calculated here — Stripe
+  // handles applicable tax on its own, separately.
+  useEffect(() => {
+    const amount = Number(msg?.paymentRequest?.amount) || 0;
+    if (!amount) { setQuote(null); return; }
+    const effDelivery = selectedDelivery || listing?.deliveryOptions?.[0] || 'pickup';
+    const df = effDelivery === 'delivery' && listing?.deliveryPrice && listing.deliveryPrice > 0 ? listing.deliveryPrice : 0;
+    const subtotal = amount + df;
+    let cancelled = false;
+    setQuoteLoading(true);
+    fetchQuote(subtotal).then(q => {
+      if (!cancelled) { setQuote(q); setQuoteLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [msg?.paymentRequest?.amount, listing?.deliveryPrice, listing?.deliveryOptions, selectedDelivery]);
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -572,7 +643,11 @@ export function Checkout() {
   const deliveryFee = effectiveDelivery === 'delivery' && listing?.deliveryPrice && listing.deliveryPrice > 0
     ? listing.deliveryPrice
     : 0;
-  const totalAmount = (Number(pay?.amount) || 0) + deliveryFee;
+  const subtotal = (Number(pay?.amount) || 0) + deliveryFee;
+  // Falls back to the raw subtotal while the server quote is still loading
+  // (so the page isn't blank) — Pay/Continue stay disabled until quote
+  // actually resolves, so this fallback is never what's charged.
+  const totalAmount = quote?.total ?? subtotal;
 
   const deliveryAddrStr = [deliveryAddress.street, deliveryAddress.city, deliveryAddress.province, deliveryAddress.postal].filter(Boolean).join(', ');
 
@@ -592,7 +667,7 @@ export function Checkout() {
           + `checkout_success=1&method=card&session_id={CHECKOUT_SESSION_ID}`;
         const { data, error } = await supabase.functions.invoke('stripe-charge', {
           body: {
-            amount_cad:     totalAmount,
+            subtotal:       subtotal,
             user_id:        user?.id,
             description:    `Payment for "${pay.listingTitle}" via Filmons`,
             customer_email: user?.email || '',
@@ -686,15 +761,18 @@ export function Checkout() {
     // (Card payments are handled by the Stripe redirect above and never
     // reach this point — this covers payment methods like Debit Card/
     // E-Transfer that are treated as immediately-confirmed real money.)
-    if (hostUser?.id && totalAmount > 0) {
+    // Host is credited net of the seller fee only — the buyer fee baked
+    // into totalAmount is the renter's cost, not the host's.
+    const hostNet = quote ? quote.subtotal - quote.sellerFeeAmount : subtotal;
+    if (hostUser?.id && hostNet > 0) {
       cadWalletApi.onPaymentReceived(
-        hostUser.id, totalAmount,
+        hostUser.id, hostNet,
         `Payment for "${pay.listingTitle || 'listing'}" via ${selectedMethod}`,
         { listingId: pay.listingId, buyerId: user?.id, msgId, convId, method: selectedMethod }
       );
       // Dispatch event so open wallet pages refresh live
       window.dispatchEvent(new CustomEvent('filmons:wallet:updated', {
-        detail: { userId: hostUser.id, type: 'cad', amount: totalAmount }
+        detail: { userId: hostUser.id, type: 'cad', amount: hostNet }
       }));
     }
 
@@ -702,10 +780,10 @@ export function Checkout() {
     setStep('done');
 
     // ── After payment: send emails + save to orders table ──────────
-    if (signedAgreement) {
+    if (signedAgreement && quote) {
       finalizeOrder({
         pay, totalAmount, selectedMethod, signedAgreement, hostUser, user, convId, msgId,
-        hostEarnings: totalAmount * 0.9, // 10% platform fee
+        breakdown: quote,
       }).catch(e => console.warn('finalizeOrder failed:', e));
     }
   };
@@ -884,8 +962,8 @@ export function Checkout() {
                   </div>
                 )}
 
-                {/* Price breakdown */}
-                <div className="border-t border-gray-100 pt-3 space-y-1.5">
+                {/* Price breakdown — server-computed, shown before any payment method is chosen */}
+                <div className="border-t border-gray-100 pt-3 space-y-1.5 relative">
                   <div className="flex items-baseline justify-between text-sm">
                     <span className="text-gray-500">Subtotal</span>
                     <span className="font-semibold text-gray-700">${(Number(pay?.amount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</span>
@@ -902,11 +980,28 @@ export function Checkout() {
                       </span>
                     </div>
                   )}
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-gray-400 flex items-center gap-1">
+                      Filmons Fee{quote ? ` (${(quote.buyerFeeRate * 100).toFixed(0)}%)` : ''}
+                      <button type="button" onClick={() => setShowFeeInfo(v => !v)} className="text-gray-300 hover:text-gray-500" aria-label="About the Filmons Fee">
+                        <ShieldCheck className="w-3 h-3" />
+                      </button>
+                    </span>
+                    <span className="text-gray-500">
+                      {quoteLoading ? '…' : `+$${(quote?.buyerFeeAmount ?? 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD`}
+                    </span>
+                  </div>
+                  {showFeeInfo && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-xs text-blue-800 leading-relaxed">
+                      <p className="font-bold mb-0.5">About the Filmons Fee</p>
+                      <p>This fee helps Filmons operate the marketplace, provide platform features, process transactions and support the rental experience.</p>
+                    </div>
+                  )}
                   <div className="flex items-baseline justify-between border-t border-gray-100 pt-2 mt-1">
                     <span className="text-sm text-gray-600 font-semibold">Total</span>
                     <div className="flex items-baseline gap-1">
                       <span className="text-2xl font-black text-gray-900">
-                        ${(effectiveDelivery === 'delivery' ? totalAmount : pay.amount).toLocaleString('en-CA', { minimumFractionDigits: 2 })}
+                        ${totalAmount.toLocaleString('en-CA', { minimumFractionDigits: 2 })}
                       </span>
                       <span className="text-xs text-gray-400">CAD</span>
                     </div>
@@ -915,9 +1010,9 @@ export function Checkout() {
               </div>
             </div>
 
-            <button onClick={() => setStep('payment')}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-2xl py-4 transition-colors shadow-sm">
-              Continue to Payment <ChevronRight className="w-4 h-4" />
+            <button onClick={() => setStep('payment')} disabled={quoteLoading || !quote}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-4 transition-colors shadow-sm">
+              {quoteLoading || !quote ? <><Loader2 className="w-4 h-4 animate-spin" /> Calculating total…</> : <>Continue to Payment <ChevronRight className="w-4 h-4" /></>}
             </button>
           </>
         )}
@@ -1201,17 +1296,19 @@ export function Checkout() {
                 className="flex-1 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm rounded-2xl py-3.5 transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
-              <button onClick={handlePay} disabled={submitting || stripeRedirecting || !agreementAccepted}
+              <button onClick={handlePay} disabled={submitting || stripeRedirecting || !agreementAccepted || quoteLoading || !quote}
                 className="flex-[2] flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-3.5 transition-colors shadow-md">
                 {stripeRedirecting
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing payment…</>
                   : submitting
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-                    : !agreementAccepted
-                      ? <>✍️ Sign agreement to pay</>
-                      : isCardMethod
-                        ? <>🔒 Pay securely →</>
-                        : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
+                    : quoteLoading || !quote
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Calculating total…</>
+                      : !agreementAccepted
+                        ? <>✍️ Sign agreement to pay</>
+                        : isCardMethod
+                          ? <>🔒 Pay securely →</>
+                          : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
               </button>
             </div>
           </>

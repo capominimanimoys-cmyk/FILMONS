@@ -422,6 +422,7 @@ export function ListingDetail() {
                         {listing.listingMode === 'sale' ? 'CAD' : listing.listingType === 'service' ? '/ hr CAD' : '/ day CAD'}
                       </span>
                     </div>
+                    <p className="text-[11px] text-gray-400 mt-1">+ Filmons Fee and applicable taxes</p>
                     {reviews.length > 0 && (
                       <div className="flex items-center gap-1 mt-2">
                         <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />

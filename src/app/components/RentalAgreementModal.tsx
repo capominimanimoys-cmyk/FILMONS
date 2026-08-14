@@ -34,6 +34,16 @@ export interface SignedAgreementData {
 }
 
 const SIGN_EDGE = `https://${projectId}.supabase.co/functions/v1/rental-agreement-sign`;
+const QUOTE_EDGE = `https://${projectId}.supabase.co/functions/v1/checkout-quote`;
+
+// Preview-only breakdown shown in Step 6 before signing — the actual signed
+// snapshot is computed independently, server-side, by rental-agreement-sign
+// at signing time (see supabase/functions/_shared/pricing.ts). This is just
+// so the renter isn't surprised by the fee at the payment step. No tax is
+// calculated here — Stripe handles applicable tax on its own, separately.
+interface PriceQuote {
+  subtotal: number; buyerFeeRate: number; buyerFeeAmount: number; total: number;
+}
 
 const ID_TYPES: Record<string, string[]> = {
   CA: ["Driver's Licence", 'Canadian Passport', 'Provincial/Territorial Photo ID'],
@@ -231,6 +241,10 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   const [listing, setListing] = useState<any>(null);
   const [rulesAgreed, setRulesAgreed] = useState(false);
 
+  // Step 6 — Review (preview pricing only; the sign call recomputes this
+  // server-side and freezes the real snapshot)
+  const [quote, setQuote] = useState<PriceQuote | null>(null);
+
   // Step 5 — Signature
   const [sigMode, setSigMode] = useState<'drawn' | 'typed'>('drawn');
   const [sigDataUrl, setSigDataUrl] = useState<string | null>(null);
@@ -270,6 +284,15 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
         .then(({ data }) => setListing(data));
     }
   }, []); // eslint-disable-line
+
+  useEffect(() => {
+    if (!profile || !pay?.amount) return;
+    fetch(QUOTE_EDGE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({ subtotal: Number(pay.amount) || 0 }),
+    }).then(r => r.json()).then(data => { if (!data.error) setQuote(data); }).catch(() => {});
+  }, [profile, pay?.amount]);
 
   const goNext = () => { setDir(1); setStepIdx(i => Math.min(STEPS.length - 1, i + 1)); };
   const goBack = () => { setDir(-1); setStepIdx(i => Math.max(0, i - 1)); };
@@ -613,7 +636,13 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                       {overviewField('Listing', pay?.listingTitle)}
                       {overviewField('Owner', hostUser?.name)}
                       {overviewField('Rental dates', pay?.startDate ? `${pay.startDate} · ${pay.duration || 1} ${pay.durationType || 'day(s)'}` : null)}
-                      {overviewField('Price', `$${totalAmount.toFixed(2)} CAD`)}
+                    </div>
+
+                    <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Price</p>
+                      <div className="flex justify-between text-sm"><span className="text-gray-500">Rental</span><span className="text-gray-800">${(quote?.subtotal ?? (Number(pay?.amount) || 0)).toFixed(2)} CAD</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-gray-500">Filmons Fee{quote ? ` (${(quote.buyerFeeRate * 100).toFixed(0)}%)` : ''}</span><span className="text-gray-800">${(quote?.buyerFeeAmount ?? 0).toFixed(2)} CAD</span></div>
+                      <div className="flex justify-between text-sm font-bold border-t border-gray-200 pt-1.5 mt-0.5"><span className="text-gray-900">Total</span><span className="text-gray-900">${(quote?.total ?? totalAmount).toFixed(2)} CAD</span></div>
                     </div>
 
                     <div className="bg-gray-50 rounded-2xl p-4">

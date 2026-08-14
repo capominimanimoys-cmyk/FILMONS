@@ -31,6 +31,11 @@ export interface AgreementData {
   signature_data?: string;
   listing_title: string;
   total_amount: number;
+  // Server-computed breakdown (see supabase/functions/_shared/pricing.ts) —
+  // frozen at signing time, never recalculated from today's fee config. No
+  // tax is calculated by Filmons — Stripe handles applicable tax on its own.
+  subtotal?: number;
+  buyer_fee_amount?: number;
   payment_method: string;
   start_date?: string;
   duration?: number;
@@ -59,6 +64,8 @@ export interface ReceiptData {
   duration?: number;
   duration_type?: string;
   total_amount: number;
+  subtotal?: number;
+  buyer_fee_amount?: number;
   payment_method: string;
   issued_at: string;
   receipt_url?: string;
@@ -118,7 +125,9 @@ const BASE_CSS = `
 
 // ── Agreement HTML ─────────────────────────────────────────────────
 export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string {
-  const dailyRate = d.duration ? (d.total_amount / d.duration).toFixed(2) : d.total_amount.toFixed(2);
+  const subtotal = d.subtotal ?? d.total_amount;
+  const buyerFeeAmount = d.buyer_fee_amount ?? 0;
+  const dailyRate = d.duration ? (subtotal / d.duration).toFixed(2) : subtotal.toFixed(2);
   const returnDate = d.start_date && d.duration
     ? (() => { const dt = new Date(d.start_date); dt.setDate(dt.getDate() + d.duration); return dt.toISOString().split('T')[0]; })()
     : '&#x2014;';
@@ -198,7 +207,8 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
   <div class="sec-title">Section 3 &#x2014; Pricing &amp; Payment</div>
   <table class="info">
     <tr><td>Daily Rate</td><td>$${dailyRate} CAD</td><td>Number of Days</td><td>${d.duration || 1}</td></tr>
-    <tr><td>Subtotal (Rate &#xD7; Days)</td><td>$${(parseFloat(dailyRate) * (d.duration || 1)).toFixed(2)} CAD</td><td>Payment Method</td><td>${d.payment_method}</td></tr>
+    <tr><td>Subtotal (Rate &#xD7; Days)</td><td>$${subtotal.toFixed(2)} CAD</td><td>Payment Method</td><td>${d.payment_method}</td></tr>
+    <tr><td>Filmons Fee</td><td>$${buyerFeeAmount.toFixed(2)} CAD</td><td></td><td></td></tr>
     <tr><td style="font-weight:800">TOTAL PAID AT BOOKING</td><td style="font-weight:800;color:#1e3a5f" colspan="3">$${d.total_amount.toFixed(2)} CAD</td></tr>
   </table>
   <div class="note">The Security Deposit is authorized (held) on the Renter's payment method at booking and is not charged unless damage is confirmed through the Filmons dispute process. Released within 48 hours of confirmed return in satisfactory condition. Late returns incur 1.5&#xD7; the daily rate per additional day.</div>
@@ -284,9 +294,10 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 
 // ── Receipt HTML ───────────────────────────────────────────────────
 export function buildReceiptHTML(d: ReceiptData): string {
-  const dailyRate = d.duration ? (d.total_amount / d.duration).toFixed(2) : d.total_amount.toFixed(2);
-  const serviceFee = (d.total_amount * 0.058).toFixed(2);
-  const subtotal   = (d.total_amount - parseFloat(serviceFee)).toFixed(2);
+  const subtotalNum = d.subtotal ?? d.total_amount;
+  const buyerFeeAmount = d.buyer_fee_amount ?? 0;
+  const dailyRate = d.duration ? (subtotalNum / d.duration).toFixed(2) : subtotalNum.toFixed(2);
+  const subtotal   = subtotalNum.toFixed(2);
   const deposit    = (d.total_amount * 1.44).toFixed(2);
   const returnDate = d.start_date && d.duration
     ? (() => { const dt = new Date(d.start_date); dt.setDate(dt.getDate() + d.duration); return dt.toISOString().split('T')[0]; })()
@@ -380,10 +391,10 @@ export function buildReceiptHTML(d: ReceiptData): string {
       <td>$${subtotal} CAD</td>
     </tr>
     <tr class="price-row">
-      <td>Filmons Platform Service Fee</td>
+      <td>Filmons Fee</td>
       <td style="text-align:center">1</td>
       <td style="text-align:center">&#x2014;</td>
-      <td>$${serviceFee} CAD</td>
+      <td>$${buyerFeeAmount.toFixed(2)} CAD</td>
     </tr>
     <tr class="price-total">
       <td colspan="3"><strong>TOTAL PAID</strong></td>

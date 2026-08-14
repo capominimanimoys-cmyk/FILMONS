@@ -25,6 +25,12 @@ interface Order {
   receipt_path:   string | null;
   id_verification_status: string | null;
   address_verification_status: string | null;
+  // Server-computed price breakdown, frozen at payment time. No tax is
+  // calculated by Filmons — Stripe handles applicable tax on its own.
+  subtotal:            number;
+  buyer_fee_rate:       number;
+  buyer_fee_amount:     number;
+  seller_fee_amount:    number;
 }
 
 function formatDate(iso: string | null) {
@@ -195,6 +201,25 @@ function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
         )}
       </div>
 
+      {/* Financial breakdown — renter sees what they paid, owner sees what they earned */}
+      <div className="px-5 pb-3">
+        {tab === 'renter' ? (
+          <div className="bg-gray-50 rounded-xl p-3 space-y-1">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Payment Details</p>
+            <div className="flex justify-between text-xs"><span className="text-gray-500">Rental</span><span className="text-gray-700">${order.subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-gray-500">Filmons Fee{order.buyer_fee_rate ? ` (${(order.buyer_fee_rate * 100).toFixed(0)}%)` : ''}</span><span className="text-gray-700">${order.buyer_fee_amount.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs font-bold border-t border-gray-200 pt-1 mt-0.5"><span className="text-gray-800">Total paid</span><span className="text-gray-900">${Number(order.total_amount).toFixed(2)} CAD</span></div>
+          </div>
+        ) : (
+          <div className="bg-gray-50 rounded-xl p-3 space-y-1">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Earnings</p>
+            <div className="flex justify-between text-xs"><span className="text-gray-500">Gross rental earnings</span><span className="text-gray-700">${order.subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-gray-500">Filmons Fee</span><span className="text-gray-700">−${order.seller_fee_amount.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs font-bold border-t border-gray-200 pt-1 mt-0.5"><span className="text-gray-800">Net earnings</span><span className="text-gray-900">${(order.subtotal - order.seller_fee_amount).toFixed(2)} CAD</span></div>
+          </div>
+        )}
+      </div>
+
       {/* Verification status — statuses only, never the underlying documents */}
       {tab === 'host' && (order.id_verification_status || order.address_verification_status) && (
         <div className="px-5 pb-2 flex flex-wrap gap-1.5">
@@ -277,6 +302,10 @@ export default function MyOrders() {
           receipt_path:   ag?.receipt_path || null,
           id_verification_status: ag?.id_verification_status || null,
           address_verification_status: ag?.address_verification_status || null,
+          subtotal:            Number(r.subtotal ?? r.total_amount ?? 0),
+          buyer_fee_rate:       Number(r.buyer_fee_rate ?? 0),
+          buyer_fee_amount:     Number(r.buyer_fee_amount ?? 0),
+          seller_fee_amount:    Number(r.seller_fee_amount ?? 0),
         };
       }));
     } catch (e) {

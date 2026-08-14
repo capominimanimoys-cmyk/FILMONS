@@ -47,3 +47,11 @@ jobs:
         run: supabase functions deploy rental-agreement-sign --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # checkout-quote, stripe-charge, and rental-agreement-sign all import
+      # ../_shared/pricing.ts by relative path — the CLI bundles it in from
+      # outside the function's own directory automatically, nothing to copy.
+      - name: Deploy checkout-quote
+        run: supabase functions deploy checkout-quote --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
