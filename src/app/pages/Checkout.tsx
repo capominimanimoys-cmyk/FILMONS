@@ -18,6 +18,7 @@ import { RentalAgreementModal, SignedAgreementData } from '../components/RentalA
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
 import { buildAgreementHTML, buildReceiptHTML, uploadPDFDoc } from '../lib/generatePDF';
+import * as notifications from '../lib/notifications';
 import { signRentalDoc } from '../../lib/upload';
 
 // ── helpers ────────────────────────────────────────────────────────
@@ -279,6 +280,17 @@ async function finalizeOrder(params: {
       counterpart_name: sa.renterName,
       metadata: { ref_no: sa.refNo },
     }).catch(() => {});
+
+    // Notify the host — this was previously never wired in at all despite
+    // the notification system already having a 'payment_received' type.
+    try {
+      notifications.push(hostUser.id, {
+        type: 'payment_received',
+        fromUserId: user?.id || '',
+        fromUserName: sa.renterName,
+        conversationId: convId,
+      });
+    } catch (e) { console.warn('Notification push failed:', e); }
   }
 }
 
@@ -689,6 +701,12 @@ export function Checkout() {
             rental_end_date: pay.startDate && pay.duration
               ? new Date(new Date(pay.startDate).getTime() + pay.duration * (pay.durationType === 'hour' ? 3600000 : 86400000)).toISOString()
               : undefined,
+            // So the webhook — the only guaranteed-to-run confirmation path
+            // if this tab never completes the redirect back — can look up
+            // the agreement and send its own notification/email fallback.
+            agreement_id:    signedAgreement?.agreementId,
+            conversation_id: convId,
+            message_id:      msgId,
           },
         });
         if (error || !data?.url) {

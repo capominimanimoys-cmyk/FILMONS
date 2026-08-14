@@ -249,7 +249,11 @@ function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
 export default function MyOrders() {
   const { user }  = useAuth();
   const navigate  = useNavigate();
-  const isCreator = user?.accountType === 'business' || user?.accountMode === 'business';
+  // Matches the gate CreateListing.tsx uses for who can list gear — was
+  // previously checking only 'business', so a Creator+ approved account
+  // (the actual common case) still saw the "Become Creator+" upsell here.
+  const HOST_TYPES = ['creator_plus', 'professional', 'business'];
+  const isCreator = HOST_TYPES.includes(user?.accountType || '') || HOST_TYPES.includes(user?.accountMode || '');
   const [orders,  setOrders]  = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab,     setTab]     = useState<'renter' | 'host'>('renter');

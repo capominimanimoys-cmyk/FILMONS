@@ -1380,6 +1380,13 @@ export function AdminVerifications() {
                     label="ID Expiry"
                     value={selectedRequest.idExpiryDate}
                   />
+                  <InfoRow
+                    icon={
+                      <User className="w-4 h-4 text-gray-400" />
+                    }
+                    label="Filmons Account ID"
+                    value={selectedRequest.userId}
+                  />
                 </div>
               </section>
 

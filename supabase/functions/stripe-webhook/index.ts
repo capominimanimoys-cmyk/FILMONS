@@ -52,6 +52,55 @@ async function rpc(fn: string, args: Record<string, unknown>) {
   return res.json();
 }
 
+const REST_H = {
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${SERVICE_KEY}`,
+  apikey: SERVICE_KEY,
+};
+function rest(path: string) {
+  return `${SUPABASE_URL}/rest/v1${path}`;
+}
+async function selectOne(table: string, filter: string) {
+  const res = await fetch(rest(`/${table}?${filter}&select=*&limit=1`), { headers: REST_H });
+  const rows = await res.json();
+  return Array.isArray(rows) ? rows[0] : null;
+}
+
+// EmailJS's public key + service/template ids are meant to be client-
+// embedded (not secrets) — same values already used in
+// src/app/lib/emailjs-config.ts. This is a best-effort fallback
+// confirmation email, sent only when the browser never returns to run
+// Checkout.tsx's finalizeOrder (which sends the full agreement/receipt
+// documents) — it deliberately doesn't try to replicate that HTML
+// generation server-side, just points both parties at Dashboard → Orders.
+const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
+const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
+const EMAILJS_TEMPLATE_RENTAL_AGREEMENT = 'template_synqixt';
+
+async function sendFallbackEmail(params: Record<string, unknown>) {
+  try {
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_RENTAL_AGREEMENT,
+        user_id: EMAILJS_PUBLIC_KEY,
+        template_params: params,
+      }),
+    });
+    if (!res.ok) console.warn('EmailJS fallback send failed:', res.status, await res.text());
+  } catch (e) {
+    console.warn('EmailJS fallback send threw:', e);
+  }
+}
+
+async function insertNotification(row: Record<string, unknown>) {
+  await fetch(rest('/notifications'), {
+    method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal' }, body: JSON.stringify(row),
+  }).catch(() => {});
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') {
@@ -104,6 +153,73 @@ Deno.serve(async (req) => {
       p_currency: 'CAD',
       p_available_at: availableAt,
     });
+
+    // Guaranteed-to-run confirmation fallback — only on first processing
+    // (never on a Stripe redelivery of the same event), and only best-
+    // effort: none of this blocks the wallet credit above, which already
+    // happened. If the browser does successfully return to Checkout.tsx,
+    // finalizeOrder still runs its full flow (real agreement/receipt
+    // documents, its own order upsert) independently of this.
+    if (processed && meta.agreement_id) {
+      try {
+        const agRow = await selectOne('rental_agreements', `id=eq.${meta.agreement_id}`);
+        const hostProfile = await selectOne('profiles', `id=eq.${hostId}`);
+        if (agRow) {
+          const details = agRow.rental_details_snapshot || {};
+          const total = subtotal + buyerFeeAmount;
+          const orderId = `ORD-${agRow.agreement_number}`;
+          const receiptId = `RCP-${String(agRow.agreement_number).split('-')[1] || Date.now()}`;
+          const renterName = [agRow.legal_first_name, agRow.legal_last_name].filter(Boolean).join(' ') || 'Renter';
+
+          // Minimal order record — best-effort; if finalizeOrder also runs
+          // client-side later it'll hit a duplicate-key conflict on this
+          // same id and just skip (documents are looked up via
+          // rental_agreement_id, not stored redundantly on this row).
+          await fetch(rest('/orders'), {
+            method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal,resolution=ignore-duplicates' },
+            body: JSON.stringify({
+              id: orderId, type: details.listingType === 'service' ? 'service' : (details.listingMode === 'sale' ? 'sale' : 'rental'),
+              status: 'paid', renter_id: agRow.renter_id, host_id: hostId,
+              renter_name: renterName, renter_email: agRow.verified_email, host_name: hostProfile?.name || null,
+              listing_title: details.listingTitle || null, listing_type: details.listingType || 'Rental',
+              start_date: details.startDate || null, duration: details.duration || 1, duration_type: details.durationType || 'day',
+              total_amount: total, payment_method: 'Credit/Debit Card', currency: 'CAD', transaction_id: session.id,
+              agreement_id: agRow.agreement_number, receipt_id: receiptId, rental_agreement_id: agRow.id,
+              conversation_id: meta.conversation_id || null, message_id: meta.message_id || null,
+              paid_at: new Date().toISOString(), subtotal, buyer_fee_rate: parseFloat(meta.buyer_fee_rate || '0'),
+              buyer_fee_amount: buyerFeeAmount, seller_fee_rate: 0, seller_fee_amount: sellerFeeAmount,
+              fee_config_version: meta.fee_config_version || null,
+            }),
+          });
+
+          if (hostId) {
+            await insertNotification({
+              user_id: hostId, actor_id: agRow.renter_id, actor_name: renterName,
+              type: 'payment_received', title: `Payment received from ${renterName}`,
+              conversation_id: meta.conversation_id || null, is_read: false,
+            });
+          }
+
+          const sharedParams = {
+            ref_no: agRow.agreement_number, renter_name: renterName, renter_email: agRow.verified_email || '',
+            renter_phone: agRow.verified_phone || '', host_name: hostProfile?.name || '—',
+            listing_title: details.listingTitle || '—', listing_type: details.listingType || 'Rental',
+            start_date: details.startDate || '—', duration: `${details.duration || 1} ${details.durationType || 'day'}(s)`,
+            payment_method: 'Credit/Debit Card', total_amount: `$${total.toFixed(2)}`, agreement_url: '', receipt_url: '',
+            greeting_message: 'Your payment is confirmed! View your rental agreement and receipt anytime from Dashboard → Orders.',
+            year: String(new Date().getFullYear()),
+          };
+          if (agRow.verified_email) {
+            sendFallbackEmail({ ...sharedParams, to_email: agRow.verified_email, to_name: renterName, reply_to: 'filmons481@gmail.com' });
+          }
+          if (hostProfile?.email) {
+            sendFallbackEmail({ ...sharedParams, to_email: hostProfile.email, to_name: hostProfile.name || 'Host', reply_to: agRow.verified_email || 'filmons481@gmail.com' });
+          }
+        }
+      } catch (e) {
+        console.warn('Confirmation fallback failed (wallet credit already succeeded):', e);
+      }
+    }
 
     return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
   } catch (e) {
