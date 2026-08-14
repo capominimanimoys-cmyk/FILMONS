@@ -84,6 +84,20 @@ interface WalletTx {
   hostName?: string;
   renterName?: string;
   method?: string;
+  refundStatus: string;
+  disputeStatus: string;
+}
+
+interface RefundRequest {
+  id: string;
+  order_id: string;
+  requester_id: string;
+  reason: string | null;
+  amount: number;
+  status: 'requested' | 'approved' | 'denied' | 'processed';
+  requested_at: string;
+  processed_at: string | null;
+  processed_by: string | null;
 }
 
 const fmt = (n: number) =>
@@ -124,6 +138,8 @@ async function loadWalletTxs(): Promise<WalletTx[]> {
         hostName: r.host_name,
         renterName: r.renter_name,
         method: r.payment_method,
+        refundStatus: r.refund_status || 'none',
+        disputeStatus: r.dispute_status || 'none',
       };
     });
   } catch {
@@ -295,6 +311,14 @@ export function AdminVerifications() {
   >("all");
   const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
   const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
+  const [payoutAction, setPayoutAction] = useState<{ payout: any; action: 'reject' | 'paid' } | null>(null);
+  const [payoutActionInput, setPayoutActionInput] = useState('');
+  const [payoutActionNotes, setPayoutActionNotes] = useState('');
+
+  // Refund requests + disputes
+  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
+  const [processingRefundId, setProcessingRefundId] = useState<string | null>(null);
+  const [disputeUpdatingOrderId, setDisputeUpdatingOrderId] = useState<string | null>(null);
 
   const ADMIN_PASSWORD = "filmons2024";
 
@@ -376,9 +400,22 @@ export function AdminVerifications() {
     } catch (e) {
       console.warn('payout_requests query failed:', e);
     }
+
+    // ── REFUND REQUESTS ───────────────────────────────────────────
+    try {
+      const { data } = await supabase
+        .from('refund_requests')
+        .select('*')
+        .order('requested_at', { ascending: false })
+        .limit(100);
+      setRefundRequests(data || []);
+    } catch (e) {
+      console.warn('refund_requests query failed:', e);
+    }
   };
 
-  const processPayout = async (payoutRequestId: string, action: 'paid' | 'rejected') => {
+  // Simple actions (approve, mark_processing) need no extra input.
+  const processPayoutSimple = async (payoutRequestId: string, action: 'approve' | 'mark_processing') => {
     setProcessingPayoutId(payoutRequestId);
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
@@ -388,12 +425,89 @@ export function AdminVerifications() {
       });
       const result = await res.json();
       if (!res.ok || result.error) throw new Error(result.error || 'Failed');
-      toast.success(action === 'paid' ? 'Payout marked as paid' : 'Payout rejected');
+      toast.success(action === 'approve' ? 'Payout approved' : 'Payout marked as processing');
+      loadAll().catch(console.error);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not update payout');
+    } finally {
+      setProcessingPayoutId(null);
+    }
+  };
+
+  // Reject (needs a reason) and Mark Paid (needs a payment reference) go
+  // through the small confirm modal below instead of firing immediately.
+  const submitPayoutAction = async () => {
+    if (!payoutAction) return;
+    const { payout, action } = payoutAction;
+    if (action === 'reject' && !payoutActionInput.trim()) { toast.error('A rejection reason is required.'); return; }
+    if (action === 'paid' && !payoutActionInput.trim()) { toast.error('A payment reference is required.'); return; }
+    setProcessingPayoutId(payout.id);
+    try {
+      const body: Record<string, unknown> = { payoutRequestId: payout.id, adminName };
+      if (action === 'reject') { body.action = 'reject'; body.reason = payoutActionInput.trim(); }
+      else { body.action = 'paid'; body.paymentReference = payoutActionInput.trim(); body.notes = payoutActionNotes.trim() || undefined; }
+
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || 'Failed');
+      toast.success(action === 'reject' ? 'Payout rejected' : 'Payout marked as paid');
+      setPayoutAction(null);
+      setPayoutActionInput('');
+      setPayoutActionNotes('');
       loadAll().catch(console.error);
     } catch (e: any) {
       toast.error(e?.message || 'Could not process payout');
     } finally {
       setProcessingPayoutId(null);
+    }
+  };
+
+  const processRefund = async (refundRequestId: string, action: 'approve' | 'deny') => {
+    setProcessingRefundId(refundRequestId);
+    try {
+      if (action === 'deny') {
+        const { error } = await supabase.from('refund_requests').update({
+          status: 'denied', processed_at: new Date().toISOString(), processed_by: adminName,
+        }).eq('id', refundRequestId);
+        if (error) throw new Error(error.message);
+        toast.success('Refund request denied');
+      } else {
+        const res = await fetch(`https://${projectId}.supabase.co/functions/v1/process-refund`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          body: JSON.stringify({ refundRequestId, adminName }),
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed');
+        toast.success('Refund processed');
+      }
+      loadAll().catch(console.error);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not process refund');
+    } finally {
+      setProcessingRefundId(null);
+    }
+  };
+
+  const toggleDispute = async (orderId: string, currentStatus: string) => {
+    setDisputeUpdatingOrderId(orderId);
+    try {
+      const next = currentStatus === 'disputed' ? 'resolved' : 'disputed';
+      const { error } = await supabase.from('orders').update({
+        dispute_status: next,
+        disputed_at: next === 'disputed' ? new Date().toISOString() : undefined,
+      }).eq('id', orderId);
+      if (error) throw new Error(error.message);
+      toast.success(next === 'disputed' ? 'Order marked disputed — pending earnings held' : 'Dispute resolved');
+      loadAll().catch(console.error);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not update dispute status');
+    } finally {
+      setDisputeUpdatingOrderId(null);
     }
   };
 
@@ -1053,32 +1167,105 @@ export function AdminVerifications() {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
               <div className="px-5 py-4 border-b border-gray-50">
                 <h3 className="text-sm font-bold text-gray-900">Payout Requests</h3>
-                <p className="text-xs text-gray-400 mt-0.5">No automated payout provider is configured yet — process these manually (e-transfer, etc.), then mark paid here.</p>
+                <p className="text-xs text-gray-400 mt-0.5">No automated payout provider is configured yet — send funds manually (e-transfer, bank transfer) using the destination shown, then mark paid here.</p>
               </div>
               {payoutRequests.length === 0 ? (
                 <div className="p-8 text-center text-sm text-gray-400">No payout requests yet.</div>
               ) : (
                 <div className="divide-y divide-gray-50">
-                  {payoutRequests.map((p) => (
-                    <div key={p.id} className="flex items-center gap-4 px-5 py-3.5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">{p.profiles?.name || p.host_id}</p>
-                        <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })} · {p.profiles?.email || ''}</p>
+                  {payoutRequests.map((p) => {
+                    const dest = p.payout_destination || {};
+                    const destText = p.payout_method === 'interac'
+                      ? dest.email
+                      : p.payout_method === 'bank_transfer'
+                        ? `${dest.accountHolder || ''} · inst ${dest.institutionNumber || '—'} · transit ${dest.transitNumber || '—'} · acct ${dest.accountNumber || '—'}`
+                        : null;
+                    const busy = processingPayoutId === p.id;
+                    return (
+                      <div key={p.id} className="px-5 py-3.5">
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 truncate">{p.profiles?.name || p.host_id}</p>
+                            <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })} · {p.profiles?.email || ''}</p>
+                            {p.payout_method && (
+                              <p className="text-xs text-gray-500 mt-1 font-mono">
+                                {p.payout_method === 'interac' ? 'Interac' : 'Bank Transfer'}: {destText || '—'}
+                              </p>
+                            )}
+                            {p.status === 'rejected' && p.rejection_reason && (
+                              <p className="text-xs text-red-500 mt-1">Rejected: {p.rejection_reason}</p>
+                            )}
+                            {p.status === 'paid' && p.payment_reference && (
+                              <p className="text-xs text-green-600 mt-1">Ref: {p.payment_reference}</p>
+                            )}
+                          </div>
+                          <span className="text-sm font-black text-gray-900 shrink-0">${fmt(Number(p.amount))}</span>
+                          {['requested', 'under_review', 'approved', 'processing'].includes(p.status) ? (
+                            <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                              {(p.status === 'requested' || p.status === 'under_review') && (
+                                <button onClick={() => processPayoutSimple(p.id, 'approve')} disabled={busy}
+                                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-50">
+                                  Approve
+                                </button>
+                              )}
+                              {p.status === 'approved' && (
+                                <button onClick={() => processPayoutSimple(p.id, 'mark_processing')} disabled={busy}
+                                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50">
+                                  Mark Processing
+                                </button>
+                              )}
+                              {(p.status === 'approved' || p.status === 'processing') && (
+                                <button onClick={() => setPayoutAction({ payout: p, action: 'paid' })} disabled={busy}
+                                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
+                                  Mark Paid
+                                </button>
+                              )}
+                              <button onClick={() => setPayoutAction({ payout: p, action: 'reject' })} disabled={busy}
+                                className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold disabled:opacity-50">
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-bold uppercase shrink-0 ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>{p.status}</span>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-sm font-black text-gray-900 shrink-0">${fmt(Number(p.amount))}</span>
-                      {p.status === 'requested' || p.status === 'processing' ? (
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Refund requests queue */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+              <div className="px-5 py-4 border-b border-gray-50">
+                <h3 className="text-sm font-bold text-gray-900">Refund Requests</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Approve calls Stripe's Refund API when the order has a captured payment (card), then reverses the ledger either way.</p>
+              </div>
+              {refundRequests.length === 0 ? (
+                <div className="p-8 text-center text-sm text-gray-400">No refund requests yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {refundRequests.map((r) => (
+                    <div key={r.id} className="flex items-center gap-4 px-5 py-3.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">Order {r.order_id}</p>
+                        <p className="text-xs text-gray-400">{new Date(r.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}{r.reason ? ` · ${r.reason}` : ''}</p>
+                      </div>
+                      <span className="text-sm font-black text-gray-900 shrink-0">${fmt(Number(r.amount))}</span>
+                      {r.status === 'requested' || r.status === 'approved' ? (
                         <div className="flex gap-1.5 shrink-0">
-                          <button onClick={() => processPayout(p.id, 'paid')} disabled={processingPayoutId === p.id}
+                          <button onClick={() => processRefund(r.id, 'approve')} disabled={processingRefundId === r.id}
                             className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
-                            Mark Paid
+                            Approve &amp; Refund
                           </button>
-                          <button onClick={() => processPayout(p.id, 'rejected')} disabled={processingPayoutId === p.id}
+                          <button onClick={() => processRefund(r.id, 'deny')} disabled={processingRefundId === r.id}
                             className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold disabled:opacity-50">
-                            Reject
+                            Deny
                           </button>
                         </div>
                       ) : (
-                        <span className={`text-xs font-bold uppercase shrink-0 ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>{p.status}</span>
+                        <span className={`text-xs font-bold uppercase shrink-0 ${r.status === 'processed' ? 'text-green-600' : 'text-red-500'}`}>{r.status}</span>
                       )}
                     </div>
                   ))}
@@ -1171,7 +1358,20 @@ export function AdminVerifications() {
                               · {tx.method}
                             </p>
                           )}
+                          {tx.disputeStatus === 'disputed' && (
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Disputed</span>
+                          )}
+                          {tx.refundStatus !== 'none' && (
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600">{tx.refundStatus.replace('_', ' ')}</span>
+                          )}
                         </div>
+                        <button
+                          onClick={() => toggleDispute(tx.id, tx.disputeStatus)}
+                          disabled={disputeUpdatingOrderId === tx.id}
+                          className="text-[10px] font-bold text-gray-400 hover:text-red-500 mt-1 disabled:opacity-50"
+                        >
+                          {tx.disputeStatus === 'disputed' ? 'Resolve dispute' : 'Mark disputed'}
+                        </button>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="flex items-center gap-2 justify-end">
@@ -1578,6 +1778,48 @@ export function AdminVerifications() {
             <p className="text-xs text-gray-400 text-center">
               An email will be sent to {rejectTarget.request.userEmail} with this reason.
             </p>
+          </div>
+        </div>
+      )}
+
+      {payoutAction && (
+        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-1">
+              {payoutAction.action === 'reject' ? 'Reject payout request' : 'Mark payout as paid'}
+            </h3>
+            <p className="text-xs text-gray-400 mb-4">${fmt(Number(payoutAction.payout.amount))} — {payoutAction.payout.profiles?.name || payoutAction.payout.host_id}</p>
+            <input
+              type="text"
+              value={payoutActionInput}
+              onChange={(e) => setPayoutActionInput(e.target.value)}
+              placeholder={payoutAction.action === 'reject' ? 'Rejection reason (required)' : 'Payment reference (required)'}
+              className="w-full border-2 border-gray-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2"
+            />
+            {payoutAction.action === 'paid' && (
+              <textarea
+                value={payoutActionNotes}
+                onChange={(e) => setPayoutActionNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                rows={2}
+                className="w-full border-2 border-gray-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2"
+              />
+            )}
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => { setPayoutAction(null); setPayoutActionInput(''); setPayoutActionNotes(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitPayoutAction}
+                disabled={processingPayoutId === payoutAction.payout.id}
+                className={`flex-1 py-2.5 rounded-xl text-white text-xs font-bold disabled:opacity-50 ${payoutAction.action === 'reject' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+              >
+                {payoutAction.action === 'reject' ? 'Reject' : 'Confirm Paid'}
+              </button>
+            </div>
           </div>
         </div>
       )}

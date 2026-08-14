@@ -189,8 +189,20 @@ Deno.serve(async (req) => {
               paid_at: new Date().toISOString(), subtotal, buyer_fee_rate: parseFloat(meta.buyer_fee_rate || '0'),
               buyer_fee_amount: buyerFeeAmount, seller_fee_rate: 0, seller_fee_amount: sellerFeeAmount,
               fee_config_version: meta.fee_config_version || null,
+              stripe_payment_intent_id: session.payment_intent || null,
             }),
           });
+
+          // ignore-duplicates on the insert above means this never
+          // overwrites stripe_payment_intent_id if finalizeOrder's own
+          // client-side insert already created the row first — patch it in
+          // regardless, refunds need it and there's nothing else that sets it.
+          if (session.payment_intent) {
+            await fetch(rest(`/orders?id=eq.${orderId}`), {
+              method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' },
+              body: JSON.stringify({ stripe_payment_intent_id: session.payment_intent }),
+            });
+          }
 
           if (hostId) {
             await insertNotification({

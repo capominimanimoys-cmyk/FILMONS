@@ -48,6 +48,10 @@ function _notifTitle(type: string, actorName: string): string {
     case 'booking_rejected':    return 'Your booking was declined';
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';
+    case 'payout_requested':    return 'Your payout request was received';
+    case 'payout_processing':   return 'Your payout is being processed';
+    case 'payout_paid':         return 'Your payout has been sent';
+    case 'payout_rejected':     return 'Your payout request was rejected';
     case 'marketplace_order':   return `${actorName} placed a new order`;
     case 'marketplace_booking': return `${actorName} requested a booking`;
     case 'marketplace_reply':   return `${actorName} replied to your inquiry`;

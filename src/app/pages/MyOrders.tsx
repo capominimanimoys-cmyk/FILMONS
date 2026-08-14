@@ -7,9 +7,12 @@ import { supabase } from '../../lib/supabase';
 import { signRentalDoc } from '../../lib/upload';
 
 interface Order {
+  id:             string;
   receipt_id:     string;
   agreement_id:   string | null;
   rental_agreement_id: string | null;
+  refund_status:  string;
+  dispute_status: string;
   listing_title:  string;
   start_date:     string | null;
   duration:       number;
@@ -141,7 +144,58 @@ function DocButton({ label, path }: { label: string; path: string | null }) {
   );
 }
 
-function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
+const REFUND_STATUS_LABEL: Record<string, { label: string; cls: string }> = {
+  requested:  { label: 'Refund requested', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  processing: { label: 'Refund processing', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  refunded:   { label: 'Refunded', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+  partially_refunded: { label: 'Partially refunded', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+};
+
+// ── Request Refund / Cancellation (renter only) ──────────────────────────
+function RequestRefundButton({ userId, order, onRequested }: { userId: string; order: Order; onRequested: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.from('refund_requests').insert({
+        order_id: order.id, requester_id: userId, reason: reason.trim() || null, amount: order.total_amount, status: 'requested',
+      });
+      if (error) throw new Error(error.message);
+      await supabase.from('orders').update({ refund_status: 'requested' }).eq('id', order.id);
+      onRequested();
+      setOpen(false);
+    } catch (e: any) {
+      alert(e?.message || 'Could not submit refund request.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} className="text-xs font-semibold text-red-600 hover:text-red-700 px-3 py-1.5 rounded-xl border border-red-200 bg-red-50">
+      Request Refund / Cancellation
+    </button>
+  );
+
+  return (
+    <div className="w-full bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+      <p className="text-xs font-bold text-gray-800">Request a refund for ${order.total_amount.toFixed(2)} CAD</p>
+      <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Reason (optional)"
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-red-400 resize-none" />
+      <div className="flex gap-2">
+        <button onClick={() => setOpen(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold">Cancel</button>
+        <button onClick={submit} disabled={submitting} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-xs font-bold disabled:opacity-50">
+          {submitting ? 'Submitting…' : 'Submit Request'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab: 'renter' | 'host'; userId: string; onRefreshNeeded: () => void }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {/* Header */}
@@ -152,9 +206,21 @@ function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
             {tab === 'renter' ? `Host: ${order.host_name || '—'}` : `Renter: ${order.renter_name || '—'}`}
           </p>
         </div>
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-green-100 text-green-700 border-green-200 shrink-0">
-          ✓ Paid
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-green-100 text-green-700 border-green-200">
+            ✓ Paid
+          </span>
+          {order.dispute_status === 'disputed' && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-red-100 text-red-700 border-red-200">
+              Disputed
+            </span>
+          )}
+          {REFUND_STATUS_LABEL[order.refund_status] && (
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${REFUND_STATUS_LABEL[order.refund_status].cls}`}>
+              {REFUND_STATUS_LABEL[order.refund_status].label}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Detail grid */}
@@ -241,6 +307,13 @@ function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
         <DocButton label="Rental Agreement" path={order.agreement_path} />
         <DocButton label="Receipt" path={order.receipt_path} />
       </div>
+
+      {/* Refund request — renter only, before anything's already in flight */}
+      {tab === 'renter' && order.refund_status === 'none' && order.dispute_status !== 'disputed' && (
+        <div className="px-5 pb-4">
+          <RequestRefundButton userId={userId} order={order} onRequested={onRefreshNeeded} />
+        </div>
+      )}
     </div>
   );
 }
@@ -289,9 +362,12 @@ export default function MyOrders() {
       setOrders(rows.map((r: any) => {
         const ag = r.rental_agreement_id ? agreementsById[r.rental_agreement_id] : null;
         return {
+          id:             r.id,
           receipt_id:     r.receipt_id || r.id,
           agreement_id:   r.agreement_id || null,
           rental_agreement_id: r.rental_agreement_id || null,
+          refund_status:  r.refund_status || 'none',
+          dispute_status: r.dispute_status || 'none',
           listing_title:  r.listing_title || '—',
           start_date:     r.start_date,
           duration:       r.duration || 1,
@@ -394,7 +470,7 @@ export default function MyOrders() {
               {orders.length} order{orders.length !== 1 ? 's' : ''} found
             </p>
             {orders.map(order => (
-              <OrderCard key={order.receipt_id} order={order} tab={tab} />
+              <OrderCard key={order.receipt_id} order={order} tab={tab} userId={user?.id || ''} onRefreshNeeded={loadOrders} />
             ))}
           </>
         ))}

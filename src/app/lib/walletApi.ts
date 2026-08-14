@@ -1,12 +1,13 @@
 // Real Supabase-backed wallet — replaces the old cadWalletApi (pure
 // localStorage, no pending/available split). This module only ever SELECTs
-// from wallets/wallet_transactions and INSERTs a payout *request* (not a
-// balance mutation) — actual balance changes only ever happen via
-// fn_finalize_payment / fn_release_pending_earnings, called with the
-// service-role key from the Stripe webhook, the cash-payment Edge
-// Function, and the scheduled release job. See
-// supabase/migrations/20240216000000_wallet_ledger.sql.
+// from wallets/wallet_transactions — actual balance changes only ever
+// happen via fn_finalize_payment / fn_release_pending_earnings /
+// fn_request_payout / fn_process_refund, called with the service-role key
+// from the Stripe webhook and dedicated Edge Functions. See
+// supabase/migrations/20240216000000_wallet_ledger.sql and
+// 20240218000000_refunds_disputes.sql.
 import { supabase } from '../../lib/supabase';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export interface WalletBalance {
   pending: number;
@@ -21,10 +22,62 @@ export interface WalletTransaction {
   amount: number;
   currency: string;
   balance_type: 'pending' | 'available';
-  status: 'pending' | 'available' | 'reversed' | 'collected' | 'paid_out';
+  status: 'pending' | 'available' | 'reversed' | 'collected' | 'paid_out' | 'held' | 'processing';
   description: string | null;
   created_at: string;
   available_at: string | null;
+}
+
+export type PayoutMethodType = 'interac' | 'bank_transfer';
+
+export interface InteracDestination {
+  email: string;
+  name?: string;
+}
+
+export interface BankTransferDestination {
+  accountHolder: string;
+  institutionNumber: string;
+  transitNumber: string;
+  accountNumber: string;
+}
+
+export type PayoutDestination = InteracDestination | BankTransferDestination;
+
+export interface PayoutMethod {
+  id: string;
+  host_id: string;
+  method: PayoutMethodType;
+  details: PayoutDestination;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface PayoutRequest {
+  id: string;
+  host_id: string;
+  amount: number;
+  currency: string;
+  status: 'requested' | 'under_review' | 'approved' | 'processing' | 'paid' | 'rejected' | 'cancelled';
+  payout_method: PayoutMethodType | null;
+  payout_destination: PayoutDestination | null;
+  payment_reference: string | null;
+  admin_notes: string | null;
+  rejection_reason: string | null;
+  requested_at: string;
+  processed_at: string | null;
+  processed_by: string | null;
+}
+
+function maskDestination(method: PayoutMethodType, details: PayoutDestination): string {
+  if (method === 'interac') {
+    const email = (details as InteracDestination).email || '';
+    const [user, domain] = email.split('@');
+    if (!domain) return email;
+    return `${user.slice(0, 2)}${'•'.repeat(Math.max(user.length - 2, 3))}@${domain}`;
+  }
+  const acct = (details as BankTransferDestination).accountNumber || '';
+  return `••••${acct.slice(-4)}`;
 }
 
 async function getOrCreateHostWalletId(hostId: string): Promise<string | null> {
@@ -51,22 +104,59 @@ export const walletApi = {
     return data || [];
   },
 
-  async requestPayout(hostId: string, amount: number): Promise<{ success: boolean; error?: string }> {
-    const walletId = await getOrCreateHostWalletId(hostId);
-    if (!walletId) return { success: false, error: 'No wallet found' };
-    const { data: wallet } = await supabase.from('wallets').select('available_balance, currency').eq('id', walletId).single();
-    if (!wallet || amount <= 0 || amount > Number(wallet.available_balance)) {
-      return { success: false, error: 'Requested amount exceeds available balance' };
+  async requestPayout(
+    hostId: string,
+    amount: number,
+    payoutMethod?: PayoutMethodType,
+    payoutDestination?: PayoutDestination
+  ): Promise<{ success: boolean; error?: string; payoutRequestId?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/request-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ hostId, amount, payoutMethod, payoutDestination }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not request payout' };
+      return { success: true, payoutRequestId: data.payoutRequestId };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
     }
-    const { error } = await supabase.from('payout_requests').insert({
-      wallet_id: walletId, host_id: hostId, amount, currency: wallet.currency || 'CAD', status: 'requested',
-    });
-    if (error) return { success: false, error: error.message };
-    return { success: true };
   },
 
-  async getPayoutRequests(hostId: string) {
+  async getPayoutRequests(hostId: string): Promise<PayoutRequest[]> {
     const { data } = await supabase.from('payout_requests').select('*').eq('host_id', hostId).order('requested_at', { ascending: false });
     return data || [];
   },
+
+  async getPayoutMethods(hostId: string): Promise<PayoutMethod[]> {
+    const { data } = await supabase.from('payout_methods').select('*').eq('host_id', hostId).order('created_at', { ascending: false });
+    return data || [];
+  },
+
+  async getDefaultPayoutMethod(hostId: string): Promise<PayoutMethod | null> {
+    const { data } = await supabase
+      .from('payout_methods')
+      .select('*')
+      .eq('host_id', hostId)
+      .eq('is_default', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  },
+
+  async savePayoutMethod(hostId: string, method: PayoutMethodType, details: PayoutDestination): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Only one default method for now — clear any existing default first.
+      await supabase.from('payout_methods').update({ is_default: false }).eq('host_id', hostId).eq('is_default', true);
+      const { error } = await supabase.from('payout_methods').insert({ host_id: hostId, method, details, is_default: true });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  },
+
+  maskDestination,
 };
