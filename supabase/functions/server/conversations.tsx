@@ -217,13 +217,21 @@ export async function upsertConversation(data: any): Promise<void> {
 }
 
 // ── Mark messages as read ──────────────────────────────────────────────────────
+// Every client read path (fetchConversationsDB, unread-count derivation)
+// reads the `is_read` column, not metadata.read — this only ever wrote the
+// metadata field, so is_read stayed false forever and a fresh fetch (a
+// realtime reconnect, a different device, localStorage cleared) always
+// came back unread again. The client-side localStorage patch in
+// fetchConversationsDB masked this as long as the same browser storage
+// survived; it still set metadata.read too, in case anything else reads it.
 export async function markRead(convId: string, userId: string): Promise<void> {
   await sql().unsafe(`
     UPDATE public.messages
-    SET metadata = metadata || '{"read":true}'::jsonb
+    SET metadata = metadata || '{"read":true}'::jsonb,
+        is_read = true
     WHERE conversation_id = $1
       AND sender_id != $2
-      AND COALESCE((metadata->>'read')::boolean, false) = false
+      AND is_read = false
   `, [convId, userId]).catch(() => {});
 }
 

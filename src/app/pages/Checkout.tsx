@@ -32,6 +32,33 @@ function getListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
 }
 
+// Flips a payment_request message's status to 'paid' in both localStorage
+// and Supabase. The card path previously never called this at all — it
+// only ran finalizeOrder (orders/transactions/agreement/emails), so
+// msg.paymentRequest.status stayed 'pending' forever and Inbox kept
+// showing "Awaiting payment" even after a successful Stripe charge.
+async function markPaymentRequestPaid(convId: string, msgId: string, updatedPayment: Record<string, any>) {
+  const convs = getConversations();
+  const cIdx = convs.findIndex((c: any) => c.id === convId);
+  if (cIdx > -1) {
+    convs[cIdx].messages = convs[cIdx].messages.map((m: any) =>
+      m.id === msgId && m.type === 'payment_request' ? { ...m, paymentRequest: updatedPayment } : m
+    );
+    saveConversations(convs);
+  }
+  try {
+    const { data: existing } = await supabase.from('messages').select('metadata').eq('id', msgId).single();
+    const currentMeta = (typeof existing?.metadata === 'string'
+      ? (() => { try { return JSON.parse(existing.metadata); } catch { return {}; } })()
+      : existing?.metadata) || {};
+    await supabase.from('messages').update({
+      metadata: { ...currentMeta, paymentRequest: updatedPayment },
+    }).eq('id', msgId);
+  } catch (e) {
+    console.warn('Supabase payment status update failed:', e);
+  }
+}
+
 // sessionStorage key for the signed-agreement data a card payment needs to
 // survive the full-page redirect to Stripe and back (see finalizeOrder below).
 const pendingAgreementKey = (sessionId: string) => `filmons_pending_agreement_${sessionId}`;
@@ -533,6 +560,9 @@ export function Checkout() {
               sellerFeeRate: 0, sellerFeeAmount: 0,
               total: result.cad_amount, feeConfigVersion: result.fee_config_version || 'unversioned',
             };
+            await markPaymentRequestPaid(convId, msgId, {
+              ...msg.paymentRequest, status: 'paid', paymentMethod: method, totalPaid: paidAmount,
+            });
             await finalizeOrder({
               pay: msg.paymentRequest!, totalAmount: paidAmount, selectedMethod: method,
               signedAgreement: sa, hostUser, user, convId, msgId, breakdown,
@@ -767,31 +797,8 @@ export function Checkout() {
       totalPaid: totalAmount,
     };
 
-    // 1. Update localStorage
-    const convs = getConversations();
-    const cIdx = convs.findIndex((c: any) => c.id === convId);
-    if (cIdx > -1) {
-      convs[cIdx].messages = convs[cIdx].messages.map((m: any) =>
-        m.id === msgId && m.type === 'payment_request'
-          ? { ...m, paymentRequest: updatedPayment }
-          : m
-      );
-      saveConversations(convs);
-    }
-
-    // 2. Update Supabase — merge paid status into message metadata
-    try {
-      const { data: existing } = await supabase
-        .from('messages').select('metadata').eq('id', msgId).single();
-      const currentMeta = (typeof existing?.metadata === 'string'
-        ? (() => { try { return JSON.parse(existing.metadata); } catch { return {}; } })()
-        : existing?.metadata) || {};
-      await supabase.from('messages').update({
-        metadata: { ...currentMeta, paymentRequest: updatedPayment },
-      }).eq('id', msgId);
-    } catch (e) {
-      console.warn('Supabase payment update failed:', e);
-    }
+    // 1 & 2. Update localStorage + Supabase message status
+    await markPaymentRequestPaid(convId, msgId, updatedPayment);
 
     // 3. Mark listing as sold if it's a sale item
     if (pay.listingId && (pay.listingMode === 'sale' || pay.listingType !== 'service')) {
