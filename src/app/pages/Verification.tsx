@@ -414,6 +414,7 @@ export function Verification() {
   const [otherIdCountry, setOtherIdCountry] = useState('');
   const issuingCountry = idCountryChoice === 'Other' ? otherIdCountry : idCountryChoice;
   const [idType, setIdType] = useState('');
+  const [govIdNumber, setGovIdNumber] = useState('');
   const [govIdFront, setGovIdFront] = useState('');
   const [govIdBack, setGovIdBack] = useState('');
   const [idExpiryDate, setIdExpiryDate] = useState('');
@@ -692,6 +693,7 @@ export function Verification() {
       if (!idCountryChoice) { toast.error('Please select the country that issued your ID'); return; }
       if (idCountryChoice === 'Other' && !otherIdCountry) { toast.error('Please select the issuing country'); return; }
       if (!idType) { toast.error('Please select an ID type'); return; }
+      if (!govIdNumber.trim()) { toast.error('Please enter your ID number'); return; }
       if (!govIdFront) { toast.error('Please upload the front of your ID'); return; }
       if (idRequiresBack(idType) && !govIdBack) { toast.error('Please upload the back of your ID'); return; }
       if (!idExpiryDate) { toast.error('Please enter the ID expiration date'); return; }
@@ -749,6 +751,7 @@ export function Verification() {
           postal_code:             postalCode || null,
           id_issuing_country:      issuingCountry || null,
           id_type:                 idType || null,
+          id_number:               govIdNumber.trim() || null,
           id_expiry_date:          idExpiryDate || null,
           proof_of_address_type:   'Utility bill / bank statement / lease',
           id_front_path:           idFrontPath,
@@ -1168,6 +1171,12 @@ export function Verification() {
 
               {idType && (
                 <div className="pt-1 space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">{idType} Number *</label>
+                    <input value={govIdNumber} onChange={e => setGovIdNumber(e.target.value)} placeholder="As printed on your ID"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+                    <p className="text-[11px] text-gray-400">Private — visible only to Filmons admin for identity review.</p>
+                  </div>
                   <div>
                     <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500"/>Front of {idType}</h3>
                     <FileUploadZone label="ID Front" accept="image/*,.pdf"

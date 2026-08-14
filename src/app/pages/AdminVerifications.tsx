@@ -55,6 +55,7 @@ interface VerificationRequest {
   residenceCountry?: string;
   issuingCountry?: string;
   idType?: string;
+  idNumber?: string;
   idExpiryDate?: string;
   idFrontPath?: string;
   idBackPath?: string;
@@ -338,6 +339,7 @@ export function AdminVerifications() {
             residenceCountry:   row.country_of_residence || undefined,
             issuingCountry:     row.id_issuing_country || undefined,
             idType:             row.id_type || undefined,
+            idNumber:           row.id_number || undefined,
             idExpiryDate:       row.id_expiry_date || undefined,
             idFrontPath:        row.id_front_path || undefined,
             idBackPath:         row.id_back_path || undefined,
@@ -1375,17 +1377,17 @@ export function AdminVerifications() {
                   />
                   <InfoRow
                     icon={
+                      <CreditCard className="w-4 h-4 text-indigo-500" />
+                    }
+                    label="ID Number"
+                    value={selectedRequest.idNumber}
+                  />
+                  <InfoRow
+                    icon={
                       <Calendar className="w-4 h-4 text-indigo-500" />
                     }
                     label="ID Expiry"
                     value={selectedRequest.idExpiryDate}
-                  />
-                  <InfoRow
-                    icon={
-                      <User className="w-4 h-4 text-gray-400" />
-                    }
-                    label="Filmons Account ID"
-                    value={selectedRequest.userId}
                   />
                 </div>
               </section>
