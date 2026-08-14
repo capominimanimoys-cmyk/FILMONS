@@ -14,7 +14,7 @@ import { savedListingsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
-import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, CREATOR_TIERS } from '../lib/reliabilityApi';
+import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus } from '../lib/reliabilityApi';
 
 function getStoredListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
@@ -248,10 +248,10 @@ function CreatorDashboard({ user }: { user: any }) {
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         {/* Reliability score mini-card */}
         {rep && (() => {
-          const composite = rep.composite ?? 0;
+          const composite = rep.reliability_score ?? 0;
           const color = scoreColor(composite);
-          const tierKey = getCompositeTier(composite, CREATOR_TIERS);
-          const tierLabel = CREATOR_TIERS[tierKey]?.label ?? 'New Creator';
+          const tier = getCompositeTier(rep.reliability_level, isCreatorPlus(rep.account_type));
+          const tierLabel = tier.label;
           return (
             <button onClick={() => navigate('/settings/reviews')}
               className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors">
@@ -267,11 +267,11 @@ function CreatorDashboard({ user }: { user: any }) {
                 <p className="text-sm font-black text-gray-900">Reliability Score</p>
                 <p className="text-xs font-semibold mt-0.5" style={{ color }}>{tierLabel}</p>
                 <div className="flex items-center gap-3 mt-1.5">
-                  {rep.renter !== undefined && (
-                    <span className="text-[10px] text-gray-400">🛒 Renter <strong className="text-gray-700">{Math.round(rep.renter)}</strong></span>
+                  {rep.renter_score !== undefined && (
+                    <span className="text-[10px] text-gray-400">🛒 Renter <strong className="text-gray-700">{Math.round(rep.renter_score)}</strong></span>
                   )}
-                  {rep.verification !== undefined && (
-                    <span className="text-[10px] text-gray-400">✓ Verify <strong className="text-gray-700">{Math.round(rep.verification)}</strong></span>
+                  {rep.verification_score !== undefined && (
+                    <span className="text-[10px] text-gray-400">✓ Verify <strong className="text-gray-700">{Math.round(rep.verification_score)}</strong></span>
                   )}
                 </div>
               </div>
@@ -613,10 +613,10 @@ function HostDashboardContent({ user }: { user: any }) {
             </div>
             {/* Reliability score card */}
             {rep && (() => {
-              const composite = rep.composite ?? 0;
+              const composite = rep.reliability_score ?? 0;
               const color = scoreColor(composite);
-              const tierKey = getCompositeTier(composite, CREATOR_TIERS);
-              const tierLabel = CREATOR_TIERS[tierKey]?.label ?? 'New Creator';
+              const tier = getCompositeTier(rep.reliability_level, isCreatorPlus(rep.account_type));
+              const tierLabel = tier.label;
               return (
                 <button onClick={() => navigate('/settings/reviews')}
                   className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors">
@@ -632,14 +632,14 @@ function HostDashboardContent({ user }: { user: any }) {
                     <p className="text-sm font-black text-gray-900">Reliability Score</p>
                     <p className="text-xs font-semibold mt-0.5" style={{ color }}>{tierLabel}</p>
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                      {rep.renter !== undefined && (
-                        <span className="text-[10px] text-gray-400">🛒 Renter <strong className="text-gray-700">{Math.round(rep.renter)}</strong></span>
+                      {rep.renter_score !== undefined && (
+                        <span className="text-[10px] text-gray-400">🛒 Renter <strong className="text-gray-700">{Math.round(rep.renter_score)}</strong></span>
                       )}
-                      {rep.host !== undefined && (
-                        <span className="text-[10px] text-gray-400">🏠 Host <strong className="text-gray-700">{Math.round(rep.host)}</strong></span>
+                      {rep.host_score !== undefined && (
+                        <span className="text-[10px] text-gray-400">🏠 Host <strong className="text-gray-700">{Math.round(rep.host_score)}</strong></span>
                       )}
-                      {rep.service !== undefined && (
-                        <span className="text-[10px] text-gray-400">🎬 Service <strong className="text-gray-700">{Math.round(rep.service)}</strong></span>
+                      {rep.service_score !== undefined && (
+                        <span className="text-[10px] text-gray-400">🎬 Service <strong className="text-gray-700">{Math.round(rep.service_score)}</strong></span>
                       )}
                     </div>
                   </div>

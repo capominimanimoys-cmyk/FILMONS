@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { reliabilityApi, ReputationScore, CREATOR_TIERS } from '../lib/reliabilityApi';
+import { reliabilityApi, ReputationScore, TrustBadge, getCompositeTier, scoreColor, isCreatorPlus } from '../lib/reliabilityApi';
 import { reputationSettingsApi } from '../lib/settingsApi';
 import { useEffect } from 'react';
 import { ArrowLeft, Star, ChevronRight, Trophy, Shield, Check } from 'lucide-react';
@@ -32,13 +32,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-const BADGES = [
-  { icon: '⭐', label: 'Top Creator',           sub: 'Earned by top 5% of creators',       earned: false },
-  { icon: '🤝', label: 'Reliable Collaborator', sub: '10+ successful collaborations',       earned: false },
-  { icon: '📦', label: 'Trusted Renter',         sub: '10+ successful rentals, no damage',  earned: false },
-  { icon: '⚡', label: 'Fast Responder',          sub: 'Average reply under 2 hours',        earned: false },
-  { icon: '✓',  label: 'Verified Professional',  sub: 'Professional verification approved',  earned: false },
-  { icon: '🔥', label: 'Trending Creative',       sub: 'Portfolio in top weekly views',      earned: false },
+const BADGE_DEFS = [
+  { type: 'top_creator',            icon: '⭐', label: 'Top Creator',           sub: 'Earned by top 5% of creators' },
+  { type: 'reliable_collaborator',  icon: '🤝', label: 'Reliable Collaborator', sub: '10+ successful collaborations' },
+  { type: 'trusted_renter',         icon: '📦', label: 'Trusted Renter',        sub: '10+ successful rentals, no damage' },
+  { type: 'fast_responder',         icon: '⚡', label: 'Fast Responder',        sub: 'Average reply under 2 hours' },
+  { type: 'verified_professional',  icon: '✓',  label: 'Verified Professional', sub: 'Professional verification approved' },
+  { type: 'trending_creative',      icon: '🔥', label: 'Trending Creative',     sub: 'Portfolio in top weekly views' },
 ];
 
 export function ReviewsSettings() {
@@ -46,10 +46,12 @@ export function ReviewsSettings() {
   const { user } = useAuth();
 
   const [rep, setRep] = useState<ReputationScore | null>(null);
+  const [badges, setBadges] = useState<TrustBadge[]>([]);
 
   useEffect(() => {
     if (!user?.id) return;
     reliabilityApi.getScore(user.id).then(r => setRep(r)).catch(() => {});
+    reliabilityApi.getBadges(user.id).then(setBadges).catch(() => {});
     reputationSettingsApi.load(user.id).then(s => {
       if (!s) return;
       setReviewVis(s.review_visibility ?? 'Public');
@@ -71,9 +73,11 @@ export function ReviewsSettings() {
   const [verifiedOnly,  setVerifiedOnly]  = useState(true);
   const [allowRespond,  setAllowRespond]  = useState(true);
 
-  const score  = rep?.reliability_score ?? 70;
-  const level  = rep?.reliability_level ?? 'reliable';
-  const tier   = CREATOR_TIERS[level as keyof typeof CREATOR_TIERS] ?? CREATOR_TIERS.reliable;
+  const score  = rep?.reliability_score ?? 0;
+  const level  = rep?.reliability_level ?? 'new_user';
+  const tier   = getCompositeTier(level, isCreatorPlus(rep?.account_type));
+  const scoreColorHex = scoreColor(score);
+  const earnedTypes = new Set(badges.map(b => b.badge_type));
   const stats  = {
     rating:       Number(rep?.renter_avg_rating ?? 5.0).toFixed(1),
     count:        rep?.renter_reviews_count ?? 0,
@@ -112,6 +116,22 @@ export function ReviewsSettings() {
         {/* ── Dashboard ── */}
         <div className="mx-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
           <p className="text-sm font-bold text-gray-900 mb-4">Reputation Dashboard</p>
+
+          <div className={`flex items-center gap-4 rounded-xl p-3 mb-4 ${tier.bg} border ${tier.border}`}>
+            <svg width={52} height={52} style={{ flexShrink: 0, overflow: 'visible' }}>
+              <circle cx={26} cy={26} r={20} fill="none" stroke="#e5e7eb" strokeWidth="5"/>
+              <circle cx={26} cy={26} r={20} fill="none" stroke={scoreColorHex} strokeWidth="5"
+                strokeDasharray={`${(score / 100) * (2 * Math.PI * 20)} ${2 * Math.PI * 20}`}
+                strokeLinecap="round" transform="rotate(-90 26 26)"/>
+              <text x={26} y={30} textAnchor="middle" fontSize={13} fontWeight="900" fill={scoreColorHex}>{Math.round(score)}</text>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-gray-900">Reliability Score</p>
+              <p className={`text-xs font-semibold mt-0.5 ${tier.color}`}>{tier.emoji} {tier.label}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{tier.description}</p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-3 mb-4">
             {[
               { label: 'Overall Rating',    value: stats.count > 0 ? `${stats.rating} ★` : '—',    color: 'text-yellow-500' },
@@ -173,21 +193,24 @@ export function ReviewsSettings() {
         {/* ── Trust badges ── */}
         <Section title="Trust Badges">
           <div className="p-4 space-y-3">
-            {BADGES.map(b => (
-              <div key={b.label} className={`flex items-center gap-3 p-3 rounded-xl ${b.earned ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${b.earned ? 'bg-blue-600 shadow-sm' : 'bg-gray-100'}`}>
-                  {b.icon}
+            {BADGE_DEFS.map(b => {
+              const earned = earnedTypes.has(b.type);
+              return (
+                <div key={b.type} className={`flex items-center gap-3 p-3 rounded-xl ${earned ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${earned ? 'bg-blue-600 shadow-sm' : 'bg-gray-100'}`}>
+                    {b.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-bold ${earned ? 'text-blue-700' : 'text-gray-500'}`}>{b.label}</p>
+                    <p className="text-xs text-gray-400">{b.sub}</p>
+                  </div>
+                  {earned
+                    ? <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold shrink-0">Earned</span>
+                    : <span className="text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full font-bold shrink-0">Locked</span>
+                  }
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-bold ${b.earned ? 'text-blue-700' : 'text-gray-500'}`}>{b.label}</p>
-                  <p className="text-xs text-gray-400">{b.sub}</p>
-                </div>
-                {b.earned
-                  ? <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold shrink-0">Earned</span>
-                  : <span className="text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full font-bold shrink-0">Locked</span>
-                }
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Section>
 

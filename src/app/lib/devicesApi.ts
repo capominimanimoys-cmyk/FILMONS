@@ -75,16 +75,14 @@ function parseUA(ua: string): { device_name: string; device_type: 'mobile'|'tabl
     device_type = 'tablet'; device_name = 'iPad';
   } else if (u.includes('iphone')) {
     device_type = 'mobile';
-    // Try to detect model
-    const m = ua.match(/iPhone\s?OS\s?([\d_]+)/i);
+    // Safari's UA string only ever exposes the iOS version, never the
+    // physical hardware model — there is no reliable way to tell an
+    // iPhone 12 mini on iOS 18 apart from an iPhone 16 on iOS 18 from the
+    // UA string alone. Guessing a model number from the OS version was
+    // actively wrong (e.g. any iOS 18 device got labeled "iPhone 16"), so
+    // this deliberately just says "iPhone" rather than a false-precision
+    // guess.
     device_name = 'iPhone';
-    if (m) {
-      const v = parseInt(m[1].replace(/_/g,'.').split('.')[0]);
-      if (v >= 18) device_name = 'iPhone 16';
-      else if (v >= 17) device_name = 'iPhone 15';
-      else if (v >= 16) device_name = 'iPhone 14';
-      else if (v >= 15) device_name = 'iPhone 13';
-    }
   } else if (u.includes('android') && u.includes('mobile')) {
     device_type = 'mobile';
     const m = ua.match(/;\s*([^;)]+)\sBuild\//i);
@@ -219,9 +217,27 @@ export async function registerDevice(userId: string, signInMethod?: string): Pro
   }
 }
 
+// A device row's session_token is per-browser, not per-physical-device — a
+// new token (and therefore a new row) is minted any time localStorage is
+// cleared or a different browser/incognito window signs in. Nothing else
+// ever expires these rows, so without pruning, every past test/incognito
+// session stays listed as "connected" forever. Auto-retire anything that
+// hasn't been active in 30 days (never the current device).
+const STALE_DEVICE_DAYS = 30;
+
+async function pruneStaleDevices(userId: string, currentToken: string): Promise<void> {
+  const cutoff = new Date(Date.now() - STALE_DEVICE_DAYS * 86400 * 1000).toISOString();
+  await supabase.from('active_devices').update({ is_active: false })
+    .eq('user_id', userId).eq('is_active', true)
+    .neq('session_token', currentToken)
+    .lt('last_active_at', cutoff)
+    .then(() => {}, () => {});
+}
+
 // ── Fetch devices for display ─────────────────────────────────────────────────
 export async function getDevices(userId: string): Promise<ActiveDevice[]> {
   const token = getSessionToken();
+  await pruneStaleDevices(userId, token);
   const { data } = await supabase
     .from('active_devices')
     .select('*')

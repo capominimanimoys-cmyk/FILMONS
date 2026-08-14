@@ -206,7 +206,7 @@ export function VerificationSettings() {
                   className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors">
                   Upgrade to Creator+
                 </button>
-                <button onClick={() => toast.info('Email: support@filmons.ca')}
+                <button onClick={() => navigate('/support', { state: { category: 'creator_plus' } })}
                   className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors">
                   Contact Support
                 </button>

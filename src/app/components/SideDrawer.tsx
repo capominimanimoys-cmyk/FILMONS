@@ -160,7 +160,7 @@ export function SideDrawer({ onClose }: Props) {
               <div className="mb-1">
                 <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Support</p>
                 <SectionRow icon={HelpCircle} label="Help Center"      to="/help"    />
-                <SectionRow icon={Mail}       label="Contact Support"  to="/contact" />
+                <SectionRow icon={Mail}       label="Contact Support"  to="/support" />
               </div>
 
               <div className="mb-1">
