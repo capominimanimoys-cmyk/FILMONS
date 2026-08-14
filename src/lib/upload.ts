@@ -41,3 +41,34 @@ export const signVerificationDoc = async (path: string | null | undefined, expir
   if (error) { console.warn('Failed to sign verification doc:', error.message); return null; }
   return data?.signedUrl || null;
 };
+
+// ── Rental agreement documents (ID/proof-of-address/signature/generated docs) ──
+// Same private-bucket + path-only pattern as verification docs above, just a
+// separate bucket so rental documents and Creator+ KYC documents stay apart.
+const RENTAL_BUCKET = 'rental-verification';
+
+export const uploadRentalDoc = async (base64OrBlob: string | Blob, path: string, contentType?: string): Promise<string> => {
+  const blob = typeof base64OrBlob === 'string'
+    ? (base64OrBlob.startsWith('data:') ? await fetch(base64OrBlob).then(r => r.blob()) : null)
+    : base64OrBlob;
+  if (!blob) return typeof base64OrBlob === 'string' ? base64OrBlob : ''; // not a base64 string — already a path
+
+  const { data, error } = await supabase.storage
+    .from(RENTAL_BUCKET)
+    .upload(path, blob, { contentType: contentType || blob.type || 'application/octet-stream', upsert: true });
+
+  if (error) {
+    console.warn('Rental document upload failed:', error.message);
+    return typeof base64OrBlob === 'string' ? base64OrBlob : '';
+  }
+  return data.path;
+};
+
+export const signRentalDoc = async (path: string | null | undefined, expiresInSeconds = 300): Promise<string | null> => {
+  if (!path || path.startsWith('data:')) return null;
+  const { data, error } = await supabase.storage
+    .from(RENTAL_BUCKET)
+    .createSignedUrl(path, expiresInSeconds);
+  if (error) { console.warn('Failed to sign rental doc:', error.message); return null; }
+  return data?.signedUrl || null;
+};

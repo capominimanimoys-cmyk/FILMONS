@@ -319,8 +319,6 @@ export interface Notification {
   audioId?: string;
   audioTitle?: string;
   audioUses?: number;
-  // FP
-  fpAmount?: number;
   // Meta
   read: boolean;
   createdAt: string;

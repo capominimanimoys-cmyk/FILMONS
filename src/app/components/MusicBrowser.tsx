@@ -397,7 +397,7 @@ export function MusicBrowser({ onSelect, onClose, mediaUrl, initialTab }: MusicB
           setLoadingMy(true);
           const { data: myData } = await supabase
             .from('user_sounds')
-            .select('id, title, description, category, file_url, artwork_url, duration_sec, use_count, fp_earned, copyright_status, visibility, is_original')
+            .select('id, title, description, category, file_url, artwork_url, duration_sec, use_count, copyright_status, visibility, is_original')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
           setMySounds((myData ?? []) as any[]);
@@ -663,7 +663,7 @@ export function MusicBrowser({ onSelect, onClose, mediaUrl, initialTab }: MusicB
               <div>
                 <p className="text-xs font-bold text-yellow-400">Copyright Scan</p>
                 <p className="text-[11px] text-white/40 leading-relaxed mt-0.5">
-                  After uploading, we'll scan your audio for copyright matches. Original sounds earn FP rewards when others use them.
+                  After uploading, we'll scan your audio for copyright matches before it's added to the library.
                 </p>
               </div>
             </div>
@@ -881,18 +881,7 @@ export function MusicBrowser({ onSelect, onClose, mediaUrl, initialTab }: MusicB
                   <Mic className="w-7 h-7 text-white/30"/>
                 </div>
                 <p className="text-sm font-black text-white text-center">No sounds yet</p>
-                <p className="text-xs text-white/40 text-center">Upload original audio to earn FP when others use your sounds</p>
-                {/* FP tiers */}
-                <div className="w-full mt-2 rounded-2xl p-3 space-y-1.5"
-                  style={{background:'rgba(255,215,0,0.06)', border:'1px solid rgba(255,215,0,0.15)'}}>
-                  <p className="text-[10px] font-black text-yellow-400 uppercase tracking-widest mb-2">🪙 Earn FP Coins</p>
-                  {[['100 uses','+50 FP'],['1K uses','+700 FP'],['10K uses','+10,000 FP + 🔥']].map(([u,f])=>(
-                    <div key={u} className="flex justify-between">
-                      <p className="text-[11px] text-white/40">{u}</p>
-                      <p className="text-[11px] font-black text-yellow-400">{f}</p>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-xs text-white/40 text-center">Upload original audio to add it to your library</p>
               </div>
             ) : (
               <>

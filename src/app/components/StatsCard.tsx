@@ -1,6 +1,6 @@
 /**
  * StatsCard — reusable metric/KPI card.
- * Used across: HostDashboard, FPWallet, AdminVerifications, etc.
+ * Used across: HostDashboard, Wallet, AdminVerifications, etc.
  */
 import { ReactNode } from 'react';
 

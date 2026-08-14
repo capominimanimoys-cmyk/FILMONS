@@ -735,7 +735,7 @@ export function Profile() {
     const [{ data: pub }, { data: fav }] = await Promise.all([
       supabase
         .from('user_sounds')
-        .select('id, title, description, category, file_url, artwork_url, duration_sec, use_count, fp_earned, copyright_status, visibility, is_original, snippet_start, snippet_end')
+        .select('id, title, description, category, file_url, artwork_url, duration_sec, use_count, copyright_status, visibility, is_original, snippet_start, snippet_end')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false }),
       supabase
@@ -1673,7 +1673,7 @@ export function Profile() {
                   <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100">
                     <Music2 className="w-8 h-8 mx-auto mb-2 text-gray-400"/>
                     <p className="text-sm font-semibold text-gray-500">No public sounds yet</p>
-                    <p className="text-xs text-gray-400 mt-1">Upload original audio to earn FP when others use your sounds</p>
+                    <p className="text-xs text-gray-400 mt-1">Upload original audio to add it to your library</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1690,7 +1690,6 @@ export function Profile() {
                           <p className="text-xs text-gray-400 truncate">
                             {(track.category ?? 'original_audio').replace(/_/g,' ')}
                             {track.use_count > 0 && <span className="ml-1.5 text-blue-500">· {track.use_count.toLocaleString()} uses</span>}
-                            {track.fp_earned > 0 && <span className="ml-1.5 text-yellow-500">· {track.fp_earned} FP</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">

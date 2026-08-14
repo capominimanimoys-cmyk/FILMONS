@@ -128,22 +128,3 @@ export async function appealCopyright(trackId: string, reason: string): Promise<
   await supabase.from('user_sounds').update({ copyright_status: 'appealing' }).eq('id', trackId);
 }
 
-export async function getAudioFpSummary(userId: string) {
-  const { data } = await supabase.rpc('get_audio_fp_summary', { p_user_id: userId });
-  return data ?? [];
-}
-
-export function calcFpForUses(uses: number): number {
-  if (uses >= 10000) return 10000 + Math.floor((uses - 10000) / 10);
-  if (uses >= 1000)  return 700  + Math.floor((uses - 1000)  * 33 / 100);
-  if (uses >= 100)   return 50   + Math.floor((uses - 100)   * 65 / 100);
-  if (uses >= 10)    return 5    + Math.floor((uses - 10)    * 5  / 10);
-  return 0;
-}
-
-export const FP_TIERS = [
-  { uses: 10,    fp: 5,     label: 'Getting started'      },
-  { uses: 100,   fp: 50,    label: 'Rising sound'         },
-  { uses: 1000,  fp: 700,   label: 'Popular sound'        },
-  { uses: 10000, fp: 10000, label: 'Viral + Trending 🔥'  },
-];

@@ -19,10 +19,9 @@ const ACCOUNT_INFO = {
       'Anyone withdrawing earnings from the marketplace',
     ],
     extras: [
-      { label: 'Wallet & balance dashboard',   sub: 'View your CAD and FP balances in real-time' },
+      { label: 'Wallet & balance dashboard',   sub: 'View your balance in real-time' },
       { label: 'Payout & withdrawal system',   sub: 'Withdraw earnings directly to your bank account' },
       { label: 'Transaction history',          sub: 'Full record of all payments, bookings, and credits' },
-      { label: 'Filmons Points (FP)',          sub: 'Earn and spend FP across the marketplace' },
       { label: 'Invoice & receipt tools',      sub: 'Generate invoices for clients and track income' },
       { label: 'Secure payout verification',  sub: 'Identity-backed payouts for your protection' },
     ],

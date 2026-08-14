@@ -4,11 +4,12 @@ import { ArrowBackIosNewRounded, ArticleRounded, CalendarMonthRounded, Inventory
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { generateAgreementFromDB, generateReceiptFromDB } from '../lib/generatePDF';
+import { signRentalDoc } from '../../lib/upload';
 
 interface Order {
   receipt_id:     string;
   agreement_id:   string | null;
+  rental_agreement_id: string | null;
   listing_title:  string;
   start_date:     string | null;
   duration:       number;
@@ -19,8 +20,11 @@ interface Order {
   renter_name:    string | null;
   issued_at:      string;
   signed_at:      string | null;
-  receipt_url:    string | null;
-  agreement_url:  string | null;
+  // Private storage paths — never a URL — signed on demand at view time.
+  agreement_path: string | null;
+  receipt_path:   string | null;
+  id_verification_status: string | null;
+  address_verification_status: string | null;
 }
 
 function formatDate(iso: string | null) {
@@ -28,25 +32,28 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// ── Document button with open + download ──────────────────────────
 // ── Document viewer modal ─────────────────────────────────────────
-function DocViewer({ url, label, onClose, preloadedHtml }: { url: string; label: string; onClose: () => void; preloadedHtml?: string }) {
+// `path` is a private storage path — a fresh short-lived signed URL is
+// minted on open (never persisted, never reused past its expiry).
+function DocViewer({ path, label, onClose }: { path: string; label: string; onClose: () => void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [htmlContent, setHtmlContent] = useState<string | null>(preloadedHtml || null);
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [loadError,   setLoadError]   = useState(false);
+  const [signedUrl,   setSignedUrl]   = useState<string | null>(null);
 
   useEffect(() => {
-    if (preloadedHtml) { setHtmlContent(preloadedHtml); return; }
     setHtmlContent(null);
     setLoadError(false);
-    fetch(url)
-      .then(r => {
-        if (!r.ok) throw new Error('fetch failed');
-        return r.text();
+    signRentalDoc(path, 300)
+      .then(url => {
+        if (!url) throw new Error('sign failed');
+        setSignedUrl(url);
+        return fetch(url);
       })
+      .then(r => { if (!r.ok) throw new Error('fetch failed'); return r.text(); })
       .then(html => setHtmlContent(html))
       .catch(() => setLoadError(true));
-  }, [url, preloadedHtml]);
+  }, [path]);
 
   const handlePrint = () => iframeRef.current?.contentWindow?.print();
 
@@ -67,10 +74,12 @@ function DocViewer({ url, label, onClose, preloadedHtml }: { url: string; label:
             <PrintRounded sx={{fontSize:14,color:'white'}} /> Print / Save as PDF
           </button>
         )}
-        <a href={url} target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl transition-colors">
-          <OpenInNewRounded sx={{fontSize:14}} /> Raw
-        </a>
+        {signedUrl && (
+          <a href={signedUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl transition-colors">
+            <OpenInNewRounded sx={{fontSize:14}} /> Raw
+          </a>
+        )}
       </div>
 
       {/* Document */}
@@ -78,8 +87,7 @@ function DocViewer({ url, label, onClose, preloadedHtml }: { url: string; label:
         {loadError ? (
           <div className="text-center text-white">
             <p className="text-lg font-bold mb-2">Failed to load document</p>
-            <a href={url} target="_blank" rel="noopener noreferrer"
-              className="text-blue-300 underline text-sm">Open directly in browser</a>
+            <p className="text-sm text-gray-300">Please try again in a moment.</p>
           </div>
         ) : !htmlContent ? (
           <div className="flex flex-col items-center gap-3 text-white">
@@ -101,81 +109,33 @@ function DocViewer({ url, label, onClose, preloadedHtml }: { url: string; label:
 }
 
 // ── Document button ───────────────────────────────────────────────
-function DocButton({
-  label, url, receiptId, agreementId, type, onGenerated, preloadedHtml: externalHtml,
-}: {
-  label: string; url: string | null;
-  receiptId?: string; agreementId?: string;
-  type: 'agreement' | 'receipt';
-  onGenerated?: (url: string) => void;
-  preloadedHtml?: string;
-}) {
-  const [generating, setGenerating] = useState(false);
-  const [localUrl,   setLocalUrl]   = useState(url);
-  const [localHtml,  setLocalHtml]  = useState<string | undefined>(externalHtml);
-  const [viewing,    setViewing]    = useState(false);
-  useEffect(() => { setLocalUrl(url); }, [url]);
-  useEffect(() => { if (externalHtml) setLocalHtml(externalHtml); }, [externalHtml]);
+// `path` is null until the document has actually been generated (which now
+// always happens once, right after payment — see Checkout.tsx's
+// finalizeOrder). There's no client-side "Generate" fallback anymore: a
+// signed agreement/receipt should already exist, and re-deriving one from
+// scratch here would mean the app, not the signed snapshot, was the source
+// of truth for a legal document.
+function DocButton({ label, path }: { label: string; path: string | null }) {
+  const [viewing, setViewing] = useState(false);
 
-  const generate = async () => {
-    setGenerating(true);
-    try {
-      let result: { url: string; html: string } | null = null;
-      if (type === 'agreement' && agreementId) result = await generateAgreementFromDB(agreementId);
-      else if (type === 'receipt' && receiptId)  result = await generateReceiptFromDB(receiptId);
-      if (result?.url) {
-        setLocalUrl(result.url);
-        setLocalHtml(result.html);
-        onGenerated?.(result.url);
-      }
-    } catch (e) { console.warn('Generate failed:', e); }
-    setGenerating(false);
-  };
-
-  if (!localUrl) return (
-    <button onClick={generate} disabled={generating}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 text-xs font-semibold hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition-colors disabled:opacity-50">
-      {generating
-        ? <><div className="w-3 h-3 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" /> Generating…</>
-        : <><RefreshRounded sx={{fontSize:13}} /> Generate {label}</>}
-    </button>
+  if (!path) return (
+    <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 text-xs font-semibold">
+      {label} unavailable
+    </span>
   );
 
   return (
     <>
-      {viewing && <DocViewer url={localUrl} label={label} onClose={() => setViewing(false)} preloadedHtml={localHtml} />}
-      <div className="flex gap-1">
-        <button onClick={() => setViewing(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors">
-          <VisibilityRounded sx={{fontSize:13}} /> {label}
-        </button>
-        <a href={localUrl} target="_blank" rel="noopener noreferrer"
-          className="flex items-center justify-center w-7 h-7 rounded-xl border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition-colors" title="Open in new tab">
-          <OpenInNewRounded sx={{fontSize:13}} />
-        </a>
-      </div>
+      {viewing && <DocViewer path={path} label={label} onClose={() => setViewing(false)} />}
+      <button onClick={() => setViewing(true)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors">
+        <VisibilityRounded sx={{fontSize:13}} /> {label}
+      </button>
     </>
   );
 }
 
 function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
-  const [agreementUrl,  setAgreementUrl]  = useState(order.agreement_url);
-  const [receiptUrl,    setReceiptUrl]    = useState(order.receipt_url);
-  const [agreementHtml, setAgreementHtml] = useState<string | undefined>(undefined);
-  const [receiptHtml,   setReceiptHtml]   = useState<string | undefined>(undefined);
-
-  // Pre-fetch HTML for existing URLs so viewer works without CORS issues
-  useEffect(() => {
-    if (order.agreement_url && !agreementHtml) {
-      fetch(order.agreement_url).then(r => r.ok ? r.text() : Promise.reject())
-        .then(h => setAgreementHtml(h)).catch(() => {});
-    }
-    if (order.receipt_url && !receiptHtml) {
-      fetch(order.receipt_url).then(r => r.ok ? r.text() : Promise.reject())
-        .then(h => setReceiptHtml(h)).catch(() => {});
-    }
-  }, [order.agreement_url, order.receipt_url]);
-
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {/* Header */}
@@ -235,24 +195,26 @@ function OrderCard({ order, tab }: { order: Order; tab: 'renter' | 'host' }) {
         )}
       </div>
 
+      {/* Verification status — statuses only, never the underlying documents */}
+      {tab === 'host' && (order.id_verification_status || order.address_verification_status) && (
+        <div className="px-5 pb-2 flex flex-wrap gap-1.5">
+          {order.id_verification_status && (
+            <span className="text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-lg">
+              Identity verification {order.id_verification_status === 'provided' || order.id_verification_status === 'verified' ? 'completed ✓' : 'pending'}
+            </span>
+          )}
+          {order.address_verification_status && (
+            <span className="text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-lg">
+              Address verification {order.address_verification_status === 'provided' || order.address_verification_status === 'verified' ? 'completed ✓' : 'pending'}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Documents */}
       <div className="px-5 pb-4 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
-        <DocButton
-          label="Rental Agreement"
-          url={agreementUrl}
-          agreementId={order.agreement_id || undefined}
-          type="agreement"
-          onGenerated={u => setAgreementUrl(u)}
-          preloadedHtml={agreementHtml}
-        />
-        <DocButton
-          label="Receipt"
-          url={receiptUrl}
-          receiptId={order.receipt_id}
-          type="receipt"
-          onGenerated={u => setReceiptUrl(u)}
-          preloadedHtml={receiptHtml}
-        />
+        <DocButton label="Rental Agreement" path={order.agreement_path} />
+        <DocButton label="Receipt" path={order.receipt_path} />
       </div>
     </div>
   );
@@ -284,22 +246,39 @@ export default function MyOrders() {
 
       if (error) console.warn('Orders fetch error:', error.message);
 
-      setOrders((data || []).map((r: any) => ({
-        receipt_id:     r.receipt_id || r.id,
-        agreement_id:   r.agreement_id || null,
-        listing_title:  r.listing_title || '—',
-        start_date:     r.start_date,
-        duration:       r.duration || 1,
-        duration_type:  r.duration_type || 'day',
-        total_amount:   Number(r.total_amount),
-        payment_method: r.payment_method,
-        host_name:      r.host_name,
-        renter_name:    r.renter_name,
-        issued_at:      r.paid_at || r.issued_at || new Date().toISOString(),
-        signed_at:      r.paid_at || null,
-        receipt_url:    r.receipt_url || null,
-        agreement_url:  tab === 'host' ? (r.host_agreement_url || r.agreement_url) : r.agreement_url || null,
-      })));
+      const rows = data || [];
+      const agreementIds = [...new Set(rows.map((r: any) => r.rental_agreement_id).filter(Boolean))];
+      const agreementsById: Record<string, any> = {};
+      if (agreementIds.length) {
+        const { data: agRows } = await supabase
+          .from('rental_agreements')
+          .select('id, agreement_renter_path, agreement_host_path, receipt_path, id_verification_status, address_verification_status')
+          .in('id', agreementIds);
+        (agRows || []).forEach((a: any) => { agreementsById[a.id] = a; });
+      }
+
+      setOrders(rows.map((r: any) => {
+        const ag = r.rental_agreement_id ? agreementsById[r.rental_agreement_id] : null;
+        return {
+          receipt_id:     r.receipt_id || r.id,
+          agreement_id:   r.agreement_id || null,
+          rental_agreement_id: r.rental_agreement_id || null,
+          listing_title:  r.listing_title || '—',
+          start_date:     r.start_date,
+          duration:       r.duration || 1,
+          duration_type:  r.duration_type || 'day',
+          total_amount:   Number(r.total_amount),
+          payment_method: r.payment_method,
+          host_name:      r.host_name,
+          renter_name:    r.renter_name,
+          issued_at:      r.paid_at || r.issued_at || new Date().toISOString(),
+          signed_at:      r.paid_at || null,
+          agreement_path: ag ? (tab === 'host' ? ag.agreement_host_path : ag.agreement_renter_path) : null,
+          receipt_path:   ag?.receipt_path || null,
+          id_verification_status: ag?.id_verification_status || null,
+          address_verification_status: ag?.address_verification_status || null,
+        };
+      }));
     } catch (e) {
       console.warn('MyOrders load failed:', e);
     }

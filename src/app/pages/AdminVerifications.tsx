@@ -21,21 +21,16 @@ import {
   DollarSign,
   TrendingUp,
   ArrowDownLeft,
-  ArrowUpRight,
   MapPin,
   Calendar,
   CreditCard,
   Camera,
   RefreshCw,
   Globe,
-  Zap,
-  ShoppingBag,
-  Rocket,
   ArrowRight,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { fpApi, FP } from "../lib/fpSystem";
 import { signVerificationDoc } from "../../lib/upload";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -310,8 +305,6 @@ export function AdminVerifications() {
 
   // Wallet state
   const [walletTxs, setWalletTxs] = useState<WalletTx[]>([]);
-  const [fpTxs, setFpTxs] = useState<any[]>([]);
-  const [fpAccounts, setFpAccounts] = useState<any[]>([]);
   const [walletFilter, setWalletFilter] = useState<
     "all" | "paid" | "pending"
   >("all");
@@ -383,16 +376,6 @@ export function AdminVerifications() {
 
     // ── WALLET ─────────────────────────────────────────────────────
     setWalletTxs(loadWalletTxs());
-
-    // ── FP SYSTEM (non-blocking) ──────────────────────────────────
-    try {
-      const [txs, accts] = await Promise.all([
-        fpApi.getAllTransactionsAsync(),
-        fpApi.getAllAccountsAsync(),
-      ]);
-      setFpTxs(txs);
-      setFpAccounts(accts);
-    } catch { /* FP system offline */ }
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -961,219 +944,6 @@ export function AdminVerifications() {
                   </p>
                 </div>
               </div>
-            </div>
-
-            {/* FP Economy stats */}
-            <div className="bg-gradient-to-br from-indigo-700 to-purple-800 rounded-3xl p-6 text-white mb-6 shadow-xl">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
-                  <Zap className="w-6 h-6 text-yellow-300" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-black">
-                    FP (Filmons Points) Economy
-                  </h2>
-                  <p className="text-indigo-200 text-xs">
-                    Buy: ${FP.BUY_RATE}/FP · Payout: $
-                    {FP.PAYOUT_RATE}/FP · ~32.5% spread margin
-                  </p>
-                </div>
-              </div>
-              {(() => {
-                const purchases = fpTxs.filter(
-                  (t: any) => t.type === "purchase",
-                );
-                const withdrawals = fpTxs.filter(
-                  (t: any) => t.type === "withdrawal",
-                );
-                const boosts = fpTxs.filter(
-                  (t: any) =>
-                    t.type === "boost_post" ||
-                    t.type === "boost_listing",
-                );
-                const totalPurchasedFP = purchases.reduce(
-                  (s: number, t: any) =>
-                    s + Math.abs(t.fpAmount),
-                  0,
-                );
-                const totalPurchasedCAD = purchases.reduce(
-                  (s: number, t: any) =>
-                    s + Math.abs(t.cadEquiv),
-                  0,
-                );
-                const totalWithdrawnFP = Math.abs(
-                  withdrawals.reduce(
-                    (s: number, t: any) => s + t.fpAmount,
-                    0,
-                  ),
-                );
-                const totalWithdrawnCAD = Math.abs(
-                  withdrawals.reduce(
-                    (s: number, t: any) => s + t.cadEquiv,
-                    0,
-                  ),
-                );
-                const totalBoostFP = Math.abs(
-                  boosts.reduce(
-                    (s: number, t: any) => s + t.fpAmount,
-                    0,
-                  ),
-                );
-                const spreadEarned = parseFloat(
-                  (
-                    totalPurchasedFP *
-                    (FP.BUY_RATE - FP.PAYOUT_RATE)
-                  ).toFixed(2),
-                );
-                const totalCirculation = fpAccounts.reduce(
-                  (s: number, a: any) => s + (a.balance || 0),
-                  0,
-                );
-                return (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {[
-                      {
-                        label: "FP Sold",
-                        value: `${fpApi.fmt(totalPurchasedFP)} FP`,
-                        sub: `$${fmt(totalPurchasedCAD)} CAD`,
-                        icon: (
-                          <ShoppingBag className="w-4 h-4" />
-                        ),
-                      },
-                      {
-                        label: "In Circulation",
-                        value: `${fpApi.fmt(totalCirculation)} FP`,
-                        sub: `${fpAccounts.length} accounts`,
-                        icon: (
-                          <Zap className="w-4 h-4 text-yellow-300" />
-                        ),
-                      },
-                      {
-                        label: "Withdrawn",
-                        value: `${fpApi.fmt(totalWithdrawnFP)} FP`,
-                        sub: `$${fmt(totalWithdrawnCAD)} paid out`,
-                        icon: (
-                          <ArrowUpRight className="w-4 h-4" />
-                        ),
-                      },
-                      {
-                        label: "Boost Spend",
-                        value: `${fpApi.fmt(totalBoostFP)} FP`,
-                        sub: `$${fmt(totalBoostFP * FP.BUY_RATE)} equiv.`,
-                        icon: (
-                          <Rocket className="w-4 h-4 text-orange-300" />
-                        ),
-                      },
-                      {
-                        label: "Spread Earned",
-                        value: `$${fmt(spreadEarned)}`,
-                        sub: `$${FP.BUY_RATE} buy vs $${FP.PAYOUT_RATE} payout`,
-                        icon: (
-                          <TrendingUp className="w-4 h-4 text-green-300" />
-                        ),
-                      },
-                      {
-                        label: "FP Transactions",
-                        value: fpTxs.length.toString(),
-                        sub: "total economy events",
-                        icon: (
-                          <DollarSign className="w-4 h-4" />
-                        ),
-                      },
-                    ].map((s) => (
-                      <div
-                        key={s.label}
-                        className="bg-white/10 rounded-2xl p-3"
-                      >
-                        <div className="flex items-center gap-1.5 mb-1 text-white/70">
-                          {s.icon}
-                          <p className="text-[10px] font-semibold uppercase tracking-wide">
-                            {s.label}
-                          </p>
-                        </div>
-                        <p className="text-lg font-black text-white leading-tight">
-                          {s.value}
-                        </p>
-                        <p className="text-[10px] text-white/50 mt-0.5">
-                          {s.sub}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* FP Transaction ledger */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-gray-50 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-yellow-500" /> FP
-                  Transactions
-                </h3>
-                <span className="text-xs text-gray-400">
-                  {fpTxs.length} total
-                </span>
-              </div>
-              {fpTxs.length === 0 ? (
-                <div className="p-8 text-center text-gray-400 text-sm">
-                  No FP transactions yet.
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
-                  {fpTxs.slice(0, 50).map((tx: any) => {
-                    const isCredit = tx.fpAmount > 0;
-                    const allUsers: any[] = JSON.parse(
-                      localStorage.getItem("filmons_users") ||
-                        "[]",
-                    );
-                    const u = allUsers.find(
-                      (u: any) => u.id === tx.userId,
-                    );
-                    return (
-                      <div
-                        key={tx.id}
-                        className="flex items-center gap-3 px-5 py-3"
-                      >
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-black ${isCredit ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}
-                        >
-                          {isCredit ? "+" : "−"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-gray-800 truncate">
-                            {tx.description}
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                            {u?.name || tx.userId?.slice(0, 8)}{" "}
-                            ·{" "}
-                            {new Date(
-                              tx.createdAt,
-                            ).toLocaleDateString("en-CA", {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p
-                            className={`text-sm font-black ${isCredit ? "text-green-600" : "text-red-500"}`}
-                          >
-                            {isCredit ? "+" : ""}
-                            {fpApi.fmt(
-                              Math.abs(tx.fpAmount),
-                            )}{" "}
-                            FP
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                            ${Math.abs(tx.cadEquiv).toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
 
             {/* Revenue breakdown */}

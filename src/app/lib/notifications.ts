@@ -106,7 +106,6 @@ function rowToNotif(r: any): Notification {
     postImage:      r.post_image        ?? undefined,
     commentContent: r.comment_content   ?? r.body ?? undefined,
     conversationId: r.conversation_id   ?? undefined,
-    fpAmount:       r.fp_amount         ?? undefined,
     read:           r.is_read           ?? r.read ?? false,
     createdAt:      r.created_at        ?? new Date().toISOString(),
   };
@@ -134,8 +133,8 @@ export function push(
   notif: Omit<Notification, 'id' | 'toUserId' | 'read' | 'createdAt'>,
 ): void {
   if (!toUserId) return;
-  // Don't notify yourself (except system events)
-  if (toUserId === notif.fromUserId && notif.type !== ('fp_purchase' as any)) return;
+  // Don't notify yourself
+  if (toUserId === notif.fromUserId) return;
 
   const title = _notifTitle(notif.type, notif.fromUserName || 'Someone');
 

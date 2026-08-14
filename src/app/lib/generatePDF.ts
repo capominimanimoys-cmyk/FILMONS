@@ -1,7 +1,9 @@
 /**
  * generatePDF.ts
  * Generates print-ready HTML documents for Filmons rental agreements and receipts.
- * Upload to Supabase Storage → get public URL → open in browser → Ctrl+P → Save as PDF
+ * Uploaded to the private `rental-verification` bucket as a path (never a
+ * public URL) — see uploadPDFDoc. View access always goes through a
+ * short-lived signed URL minted on demand.
  */
 
 import { supabase } from '../../lib/supabase';
@@ -17,7 +19,6 @@ export interface AgreementData {
   last_name: string;
   birthdate: string;
   id_type?: string;
-  id_number: string;
   id_country: string;
   email: string;
   phone: string;
@@ -27,8 +28,6 @@ export interface AgreementData {
   postal_code: string;
   country: string;
   proof_of_address_type?: string;
-  id_photo_url?: string;
-  proof_url?: string;
   signature_data?: string;
   listing_title: string;
   total_amount: number;
@@ -162,9 +161,8 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
     <div class="field"><div class="fl">Phone Number</div><div class="fv">${d.phone} <span class="badge">&#x2713; Verified</span></div></div>
     <div class="field"><div class="fl">Date of Birth</div><div class="fv">${d.birthdate}</div></div>
     <div class="field"><div class="fl">Government ID Type</div><div class="fv">${d.id_type || '&#x2014;'}</div></div>
-    <div class="field"><div class="fl">ID Number</div><div class="fv">${d.id_number}</div></div>
     <div class="field"><div class="fl">ID Country of Issue</div><div class="fv">${d.id_country}</div></div>
-    <div class="field"><div class="fl">ID Photo</div><div class="fv">${isHostCopy && d.id_photo_url ? `<a href="${d.id_photo_url}" style="color:#2563eb">🔒 View secure ID photo (host only)</a>` : 'Stored securely in Filmons vault'}</div></div>
+    <div class="field"><div class="fl">Identity Verification</div><div class="fv"><span class="badge">&#x2713; Provided</span> &#x2014; document is private and never shown here</div></div>
   </div>
 
   <div class="sub">1.3 Rental Period</div>
@@ -180,7 +178,7 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
     <div class="field"><div class="fl">Province / State</div><div class="fv">${d.province}</div></div>
     <div class="field"><div class="fl">Postal / ZIP Code</div><div class="fv">${d.postal_code}</div></div>
     <div class="field"><div class="fl">Country</div><div class="fv">${d.country}</div></div>
-    <div class="field"><div class="fl">Proof of Address</div><div class="fv">${d.proof_of_address_type || '&#x2014;'} <span class="badge">&#x2713; Provided</span>${isHostCopy && d.proof_url ? ` &nbsp;<a href="${d.proof_url}" style="color:#2563eb;font-size:8.5px">View document</a>` : ''}</div></div>
+    <div class="field"><div class="fl">Proof of Address</div><div class="fv">${d.proof_of_address_type || '&#x2014;'} <span class="badge">&#x2713; Provided</span></div></div>
   </div>
 </div>
 
@@ -434,68 +432,19 @@ export function buildReceiptHTML(d: ReceiptData): string {
 </body></html>`;
 }
 
-// ── Upload to Supabase and return public URL ────────────────────────
-export async function uploadPDFDoc(filename: string, html: string): Promise<string> {
-  // Encode as UTF-8 explicitly
+// ── Upload to the private rental-verification bucket, return the storage
+// PATH (never a public URL — callers mint a short-lived signed URL at view
+// time via signRentalDoc in src/lib/upload.ts). ─────────────────────
+export async function uploadPDFDoc(path: string, html: string): Promise<string> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(html);
   const blob = new Blob([bytes], { type: 'text/html; charset=utf-8' });
   try {
-    const { data } = await supabase.storage.from('documents')
-      .upload(filename, blob, { contentType: 'text/html; charset=utf-8', upsert: true });
-    if (data) return supabase.storage.from('documents').getPublicUrl(data.path).data.publicUrl;
-  } catch {}
-  return '';
-}
-
-// ── Fetch agreement from DB and generate HTML ──────────────────────
-export async function generateAgreementFromDB(agreementId: string, isHostCopy = false): Promise<{ html: string; url: string }> {
-  const { data, error } = await supabase
-    .from('rental_agreements')
-    .select('*')
-    .eq('id', agreementId)
-    .single();
-
-  if (error || !data) throw new Error('Agreement not found: ' + agreementId);
-
-  // Fetch host profile
-  let host: any = {};
-  if (data.host_id) {
-    const { data: hp } = await supabase.from('profiles').select('name, email, username').eq('id', data.host_id).single();
-    if (hp) host = hp;
+    const { data, error } = await supabase.storage.from('rental-verification')
+      .upload(path, blob, { contentType: 'text/html; charset=utf-8', upsert: true });
+    if (error) { console.warn('Document upload failed:', error.message); return ''; }
+    return data?.path || '';
+  } catch {
+    return '';
   }
-
-  const agreementData: AgreementData = {
-    ...data,
-    listing_title: data.listing_title,
-    total_amount:  Number(data.total_amount),
-    host_name:     host.name || null,
-    host_email:    host.email || null,
-    host_username: host.username || null,
-  };
-
-  const html = buildAgreementHTML(agreementData, isHostCopy);
-  const filename = `${agreementId}-agreement${isHostCopy ? '-host' : '-renter'}.html`;
-  const url = await uploadPDFDoc(filename, html);
-  return { html, url };
-}
-
-// ── Fetch receipt from DB and generate HTML ────────────────────────
-export async function generateReceiptFromDB(receiptId: string): Promise<{ html: string; url: string }> {
-  const { data, error } = await supabase
-    .from('receipts')
-    .select('*')
-    .eq('id', receiptId)
-    .single();
-
-  if (error || !data) throw new Error('Receipt not found: ' + receiptId);
-
-  const receiptData: ReceiptData = {
-    ...data,
-    total_amount: Number(data.total_amount),
-  };
-
-  const html = buildReceiptHTML(receiptData);
-  const url = await uploadPDFDoc(`${receiptId}-receipt.html`, html);
-  return { html, url };
 }

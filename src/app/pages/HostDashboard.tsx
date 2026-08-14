@@ -11,7 +11,7 @@ import {
   ShoppingCart, Zap, X, CalendarDays, Lock,
 } from 'lucide-react';
 import { savedListingsApi } from '../lib/api';
-import { fpApi, cadWalletApi } from '../lib/fpSystem';
+import { cadWalletApi } from '../lib/fpSystem';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
 import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, CREATOR_TIERS } from '../lib/reliabilityApi';
@@ -59,40 +59,19 @@ function TxRow({ amount, title, status, date, method, delivery }: {
 }
 
 function DbTxRow({ tx }: { tx: any }) {
-  const isCredit = tx.fp_amount > 0 || tx.cad_amount > 0;
-  const isFP     = tx.fp_amount !== 0;
+  const isCredit = tx.cad_amount > 0;
   const isCad    = tx.cad_amount !== 0;
 
   const typeLabel: Record<string, string> = {
-    fp_purchase:     '⚡ FP Purchase',
-    fp_earn:         '⚡ FP Earned',
-    fp_earn_views:   '⚡ FP from Views',
-    fp_earn_sale:    '⚡ FP from Sale',
-    fp_spend:        '⚡ FP Spent',
-    fp_spend_boost:  '⚡ Boost',
-    fp_send:         '⚡ FP Sent',
-    fp_receive:      '⚡ FP Received',
-    fp_withdrawal:   '⚡ Withdrawal',
     order_payment:   '🧾 Order Payment',
     order_earning:   '💰 Order Earning',
     stripe_checkout: '💳 Card Payment',
-    purchase:        '⚡ FP Purchase',
-    earn_views:      '⚡ Views Earning',
     marketplace_earn:'💰 Sale Earning',
-    boost_listing:   '🚀 Boost',
-    boost_post:      '🚀 Boost',
     withdrawal:      '🏦 Withdrawal',
-    send_fp:         '⚡ FP Sent',
-    receive_fp:      '⚡ FP Received',
-    admin_credit:    '🎁 Admin Credit',
   };
 
-  const bgColor = isCredit
-    ? (isFP ? 'bg-purple-50' : 'bg-green-50')
-    : 'bg-red-50';
-  const iconColor = isCredit
-    ? (isFP ? 'text-purple-500' : 'text-green-500')
-    : 'text-red-500';
+  const bgColor   = isCredit ? 'bg-green-50' : 'bg-red-50';
+  const iconColor = isCredit ? 'text-green-500' : 'text-red-500';
 
   return (
     <div className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
@@ -110,11 +89,6 @@ function DbTxRow({ tx }: { tx: any }) {
         </p>
       </div>
       <div className="text-right shrink-0 space-y-0.5">
-        {isFP && (
-          <p className={`text-sm font-black ${tx.fp_amount > 0 ? 'text-purple-600' : 'text-red-500'}`}>
-            {tx.fp_amount > 0 ? '+' : ''}⚡{Math.abs(tx.fp_amount).toLocaleString()}
-          </p>
-        )}
         {isCad && (
           <p className={`text-sm font-black ${tx.cad_amount > 0 ? 'text-green-600' : 'text-red-500'}`}>
             {tx.cad_amount > 0 ? '+' : ''}${fmt(Math.abs(tx.cad_amount))}
@@ -439,7 +413,6 @@ function CreatorDashboard({ user }: { user: any }) {
         </div>
         <CreatorPlusRequired feature="My Listings" color="blue" navigate={navigate}/>
         <CreatorPlusRequired feature="Wallet & Payouts" color="emerald" navigate={navigate}/>
-        <CreatorPlusRequired feature="FP Points" color="purple" navigate={navigate}/>
       </div>
 
       {/* Upgrade modal */}
@@ -494,7 +467,7 @@ function HostDashboardContent({ user }: { user: any }) {
   const [savedListings2, setSavedListings2] = useState<any[]>([]);
   const [stats, setStats] = useState({
     balance: 0, totalEarned: 0, pending: 0,
-    cadBalance: 0, fpBalance: 0,
+    cadBalance: 0,
     listingCount: 0, followers: 0, following: 0,
     reviewCount: 0, avgRating: 0, activeRequests: 0,
   });
@@ -534,15 +507,14 @@ function HostDashboardContent({ user }: { user: any }) {
         const totalEarned = orders.reduce((s: number, o: any) => s + Number(o.total_amount || 0), 0);
         const pending     = 0; // all paid at this point
 
-        // Wallet balances — real from cadWallet + fpApi
+        // Wallet balance — real from cadWallet
         const cadBalance = Math.max(cadWalletApi.getBalance(user.id), totalEarned);
-        const fpBalance  = fpApi.getBalance(user.id);
 
         const reviews = getStoredReviews().filter(r => listings.some(l => l.id === r.listingId));
         const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
 
         setStats({
-          balance: cadBalance, totalEarned, pending, cadBalance, fpBalance,
+          balance: cadBalance, totalEarned, pending, cadBalance,
           listingCount: listings.length,
           followers: user.followers?.length || 0,
           following: user.following?.length || 0,
@@ -553,8 +525,7 @@ function HostDashboardContent({ user }: { user: any }) {
       .catch(() => {
         // Fallback to localStorage wallet
         const cadBalance = cadWalletApi.getBalance(user.id);
-        const fpBalance  = fpApi.getBalance(user.id);
-        setStats(prev => ({ ...prev, cadBalance, fpBalance, balance: cadBalance }));
+        setStats(prev => ({ ...prev, cadBalance, balance: cadBalance }));
       });
 
     savedListingsApi.getSaved(user.id).then(ls => setSavedListings2(Array.isArray(ls) ? ls : [])).catch(() => setSavedListings2([]));
@@ -562,9 +533,8 @@ function HostDashboardContent({ user }: { user: any }) {
 
   useEffect(() => {
     const handler = () => {
-      const fpBalance  = fpApi.getBalance(user.id);
       const cadBalance = Math.max(cadWalletApi.getBalance(user.id), stats.totalEarned);
-      setStats(prev => ({ ...prev, cadBalance, fpBalance, balance: cadBalance }));
+      setStats(prev => ({ ...prev, cadBalance, balance: cadBalance }));
     };
     window.addEventListener('filmons:wallet:updated', handler);
     return () => window.removeEventListener('filmons:wallet:updated', handler);
@@ -629,23 +599,12 @@ function HostDashboardContent({ user }: { user: any }) {
                   My Wallet →
                 </Link>
               </div>
-              {/* CAD Wallet */}
-              <div className="flex items-baseline gap-2 mb-1">
+              <div className="flex items-baseline gap-2 mb-4">
                 <span className="text-4xl font-black">${fmt(stats.cadBalance)}</span>
                 <span className="text-blue-200 text-sm">CAD</span>
               </div>
-              {/* FP Wallet */}
-              {stats.fpBalance > 0 && (
-                <div className="flex items-baseline gap-1.5 mb-4">
-                  <span className="text-xl font-bold text-blue-100">⚡{fpApi.fmt(stats.fpBalance)}</span>
-                  <span className="text-blue-300 text-xs">FP ≈ ${fmt(fpApi.fpToCad(stats.fpBalance))} CAD</span>
-                </div>
-              )}
-              {stats.fpBalance === 0 && <div className="mb-4" />}
               <div className="flex gap-4">
                 <div><p className="text-blue-200 text-xs">CAD Earned</p><p className="text-white font-bold text-sm">${fmt(stats.cadBalance)}</p></div>
-                <div className="w-px bg-blue-500/50" />
-                <div><p className="text-blue-200 text-xs">FP Balance</p><p className="text-white font-bold text-sm">⚡{fpApi.fmt(stats.fpBalance)}</p></div>
                 <div className="w-px bg-blue-500/50" />
                 <div><p className="text-blue-200 text-xs">Pending</p><p className="text-white font-bold text-sm">${fmt(stats.pending)}</p></div>
                 <div className="w-px bg-blue-500/50" />
@@ -710,7 +669,7 @@ function HostDashboardContent({ user }: { user: any }) {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-gray-900">Recent Transactions</h3>
-                <Link to="/wallet" className="text-xs text-blue-600 font-semibold flex items-center gap-0.5">FP Wallet <ArrowUpRight className="w-3 h-3" /></Link>
+                <Link to="/wallet" className="text-xs text-blue-600 font-semibold flex items-center gap-0.5">Wallet <ArrowUpRight className="w-3 h-3" /></Link>
               </div>
               {dbTxLoading ? (
                 <div className="flex items-center justify-center py-6">

@@ -45,7 +45,10 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
 
   // ── GET /stripe-charge/verify?session_id=xxx ──────────────────
-  // Called on return from Stripe to verify payment and credit FP
+  // Called on return from Stripe to verify a cash order payment. The
+  // caller (Checkout.tsx) finalizes its own order/transaction rows using
+  // the cad_amount this returns — this endpoint only verifies with Stripe
+  // and reports back the confirmed amount, idempotently.
   if (req.method === 'GET' && url.pathname.endsWith('/verify')) {
     const sessionId = url.searchParams.get('session_id');
     if (!sessionId) return new Response(JSON.stringify({ error: 'Missing session_id' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -62,16 +65,9 @@ Deno.serve(async (req) => {
     if (session.error) return new Response(JSON.stringify({ error: session.error.message }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     if (session.payment_status !== 'paid') return new Response(JSON.stringify({ error: 'Payment not completed', status: session.payment_status }), { status: 402, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-    const userId  = session.metadata?.user_id;
-    const fpAmt   = parseInt(session.metadata?.fp_amount || '0');
-    const cadAmt  = parseFloat(session.metadata?.cad_amount || '0');
+    const userId = session.metadata?.user_id;
+    const cadAmt = parseFloat(session.metadata?.cad_amount || '0');
 
-    // This endpoint is shared by two flows: buying FP credit (fp_amount > 0,
-    // handled entirely here) and paying cash for a rental/order (fp_amount
-    // is legitimately 0 — the caller finalizes its own order/transaction
-    // rows using the cad_amount this returns). Requiring fp_amount to be
-    // truthy rejected every real cash payment as "Missing metadata" before
-    // any transaction was ever written.
     if (!userId) return new Response(JSON.stringify({ error: 'Missing metadata' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     // Check if already credited (idempotency)
@@ -80,50 +76,19 @@ Deno.serve(async (req) => {
     });
     const existing = await checkRes.json();
     if (existing?.length > 0) {
-      return new Response(JSON.stringify({ success: true, already_credited: true, fp_amount: fpAmt, cad_amount: cadAmt }), {
+      return new Response(JSON.stringify({ success: true, already_credited: true, cad_amount: cadAmt }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       });
     }
 
-    // FP top-up purchase — record the transaction and credit the wallet.
-    // Cash order payments (fpAmt === 0) skip this; the caller records its
-    // own order_payment/order_earning transactions and order row.
-    if (fpAmt > 0) {
-      await dbInsert('transactions', {
-        user_id:           userId,
-        type:              'fp_purchase',
-        fp_amount:         fpAmt,
-        cad_amount:        -cadAmt,
-        description:       `Purchased ⚡${fpAmt} FP — $${cadAmt.toFixed(2)} CAD via Stripe`,
-        status:            'completed',
-        payment_method:    'stripe_checkout',
-        stripe_session_id: sessionId,
-        metadata:          { cad_amount: cadAmt, fp_amount: fpAmt, stripe: true },
-      });
-
-      const walletRes = await fetch(`${SUPABASE_URL}/rest/v1/fp_wallets?user_id=eq.${userId}&select=balance,lifetime_earned,lifetime_purchased`, {
-        headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'apikey': SUPABASE_SERVICE_KEY },
-      });
-      const wallets = await walletRes.json();
-      const current = wallets?.[0] || { balance: 0, lifetime_earned: 0, lifetime_purchased: 0 };
-
-      await dbUpsert('fp_wallets', {
-        user_id:            userId,
-        balance:            (current.balance || 0) + fpAmt,
-        lifetime_earned:    (current.lifetime_earned || 0) + fpAmt,
-        lifetime_purchased: (current.lifetime_purchased || 0) + fpAmt,
-        updated_at:         new Date().toISOString(),
-      }, 'user_id');
-    }
-
-    return new Response(JSON.stringify({ success: true, fp_amount: fpAmt, cad_amount: cadAmt }), {
+    return new Response(JSON.stringify({ success: true, cad_amount: cadAmt }), {
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
   }
 
   // ── POST /stripe-charge — Create Checkout Session ─────────────
   try {
-    const { amount_cad, customer_email, description, success_url, cancel_url, user_id, fp_amount } = await req.json();
+    const { amount_cad, customer_email, description, success_url, cancel_url, user_id } = await req.json();
 
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return new Response(JSON.stringify({ error: 'Stripe not configured' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -132,13 +97,12 @@ Deno.serve(async (req) => {
       'mode':                                           'payment',
       'line_items[0][price_data][currency]':            'cad',
       'line_items[0][price_data][unit_amount]':         String(Math.round(amount_cad * 100)),
-      'line_items[0][price_data][product_data][name]':  description || 'Filmons FP Purchase',
+      'line_items[0][price_data][product_data][name]':  description || 'Filmons Payment',
       'line_items[0][quantity]':                        '1',
       'success_url':                                    success_url,
       'cancel_url':                                     cancel_url,
       // Store metadata for verification
       'metadata[user_id]':                              user_id || '',
-      'metadata[fp_amount]':                            String(fp_amount || 0),
       'metadata[cad_amount]':                           String(amount_cad),
       'metadata[platform]':                             'filmons',
     });

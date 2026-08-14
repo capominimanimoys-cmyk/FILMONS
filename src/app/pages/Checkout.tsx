@@ -6,7 +6,7 @@ import { chatApi, listingsApi, authApi } from '../lib/api';
 import { ChatMessage, Listing } from '../types';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { toast } from 'sonner';
-import { fpApi, cadWalletApi } from '../lib/fpSystem';
+import { cadWalletApi } from '../lib/fpSystem';
 import {
   ArrowLeft, CreditCard, MapPin, Truck, CheckCircle,
   CalendarDays, Clock, ShieldCheck, ChevronRight, Loader2,
@@ -18,6 +18,8 @@ import { supabase } from '../../lib/supabase';
 import { RentalAgreementModal, SignedAgreementData } from '../components/RentalAgreementModal';
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
+import { buildAgreementHTML, buildReceiptHTML, uploadPDFDoc } from '../lib/generatePDF';
+import { signRentalDoc } from '../../lib/upload';
 
 // ── helpers ────────────────────────────────────────────────────────
 function getConversations() {
@@ -35,13 +37,13 @@ function getListings(): Listing[] {
 const pendingAgreementKey = (sessionId: string) => `filmons_pending_agreement_${sessionId}`;
 
 // ── Shared order finalisation ────────────────────────────────────────────────
-// Both payment paths (FP/cash — synchronous — and card — after the Stripe
-// redirect returns) need to do the exact same thing once money has actually
-// moved: send the renter+host their agreement/receipt emails, and write the
-// order + both sides' transactions. Previously only the FP/cash path did
-// this; the card path's post-redirect handler wrote a couple of ad-hoc
-// transaction rows and nothing else, so card payments never created an
-// `orders` row and never sent the confirmation emails.
+// Both payment paths (cash-equivalent methods — synchronous — and card —
+// after the Stripe redirect returns) need to do the exact same thing once
+// money has actually moved: send the renter+host their agreement/receipt
+// emails, and write the order + both sides' transactions. Previously only
+// the synchronous path did this; the card path's post-redirect handler
+// wrote a couple of ad-hoc transaction rows and nothing else, so card
+// payments never created an `orders` row and never sent confirmation emails.
 async function finalizeOrder(params: {
   pay: { listingTitle?: string; listingType?: string; listingMode?: string; startDate?: string; duration?: number; durationType?: string };
   totalAmount: number;
@@ -56,6 +58,88 @@ async function finalizeOrder(params: {
   const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, hostEarnings } = params;
   const today = new Date().toISOString().split('T')[0];
   const signedAt = new Date().toLocaleString('en-CA', { timeZone: 'America/Toronto' }) + ' EST';
+
+  // Rental documents (agreement copies + receipt) are generated here, once,
+  // from the already-signed & frozen `rental_agreements` row — never from
+  // live listing/order data (see rental_rules_snapshot immutability) — and
+  // stored path-only in the private `rental-verification` bucket. Email
+  // links below are short-lived signed URLs minted for this one send; the
+  // DB never persists a permanent/public link (Dashboard → Orders mints a
+  // fresh signed URL on demand instead).
+  let agreementRenterUrl = '', agreementHostUrl = '', receiptDocUrl = '';
+  try {
+    const { data: agRow } = await supabase.from('rental_agreements').select('*').eq('id', sa.agreementId).maybeSingle();
+    if (agRow) {
+      let signatureDataUrl = '';
+      if (agRow.signature_path) {
+        const sigSigned = await signRentalDoc(agRow.signature_path, 300);
+        if (sigSigned) {
+          try {
+            const blob = await (await fetch(sigSigned)).blob();
+            signatureDataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch { /* signature preview is best-effort */ }
+        }
+      }
+
+      const baseAgreement = {
+        id: sa.agreementId,
+        conversation_id: convId, message_id: msgId,
+        renter_id: user?.id, host_id: hostUser?.id,
+        first_name: agRow.legal_first_name || sa.renterName.split(' ')[0] || '',
+        last_name: agRow.legal_last_name || sa.renterName.split(' ').slice(1).join(' ') || '',
+        birthdate: agRow.date_of_birth || '—',
+        id_type: agRow.id_type, id_country: agRow.id_issuing_country || '—',
+        email: sa.renterEmail, phone: sa.renterPhone,
+        address: agRow.address_line1 || '—', city: agRow.city || '—',
+        province: agRow.province_state || '—', postal_code: agRow.postal_code || '—',
+        country: agRow.address_country === 'US' ? 'United States' : 'Canada',
+        proof_of_address_type: agRow.proof_of_address_type,
+        signature_data: signatureDataUrl,
+        listing_title: pay.listingTitle || '—', total_amount: totalAmount,
+        payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
+        duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
+        host_name: hostUser?.name, host_email: hostUser?.email,
+      };
+
+      const renterHtml = buildAgreementHTML(baseAgreement, false);
+      const hostHtml    = buildAgreementHTML(baseAgreement, true);
+      const receiptHtml = buildReceiptHTML({
+        id: sa.receiptNo, agreement_id: sa.refNo,
+        renter_id: user?.id, host_id: hostUser?.id,
+        renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
+        host_name: hostUser?.name, host_email: hostUser?.email,
+        listing_title: pay.listingTitle || '—', listing_type: pay.listingType,
+        start_date: pay.startDate, duration: pay.duration, duration_type: pay.durationType,
+        total_amount: totalAmount, payment_method: selectedMethod,
+        issued_at: new Date().toISOString(),
+      });
+
+      const [renterPath, hostPath, receiptPath] = await Promise.all([
+        uploadPDFDoc(`${sa.agreementId}/agreement-renter.html`, renterHtml),
+        uploadPDFDoc(`${sa.agreementId}/agreement-host.html`, hostHtml),
+        uploadPDFDoc(`${sa.agreementId}/receipt.html`, receiptHtml),
+      ]);
+
+      await supabase.from('rental_agreements').update({
+        agreement_renter_path: renterPath || null,
+        agreement_host_path: hostPath || null,
+        receipt_path: receiptPath || null,
+      }).eq('id', sa.agreementId);
+
+      const [rUrl, hUrl, rcUrl] = await Promise.all([
+        signRentalDoc(renterPath, 7 * 86400),
+        signRentalDoc(hostPath, 7 * 86400),
+        signRentalDoc(receiptPath, 7 * 86400),
+      ]);
+      agreementRenterUrl = rUrl || ''; agreementHostUrl = hUrl || ''; receiptDocUrl = rcUrl || '';
+    }
+  } catch (e) { console.warn('Document generation failed:', e); }
+
   const sharedParams = {
     ref_no: sa.refNo, today, signed_at: signedAt,
     renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
@@ -69,18 +153,17 @@ async function finalizeOrder(params: {
   emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templates.rentalAgreement, {
     ...sharedParams,
     to_email: sa.renterEmail, to_name: sa.renterName,
-    agreement_url: sa.agreementUrl, receipt_url: sa.receiptUrl,
-    greeting_message: 'Your payment is confirmed. Your rental agreement and receipt are ready.',
-    id_photo_url: sa.idUrl, proof_url: sa.proofUrl,
+    agreement_url: agreementRenterUrl, receipt_url: receiptDocUrl,
+    greeting_message: 'Your payment is confirmed. Your rental agreement and receipt are ready. (Links expire in 7 days — view anytime from Dashboard → Orders.)',
     reply_to: EMAILJS_CONFIG.filmons.email,
   }, EMAILJS_CONFIG.publicKey).catch(e => console.warn('Renter email failed:', e));
 
   emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templates.rentalAgreement, {
     ...sharedParams,
     to_email: hostUser?.email || EMAILJS_CONFIG.filmons.email, to_name: hostUser?.name || 'Host',
-    agreement_url: sa.hostAgreementUrl, receipt_url: sa.receiptUrl,
-    greeting_message: `${sa.renterName} has paid. Rental agreement and receipt are attached.`,
-    id_photo_url: sa.idUrl, proof_url: sa.proofUrl, reply_to: sa.renterEmail,
+    agreement_url: agreementHostUrl, receipt_url: receiptDocUrl,
+    greeting_message: `${sa.renterName} has paid. Rental agreement and receipt are attached. (Links expire in 7 days — view anytime from Dashboard → Orders.)`,
+    reply_to: sa.renterEmail,
   }, EMAILJS_CONFIG.publicKey).catch(e => console.warn('Host email failed:', e));
 
   const orderId = `ORD-${sa.refNo}`;
@@ -127,11 +210,9 @@ async function finalizeOrder(params: {
     transaction_id:    txId,
     agreement_id:      sa.refNo,
     receipt_id:        sa.receiptNo,
+    rental_agreement_id: sa.agreementId,
     conversation_id:   convId,
     message_id:        msgId,
-    agreement_url:     sa.agreementUrl,
-    host_agreement_url: sa.hostAgreementUrl,
-    receipt_url:       sa.receiptUrl,
     paid_at:           new Date().toISOString(),
   })).catch(e => console.warn('Order/transaction save failed:', e));
 
@@ -366,7 +447,7 @@ export function Checkout() {
 
         // Restore what handlePay stashed before the Stripe redirect wiped
         // React state, and run the same order/transactions/email flow the
-        // FP/cash path runs synchronously. Without this, card payments
+        // synchronous path runs immediately. Without this, card payments
         // never wrote an `orders` row and never sent the confirmation
         // emails — only the ad-hoc transaction rows above happened.
         const key = pendingAgreementKey(sessionId);
@@ -469,12 +550,11 @@ export function Checkout() {
 
   const pay = msg.paymentRequest!;
   const isPaid = pay.status === 'paid';
-  const isFPPayment  = selectedMethod === 'FP';
   const isCardMethod = selectedMethod === 'Credit/Debit Card';
   const availableMethods = (listing?.paymentMethods?.length
     ? listing.paymentMethods
-    : ['Credit/Debit Card', 'FP']
-  ).filter((m: string) => m !== 'Cash');
+    : ['Credit/Debit Card']
+  ).filter((m: string) => m !== 'Cash' && m !== 'FP');
   const availableDelivery = listing?.deliveryOptions?.length
     ? listing.deliveryOptions
     : ['pickup'];
@@ -493,7 +573,6 @@ export function Checkout() {
     ? listing.deliveryPrice
     : 0;
   const totalAmount = (Number(pay?.amount) || 0) + deliveryFee;
-  const fpEquivalent = isFPPayment ? totalAmount : fpApi.cadToFp(totalAmount);
 
   const deliveryAddrStr = [deliveryAddress.street, deliveryAddress.city, deliveryAddress.province, deliveryAddress.postal].filter(Boolean).join(', ');
 
@@ -515,7 +594,6 @@ export function Checkout() {
           body: {
             amount_cad:     totalAmount,
             user_id:        user?.id,
-            fp_amount:      0,
             description:    `Payment for "${pay.listingTitle}" via Filmons`,
             customer_email: user?.email || '',
             success_url:    successUrl,
@@ -561,15 +639,6 @@ export function Checkout() {
       return;
     }
 
-    // ── FP payment — check balance ───────────────────────────────
-    if (isFPPayment) {
-      const fpBalance = fpApi.getBalance(user!.id);
-      if (fpBalance < totalAmount) {
-        toast.error(`Insufficient FP balance. You have ⚡${fpBalance} but need ⚡${totalAmount}. Buy more FP first.`);
-        return;
-      }
-    }
-
     setSubmitting(true);
 
     const updatedPayment = {
@@ -613,29 +682,19 @@ export function Checkout() {
       listingsApi.markListingSold(pay.listingId).catch(() => {});
     }
 
-    // 4. Credit the correct wallet based on payment method + notify host
+    // 4. Credit the host's CAD wallet + notify them.
+    // (Card payments are handled by the Stripe redirect above and never
+    // reach this point — this covers payment methods like Debit Card/
+    // E-Transfer that are treated as immediately-confirmed real money.)
     if (hostUser?.id && totalAmount > 0) {
-      const isPayingWithFP = selectedMethod === 'FP' || selectedMethod?.toLowerCase().includes('fp');
-      if (isPayingWithFP) {
-        // Debit buyer's FP, credit host's FP wallet
-        fpApi.debit(user!.id, totalAmount, 'fp_spend' as any, `Payment for "${pay.listingTitle || 'listing'}"`, { listingId: pay.listingId });
-        fpApi.credit(hostUser.id, totalAmount, 'marketplace_earn' as any, `Sale: "${pay.listingTitle || 'listing'}"`, { listingId: pay.listingId, buyerId: user?.id });
-        // Save transaction to DB
-        supabase.from('transactions').insert([
-          { user_id: user!.id, type: 'fp_spend', fp_amount: -totalAmount, description: `Payment for "${pay.listingTitle}"`, status: 'completed', listing_title: pay.listingTitle, counterpart_id: hostUser.id, counterpart_name: hostUser.name },
-          { user_id: hostUser.id, type: 'fp_receive', fp_amount: totalAmount, description: `Received payment for "${pay.listingTitle}"`, status: 'completed', listing_title: pay.listingTitle, counterpart_id: user!.id, counterpart_name: user?.name },
-        ]).catch(() => {});
-      } else {
-        // Card (handled by redirect — shouldn't reach here)
-        cadWalletApi.onPaymentReceived(
-          hostUser.id, totalAmount,
-          `Payment for "${pay.listingTitle || 'listing'}" via ${selectedMethod}`,
-          { listingId: pay.listingId, buyerId: user?.id, msgId, convId, method: selectedMethod }
-        );
-      }
+      cadWalletApi.onPaymentReceived(
+        hostUser.id, totalAmount,
+        `Payment for "${pay.listingTitle || 'listing'}" via ${selectedMethod}`,
+        { listingId: pay.listingId, buyerId: user?.id, msgId, convId, method: selectedMethod }
+      );
       // Dispatch event so open wallet pages refresh live
       window.dispatchEvent(new CustomEvent('filmons:wallet:updated', {
-        detail: { userId: hostUser.id, type: isPayingWithFP ? 'fp' : 'cad', amount: totalAmount }
+        detail: { userId: hostUser.id, type: 'cad', amount: totalAmount }
       }));
     }
 
@@ -679,10 +738,7 @@ export function Checkout() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Payment Complete!</h2>
           <p className="text-gray-500 text-sm">
-            {isFPPayment
-              ? <>Your payment of <strong className="text-purple-700">⚡{totalAmount.toLocaleString('en-CA')} FP</strong> (≈ ${fpApi.fpToCad(totalAmount).toFixed(2)} CAD) has been confirmed.</>
-              : <>Your payment of <strong className="text-gray-800">${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</strong> has been confirmed.</>
-            }
+            Your payment of <strong className="text-gray-800">${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</strong> has been confirmed.
             {effectiveDelivery === 'delivery'
               ? ' The host will arrange delivery with you.'
               : ' Please coordinate pickup details with the host.'}
@@ -692,12 +748,6 @@ export function Checkout() {
               <span className="text-gray-500">Method</span>
               <span className="font-semibold">{selectedMethod}</span>
             </div>
-            {isFPPayment && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">FP Used</span>
-                <span className="font-bold text-purple-700">⚡{(Number(totalAmount)||0).toLocaleString('en-CA')} FP ≈ ${fpApi.fpToCad(Number(totalAmount)||0).toFixed(2)} CAD</span>
-              </div>
-            )}
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Fulfilment</span>
               <span className="font-semibold capitalize">{effectiveDelivery}</span>
@@ -883,9 +933,6 @@ export function Checkout() {
               </div>
               <div className="p-4 space-y-2">
                 {availableMethods.map(method => {
-                  const isFP   = method === 'FP';
-                  const fpBal  = fpApi.getBalance(user?.id || '');
-                  const enough = fpBal >= totalAmount;
                   return (
                     <button key={method} onClick={() => setSelectedMethod(method)}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
@@ -900,11 +947,6 @@ export function Checkout() {
                         <span className={`font-semibold text-sm ${selectedMethod === method ? 'text-blue-700' : 'text-gray-700'}`}>
                           {method}
                         </span>
-                        {isFP && (
-                          <p className={`text-xs mt-0.5 ${enough ? 'text-purple-600' : 'text-red-500'}`}>
-                            Balance: ⚡{fpBal.toLocaleString()} {!enough && `— need ⚡${(totalAmount - fpBal).toLocaleString()} more`}
-                          </p>
-                        )}
                         {method === 'Credit/Debit Card' && (
                           <p className="text-xs text-gray-400 mt-0.5">Secured payment</p>
                         )}
@@ -917,18 +959,6 @@ export function Checkout() {
                     </button>
                   );
                 })}
-
-                {/* FP top-up link when balance insufficient */}
-                {isFPPayment && fpApi.getBalance(user?.id || '') < totalAmount && (
-                  <div className="mt-2 p-3 bg-purple-50 rounded-xl border border-purple-200">
-                    <p className="text-xs text-purple-700 font-semibold mb-2">
-                      You need ⚡{(totalAmount - fpApi.getBalance(user?.id || '')).toLocaleString()} more FP to complete this payment.
-                    </p>
-                    <Link to="/wallet" className="inline-flex items-center gap-1.5 text-xs bg-purple-600 text-white font-bold px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors">
-                      ⚡ Buy FP →
-                    </Link>
-                  </div>
-                )}
 
                 {/* Stripe redirect note for card */}
                 {isCardMethod && (
@@ -1171,7 +1201,7 @@ export function Checkout() {
                 className="flex-1 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm rounded-2xl py-3.5 transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
-              <button onClick={handlePay} disabled={submitting || stripeRedirecting || !agreementAccepted || (isFPPayment && fpApi.getBalance(user?.id || '') < totalAmount)}
+              <button onClick={handlePay} disabled={submitting || stripeRedirecting || !agreementAccepted}
                 className="flex-[2] flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-3.5 transition-colors shadow-md">
                 {stripeRedirecting
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing payment…</>
@@ -1179,11 +1209,9 @@ export function Checkout() {
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
                     : !agreementAccepted
                       ? <>✍️ Sign agreement to pay</>
-                      : isFPPayment
-                        ? <>⚡ Pay {totalAmount.toLocaleString()} FP</>
-                        : isCardMethod
-                          ? <>🔒 Pay securely →</>
-                          : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
+                      : isCardMethod
+                        ? <>🔒 Pay securely →</>
+                        : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
               </button>
             </div>
           </>

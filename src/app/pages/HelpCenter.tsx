@@ -18,7 +18,7 @@ const CATEGORIES = [
   { id:'portfolio',    icon: <Film className="w-5 h-5"/>,          label: 'Portfolio',           color: 'bg-pink-50 text-pink-600',    desc: 'Create, edit, and share your work' },
   { id:'messaging',    icon: <MessageCircle className="w-5 h-5"/>, label: 'Messaging',           color: 'bg-green-50 text-green-600',  desc: 'DMs, collaboration requests' },
   { id:'marketplace',  icon: <Package className="w-5 h-5"/>,       label: 'Marketplace',         color: 'bg-orange-50 text-orange-600',desc: 'Listings, rentals, services' },
-  { id:'payments',     icon: <CreditCard className="w-5 h-5"/>,    label: 'Payments & Wallet',   color: 'bg-emerald-50 text-emerald-600', desc: 'FP, payouts, transactions' },
+  { id:'payments',     icon: <CreditCard className="w-5 h-5"/>,    label: 'Payments & Wallet',   color: 'bg-emerald-50 text-emerald-600', desc: 'Payouts, transactions' },
   { id:'verification', icon: <CheckCircle className="w-5 h-5"/>,   label: 'Verification',        color: 'bg-teal-50 text-teal-600',    desc: 'ID, professional, business badges' },
   { id:'privacy',      icon: <Lock className="w-5 h-5"/>,          label: 'Privacy & Security',  color: 'bg-gray-50 text-gray-600',    desc: '2FA, devices, privacy controls' },
   { id:'trust',        icon: <Shield className="w-5 h-5"/>,        label: 'Trust & Safety',      color: 'bg-red-50 text-red-600',      desc: 'Reporting, scam prevention' },
@@ -55,7 +55,6 @@ const FAQS: Record<string, { q: string; a: string }[]> = {
     { q: 'Can I offer services, not just gear?', a: 'Yes. Create a "Service" listing for editing, cinematography, photography, sound, and more. Set your hourly or day rate, availability, and working area.' },
   ],
   payments: [
-    { q: 'What is FP (Filmons Points)?', a: 'FP is Filmons\' internal currency. You earn FP on every transaction and can redeem them for platform credits, premium features, or cash out to your linked bank account (Creator+ users).' },
     { q: 'How long do payouts take?', a: 'Standard payouts process within 3-5 business days after a rental or service is marked complete. Creator+ users with verified bank accounts get priority 24-48h payouts.' },
     { q: 'What payment methods are accepted?', a: 'Filmons accepts Visa, Mastercard, American Express, and Interac (Canada). Apple Pay and Google Pay are coming soon. All payments are secured via Stripe.' },
     { q: 'How do I dispute a charge?', a: 'Go to Wallet → Transaction History → tap the transaction → "Dispute". Provide details and any evidence. Our payments team responds within 48 hours.' },
@@ -92,7 +91,7 @@ const GUIDES = [
   { icon: '🔒', title: 'Protecting Your Creative Work',        sub: '6 min read', cat: 'privacy'      },
   { icon: '✓',  title: 'Setting Up Professional Verification', sub: '4 min read', cat: 'verification' },
   { icon: '⭐', title: 'Growing Your Creator Reputation',       sub: '7 min read', cat: 'account'      },
-  { icon: '💰', title: 'Getting Paid: FP & Payouts Guide',     sub: '5 min read', cat: 'payments'     },
+  { icon: '💰', title: 'Getting Paid: Payouts Guide',          sub: '5 min read', cat: 'payments'     },
 ];
 
 const SYSTEM_STATUS = [

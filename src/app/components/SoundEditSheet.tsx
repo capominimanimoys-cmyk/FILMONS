@@ -34,7 +34,6 @@ interface Sound {
   visibility:       string;
   copyright_status: string;
   use_count:        number;
-  fp_earned:        number;
   is_original:      boolean;
 }
 
@@ -184,9 +183,6 @@ export function SoundEditSheet({ sound, onClose, onSaved, onDelete }: Props) {
                 {sound.use_count > 0 && (
                   <span className="text-[10px] font-bold text-blue-500">{sound.use_count.toLocaleString()} uses</span>
                 )}
-                {sound.fp_earned > 0 && (
-                  <span className="text-[10px] font-bold text-yellow-500">🪙 {sound.fp_earned} FP</span>
-                )}
                 {sound.copyright_status === 'approved' && (
                   <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">✓ Approved</span>
                 )}
@@ -273,7 +269,7 @@ export function SoundEditSheet({ sound, onClose, onSaved, onDelete }: Props) {
               {vis === 'public' && sound.copyright_status === 'approved' && (
                 <div className="mt-2 p-3 rounded-xl bg-green-50 border border-green-100 flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-green-500 shrink-0"/>
-                  <p className="text-[11px] text-green-600">Public approved sounds appear in the Filmons audio library and earn FP rewards</p>
+                  <p className="text-[11px] text-green-600">Public approved sounds appear in the Filmons audio library</p>
                 </div>
               )}
             </div>

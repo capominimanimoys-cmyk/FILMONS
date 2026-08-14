@@ -142,7 +142,7 @@ export function EditListing() {
   const [endTime, setEndTime]     = useState('18:00');
   const [requirements, setRequirements] = useState('');
   const [cancellation, setCancellation] = useState('');
-  const [paymentMethods, setPaymentMethods] = useState<string[]>(['Credit/Debit Card', 'FP']);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(['Credit/Debit Card']);
   const [deliveryOptions, setDeliveryOptions] = useState<string[]>(['pickup']);
   const [deliveryPrice, setDeliveryPrice] = useState('');
 
@@ -199,7 +199,7 @@ export function EditListing() {
       setWorkingHours(listing.workingHours || '');
       setRequirements(listing.requirements || '');
       setCancellation(listing.cancellation || '');
-      if (listing.paymentMethods?.length) setPaymentMethods(listing.paymentMethods.filter((m: string) => m !== 'Cash')); else setPaymentMethods(['Credit/Debit Card', 'FP']);
+      if (listing.paymentMethods?.length) setPaymentMethods(listing.paymentMethods.filter((m: string) => m !== 'Cash' && m !== 'FP')); else setPaymentMethods(['Credit/Debit Card']);
       if (listing.blockedDates?.length) setBlockedDates(listing.blockedDates);
       if ((listing as any).availableDays?.length) setAvailableDays((listing as any).availableDays);
       if ((listing as any).serviceStartTime) setStartTime((listing as any).serviceStartTime);

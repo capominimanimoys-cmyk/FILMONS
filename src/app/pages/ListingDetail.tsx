@@ -422,7 +422,6 @@ export function ListingDetail() {
                         {listing.listingMode === 'sale' ? 'CAD' : listing.listingType === 'service' ? '/ hr CAD' : '/ day CAD'}
                       </span>
                     </div>
-                    <p className="text-xs text-purple-500 font-medium mt-0.5">⚡ {Math.floor(listing.price / 0.04).toLocaleString()} FP</p>
                     {reviews.length > 0 && (
                       <div className="flex items-center gap-1 mt-2">
                         <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />

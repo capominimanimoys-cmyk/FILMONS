@@ -21,7 +21,7 @@ export function Footer() {
               <li><Link to="/marketplace" className="text-gray-600 hover:text-blue-600 transition-colors">Marketplace</Link></li>
               <li><Link to="/feed" className="text-gray-600 hover:text-blue-600 transition-colors">Feed</Link></li>
               <li><Link to="/create-listing" className="text-gray-600 hover:text-blue-600 transition-colors">List your gear</Link></li>
-              <li><Link to="/wallet" className="text-gray-600 hover:text-blue-600 transition-colors">FP Wallet</Link></li>
+              <li><Link to="/wallet" className="text-gray-600 hover:text-blue-600 transition-colors">Wallet</Link></li>
             </ul>
           </div>
 

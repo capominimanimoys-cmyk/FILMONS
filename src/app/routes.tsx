@@ -23,7 +23,7 @@ import { Feed } from './pages/Feed';
 import { Inbox } from './pages/Inbox';
 import { Checkout } from './pages/Checkout';
 import { HostDashboard } from './pages/HostDashboard';
-import { FPWallet } from './pages/FPWallet';
+import { Wallet } from './pages/Wallet';
 import AudioPage from './pages/AudioPage';
 import { Notifications } from './pages/Notifications';
 import { NotificationSettings }  from './pages/NotificationSettings';
@@ -70,7 +70,7 @@ export const router = createBrowserRouter([
       { path: 'inbox', Component: Inbox },
       { path: 'checkout', Component: Checkout },
       { path: 'dashboard', Component: HostDashboard },
-      { path: 'wallet', Component: FPWallet },
+      { path: 'wallet', Component: Wallet },
       { path: 'notifications', Component: Notifications },
       { path: 'settings/notifications',  Component: NotificationSettings  },
       { path: 'settings/messages',       Component: MessageSettings        },

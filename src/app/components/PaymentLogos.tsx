@@ -119,19 +119,6 @@ export const PaymentLogo = ({ method, size = 32 }: { method: string; size?: numb
       </svg>
     ),
 
-    FP: (
-      <svg width={w} height={h} viewBox="0 0 52 30" fill="none">
-        <defs>
-          <linearGradient id="fp-g" x1="0" y1="0" x2="52" y2="30" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#7C3AED" /><stop offset="1" stopColor="#4F46E5" />
-          </linearGradient>
-        </defs>
-        <rect width="52" height="30" rx="5" fill="url(#fp-g)" />
-        <text x="26" y="21" textAnchor="middle" fill="white"
-          fontFamily="Arial,sans-serif" fontSize="14" fontWeight="900" letterSpacing="2">FP</text>
-      </svg>
-    ),
-
     Cash: (
       <svg width={w} height={h} viewBox="0 0 52 30" fill="none">
         <defs>

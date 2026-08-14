@@ -4,8 +4,8 @@
  * src/app/components/CopyrightScanModal.tsx
  */
 import { useState, useEffect } from 'react';
-import { Shield, CheckCircle, XCircle, AlertTriangle, RefreshCw, Upload, Coins } from 'lucide-react';
-import { checkCopyright, appealCopyright, calcFpForUses, FP_TIERS, type CopyrightResult } from '../lib/copyrightApi';
+import { Shield, CheckCircle, XCircle, AlertTriangle, RefreshCw, Upload } from 'lucide-react';
+import { checkCopyright, appealCopyright, type CopyrightResult } from '../lib/copyrightApi';
 
 interface Props {
   audioBlob:  Blob;
@@ -121,27 +121,6 @@ export function CopyrightScanModal({ audioBlob, trackId, trackTitle, onApproved,
         <p className="text-sm text-white/50 mt-1">
           Your sound is copyright-safe and can be reused by other creators.
         </p>
-      </div>
-
-      {/* FP Rewards preview */}
-      <div className="w-full rounded-2xl p-4 space-y-3"
-        style={{background:'rgba(255,215,0,0.06)', border:'1px solid rgba(255,215,0,0.2)'}}>
-        <div className="flex items-center gap-2">
-          <Coins className="w-4 h-4 text-yellow-400"/>
-          <p className="text-xs font-black text-yellow-400 uppercase tracking-widest">Earn FP Coins</p>
-        </div>
-        <p className="text-xs text-white/50">You earn FP every time another creator uses your sound:</p>
-        <div className="space-y-2">
-          {FP_TIERS.map(tier => (
-            <div key={tier.uses} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-yellow-400"/>
-                <p className="text-xs text-white/60">{tier.uses.toLocaleString()} uses</p>
-              </div>
-              <p className="text-xs font-black text-yellow-400">+{tier.fp.toLocaleString()} FP{tier.uses === 10000 ? ' + 🔥 Trending' : ''}</p>
-            </div>
-          ))}
-        </div>
       </div>
 
       <button onClick={onApproved}
