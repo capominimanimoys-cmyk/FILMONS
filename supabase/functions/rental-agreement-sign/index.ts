@@ -88,9 +88,17 @@ Deno.serve(async (req) => {
     // 3. Re-derive verified contact info server-side — the client's copy is
     // never trusted for this, only used to decide whether to show the
     // "contact verification required" screen before ever reaching here.
+    //
+    // email_verified/phone_verified are a separate, rarely-used OTP-style
+    // flow — Creator+ approval never sets them even though its KYC
+    // (government ID + proof of address) is a strictly stronger check, so a
+    // Creator+ approved account also satisfies this gate. Must mirror the
+    // client-side check in RentalAgreementModal.tsx exactly, or an approved
+    // renter passes the wizard's gate and then fails here at the last step.
     const profile = await selectOne('profiles', `id=eq.${renterId}`);
     if (!profile) return new Response(JSON.stringify({ error: 'Renter profile not found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
-    if (!profile.email_verified || !profile.phone_verified) {
+    const contactVerified = (profile.email_verified && profile.phone_verified) || profile.is_verified;
+    if (!contactVerified) {
       return new Response(JSON.stringify({ error: 'Contact verification required' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 

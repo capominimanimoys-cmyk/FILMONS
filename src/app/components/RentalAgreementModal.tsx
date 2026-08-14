@@ -191,10 +191,18 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   // client-side `user` object (AuthContext doesn't populate emailVerified/
   // phoneVerified on it; this is also the actual source of truth the Edge
   // Function re-checks server-side at signing time).
-  const [profile, setProfile] = useState<{ email: string; phone: string; email_verified: boolean; phone_verified: boolean } | null>(null);
+  //
+  // email_verified/phone_verified come from a separate, rarely-used OTP-style
+  // flow — Creator+ approval (verification-decision Edge Function) never
+  // touches them, even though Creator+ KYC (government ID + proof of
+  // address) is a strictly stronger identity check. Treating a Creator+
+  // approved account as having unverified contact info was a real bug, not
+  // intended behaviour — so an approved account also satisfies this gate.
+  const [profile, setProfile] = useState<{ email: string; phone: string; email_verified: boolean; phone_verified: boolean; is_verified: boolean } | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
-  const emailVerified = !!profile?.email_verified;
-  const phoneVerified = !!profile?.phone_verified;
+  const isCreatorPlusApproved = !!profile?.is_verified;
+  const emailVerified = !!profile?.email_verified || isCreatorPlusApproved;
+  const phoneVerified = !!profile?.phone_verified || isCreatorPlusApproved;
 
   // Step 1 — Personal
   const [legalFirst, setLegalFirst] = useState(user?.name?.split(' ')[0] || '');
@@ -246,9 +254,13 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     }).then(({ error }) => { if (error) console.warn('[rental-agreement] draft create failed:', error.message); });
 
     if (user?.id) {
-      supabase.from('profiles').select('email, phone, email_verified, phone_verified').eq('id', user.id).maybeSingle()
-        .then(({ data }) => { setProfile(data as any); setProfileLoading(false); })
-        .catch(() => setProfileLoading(false));
+      supabase.from('profiles').select('email, phone, email_verified, phone_verified, is_verified').eq('id', user.id).maybeSingle()
+        .then(({ data, error }) => {
+          if (error) console.warn('[rental-agreement] profile fetch failed:', error.message);
+          setProfile(data as any);
+          setProfileLoading(false);
+        })
+        .catch(e => { console.warn('[rental-agreement] profile fetch failed:', e); setProfileLoading(false); });
     } else {
       setProfileLoading(false);
     }
