@@ -482,9 +482,16 @@ export function Checkout() {
     const checkoutSuccess = params.get('checkout_success');
     const sessionId       = params.get('session_id');
     // Also wait for `msg` (loaded async from convId/msgId) — it carries
-    // paymentRequest details finalizeOrder needs, and without this guard
-    // the effect could run before that load finishes.
+    // paymentRequest details finalizeOrder needs — and for `hostUser`,
+    // fetched in a separate async call keyed off msg.senderId. Without the
+    // hostUser wait, this effect fires (page reload after the Stripe
+    // redirect starts every piece of state from scratch) before hostUser
+    // resolves, finalizeOrder runs with hostUser=null, and the resulting
+    // `orders` row gets host_id=null — permanently, since the
+    // sessionStorage pending-agreement key is consumed on this first run
+    // and there's no retry once hostUser actually loads a moment later.
     if (checkoutSuccess !== '1' || !sessionId || !user || !msg) return;
+    if (msg.senderId && !hostUser) return;
 
     (async () => {
       toast.loading('Verifying payment…', { id: 'checkout-verify' });
@@ -676,6 +683,9 @@ export function Checkout() {
   // ── Complete payment ───────────────────────────────────────────
   const handlePay = async () => {
     if (!selectedMethod) { toast.error('Please select a payment method'); return; }
+    // hostUser loads async off msg.senderId — guard against paying before it
+    // resolves, which would otherwise write host_id=null onto the order.
+    if (msg.senderId && !hostUser) { toast.error('Still loading host details — try again in a moment.'); return; }
     if (availableDelivery.length > 1 && !selectedDelivery) { toast.error('Please select a delivery option'); return; }
     if (effectiveDelivery === 'delivery' && !deliveryAddress.city) {
       toast.error('Please enter your delivery address'); return;
