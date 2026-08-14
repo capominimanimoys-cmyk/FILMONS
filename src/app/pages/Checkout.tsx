@@ -50,12 +50,19 @@ interface PriceQuote {
   feeConfigVersion: string;
 }
 
+// 8s timeout — without one, a cold/unreachable Edge Function (e.g. not yet
+// deployed) leaves the browser's default fetch pending far longer than any
+// user will wait, and the caller has no way to tell "still loading" apart
+// from "never going to resolve".
 async function fetchQuote(subtotal: number): Promise<PriceQuote | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const res = await fetch(`https://${projectId}.supabase.co/functions/v1/checkout-quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
       body: JSON.stringify({ subtotal }),
+      signal: controller.signal,
     });
     const data = await res.json();
     if (!res.ok || data.error) { console.warn('[checkout-quote] failed:', data.error); return null; }
@@ -63,6 +70,8 @@ async function fetchQuote(subtotal: number): Promise<PriceQuote | null> {
   } catch (e) {
     console.warn('[checkout-quote] failed:', e);
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -453,6 +462,8 @@ export function Checkout() {
   const [selectedDelivery, setSelectedDelivery] = useState('');
   const [quote, setQuote] = useState<PriceQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState(false);
+  const [quoteRetryToken, setQuoteRetryToken] = useState(0);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
 
   // Handle return from secure checkout after card payment
@@ -597,11 +608,15 @@ export function Checkout() {
     const subtotal = amount + df;
     let cancelled = false;
     setQuoteLoading(true);
+    setQuoteError(false);
     fetchQuote(subtotal).then(q => {
-      if (!cancelled) { setQuote(q); setQuoteLoading(false); }
+      if (cancelled) return;
+      setQuote(q);
+      setQuoteError(!q);
+      setQuoteLoading(false);
     });
     return () => { cancelled = true; };
-  }, [msg?.paymentRequest?.amount, listing?.deliveryPrice, listing?.deliveryOptions, selectedDelivery]);
+  }, [msg?.paymentRequest?.amount, listing?.deliveryPrice, listing?.deliveryOptions, selectedDelivery, quoteRetryToken]);
 
   if (!user) {
     return (
@@ -1010,10 +1025,20 @@ export function Checkout() {
               </div>
             </div>
 
-            <button onClick={() => setStep('payment')} disabled={quoteLoading || !quote}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-4 transition-colors shadow-sm">
-              {quoteLoading || !quote ? <><Loader2 className="w-4 h-4 animate-spin" /> Calculating total…</> : <>Continue to Payment <ChevronRight className="w-4 h-4" /></>}
-            </button>
+            {quoteError && !quoteLoading ? (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center space-y-2">
+                <p className="text-sm text-red-700 font-semibold">Couldn't calculate the total — please check your connection.</p>
+                <button onClick={() => setQuoteRetryToken(t => t + 1)}
+                  className="text-sm font-bold text-red-700 underline underline-offset-2">
+                  Try again
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setStep('payment')} disabled={quoteLoading || !quote}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-4 transition-colors shadow-sm">
+                {quoteLoading || !quote ? <><Loader2 className="w-4 h-4 animate-spin" /> Calculating total…</> : <>Continue to Payment <ChevronRight className="w-4 h-4" /></>}
+              </button>
+            )}
           </>
         )}
 
@@ -1296,19 +1321,22 @@ export function Checkout() {
                 className="flex-1 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm rounded-2xl py-3.5 transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
-              <button onClick={handlePay} disabled={submitting || stripeRedirecting || !agreementAccepted || quoteLoading || !quote}
+              <button onClick={quoteError && !quoteLoading ? () => setQuoteRetryToken(t => t + 1) : handlePay}
+                disabled={submitting || stripeRedirecting || (!quoteError && (!agreementAccepted || quoteLoading || !quote))}
                 className="flex-[2] flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-3.5 transition-colors shadow-md">
                 {stripeRedirecting
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing payment…</>
                   : submitting
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-                    : quoteLoading || !quote
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Calculating total…</>
-                      : !agreementAccepted
-                        ? <>✍️ Sign agreement to pay</>
-                        : isCardMethod
-                          ? <>🔒 Pay securely →</>
-                          : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
+                    : quoteError && !quoteLoading
+                      ? <>Couldn't calculate total — Retry</>
+                      : quoteLoading || !quote
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Calculating total…</>
+                        : !agreementAccepted
+                          ? <>✍️ Sign agreement to pay</>
+                          : isCardMethod
+                            ? <>🔒 Pay securely →</>
+                            : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
               </button>
             </div>
           </>
