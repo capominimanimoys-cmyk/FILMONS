@@ -72,3 +72,26 @@ export const signRentalDoc = async (path: string | null | undefined, expiresInSe
   if (error) { console.warn('Failed to sign rental doc:', error.message); return null; }
   return data?.signedUrl || null;
 };
+
+// ── Support case attachments (screenshots, damage photos, documents) ──────
+// Same private-bucket + path-only pattern, keyed by user id folder so paths
+// can't collide across users.
+const SUPPORT_BUCKET = 'support-attachments';
+
+export const uploadSupportAttachment = async (userId: string, file: File): Promise<string> => {
+  const path = `${userId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const { data, error } = await supabase.storage
+    .from(SUPPORT_BUCKET)
+    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+  if (error) throw new Error(error.message);
+  return data.path;
+};
+
+export const signSupportAttachment = async (path: string | null | undefined, expiresInSeconds = 300): Promise<string | null> => {
+  if (!path) return null;
+  const { data, error } = await supabase.storage
+    .from(SUPPORT_BUCKET)
+    .createSignedUrl(path, expiresInSeconds);
+  if (error) { console.warn('Failed to sign support attachment:', error.message); return null; }
+  return data?.signedUrl || null;
+};

@@ -18,6 +18,10 @@ import { TermsConditions } from './pages/TermsConditions';
 import { HostProfile } from './pages/HostProfile';
 import { Verification } from './pages/Verification';
 import { AdminVerifications } from './pages/AdminVerifications';
+import { ContactSupport } from './pages/ContactSupport';
+import { MySupportCases } from './pages/MySupportCases';
+import { SupportCaseDetail } from './pages/SupportCaseDetail';
+import { AdminSupport } from './pages/AdminSupport';
 import { Feed } from './pages/Feed';
 import { Inbox } from './pages/Inbox';
 import { Checkout } from './pages/Checkout';
@@ -112,6 +116,10 @@ export const router = createBrowserRouter([
       { path: 'terms-conditions', Component: TermsConditions },
       { path: 'host/:userId', Component: HostProfile },
       { path: 'admin-verifications', Component: AdminVerifications },
+      { path: 'support', Component: ContactSupport },
+      { path: 'support/cases', Component: MySupportCases },
+      { path: 'support/cases/:id', Component: SupportCaseDetail },
+      { path: 'admin-support', Component: AdminSupport },
     ],
   },
   // ── Auth routes — outside Root layout (no navbar/shell) ──────────────────

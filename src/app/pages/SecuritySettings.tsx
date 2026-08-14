@@ -421,6 +421,20 @@ const [showPw,  setShowPw]  = useState(false);
           </button>
         </Section>
 
+        <Section title="Need help with your account?" icon={<AlertTriangle className="w-4 h-4 text-gray-600"/>}>
+          <div className="p-4 space-y-1">
+            <p className="text-xs text-gray-400 mb-2">Security-sensitive issues are eligible for immediate escalation to an agent.</p>
+          </div>
+          <button onClick={() => navigate('/support', { state: { category: 'account_security' } })}
+            className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-left border-t border-gray-100">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">Get Help</p>
+              <p className="text-xs text-gray-400">Unrecognized logins, lost access, account compromise</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+          </button>
+        </Section>
+
         {/* Alerts */}
         <Section title="Security Alerts" icon={<AlertTriangle className="w-4 h-4 text-gray-600"/>}>
           <div className="p-4 space-y-3">

@@ -4,6 +4,7 @@ import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { adminAuth as adminAuthClient } from '../lib/adminAuth';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -320,15 +321,11 @@ export function AdminVerifications() {
   const [processingRefundId, setProcessingRefundId] = useState<string | null>(null);
   const [disputeUpdatingOrderId, setDisputeUpdatingOrderId] = useState<string | null>(null);
 
-  const ADMIN_PASSWORD = "filmons2024";
-
   useEffect(() => {
-    const adminAuth = sessionStorage.getItem(
-      "adminAuthenticated",
-    );
-    if (adminAuth === "true") {
+    const session = adminAuthClient.getAdmin();
+    if (session) {
       setIsAuthenticated(true);
-      setAdminName(sessionStorage.getItem("adminName") || "Admin");
+      setAdminName(session.name);
       loadAll().catch(console.error);
     }
   }, []);
@@ -420,7 +417,7 @@ export function AdminVerifications() {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}`, ...adminAuthClient.authHeader() },
         body: JSON.stringify({ payoutRequestId, action, adminName }),
       });
       const result = await res.json();
@@ -449,7 +446,7 @@ export function AdminVerifications() {
 
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}`, ...adminAuthClient.authHeader() },
         body: JSON.stringify(body),
       });
       const result = await res.json();
@@ -478,7 +475,7 @@ export function AdminVerifications() {
       } else {
         const res = await fetch(`https://${projectId}.supabase.co/functions/v1/process-refund`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}`, ...adminAuthClient.authHeader() },
           body: JSON.stringify({ refundRequestId, adminName }),
         });
         const result = await res.json();
@@ -511,25 +508,25 @@ export function AdminVerifications() {
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      const name = adminName.trim() || "Admin";
+    const name = adminName.trim();
+    if (!name || !password) { toast.error('Enter your name and password.'); return; }
+    const { success, error } = await adminAuthClient.login(name, password);
+    if (success) {
+      const session = adminAuthClient.getAdmin();
       setIsAuthenticated(true);
-      setAdminName(name);
-      sessionStorage.setItem("adminAuthenticated", "true");
-      sessionStorage.setItem("adminName", name);
+      setAdminName(session?.name || name);
       loadAll().catch(console.error);
       toast.success("Admin access granted");
     } else {
-      toast.error("Incorrect password");
+      toast.error(error || "Incorrect name or password");
     }
   };
 
   const handleLogout = () => {
+    adminAuthClient.logout();
     setIsAuthenticated(false);
-    sessionStorage.removeItem("adminAuthenticated");
-    sessionStorage.removeItem("adminName");
     setPassword("");
     toast.info("Logged out");
   };
@@ -593,6 +590,7 @@ export function AdminVerifications() {
     try {
       const { data, error } = await supabase.functions.invoke('verification-decision', {
         body: { verificationId: request.id, action, reason, adminIdentifier: adminName || 'Admin' },
+        headers: adminAuthClient.authHeader(),
       });
       if (error || !data?.success) throw error || new Error(data?.error || 'Decision failed');
 
@@ -676,7 +674,7 @@ export function AdminVerifications() {
               type="text"
               value={adminName}
               onChange={(e) => setAdminName(e.target.value)}
-              placeholder="Your name (for the review record)"
+              placeholder="Admin name"
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
             <div className="relative">

@@ -5,7 +5,7 @@ import {
   MessageCircle, Mail, FileText, AlertTriangle, Shield,
   CheckCircle, Clock, Package, CreditCard, Lock, User,
   Briefcase, Film, BookOpen, Zap, LifeBuoy, Activity,
-  X, Plus, Send, HelpCircle,
+  X, Plus, HelpCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -106,57 +106,6 @@ const SYSTEM_STATUS = [
 // ─────────────────────────────────────────────────────────────────────────────
 // TICKET FORM
 // ─────────────────────────────────────────────────────────────────────────────
-function TicketForm({ onClose }: { onClose: () => void }) {
-  const [category, setCategory] = useState('');
-  const [subject,  setSubject]  = useState('');
-  const [body,     setBody]     = useState('');
-  const [sending,  setSending]  = useState(false);
-
-  const submit = async () => {
-    if (!category || !subject.trim() || !body.trim()) { toast.error('Please fill all fields'); return; }
-    setSending(true);
-    await new Promise(r => setTimeout(r, 1200));
-    toast.success('Support ticket submitted — we\'ll reply within 24h');
-    onClose();
-    setSending(false);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end md:items-center justify-center p-4">
-      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-black text-gray-900">Open Support Ticket</h3>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"><X className="w-4 h-4"/></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Category</label>
-            <select value={category} onChange={e => setCategory(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400 bg-white">
-              <option value="">Select a category…</option>
-              {['Technical Issue','Account Recovery','Payments','Verification','Rentals','Abuse Report','Other'].map(c => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Subject</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Brief description of the issue"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400"/>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Description</label>
-            <textarea value={body} onChange={e => setBody(e.target.value)} rows={4} placeholder="Describe your issue in detail…"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400 resize-none"/>
-          </div>
-          <button onClick={submit} disabled={sending}
-            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 transition-colors">
-            {sending ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Sending…</> : <><Send className="w-4 h-4"/>Submit Ticket</>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // FAQ ACCORDION
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,12 +130,21 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
+// Maps this page's own FAQ category ids to Contact Support's topic ids —
+// the two use different category sets (this page's predate the support
+// case system), so a raw pass-through would send an id ContactSupport
+// doesn't recognize.
+const CATEGORY_TO_SUPPORT_TOPIC: Record<string, string> = {
+  started: 'something_else', account: 'account_security', portfolio: 'portfolio',
+  messaging: 'something_else', marketplace: 'orders_rentals', payments: 'payments_refunds',
+  verification: 'creator_plus', privacy: 'account_security', trust: 'trust_safety', troubleshoot: 'something_else',
+};
+
 export function HelpCenter() {
   const navigate   = useNavigate();
   const [query,    setQuery]    = useState('');
   const [activeTab,setActiveTab]= useState<'home'|'faq'|'tickets'|'status'>('home');
   const [activeCat,setActiveCat]= useState<string | null>(null);
-  const [showTicket,setShowTicket] = useState(false);
   const searchRef  = useRef<HTMLInputElement>(null);
 
   const allFaqs = Object.entries(FAQS).flatMap(([, arr]) => arr);
@@ -198,8 +156,6 @@ export function HelpCenter() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {showTicket && <TicketForm onClose={() => setShowTicket(false)}/>}
-
       {/* ── Header ── */}
       <div className="sticky top-14 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
         <button onClick={() => activeCat ? setActiveCat(null) : navigate(-1)}
@@ -217,9 +173,9 @@ export function HelpCenter() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
             {catFaqs.map(faq => <FaqItem key={faq.q} q={faq.q} a={faq.a}/>)}
           </div>
-          <button onClick={() => setShowTicket(true)}
+          <button onClick={() => navigate('/support', { state: { category: activeCat ? CATEGORY_TO_SUPPORT_TOPIC[activeCat] : undefined } })}
             className="w-full mt-4 py-3.5 border-2 border-blue-200 text-blue-600 font-bold text-sm rounded-2xl hover:bg-blue-50 transition-colors">
-            Still need help? Open a ticket →
+            Still need help? Contact Support →
           </button>
         </div>
       )}
@@ -253,7 +209,7 @@ export function HelpCenter() {
                 <div className="text-center py-8">
                   <HelpCircle className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
                   <p className="text-gray-500 text-sm">No results found</p>
-                  <button onClick={() => setShowTicket(true)} className="mt-3 text-xs text-blue-600 font-semibold hover:underline">
+                  <button onClick={() => navigate('/support')} className="mt-3 text-xs text-blue-600 font-semibold hover:underline">
                     Contact support instead
                   </button>
                 </div>
@@ -267,12 +223,12 @@ export function HelpCenter() {
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 px-1">QUICK ACTIONS</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label:'Report User',              icon:'🚫', color:'bg-red-50 border-red-200 text-red-700' },
-                  { label:'Report Scam',              icon:'⚠️', color:'bg-orange-50 border-orange-200 text-orange-700' },
-                  { label:'Report Copyright',         icon:'©️', color:'bg-purple-50 border-purple-200 text-purple-700' },
-                  { label:'Payment Issue',            icon:'💳', color:'bg-blue-50 border-blue-200 text-blue-700' },
+                  { label:'Report User',      icon:'🚫', color:'bg-red-50 border-red-200 text-red-700',       category:'trust_safety',     subcategory:'suspicious_user' },
+                  { label:'Report Scam',      icon:'⚠️', color:'bg-orange-50 border-orange-200 text-orange-700', category:'trust_safety',   subcategory:'fraud' },
+                  { label:'Report Copyright', icon:'©️', color:'bg-purple-50 border-purple-200 text-purple-700', category:'trust_safety',   subcategory:'other' },
+                  { label:'Payment Issue',    icon:'💳', color:'bg-blue-50 border-blue-200 text-blue-700',       category:'payments_refunds' },
                 ].map(a => (
-                  <button key={a.label} onClick={() => setShowTicket(true)}
+                  <button key={a.label} onClick={() => navigate('/support', { state: { category: a.category, subcategory: a.subcategory } })}
                     className={`flex items-center gap-2 p-3 rounded-2xl border-2 text-left hover:opacity-90 transition-opacity ${a.color}`}>
                     <span className="text-xl">{a.icon}</span>
                     <p className="text-xs font-bold leading-tight">{a.label}</p>
@@ -347,14 +303,24 @@ export function HelpCenter() {
             <div className="px-4 pt-5 pb-24">
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 px-1">CONTACT SUPPORT</p>
               <div className="space-y-2">
-                <button onClick={() => setShowTicket(true)}
+                <button onClick={() => navigate('/support')}
                   className="w-full flex items-center gap-4 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-md transition-colors text-left">
                   <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
-                    <FileText className="w-5 h-5"/>
+                    <MessageCircle className="w-5 h-5"/>
                   </div>
                   <div>
-                    <p className="font-bold text-sm">Open a Support Ticket</p>
-                    <p className="text-xs text-blue-100">Track your issue — we reply within 24h</p>
+                    <p className="font-bold text-sm">Chat with Filmons Support</p>
+                    <p className="text-xs text-blue-100">AI-assisted, with a real agent when you need one</p>
+                  </div>
+                </button>
+                <button onClick={() => navigate('/support/cases')}
+                  className="w-full flex items-center gap-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow text-left">
+                  <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5 text-gray-600"/>
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-gray-900">My Support Cases</p>
+                    <p className="text-xs text-gray-400">Track issues you've already reported</p>
                   </div>
                 </button>
                 <button onClick={() => { window.location.href='mailto:support@filmons.ca'; }}
@@ -366,17 +332,6 @@ export function HelpCenter() {
                     <p className="font-bold text-sm text-gray-900">Email Support</p>
                     <p className="text-xs text-gray-400">support@filmons.ca</p>
                   </div>
-                </button>
-                <button onClick={() => toast.info('Live chat launching soon — use email or ticket for now')}
-                  className="w-full flex items-center gap-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow text-left">
-                  <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
-                    <MessageCircle className="w-5 h-5 text-green-600"/>
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-bold text-sm text-gray-900">Live Chat</p>
-                    <p className="text-xs text-gray-400">Mon–Fri, 9AM–6PM EST</p>
-                  </div>
-                  <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold shrink-0">SOON</span>
                 </button>
               </div>
             </div>

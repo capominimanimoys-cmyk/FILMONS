@@ -10,6 +10,11 @@
 // notifies + emails the host — this endpoint is the only place an admin
 // can move a payout request forward, so it's also the only place that
 // needs to record who did what.
+//
+// Requires a verified admin token (X-Admin-Token) — see _shared/adminAuth.ts.
+// The verified name is used for processed_by/audit_log, not the client body.
+import { verifyAdminToken } from '../_shared/adminAuth.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -92,8 +97,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { payoutRequestId, action, adminName, reason, paymentReference, notes } = await req.json() as {
-      payoutRequestId?: string; action?: Action; adminName?: string; reason?: string; paymentReference?: string; notes?: string;
+    const admin = await verifyAdminToken(req);
+    if (!admin) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const adminName = admin.name;
+
+    const { payoutRequestId, action, reason, paymentReference, notes } = await req.json() as {
+      payoutRequestId?: string; action?: Action; reason?: string; paymentReference?: string; notes?: string;
     };
 
     if (!payoutRequestId || !action || !VALID_ACTIONS.includes(action)) {

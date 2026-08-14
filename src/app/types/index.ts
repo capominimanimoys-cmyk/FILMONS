@@ -284,6 +284,7 @@ export type NotificationType =
   | 'service_booked' | 'booking_accepted' | 'booking_rejected'
   | 'payment_received' | 'payment_released'
   | 'payout_requested' | 'payout_processing' | 'payout_paid' | 'payout_rejected'
+  | 'support_reply'
   | 'marketplace_order' | 'marketplace_booking' | 'marketplace_reply'
   | 'review_received'
   // Profile & Trust

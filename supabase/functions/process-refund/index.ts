@@ -4,6 +4,10 @@
 // payment methods, there's no Stripe transaction to reverse, so this only
 // does the ledger-side reversal (a manual/off-platform refund is the
 // admin's own responsibility for those).
+//
+// Requires a verified admin token (X-Admin-Token) — see _shared/adminAuth.ts.
+import { verifyAdminToken } from '../_shared/adminAuth.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -40,7 +44,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { refundRequestId, adminName } = await req.json();
+    const admin = await verifyAdminToken(req);
+    if (!admin) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const adminName = admin.name;
+
+    const { refundRequestId } = await req.json();
     if (!refundRequestId) {
       return new Response(JSON.stringify({ error: 'Missing refundRequestId' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }

@@ -818,6 +818,7 @@ export function Verification() {
           <h2 className="text-2xl font-bold text-gray-900">Verification Submitted</h2>
           <p className="text-gray-500 text-sm">Your Creator+ verification has been submitted for review. We'll notify you when a decision has been made.</p>
           <button onClick={() => navigate('/profile')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3">Back to Profile</button>
+          <button onClick={() => navigate('/support', { state: { verificationId: myVerification?.id, category: 'creator_plus', subcategory: 'verification_pending' } })} className="w-full text-sm font-bold text-gray-400">Need Help?</button>
         </div>
       </div>
     );
@@ -832,6 +833,7 @@ export function Verification() {
           {myVerification?.decision_reason && <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-left"><p className="text-xs font-bold text-red-600 mb-1">Reason</p><p className="text-sm text-red-700">{myVerification.decision_reason}</p></div>}
           <p className="text-gray-500 text-sm">Please review the reason and resubmit with corrected documents.</p>
           <button onClick={() => { try { const u = JSON.parse(localStorage.getItem('filmons_current_user') || 'null'); if(u){u.verificationStatus='';localStorage.setItem('filmons_current_user',JSON.stringify(u));} } catch{} window.location.reload(); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3">Resubmit Verification</button>
+          <button onClick={() => navigate('/support', { state: { verificationId: myVerification?.id, category: 'creator_plus', subcategory: 'verification_denied' } })} className="w-full text-sm font-bold text-gray-400">Need Help?</button>
         </div>
       </div>
     );

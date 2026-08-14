@@ -176,6 +176,8 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Check,         gradient: 'from-green-500 to-emerald-600',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your payout has been sent' };
     case 'payout_rejected':
       return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Your payout request was rejected' };
+    case 'support_reply':
+      return { icon: MessageCircle, gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Filmons Support replied to your case' };
     case 'profile_completion':
       return { icon: Star,          gradient: 'from-yellow-400 to-amber-500',    iconColor: 'text-white', ringColor: 'ring-yellow-100',  label: () => 'Your profile is now 80% complete' };
     case 'trust_level_update':
@@ -198,6 +200,7 @@ const SYSTEM_TYPES: string[] = [
   'profile_completion','trust_level_update','booking_accepted','booking_rejected',
   'payment_released','application_accepted','application_rejected',
   'payout_requested','payout_processing','payout_paid','payout_rejected',
+  'support_reply',
 ];
 function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
 function systemIcon(type: string): ElementType {
@@ -215,6 +218,7 @@ function systemIcon(type: string): ElementType {
     case 'payout_processing':    return Zap;
     case 'payout_paid':          return Check;
     case 'payout_rejected':      return X;
+    case 'support_reply':        return MessageCircle;
     case 'application_accepted': return PartyPopper;
     case 'application_rejected': return Bell;
     default:                     return Wrench;
@@ -502,7 +506,7 @@ const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketp
 const SERVICES_TYPES       = ['service_booked','application_received','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_received','payment_released','payout_requested','payout_processing','payout_paid','payout_rejected'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];
-const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted'];
+const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
 const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [
   { key: 'all',         label: 'All',         icon: Bell,        activeColor: 'text-blue-600 border-blue-600' },
@@ -587,8 +591,10 @@ export function Notifications() {
       navigate(n.conversationId
         ? `/inbox?conv=${n.conversationId}&with=${n.fromUserId}`
         : `/inbox?with=${n.fromUserId}`);
-    } else if (n.type === 'payment_received' || n.type === 'payment_released') {
+    } else if (n.type === 'payment_received' || n.type === 'payment_released' || (n.type as string).startsWith('payout_')) {
       navigate('/wallet');
+    } else if (n.type === 'support_reply') {
+      navigate(n.conversationId ? `/support/cases/${n.conversationId}` : '/support/cases');
     } else if ([...MARKETPLACE_TYPES, ...SERVICES_TYPES].includes(n.type)) {
       navigate((n as any).listingId ? `/listing/${(n as any).listingId}` : '/marketplace');
     } else if (n.postId) {

@@ -55,8 +55,23 @@ function RequestPayoutModal({
   const [amount, setAmount] = useState(String(available.toFixed(2)));
   const [method, setMethod] = useState<PayoutMethodType | null>(defaultMethod?.method || null);
   const [useSaved, setUseSaved] = useState(!!defaultMethod);
-  const [interac, setInterac] = useState({ email: '', name: '' });
-  const [bank, setBank] = useState({ accountHolder: '', institutionNumber: '', transitNumber: '', accountNumber: '' });
+  // Seed from the saved method (if any) so unchecking "use saved" to edit
+  // shows the existing values instead of blank fields.
+  const [interac, setInterac] = useState(() =>
+    defaultMethod?.method === 'interac'
+      ? { email: (defaultMethod.details as any).email || '', name: (defaultMethod.details as any).name || '' }
+      : { email: '', name: '' }
+  );
+  const [bank, setBank] = useState(() =>
+    defaultMethod?.method === 'bank_transfer'
+      ? {
+          accountHolder: (defaultMethod.details as any).accountHolder || '',
+          institutionNumber: (defaultMethod.details as any).institutionNumber || '',
+          transitNumber: (defaultMethod.details as any).transitNumber || '',
+          accountNumber: (defaultMethod.details as any).accountNumber || '',
+        }
+      : { accountHolder: '', institutionNumber: '', transitNumber: '', accountNumber: '' }
+  );
   const [saveMethod, setSaveMethod] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -411,7 +426,17 @@ export function Wallet() {
                         <p className="text-xs text-red-500 mt-0.5">{p.rejection_reason}</p>
                       )}
                     </div>
-                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${s.className}`}>{s.label}</span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${s.className}`}>{s.label}</span>
+                      <button
+                        onClick={() => navigate('/support', { state: {
+                          payoutRequestId: p.id, category: 'wallet_payouts',
+                        } })}
+                        className="text-[10px] font-bold text-gray-400 hover:text-blue-600"
+                      >
+                        Get Help
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -446,7 +471,17 @@ export function Wallet() {
                       </span>
                     </div>
                   </div>
-                  <span className={`text-sm font-black shrink-0 ${tx.status === 'pending' ? 'text-amber-600' : 'text-green-600'}`}>+{fmtCad(tx.amount)}</span>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className={`text-sm font-black ${tx.status === 'pending' ? 'text-amber-600' : 'text-green-600'}`}>+{fmtCad(tx.amount)}</span>
+                    <button
+                      onClick={() => navigate('/support', { state: {
+                        walletTransactionId: tx.id, orderId: tx.order_id || undefined, category: 'wallet_payouts',
+                      } })}
+                      className="text-[10px] font-bold text-gray-400 hover:text-blue-600"
+                    >
+                      Need Help?
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

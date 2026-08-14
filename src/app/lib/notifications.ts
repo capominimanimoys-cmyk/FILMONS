@@ -52,6 +52,7 @@ function _notifTitle(type: string, actorName: string): string {
     case 'payout_processing':   return 'Your payout is being processed';
     case 'payout_paid':         return 'Your payout has been sent';
     case 'payout_rejected':     return 'Your payout request was rejected';
+    case 'support_reply':       return 'Filmons Support replied';
     case 'marketplace_order':   return `${actorName} placed a new order`;
     case 'marketplace_booking': return `${actorName} requested a booking`;
     case 'marketplace_reply':   return `${actorName} replied to your inquiry`;

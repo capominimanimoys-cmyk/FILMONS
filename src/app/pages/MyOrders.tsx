@@ -196,6 +196,7 @@ function RequestRefundButton({ userId, order, onRequested }: { userId: string; o
 }
 
 function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab: 'renter' | 'host'; userId: string; onRefreshNeeded: () => void }) {
+  const navigate = useNavigate();
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {/* Header */}
@@ -310,10 +311,21 @@ function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab:
 
       {/* Refund request — renter only, before anything's already in flight */}
       {tab === 'renter' && order.refund_status === 'none' && order.dispute_status !== 'disputed' && (
-        <div className="px-5 pb-4">
+        <div className="px-5 pb-2">
           <RequestRefundButton userId={userId} order={order} onRequested={onRefreshNeeded} />
         </div>
       )}
+
+      <div className="px-5 pb-4">
+        <button
+          onClick={() => navigate('/support', { state: {
+            orderId: order.id, category: 'orders_rentals', role: tab, paymentStatus: 'paid',
+          } })}
+          className="text-xs font-bold text-gray-400 hover:text-blue-600"
+        >
+          Need Help?
+        </button>
+      </div>
     </div>
   );
 }

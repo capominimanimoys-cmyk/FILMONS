@@ -6,6 +6,10 @@
 // skippable (closed tab, crashed browser, blocked request) and would leave
 // files behind. Runs with the service-role key, which the Supabase
 // platform injects into every Edge Function automatically.
+//
+// Requires a verified admin token (X-Admin-Token) — see _shared/adminAuth.ts.
+import { verifyAdminToken } from '../_shared/adminAuth.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -77,8 +81,14 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const adminIdentity = await verifyAdminToken(req);
+    if (!adminIdentity) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
     const body = await req.json();
-    const { verificationId, action, reason, adminIdentifier } = body || {};
+    const { verificationId, action, reason } = body || {};
+    const adminIdentifier = adminIdentity.name;
     if (!verificationId || !action) {
       return new Response(JSON.stringify({ error: 'Missing verificationId or action' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
