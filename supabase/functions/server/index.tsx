@@ -1793,6 +1793,13 @@ app.get(
         return c.json({ predictions: [] });
       }
       const data = await resp.json();
+      if (data.status && data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+        // Logged server-side only — e.g. REQUEST_DENIED means billing isn't
+        // enabled on the Google Cloud project for this key. The client just
+        // sees an empty result and falls back to Nominatim.
+        console.error("Google autocomplete API status:", data.status, data.error_message);
+        return c.json({ predictions: [] });
+      }
 
       // Pass through full prediction objects including structured_formatting
       const predictions = (data.predictions || []).map(

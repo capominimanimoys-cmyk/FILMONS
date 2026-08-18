@@ -419,10 +419,12 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
         .ram-step-enter { animation: ramStepIn 0.22s ease both; }
         @keyframes ramStepIn { from { opacity: 0; transform: translateX(var(--ram-dir, 24px)); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
-      <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center" style={{ animation: 'ramFadeIn 0.2s ease' }} onClick={onClose}>
+      <div className={`fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex ${overview ? 'items-stretch justify-stretch' : 'items-end md:items-center justify-center'}`} style={{ animation: 'ramFadeIn 0.2s ease' }} onClick={onClose}>
         <div
-          className="bg-white w-full md:max-w-2xl rounded-t-3xl md:rounded-[22px] max-h-[94vh] md:max-h-[88vh] flex flex-col shadow-2xl"
-          style={{ animation: 'ramSlideUp 0.32s cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+          className={overview
+            ? 'bg-white w-full h-full flex flex-col shadow-2xl'
+            : 'bg-white w-full md:max-w-2xl rounded-t-3xl md:rounded-[22px] max-h-[94vh] md:max-h-[88vh] flex flex-col shadow-2xl'}
+          style={{ animation: 'ramSlideUp 0.32s cubic-bezier(0.32,0.72,0,1)', paddingBottom: overview ? undefined : 'env(safe-area-inset-bottom)' }}
           onClick={e => e.stopPropagation()}
         >
           {/* Sticky header */}

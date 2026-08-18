@@ -190,17 +190,27 @@ export function SmartAddressInput({
               const city     = addr.city || addr.town || addr.village || addr.county || r.display_name.split(', ')[0];
               const province = addr.state_code || addr.ISO3166_2_lvl4?.split('-')[1] || addr.state || '';
               const country  = (addr.country_code ?? '').toUpperCase();
-              const desc     = [city, province].filter(Boolean).join(', ') || r.display_name;
+              // Full-address mode needs the actual street line — Nominatim
+              // returns it as separate house_number/road fields, not baked
+              // into a single string like Google's "description" is.
+              const streetAddress = mode === 'full'
+                ? [addr.house_number, addr.road].filter(Boolean).join(' ')
+                : '';
+              const desc = mode === 'full'
+                ? [streetAddress, city, province, addr.postcode].filter(Boolean).join(', ') || r.display_name
+                : [city, province].filter(Boolean).join(', ') || r.display_name;
               return {
                 place_id:    String(r.place_id),
                 description: desc,
                 structured_formatting: {
-                  main_text:      city || desc,
-                  secondary_text: [province, addr.country].filter(Boolean).join(', '),
+                  main_text:      mode === 'full' ? (streetAddress || city || desc) : (city || desc),
+                  secondary_text: mode === 'full'
+                    ? [city, province, addr.postcode].filter(Boolean).join(', ')
+                    : [province, addr.country].filter(Boolean).join(', '),
                 },
                 _parts: {
                   formatted:     desc,
-                  streetAddress: '',
+                  streetAddress,
                   city,
                   province,
                   postalCode:    addr.postcode ?? '',
