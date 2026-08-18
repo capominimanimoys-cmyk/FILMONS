@@ -230,7 +230,7 @@ export function GoogleSignup() {
         // this only fires on a genuine race between two simultaneous
         // first-time signups for the same address.
         if ((insertErr as any).code === '23505') {
-          throw new Error('Email already in use — this email address is already connected to another Filmons account.');
+          throw new Error('Email already in use. This email address is already connected to another Filmons account.');
         }
         throw new Error(insertErr.message);
       }
@@ -546,7 +546,7 @@ export function GoogleSignup() {
             onClick={() => setShowOptional(v => !v)}
             className="w-full flex items-center justify-between py-3 border border-white/10 rounded-2xl px-4 text-white/50 hover:text-white/80 hover:border-white/20 transition-all text-sm font-semibold"
           >
-            <span>Optional details — bio, social links</span>
+            <span>Optional details: bio, social links</span>
             {showOptional ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}
           </button>
 
@@ -556,7 +556,7 @@ export function GoogleSignup() {
                 value={bio}
                 onChange={e => setBio(e.target.value.slice(0, 300))}
                 rows={3}
-                placeholder="Short bio — shown on your public profile"
+                placeholder="Short bio, shown on your public profile"
                 className={`${iCls} resize-none`}
               />
               <div className="flex justify-end">
