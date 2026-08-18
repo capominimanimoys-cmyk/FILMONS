@@ -43,7 +43,16 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Incorrect name or password' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    const token = await mintAdminToken({ adminId: match.id, name: match.name, role: match.role });
+    // Isolated from the generic catch below so a misconfigured
+    // ADMIN_SESSION_SECRET reports as a real 500 instead of silently
+    // presenting as "incorrect password" to the person logging in.
+    let token: string;
+    try {
+      token = await mintAdminToken({ adminId: match.id, name: match.name, role: match.role });
+    } catch (tokenErr) {
+      console.error('admin-login token mint failed (check ADMIN_SESSION_SECRET):', tokenErr);
+      return new Response(JSON.stringify({ error: 'Server misconfigured — contact an administrator' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
 
     fetch(rest(`/admin_users?id=eq.${match.id}`), {
       method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
