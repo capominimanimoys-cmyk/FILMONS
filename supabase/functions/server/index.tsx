@@ -1756,7 +1756,16 @@ app.get(
   async (c) => {
     try {
       const input = c.req.query("input") || "";
+      // Accepts a single country ("ca") or a comma-separated list ("ca,us") —
+      // Google Places restricts to multiple countries by repeating
+      // `country:XX` once per country, joined with `|`.
       const country = c.req.query("country") || "ca";
+      const countryComponents = country
+        .split(",")
+        .map((cc) => cc.trim().toLowerCase())
+        .filter(Boolean)
+        .map((cc) => `country:${cc}`)
+        .join("|");
       const type = c.req.query("type") || "address"; // 'address' | 'city'
       const apiKey = Deno.env.get("GOOGLE_API_KEY");
       if (!apiKey)
@@ -1769,7 +1778,7 @@ app.get(
       // Use (cities) for profile/signup city search, address for listing full addresses
       const typesParam =
         type === "city" ? "(cities)" : "address";
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&components=country:${country}&key=${apiKey}&types=${encodeURIComponent(typesParam)}&language=en`;
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&components=${encodeURIComponent(countryComponents)}&key=${apiKey}&types=${encodeURIComponent(typesParam)}&language=en`;
 
       const resp = await fetch(url, {
         signal: AbortSignal.timeout(8000),

@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../../lib/supabase';
+import { signRentalDoc } from '../../lib/upload';
 
 // ── Types ──────────────────────────────────────────────────────────
 export interface AgreementData {
@@ -131,7 +132,18 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
   const returnDate = d.start_date && d.duration
     ? (() => { const dt = new Date(d.start_date); dt.setDate(dt.getDate() + d.duration); return dt.toISOString().split('T')[0]; })()
     : '&#x2014;';
-  const signedAt = new Date(d.signed_at).toLocaleString('en-CA', { timeZone: 'America/Toronto', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  const signedAt = d.signed_at
+    ? new Date(d.signed_at).toLocaleString('en-CA', { timeZone: 'America/Toronto', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })
+    : '';
+
+  // Draft/preview support — this same function renders both the mid-flow
+  // preview (fields not filled in yet) and the final signed document
+  // (everything guaranteed present). Empty required fields show "Not
+  // completed" instead of blank cells or a misleadingly-hardcoded "Provided".
+  const renterName = (d.first_name || d.last_name) ? `${d.first_name} ${d.last_name}`.trim() : 'Not completed';
+  const hasAddress = !!(d.address || d.city || d.province || d.postal_code);
+  const idProvided = !!d.id_type;
+  const proofProvided = !!d.proof_of_address_type;
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
@@ -165,13 +177,13 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 
   <div class="sub">1.2 Renter</div>
   <div class="two">
-    <div class="field"><div class="fl">Full Legal Name</div><div class="fv">${d.first_name} ${d.last_name}</div></div>
-    <div class="field"><div class="fl">Email Address</div><div class="fv">${d.email} <span class="badge">&#x2713; Verified</span></div></div>
-    <div class="field"><div class="fl">Phone Number</div><div class="fv">${d.phone} <span class="badge">&#x2713; Verified</span></div></div>
-    <div class="field"><div class="fl">Date of Birth</div><div class="fv">${d.birthdate}</div></div>
-    <div class="field"><div class="fl">Government ID Type</div><div class="fv">${d.id_type || '&#x2014;'}</div></div>
-    <div class="field"><div class="fl">ID Country of Issue</div><div class="fv">${d.id_country}</div></div>
-    <div class="field"><div class="fl">Identity Verification</div><div class="fv"><span class="badge">&#x2713; Provided</span> &#x2014; document is private and never shown here</div></div>
+    <div class="field"><div class="fl">Full Legal Name</div><div class="fv">${renterName}</div></div>
+    <div class="field"><div class="fl">Email Address</div><div class="fv">${d.email ? `${d.email} <span class="badge">&#x2713; Verified</span>` : 'Not completed'}</div></div>
+    <div class="field"><div class="fl">Phone Number</div><div class="fv">${d.phone ? `${d.phone} <span class="badge">&#x2713; Verified</span>` : 'Not completed'}</div></div>
+    <div class="field"><div class="fl">Date of Birth</div><div class="fv">${d.birthdate || 'Not completed'}</div></div>
+    <div class="field"><div class="fl">Government ID Type</div><div class="fv">${d.id_type || 'Not completed'}</div></div>
+    <div class="field"><div class="fl">ID Country of Issue</div><div class="fv">${d.id_country || '&#x2014;'}</div></div>
+    <div class="field"><div class="fl">Identity Verification</div><div class="fv">${idProvided ? '<span class="badge">&#x2713; Provided</span> &#x2014; document is private and never shown here' : '<span class="badge badge-gray">Not completed</span>'}</div></div>
   </div>
 
   <div class="sub">1.3 Rental Period</div>
@@ -182,12 +194,12 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 
   <div class="sub">1.4 Renter Address</div>
   <div class="two">
-    <div class="field"><div class="fl">Street Address</div><div class="fv">${d.address}</div></div>
-    <div class="field"><div class="fl">City</div><div class="fv">${d.city}</div></div>
-    <div class="field"><div class="fl">Province / State</div><div class="fv">${d.province}</div></div>
-    <div class="field"><div class="fl">Postal / ZIP Code</div><div class="fv">${d.postal_code}</div></div>
-    <div class="field"><div class="fl">Country</div><div class="fv">${d.country}</div></div>
-    <div class="field"><div class="fl">Proof of Address</div><div class="fv">${d.proof_of_address_type || '&#x2014;'} <span class="badge">&#x2713; Provided</span></div></div>
+    <div class="field"><div class="fl">Street Address</div><div class="fv">${d.address || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
+    <div class="field"><div class="fl">City</div><div class="fv">${d.city || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
+    <div class="field"><div class="fl">Province / State</div><div class="fv">${d.province || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
+    <div class="field"><div class="fl">Postal / ZIP Code</div><div class="fv">${d.postal_code || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
+    <div class="field"><div class="fl">Country</div><div class="fv">${d.country || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
+    <div class="field"><div class="fl">Proof of Address</div><div class="fv">${proofProvided ? `${d.proof_of_address_type} <span class="badge">&#x2713; Provided</span>` : 'Not completed'}</div></div>
   </div>
 </div>
 
@@ -266,11 +278,11 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
     </div>
     <div>
       <div class="sub" style="margin-top:0">RENTER</div>
-      <div class="field"><div class="fl">Full Name</div><div class="fv">${d.first_name} ${d.last_name}</div></div>
+      <div class="field"><div class="fl">Full Name</div><div class="fv">${renterName}</div></div>
       <div class="field"><div class="fl">Signature</div>
         <div class="sig-box">
           ${d.signature_data ? `<img src="${d.signature_data}" alt="Renter signature"/>` : ''}
-          <div class="sig-line">Digitally signed &#x2014; ${signedAt} EST</div>
+          <div class="sig-line">${d.signature_data ? `Digitally signed &#x2014; ${signedAt} EST` : 'Not signed'}</div>
         </div>
       </div>
       <div class="field"><div class="fl">Date</div><div class="fv">${d.signed_at ? d.signed_at.split('T')[0] : '&#x2014;'}</div></div>
@@ -280,7 +292,7 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
   <table class="info" style="margin-top:14px;border:2px solid #e5e7eb">
     <tr><td colspan="4" style="background:#f8fafc;font-weight:700;font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#374151">For Platform Use Only</td></tr>
     <tr><td>Booking ID</td><td>${d.id}</td><td>Verified By</td><td>Filmons Platform</td></tr>
-    <tr><td>Signed At</td><td colspan="3">${signedAt} EST</td></tr>
+    <tr><td>Signed At</td><td colspan="3">${signedAt ? `${signedAt} EST` : 'Not signed'}</td></tr>
   </table>
 </div>
 
@@ -458,4 +470,94 @@ export async function uploadPDFDoc(path: string, html: string): Promise<string> 
   } catch {
     return '';
   }
+}
+
+// ── Regenerate a signed agreement's documents from its frozen snapshot ────
+// Used when Checkout.tsx's post-sign generation failed (see its catch
+// block) and MyOrders.tsx's "Retry generating documents" needs to recover.
+// Deterministic and safe to re-run: everything is read from the already-
+// immutable `rental_agreements` row (the DB trigger allows updating the
+// document-path columns even after status='signed'), never from live
+// profile/listing state — a later address/name/listing change must not
+// leak into an already-signed document.
+export async function regenerateAgreementDocuments(agreementId: string): Promise<{
+  renterPath: string | null; hostPath: string | null; receiptPath: string | null; error?: string;
+}> {
+  const { data: agRow, error: fetchErr } = await supabase.from('rental_agreements').select('*').eq('id', agreementId).maybeSingle();
+  if (fetchErr || !agRow) return { renterPath: null, hostPath: null, receiptPath: null, error: fetchErr?.message || 'Agreement not found' };
+
+  const [renterProfile, hostProfile] = await Promise.all([
+    agRow.renter_id ? supabase.from('profiles').select('name, email, phone').eq('id', agRow.renter_id).maybeSingle().then(r => r.data) : null,
+    agRow.host_id ? supabase.from('profiles').select('name, email, username').eq('id', agRow.host_id).maybeSingle().then(r => r.data) : null,
+  ]);
+
+  let signatureDataUrl = '';
+  if (agRow.signature_path) {
+    const signed = await signRentalDoc(agRow.signature_path, 300);
+    if (signed) {
+      try {
+        const blob = await (await fetch(signed)).blob();
+        signatureDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch { /* signature is best-effort — document still generates without it */ }
+    }
+  }
+
+  const details = agRow.rental_details_snapshot || {};
+  const pricing = agRow.pricing_snapshot || {};
+
+  const baseAgreement: AgreementData = {
+    id: agRow.id,
+    renter_id: agRow.renter_id, host_id: agRow.host_id,
+    first_name: agRow.legal_first_name || renterProfile?.name?.split(' ')[0] || '',
+    last_name: agRow.legal_last_name || renterProfile?.name?.split(' ').slice(1).join(' ') || '',
+    birthdate: agRow.date_of_birth || '',
+    id_type: agRow.id_type, id_country: agRow.id_issuing_country || '',
+    email: agRow.verified_email || renterProfile?.email || '',
+    phone: agRow.verified_phone || renterProfile?.phone || '',
+    address: agRow.address_line1 || '', city: agRow.city || '',
+    province: agRow.province_state || '', postal_code: agRow.postal_code || '',
+    country: agRow.address_country === 'US' ? 'United States' : 'Canada',
+    proof_of_address_type: agRow.proof_of_address_type,
+    signature_data: signatureDataUrl || undefined,
+    listing_title: details.listingTitle || '—',
+    total_amount: Number(pricing.total ?? details.amount ?? 0),
+    subtotal: pricing.subtotal, buyer_fee_amount: pricing.buyerFeeAmount,
+    payment_method: details.paymentMethod || 'Card',
+    start_date: details.startDate, duration: details.duration, duration_type: details.durationType,
+    signed_at: agRow.signed_at || '',
+    host_name: hostProfile?.name, host_email: hostProfile?.email, host_username: hostProfile?.username,
+  };
+
+  const renterHtml = buildAgreementHTML(baseAgreement, false);
+  const hostHtml = buildAgreementHTML(baseAgreement, true);
+  const receiptHtml = buildReceiptHTML({
+    id: agRow.agreement_number, agreement_id: agRow.id,
+    renter_id: agRow.renter_id, host_id: agRow.host_id,
+    renter_name: `${baseAgreement.first_name} ${baseAgreement.last_name}`.trim(),
+    renter_email: baseAgreement.email, renter_phone: baseAgreement.phone,
+    host_name: hostProfile?.name, host_email: hostProfile?.email,
+    listing_title: baseAgreement.listing_title, start_date: baseAgreement.start_date,
+    duration: baseAgreement.duration, duration_type: baseAgreement.duration_type,
+    total_amount: baseAgreement.total_amount, subtotal: baseAgreement.subtotal, buyer_fee_amount: baseAgreement.buyer_fee_amount,
+    payment_method: baseAgreement.payment_method, issued_at: agRow.signed_at || new Date().toISOString(),
+  });
+
+  const [renterPath, hostPath, receiptPath] = await Promise.all([
+    uploadPDFDoc(`${agRow.id}/agreement-renter.html`, renterHtml),
+    uploadPDFDoc(`${agRow.id}/agreement-host.html`, hostHtml),
+    uploadPDFDoc(`${agRow.id}/receipt.html`, receiptHtml),
+  ]);
+
+  await supabase.from('rental_agreements').update({
+    agreement_renter_path: renterPath || null,
+    agreement_host_path: hostPath || null,
+    receipt_path: receiptPath || null,
+  }).eq('id', agreementId);
+
+  return { renterPath: renterPath || null, hostPath: hostPath || null, receiptPath: receiptPath || null };
 }

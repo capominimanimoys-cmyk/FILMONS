@@ -59,6 +59,8 @@ export interface SmartAddressInputProps {
   canadaOnly?:    boolean;
   /** ISO country code to restrict results. Overrides canadaOnly when set. */
   countryCode?:   'CA' | 'US';
+  /** Restrict results to any of several countries at once. Overrides countryCode/canadaOnly when set. */
+  countryCodes?:  ('CA' | 'US')[];
   disabled?:      boolean;
   variant?:       'light' | 'dark';
 }
@@ -95,11 +97,16 @@ export function SmartAddressInput({
   showGPS     = true,
   canadaOnly  = true,
   countryCode,
+  countryCodes,
   disabled    = false,
   variant     = 'light',
 }: SmartAddressInputProps) {
-  // Effective country: explicit countryCode wins, else fall back to canadaOnly
-  const effectiveCountry = countryCode ?? (canadaOnly ? 'CA' : null);
+  // Effective countries: explicit countryCodes wins, then countryCode, then canadaOnly
+  const effectiveCountries: ('CA' | 'US')[] | null =
+    countryCodes ?? (countryCode ? [countryCode] : (canadaOnly ? ['CA'] : null));
+  const countryDisplayName = effectiveCountries
+    ? effectiveCountries.map(c => c === 'CA' ? 'Canada' : 'the United States').join(' or ')
+    : '';
   const dark = variant === 'dark';
   const [predictions,   setPredictions]   = useState<Prediction[]>([]);
   const [showDrop,      setShowDrop]      = useState(false);
@@ -150,7 +157,7 @@ export function SmartAddressInput({
     setShowDrop(true); // open immediately so the "Searching…" state is visible, not just the eventual results
     let usedFallback = false;
     try {
-      const countryParam = effectiveCountry ? `&country=${effectiveCountry.toLowerCase()}` : '';
+      const countryParam = effectiveCountries ? `&country=${effectiveCountries.join(',').toLowerCase()}` : '';
       const typeParam    = mode === 'city' ? '&type=city' : '&type=address';
       const res = await fetch(
         `${EDGE}/geocode/autocomplete?input=${encodeURIComponent(text)}${countryParam}${typeParam}`,
@@ -173,7 +180,7 @@ export function SmartAddressInput({
       if (err?.name !== 'AbortError' && !ctrl.signal.aborted) {
         // Nominatim fallback — respects effectiveCountry for both CA and US
         try {
-          const cc  = effectiveCountry?.toLowerCase() ?? 'ca';
+          const cc  = effectiveCountries ? effectiveCountries.join(',').toLowerCase() : 'ca';
           const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&countrycodes=${cc}&format=json&addressdetails=1&limit=8&accept-language=en`;
           const nomRes  = await fetch(url, { headers: { 'User-Agent': 'Filmons/1.0', 'Accept-Language': 'en' }, signal: ctrl.signal });
           const nomData = await nomRes.json() as any[];
@@ -215,7 +222,7 @@ export function SmartAddressInput({
     } finally {
       if (!ctrl.signal.aborted) setIsSearching(false);
     }
-  }, [effectiveCountry, mode]);
+  }, [effectiveCountries, mode]);
 
   const handleChange = (val: string) => {
     onInputChange(val);
@@ -258,11 +265,10 @@ export function SmartAddressInput({
       const comps: any[]  = result?.address_components ?? [];
       const geometry: any = result?.geometry;
 
-      if (effectiveCountry) {
-        const inCountry = comps.some((c: any) => c.types.includes('country') && c.short_name === effectiveCountry);
+      if (effectiveCountries) {
+        const inCountry = comps.some((c: any) => c.types.includes('country') && effectiveCountries.includes(c.short_name));
         if (!inCountry) {
-          const name = effectiveCountry === 'CA' ? 'Canada' : 'the United States';
-          toast.error(`Please select a location in ${name}.`);
+          toast.error(`Please select a location in ${countryDisplayName}.`);
           return;
         }
       }
@@ -279,7 +285,7 @@ export function SmartAddressInput({
       onAddressSelect?.(p.description, { formatted: p.description, streetAddress: '', city: '', province: '', postalCode: '' });
       onValidityChange?.(true);
     }
-  }, [mode, effectiveCountry, onInputChange, onAddressSelect, onValidityChange]);
+  }, [mode, effectiveCountries, countryDisplayName, onInputChange, onAddressSelect, onValidityChange]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showDrop || predictions.length === 0) return;
@@ -315,11 +321,10 @@ export function SmartAddressInput({
           if (!result) { toast.error('Could not determine your location.'); return; }
           const comps: any[]  = result.address_components ?? [];
           const geometry: any = result.geometry;
-          if (effectiveCountry) {
-            const inCountry = comps.some((c: any) => c.types.includes('country') && c.short_name === effectiveCountry);
+          if (effectiveCountries) {
+            const inCountry = comps.some((c: any) => c.types.includes('country') && effectiveCountries.includes(c.short_name));
             if (!inCountry) {
-              const name = effectiveCountry === 'CA' ? 'Canada' : 'the United States';
-              toast.error(`Your GPS location is outside ${name}.`);
+              toast.error(`Your GPS location is outside ${countryDisplayName}.`);
               return;
             }
           }
@@ -397,7 +402,7 @@ export function SmartAddressInput({
             role="combobox"
             aria-expanded={dropdownVisible}
             aria-autocomplete="list"
-            className={`w-full pl-9 pr-9 py-3.5 text-sm rounded-2xl outline-none transition disabled:opacity-50 ${
+            className={`w-full pl-9 pr-9 py-3.5 text-base rounded-2xl outline-none transition disabled:opacity-50 ${
               dark
                 ? 'bg-white/10 border border-white/20 text-white placeholder-white/40 focus:border-blue-400'
                 : 'border border-gray-200 bg-gray-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-50 text-gray-900'

@@ -209,7 +209,14 @@ async function finalizeOrder(params: {
       ]);
       agreementRenterUrl = rUrl || ''; agreementHostUrl = hUrl || ''; receiptDocUrl = rcUrl || '';
     }
-  } catch (e) { console.warn('Document generation failed:', e); }
+  } catch (e) {
+    console.warn('Document generation failed:', e);
+    // Best-effort — checkout itself already succeeded, so this doesn't
+    // block anything, but it must be visible rather than silently
+    // swallowed. The frozen agreement row is safe to regenerate from later
+    // (see MyOrders.tsx's "Retry generating documents").
+    toast.error('Your booking is confirmed, but we had trouble generating your agreement documents. You can retry from Dashboard → Orders.', { duration: 8000 });
+  }
 
   const sharedParams = {
     ref_no: sa.refNo, today, signed_at: signedAt,

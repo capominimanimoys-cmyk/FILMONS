@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { uploadRentalDoc, signRentalDoc } from '../../lib/upload';
+import { buildAgreementHTML, type AgreementData } from '../lib/generatePDF';
 import { SmartAddressInput, type AddressComponents } from './SmartAddressInput';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
@@ -364,6 +365,45 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     }
   };
 
+  // Draft preview — same buildAgreementHTML template the final signed
+  // document uses (see generatePDF.ts), fed with whatever's been entered so
+  // far. Incomplete sections render "Not completed" rather than a
+  // differently-shaped summary, so Document Overview always shows the
+  // actual document structure, never a simplified stand-in.
+  const draftAgreementData: AgreementData = useMemo(() => ({
+    id: agreementNumber,
+    first_name: legalFirst.trim(),
+    last_name: legalLast.trim(),
+    birthdate: dob,
+    id_type: idType,
+    id_country: idCountry,
+    email: profile?.email || '',
+    phone: profile?.phone || '',
+    address: unit.trim() ? `${addressText.trim()}, ${unit.trim()}` : addressText.trim(),
+    city: addrParts?.city || '',
+    province: addrParts?.province || '',
+    postal_code: addrParts?.postalCode || '',
+    country: addrCountryCode === 'CA' ? 'Canada' : 'United States',
+    proof_of_address_type: proofType,
+    signature_data: sigDataUrl || undefined,
+    listing_title: pay?.listingTitle || '',
+    total_amount: quote?.total ?? (Number(pay?.amount) || 0),
+    subtotal: quote?.subtotal,
+    buyer_fee_amount: quote?.buyerFeeAmount,
+    payment_method: selectedMethod || 'Card',
+    start_date: pay?.startDate,
+    duration: pay?.duration,
+    duration_type: pay?.durationType,
+    signed_at: '',
+    host_name: hostUser?.name,
+    host_email: hostUser?.email,
+    host_username: hostUser?.username,
+  }), [
+    agreementNumber, legalFirst, legalLast, dob, idType, idCountry, profile,
+    addressText, unit, addrParts, addrCountryCode, proofType, sigDataUrl,
+    pay, quote, selectedMethod, hostUser,
+  ]);
+
   const overviewField = (label: string, value: string | null | undefined) => (
     <div className="mb-2.5">
       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</p>
@@ -395,7 +435,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">FILMONS · Rental Agreement</p>
-                <p className="text-sm font-bold text-gray-900">{overview ? 'Document Overview' : `Step ${stepIdx + 1} of 6`}</p>
+                <p className="text-sm font-bold text-gray-900">{overview ? 'Rental Agreement Preview' : `Step ${stepIdx + 1} of 6`}</p>
               </div>
               <button onClick={() => setOverview(v => !v)}
                 className="flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-colors shrink-0">
@@ -409,18 +449,18 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto">
+          <div className={`flex-1 ${overview ? 'overflow-hidden' : 'overflow-y-auto'}`}>
             {overview ? (
-              <div className="px-5 py-5">
-                <div className="bg-gray-50 rounded-2xl p-4 space-y-1 border border-gray-100">
-                  <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Renter</p>
-                  {overviewField('Legal name', (legalFirst || legalLast) ? `${legalFirst} ${legalLast}`.trim() : null)}
-                  {overviewField('Address', addrParts?.city ? `${addressText}, ${addrParts.city}` : null)}
-                  {overviewField('Verified contact', emailVerified && phoneVerified ? `${profile?.email}\n${profile?.phone}` : null)}
-                  {overviewField('Listing', pay?.listingTitle)}
-                  {overviewField('Rental rules', rulesAgreed ? 'Agreed' : null)}
-                  {overviewField('Signature', sigDataUrl ? `Signed by ${legalFirst} ${legalLast}` : null)}
+              <div className="h-full flex flex-col">
+                <div className="px-5 pt-3 pb-2 flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Preview</span>
+                  <p className="text-[11px] text-gray-400">This is a preview of the document you'll sign — it isn't final until you complete and sign the agreement.</p>
                 </div>
+                <iframe
+                  title="Rental Agreement Preview"
+                  srcDoc={buildAgreementHTML(draftAgreementData)}
+                  className="flex-1 w-full border-0 bg-white"
+                />
               </div>
             ) : (
               <div key={step} className="ram-step-enter" style={{ ['--ram-dir' as any]: dir === 1 ? '24px' : '-24px' }}>

@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { signRentalDoc } from '../../lib/upload';
+import { regenerateAgreementDocuments } from '../lib/generatePDF';
+import { toast } from 'sonner';
 
 interface Order {
   id:             string;
@@ -141,6 +143,36 @@ function DocButton({ label, path }: { label: string; path: string | null }) {
         <VisibilityRounded sx={{fontSize:13}} /> {label}
       </button>
     </>
+  );
+}
+
+// Shown when a signed agreement's documents never got generated (see
+// Checkout.tsx's best-effort post-sign generation) — regenerates
+// deterministically from the frozen agreement snapshot, safe to re-run.
+function RetryDocumentsButton({ agreementId, onDone }: { agreementId: string; onDone: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      const result = await regenerateAgreementDocuments(agreementId);
+      if (result.error || (!result.renterPath && !result.hostPath)) {
+        throw new Error(result.error || 'Could not generate documents');
+      }
+      toast.success('Documents generated.');
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not generate documents — please try again.');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <button onClick={retry} disabled={retrying}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors disabled:opacity-50">
+      <RefreshRounded sx={{fontSize:13}} /> {retrying ? 'Generating…' : 'Retry generating documents'}
+    </button>
   );
 }
 
@@ -307,6 +339,9 @@ function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab:
       <div className="px-5 pb-4 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
         <DocButton label="Rental Agreement" path={order.agreement_path} />
         <DocButton label="Receipt" path={order.receipt_path} />
+        {order.rental_agreement_id && !order.agreement_path && !order.receipt_path && (
+          <RetryDocumentsButton agreementId={order.rental_agreement_id} onDone={onRefreshNeeded} />
+        )}
       </div>
 
       {/* Refund request — renter only, before anything's already in flight */}
