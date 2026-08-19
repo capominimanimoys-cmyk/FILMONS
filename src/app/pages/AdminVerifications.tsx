@@ -68,6 +68,7 @@ interface VerificationRequest {
   submittedAt: string;
   reviewedAt: string | null;
   reviewedBy: string | null;
+  verifiedAt: string | null;
 }
 
 interface WalletTx {
@@ -263,6 +264,18 @@ function InfoRow({
   );
 }
 
+// Compact label+value pair for the verification list card — always
+// renders (unlike InfoRow, which hides empty fields) so every record
+// shows the same field set, with "—" for anything not yet provided.
+function CardField({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-semibold text-gray-800 truncate">{value || '—'}</p>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────
 export function AdminVerifications() {
   const navigate = useNavigate();
@@ -372,6 +385,7 @@ export function AdminVerifications() {
             submittedAt:        row.submitted_at || row.created_at,
             reviewedAt:         row.reviewed_at || null,
             reviewedBy:         row.reviewed_by || null,
+            verifiedAt:         row.verified_at || null,
           } as VerificationRequest;
         });
       } else if (error) {
@@ -951,35 +965,29 @@ export function AdminVerifications() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                        <div className="flex items-center gap-1.5 text-gray-500">
-                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                          <span>
-                            Submitted{" "}
-                            {new Date(req.submittedAt).toLocaleDateString("en-CA", {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </span>
-                        </div>
-                        {req.residenceCountry && (
-                          <div className="flex items-center gap-1.5 text-gray-500">
-                            <Globe className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="truncate">{req.residenceCountry}</span>
-                          </div>
-                        )}
-                        {req.issuingCountry && (
-                          <div className="flex items-center gap-1.5 text-gray-500">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="truncate">ID: {req.issuingCountry}</span>
-                          </div>
-                        )}
-                        {req.idType && (
-                          <div className="flex items-center gap-1.5 text-gray-500">
-                            <CreditCard className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="truncate">{req.idType}</span>
-                          </div>
-                        )}
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs mb-3 bg-gray-50 rounded-xl p-3">
+                        <CardField label="Legal name" value={req.fullName || undefined} />
+                        <CardField label="Date of birth" value={req.dob} />
+                        <CardField label="ID type" value={req.idType} />
+                        <CardField label="ID number" value={req.idNumber} />
+                        <CardField label="ID issuing country" value={req.issuingCountry} />
+                        <CardField label="ID expiry date" value={req.idExpiryDate} />
+                        <CardField
+                          label="Address verification"
+                          value={req.proofOfAddressPath ? 'Provided ✓' : 'Not provided'}
+                        />
+                        <CardField
+                          label="Identity status"
+                          value={req.status.replace('_', ' ')}
+                        />
+                        <CardField
+                          label="Submitted"
+                          value={new Date(req.submittedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" })}
+                        />
+                        <CardField
+                          label="Verified"
+                          value={req.verifiedAt ? new Date(req.verifiedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" }) : undefined}
+                        />
                       </div>
 
                       <button
