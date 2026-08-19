@@ -54,7 +54,7 @@ const ID_TYPES: Record<string, string[]> = {
 
 const PROOF_TYPES = ['Utility bill', 'Bank statement', 'Credit-card statement', 'Government correspondence', 'Lease/rental agreement'];
 
-const STEP_LABELS = ['Personal', 'Address', 'Verification', 'Rental Rules', 'Signature', 'Review'];
+const STEP_LABELS = ['Personal', 'Address', 'Identity & Address', 'Rental Rules', 'Signature', 'Review'];
 type StepKey = 'personal' | 'address' | 'verify' | 'rules' | 'signature' | 'review';
 const STEPS: StepKey[] = ['personal', 'address', 'verify', 'rules', 'signature', 'review'];
 
@@ -215,6 +215,25 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   const emailVerified = !!profile?.email_verified || isCreatorPlusApproved;
   const phoneVerified = !!profile?.phone_verified || isCreatorPlusApproved;
 
+  // Creator+ identity/address verification — the source of truth for the
+  // "Identity & Address" step. Approval is one holistic decision covering
+  // both identity and address (there's no separate per-field status in this
+  // schema), and Creator+ approval already deletes the raw ID/proof-of-
+  // address files — so reuse can only ever be status + legal info, never
+  // document copying.
+  interface CreatorPlusVerification {
+    id: string; status: string; decisionReason: string | null;
+    legalFirstName: string; legalLastName: string;
+    addressLine1: string; addressLine2: string; city: string; provinceState: string; postalCode: string; country: string;
+    verifiedAt: string | null;
+    // Derived, not manually settable — true once a document existed at
+    // submission time, even after approval deletes the raw file.
+    governmentIdProvided: boolean; proofOfAddressProvided: boolean;
+  }
+  const [verification, setVerification] = useState<CreatorPlusVerification | null>(null);
+  const [verificationLoading, setVerificationLoading] = useState(true);
+  const isFullyVerified = verification?.status === 'approved';
+
   // Step 1 — Personal
   const [legalFirst, setLegalFirst] = useState(user?.name?.split(' ')[0] || '');
   const [legalLast, setLegalLast] = useState(user?.name?.split(' ').slice(1).join(' ') || '');
@@ -276,8 +295,27 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
           setProfileLoading(false);
         })
         .catch(e => { console.warn('[rental-agreement] profile fetch failed:', e); setProfileLoading(false); });
+
+      supabase.from('identity_verifications')
+        .select('id, status, decision_reason, legal_first_name, legal_last_name, address_line1, address_line2, city, province_state, postal_code, country_of_residence, verified_at, id_front_path, proof_of_address_path, documents_deleted_at')
+        .eq('user_id', user.id).order('submitted_at', { ascending: false }).limit(1).maybeSingle()
+        .then(({ data, error }) => {
+          if (error) console.warn('[rental-agreement] verification fetch failed:', error.message);
+          setVerification(data ? {
+            id: data.id, status: data.status, decisionReason: data.decision_reason,
+            legalFirstName: data.legal_first_name || '', legalLastName: data.legal_last_name || '',
+            addressLine1: data.address_line1 || '', addressLine2: data.address_line2 || '',
+            city: data.city || '', provinceState: data.province_state || '', postalCode: data.postal_code || '',
+            country: data.country_of_residence || '', verifiedAt: data.verified_at,
+            governmentIdProvided: !!data.id_front_path || !!data.documents_deleted_at,
+            proofOfAddressProvided: !!data.proof_of_address_path || !!data.documents_deleted_at,
+          } : null);
+          setVerificationLoading(false);
+        })
+        .catch(e => { console.warn('[rental-agreement] verification fetch failed:', e); setVerificationLoading(false); });
     } else {
       setProfileLoading(false);
+      setVerificationLoading(false);
     }
 
     if (pay?.listingId) {
@@ -295,12 +333,41 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     }).then(r => r.json()).then(data => { if (!data.error) setQuote(data); }).catch(() => {});
   }, [profile, pay?.amount]);
 
+  // Once Creator+ verification loads for a fully-verified renter, pre-fill
+  // Personal/Address from it rather than the editable public profile — the
+  // final saved record uses verification.* directly regardless (see
+  // handleSubmit), but pre-filling here keeps what's on screen honest too.
+  useEffect(() => {
+    if (!isFullyVerified || !verification) return;
+    setLegalFirst(verification.legalFirstName);
+    setLegalLast(verification.legalLastName);
+    setAddrCountryCode(verification.country === 'US' ? 'US' : 'CA');
+    const formatted = [verification.addressLine1, verification.city, verification.provinceState, verification.postalCode].filter(Boolean).join(', ');
+    setAddressText(verification.addressLine1);
+    setUnit(verification.addressLine2);
+    setAddrParts({
+      formatted, streetAddress: verification.addressLine1, city: verification.city,
+      province: verification.provinceState, postalCode: verification.postalCode,
+      country: verification.country === 'US' ? 'US' : 'CA',
+    });
+  }, [isFullyVerified, verification]); // eslint-disable-line
+
   const goNext = () => { setDir(1); setStepIdx(i => Math.min(STEPS.length - 1, i + 1)); };
   const goBack = () => { setDir(-1); setStepIdx(i => Math.max(0, i - 1)); };
 
+  // Leaving for full Creator+ verification loses this modal's in-progress
+  // state (nothing here is persisted server-side until final signing) — a
+  // resume flag lets Checkout.tsx reopen the agreement flow if the renter
+  // lands back on this same checkout URL, though not necessarily mid-step.
+  const goVerifyNow = () => {
+    try { sessionStorage.setItem('filmons_resume_rental_agreement', JSON.stringify({ conv: convId, msg: msgId })); } catch {}
+    onClose();
+    navigate('/verification');
+  };
+
   const canContinuePersonal = emailVerified && phoneVerified && legalFirst.trim() && legalLast.trim() && dob;
   const canContinueAddress  = !!addrParts?.city && !!addrParts?.postalCode && !!addressText.trim();
-  const canContinueVerify   = !!idType && !!idFrontPath && (!requiresIdBack || !!idBackPath) && !!proofType && !!proofPath;
+  const canContinueVerify   = isFullyVerified || (!!idType && !!idFrontPath && (!requiresIdBack || !!idBackPath) && !!proofType && !!proofPath);
   const canContinueRules    = rulesAgreed;
   const canContinueSign     = !!sigDataUrl && confirmAccurate && confirmAgree;
 
@@ -328,8 +395,23 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
       const sigBlob = await (await fetch(sigDataUrl!)).blob();
       const sigPath = await uploadRentalDoc(sigBlob, `${agreementId}/signature.png`, 'image/png');
 
-      // Save the draft's full field set, then finalize server-side.
-      const { error: updErr } = await supabase.from('rental_agreements').update({
+      // Save the draft's full field set, then finalize server-side. When
+      // reusing Creator+ verification, the legal name/address saved here
+      // come from the verified record itself — never from the editable
+      // form state — so "Verified by Filmons" can never end up attached to
+      // unverified self-entered data.
+      const updatePayload: Record<string, unknown> = isFullyVerified ? {
+        legal_first_name: verification!.legalFirstName, legal_last_name: verification!.legalLastName, date_of_birth: dob,
+        address_country: verification!.country === 'US' ? 'US' : 'CA',
+        address_line1: verification!.addressLine1, address_line2: verification!.addressLine2 || null,
+        city: verification!.city, province_state: verification!.provinceState, postal_code: verification!.postalCode,
+        id_issuing_country: null, id_type: null, id_front_path: null, id_back_path: null,
+        proof_of_address_type: null, proof_of_address_path: null,
+        renter_verification_id: verification!.id,
+        renter_verification_verified_at: verification!.verifiedAt,
+        signature_type: sigMode, signature_path: sigPath,
+        status: 'ready_to_sign',
+      } : {
         legal_first_name: legalFirst.trim(), legal_last_name: legalLast.trim(), date_of_birth: dob,
         address_country: addrCountryCode, address_line1: addressText.trim(), address_line2: unit.trim() || null,
         city: addrParts?.city || '', province_state: addrParts?.province || '', postal_code: addrParts?.postalCode || '',
@@ -337,7 +419,8 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
         proof_of_address_type: proofType, proof_of_address_path: proofPath,
         signature_type: sigMode, signature_path: sigPath,
         status: 'ready_to_sign',
-      }).eq('id', agreementId);
+      };
+      const { error: updErr } = await supabase.from('rental_agreements').update(updatePayload).eq('id', agreementId);
       if (updErr) throw new Error(updErr.message);
 
       const res = await fetch(SIGN_EDGE, {
@@ -398,10 +481,11 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     host_name: hostUser?.name,
     host_email: hostUser?.email,
     host_username: hostUser?.username,
+    verification_reused: isFullyVerified,
   }), [
     agreementNumber, legalFirst, legalLast, dob, idType, idCountry, profile,
     addressText, unit, addrParts, addrCountryCode, proofType, sigDataUrl,
-    pay, quote, selectedMethod, hostUser,
+    pay, quote, selectedMethod, hostUser, isFullyVerified,
   ]);
 
   const overviewField = (label: string, value: string | null | undefined) => (
@@ -546,47 +630,106 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                   </div>
                 )}
 
-                {/* ── Step 3: Verification ── */}
+                {/* ── Step 3: Identity & Address ── */}
                 {step === 'verify' && (
                   <div className="px-5 py-5 space-y-5">
-                    <h2 className="text-lg font-black text-gray-900">Verify your information</h2>
+                    {verificationLoading ? (
+                      <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>
+                    ) : isFullyVerified ? (
+                      <>
+                        <h2 className="text-lg font-black text-gray-900">Identity &amp; Address</h2>
+                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5 space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shrink-0">
+                              <ShieldCheck className="w-5 h-5 text-white" />
+                            </div>
+                            <p className="font-black text-gray-900">Verified by Filmons ✓</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Government ID</p><p className="text-sm font-bold text-green-600">{verification!.governmentIdProvided ? 'Provided ✓' : 'Not provided'}</p></div>
+                            <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Proof of Address</p><p className="text-sm font-bold text-green-600">{verification!.proofOfAddressProvided ? 'Provided ✓' : 'Not provided'}</p></div>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Legal Name</p>
+                            <p className="text-sm font-semibold text-gray-900">{verification!.legalFirstName} {verification!.legalLastName}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verified Address</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {[verification!.addressLine1, verification!.addressLine2].filter(Boolean).join(', ')}<br/>
+                              {[verification!.city, verification!.provinceState, verification!.postalCode].filter(Boolean).join(', ')}
+                            </p>
+                          </div>
+                          <p className="text-xs text-blue-800 bg-white/60 rounded-xl px-3 py-2.5">
+                            Your identity and residential address have already been verified by Filmons. You do not need to submit your documents again.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-lg font-black text-gray-900">Identity &amp; Address</h2>
 
-                    <div className="border border-gray-200 rounded-2xl p-4 space-y-3">
-                      <p className="text-sm font-bold text-gray-900">Government ID</p>
-                      <p className="text-xs text-gray-500">Country that issued your ID</p>
-                      <IssuingCountryPicker value={idCountry} onChange={v => { setIdCountry(v); setIdType(''); }} />
-                      {idCountry && (
-                        <select value={idType} onChange={e => setIdType(e.target.value)}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-                          <option value="">Select ID type…</option>
-                          {idTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      )}
-                      {idType && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <UploadCard label="Upload front" filePreview={idFrontPreview} uploading={uploadingKind === 'idFront'} onPick={f => handleUpload('idFront', f)} />
-                          {requiresIdBack && (
-                            <UploadCard label="Upload back" filePreview={idBackPreview} uploading={uploadingKind === 'idBack'} onPick={f => handleUpload('idBack', f)} />
+                        {verification?.status === 'pending' || verification?.status === 'under_review' ? (
+                          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-1.5">
+                            <p className="text-sm font-bold text-gray-900">Verification in progress</p>
+                            <p className="text-xs text-gray-500">Your Creator+ verification is under review. You can finish this rental agreement now using the documents below, or wait for that review to complete.</p>
+                          </div>
+                        ) : verification?.status === 'changes_requested' || verification?.status === 'denied' ? (
+                          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-1.5">
+                            <p className="text-sm font-bold text-gray-900">Verification update required</p>
+                            <p className="text-xs text-gray-500">{verification.decisionReason || 'Your Creator+ verification needs a correction before it can be reused here.'}</p>
+                            <button type="button" onClick={goVerifyNow} className="w-full mt-2 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-sm">
+                              Update Verification
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-1.5">
+                            <p className="text-sm font-bold text-gray-900">Verify your identity</p>
+                            <p className="text-xs text-gray-500">Complete Creator+ verification once and Filmons will reuse it for this and future rentals — or submit documents for this rental only below.</p>
+                            <button type="button" onClick={goVerifyNow} className="w-full mt-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm">
+                              Become Creator+ / Complete verification
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="border border-gray-200 rounded-2xl p-4 space-y-3">
+                          <p className="text-sm font-bold text-gray-900">Government ID</p>
+                          <p className="text-xs text-gray-500">Country that issued your ID</p>
+                          <IssuingCountryPicker value={idCountry} onChange={v => { setIdCountry(v); setIdType(''); }} />
+                          {idCountry && (
+                            <select value={idType} onChange={e => setIdType(e.target.value)}
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                              <option value="">Select ID type…</option>
+                              {idTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          )}
+                          {idType && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <UploadCard label="Upload front" filePreview={idFrontPreview} uploading={uploadingKind === 'idFront'} onPick={f => handleUpload('idFront', f)} />
+                              {requiresIdBack && (
+                                <UploadCard label="Upload back" filePreview={idBackPreview} uploading={uploadingKind === 'idBack'} onPick={f => handleUpload('idBack', f)} />
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    <div className="border border-gray-200 rounded-2xl p-4 space-y-3">
-                      <p className="text-sm font-bold text-gray-900">Proof of Address</p>
-                      <select value={proofType} onChange={e => setProofType(e.target.value)}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-                        <option value="">Select document type…</option>
-                        {PROOF_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      {proofType && (
-                        <UploadCard label="Upload document" sub="Shows name, address, issuer, and a recent date" filePreview={proofPreview} uploading={uploadingKind === 'proof'} onPick={f => handleUpload('proof', f)} />
-                      )}
-                    </div>
+                        <div className="border border-gray-200 rounded-2xl p-4 space-y-3">
+                          <p className="text-sm font-bold text-gray-900">Proof of Address</p>
+                          <select value={proofType} onChange={e => setProofType(e.target.value)}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            <option value="">Select document type…</option>
+                            {PROOF_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          {proofType && (
+                            <UploadCard label="Upload document" sub="Shows name, address, issuer, and a recent date" filePreview={proofPreview} uploading={uploadingKind === 'proof'} onPick={f => handleUpload('proof', f)} />
+                          )}
+                        </div>
 
-                    <p className="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
-                      <Camera className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Your verification documents are private and are never displayed publicly. The listing owner never sees these files — only a verification status.
-                    </p>
+                        <p className="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
+                          <Camera className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Your verification documents are private and are never displayed publicly. The listing owner never sees these files — only a verification status.
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
 

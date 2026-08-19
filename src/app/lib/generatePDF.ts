@@ -29,6 +29,10 @@ export interface AgreementData {
   postal_code: string;
   country: string;
   proof_of_address_type?: string;
+  // True when the renter's identity/address came from an approved Creator+
+  // verification instead of documents uploaded for this specific rental —
+  // renders "Verified by Filmons" instead of "Provided" in that case.
+  verification_reused?: boolean;
   signature_data?: string;
   listing_title: string;
   total_amount: number;
@@ -142,8 +146,8 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
   // completed" instead of blank cells or a misleadingly-hardcoded "Provided".
   const renterName = (d.first_name || d.last_name) ? `${d.first_name} ${d.last_name}`.trim() : 'Not completed';
   const hasAddress = !!(d.address || d.city || d.province || d.postal_code);
-  const idProvided = !!d.id_type;
-  const proofProvided = !!d.proof_of_address_type;
+  const idProvided = !!d.id_type || !!d.verification_reused;
+  const proofProvided = !!d.proof_of_address_type || !!d.verification_reused;
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
@@ -181,9 +185,11 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
     <div class="field"><div class="fl">Email Address</div><div class="fv">${d.email ? `${d.email} <span class="badge">&#x2713; Verified</span>` : 'Not completed'}</div></div>
     <div class="field"><div class="fl">Phone Number</div><div class="fv">${d.phone ? `${d.phone} <span class="badge">&#x2713; Verified</span>` : 'Not completed'}</div></div>
     <div class="field"><div class="fl">Date of Birth</div><div class="fv">${d.birthdate || 'Not completed'}</div></div>
-    <div class="field"><div class="fl">Government ID Type</div><div class="fv">${d.id_type || 'Not completed'}</div></div>
+    <div class="field"><div class="fl">Government ID Type</div><div class="fv">${d.verification_reused ? '&#x2014;' : (d.id_type || 'Not completed')}</div></div>
     <div class="field"><div class="fl">ID Country of Issue</div><div class="fv">${d.id_country || '&#x2014;'}</div></div>
-    <div class="field"><div class="fl">Identity Verification</div><div class="fv">${idProvided ? '<span class="badge">&#x2713; Provided</span> &#x2014; document is private and never shown here' : '<span class="badge badge-gray">Not completed</span>'}</div></div>
+    <div class="field"><div class="fl">Government ID</div><div class="fv">${d.verification_reused
+      ? '<span class="badge">&#x2713; Verified by Filmons</span> &#x2014; identity confirmed via approved Creator+ verification'
+      : idProvided ? '<span class="badge">&#x2713; Provided</span> &#x2014; document is private and never shown here' : '<span class="badge badge-gray">Not completed</span>'}</div></div>
   </div>
 
   <div class="sub">1.3 Rental Period</div>
@@ -199,7 +205,9 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
     <div class="field"><div class="fl">Province / State</div><div class="fv">${d.province || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
     <div class="field"><div class="fl">Postal / ZIP Code</div><div class="fv">${d.postal_code || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
     <div class="field"><div class="fl">Country</div><div class="fv">${d.country || (hasAddress ? '&#x2014;' : 'Not completed')}</div></div>
-    <div class="field"><div class="fl">Proof of Address</div><div class="fv">${proofProvided ? `${d.proof_of_address_type} <span class="badge">&#x2713; Provided</span>` : 'Not completed'}</div></div>
+    <div class="field"><div class="fl">Proof of Address</div><div class="fv">${d.verification_reused
+      ? '<span class="badge">&#x2713; Verified by Filmons</span> &#x2014; address confirmed via approved Creator+ verification'
+      : proofProvided ? `${d.proof_of_address_type} <span class="badge">&#x2713; Provided</span>` : 'Not completed'}</div></div>
   </div>
 </div>
 
@@ -531,6 +539,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     start_date: details.startDate, duration: details.duration, duration_type: details.durationType,
     signed_at: agRow.signed_at || '',
     host_name: hostProfile?.name, host_email: hostProfile?.email, host_username: hostProfile?.username,
+    verification_reused: !!agRow.renter_verification_id,
   };
 
   const renterHtml = buildAgreementHTML(baseAgreement, false);

@@ -75,13 +75,26 @@ Deno.serve(async (req) => {
     }
 
     // 2. Required fields must actually be present — never trust a client
-    // claim of "ready to sign" without checking.
+    // claim of "ready to sign" without checking. A Creator+-approved
+    // renter can substitute renter_verification_id for the ID/proof-of-
+    // address uploads — re-validated here, never trusted from the client
+    // draft alone (a forged/stale/unapproved id must not pass).
+    let reusedVerification: any = null;
+    if (draft.renter_verification_id) {
+      reusedVerification = await selectOne('identity_verifications', `id=eq.${draft.renter_verification_id}`);
+      if (!reusedVerification || reusedVerification.user_id !== renterId || reusedVerification.status !== 'approved') {
+        return new Response(JSON.stringify({ error: 'Referenced verification is not an approved record for this renter' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+    }
+
     const missing: string[] = [];
     if (!draft.legal_first_name || !draft.legal_last_name) missing.push('legal name');
     if (!draft.date_of_birth) missing.push('date of birth');
     if (!draft.address_line1 || !draft.city || !draft.postal_code) missing.push('address');
-    if (!draft.id_front_path) missing.push('government ID');
-    if (!draft.proof_of_address_path) missing.push('proof of address');
+    if (!reusedVerification) {
+      if (!draft.id_front_path) missing.push('government ID');
+      if (!draft.proof_of_address_path) missing.push('proof of address');
+    }
     if (!draft.signature_path) missing.push('signature');
     if (missing.length) {
       return new Response(JSON.stringify({ error: `Missing required information: ${missing.join(', ')}` }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -151,8 +164,8 @@ Deno.serve(async (req) => {
       rental_details_snapshot: rentalDetails,
       pricing_snapshot: { ...pricingBreakdown, currency: 'CAD' },
       agreement_terms_version: AGREEMENT_TERMS_VERSION,
-      id_verification_status: 'provided',
-      address_verification_status: 'provided',
+      id_verification_status: reusedVerification ? 'verified' : 'provided',
+      address_verification_status: reusedVerification ? 'verified' : 'provided',
       status: 'signed',
       signed_at: now,
     });

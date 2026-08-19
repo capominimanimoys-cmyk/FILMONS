@@ -72,9 +72,7 @@ interface FormState {
   // Step 5 Requirements
   depositRequired: boolean;
   insuranceRequired: boolean;
-  govIdRequired: boolean;
   ageRequirement: string;
-  agreementRequired: boolean;
   usageRules: string;
   customRequirements: string;
   // Step 6 Payment
@@ -186,8 +184,8 @@ function defaultForm(): FormState {
     acceptOffers: false, negotiable: false, startingPrice: '', hourlyRate: '',
     securityDeposit: '', lateFee: '', minDuration: '', cleaningFee: '',
     pricingPackages: [],
-    depositRequired: false, insuranceRequired: false, govIdRequired: false,
-    ageRequirement: '', agreementRequired: false, usageRules: '', customRequirements: '',
+    depositRequired: false, insuranceRequired: false,
+    ageRequirement: '', usageRules: '', customRequirements: '',
     acceptedPayments: ['Credit Card', 'Debit Card', 'E-Transfer'],
     cancellationPolicy: 'Moderate (Full refund 7 days before)',
     refundPolicy: 'Full Refund',
@@ -799,13 +797,23 @@ function Step5({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
         <div className="divide-y divide-gray-100">
           <Toggle checked={form.depositRequired} onChange={v=>set({depositRequired:v})} label="Deposit Required" sub="Collect a security deposit before the booking"/>
           <Toggle checked={form.insuranceRequired} onChange={v=>set({insuranceRequired:v})} label="Insurance Required" sub="Renter must provide proof of insurance"/>
-          <Toggle checked={form.govIdRequired} onChange={v=>set({govIdRequired:v})} label="Government ID Required" sub="Verify renter identity before handoff"/>
-          <Toggle checked={form.agreementRequired} onChange={v=>set({agreementRequired:v})} label="Signed Agreement Required" sub="Renter must sign a rental agreement"/>
         </div>
         <Field>
           <Label>Age Requirement</Label>
           <Input value={form.ageRequirement} onChange={e=>set({ageRequirement:e.target.value})} placeholder="e.g. Must be 21+" />
         </Field>
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+          <div className="space-y-1.5">
+            <p className="text-xs text-blue-900">Filmons verifies renter identity and address when required — this isn't something individual listings configure.</p>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+              <Check className="w-3.5 h-3.5" /> Identity verification — Managed by Filmons
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+              <Check className="w-3.5 h-3.5" /> Rental Agreement — Managed by Filmons
+            </div>
+          </div>
+        </div>
       </SectionCard>
 
       <SectionCard title="Usage Rules" icon={<AlertCircle className="w-4 h-4"/>}>
@@ -1391,9 +1399,7 @@ export function CreateListing() {
       negotiable: form.negotiable,
       depositRequired: form.depositRequired,
       insuranceRequired: form.insuranceRequired,
-      govIdRequired: form.govIdRequired,
       ageRequirement: form.ageRequirement||null,
-      agreementRequired: form.agreementRequired,
       usageRules: form.usageRules||null,
       customRequirements: form.customRequirements||null,
       cancellationPolicy: form.cancellationPolicy,

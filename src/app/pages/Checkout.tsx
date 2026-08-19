@@ -174,6 +174,7 @@ async function finalizeOrder(params: {
         payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
         duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
         host_name: hostUser?.name, host_email: hostUser?.email,
+        verification_reused: !!agRow.renter_verification_id,
       };
 
       const renterHtml = buildAgreementHTML(baseAgreement, false);
@@ -510,6 +511,25 @@ export function Checkout() {
   const [quoteError, setQuoteError] = useState(false);
   const [quoteRetryToken, setQuoteRetryToken] = useState(0);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
+
+  // Reopen the Rental Agreement modal if the renter left mid-flow to
+  // complete Creator+ verification (see RentalAgreementModal's
+  // goVerifyNow) and has landed back on this same checkout URL. This
+  // doesn't restore their exact prior step — nothing in the modal persists
+  // server-side until final signing — just gets them back into the flow
+  // without re-navigating from the listing/chat.
+  useEffect(() => {
+    if (!convId || !msgId) return;
+    try {
+      const raw = sessionStorage.getItem('filmons_resume_rental_agreement');
+      if (!raw) return;
+      const resume = JSON.parse(raw);
+      if (resume.conv === convId && resume.msg === msgId) {
+        sessionStorage.removeItem('filmons_resume_rental_agreement');
+        setShowAgreementModal(true);
+      }
+    } catch {}
+  }, [convId, msgId]);
 
   // Handle return from secure checkout after card payment
   useEffect(() => {

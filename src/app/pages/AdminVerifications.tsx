@@ -276,6 +276,22 @@ function CardField({ label, value }: { label: string; value?: string }) {
   );
 }
 
+// ID numbers stay masked until an admin explicitly clicks Reveal — never
+// shown plainly by default, never logged/emailed/notified anywhere.
+function MaskedIdNumber({ value }: { value?: string }) {
+  const [revealed, setRevealed] = useState(false);
+  if (!value) return <p className="text-sm font-semibold text-gray-800 mt-0.5">—</p>;
+  const masked = `••••••${value.slice(-4)}`;
+  return (
+    <div className="flex items-center gap-2 mt-0.5">
+      <p className="text-sm font-semibold text-gray-800 font-mono">{revealed ? value : masked}</p>
+      <button type="button" onClick={() => setRevealed(v => !v)} className="text-[11px] font-bold text-blue-600 hover:underline">
+        {revealed ? 'Hide' : 'Reveal'}
+      </button>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────
 export function AdminVerifications() {
   const navigate = useNavigate();
@@ -968,17 +984,18 @@ export function AdminVerifications() {
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs mb-3 bg-gray-50 rounded-xl p-3">
                         <CardField label="Legal name" value={req.fullName || undefined} />
                         <CardField label="Date of birth" value={req.dob} />
+                        <CardField label="Address" value={[req.streetAddr, req.city, req.province, req.postalCode].filter(Boolean).join(', ') || undefined} />
+                        <CardField label="Country" value={req.residenceCountry} />
                         <CardField label="ID type" value={req.idType} />
-                        <CardField label="ID number" value={req.idNumber} />
                         <CardField label="ID issuing country" value={req.issuingCountry} />
                         <CardField label="ID expiry date" value={req.idExpiryDate} />
                         <CardField
-                          label="Address verification"
-                          value={req.proofOfAddressPath ? 'Provided ✓' : 'Not provided'}
+                          label="Government ID"
+                          value={(req.idFrontPath || req.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
                         />
                         <CardField
-                          label="Identity status"
-                          value={req.status.replace('_', ' ')}
+                          label="Proof of address"
+                          value={(req.proofOfAddressPath || req.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
                         />
                         <CardField
                           label="Submitted"
@@ -1513,10 +1530,10 @@ export function AdminVerifications() {
                   />
                   <InfoRow
                     icon={
-                      <CreditCard className="w-4 h-4 text-gray-400" />
+                      <User className="w-4 h-4 text-gray-400" />
                     }
-                    label="Government ID Number"
-                    value={selectedRequest.idNumber}
+                    label="Filmons Username"
+                    value={selectedRequest.userName ? `@${selectedRequest.userName.toLowerCase().replace(/\s+/g, '')}` : undefined}
                   />
                 </div>
               </section>
@@ -1581,13 +1598,15 @@ export function AdminVerifications() {
                     label="ID Type"
                     value={selectedRequest.idType}
                   />
-                  <InfoRow
-                    icon={
+                  <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
+                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 mt-0.5">
                       <CreditCard className="w-4 h-4 text-indigo-500" />
-                    }
-                    label="ID Number"
-                    value={selectedRequest.idNumber}
-                  />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">ID Number</p>
+                      <MaskedIdNumber value={selectedRequest.idNumber} />
+                    </div>
+                  </div>
                   <InfoRow
                     icon={
                       <Calendar className="w-4 h-4 text-indigo-500" />
@@ -1604,6 +1623,20 @@ export function AdminVerifications() {
                   <Camera className="w-3.5 h-3.5" /> Submitted
                   Documents
                 </h3>
+                <div className="flex items-center gap-4 mb-3 text-xs">
+                  <span className="font-semibold text-gray-600">
+                    Government ID{' '}
+                    <span className={(selectedRequest.idFrontPath || selectedRequest.documentsDeletedAt) ? 'text-green-600' : 'text-gray-400'}>
+                      {(selectedRequest.idFrontPath || selectedRequest.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
+                    </span>
+                  </span>
+                  <span className="font-semibold text-gray-600">
+                    Proof of Address{' '}
+                    <span className={(selectedRequest.proofOfAddressPath || selectedRequest.documentsDeletedAt) ? 'text-green-600' : 'text-gray-400'}>
+                      {(selectedRequest.proofOfAddressPath || selectedRequest.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
+                    </span>
+                  </span>
+                </div>
                 {selectedRequest.documentsDeletedAt ? (
                   <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 text-center">
                     <Trash2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
