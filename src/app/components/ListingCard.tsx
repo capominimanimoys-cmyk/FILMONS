@@ -1,16 +1,20 @@
 import { useNavigate } from 'react-router';
-import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X } from 'lucide-react';
+import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { Listing } from '../types';
 import { savedListingsApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 interface ListingCardProps {
   listing: Listing & { distance?: number };
   onClick?: () => void;
   className?: string;
+  /** Called after the owner successfully deletes this listing, so the
+   * parent list can remove it without waiting for a full reload. */
+  onDeleted?: () => void;
 }
 
 function distanceLabel(km: number) {
@@ -18,8 +22,9 @@ function distanceLabel(km: number) {
 }
 
 // ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
-function BottomMenuSheet({ listing, saved, onSave, onClose }: {
+function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
+  isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
 }) {
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
@@ -80,10 +85,16 @@ function BottomMenuSheet({ listing, saved, onSave, onClose }: {
         {/* Actions */}
         <div className="px-4 py-2 space-y-1">
           {[
+            ...(isOwn ? [
+              { icon: <Pencil className="w-5 h-5"/>, label: 'Edit Listing', sub: 'Update photos, pricing, details, and more', color: 'text-gray-900', action: () => { close(); onEdit(); } },
+              { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
+            ] : []),
             { icon: <Bookmark className="w-5 h-5"/>, label: saved ? 'Remove from saved' : 'Save listing', sub: saved ? 'Remove from your saved listings' : 'Add to your saved listings', color: 'text-gray-900', action: () => { onSave(); close(); } },
             { icon: <Share2 className="w-5 h-5"/>,   label: 'Share listing',   sub: 'Send the link to someone', color: 'text-gray-900', action: share },
-            { icon: <EyeOff className="w-5 h-5"/>,   label: 'Hide listing',    sub: "Don't show this listing again", color: 'text-gray-600', action: () => { toast('Listing hidden'); close(); } },
-            { icon: <Flag className="w-5 h-5"/>,     label: 'Report listing',  sub: 'Scam, inappropriate, or misleading', color: 'text-red-500', action: () => { toast.info('Report submitted — thank you'); close(); } },
+            ...(isOwn ? [] : [
+              { icon: <EyeOff className="w-5 h-5"/>,   label: 'Hide listing',    sub: "Don't show this listing again", color: 'text-gray-600', action: () => { toast('Listing hidden'); close(); } },
+              { icon: <Flag className="w-5 h-5"/>,     label: 'Report listing',  sub: 'Scam, inappropriate, or misleading', color: 'text-red-500', action: () => { toast.info('Report submitted — thank you'); close(); } },
+            ]),
           ].map((a, i) => (
             <button key={i} onClick={a.action}
               className={`w-full flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-left ${a.color}`}>
@@ -107,8 +118,78 @@ function BottomMenuSheet({ listing, saved, onSave, onClose }: {
   );
 }
 
+// ── Delete confirmation — checks active rentals server-side before the
+// soft-delete actually happens (see supabase/functions/delete-listing). ──
+function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
+  listing: Listing; userId: string; onCancel: () => void; onDeleted: () => void;
+}) {
+  const navigate = useNavigate();
+  const [deleting, setDeleting] = useState(false);
+  const [blocked, setBlocked] = useState<string | null>(null);
+  const cover = listing.image || (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string') : null);
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/delete-listing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ listingId: listing.id, userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === 'active_rental') { setBlocked(data.message); return; }
+        throw new Error(data.error || 'Could not delete listing');
+      }
+      toast.success('Listing deleted');
+      onDeleted();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not delete listing');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="bg-white rounded-3xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        {blocked ? (
+          <>
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center mb-3">
+              <AlertTriangle className="w-6 h-6 text-amber-600" />
+            </div>
+            <h3 className="text-base font-black text-gray-900 mb-1.5">Can't delete this listing yet</h3>
+            <p className="text-sm text-gray-500 mb-5">{blocked}</p>
+            <div className="flex gap-2">
+              <button onClick={onCancel} className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-2xl text-sm">Close</button>
+              <button onClick={() => navigate('/my-orders')} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm">View Orders</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 className="text-base font-black text-gray-900 mb-1.5">Delete listing?</h3>
+            <p className="text-sm text-gray-500 mb-4">Are you sure you want to delete this listing? This action cannot be undone.</p>
+            <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-3 mb-5">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                {cover ? <img src={cover} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>}
+              </div>
+              <p className="text-sm font-bold text-gray-900 truncate">{listing.title}</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={onCancel} disabled={deleting} className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-2xl text-sm disabled:opacity-50">Cancel</button>
+              <button onClick={confirmDelete} disabled={deleting} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Listing'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ListingCard ──────────────────────────────────────────────────────────
-export function ListingCard({ listing, onClick, className = '' }: ListingCardProps) {
+export function ListingCard({ listing, onClick, className = '', onDeleted }: ListingCardProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -118,6 +199,8 @@ export function ListingCard({ listing, onClick, className = '' }: ListingCardPro
   });
   const [saving,  setSaving]  = useState(false);
   const [sheet,   setSheet]   = useState(false);   // three-dot click + long-press both open this
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isOwn = !!user?.id && user.id === listing.userId;
 
   // Long-press detection
   const pressTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,7 +273,21 @@ export function ListingCard({ listing, onClick, className = '' }: ListingCardPro
   return (
     <>
       {/* Menu */}
-      {sheet && <BottomMenuSheet listing={listing} saved={saved} onSave={() => handleSave()} onClose={() => setSheet(false)}/>}
+      {sheet && (
+        <BottomMenuSheet
+          listing={listing} saved={saved} onSave={() => handleSave()} onClose={() => setSheet(false)}
+          isOwn={isOwn}
+          onEdit={() => navigate(`/edit-listing/${listing.id}`)}
+          onDeleteRequest={() => setShowDeleteConfirm(true)}
+        />
+      )}
+      {showDeleteConfirm && user?.id && (
+        <DeleteConfirmModal
+          listing={listing} userId={user.id}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onDeleted={() => { setShowDeleteConfirm(false); onDeleted?.(); }}
+        />
+      )}
 
       <div
         onClick={handleClick}

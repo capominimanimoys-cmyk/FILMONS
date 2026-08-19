@@ -14,7 +14,7 @@ import { savedListingsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
-import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus } from '../lib/reliabilityApi';
+import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier } from '../lib/reliabilityApi';
 
 function getStoredListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
@@ -250,7 +250,7 @@ function CreatorDashboard({ user }: { user: any }) {
         {rep && (() => {
           const composite = rep.reliability_score ?? 0;
           const color = scoreColor(composite);
-          const tier = getCompositeTier(rep.reliability_level, isCreatorPlus(rep.account_type));
+          const tier = getCompositeTier(rep.reliability_level, isCreatorPlusTier(rep.account_type));
           const tierLabel = tier.label;
           return (
             <button onClick={() => navigate('/settings/reviews')}
@@ -615,7 +615,7 @@ function HostDashboardContent({ user }: { user: any }) {
             {rep && (() => {
               const composite = rep.reliability_score ?? 0;
               const color = scoreColor(composite);
-              const tier = getCompositeTier(rep.reliability_level, isCreatorPlus(rep.account_type));
+              const tier = getCompositeTier(rep.reliability_level, isCreatorPlusTier(rep.account_type));
               const tierLabel = tier.label;
               return (
                 <button onClick={() => navigate('/settings/reviews')}

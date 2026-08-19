@@ -91,6 +91,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Deploy delete-listing
+        run: supabase functions deploy delete-listing --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Deploy admin-login
         run: supabase functions deploy admin-login --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:

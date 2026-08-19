@@ -681,6 +681,7 @@ export const listingsApi = {
       const { data, error } = await supabase
         .from('listings')
         .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, image, images, videos, contact_methods, pricing_packages, created_at, metadata')
+        .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -781,6 +782,7 @@ export const listingsApi = {
         .from('listings')
         .select('*')
         .eq('user_id', userId)
+        .eq('is_active', true)
         .order('created_at', { ascending: false });
 
       if (!error && data) {
