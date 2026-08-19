@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { RentRequestModal } from '../components/RentRequestModal';
+import { boostApi } from '../lib/boostApi';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -93,6 +94,7 @@ export function ListingDetail() {
       ]);
       setListing(data);
       setReviews(reviewData);
+      boostApi.logEvent(listingId, 'view', data.boosted ? 'boosted' : 'organic', undefined, user?.id);
       const hostData = await authApi.getUserById(data.userId);
       setHost(hostData);
     } catch (error: any) {

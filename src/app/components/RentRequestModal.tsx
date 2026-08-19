@@ -11,6 +11,7 @@ import { chatApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
+import { boostApi } from '../lib/boostApi';
 
 interface RentRequestModalProps {
   listing: Listing;
@@ -137,6 +138,11 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
         conv.isRequest ?? false,
         conv.requestedBy ?? null,
       );
+      // This app has no separate plain "message host" action distinct from
+      // this request flow — sending a request is also the message.
+      const source = listing.boosted ? 'boosted' : 'organic';
+      boostApi.logEvent(listing.id, 'message', source, undefined, user.id);
+      boostApi.logEvent(listing.id, 'rental_request', source, undefined, user.id);
       setStep(3);
     } catch (err) {
       console.error('Error sending request:', err);

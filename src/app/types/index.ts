@@ -189,6 +189,8 @@ export interface Listing {
   isSold?: boolean;
   soldAt?: string;
   qualification?: string;
+  boosted?: boolean;
+  insuranceRequired?: boolean;
   pricingPackages?: PricingPackage[];
   workingHours?: string;
   requirements?: string;

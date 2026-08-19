@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap } from 'lucide-react';
 import { Listing } from '../types';
 import { savedListingsApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { boostApi } from '../lib/boostApi';
 
 interface ListingCardProps {
   listing: Listing & { distance?: number };
@@ -22,9 +23,10 @@ function distanceLabel(km: number) {
 }
 
 // ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
-function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest }: {
+function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, boosted, onBoost }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
+  boosted: boolean; onBoost: () => void;
 }) {
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
@@ -87,6 +89,7 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
           {[
             ...(isOwn ? [
               { icon: <Pencil className="w-5 h-5"/>, label: 'Edit Listing', sub: 'Update photos, pricing, details, and more', color: 'text-gray-900', action: () => { close(); onEdit(); } },
+              { icon: <Zap className={`w-5 h-5 ${boosted ? 'fill-amber-500 text-amber-500' : ''}`}/>, label: boosted ? 'Manage Boost' : 'Boost Listing', sub: boosted ? 'View performance, spend, and stop this boost' : 'Promote this listing to more people', color: boosted ? 'text-amber-600' : 'text-gray-900', action: () => { close(); onBoost(); } },
               { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
             ] : []),
             { icon: <Bookmark className="w-5 h-5"/>, label: saved ? 'Remove from saved' : 'Save listing', sub: saved ? 'Remove from your saved listings' : 'Add to your saved listings', color: 'text-gray-900', action: () => { onSave(); close(); } },
@@ -200,7 +203,15 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
   const [saving,  setSaving]  = useState(false);
   const [sheet,   setSheet]   = useState(false);   // three-dot click + long-press both open this
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const boosted = !!listing.boosted;
   const isOwn = !!user?.id && user.id === listing.userId;
+
+  // Real, honest funnel event — logged once per listing per session, not
+  // fabricated. `source` reflects the listing's actual boost state.
+  useEffect(() => {
+    if (!listing.id) return;
+    boostApi.logEvent(listing.id, 'impression', boosted ? 'boosted' : 'organic');
+  }, [listing.id, boosted]);
 
   // Long-press detection
   const pressTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -248,6 +259,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         const key = `saved_listings_cache_${user.id}`;
         const ids: string[] = JSON.parse(localStorage.getItem(key) || '[]');
         if (!ids.includes(listing.id)) localStorage.setItem(key, JSON.stringify([...ids, listing.id]));
+        boostApi.logEvent(listing.id, 'save', boosted ? 'boosted' : 'organic', undefined, user.id);
         toast('❤️ Saved!', { duration: 1500 });
       } else {
         await supabase.from('favorites').delete().eq('user_id', user.id).eq('item_id', listing.id);
@@ -279,6 +291,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           isOwn={isOwn}
           onEdit={() => navigate(`/edit-listing/${listing.id}`)}
           onDeleteRequest={() => setShowDeleteConfirm(true)}
+          boosted={boosted} onBoost={() => navigate(boosted ? `/boost/${listing.id}/insights` : `/boost/${listing.id}`)}
         />
       )}
       {showDeleteConfirm && user?.id && (
@@ -310,6 +323,13 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           <span className={`absolute top-2.5 left-2.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${typeColor}`}>
             {typeLabel}
           </span>
+
+          {/* Boosted badge — owner sees "Boosted", everyone else sees "Sponsored" */}
+          {boosted && (
+            <span className="absolute top-9 left-2.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-white flex items-center gap-0.5">
+              <Zap className="w-2.5 h-2.5 fill-white" /> {isOwn ? 'Boosted' : 'Sponsored'}
+            </span>
+          )}
 
           {/* ── Heart button — always visible on mobile, hover on desktop ── */}
           <button

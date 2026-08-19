@@ -128,6 +128,24 @@ Deno.serve(async (req) => {
 
     const session = event.data?.object;
     const meta = session?.metadata || {};
+
+    // Boost purchases are a separate charge type — pure platform revenue,
+    // no host-earning leg, so they route to fn_finalize_boost_payment
+    // instead of the rental-payment path below.
+    if (meta.charge_type === 'boost') {
+      if (!meta.boost_id) {
+        return new Response(JSON.stringify({ received: true, skipped: 'no boost_id' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const amount = parseFloat(meta.total_budget || '0') || (session.amount_total ? session.amount_total / 100 : 0);
+      const processed = await rpc('fn_finalize_boost_payment', {
+        p_idempotency_key: event.id,
+        p_boost_id: meta.boost_id,
+        p_amount: amount,
+        p_currency: 'CAD',
+      });
+      return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
     const hostId = meta.host_id;
     const subtotal = parseFloat(meta.subtotal || '0');
     const buyerFeeAmount = parseFloat(meta.buyer_fee_amount || '0');

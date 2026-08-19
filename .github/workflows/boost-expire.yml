@@ -1,0 +1,21 @@
+name: Expire Listing Boosts
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # every 30 minutes
+  workflow_dispatch:
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call boost-expire
+        # Anon key is already public (committed in utils/supabase/info.tsx) —
+        # all functions in this repo deploy with --no-verify-jwt, so this
+        # only needs to be *a* bearer token, not a privileged one. Same
+        # pattern as release-pending-earnings.yml.
+        run: |
+          curl -sf -X POST \
+            "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/boost-expire" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuYWpyZHZjd3NianFlZmFmdHNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNzE5NTgsImV4cCI6MjA5MDc0Nzk1OH0.n2oLgMfdfzmLw8KvsBrJbsFvgQ7qOgPL7tVlD-lqDiY" \
+            -H "Content-Type: application/json"

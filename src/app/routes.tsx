@@ -61,6 +61,8 @@ import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
 import { SignupPhone }        from './pages/SignupPhone';
 import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
 import { ShareCard }          from './pages/ShareCard';
+import { BoostListingFlow } from './pages/BoostListingFlow';
+import { BoostInsights } from './pages/BoostInsights';
 
 export const router = createBrowserRouter([
   {
@@ -105,6 +107,8 @@ export const router = createBrowserRouter([
       { path: 'my-listings', Component: MyListings },
       { path: 'my-orders', Component: MyOrders },
       { path: 'listing/:id', Component: ListingDetail },
+      { path: 'boost/:listingId', Component: BoostListingFlow },
+      { path: 'boost/:listingId/insights', Component: BoostInsights },
       { path: 'search', Component: SearchPage },
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },

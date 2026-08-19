@@ -673,6 +673,8 @@ export const listingsApi = {
         createdAt:       row.created_at,
         isSold:          row.is_sold || false,
         soldAt:          row.sold_at || undefined,
+        boosted:         row.boosted || false,
+        insuranceRequired: !!meta.insuranceRequired,
       } as Listing;
     };
 
@@ -680,8 +682,9 @@ export const listingsApi = {
       // Only select columns that definitely exist — no is_sold/sold_at until SQL migration runs
       const { data, error } = await supabase
         .from('listings')
-        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, image, images, videos, contact_methods, pricing_packages, created_at, metadata')
+        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, image, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted')
         .eq('is_active', true)
+        .order('boosted', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -758,6 +761,7 @@ export const listingsApi = {
           createdAt:       data.created_at,
           isSold:          data.is_sold          || false,
           soldAt:          data.sold_at          || undefined,
+          boosted:         data.boosted          || false,
         } as Listing;
       }
       if (error) console.warn('getOne Supabase error:', error.message);
@@ -808,6 +812,7 @@ export const listingsApi = {
             contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
             pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
             createdAt:       row.created_at,
+            boosted:         row.boosted || false,
           } as Listing;
         });
         return listings;
