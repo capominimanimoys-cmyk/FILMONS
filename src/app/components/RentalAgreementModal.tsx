@@ -604,29 +604,54 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                 {step === 'address' && (
                   <div className="px-5 py-5 space-y-4">
                     <h2 className="text-lg font-black text-gray-900">Where do you live?</h2>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[{ id: 'CA', label: '🇨🇦 Canada' }, { id: 'US', label: '🇺🇸 United States' }].map(c => (
-                        <button key={c.id} type="button" onClick={() => setAddrCountryCode(c.id as 'CA' | 'US')}
-                          className={`py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${addrCountryCode === c.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>
-                          {c.label}
+                    {isFullyVerified ? (
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-blue-600 shrink-0" />
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Residential Address</p>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {[verification!.addressLine1, verification!.addressLine2].filter(Boolean).join(', ')}<br/>
+                          {[verification!.city, verification!.provinceState, verification!.postalCode].filter(Boolean).join(', ')}<br/>
+                          {verification!.country === 'US' ? 'United States' : 'Canada'}
+                        </p>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                          <Check className="w-3 h-3" /> Verified by Filmons
+                        </span>
+                        <p className="text-xs text-blue-800 bg-white/60 rounded-xl px-3 py-2.5">
+                          This address was verified by Filmons and cannot be changed from the Rental Agreement.
+                        </p>
+                        <button type="button" onClick={goVerifyNow} className="text-xs font-bold text-blue-700 underline underline-offset-2">
+                          Contact Support to change it
                         </button>
-                      ))}
-                    </div>
-                    <SmartAddressInput
-                      value={addressText}
-                      onInputChange={setAddressText}
-                      onAddressSelect={(_, parts) => setAddrParts(parts)}
-                      mode="full"
-                      countryCode={addrCountryCode}
-                      showGPS
-                      label="Street address"
-                    />
-                    <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Apartment / Unit (optional)</label>
-                      <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit 4B"
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
-                    <p className="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Your residential address is private and is used only for rental verification and agreement purposes.
-                    </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[{ id: 'CA', label: '🇨🇦 Canada' }, { id: 'US', label: '🇺🇸 United States' }].map(c => (
+                            <button key={c.id} type="button" onClick={() => setAddrCountryCode(c.id as 'CA' | 'US')}
+                              className={`py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${addrCountryCode === c.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                        <SmartAddressInput
+                          value={addressText}
+                          onInputChange={setAddressText}
+                          onAddressSelect={(_, parts) => setAddrParts(parts)}
+                          mode="full"
+                          countryCode={addrCountryCode}
+                          showGPS
+                          label="Street address"
+                        />
+                        <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Apartment / Unit (optional)</label>
+                          <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit 4B"
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+                        <p className="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Your residential address is private and is used only for rental verification and agreement purposes.
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
 
