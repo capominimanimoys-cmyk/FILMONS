@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Navigation, Sparkles, Camera, Mic, Aperture, Video, Lightbulb, Scissors, Building2, Shirt, Plane, Gamepad2, Music, Monitor, Wrench, Search, X, RotateCcw, Heart } from 'lucide-react';
-import { SwipeStack, EnrichedListing, SwipeStackHandle } from '../components/SwipeStack';
+import { Navigation, Sparkles, Camera, Mic, Aperture, Video, Lightbulb, Scissors, Building2, Shirt, Plane, Gamepad2, Music, Monitor, Wrench, Search } from 'lucide-react';
+import { SwipeStack, EnrichedListing } from '../components/SwipeStack';
 import { FilterPanel, FilterOptions } from '../components/FilterPanel';
 import { LocationPermissionDialog } from '../components/LocationPermissionDialog';
 import { listingsApi } from '../lib/api';
@@ -71,7 +71,6 @@ export function Marketplace() {
   const [filters,      setFilters]      = useState<FilterOptions>(DEFAULT_FILTERS);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number; city?: string } | null>(null);
   const [swipeKey,     setSwipeKey]     = useState(0);
-  const swipeStackRef = useRef<SwipeStackHandle>(null);
 
   useEffect(() => {
     const cached = localStorage.getItem('filmons_listings');
@@ -231,23 +230,7 @@ export function Marketplace() {
               )}
             </div>
 
-            <div className="flex flex-col items-center px-4">
-              <SwipeStack key={swipeKey} ref={swipeStackRef} items={filtered.map(l => ({ kind: 'listing' as const, data: l }))} onDone={() => {}}/>
-              <div className="flex items-center gap-6 mt-6">
-                <button onClick={() => swipeStackRef.current?.pass()} aria-label="Pass"
-                  className="w-14 h-14 rounded-full bg-white border-2 border-red-200 shadow-md flex items-center justify-center hover:border-red-400 hover:bg-red-50 transition-all active:scale-90">
-                  <X className="w-6 h-6 text-red-400"/>
-                </button>
-                <button onClick={() => swipeStackRef.current?.undo()} aria-label="Undo"
-                  className="w-12 h-12 rounded-full bg-white border-2 border-gray-200 shadow-md flex items-center justify-center hover:border-gray-400 hover:bg-gray-50 transition-all active:scale-90">
-                  <RotateCcw className="w-5 h-5 text-gray-500"/>
-                </button>
-                <button onClick={() => swipeStackRef.current?.like()} aria-label="Like"
-                  className="w-14 h-14 rounded-full bg-white border-2 border-green-200 shadow-md flex items-center justify-center hover:border-green-400 hover:bg-green-50 transition-all active:scale-90">
-                  <Heart className="w-6 h-6 text-green-500"/>
-                </button>
-              </div>
-            </div>
+            <SwipeStack key={swipeKey} listings={filtered} onDone={() => {}}/>
           </div>
         )}
       </div>
