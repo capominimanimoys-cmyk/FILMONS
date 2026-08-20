@@ -114,7 +114,7 @@ interface OppFormState {
   existingVideos: string[]; videoPreviews: string[]; videoFiles: File[];
   coverSource: 'upload' | 'video_frame'; coverVideoUrl: string; coverTimestamp: number; coverPositionY: number;
   workArrangement: 'onsite' | 'remote' | 'hybrid';
-  streetAddress: string; city: string; province: string; country: string; postalCode: string;
+  addressInput: string; streetAddress: string; city: string; province: string; country: string; postalCode: string;
   remoteEligibility: 'CA' | 'US' | 'CA_US' | 'ANYWHERE';
   timingType: 'one_time' | 'multiple_dates' | 'ongoing' | 'flexible';
   startDate: string; endDate: string; startTime: string; endTime: string;
@@ -139,7 +139,7 @@ function defaultForm(): OppFormState {
     existingVideos: [], videoPreviews: [], videoFiles: [],
     coverSource: 'upload', coverVideoUrl: '', coverTimestamp: 0, coverPositionY: 50,
     workArrangement: 'onsite',
-    streetAddress: '', city: '', province: '', country: 'Canada', postalCode: '',
+    addressInput: '', streetAddress: '', city: '', province: '', country: 'Canada', postalCode: '',
     remoteEligibility: 'CA',
     timingType: 'one_time',
     startDate: '', endDate: '', startTime: '', endTime: '',
@@ -381,18 +381,25 @@ function Step4({ form, set }: { form: OppFormState; set: (f: Partial<OppFormStat
         ]} />
       </SectionCard>
       {(form.workArrangement === 'onsite' || form.workArrangement === 'hybrid') && (
-        <SectionCard title="Location" icon={<MapPin className="w-4 h-4" />}>
+        // Not a SectionCard — its overflow-hidden (for rounded corners)
+        // was clipping the address suggestions dropdown, which is
+        // absolutely positioned relative to this field.
+        <div className="bg-white rounded-2xl shadow-sm px-5 py-4">
+          <div className="flex items-center gap-2.5 mb-3 -mx-5 px-5 pb-3 border-b border-gray-50">
+            <span className="text-indigo-500"><MapPin className="w-4 h-4" /></span>
+            <h3 className="text-sm font-bold text-gray-800">Location</h3>
+          </div>
           <Field>
             <Label required>Address</Label>
             <SmartAddressInput
-              value={[form.streetAddress, form.city].filter(Boolean).join(', ')}
-              onInputChange={() => {}}
-              onAddressSelect={(_display, parts: AddressComponents) => set({ streetAddress: parts.streetAddress || '', city: parts.city || '', province: parts.province || '', postalCode: parts.postalCode || '', country: parts.country || 'Canada' })}
+              value={form.addressInput}
+              onInputChange={v => set({ addressInput: v })}
+              onAddressSelect={(display, parts: AddressComponents) => set({ addressInput: display, streetAddress: parts.streetAddress || '', city: parts.city || '', province: parts.province || '', postalCode: parts.postalCode || '', country: parts.country || 'Canada' })}
               mode="full" placeholder="Search address…" canadaOnly
             />
             <p className="text-[11px] text-gray-400">Only your city/province is shown publicly on the listing.</p>
           </Field>
-        </SectionCard>
+        </div>
       )}
       {(form.workArrangement === 'remote' || form.workArrangement === 'hybrid') && (
         <SectionCard title="Who can apply?" icon={<Users className="w-4 h-4" />}>
@@ -633,7 +640,9 @@ export function CreateOpportunity() {
         opportunityType: o.opportunityType, title: l.title, categoryIndustry: o.categoryIndustry || '', roleNeeded: o.roleNeeded || '',
         description: l.description, numPeopleNeeded: o.numPeopleNeeded ? String(o.numPeopleNeeded) : '',
         existingImages: l.images || [], existingVideos: l.videos || [],
-        workArrangement: o.workArrangement, streetAddress: l.streetAddress || '', city: l.city || '', province: l.province || '',
+        workArrangement: o.workArrangement,
+        addressInput: [l.streetAddress, l.city, l.province, l.postalCode].filter(Boolean).join(', '),
+        streetAddress: l.streetAddress || '', city: l.city || '', province: l.province || '',
         postalCode: l.postalCode || '', remoteEligibility: o.remoteEligibility || 'CA',
         timingType: o.timingType, startDate: o.startDate || '', endDate: o.endDate || '', startTime: o.startTime || '', endTime: o.endTime || '',
         applicationDeadline: o.applicationDeadline || '', noDeadline: !!o.noDeadline, estimatedWorkDays: o.estimatedWorkDays ? String(o.estimatedWorkDays) : '',
