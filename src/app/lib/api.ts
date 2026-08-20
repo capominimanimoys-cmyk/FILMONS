@@ -1051,18 +1051,12 @@ export const listingsApi = {
     return { videoUrl: pub.publicUrl };
   },
 
-  delete: async (id: string): Promise<void> => {
-    // Remove from Supabase
-    const { error } = await supabase.from('listings').delete().eq('id', id);
-    if (error) throw new Error(error.message);
-    // Remove from localStorage cache
-    try {
-      const all: Listing[] = JSON.parse(localStorage.getItem('filmons_listings') || '[]');
-      localStorage.setItem('filmons_listings', JSON.stringify(all.filter(l => l.id !== id)));
-    } catch {}
-    // Invalidate in-memory cache
-    _listingsCache = null as any;
-  },
+  // No client-side delete() here on purpose — hard-deleting a listings row
+  // would orphan every historical order/agreement/receipt/wallet
+  // transaction that references it, and had no ownership check. The only
+  // real delete path is the delete-listing edge function (server-verified
+  // ownership, blocks active/upcoming rentals, soft-delete via is_active),
+  // wired through ListingCard.tsx's menu everywhere listings render.
 };
 
 // ============================================

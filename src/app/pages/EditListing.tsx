@@ -91,6 +91,34 @@ export function EditListing() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteBlocked, setDeleteBlocked] = useState<string | null>(null);
+
+  // Same server-verified soft-delete path as ListingCard.tsx's menu — never
+  // a hard delete, and blocks listings with an active/upcoming rental.
+  const handleDeleteListing = async () => {
+    if (!id || !user?.id) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/delete-listing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ listingId: id, userId: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === 'active_rental') { setDeleteBlocked(data.message); return; }
+        throw new Error(data.error || 'Could not delete listing');
+      }
+      toast.success('Listing deleted');
+      navigate('/my-listings');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not delete listing');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Type
   const [listingType, setListingType] = useState<'gear' | 'service'>('gear');
@@ -1170,8 +1198,50 @@ export function EditListing() {
           </div>
         </Section>
 
+        {/* ── Delete listing ── */}
+        <div className="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
+          <div className="px-4 pt-4 pb-1 flex items-center gap-2.5">
+            <span className="text-red-500 shrink-0"><Trash2 className="w-4 h-4" /></span>
+            <h3 className="text-sm font-bold text-gray-800">Danger Zone</h3>
+          </div>
+          <div className="px-4 pb-4 pt-2">
+            <button type="button" onClick={() => { setDeleteBlocked(null); setShowDeleteConfirm(true); }}
+              className="w-full flex items-center justify-center gap-2 border-2 border-red-200 text-red-600 font-bold text-sm rounded-2xl py-3.5 hover:bg-red-50 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete Listing
+            </button>
+          </div>
+        </div>
+
         <div className="h-4" />
       </form>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            {deleteBlocked ? (
+              <>
+                <h3 className="text-base font-black text-gray-900 mb-1.5">Can't delete this listing yet</h3>
+                <p className="text-sm text-gray-500 mb-5">{deleteBlocked}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-2xl text-sm">Close</button>
+                  <button onClick={() => navigate('/my-orders')} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm">View Orders</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-base font-black text-gray-900 mb-1.5">Delete listing?</h3>
+                <p className="text-sm text-gray-500 mb-5">Are you sure you want to delete this listing? This action cannot be undone.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowDeleteConfirm(false)} disabled={deleting} className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-2xl text-sm disabled:opacity-50">Cancel</button>
+                  <button onClick={handleDeleteListing} disabled={deleting} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete Listing'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Sticky submit */}
       <div className="fixed bottom-0 left-0 right-0 z-10 bg-white border-t border-gray-100 px-4 py-4">

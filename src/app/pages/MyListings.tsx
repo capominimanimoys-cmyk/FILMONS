@@ -9,96 +9,13 @@ import { listingsApi } from '../lib/api';
 import { PageWrapper } from '../components/PageWrapper';
 import { SectionHeader } from '../components/SectionHeader';
 import { EmptyState } from '../components/EmptyState';
-import { Plus, Film, Trash2, Edit, Link2, MapPin, Lock, CheckCircle, Search, X } from 'lucide-react';
+import { ListingCard } from '../components/ListingCard';
+import { Plus, Film, Lock, CheckCircle, Search, X } from 'lucide-react';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { Listing } from '../types';
 import { toast } from 'sonner';
 import { matchesListing } from '../lib/searchUtils';
-
-// ── Compact listing row card for the "My Listings" management view ──────────
-function MyListingRow({
-  listing,
-  onEdit,
-  onDelete,
-  onCopyLink,
-}: {
-  listing: Listing;
-  onEdit: () => void;
-  onDelete: () => void;
-  onCopyLink: () => void;
-}) {
-  const coverImage = listing.image || listing.images?.[0];
-  const priceLabel = listing.listingType === 'service'
-    ? '/hr'
-    : listing.listingMode !== 'sale'
-      ? '/day'
-      : '';
-
-  const badge = listing.listingType === 'service'
-    ? { label: 'Service', cls: 'bg-purple-50 text-purple-600' }
-    : listing.listingMode === 'sale'
-      ? { label: 'For Sale', cls: 'bg-green-50 text-green-600' }
-      : { label: 'Rental', cls: 'bg-blue-50 text-blue-600' };
-
-  return (
-    <div className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-      <div className="flex">
-        {/* Thumbnail */}
-        <div className="w-28 sm:w-36 shrink-0 aspect-square bg-gray-50 overflow-hidden rounded-l-2xl">
-          {coverImage ? (
-            <img src={coverImage} alt={listing.title} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-300">
-              <Film className="w-8 h-8" />
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 p-4 flex flex-col gap-2.5 min-w-0">
-          {/* Title + type badge */}
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-gray-700 line-clamp-1 flex-1 text-sm">{listing.title}</h3>
-            <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
-              {badge.label}
-            </span>
-          </div>
-
-          {/* Location + price */}
-          <div className="flex items-center gap-4 text-xs text-gray-500">
-            {listing.city && (
-              <span className="flex items-center gap-1 truncate max-w-[110px]">
-                <MapPin className="w-3 h-3 shrink-0" />
-                {listing.city}
-              </span>
-            )}
-            <span className="font-semibold text-gray-700">
-              ${(listing.price ?? 0).toLocaleString()}
-              <span className="font-normal text-gray-400">{priceLabel} CAD</span>
-            </span>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-1 mt-auto flex-wrap">
-            <button onClick={onEdit}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
-              <Edit className="w-3 h-3" /> Edit
-            </button>
-            <button onClick={onCopyLink}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors">
-              <Link2 className="w-3 h-3" /> Copy link
-            </button>
-            <button onClick={onDelete}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 transition-colors ml-auto">
-              <Trash2 className="w-3 h-3" /> Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export function MyListings() {
@@ -124,33 +41,6 @@ export function MyListings() {
       toast.error('Failed to load your listings');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this listing? This cannot be undone.')) return;
-    try {
-      await listingsApi.delete(id);
-      setListings(prev => prev.filter(l => l.id !== id));
-      toast.success('Listing deleted');
-    } catch {
-      toast.error('Failed to delete listing');
-    }
-  }
-
-  function handleCopyLink(id: string) {
-    const url = `${window.location.origin}/listing/${id}`;
-    try {
-      const el = document.createElement('textarea');
-      el.value = url;
-      el.style.position = 'fixed'; el.style.left = '-9999px';
-      document.body.appendChild(el);
-      el.focus(); el.select();
-      document.execCommand('copy');
-      el.remove();
-      toast.success('Link copied!');
-    } catch {
-      toast.error('Could not copy — try manually from the address bar');
     }
   }
 
@@ -252,14 +142,12 @@ export function MyListings() {
                   <button onClick={() => setSearch('')} className="text-xs text-blue-600 mt-2 font-semibold">Clear search</button>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {filtered.map(listing => (
-                    <MyListingRow
+                    <ListingCard
                       key={listing.id}
                       listing={listing}
-                      onEdit={() => navigate(`/edit-listing/${listing.id}`)}
-                      onDelete={() => handleDelete(listing.id)}
-                      onCopyLink={() => handleCopyLink(listing.id)}
+                      onDeleted={() => setListings(prev => prev.filter(l => l.id !== listing.id))}
                     />
                   ))}
                 </div>

@@ -4,14 +4,15 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { Listing, Conversation } from '../types';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { ListingCard } from '../components/ListingCard';
 import {
   LayoutDashboard, Package, DollarSign, Users, Star,
   Plus, ChevronRight, Eye, CheckCircle,
-  Clock, ArrowUpRight, BarChart3, Wrench, Camera, Tag,
+  Clock, ArrowUpRight, BarChart3, Wrench, Camera,
   MessageCircle, ShieldCheck, Settings, Bookmark, Heart, MapPin,
   ShoppingCart, Zap, X, CalendarDays, Lock, Briefcase, ArrowLeft, ExternalLink, XCircle,
 } from 'lucide-react';
-import { savedListingsApi, authApi, chatApi } from '../lib/api';
+import { savedListingsApi, authApi, chatApi, listingsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
@@ -478,19 +479,28 @@ function HostDashboardContent({ user }: { user: any }) {
     reviewCount: 0, avgRating: 0, activeRequests: 0,
   });
 
-  useEffect(() => {
-    const listings = getStoredListings().filter((l: Listing) => l.userId === user.id);
-    setMyListings(listings);
+  const loadApplicantCounts = (listings: Listing[]) => {
+    const oppIds = listings.filter(l => l.listingKind === 'talent').map(l => l.id);
+    if (!oppIds.length) return;
+    supabase.from('opportunity_applications').select('listing_id').in('listing_id', oppIds).then(({ data }) => {
+      const counts: Record<string, number> = {};
+      (data || []).forEach((r: any) => { counts[r.listing_id] = (counts[r.listing_id] || 0) + 1; });
+      setApplicantCounts(counts);
+    });
+  };
 
-    // Applicant counts for the Opportunities tab
-    const oppIds = listings.filter((l: Listing) => l.listingKind === 'talent').map((l: Listing) => l.id);
-    if (oppIds.length) {
-      supabase.from('opportunity_applications').select('listing_id').in('listing_id', oppIds).then(({ data }) => {
-        const counts: Record<string, number> = {};
-        (data || []).forEach((r: any) => { counts[r.listing_id] = (counts[r.listing_id] || 0) + 1; });
-        setApplicantCounts(counts);
-      });
-    }
+  useEffect(() => {
+    // Instant paint from cache, then replaced by a live, is_active-filtered
+    // fetch below — the cache alone previously meant a deleted listing kept
+    // showing here indefinitely, since nothing ever invalidated it.
+    const cached = getStoredListings().filter((l: Listing) => l.userId === user.id);
+    setMyListings(cached);
+    loadApplicantCounts(cached);
+
+    listingsApi.getUserListings(user.id).then(listings => {
+      setMyListings(listings);
+      loadApplicantCounts(listings);
+    }).catch(() => {});
 
     // Load orders from DB (as host)
     supabase.from('orders').select('*')
@@ -555,17 +565,6 @@ function HostDashboardContent({ user }: { user: any }) {
     window.addEventListener('filmons:wallet:updated', handler);
     return () => window.removeEventListener('filmons:wallet:updated', handler);
   }, [user.id]);
-
-  const getListingIcon = (l: Listing) => {
-    if (l.listingType === 'service') return <Camera className="w-4 h-4 text-purple-500" />;
-    if (l.listingMode === 'sale') return <Tag className="w-4 h-4 text-orange-500" />;
-    return <Wrench className="w-4 h-4 text-blue-500" />;
-  };
-  const getKindLabel = (l: Listing) => {
-    if (l.listingType === 'service') return { label: 'Service', cls: 'bg-purple-100 text-purple-700' };
-    if (l.listingMode === 'sale') return { label: 'Sale', cls: 'bg-orange-100 text-orange-700' };
-    return { label: 'Rental', cls: 'bg-blue-100 text-blue-700' };
-  };
 
   const opportunities = myListings.filter(l => l.listingKind === 'talent');
 
@@ -759,34 +758,14 @@ function HostDashboardContent({ user }: { user: any }) {
                 <button onClick={goCreate} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"><Plus className="w-4 h-4" /> Create Listing</button>
               </div>
             ) : (
-              <div className="space-y-3">
-                {myListings.map(listing => {
-                  const { label, cls } = getKindLabel(listing);
-                  const thumb = listing.image || listing.images?.[0];
-                  const earned = transactions.filter(t => t.title?.includes(listing.title) && t.status === 'paid').reduce((s, t) => s + t.amount, 0);
-                  return (
-                    <div key={listing.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                      <div className="flex gap-3 p-3">
-                        {thumb ? <img src={thumb} alt={listing.title} className="w-16 h-16 rounded-xl object-cover shrink-0" />
-                          : <div className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">{getListingIcon(listing)}</div>}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span></div>
-                          <p className="text-sm font-bold text-gray-900 truncate">{listing.title}</p>
-                          <p className="text-xs text-gray-400">{[listing.city, listing.province].filter(Boolean).join(', ')}</p>
-                          <div className="flex items-baseline gap-1 mt-0.5">
-                            <span className="text-sm font-bold text-blue-600">${listing.price}</span>
-                            <span className="text-xs text-gray-400">{listing.listingType === 'service' ? '/hr' : listing.listingMode === 'sale' ? '' : '/day'} CAD</span>
-                          </div>
-                        </div>
-                        {earned > 0 && <div className="text-right shrink-0"><p className="text-[10px] text-gray-400">Earned</p><p className="text-sm font-bold text-green-600">${fmt(earned)}</p></div>}
-                      </div>
-                      <div className="border-t border-gray-50 flex">
-                        <Link to={`/listing/${listing.id}`} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors border-r border-gray-50"><Eye className="w-3.5 h-3.5" /> View</Link>
-                        <Link to={`/edit-listing/${listing.id}`} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Settings className="w-3.5 h-3.5" /> Edit</Link>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="grid grid-cols-2 gap-3">
+                {myListings.map(listing => (
+                  <ListingCard
+                    key={listing.id}
+                    listing={listing}
+                    onDeleted={() => setMyListings(prev => prev.filter(l => l.id !== listing.id))}
+                  />
+                ))}
               </div>
             )}
           </>

@@ -2442,30 +2442,26 @@ export function Inbox() {
           className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600">
           <ArrowBackIosNewRounded sx={{fontSize:18}} />
         </button>
-        <h1 className="text-lg font-bold text-gray-900">
+        <h1 className="text-lg font-bold text-gray-900 flex-1">
           {activeConv && otherUser && !showSidebar
             ? otherUser.name
             : totalUnread > 0 ? `Inbox (${totalUnread})` : 'Inbox'}
         </h1>
+        {(!activeConv || showSidebar) && (
+          <button
+            onClick={() => setShowNewConv(true)}
+            title="New conversation"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shrink-0"
+          >
+            <EditRounded sx={{fontSize:18,color:"white"}} />
+          </button>
+        )}
       </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <div className={`relative flex flex-col border-r border-gray-200 bg-white ${showSidebar ? 'flex w-full md:w-80 shrink-0' : 'hidden md:flex md:w-80 shrink-0'}`}>
           <div className="px-3 py-3 border-b border-gray-100 space-y-2">
-            {/* Title + compose button */}
-            <div className="flex items-center justify-between px-1 mb-1">
-              <h2 className="text-base font-bold text-gray-900">
-                {totalUnread > 0 ? `Inbox (${totalUnread})` : 'Inbox'}
-              </h2>
-              <button
-                onClick={() => setShowNewConv(true)}
-                title="New conversation"
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                <EditRounded sx={{fontSize:18,color:"white"}} />
-              </button>
-            </div>
             <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
               <SearchRounded sx={{fontSize:18,color:"#9ca3af",flexShrink:0}} />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search conversations…"
