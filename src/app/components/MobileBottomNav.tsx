@@ -77,15 +77,15 @@ export function MobileBottomNav() {
                 key={to}
                 to={to}
                 onClick={captureSnapshot}
-                className="flex-1 flex flex-col items-center justify-center pt-1.5 pb-1"
+                className="flex-1 flex flex-col items-center justify-center pt-1 pb-0.5"
               >
                 <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all active:scale-95 mb-0.5"
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95 mb-0.5"
                   style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
                 >
-                  <Plus className="w-6 h-6 text-white" strokeWidth={2.5}/>
+                  <Plus className="w-[18px] h-[18px] text-white" strokeWidth={2.5}/>
                 </div>
-                <span className="text-[9px] font-semibold tracking-wide text-gray-400">{label}</span>
+                <span className="text-[8px] font-semibold tracking-wide text-gray-400">{label}</span>
               </Link>
             );
           }
@@ -95,13 +95,13 @@ export function MobileBottomNav() {
               key={to}
               to={to}
               onClick={captureSnapshot}
-              className="flex-1 flex flex-col items-center justify-center pt-2 pb-1 relative"
+              className="flex-1 flex flex-col items-center justify-center pt-1.5 pb-0.5 relative"
             >
               {/* Active pip */}
               <span
                 className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 rounded-full bg-black"
                 style={{
-                  width:   isActive ? '28px' : '0px',
+                  width:   isActive ? '24px' : '0px',
                   opacity: isActive ? 1 : 0,
                   transition: 'width 220ms cubic-bezier(0.34,1.4,0.64,1), opacity 150ms ease',
                 }}
@@ -112,22 +112,22 @@ export function MobileBottomNav() {
                   <Icon
                     className={`transition-all ${isActive ? 'text-black' : 'text-gray-400'}`}
                     style={{
-                      width:       isActive ? '26px' : '24px',
-                      height:      isActive ? '26px' : '24px',
+                      width:       isActive ? '21px' : '19px',
+                      height:      isActive ? '21px' : '19px',
                       strokeWidth: isActive ? 2.25 : 1.75,
                       transition: 'width 200ms cubic-bezier(0.34,1.4,0.64,1), height 200ms, color 150ms ease',
                     }}
                   />
                 )}
                 {badge > 0 && (
-                  <span className="absolute -top-1 -right-1.5 min-w-[15px] h-[15px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
+                  <span className="absolute -top-1 -right-1.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center px-0.5">
                     {badge > 99 ? '99+' : badge}
                   </span>
                 )}
               </div>
 
               <span
-                className="text-[9px] font-semibold mt-0.5 tracking-wide"
+                className="text-[8px] font-semibold mt-0.5 tracking-wide"
                 style={{
                   color:   isActive ? '#000' : '#9ca3af',
                   opacity: isActive ? 1 : 0.8,

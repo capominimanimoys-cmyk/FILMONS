@@ -16,7 +16,7 @@ const NO_FOOTER_PAGES = ['/login', '/phone-signup', '/phone-login', '/inbox', '/
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
 // These pages render their own fixed bottom action bar (Back/Next, Save, etc.) —
 // the global MobileBottomNav sits on top of it (higher z-index) and hides it.
-const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing'];
+const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity'];
 
 function isOnboardingIncomplete(user: User | null): boolean {
   if (!user) return false;
@@ -73,7 +73,7 @@ export function Root() {
           />
         )}
 
-        <main className="flex-1 pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0">
+        <main className="flex-1 pb-[calc(54px+env(safe-area-inset-bottom))] md:pb-0">
           <Outlet />
         </main>
 
