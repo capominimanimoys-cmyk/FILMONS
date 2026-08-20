@@ -617,6 +617,13 @@ function firstNonEmpty<T>(rowVal: T[] | null | undefined, metaVal: T[] | null | 
   return (rowVal && rowVal.length) ? rowVal : (metaVal || []);
 }
 
+// 'talent' is the repurposed Opportunity category (jobs/gigs/casting calls)
+// — the internal metadata.listingKind value stays 'talent', only the
+// user-facing label says "Opportunity".
+export function isOpportunity(listing: Pick<Listing, 'listingKind'>): boolean {
+  return listing.listingKind === 'talent';
+}
+
 export const listingsApi = {
   getAll: async (): Promise<Listing[]> => {
     // Return in-memory cache if fresh (< 60 seconds) and has data
@@ -675,6 +682,7 @@ export const listingsApi = {
         soldAt:          row.sold_at || undefined,
         boosted:         row.boosted || false,
         insuranceRequired: !!meta.insuranceRequired,
+        listingKind:     meta.listingKind || undefined,
       } as Listing;
     };
 

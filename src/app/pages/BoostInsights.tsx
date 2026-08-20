@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, Zap, Loader2, Eye, MessageCircle, CalendarCheck, Bookmark, TrendingUp, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Zap, Loader2, Eye, MessageCircle, CalendarCheck, Bookmark, TrendingUp, AlertTriangle, Briefcase } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi } from '../lib/api';
 import { boostApi, ListingBoost, BoostEventType } from '../lib/boostApi';
@@ -13,6 +13,7 @@ const FUNNEL: { type: BoostEventType; label: string; icon: any }[] = [
   { type: 'save', label: 'Saves', icon: Bookmark },
   { type: 'message', label: 'Messages', icon: MessageCircle },
   { type: 'rental_request', label: 'Rental Requests', icon: CalendarCheck },
+  { type: 'application', label: 'Applications', icon: Briefcase },
 ];
 
 export function BoostInsights() {

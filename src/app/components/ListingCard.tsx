@@ -275,11 +275,17 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
   const cover = listing.image ||
     (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string' && i.length > 10) : null);
 
-  const typeLabel = listing.listingType === 'service' ? 'Service'
+  const isOpportunity = listing.listingKind === 'talent';
+  const typeLabel = isOpportunity ? 'Opportunity'
+    : listing.listingType === 'service' ? 'Service'
     : listing.listingMode === 'sale' ? 'For Sale' : 'Rental';
-  const typeColor = listing.listingType === 'service' ? 'bg-purple-100 text-purple-700'
+  const typeColor = isOpportunity ? 'bg-indigo-600 text-white'
+    : listing.listingType === 'service' ? 'bg-purple-100 text-purple-700'
     : listing.listingMode === 'sale' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
-  const priceUnit = listing.listingType === 'service' ? '/hr'
+  // Opportunity compensation has no reliable unit (day-rate vs. flat fee) —
+  // show the bare figure rather than guessing a wrong /hr suffix.
+  const priceUnit = isOpportunity ? ''
+    : listing.listingType === 'service' ? '/hr'
     : listing.listingMode === 'sale' ? '' : '/day';
 
   return (

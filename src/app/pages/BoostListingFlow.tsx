@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, X, Check, Loader2, Zap, Eye, MessageCircle, CalendarCheck, MapPin, Sparkles, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, X, Check, Loader2, Zap, Eye, MessageCircle, CalendarCheck, MapPin, Sparkles, ShieldCheck, Briefcase } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi } from '../lib/api';
 import { boostApi, BoostGoal, BoostAudienceType, BoostConfig, AudienceConfig } from '../lib/boostApi';
@@ -39,11 +39,12 @@ function Stepper({ stepIdx }: { stepIdx: number }) {
   );
 }
 
-const GOAL_OPTIONS: { value: BoostGoal; label: string; sub: string; icon: any; forService?: boolean; forNonService?: boolean }[] = [
+const GOAL_OPTIONS: { value: BoostGoal; label: string; sub: string; icon: any; forService?: boolean; forNonService?: boolean; forOpportunity?: boolean }[] = [
   { value: 'more_views', label: 'More Listing Views', sub: 'Get seen by more people browsing Marketplace', icon: Eye },
   { value: 'more_messages', label: 'More Messages', sub: 'Get more people reaching out about this listing', icon: MessageCircle },
   { value: 'more_rental_requests', label: 'More Rental Requests', sub: 'Get more renters requesting this item', icon: CalendarCheck, forNonService: true },
   { value: 'more_booking_requests', label: 'More Booking Requests', sub: 'Get more clients booking this service', icon: CalendarCheck, forService: true },
+  { value: 'more_applications', label: 'More Applications', sub: 'Get more people applying to this opportunity', icon: Briefcase, forOpportunity: true },
 ];
 
 export function BoostListingFlow() {
@@ -190,7 +191,10 @@ export function BoostListingFlow() {
   }
   if (!listing) return null;
 
+  const isOpportunity = listing.listingKind === 'talent';
   const availableGoals = GOAL_OPTIONS.filter(g => {
+    if (g.forOpportunity) return isOpportunity;
+    if (isOpportunity) return !g.forService && !g.forNonService; // rental/booking goals don't apply to a job posting
     if (g.forService) return listing.listingType === 'service';
     if (g.forNonService) return listing.listingType !== 'service';
     return true;

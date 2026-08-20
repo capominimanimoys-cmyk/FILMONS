@@ -191,6 +191,8 @@ export interface Listing {
   qualification?: string;
   boosted?: boolean;
   insuranceRequired?: boolean;
+  /** Raw CreateListing kind ('equipment-rental'|'equipment-sale'|'creative-service'|'studio'|'talent'|'job') from metadata.listingKind. 'talent' is the Opportunity category. */
+  listingKind?: string;
   pricingPackages?: PricingPackage[];
   workingHours?: string;
   requirements?: string;

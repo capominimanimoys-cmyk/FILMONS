@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { RentRequestModal } from '../components/RentRequestModal';
+import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
@@ -157,7 +158,9 @@ export function ListingDetail() {
     ...(listing.videos || []).map(url => ({ url, type: 'video' as const })),
   ];
 
-  const actionLabel = listing.listingType === 'service' ? 'Request Service'
+  const isOpportunity = listing.listingKind === 'talent';
+  const actionLabel = isOpportunity ? 'Apply'
+    : listing.listingType === 'service' ? 'Request Service'
     : listing.listingMode === 'sale' ? 'Request to Buy'
     : 'Request to Rent';
 
@@ -462,9 +465,13 @@ export function ListingDetail() {
       {/* Lightbox */}
       {lightbox && <Lightbox items={lightbox.items} startIndex={lightbox.index} onClose={() => setLightbox(null)} />}
 
-      {/* Request modal */}
+      {/* Request / Apply modal — Opportunity listings never enter the rental-
+          request → Checkout → RentalAgreement path; applying is a separate,
+          payment-free action. */}
       {showRequestModal && listing && host && (
-        <RentRequestModal listing={listing} host={host} onClose={() => setShowRequestModal(false)} />
+        isOpportunity
+          ? <ApplyModal listing={listing} host={host} onClose={() => setShowRequestModal(false)} />
+          : <RentRequestModal listing={listing} host={host} onClose={() => setShowRequestModal(false)} />
       )}
     </div>
   );

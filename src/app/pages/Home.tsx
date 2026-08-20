@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Star } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase } from 'lucide-react';
 import { listingsApi } from '../lib/api';
 import { supabase } from '../../lib/supabase';
 import { Listing } from '../types';
@@ -21,7 +21,7 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
   { id: 'services', label: 'Services', icon: Wrench    },
   { id: 'creators', label: 'Creators', icon: User      },
   { id: 'studios',  label: 'Studios',  icon: Building2 },
-  { id: 'talent',   label: 'Talent',   icon: Star      },
+  { id: 'talent',   label: 'Opportunity', icon: Briefcase },
 ];
 
 function buildDeck(listings: Listing[], creators: CreatorProfile[], filter: FilterId): DeckItem[] {
@@ -43,7 +43,12 @@ function buildDeck(listings: Listing[], creators: CreatorProfile[], filter: Filt
       (l.serviceCategory?.toLowerCase() ?? '').includes('studio')
     );
   } else if (filter === 'talent') {
+    // Real Opportunity listings (metadata.listingKind === 'talent', set via
+    // CreateListing's "Opportunity" kind) plus the original keyword
+    // heuristic as a fallback, so older listings that only matched the old
+    // regex don't silently disappear from this chip.
     const talentListings = filtered.filter(l =>
+      l.listingKind === 'talent' ||
       /model|actor|actress|talent|ugc/i.test(l.title ?? '') ||
       /model|actor|actress|talent|ugc/i.test(l.serviceCategory ?? '')
     );

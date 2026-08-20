@@ -1,10 +1,10 @@
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
-export type BoostGoal = 'more_views' | 'more_messages' | 'more_rental_requests' | 'more_booking_requests';
+export type BoostGoal = 'more_views' | 'more_messages' | 'more_rental_requests' | 'more_booking_requests' | 'more_applications';
 export type BoostAudienceType = 'automatic' | 'local' | 'custom';
 export type BoostStatus = 'draft' | 'pending_payment' | 'active' | 'paused' | 'completed' | 'stopped' | 'failed' | 'refunded';
-export type BoostEventType = 'impression' | 'view' | 'save' | 'message' | 'rental_request';
+export type BoostEventType = 'impression' | 'view' | 'save' | 'message' | 'rental_request' | 'application';
 export type BoostEventSource = 'organic' | 'boosted';
 
 export interface BoostConfig {
@@ -152,7 +152,7 @@ export const boostApi = {
   getInsights: async (listingId: string): Promise<Record<BoostEventType, { organic: number; boosted: number }>> => {
     const empty = () => ({ organic: 0, boosted: 0 });
     const result: Record<BoostEventType, { organic: number; boosted: number }> = {
-      impression: empty(), view: empty(), save: empty(), message: empty(), rental_request: empty(),
+      impression: empty(), view: empty(), save: empty(), message: empty(), rental_request: empty(), application: empty(),
     };
     const { data } = await supabase.from('boost_events').select('event_type, source').eq('listing_id', listingId);
     for (const row of data || []) {

@@ -42,6 +42,9 @@ const STACK: Record<number, string> = {
 
 function fmtPrice(l: Listing) {
   const p = `$${Number(l.price).toLocaleString()}`;
+  // Opportunity compensation has no reliable unit (day-rate vs. flat fee) —
+  // show the bare figure rather than guessing a wrong /hr suffix.
+  if (l.listingKind === 'talent')  return p;
   if (l.listingMode === 'rent')    return `${p}/day`;
   if (l.listingType === 'service') return `${p}/hr`;
   return p;
@@ -49,7 +52,8 @@ function fmtPrice(l: Listing) {
 
 // ── Listing card body ─────────────────────────────────────────────────────────
 function ListingContent({ listing }: { listing: EnrichedListing }) {
-  const typeLabel =
+  const isOpportunity = listing.listingKind === 'talent';
+  const typeLabel = isOpportunity ? 'Opportunity' :
     listing.listingType === 'service'          ? 'Service'
     : listing.listingMode === 'rent'            ? 'Rental'
     : (listing as any).listingType === 'studio' ? 'Studio'
@@ -64,7 +68,7 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
         }
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/60 to-transparent"/>
         <div className="absolute top-3 left-3">
-          <span className="text-[10px] font-black text-white bg-black/55 backdrop-blur-sm px-2.5 py-1 rounded-full uppercase tracking-wide">
+          <span className={`text-[10px] font-black text-white backdrop-blur-sm px-2.5 py-1 rounded-full uppercase tracking-wide ${isOpportunity ? 'bg-indigo-600' : 'bg-black/55'}`}>
             {typeLabel}
           </span>
         </div>
