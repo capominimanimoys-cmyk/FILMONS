@@ -58,6 +58,13 @@ async function updateProfile(userId: string, patch: Record<string, unknown>) {
   });
 }
 
+async function notifyUser(userId: string, type: string, title: string) {
+  await fetch(rest('/notifications'), {
+    method: 'POST', headers: { ...restHeaders, Prefer: 'return=minimal' },
+    body: JSON.stringify({ user_id: userId, actor_id: null, actor_name: 'Filmons', type, title, is_read: false }),
+  }).catch(() => {});
+}
+
 // Deletes the actual objects from the private bucket — not just clearing
 // DB columns. Best-effort per file so one missing/already-gone object
 // doesn't block clearing the rest.
@@ -84,6 +91,11 @@ Deno.serve(async (req) => {
     const adminIdentity = await verifyAdminToken(req);
     if (!adminIdentity) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    // Deciding a verification (approve/changes/deny) is reserved for
+    // Super Admin — Support Agent can view/review but not decide.
+    if (adminIdentity.role !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Only Super Admin can decide a verification' }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const body = await req.json();
@@ -118,6 +130,7 @@ Deno.serve(async (req) => {
       });
       await updateProfile(row.user_id, { verification_status: 'changes_requested' });
       await dbInsertAudit({ verification_id: verificationId, user_id: row.user_id, admin_identifier: admin, action: 'changes_requested', detail: reason });
+      await notifyUser(row.user_id, 'account_warning', 'Creator+ verification — changes requested');
       return new Response(JSON.stringify({ success: true, status: 'changes_requested' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
@@ -147,6 +160,7 @@ Deno.serve(async (req) => {
 
     await dbInsertAudit({ verification_id: verificationId, user_id: row.user_id, admin_identifier: admin, action: approved ? 'approved' : 'denied', detail: reason || null });
     await dbInsertAudit({ verification_id: verificationId, user_id: row.user_id, admin_identifier: admin, action: 'documents_deleted', detail: `${docPaths.filter(Boolean).length} file(s) removed after final decision` });
+    await notifyUser(row.user_id, approved ? 'account_verified' : 'account_warning', approved ? 'Creator+ Verification Approved ✓' : 'Creator+ verification denied');
 
     return new Response(JSON.stringify({ success: true, status: approved ? 'approved' : 'denied' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
   } catch (e) {

@@ -33,7 +33,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { signVerificationDoc } from "../../lib/upload";
 
 // ── Types ──────────────────────────────────────────────────────────
 // Mirrors identity_verifications (+ joined profiles for contact info).
@@ -44,9 +43,17 @@ interface VerificationRequest {
   id: string;
   userId: string;
   userName: string;
+  username?: string;
   userEmail: string;
   userPhone: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  avatarUrl?: string;
+  primaryRole?: string;
+  publicCity?: string;
   fullName: string;
+  legalFirstName?: string;
+  legalLastName?: string;
   dob?: string;
   streetAddr?: string;
   unit?: string;
@@ -56,10 +63,11 @@ interface VerificationRequest {
   residenceCountry?: string;
   issuingCountry?: string;
   idType?: string;
-  idNumber?: string;
+  idNumberLast4?: string;
   idExpiryDate?: string;
   idFrontPath?: string;
   idBackPath?: string;
+  proofOfAddressType?: string;
   proofOfAddressPath?: string;
   selfiePath?: string;
   status: VerificationStatus;
@@ -69,6 +77,21 @@ interface VerificationRequest {
   reviewedAt: string | null;
   reviewedBy: string | null;
   verifiedAt: string | null;
+}
+
+interface AuditEvent {
+  id: string;
+  action: string;
+  detail: string | null;
+  adminIdentifier: string;
+  createdAt: string;
+}
+
+interface AdminNote {
+  id: string;
+  adminIdentifier: string;
+  note: string;
+  createdAt: string;
 }
 
 interface WalletTx {
@@ -151,89 +174,54 @@ async function loadWalletTxs(): Promise<WalletTx[]> {
 
 // ── Sub-components ────────────────────────────────────────────────
 
-function PhotoViewer({
-  path,
-  label,
-}: {
-  path?: string;
-  label: string;
+// Secure document viewer — fetches a fresh signed URL server-side (via
+// verification-view-document, super_admin only, audit-logged) only once
+// the admin explicitly clicks View; never shown inline/automatically.
+function DocumentViewerModal({ userName, docLabel, url, onClose }: {
+  userName: string; docLabel: string; url: string; onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  // `path` is a storage path (verification-documents bucket, private) or,
-  // for older/failed-upload rows, a raw base64 string — either way we need
-  // a real URL to render. Signed URLs expire, so mint one fresh here rather
-  // than trusting anything persisted.
-  const [src, setSrc] = useState<string | null>(null);
-  const [loadingUrl, setLoadingUrl] = useState(false);
-
-  useEffect(() => {
-    if (!path) { setSrc(null); return; }
-    if (path.startsWith('data:')) { setSrc(path); return; } // legacy base64 fallback
-    setLoadingUrl(true);
-    signVerificationDoc(path, 600).then(url => { setSrc(url); setLoadingUrl(false); });
-  }, [path]);
-
-  if (!path) {
-    return (
-      <div className="h-28 flex flex-col items-center justify-center bg-gray-50 border border-dashed border-gray-200 rounded-xl gap-2">
-        <FileText className="w-6 h-6 text-gray-300" />
-        <p className="text-xs text-gray-400">Not uploaded</p>
-      </div>
-    );
-  }
-  if (loadingUrl || !src) {
-    return (
-      <div className="h-28 flex flex-col items-center justify-center bg-gray-50 border border-gray-100 rounded-xl gap-2">
-        <RefreshCw className="w-5 h-5 text-gray-300 animate-spin" />
-      </div>
-    );
-  }
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="relative group w-full rounded-xl overflow-hidden border border-gray-200 bg-gray-50 hover:border-blue-300 transition-colors"
-      >
-        <img
-          src={src}
-          alt={label}
-          className="w-full h-28 object-cover"
-        />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
-          <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] font-semibold py-1 text-center">
-          {label}
-        </div>
-      </button>
-      {open && (
-        <div
-          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="relative max-w-2xl w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="absolute -top-10 right-0 text-white/70 hover:text-white text-sm"
-              onClick={() => setOpen(false)}
-            >
-              ✕ Close
-            </button>
-            <img
-              src={src}
-              alt={label}
-              className="w-full rounded-2xl shadow-2xl"
-            />
-            <p className="text-center text-white/60 text-sm mt-3">
-              {label}
-            </p>
+    <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="relative max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white rounded-t-2xl px-5 py-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verification Document</p>
+            <p className="text-sm font-bold text-gray-900">User: {userName} · Document: {docLabel}</p>
           </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-sm font-bold">Close ✕</button>
         </div>
-      )}
-    </>
+        <img src={url} alt={docLabel} className="w-full rounded-b-2xl shadow-2xl" />
+      </div>
+    </div>
+  );
+}
+
+function DocumentViewButton({ label, hasDoc, canView, onView }: {
+  label: string; hasDoc: boolean; canView: boolean; onView: () => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+  if (!hasDoc) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 border border-dashed border-gray-200 rounded-xl px-3 py-2.5">
+        <FileText className="w-3.5 h-3.5" /> {label} — not uploaded
+      </div>
+    );
+  }
+  if (!canView) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+        <Lock className="w-3.5 h-3.5" /> {label} — Super Admin only
+      </div>
+    );
+  }
+  const handleClick = async () => { setLoading(true); await onView(); setLoading(false); };
+  return (
+    <button
+      type="button" onClick={handleClick} disabled={loading}
+      className="flex items-center justify-center gap-1.5 w-full text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl px-3 py-2.5 transition-colors disabled:opacity-60"
+    >
+      {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />} {loading ? 'Loading…' : `View ${label}`}
+    </button>
   );
 }
 
@@ -276,18 +264,37 @@ function CardField({ label, value }: { label: string; value?: string }) {
   );
 }
 
-// ID numbers stay masked until an admin explicitly clicks Reveal — never
-// shown plainly by default, never logged/emailed/notified anywhere.
-function MaskedIdNumber({ value }: { value?: string }) {
-  const [revealed, setRevealed] = useState(false);
-  if (!value) return <p className="text-sm font-semibold text-gray-800 mt-0.5">—</p>;
-  const masked = `••••••${value.slice(-4)}`;
+// ID numbers stay masked until an admin explicitly clicks Reveal, which
+// calls verification-reveal-id (super_admin only, server-audit-logged) —
+// the full number is never in the initial fetch (identity_verifications_
+// admin_view only ever exposes the last 4 digits) and never logged/
+// emailed/notified anywhere client-side.
+function MaskedIdNumber({ last4, canReveal, onReveal }: {
+  last4?: string; canReveal: boolean; onReveal: () => Promise<string | null>;
+}) {
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  if (!last4) return <p className="text-sm font-semibold text-gray-800 mt-0.5">—</p>;
+  const masked = `••••••${last4}`;
+
+  const handleClick = async () => {
+    if (revealed) { setRevealed(null); return; }
+    setLoading(true);
+    const full = await onReveal();
+    setLoading(false);
+    if (full) setRevealed(full);
+  };
+
   return (
     <div className="flex items-center gap-2 mt-0.5">
-      <p className="text-sm font-semibold text-gray-800 font-mono">{revealed ? value : masked}</p>
-      <button type="button" onClick={() => setRevealed(v => !v)} className="text-[11px] font-bold text-blue-600 hover:underline">
-        {revealed ? 'Hide' : 'Reveal'}
-      </button>
+      <p className="text-sm font-semibold text-gray-800 font-mono">{revealed || masked}</p>
+      {canReveal ? (
+        <button type="button" onClick={handleClick} disabled={loading} className="text-[11px] font-bold text-blue-600 hover:underline disabled:opacity-50">
+          {loading ? 'Revealing…' : revealed ? 'Hide' : 'Reveal'}
+        </button>
+      ) : (
+        <span className="text-[11px] font-bold text-gray-300">Super Admin only</span>
+      )}
     </div>
   );
 }
@@ -334,6 +341,73 @@ export function AdminVerifications() {
     "Information doesn't match",
   ];
 
+  // Review-flow additions: role gate, secure document viewer, history, notes.
+  const adminRole = adminAuthClient.getAdmin()?.role;
+  const canDecide = adminRole === 'super_admin';
+  const canViewSensitive = adminRole === 'super_admin'; // raw ID docs + full ID number
+
+  const [viewerDoc, setViewerDoc] = useState<{ label: string; url: string } | null>(null);
+  const [history, setHistory] = useState<AuditEvent[]>([]);
+  const [notes, setNotes] = useState<AdminNote[]>([]);
+  const [newNote, setNewNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
+  const viewDocument = async (verificationId: string, docType: 'id_front' | 'id_back' | 'selfie' | 'proof_of_address', label: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('verification-view-document', {
+        body: { verificationId, docType },
+        headers: adminAuthClient.authHeader(),
+      });
+      if (error || data?.error || !data?.url) throw error || new Error(data?.error || 'Could not load document');
+      setViewerDoc({ label, url: data.url });
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not load document');
+    }
+  };
+
+  const revealIdNumber = async (verificationId: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('verification-reveal-id', {
+        body: { verificationId },
+        headers: adminAuthClient.authHeader(),
+      });
+      if (error || data?.error) throw error || new Error(data?.error || 'Could not reveal ID number');
+      return data?.idNumber || null;
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not reveal ID number');
+      return null;
+    }
+  };
+
+  const loadReviewExtras = async (verificationId: string) => {
+    const [historyRes, notesRes] = await Promise.all([
+      supabase.from('verification_audit_log').select('id, action, detail, admin_identifier, created_at')
+        .eq('verification_id', verificationId).order('created_at', { ascending: true }),
+      supabase.from('verification_admin_notes').select('id, note, admin_identifier, created_at')
+        .eq('verification_id', verificationId).order('created_at', { ascending: false }),
+    ]);
+    setHistory((historyRes.data || []).map((r: any) => ({ id: r.id, action: r.action, detail: r.detail, adminIdentifier: r.admin_identifier, createdAt: r.created_at })));
+    setNotes((notesRes.data || []).map((r: any) => ({ id: r.id, note: r.note, adminIdentifier: r.admin_identifier, createdAt: r.created_at })));
+  };
+
+  const addNote = async (verificationId: string) => {
+    const text = newNote.trim();
+    if (!text) return;
+    setSavingNote(true);
+    try {
+      const { error } = await supabase.from('verification_admin_notes').insert({
+        verification_id: verificationId, admin_identifier: adminName || 'Admin', note: text,
+      });
+      if (error) throw new Error(error.message);
+      setNewNote('');
+      await loadReviewExtras(verificationId);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not save note');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   // Wallet state
   const [walletTxs, setWalletTxs] = useState<WalletTx[]>([]);
   const [walletFilter, setWalletFilter] = useState<
@@ -365,9 +439,12 @@ export function AdminVerifications() {
     // the user_id FK) supplies contact info for display only.
     let serverReqs: VerificationRequest[] = [];
     try {
+      // Admin-facing view only — never exposes the full id_number (see
+      // identity_verifications_admin_view; the raw table + full number are
+      // only ever read server-side by verification-reveal-id).
       const { data, error } = await supabase
-        .from('identity_verifications')
-        .select('*, profiles(name, email, phone)')
+        .from('identity_verifications_admin_view')
+        .select('*, profiles(name, username, email, phone, avatar_url, primary_role, city, email_verified, phone_verified)')
         .order('submitted_at', { ascending: false });
 
       if (!error && data) {
@@ -377,9 +454,17 @@ export function AdminVerifications() {
             id:                 row.id,
             userId:             row.user_id,
             userName:           profile.name || [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
+            username:           profile.username || undefined,
             userEmail:          profile.email || '',
             userPhone:          profile.phone || '',
+            emailVerified:      !!profile.email_verified,
+            phoneVerified:      !!profile.phone_verified,
+            avatarUrl:          profile.avatar_url || undefined,
+            primaryRole:        profile.primary_role || undefined,
+            publicCity:         profile.city || undefined,
             fullName:           [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
+            legalFirstName:     row.legal_first_name || undefined,
+            legalLastName:      row.legal_last_name || undefined,
             dob:                row.date_of_birth || undefined,
             streetAddr:         row.address_line1 || undefined,
             unit:               row.address_line2 || undefined,
@@ -389,10 +474,11 @@ export function AdminVerifications() {
             residenceCountry:   row.country_of_residence || undefined,
             issuingCountry:     row.id_issuing_country || undefined,
             idType:             row.id_type || undefined,
-            idNumber:           row.id_number || undefined,
+            idNumberLast4:      row.id_number_last4 || undefined,
             idExpiryDate:       row.id_expiry_date || undefined,
             idFrontPath:        row.id_front_path || undefined,
             idBackPath:         row.id_back_path || undefined,
+            proofOfAddressType: row.proof_of_address_type || undefined,
             proofOfAddressPath: row.proof_of_address_path || undefined,
             selfiePath:         row.selfie_path || undefined,
             status:             row.status || 'pending',
@@ -405,10 +491,10 @@ export function AdminVerifications() {
           } as VerificationRequest;
         });
       } else if (error) {
-        console.warn('identity_verifications query failed:', error.message);
+        console.warn('identity_verifications_admin_view query failed:', error.message);
       }
     } catch (e) {
-      console.warn('identity_verifications query threw:', e);
+      console.warn('identity_verifications_admin_view query threw:', e);
     }
 
     setRequests(serverReqs);
@@ -591,6 +677,9 @@ export function AdminVerifications() {
   // the access for the audit trail the spec requires.
   const openReview = async (request: VerificationRequest) => {
     setSelectedRequest(request);
+    setViewerDoc(null);
+    setHistory([]);
+    setNotes([]);
     if (request.status === 'pending') {
       await supabase.from('identity_verifications').update({ status: 'under_review' }).eq('id', request.id);
       await supabase.from('profiles').update({ verification_status: 'under_review' }).eq('id', request.userId);
@@ -601,9 +690,10 @@ export function AdminVerifications() {
       verification_id: request.id,
       user_id: request.userId,
       admin_identifier: adminName || 'Admin',
-      action: 'viewed_document',
-      detail: 'Opened review',
+      action: 'verification_opened',
+      detail: null,
     });
+    loadReviewExtras(request.id).catch(console.error);
   };
 
   // Approve / Deny both delete the submitted documents from storage as the
@@ -952,17 +1042,17 @@ export function AdminVerifications() {
                     <div className="p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-base shrink-0">
-                            {req.userName
-                              ?.charAt(0)
-                              ?.toUpperCase() || "?"}
+                          <div className="w-11 h-11 rounded-xl overflow-hidden bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-base shrink-0">
+                            {req.avatarUrl
+                              ? <img src={req.avatarUrl} alt="" className="w-full h-full object-cover" />
+                              : (req.fullName || req.userName)?.charAt(0)?.toUpperCase() || "?"}
                           </div>
                           <div>
                             <p className="font-bold text-gray-900 text-sm">
-                              {req.userName}
+                              {req.fullName || req.userName}
                             </p>
                             <p className="text-xs text-gray-400">
-                              @{req.userName?.toLowerCase().replace(/\s+/g, '') || req.userId.slice(0, 8)}
+                              {req.username ? `@${req.username}` : `@${req.userId.slice(0, 8)}`}
                             </p>
                           </div>
                         </div>
@@ -981,14 +1071,13 @@ export function AdminVerifications() {
                         </span>
                       </div>
 
+                      {/* Kept compact per spec — full legal record lives in Review Verification, not here */}
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs mb-3 bg-gray-50 rounded-xl p-3">
-                        <CardField label="Legal name" value={req.fullName || undefined} />
-                        <CardField label="Date of birth" value={req.dob} />
-                        <CardField label="Address" value={[req.streetAddr, req.city, req.province, req.postalCode].filter(Boolean).join(', ') || undefined} />
                         <CardField label="Country" value={req.residenceCountry} />
-                        <CardField label="ID type" value={req.idType} />
-                        <CardField label="ID issuing country" value={req.issuingCountry} />
-                        <CardField label="ID expiry date" value={req.idExpiryDate} />
+                        <CardField
+                          label="Submitted"
+                          value={new Date(req.submittedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" })}
+                        />
                         <CardField
                           label="Government ID"
                           value={(req.idFrontPath || req.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
@@ -996,14 +1085,6 @@ export function AdminVerifications() {
                         <CardField
                           label="Proof of address"
                           value={(req.proofOfAddressPath || req.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
-                        />
-                        <CardField
-                          label="Submitted"
-                          value={new Date(req.submittedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" })}
-                        />
-                        <CardField
-                          label="Verified"
-                          value={req.verifiedAt ? new Date(req.verifiedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" }) : undefined}
                         />
                       </div>
 
@@ -1442,14 +1523,14 @@ export function AdminVerifications() {
         )}
       </div>
 
-      {/* ── Verification Detail Modal ─────────────────────────────── */}
+      {/* ── Review Verification Modal ─────────────────────────────── */}
       {selectedRequest && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
           onClick={() => setSelectedRequest(null)}
         >
           <div
-            className="bg-white w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-3xl shadow-2xl"
+            className="bg-white w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
@@ -1464,281 +1545,272 @@ export function AdminVerifications() {
                       : "bg-amber-50"
               }`}
             >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-lg">
-                  {selectedRequest.userName
-                    ?.charAt(0)
-                    ?.toUpperCase() || "?"}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-12 h-12 rounded-xl overflow-hidden bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg shrink-0">
+                  {selectedRequest.avatarUrl
+                    ? <img src={selectedRequest.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    : (selectedRequest.fullName || selectedRequest.userName)?.charAt(0)?.toUpperCase() || "?"}
                 </div>
-                <div>
-                  <h2 className="text-lg font-black text-gray-900">
-                    {selectedRequest.userName}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Review Verification · Creator+ Verification</p>
+                  <h2 className="text-lg font-black text-gray-900 truncate">
+                    {selectedRequest.fullName || selectedRequest.userName}
                   </h2>
-                  <span
-                    className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase ${
-                      selectedRequest.status === "pending" || selectedRequest.status === "under_review"
-                        ? "bg-amber-200 text-amber-800"
-                        : selectedRequest.status === "changes_requested"
-                          ? "bg-orange-200 text-orange-800"
-                          : selectedRequest.status === "approved"
-                            ? "bg-green-200 text-green-800"
-                            : "bg-red-200 text-red-800"
-                    }`}
-                  >
-                    {selectedRequest.status.replace('_', ' ')}
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase ${
+                        selectedRequest.status === "pending" || selectedRequest.status === "under_review"
+                          ? "bg-amber-200 text-amber-800"
+                          : selectedRequest.status === "changes_requested"
+                            ? "bg-orange-200 text-orange-800"
+                            : selectedRequest.status === "approved"
+                              ? "bg-green-200 text-green-800"
+                              : "bg-red-200 text-red-800"
+                      }`}
+                    >
+                      {selectedRequest.status.replace('_', ' ')}
+                    </span>
+                    <span className="text-[11px] text-gray-400">Submitted {new Date(selectedRequest.submittedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" })}</span>
+                  </div>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedRequest(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-500 shadow"
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-500 shadow shrink-0"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-5 space-y-5">
-              {/* Account info */}
-              <section>
-                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <User className="w-3.5 h-3.5" /> Account
-                </h3>
-                <div className="bg-gray-50 rounded-2xl overflow-hidden">
-                  <InfoRow
-                    icon={
-                      <User className="w-4 h-4 text-blue-500" />
-                    }
-                    label="Full Legal Name"
-                    value={
-                      selectedRequest.fullName ||
-                      selectedRequest.userName
-                    }
-                  />
-                  <InfoRow
-                    icon={
-                      <Mail className="w-4 h-4 text-blue-500" />
-                    }
-                    label="Email"
-                    value={selectedRequest.userEmail}
-                  />
-                  <InfoRow
-                    icon={
-                      <Phone className="w-4 h-4 text-blue-500" />
-                    }
-                    label="Phone"
-                    value={selectedRequest.userPhone || undefined}
-                  />
-                  <InfoRow
-                    icon={
-                      <User className="w-4 h-4 text-gray-400" />
-                    }
-                    label="Filmons Username"
-                    value={selectedRequest.userName ? `@${selectedRequest.userName.toLowerCase().replace(/\s+/g, '')}` : undefined}
-                  />
-                </div>
-              </section>
+              <p className="text-[11px] text-gray-300 font-mono">Verification ID: {selectedRequest.id}</p>
 
-              {/* Personal details */}
-              <section>
-                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5" /> Personal
-                  Details
-                </h3>
-                <div className="bg-gray-50 rounded-2xl overflow-hidden">
-                  <InfoRow
-                    icon={
-                      <Calendar className="w-4 h-4 text-purple-500" />
-                    }
-                    label="Date of Birth"
-                    value={
-                      selectedRequest.dob
-                        ? new Date(
-                            selectedRequest.dob + "T00:00:00",
-                          ).toLocaleDateString("en-CA", {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          })
-                        : undefined
-                    }
-                  />
-                  <InfoRow
-                    icon={
-                      <MapPin className="w-4 h-4 text-red-400" />
-                    }
-                    label="Street Address"
-                    value={[selectedRequest.streetAddr, selectedRequest.unit].filter(Boolean).join(', ')}
-                  />
-                  <InfoRow
-                    icon={
-                      <MapPin className="w-4 h-4 text-red-400" />
-                    }
-                    label="City / Province / Postal"
-                    value={
-                      [
-                        selectedRequest.city,
-                        selectedRequest.province,
-                        selectedRequest.postalCode,
-                      ]
-                        .filter(Boolean)
-                        .join(", ") || undefined
-                    }
-                  />
-                  <InfoRow
-                    icon={
-                      <Globe className="w-4 h-4 text-indigo-500" />
-                    }
-                    label="Country of ID"
-                    value={selectedRequest.issuingCountry}
-                  />
-                  <InfoRow
-                    icon={
-                      <CreditCard className="w-4 h-4 text-indigo-500" />
-                    }
-                    label="ID Type"
-                    value={selectedRequest.idType}
-                  />
-                  <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
-                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 mt-0.5">
-                      <CreditCard className="w-4 h-4 text-indigo-500" />
+              <div className="lg:grid lg:grid-cols-2 lg:gap-6 space-y-5 lg:space-y-0">
+                {/* ── LEFT: Public preview + Personal + Address ── */}
+                <div className="space-y-5">
+                  {/* Public profile preview — distinct from legal info below */}
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <User className="w-3.5 h-3.5" /> Public Profile
+                    </h3>
+                    <div className="bg-gray-50 rounded-2xl p-3.5 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 shrink-0">
+                        {selectedRequest.avatarUrl && <img src={selectedRequest.avatarUrl} alt="" className="w-full h-full object-cover" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-gray-900 truncate">{selectedRequest.userName}</p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {selectedRequest.username ? `@${selectedRequest.username}` : '—'}
+                          {selectedRequest.primaryRole ? ` · ${selectedRequest.primaryRole}` : ''}
+                          {selectedRequest.publicCity ? ` · ${selectedRequest.publicCity}` : ''}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">ID Number</p>
-                      <MaskedIdNumber value={selectedRequest.idNumber} />
-                    </div>
-                  </div>
-                  <InfoRow
-                    icon={
-                      <Calendar className="w-4 h-4 text-indigo-500" />
-                    }
-                    label="ID Expiry"
-                    value={selectedRequest.idExpiryDate}
-                  />
-                </div>
-              </section>
+                  </section>
 
-              {/* Documents */}
-              <section>
-                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Camera className="w-3.5 h-3.5" /> Submitted
-                  Documents
-                </h3>
-                <div className="flex items-center gap-4 mb-3 text-xs">
-                  <span className="font-semibold text-gray-600">
-                    Government ID{' '}
-                    <span className={(selectedRequest.idFrontPath || selectedRequest.documentsDeletedAt) ? 'text-green-600' : 'text-gray-400'}>
-                      {(selectedRequest.idFrontPath || selectedRequest.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
-                    </span>
-                  </span>
-                  <span className="font-semibold text-gray-600">
-                    Proof of Address{' '}
-                    <span className={(selectedRequest.proofOfAddressPath || selectedRequest.documentsDeletedAt) ? 'text-green-600' : 'text-gray-400'}>
-                      {(selectedRequest.proofOfAddressPath || selectedRequest.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
-                    </span>
-                  </span>
-                </div>
-                {selectedRequest.documentsDeletedAt ? (
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 text-center">
-                    <Trash2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm font-bold text-gray-600">Identity documents removed</p>
-                    <p className="text-xs text-gray-400 mt-1">The submitted documents were securely removed after the verification decision.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                        ID Front
-                      </p>
-                      <PhotoViewer
-                        path={selectedRequest.idFrontPath}
-                        label="ID Front"
+                  {/* Personal information — legal identity, source of truth for Creator+ */}
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5" /> Personal Information
+                    </h3>
+                    <div className="bg-gray-50 rounded-2xl overflow-hidden">
+                      <InfoRow icon={<User className="w-4 h-4 text-blue-500" />} label="Legal First Name" value={selectedRequest.legalFirstName} />
+                      <InfoRow icon={<User className="w-4 h-4 text-blue-500" />} label="Legal Last Name" value={selectedRequest.legalLastName} />
+                      <InfoRow
+                        icon={<Calendar className="w-4 h-4 text-purple-500" />}
+                        label="Date of Birth"
+                        value={selectedRequest.dob ? new Date(selectedRequest.dob + "T00:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }) : undefined}
+                      />
+                      <InfoRow
+                        icon={<Mail className="w-4 h-4 text-blue-500" />}
+                        label="Email"
+                        value={selectedRequest.userEmail ? `${selectedRequest.userEmail} · ${selectedRequest.emailVerified ? 'Verified ✓' : 'Not verified'}` : undefined}
+                      />
+                      <InfoRow
+                        icon={<Phone className="w-4 h-4 text-blue-500" />}
+                        label="Phone"
+                        value={selectedRequest.userPhone ? `${selectedRequest.userPhone} · ${selectedRequest.phoneVerified ? 'Verified ✓' : 'Not verified'}` : undefined}
+                      />
+                      <InfoRow
+                        icon={<User className="w-4 h-4 text-gray-400" />}
+                        label="Filmons Username"
+                        value={selectedRequest.username ? `@${selectedRequest.username}` : undefined}
                       />
                     </div>
-                    {selectedRequest.idBackPath && (
-                      <div>
-                        <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                          ID Back
-                        </p>
-                        <PhotoViewer
-                          path={selectedRequest.idBackPath}
-                          label="ID Back"
-                        />
+                  </section>
+
+                  {/* Address — from identity_verifications, never the editable public profile location */}
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5" /> Residential Address
+                    </h3>
+                    <div className="bg-gray-50 rounded-2xl p-4 text-sm text-gray-800 leading-relaxed">
+                      {selectedRequest.streetAddr ? (
+                        <>
+                          {selectedRequest.streetAddr}{selectedRequest.unit ? `, ${selectedRequest.unit}` : ''}<br/>
+                          {[selectedRequest.city, selectedRequest.province, selectedRequest.postalCode].filter(Boolean).join(', ')}<br/>
+                          {selectedRequest.residenceCountry}
+                        </>
+                      ) : <span className="text-gray-400">Not provided</span>}
+                    </div>
+                  </section>
+                </div>
+
+                {/* ── RIGHT: Government ID + Proof of Address + History + Notes ── */}
+                <div className="space-y-5">
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <CreditCard className="w-3.5 h-3.5" /> Government ID
+                    </h3>
+                    <div className="bg-gray-50 rounded-2xl overflow-hidden">
+                      <InfoRow
+                        icon={<CheckCircle className="w-4 h-4 text-green-500" />}
+                        label="Government ID"
+                        value={(selectedRequest.idFrontPath || selectedRequest.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
+                      />
+                      <InfoRow icon={<CreditCard className="w-4 h-4 text-indigo-500" />} label="ID Type" value={selectedRequest.idType} />
+                      <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
+                        <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 mt-0.5">
+                          <CreditCard className="w-4 h-4 text-indigo-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">ID Number</p>
+                          <MaskedIdNumber last4={selectedRequest.idNumberLast4} canReveal={canViewSensitive} onReveal={() => revealIdNumber(selectedRequest.id)} />
+                        </div>
+                      </div>
+                      <InfoRow icon={<Globe className="w-4 h-4 text-indigo-500" />} label="Issuing Country" value={selectedRequest.issuingCountry} />
+                      <InfoRow icon={<Calendar className="w-4 h-4 text-indigo-500" />} label="Expiration Date" value={selectedRequest.idExpiryDate} />
+                    </div>
+                    {!selectedRequest.documentsDeletedAt && (
+                      <div className="mt-2 space-y-1.5">
+                        <DocumentViewButton label="Government ID" hasDoc={!!selectedRequest.idFrontPath} canView={canViewSensitive}
+                          onView={() => viewDocument(selectedRequest.id, 'id_front', 'Government ID')} />
+                        {selectedRequest.idBackPath && (
+                          <DocumentViewButton label="Government ID (Back)" hasDoc={!!selectedRequest.idBackPath} canView={canViewSensitive}
+                            onView={() => viewDocument(selectedRequest.id, 'id_back', 'Government ID (Back)')} />
+                        )}
+                        <DocumentViewButton label="Selfie" hasDoc={!!selectedRequest.selfiePath} canView={canViewSensitive}
+                          onView={() => viewDocument(selectedRequest.id, 'selfie', 'Selfie')} />
                       </div>
                     )}
-                    <div>
-                      <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                        Proof of Address
-                      </p>
-                      <PhotoViewer
-                        path={selectedRequest.proofOfAddressPath}
+                  </section>
+
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <Camera className="w-3.5 h-3.5" /> Proof of Address
+                    </h3>
+                    <div className="bg-gray-50 rounded-2xl overflow-hidden">
+                      <InfoRow
+                        icon={<CheckCircle className="w-4 h-4 text-green-500" />}
                         label="Proof of Address"
+                        value={(selectedRequest.proofOfAddressPath || selectedRequest.documentsDeletedAt) ? 'Provided ✓' : 'Not provided'}
                       />
+                      <InfoRow icon={<FileText className="w-4 h-4 text-indigo-500" />} label="Document Type" value={selectedRequest.proofOfAddressType} />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-gray-500 mb-1.5 text-center">
-                        Selfie
-                      </p>
-                      <PhotoViewer
-                        path={selectedRequest.selfiePath}
-                        label="Selfie"
+                    {!selectedRequest.documentsDeletedAt && (
+                      <div className="mt-2">
+                        <DocumentViewButton label="Proof of Address" hasDoc={!!selectedRequest.proofOfAddressPath} canView={canViewSensitive}
+                          onView={() => viewDocument(selectedRequest.id, 'proof_of_address', 'Proof of Address')} />
+                      </div>
+                    )}
+                    {selectedRequest.documentsDeletedAt && (
+                      <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 text-center mt-2">
+                        <Trash2 className="w-6 h-6 text-gray-300 mx-auto mb-1.5" />
+                        <p className="text-xs font-bold text-gray-600">Documents removed</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Securely removed after the final decision.</p>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* Verification History — lifecycle only, never document contents */}
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5" /> Verification History
+                    </h3>
+                    <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5 text-sm max-h-48 overflow-y-auto">
+                      <div className="flex items-start gap-2">
+                        <span className="text-[11px] text-gray-400 shrink-0 w-16">{new Date(selectedRequest.submittedAt).toLocaleDateString("en-CA", { month: 'short', day: 'numeric' })}</span>
+                        <span className="text-gray-700 font-medium">Verification submitted</span>
+                      </div>
+                      {history.map(h => (
+                        <div key={h.id} className="flex items-start gap-2">
+                          <span className="text-[11px] text-gray-400 shrink-0 w-16">{new Date(h.createdAt).toLocaleDateString("en-CA", { month: 'short', day: 'numeric' })}</span>
+                          <span className="text-gray-700">
+                            {{
+                              verification_opened: 'Review started',
+                              government_id_viewed: 'Government ID viewed',
+                              proof_of_address_viewed: 'Proof of address viewed',
+                              id_number_revealed: 'ID number revealed',
+                              approved: 'Approved',
+                              changes_requested: 'Changes requested',
+                              denied: 'Denied',
+                              documents_deleted: 'Documents removed',
+                              viewed_document: 'Document viewed',
+                            }[h.action] || h.action} <span className="text-gray-400">— {h.adminIdentifier}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Internal Notes — admin-only, never shown to the user */}
+                  <section>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5" /> Internal Notes
+                    </h3>
+                    <div className="space-y-2 mb-2 max-h-32 overflow-y-auto">
+                      {notes.map(n => (
+                        <div key={n.id} className="bg-gray-50 rounded-xl p-3 text-sm">
+                          <p className="text-gray-800">{n.note}</p>
+                          <p className="text-[10px] text-gray-400 mt-1">{n.adminIdentifier} · {new Date(n.createdAt).toLocaleString('en-CA')}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={newNote} onChange={e => setNewNote(e.target.value)}
+                        placeholder="Add an internal note…"
+                        className="flex-1 bg-gray-50 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
                       />
+                      <button
+                        onClick={() => addNote(selectedRequest.id)} disabled={savingNote || !newNote.trim()}
+                        className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl px-3 disabled:opacity-50"
+                      >
+                        {savingNote ? '…' : 'Add Note'}
+                      </button>
                     </div>
-                  </div>
-                )}
-              </section>
-
-              {/* Timeline */}
-              <section className="bg-gray-50 rounded-2xl p-4 text-sm space-y-1.5">
-                <p className="text-gray-500">
-                  <span className="font-semibold text-gray-700">
-                    Submitted:
-                  </span>{" "}
-                  {new Date(
-                    selectedRequest.submittedAt,
-                  ).toLocaleString("en-CA")}
-                </p>
-                {selectedRequest.reviewedAt && (
-                  <>
-                    <p className="text-gray-500">
-                      <span className="font-semibold text-gray-700">
-                        Reviewed:
-                      </span>{" "}
-                      {new Date(
-                        selectedRequest.reviewedAt,
-                      ).toLocaleString("en-CA")}
-                    </p>
-                    <p className="text-gray-500">
-                      <span className="font-semibold text-gray-700">
-                        By:
-                      </span>{" "}
-                      {selectedRequest.reviewedBy}
-                    </p>
-                  </>
-                )}
-              </section>
-
-              {/* Actions — only while the application is still active (not a final decision yet) */}
-              {(selectedRequest.status === "pending" || selectedRequest.status === "under_review") && (
-                <div className="flex gap-3 flex-wrap">
-                  <button
-                    className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
-                    onClick={() => handleDecision(selectedRequest, "approve")}
-                  >
-                    <CheckCircle className="w-5 h-5" /> Approve Creator+
-                  </button>
-                  <button
-                    className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
-                    onClick={() => openRejectModal(selectedRequest, 'denied')}
-                  >
-                    <XCircle className="w-5 h-5" /> Deny
-                  </button>
-                  <button
-                    className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl py-3 transition-colors"
-                    onClick={() => openRejectModal(selectedRequest, 'changes_requested')}
-                  >
-                    <RefreshCw className="w-4 h-4" /> Request Changes
-                  </button>
+                  </section>
                 </div>
+              </div>
+
+              {/* Actions — only while the application is still active, and only Super Admin can decide */}
+              {(selectedRequest.status === "pending" || selectedRequest.status === "under_review") && (
+                canDecide ? (
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
+                      onClick={() => handleDecision(selectedRequest, "approve")}
+                    >
+                      <CheckCircle className="w-5 h-5" /> Approve
+                    </button>
+                    <button
+                      className="flex-1 flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
+                      onClick={() => openRejectModal(selectedRequest, 'changes_requested')}
+                    >
+                      <RefreshCw className="w-4 h-4" /> Request Changes
+                    </button>
+                    <button
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl py-3.5 transition-colors min-w-[120px]"
+                      onClick={() => openRejectModal(selectedRequest, 'denied')}
+                    >
+                      <XCircle className="w-5 h-5" /> Deny
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 justify-center text-sm text-gray-400 bg-gray-50 rounded-2xl py-3.5">
+                    <Lock className="w-4 h-4" /> Only Super Admin can approve, request changes, or deny
+                  </div>
+                )
               )}
               <button
                 className="w-full text-gray-500 hover:text-gray-700 text-sm py-2 font-semibold"
@@ -1749,6 +1821,15 @@ export function AdminVerifications() {
             </div>
           </div>
         </div>
+      )}
+
+      {viewerDoc && (
+        <DocumentViewerModal
+          userName={selectedRequest?.fullName || selectedRequest?.userName || ''}
+          docLabel={viewerDoc.label}
+          url={viewerDoc.url}
+          onClose={() => setViewerDoc(null)}
+        />
       )}
 
       {/* ── Rejection Reason Modal ──────────────────────────────── */}
