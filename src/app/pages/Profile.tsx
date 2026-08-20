@@ -548,6 +548,7 @@ export function Profile() {
   const [showMusicUploader, setShowMusicUploader] = useState(false);
   const [savedListings,   setSavedListings]   = useState<any[]>([]);
   const [likedCreators,   setLikedCreators]   = useState<any[]>([]);
+  const [savedLoading,    setSavedLoading]    = useState(false);
   const [reviews,         setReviews]         = useState<Review[]>([]); // Reviews Given (written by me)
   const [receivedReviews, setReceivedReviews] = useState<Review[]>([]); // Reviews Received (about me)
   const [reviewsView,     setReviewsView]     = useState<'received' | 'given'>('received');
@@ -699,20 +700,41 @@ export function Profile() {
     setLikedPosts(all.filter(p => p?.userName && p.likes?.includes(user!.id)));
   }
 
+  const SAVED_CACHE_KEY = user?.id ? `filmons_saved_favs_${user.id}` : null;
+
   async function loadSaved() {
     if (!user) return;
+
+    // 1. Show cache instantly so the tab doesn't flash an empty state
+    // while the real fetch is still in flight.
+    if (SAVED_CACHE_KEY) {
+      try {
+        const raw = localStorage.getItem(SAVED_CACHE_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          setSavedListings(cached.listings ?? []);
+          setLikedCreators(cached.creators ?? []);
+        }
+      } catch {}
+    }
+
+    setSavedLoading(true);
     const sp = await savedPostsApi.getSaved(user.id).catch(() => []);
     setSavedPosts(sp.filter((p: any) => p?.id && p?.userName));
     const [listingFavs, creatorFavs] = await Promise.all([
-      supabase.from('favorites').select('*')
+      supabase.from('favorites').select('id, item_id, item_data')
         .eq('user_id', user.id).eq('item_type', 'listing').order('created_at', { ascending: false })
         .then(r => r.data || [], () => []),
-      supabase.from('favorites').select('*')
+      supabase.from('favorites').select('id, item_id, item_data')
         .eq('user_id', user.id).eq('item_type', 'creator').order('created_at', { ascending: false })
         .then(r => r.data || [], () => []),
     ]);
     setSavedListings(listingFavs);
     setLikedCreators(creatorFavs);
+    setSavedLoading(false);
+    if (SAVED_CACHE_KEY) {
+      try { localStorage.setItem(SAVED_CACHE_KEY, JSON.stringify({ listings: listingFavs, creators: creatorFavs })); } catch {}
+    }
   }
 
   const SOUNDS_CACHE_KEY = user?.id ? `filmons_sounds_${user.id}` : null;
@@ -1864,7 +1886,16 @@ export function Profile() {
                   <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><Package className="w-4 h-4"/> Liked Listings</p>
                   <span className="text-xs text-gray-400">{savedListings.length}</span>
                 </div>
-                {savedListings.length === 0 ? (
+                {savedLoading && savedListings.length === 0 ? (
+                  <div className="px-4 py-3 space-y-3 animate-pulse">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gray-100 shrink-0"/>
+                        <div className="flex-1 space-y-1.5"><div className="h-3 bg-gray-100 rounded w-2/3"/><div className="h-2.5 bg-gray-100 rounded w-1/3"/></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : savedListings.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-gray-400">
                     <Package className="w-8 h-8 mx-auto mb-2 text-gray-300"/>
                     Swipe right on listings to save them here.
@@ -1905,7 +1936,16 @@ export function Profile() {
                   <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><User className="w-4 h-4"/> Liked Creators</p>
                   <span className="text-xs text-gray-400">{likedCreators.length}</span>
                 </div>
-                {likedCreators.length === 0 ? (
+                {savedLoading && likedCreators.length === 0 ? (
+                  <div className="px-4 py-3 space-y-3 animate-pulse">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-full bg-gray-100 shrink-0"/>
+                        <div className="flex-1 space-y-1.5"><div className="h-3 bg-gray-100 rounded w-1/2"/><div className="h-2.5 bg-gray-100 rounded w-1/3"/></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : likedCreators.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-gray-400">
                     <User className="w-8 h-8 mx-auto mb-2 text-gray-300"/>
                     Swipe right on creators to like them here.

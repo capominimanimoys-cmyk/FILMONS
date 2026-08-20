@@ -278,15 +278,20 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
     setTimeout(async () => {
       if (dir === 'R' && user && item) {
         if (item.kind === 'listing') {
+          // Trimmed shape only — matches ListingCard.tsx's handleSave.
+          // Storing the full listing (images/videos arrays, sometimes
+          // base64) here made favorites.item_data heavy and slowed down
+          // Profile's Liked tab fetch for every swipe-saved listing.
+          const cover = item.data.image || item.data.images?.find(i => typeof i === 'string');
           await supabase.from('favorites').upsert({
-            user_id: user.id, item_id: item.data.id,
-            item_type: 'listing', item_data: item.data,
+            user_id: user.id, item_id: item.data.id, item_type: 'listing',
+            item_data: { title: item.data.title, image: cover, price: item.data.price, city: item.data.city },
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Saved: ${item.data.title}`);
         } else {
           await supabase.from('favorites').upsert({
-            user_id: user.id, item_id: item.data.id,
-            item_type: 'creator', item_data: item.data,
+            user_id: user.id, item_id: item.data.id, item_type: 'creator',
+            item_data: { id: item.data.id, name: item.data.name, username: item.data.username, avatar_url: item.data.avatar_url, city: item.data.city, primary_role: item.data.primary_role },
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Liked: ${item.data.name}`);
         }
