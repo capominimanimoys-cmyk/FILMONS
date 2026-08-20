@@ -19,7 +19,10 @@ INSERT INTO public.boost_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.listing_boosts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  listing_id uuid NOT NULL REFERENCES public.listings(id),
+  -- listings.id is text (app-generated ids, not uuid) — no REFERENCES here,
+  -- same pattern as rental_agreements.listing_id / support_system's
+  -- related_listing_id, both of which are also plain text with no FK.
+  listing_id text NOT NULL,
   owner_id uuid NOT NULL,
   goal text NOT NULL CHECK (goal IN ('more_views','more_messages','more_rental_requests','more_booking_requests')),
   audience_type text NOT NULL CHECK (audience_type IN ('automatic','local','custom')),
@@ -43,7 +46,7 @@ CREATE INDEX IF NOT EXISTS listing_boosts_status_idx ON public.listing_boosts (s
 
 CREATE TABLE IF NOT EXISTS public.boost_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  listing_id uuid NOT NULL REFERENCES public.listings(id),
+  listing_id text NOT NULL,
   boost_id uuid REFERENCES public.listing_boosts(id),
   event_type text NOT NULL CHECK (event_type IN ('impression','view','save','message','rental_request')),
   source text NOT NULL CHECK (source IN ('organic','boosted')),
@@ -81,7 +84,7 @@ CREATE OR REPLACE FUNCTION public.fn_finalize_boost_payment(
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   v_wallet_id uuid;
-  v_listing_id uuid;
+  v_listing_id text;
 BEGIN
   INSERT INTO payment_idempotency_keys(key) VALUES (p_idempotency_key) ON CONFLICT DO NOTHING;
   IF NOT FOUND THEN

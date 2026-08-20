@@ -5,7 +5,9 @@
 -- finally have something driving them.
 CREATE TABLE IF NOT EXISTS public.opportunity_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  listing_id uuid NOT NULL REFERENCES public.listings(id),
+  -- listings.id is text (app-generated ids, not uuid) — no REFERENCES here,
+  -- same pattern used by listing_boosts.listing_id and boost_events.listing_id.
+  listing_id text NOT NULL,
   applicant_id uuid NOT NULL,
   message text,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected')),
