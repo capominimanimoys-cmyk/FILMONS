@@ -230,7 +230,7 @@ export function Marketplace() {
               )}
             </div>
 
-            <SwipeStack key={swipeKey} listings={filtered} onDone={() => {}}/>
+            <SwipeStack key={swipeKey} items={filtered.map(l => ({ kind: 'listing' as const, data: l }))} onDone={() => {}}/>
           </div>
         )}
       </div>
