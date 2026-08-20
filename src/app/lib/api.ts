@@ -609,6 +609,16 @@ export const authApi = {
 let _listingsCache: Listing[] | null = null;
 let _listingsCacheAt = 0; // reset to force re-fetch with fixed image parsing
 
+// Call after any direct (non-listingsApi.create) insert/update so the next
+// getAll() actually re-fetches instead of serving a stale 60s cache — a
+// freshly-published listing (e.g. from CreateListing.tsx/CreateOpportunity.tsx's
+// direct-insert path) would otherwise stay invisible on Marketplace/Home
+// until the cache naturally expired.
+export function invalidateListingsCache() {
+  _listingsCache = null;
+  _listingsCacheAt = 0;
+}
+
 // `rowVal || metaVal || []` is a trap: an array is truthy even when empty,
 // so `[] || metaVal` always evaluates to `[]` and the metadata fallback
 // (where pricingPackages/images actually live when the dedicated column was
@@ -838,6 +848,7 @@ export const listingsApi = {
   create: async (listing: Partial<Listing>): Promise<Listing> => {
     const currentUser = authApi.getCurrentUser();
     if (!currentUser) throw new Error('Not authenticated');
+    invalidateListingsCache();
 
     const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
@@ -940,6 +951,7 @@ export const listingsApi = {
   },
 
   update: async (id: string, updates: Partial<Listing>): Promise<Listing> => {
+    invalidateListingsCache();
     try {
       const { listing } = await call<any>(`/listings/${id}`, {
         method: 'PUT',

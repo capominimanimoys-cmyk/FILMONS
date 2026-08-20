@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap } from 'lucide-react';
 import { Listing } from '../types';
-import { savedListingsApi } from '../lib/api';
+import { savedListingsApi, invalidateListingsCache } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -145,6 +145,7 @@ function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
         throw new Error(data.error || 'Could not delete listing');
       }
       toast.success('Listing deleted');
+      invalidateListingsCache();
       onDeleted();
     } catch (e: any) {
       toast.error(e?.message || 'Could not delete listing');

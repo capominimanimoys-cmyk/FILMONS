@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { listingsApi } from '../lib/api';
+import { listingsApi, invalidateListingsCache } from '../lib/api';
 import {
   ArrowLeft, ChevronRight, ChevronLeft, Upload, Trash2, Plus, X,
   Check, DollarSign, MapPin, Clock, Image as ImageIcon, Video,
@@ -1549,6 +1549,7 @@ export function CreateListing() {
       if (error) throw new Error(error.message);
 
       localStorage.removeItem(DRAFT_KEY);
+      invalidateListingsCache();
       toast.success('Listing published!', { description: 'Your listing is now live on the marketplace.' });
       navigate(`/listing/${data.id}`);
     } catch (e) {

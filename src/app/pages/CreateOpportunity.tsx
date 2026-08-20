@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { listingsApi } from '../lib/api';
+import { listingsApi, invalidateListingsCache } from '../lib/api';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import {
@@ -771,6 +771,7 @@ export function CreateOpportunity() {
         const { error } = await supabase.from('listings').update(payload).eq('id', editId);
         if (error) throw new Error(error.message);
         localStorage.removeItem(DRAFT_KEY);
+        invalidateListingsCache();
         toast.success('Opportunity updated!');
         navigate(`/listing/${editId}`);
         return;
@@ -785,6 +786,7 @@ export function CreateOpportunity() {
       const { error } = await supabase.from('listings').insert({ ...payload, id: newId, user_id: user.id, created_at: new Date().toISOString(), is_active: true });
       if (error) throw new Error(error.message);
       localStorage.removeItem(DRAFT_KEY);
+      invalidateListingsCache();
       setPublishedId(newId);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
