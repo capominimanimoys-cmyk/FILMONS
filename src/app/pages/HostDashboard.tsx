@@ -532,7 +532,7 @@ function HostDashboardContent({ user }: { user: any }) {
 
         const totalEarned = orders.reduce((s: number, o: any) => s + Number(o.total_amount || 0), 0);
 
-        const reviews = getStoredReviews().filter(r => listings.some(l => l.id === r.listingId));
+        const reviews = getStoredReviews().filter(r => cached.some(l => l.id === r.listingId));
         const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
 
         // Real wallet balance (pending vs available) — replaces the old
@@ -544,7 +544,7 @@ function HostDashboardContent({ user }: { user: any }) {
         setStats(prev => ({
           ...prev,
           totalEarned,
-          listingCount: listings.length,
+          listingCount: cached.length,
           followers: user.followers?.length || 0,
           following: user.following?.length || 0,
           reviewCount: reviews.length, avgRating,
