@@ -5,7 +5,7 @@ import { listingsApi } from '../lib/api';
 import {
   ArrowLeft, ChevronRight, ChevronLeft, Upload, Trash2, Plus, X,
   Check, DollarSign, MapPin, Clock, Image as ImageIcon, Video,
-  CheckCircle, Camera, Briefcase, Building2, Tag,
+  CheckCircle, Camera, Building2, Tag,
   Star, Shield, Calendar, Info, Eye, Globe,
   Loader2, Zap, AlertCircle, Film,
 } from 'lucide-react';
@@ -134,7 +134,6 @@ const LISTING_KINDS: { kind: ListingKind; icon: React.ReactNode; label: string; 
   { kind: 'creative-service', icon: <Film className="w-7 h-7" />,   label: 'Creative Service', sub: 'Offer your skills' },
   { kind: 'studio',           icon: <Building2 className="w-7 h-7" />, label: 'Studio / Location', sub: 'Rent your space' },
   { kind: 'talent',           icon: <Star className="w-7 h-7" />,  label: 'Opportunity', sub: 'Post a job, gig, or casting call' },
-  { kind: 'job',              icon: <Briefcase className="w-7 h-7" />, label: 'Job / Gig', sub: 'Post an opportunity' },
 ];
 
 const CATEGORIES: Record<ListingKind, string[]> = {
