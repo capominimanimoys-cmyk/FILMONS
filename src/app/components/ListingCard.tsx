@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap } from 'lucide-react';
+import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users } from 'lucide-react';
 import { Listing } from '../types';
 import { savedListingsApi, invalidateListingsCache } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -23,10 +23,10 @@ function distanceLabel(km: number) {
 }
 
 // ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
-function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, boosted, onBoost }: {
+function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, boosted, onBoost, onViewApplicants }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
-  boosted: boolean; onBoost: () => void;
+  boosted: boolean; onBoost: () => void; onViewApplicants?: () => void;
 }) {
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
@@ -89,6 +89,9 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
           {[
             ...(isOwn ? [
               { icon: <Pencil className="w-5 h-5"/>, label: 'Edit Listing', sub: 'Update photos, pricing, details, and more', color: 'text-gray-900', action: () => { close(); onEdit(); } },
+              ...(onViewApplicants ? [
+                { icon: <Users className="w-5 h-5"/>, label: 'View Applicants', sub: 'See who applied and manage status', color: 'text-gray-900', action: () => { close(); onViewApplicants(); } },
+              ] : []),
               { icon: <Zap className={`w-5 h-5 ${boosted ? 'fill-amber-500 text-amber-500' : ''}`}/>, label: boosted ? 'Manage Boost' : 'Boost Listing', sub: boosted ? 'View performance, spend, and stop this boost' : 'Promote this listing to more people', color: boosted ? 'text-amber-600' : 'text-gray-900', action: () => { close(); onBoost(); } },
               { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
             ] : []),
@@ -299,6 +302,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           onEdit={() => navigate(`/edit-listing/${listing.id}`)}
           onDeleteRequest={() => setShowDeleteConfirm(true)}
           boosted={boosted} onBoost={() => navigate(boosted ? `/boost/${listing.id}/insights` : `/boost/${listing.id}`)}
+          onViewApplicants={isOpportunity ? () => navigate(`/listing/${listing.id}/applicants`) : undefined}
         />
       )}
       {showDeleteConfirm && user?.id && (
