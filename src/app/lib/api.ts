@@ -683,6 +683,7 @@ export const listingsApi = {
         boosted:         row.boosted || false,
         insuranceRequired: !!meta.insuranceRequired,
         listingKind:     meta.listingKind || undefined,
+        opportunity:     meta.opportunity || undefined,
       } as Listing;
     };
 

@@ -390,10 +390,26 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
               <span className="text-xs font-semibold text-gray-800">New</span>
             </div>
           </div>
-          <p className="text-sm font-bold text-gray-900 mt-1.5">
-            ${listing.price}
-            <span className="font-normal text-gray-500 text-xs"> CAD{priceUnit}</span>
-          </p>
+          {isOpportunity && listing.opportunity ? (
+            <>
+              <p className="text-sm font-bold text-gray-900 mt-1.5">
+                {listing.opportunity.paid
+                  ? `$${listing.price} ${listing.opportunity.currency || 'CAD'}${listing.opportunity.compensationType === 'hourly' ? '/hr' : listing.opportunity.compensationType === 'daily' ? '/day' : ''}`
+                  : <span className="text-gray-500">Unpaid / Collaboration</span>}
+              </p>
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {listing.opportunity.workArrangement && (
+                  <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize">{listing.opportunity.workArrangement}</span>
+                )}
+                <span className="text-[10px] font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full">Applications Open</span>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm font-bold text-gray-900 mt-1.5">
+              ${listing.price}
+              <span className="font-normal text-gray-500 text-xs"> CAD{priceUnit}</span>
+            </p>
+          )}
         </div>
       </div>
     </>

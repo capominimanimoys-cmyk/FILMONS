@@ -42,9 +42,11 @@ const STACK: Record<number, string> = {
 
 function fmtPrice(l: Listing) {
   const p = `$${Number(l.price).toLocaleString()}`;
-  // Opportunity compensation has no reliable unit (day-rate vs. flat fee) —
-  // show the bare figure rather than guessing a wrong /hr suffix.
-  if (l.listingKind === 'talent')  return p;
+  if (l.listingKind === 'talent') {
+    if (l.opportunity && !l.opportunity.paid) return 'Unpaid / Collaboration';
+    const ct = l.opportunity?.compensationType;
+    return `${p}${ct === 'hourly' ? '/hr' : ct === 'daily' ? '/day' : ''}`;
+  }
   if (l.listingMode === 'rent')    return `${p}/day`;
   if (l.listingType === 'service') return `${p}/hr`;
   return p;

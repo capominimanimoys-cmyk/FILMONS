@@ -193,10 +193,56 @@ export interface Listing {
   insuranceRequired?: boolean;
   /** Raw CreateListing kind ('equipment-rental'|'equipment-sale'|'creative-service'|'studio'|'talent'|'job') from metadata.listingKind. 'talent' is the Opportunity category. */
   listingKind?: string;
+  /** Structured Opportunity fields from metadata.opportunity — only present when listingKind === 'talent'. */
+  opportunity?: OpportunityDetails;
   pricingPackages?: PricingPackage[];
   workingHours?: string;
   requirements?: string;
   cancellation?: string;
+}
+
+export interface OpportunityApplicationConfig {
+  requireProfile: boolean;
+  requirePortfolio: boolean;
+  requireMessage: boolean;
+  requireResume: boolean;
+  requireDemoReel: boolean;
+  requireAvailability: boolean;
+  requireExpectedRate: boolean;
+  customQuestions: string[];
+}
+
+export interface OpportunityDetails {
+  opportunityType: string; // 'job'|'paid_gig'|'casting_call'|'crew_call'|'freelance_project'|'collaboration'|'internship'|'audition'|'volunteer'|'other'
+  categoryIndustry?: string;
+  roleNeeded?: string;
+  numPeopleNeeded?: number;
+  workArrangement: 'onsite' | 'remote' | 'hybrid';
+  remoteEligibility?: 'CA' | 'US' | 'CA_US' | 'ANYWHERE';
+  timingType: 'one_time' | 'multiple_dates' | 'ongoing' | 'flexible';
+  startDate?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  applicationDeadline?: string;
+  noDeadline?: boolean;
+  estimatedWorkDays?: number;
+  paid: boolean;
+  compensationType?: 'hourly' | 'daily' | 'fixed' | 'salary' | 'negotiable';
+  compensationAmount?: number;
+  compensationMin?: number;
+  compensationMax?: number;
+  currency?: 'CAD' | 'USD';
+  paymentDetails?: string;
+  experienceLevel?: 'any' | 'beginner' | 'intermediate' | 'experienced' | 'professional';
+  skills?: string[];
+  equipmentRequirement?: 'provided' | 'own' | 'either';
+  equipmentDetails?: string;
+  languages?: string;
+  certifications?: string;
+  driversLicence?: boolean;
+  portfolioRequired?: boolean;
+  applicationConfig?: OpportunityApplicationConfig;
 }
 
 export interface ChatMessage {

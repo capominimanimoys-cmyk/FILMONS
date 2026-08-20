@@ -185,6 +185,13 @@ export function EditListing() {
         navigate('/dashboard');
         return;
       }
+      // Opportunities have their own dedicated editor (structured fields —
+      // work arrangement, dates, compensation, requirements, application
+      // config — none of which this generic gear/service editor knows about).
+      if (listing.listingKind === 'talent') {
+        navigate(`/create-opportunity?edit=${listingId}`, { replace: true });
+        return;
+      }
       setTitle(listing.title);
       setDescription(listing.description);
       setPrice(listing.price.toString());

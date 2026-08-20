@@ -63,6 +63,7 @@ import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
 import { ShareCard }          from './pages/ShareCard';
 import { BoostListingFlow } from './pages/BoostListingFlow';
 import { BoostInsights } from './pages/BoostInsights';
+import { CreateOpportunity } from './pages/CreateOpportunity';
 
 export const router = createBrowserRouter([
   {
@@ -103,6 +104,7 @@ export const router = createBrowserRouter([
       { path: 'phone-signup', Component: SignupPhone },
       { path: 'phone-login', Component: PhoneLogin },
       { path: 'create-listing', Component: CreateListing },
+      { path: 'create-opportunity', Component: CreateOpportunity },
       { path: 'edit-listing/:id', Component: EditListing },
       { path: 'my-listings', Component: MyListings },
       { path: 'my-orders', Component: MyOrders },

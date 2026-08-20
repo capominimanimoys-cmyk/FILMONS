@@ -336,8 +336,13 @@ function AvailabilityCalendar({ blockedDates, onChange }: { blockedDates: string
 }
 
 // ── Step 1 — Listing Type ─────────────────────────────────────────────────────
-function Step1({ form, set, onNext }: { form: FormState; set: (f: Partial<FormState>) => void; onNext: () => void }) {
-  const select = (kind: ListingKind) => { set({ kind }); setTimeout(onNext, 120); };
+function Step1({ form, set, onNext, onSelectOpportunity }: { form: FormState; set: (f: Partial<FormState>) => void; onNext: () => void; onSelectOpportunity: () => void }) {
+  // Opportunity ('talent') never uses this gear/rental wizard — it has its
+  // own dedicated Create Listing flow (CreateOpportunity.tsx).
+  const select = (kind: ListingKind) => {
+    if (kind === 'talent') { onSelectOpportunity(); return; }
+    set({ kind }); setTimeout(onNext, 120);
+  };
   return (
     <div className="space-y-4">
       <div className="text-center mb-6">
@@ -1589,7 +1594,7 @@ export function CreateListing() {
 
   const renderStep = () => {
     switch (step) {
-      case 1:  return <Step1 form={form} set={set} onNext={goNext}/>;
+      case 1:  return <Step1 form={form} set={set} onNext={goNext} onSelectOpportunity={() => navigate('/create-opportunity')}/>;
       case 2:  return <Step2 form={form} set={set}/>;
       case 3:  return <Step3 form={form} set={set}/>;
       case 4:  return <Step4 form={form} set={set}/>;

@@ -1,8 +1,8 @@
 import { useParams, useNavigate, Link } from 'react-router';
 import { useState, useEffect, useCallback } from 'react';
-import { listingsApi, authApi, reviewsApi } from '../lib/api';
+import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
 import { push as pushNotification } from '../lib/notifications';
-import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film } from 'lucide-react';
+import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -170,6 +170,22 @@ export function ListingDetail() {
     setShowRequestModal(true);
   };
 
+  const handleMessage = async () => {
+    if (!user) { navigate('/login'); return; }
+    if (isOwnListing || !host) return;
+    const conv = await chatApi.getOrCreateDB(user.id, host.id);
+    navigate(`/inbox?conv=${conv.id}`);
+  };
+
+  const workArrangementLabel = (w?: string) => w === 'onsite' ? 'On-site' : w === 'remote' ? 'Remote' : w === 'hybrid' ? 'Hybrid' : undefined;
+  const dateRangeLabel = (o: NonNullable<typeof listing.opportunity>) => {
+    if (!o.startDate) return o.timingType === 'flexible' ? 'Flexible' : o.timingType === 'ongoing' ? 'Ongoing' : undefined;
+    const start = new Date(o.startDate + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+    if (!o.endDate || o.endDate === o.startDate) return start;
+    const end = new Date(o.endDate + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+    return `${start} – ${end}`;
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* ── Back bar ── */}
@@ -247,11 +263,13 @@ export function ListingDetail() {
             <div>
               <div className="flex items-center gap-2 flex-wrap mb-2">
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${
-                  listing.listingType === 'service' ? 'bg-purple-100 text-purple-700'
+                  isOpportunity ? 'bg-indigo-600 text-white'
+                  : listing.listingType === 'service' ? 'bg-purple-100 text-purple-700'
                   : listing.listingMode === 'sale'  ? 'bg-orange-100 text-orange-700'
                   : 'bg-blue-100 text-blue-700'
                 }`}>
-                  {listing.listingType === 'service' ? <><Wrench className="w-3 h-3"/> Service</>
+                  {isOpportunity ? 'OPPORTUNITY'
+                   : listing.listingType === 'service' ? <><Wrench className="w-3 h-3"/> Service</>
                    : listing.listingMode === 'sale' ? <><Tag className="w-3 h-3"/> For Sale</>
                    : <><Film className="w-3 h-3"/> Rental</>}
                 </span>
@@ -300,9 +318,85 @@ export function ListingDetail() {
 
             {/* ── Description ── */}
             <div>
-              <h2 className="text-lg font-bold text-gray-900 mb-2">About this listing</h2>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">{isOpportunity ? 'About the Opportunity' : 'About this listing'}</h2>
               <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{listing.description}</p>
             </div>
+
+            {/* ── Opportunity: Role / Requirements / Application ── */}
+            {isOpportunity && listing.opportunity && (
+              <>
+                {(listing.opportunity.roleNeeded || listing.opportunity.numPeopleNeeded) && (
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 mb-3">Role</h2>
+                    <div className="grid gap-3">
+                      {listing.opportunity.roleNeeded && (
+                        <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
+                          <UserIcon className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                          <div><p className="font-semibold text-gray-800 text-sm mb-0.5">Role needed</p><p className="text-sm text-gray-600">{listing.opportunity.roleNeeded}</p></div>
+                        </div>
+                      )}
+                      {listing.opportunity.numPeopleNeeded && (
+                        <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
+                          <UserIcon className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                          <div><p className="font-semibold text-gray-800 text-sm mb-0.5">People needed</p><p className="text-sm text-gray-600">{listing.opportunity.numPeopleNeeded}</p></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 mb-3">Requirements</h2>
+                  <div className="grid gap-3">
+                    <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
+                      <Award className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                      <div><p className="font-semibold text-gray-800 text-sm mb-0.5">Experience</p><p className="text-sm text-gray-600 capitalize">{listing.opportunity.experienceLevel || 'Any level'}</p></div>
+                    </div>
+                    {listing.opportunity.skills && listing.opportunity.skills.length > 0 && (
+                      <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Award className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                        <div><p className="font-semibold text-gray-800 text-sm mb-1">Skills</p>
+                          <div className="flex flex-wrap gap-1.5">{listing.opportunity.skills.map(s => <span key={s} className="text-xs bg-white text-gray-600 px-2 py-1 rounded-full border border-gray-200">{s}</span>)}</div>
+                        </div>
+                      </div>
+                    )}
+                    {listing.opportunity.equipmentRequirement && (
+                      <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Award className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                        <div><p className="font-semibold text-gray-800 text-sm mb-0.5">Equipment</p>
+                          <p className="text-sm text-gray-600">
+                            {listing.opportunity.equipmentRequirement === 'provided' ? 'Equipment provided' : listing.opportunity.equipmentRequirement === 'own' ? (listing.opportunity.equipmentDetails || 'Applicant should have their own equipment') : 'Either'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {listing.opportunity.portfolioRequired && (
+                      <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Award className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                        <div><p className="font-semibold text-gray-800 text-sm">Portfolio required</p></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {listing.opportunity.applicationConfig && (
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 mb-3">Application</h2>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        listing.opportunity.applicationConfig.requireProfile && 'Filmons Profile',
+                        listing.opportunity.applicationConfig.requirePortfolio && 'Portfolio',
+                        listing.opportunity.applicationConfig.requireMessage && 'Short Message',
+                        listing.opportunity.applicationConfig.requireResume && 'Resume',
+                        listing.opportunity.applicationConfig.requireDemoReel && 'Demo Reel / Work Sample',
+                        listing.opportunity.applicationConfig.requireAvailability && 'Availability',
+                        listing.opportunity.applicationConfig.requireExpectedRate && 'Expected Rate',
+                      ].filter(Boolean).map(f => <span key={f as string} className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-1.5 rounded-full">{f}</span>)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             {/* ── Pricing packages (service) ── */}
             {listing.pricingPackages && listing.pricingPackages.length > 0 && (
@@ -417,9 +511,27 @@ export function ListingDetail() {
           {/* ── RIGHT SIDEBAR ── */}
           <div className="lg:col-span-1">
             <div className="sticky top-20 space-y-4">
-              {/* Pricing card */}
+              {/* Pricing / Opportunity summary card */}
               <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-                {listing.price > 0 && (
+                {isOpportunity && listing.opportunity ? (
+                  <div className="mb-4 space-y-2.5 text-sm">
+                    {(listing.city || listing.opportunity.workArrangement) && (
+                      <div className="flex items-center gap-2 text-gray-700"><MapPin className="w-3.5 h-3.5 text-gray-400" />
+                        {[listing.city && [listing.city, listing.province].filter(Boolean).join(', '), workArrangementLabel(listing.opportunity.workArrangement)].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <DollarSign className="w-3.5 h-3.5 text-gray-400" />
+                      {listing.opportunity.paid ? <span className="font-bold text-gray-900">${listing.price} {listing.opportunity.currency || 'CAD'}</span> : <span className="font-semibold">Unpaid / Collaboration</span>}
+                    </div>
+                    {dateRangeLabel(listing.opportunity) && (
+                      <div className="flex items-center gap-2 text-gray-700"><Clock className="w-3.5 h-3.5 text-gray-400" /> {dateRangeLabel(listing.opportunity)}</div>
+                    )}
+                    {!listing.opportunity.noDeadline && listing.opportunity.applicationDeadline && (
+                      <div className="flex items-center gap-2 text-gray-700"><Clock className="w-3.5 h-3.5 text-gray-400" /> Apply by {new Date(listing.opportunity.applicationDeadline + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</div>
+                    )}
+                  </div>
+                ) : listing.price > 0 && (
                   <div className="mb-4">
                     <div className="flex items-baseline gap-2">
                       <span className="text-3xl font-black text-gray-900">${listing.price}</span>
@@ -439,20 +551,32 @@ export function ListingDetail() {
                 )}
 
                 <button onClick={handleRequest}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-colors text-sm">
+                  className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-xl transition-colors text-sm ${isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
                   <Send className="w-4 h-4" /> {actionLabel}
                 </button>
 
                 <div className="mt-4 space-y-2 text-xs text-gray-500">
-                  <div className="flex items-center gap-2"><Shield className="w-3.5 h-3.5 text-green-500" /> Secure booking</div>
-                  <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 text-blue-500" /> Response within 24 hours</div>
+                  {isOpportunity ? (
+                    <div className="flex items-center gap-2"><MessageCircle className="w-3.5 h-3.5 text-blue-500" /> Messages through Filmons</div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2"><Shield className="w-3.5 h-3.5 text-green-500" /> Secure booking</div>
+                      <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 text-blue-500" /> Response within 24 hours</div>
+                    </>
+                  )}
                   {host?.isVerified && <div className="flex items-center gap-2"><Star className="w-3.5 h-3.5 text-yellow-500" /> Verified seller</div>}
                 </div>
 
-                <div className="border-t border-gray-100 mt-4 pt-4">
+                <div className="border-t border-gray-100 mt-4 pt-4 space-y-2">
+                  {isOpportunity && (
+                    <button onClick={handleMessage}
+                      className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 border border-gray-200 rounded-xl py-2.5 hover:bg-gray-50 transition-colors font-medium">
+                      <MessageCircle className="w-4 h-4" /> Message
+                    </button>
+                  )}
                   <button onClick={handleCopyLink}
                     className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 border border-gray-200 rounded-xl py-2.5 hover:bg-gray-50 transition-colors font-medium">
-                    <Link2 className="w-4 h-4" /> Copy link
+                    <Link2 className="w-4 h-4" /> {isOpportunity ? 'Share' : 'Copy link'}
                   </button>
                 </div>
               </div>

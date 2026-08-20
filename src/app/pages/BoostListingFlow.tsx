@@ -237,7 +237,7 @@ export function BoostListingFlow() {
                     <Icon className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900">{g.label}</p>
+                    <p className="text-sm font-bold text-gray-900">{g.value === 'more_views' && isOpportunity ? 'More Opportunity Views' : g.label}</p>
                     <p className="text-xs text-gray-400">{g.sub}</p>
                   </div>
                   {active && <Check className="w-5 h-5 text-amber-600 shrink-0" />}

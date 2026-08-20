@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { Listing, Conversation } from '../types';
 import { UserAvatar } from '../components/AccountTypeBadge';
@@ -8,9 +9,9 @@ import {
   Plus, ChevronRight, Eye, CheckCircle,
   Clock, ArrowUpRight, BarChart3, Wrench, Camera, Tag,
   MessageCircle, ShieldCheck, Settings, Bookmark, Heart, MapPin,
-  ShoppingCart, Zap, X, CalendarDays, Lock,
+  ShoppingCart, Zap, X, CalendarDays, Lock, Briefcase, ArrowLeft, ExternalLink, XCircle,
 } from 'lucide-react';
-import { savedListingsApi } from '../lib/api';
+import { savedListingsApi, authApi, chatApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
@@ -452,8 +453,13 @@ function HostDashboardContent({ user }: { user: any }) {
   const navigate = useNavigate();
   const isCreatorPlus = ['creator_plus', 'professional', 'business'].includes(user.accountType ?? '');
   const goCreate = () => navigate(isCreatorPlus ? '/create-listing' : '/creator-plus-required?type=listings');
-  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'orders'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'orders' | 'opportunities'>('overview');
   const [myListings, setMyListings] = useState<Listing[]>([]);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<Listing | null>(null);
+  const [applicants, setApplicants] = useState<any[]>([]);
+  const [applicantsLoading, setApplicantsLoading] = useState(false);
+  const [applicantFilter, setApplicantFilter] = useState<'all' | 'pending' | 'shortlisted' | 'contacted' | 'accepted' | 'rejected'>('all');
+  const [applicantCounts, setApplicantCounts] = useState<Record<string, number>>({});
   const [myOrders, setMyOrders] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [dbTransactions, setDbTransactions] = useState<any[]>([]);
@@ -475,6 +481,16 @@ function HostDashboardContent({ user }: { user: any }) {
   useEffect(() => {
     const listings = getStoredListings().filter((l: Listing) => l.userId === user.id);
     setMyListings(listings);
+
+    // Applicant counts for the Opportunities tab
+    const oppIds = listings.filter((l: Listing) => l.listingKind === 'talent').map((l: Listing) => l.id);
+    if (oppIds.length) {
+      supabase.from('opportunity_applications').select('listing_id').in('listing_id', oppIds).then(({ data }) => {
+        const counts: Record<string, number> = {};
+        (data || []).forEach((r: any) => { counts[r.listing_id] = (counts[r.listing_id] || 0) + 1; });
+        setApplicantCounts(counts);
+      });
+    }
 
     // Load orders from DB (as host)
     supabase.from('orders').select('*')
@@ -551,6 +567,39 @@ function HostDashboardContent({ user }: { user: any }) {
     return { label: 'Rental', cls: 'bg-blue-100 text-blue-700' };
   };
 
+  const opportunities = myListings.filter(l => l.listingKind === 'talent');
+
+  const openApplicants = async (listing: Listing) => {
+    setSelectedOpportunity(listing);
+    setApplicantFilter('all');
+    setApplicantsLoading(true);
+    try {
+      const { data } = await supabase.from('opportunity_applications').select('*').eq('listing_id', listing.id).order('created_at', { ascending: false });
+      const rows = data || [];
+      // Never fetches identity_verifications — applicant cards show only
+      // public-profile info, per the spec's explicit instruction.
+      const profiles = await Promise.all(rows.map((r: any) => authApi.getUserById(r.applicant_id).catch(() => null)));
+      setApplicants(rows.map((r: any, i: number) => ({ ...r, profile: profiles[i] })));
+    } catch {
+      toast.error('Could not load applicants');
+    } finally {
+      setApplicantsLoading(false);
+    }
+  };
+
+  const updateApplicantStatus = async (appId: string, status: string) => {
+    const { error } = await supabase.from('opportunity_applications').update({ status }).eq('id', appId);
+    if (!error) setApplicants(prev => prev.map(a => a.id === appId ? { ...a, status } : a));
+  };
+
+  const messageApplicant = async (applicantId: string) => {
+    const conv = await chatApi.getOrCreateDB(user.id, applicantId);
+    navigate(`/inbox?conv=${conv.id}`);
+  };
+
+  const APPLICANT_STATUS_LABEL: Record<string, string> = { pending: 'New', shortlisted: 'Shortlisted', contacted: 'Contacted', accepted: 'Accepted', rejected: 'Declined' };
+  const filteredApplicants = applicantFilter === 'all' ? applicants : applicants.filter(a => a.status === applicantFilter);
+
   const quickActions = [
     { icon: <Plus className="w-4 h-4 text-blue-600" />, label: 'Create a new listing', color: 'bg-blue-50', action: goCreate },
     { icon: <Package className="w-4 h-4 text-purple-600" />, label: 'My listings', color: 'bg-purple-50', action: () => setActiveTab('listings') },
@@ -580,6 +629,7 @@ function HostDashboardContent({ user }: { user: any }) {
             { key: 'overview', label: 'Overview', icon: LayoutDashboard },
             { key: 'listings', label: 'Listings', icon: Package },
             { key: 'orders',   label: 'My Orders', icon: ShoppingCart },
+            ...(opportunities.length ? [{ key: 'opportunities', label: 'Opportunities', icon: Briefcase }] : []),
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setActiveTab(key as any)}
               className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${activeTab === (key as any) ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
@@ -777,6 +827,79 @@ function HostDashboardContent({ user }: { user: any }) {
           </div>
         )}
 
+        {activeTab === 'opportunities' && !selectedOpportunity && (
+          <div className="space-y-3">
+            {opportunities.map(o => (
+              <button key={o.id} onClick={() => openApplicants(o)}
+                className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-left hover:bg-gray-50 transition-colors">
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0"><Briefcase className="w-5 h-5 text-indigo-600" /></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{o.title}</p>
+                  <p className="text-xs text-gray-400">{applicantCounts[o.id] || 0} applicant{(applicantCounts[o.id] || 0) === 1 ? '' : 's'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'opportunities' && selectedOpportunity && (
+          <div className="space-y-3">
+            <button onClick={() => setSelectedOpportunity(null)} className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700">
+              <ArrowLeft className="w-3.5 h-3.5" /> All Opportunities
+            </button>
+            <p className="text-sm font-bold text-gray-900">{selectedOpportunity.title}</p>
+
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              {(['all', 'pending', 'shortlisted', 'contacted', 'accepted', 'rejected'] as const).map(f => (
+                <button key={f} onClick={() => setApplicantFilter(f)}
+                  className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${applicantFilter === f ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                  {f === 'all' ? 'All' : APPLICANT_STATUS_LABEL[f]}
+                </button>
+              ))}
+            </div>
+
+            {applicantsLoading ? (
+              <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>
+            ) : filteredApplicants.length === 0 ? (
+              <div className="text-center py-10 bg-white rounded-2xl border border-gray-100">
+                <Briefcase className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                <p className="text-sm text-gray-400">No applicants{applicantFilter !== 'all' ? ` in ${APPLICANT_STATUS_LABEL[applicantFilter]}` : ' yet'}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredApplicants.map(a => (
+                  <div key={a.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 shrink-0">
+                        {a.profile?.avatar && <img src={a.profile.avatar} alt="" className="w-full h-full object-cover" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-900 truncate flex items-center gap-1">
+                          {a.profile?.name || 'Applicant'} {a.profile?.isVerified && <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
+                        </p>
+                        <p className="text-xs text-gray-400">{[a.profile?.primaryRole, a.profile?.city].filter(Boolean).join(' · ')}</p>
+                        <p className="text-[10px] text-gray-300 mt-0.5">{new Date(a.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-gray-100 text-gray-600 shrink-0">{APPLICANT_STATUS_LABEL[a.status] || a.status}</span>
+                    </div>
+                    {a.message && <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-3 py-2.5">{a.message}</p>}
+                    <div className="flex flex-wrap gap-2">
+                      {a.portfolio_url && (
+                        <a href={a.portfolio_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1.5 rounded-full"><ExternalLink className="w-3 h-3" /> Portfolio</a>
+                      )}
+                      <button onClick={() => messageApplicant(a.applicant_id)} className="flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1.5 rounded-full"><MessageCircle className="w-3 h-3" /> Message</button>
+                      {a.status !== 'shortlisted' && <button onClick={() => updateApplicantStatus(a.id, 'shortlisted')} className="text-xs font-semibold text-purple-700 bg-purple-50 px-2.5 py-1.5 rounded-full">Shortlist</button>}
+                      {a.status !== 'contacted' && <button onClick={() => updateApplicantStatus(a.id, 'contacted')} className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-full">Contacted</button>}
+                      {a.status !== 'accepted' && <button onClick={() => updateApplicantStatus(a.id, 'accepted')} className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2.5 py-1.5 rounded-full"><CheckCircle className="w-3 h-3" /> Accept</button>}
+                      {a.status !== 'rejected' && <button onClick={() => updateApplicantStatus(a.id, 'rejected')} className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1.5 rounded-full"><XCircle className="w-3 h-3" /> Decline</button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>
