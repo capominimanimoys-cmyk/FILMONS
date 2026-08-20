@@ -1524,9 +1524,20 @@ export function CreateListing() {
     try {
       const payload = buildPayload();
 
+      // listings.id has no database-side default — without an explicit id
+      // this insert always fails with a not-null violation and silently
+      // falls through to the listingsApi.create() fallback below on every
+      // single publish (that fallback already generates one; matching it
+      // here lets the direct insert actually succeed instead of always
+      // paying for two network round-trips).
+      const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
       // Direct Supabase insert
       const { data, error } = await supabase.from('listings').insert({
         ...payload,
+        id: newId,
         images: imageUrls,
         videos: videoUrls,
         user_id: user.id,

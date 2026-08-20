@@ -776,10 +776,16 @@ export function CreateOpportunity() {
         return;
       }
 
-      const { data, error } = await supabase.from('listings').insert({ ...payload, user_id: user.id, created_at: new Date().toISOString(), is_active: true }).select('id').single();
+      // listings.id has no database-side default — every other listing
+      // creation path in this app (listingsApi.create()'s fallback) already
+      // generates it client-side; the direct insert here needs the same.
+      const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const { error } = await supabase.from('listings').insert({ ...payload, id: newId, user_id: user.id, created_at: new Date().toISOString(), is_active: true });
       if (error) throw new Error(error.message);
       localStorage.removeItem(DRAFT_KEY);
-      setPublishedId(data.id);
+      setPublishedId(newId);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
     } finally {
