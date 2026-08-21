@@ -699,10 +699,14 @@ export const listingsApi = {
     };
 
     try {
-      // Only select columns that definitely exist — no is_sold/sold_at until SQL migration runs
+      // Only select columns that definitely exist — no is_sold/sold_at until SQL migration runs.
+      // "image" (singular) isn't a real column either — only "images" (plural
+      // array) is — this was silently 400'ing the whole query on every call,
+      // making getAll() permanently fall through to the stale localStorage
+      // fallback below regardless of what was actually in the database.
       const { data, error } = await supabase
         .from('listings')
-        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, image, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted')
+        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted')
         .eq('is_active', true)
         .order('boosted', { ascending: false })
         .order('created_at', { ascending: false })
