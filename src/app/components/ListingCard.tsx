@@ -279,7 +279,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
   const cover = listing.image ||
     (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string' && i.length > 10) : null);
 
-  const isOpportunity = listing.listingKind === 'talent';
+  const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const typeLabel = isOpportunity ? 'Opportunity'
     : listing.listingType === 'service' ? 'Service'
     : listing.listingMode === 'sale' ? 'For Sale' : 'Rental';

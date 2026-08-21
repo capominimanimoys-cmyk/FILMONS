@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Navigation, Sparkles, Camera, Mic, Aperture, Video, Lightbulb, Scissors, Building2, Shirt, Plane, Gamepad2, Music, Monitor, Wrench, Search } from 'lucide-react';
+import { Navigation, Sparkles, Camera, Mic, Aperture, Video, Lightbulb, Scissors, Building2, Shirt, Plane, Gamepad2, Music, Monitor, Wrench, Search, Briefcase } from 'lucide-react';
 import { SwipeStack, EnrichedListing } from '../components/SwipeStack';
 import { FilterPanel, FilterOptions } from '../components/FilterPanel';
 import { LocationPermissionDialog } from '../components/LocationPermissionDialog';
@@ -39,6 +39,9 @@ function kw(l: Listing, words: string[]): boolean {
 
 const CATEGORIES: Category[] = [
   { icon: Sparkles,  label:'All',          match: ()  => true },
+  // listing_type === 'opportunity' is the authoritative source of truth;
+  // listingKind === 'talent' kept as a fallback for pre-migration listings.
+  { icon: Briefcase, label:'Opportunity',  match: (l) => l.listingType === 'opportunity' || l.listingKind === 'talent' },
   { icon: Camera,    label:'Cameras',      match: (l) => kw(l,['camera','canon','sony','nikon','blackmagic','fuji','lumix']) },
   { icon: Mic,       label:'Audio',        match: (l) => kw(l,['audio','microphone','mic','sound','speaker','rode','sennheiser']) },
   { icon: Aperture,  label:'Photography',  match: (l) => kw(l,['photo','photography','photographer','shoot','portrait']) },

@@ -216,7 +216,7 @@ export function EditListing() {
       // Opportunities have their own dedicated editor (structured fields —
       // work arrangement, dates, compensation, requirements, application
       // config — none of which this generic gear/service editor knows about).
-      if (listing.listingKind === 'talent') {
+      if (listing.listingType === 'opportunity' || listing.listingKind === 'talent') {
         navigate(`/create-opportunity?edit=${listingId}`, { replace: true });
         return;
       }

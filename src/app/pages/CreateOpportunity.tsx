@@ -741,7 +741,7 @@ export function CreateOpportunity() {
     city: form.city, province: form.province, streetAddress: form.streetAddress, postalCode: form.postalCode,
     image: form.imagePreviews[0] || form.existingImages[0], images: [...form.existingImages, ...form.imagePreviews],
     videos: [...form.existingVideos, ...form.videoPreviews],
-    createdAt: new Date().toISOString(), listingType: 'service', listingMode: undefined, listingKind: 'talent',
+    createdAt: new Date().toISOString(), listingType: 'opportunity', listingMode: undefined, listingKind: 'talent',
     opportunity: buildOpportunity(),
   } as Listing;
 
@@ -762,7 +762,7 @@ export function CreateOpportunity() {
         city: form.city.trim(), street_address: form.streetAddress.trim() || null, province: form.province || null,
         postal_code: form.postalCode || null, country: form.country || 'Canada',
         images: imageUrls, videos: videoUrls,
-        listing_type: 'service', listing_mode: null, service_category: (form.categoryIndustry || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        listing_type: 'opportunity', listing_mode: null, service_category: (form.categoryIndustry || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         metadata: { listingKind: 'talent', opportunity },
         updated_at: new Date().toISOString(),
       };

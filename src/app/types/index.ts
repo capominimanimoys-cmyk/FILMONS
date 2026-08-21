@@ -182,7 +182,7 @@ export interface Listing {
   deliveryOptions?: string[];       // e.g. ['pickup', 'delivery']
   deliveryPrice?: number;           // optional fee host charges for delivery (CAD)
   createdAt: string;
-  listingType: 'gear' | 'service';
+  listingType: 'gear' | 'service' | 'opportunity';
   serviceCategory?: 'photographer' | 'videographer' | 'editor' | 'colorist' | 'sound-designer' | 'drone-pilot' | 'gaffer' | 'grip' | 'production-assistant' | 'other';
   listingMode?: 'rent' | 'sale';
   condition?: 'new' | 'like-new' | 'good' | 'fair';

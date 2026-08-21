@@ -627,11 +627,12 @@ function firstNonEmpty<T>(rowVal: T[] | null | undefined, metaVal: T[] | null | 
   return (rowVal && rowVal.length) ? rowVal : (metaVal || []);
 }
 
-// 'talent' is the repurposed Opportunity category (jobs/gigs/casting calls)
-// — the internal metadata.listingKind value stays 'talent', only the
-// user-facing label says "Opportunity".
-export function isOpportunity(listing: Pick<Listing, 'listingKind'>): boolean {
-  return listing.listingKind === 'talent';
+// listing_type = 'opportunity' is the authoritative source of truth for
+// jobs/gigs/casting calls. metadata.listingKind === 'talent' (the original
+// repurposed-kind marker) is kept as a fallback so any listing created
+// before the listing_type migration doesn't silently stop being recognized.
+export function isOpportunity(listing: Pick<Listing, 'listingType' | 'listingKind'>): boolean {
+  return listing.listingType === 'opportunity' || listing.listingKind === 'talent';
 }
 
 export const listingsApi = {

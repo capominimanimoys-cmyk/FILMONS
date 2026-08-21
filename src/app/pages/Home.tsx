@@ -43,11 +43,12 @@ function buildDeck(listings: Listing[], creators: CreatorProfile[], filter: Filt
       (l.serviceCategory?.toLowerCase() ?? '').includes('studio')
     );
   } else if (filter === 'talent') {
-    // Real Opportunity listings (metadata.listingKind === 'talent', set via
-    // CreateListing's "Opportunity" kind) plus the original keyword
-    // heuristic as a fallback, so older listings that only matched the old
-    // regex don't silently disappear from this chip.
+    // Real Opportunity listings — listing_type === 'opportunity' is the
+    // authoritative source of truth now; metadata.listingKind === 'talent'
+    // (the earlier repurposed-kind marker) and the original keyword
+    // heuristic are kept as fallbacks so older listings don't disappear.
     const talentListings = filtered.filter(l =>
+      l.listingType === 'opportunity' ||
       l.listingKind === 'talent' ||
       /model|actor|actress|talent|ugc/i.test(l.title ?? '') ||
       /model|actor|actress|talent|ugc/i.test(l.serviceCategory ?? '')

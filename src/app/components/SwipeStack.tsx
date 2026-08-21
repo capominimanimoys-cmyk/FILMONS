@@ -42,7 +42,7 @@ const STACK: Record<number, string> = {
 
 function fmtPrice(l: Listing) {
   const p = `$${Number(l.price).toLocaleString()}`;
-  if (l.listingKind === 'talent') {
+  if (l.listingType === 'opportunity' || l.listingKind === 'talent') {
     if (l.opportunity && !l.opportunity.paid) return 'Unpaid / Collaboration';
     const ct = l.opportunity?.compensationType;
     return `${p}${ct === 'hourly' ? '/hr' : ct === 'daily' ? '/day' : ''}`;
@@ -54,7 +54,7 @@ function fmtPrice(l: Listing) {
 
 // ── Listing card body ─────────────────────────────────────────────────────────
 function ListingContent({ listing }: { listing: EnrichedListing }) {
-  const isOpportunity = listing.listingKind === 'talent';
+  const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const typeLabel = isOpportunity ? 'Opportunity' :
     listing.listingType === 'service'          ? 'Service'
     : listing.listingMode === 'rent'            ? 'Rental'

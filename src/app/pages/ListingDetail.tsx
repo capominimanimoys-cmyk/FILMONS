@@ -158,7 +158,7 @@ export function ListingDetail() {
     ...(listing.videos || []).map(url => ({ url, type: 'video' as const })),
   ];
 
-  const isOpportunity = listing.listingKind === 'talent';
+  const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const actionLabel = isOpportunity ? 'Apply'
     : listing.listingType === 'service' ? 'Request Service'
     : listing.listingMode === 'sale' ? 'Request to Buy'

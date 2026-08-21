@@ -191,7 +191,7 @@ export function BoostListingFlow() {
   }
   if (!listing) return null;
 
-  const isOpportunity = listing.listingKind === 'talent';
+  const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const availableGoals = GOAL_OPTIONS.filter(g => {
     if (g.forOpportunity) return isOpportunity;
     if (isOpportunity) return !g.forService && !g.forNonService; // rental/booking goals don't apply to a job posting
