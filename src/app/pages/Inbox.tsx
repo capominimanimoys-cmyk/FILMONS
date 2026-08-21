@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { AddPhotoAlternateRounded, AddRounded, ArrowBackIosNewRounded, AttachFileRounded, AttachMoneyRounded, CalendarMonthRounded, CameraAltRounded, CancelRounded, ChatBubbleRounded, CheckCircleRounded, CheckRounded, CloseRounded, ConstructionRounded, CreditCardRounded, DeleteRounded, DoneAllRounded, EditRounded, FavoriteRounded, GppBadRounded, GroupRounded, HourglassEmptyRounded, HowToRegRounded, ImageRounded, Inventory2Rounded, KeyboardArrowDownRounded, LocalOfferRounded, LocationOnRounded, MicOffRounded, MicRounded, MoreHorizRounded, MoreVertRounded, MusicNoteRounded, OpenInNewRounded, PaymentRounded, PersonAddRounded, PersonRemoveRounded, PhoneDisabledRounded, PhoneRounded, PhotoCameraRounded, PhotoLibraryRounded, PlayArrowRounded, PushPinRounded, ReplyRounded, ScheduleRounded, SearchRounded, SendRounded, SentimentSatisfiedRounded, StopRounded, VerifiedRounded, VideoLibraryRounded, VideocamOffRounded, VideocamRounded, VolumeUpRounded } from '../components/Icons';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord } from '../lib/api';
+import { chatApi, authApi, listingsApi, dbRowToMsg, consumeDeletedConvRecord } from '../lib/api';
 import * as notifs from '../lib/notifications';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Conversation, ChatMessage, User, Post, Listing, PricingPackage } from '../types';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
+import { ApplicationCardBubble, SystemMessageDivider } from '../components/ApplicationCardBubble';
+import { applicationApi } from '../lib/applicationApi';
 import { toast } from 'sonner';
 import {
   Send, ArrowLeft, MessageCircle, Search, Play, Heart, Music2,
@@ -1080,7 +1082,7 @@ function ConvRow({
   onArchive, onMute, onPin, onDelete,
 }: {
   conv: Conversation; currentUserId: string; isActive: boolean; onClick: () => void;
-  isRequest?: boolean; convType?: 'booking' | 'sale' | 'collab' | 'general'; onLongPress?: () => void;
+  isRequest?: boolean; convType?: 'booking' | 'sale' | 'collab' | 'general' | 'application'; onLongPress?: () => void;
   onArchive?: () => void; onMute?: () => void; onPin?: () => void; onDelete?: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -1097,6 +1099,8 @@ function ConvRow({
       last.type === 'post'            ? 'Shared a post' :
       last.type === 'rental_request'  ? 'Rental request' :
       last.type === 'payment_request' ? 'Payment request' :
+      last.type === 'application'     ? 'Application' :
+      last.type === 'system'          ? (last.systemText || 'Application update') :
       last.type === 'media'
         ? (last.mediaType === 'audio' ? 'Voice message' : last.mediaType === 'video' ? 'Video' : 'Photo')
         : (last.content || ''));
@@ -1190,11 +1194,12 @@ function ConvRow({
           )}
           {!isRequest && convType && convType !== 'general' && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
-              convType === 'booking' ? 'text-blue-600 bg-blue-50 border-blue-200' :
-              convType === 'sale'    ? 'text-green-600 bg-green-50 border-green-200' :
+              convType === 'booking'     ? 'text-blue-600 bg-blue-50 border-blue-200' :
+              convType === 'sale'        ? 'text-green-600 bg-green-50 border-green-200' :
+              convType === 'application' ? 'text-indigo-600 bg-indigo-50 border-indigo-200' :
               'text-purple-600 bg-purple-50 border-purple-200'
             }`}>
-              {convType === 'booking' ? 'Booking' : convType === 'sale' ? 'Marketplace' : 'Collab'}
+              {convType === 'booking' ? 'Booking' : convType === 'sale' ? 'Marketplace' : convType === 'application' ? 'Application' : 'Collab'}
             </span>
           )}
         </div>
@@ -1247,7 +1252,7 @@ export function Inbox() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showCallScreen, setShowCallScreen] = useState(false);
-  const [inboxTab, setInboxTab] = useState<'all' | 'unread' | 'bookings' | 'marketplace' | 'archived'>('all');
+  const [inboxTab, setInboxTab] = useState<'all' | 'unread' | 'bookings' | 'marketplace' | 'applications' | 'archived'>('all');
   const [serverLoaded, setServerLoaded] = useState(false);
   const [archivedConvs, setArchivedConvs]   = useState<Conversation[]>([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
@@ -1708,6 +1713,15 @@ export function Inbox() {
   const otherUserId = activeConv?.participantIds.find(id => id !== user?.id) || '';
   const otherUser = otherUserId ? authApi.getUserByIdSync(otherUserId) : null;
 
+  // Opportunity title for the "APPLICATION · <title>" header caption —
+  // fetched lazily per opportunityId, not carried on the conversation itself.
+  const [oppTitleCache, setOppTitleCache] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const oid = activeConv?.opportunityId;
+    if (!oid || oppTitleCache[oid]) return;
+    listingsApi.getOne(oid).then(l => setOppTitleCache(prev => ({ ...prev, [oid]: l.title }))).catch(() => {});
+  }, [activeConv?.opportunityId]);
+
   // Mutual follow check for calling
   const canCall = !!(user && otherUser &&
     user.following?.includes(otherUser.id) &&
@@ -1926,6 +1940,12 @@ export function Inbox() {
       null,
     ).then(() => {
       isSendingRef.current = false;
+      // "viewed→contacted only once the host actually messages" — a no-op
+      // (and silently ignored) when the sender isn't this application's
+      // owner or the status doesn't qualify; manage-application enforces that.
+      if (activeConv.applicationId) {
+        applicationApi.markContacted(activeConv.applicationId, user.id).catch(() => {});
+      }
     }).catch((e: any) => {
       isSendingRef.current = false;
       console.error('[Inbox] send error:', e?.message || e);
@@ -2033,7 +2053,8 @@ export function Inbox() {
   const totalUnread  = regularConvs.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
 
   // Infer conversation type from message history
-  const getConvType = (c: Conversation): 'booking' | 'sale' | 'collab' | 'general' => {
+  const getConvType = (c: Conversation): 'booking' | 'sale' | 'collab' | 'general' | 'application' => {
+    if (c.applicationId || c.messages.some(m => m.type === 'application')) return 'application';
     if (c.messages.some(m => m.type === 'rental_request')) {
       const req = c.messages.find(m => m.type === 'rental_request' && m.rentalRequest)?.rentalRequest;
       return req?.listingMode === 'sale' || req?.durationType === 'purchase' ? 'sale' : 'booking';
@@ -2058,6 +2079,7 @@ export function Inbox() {
       case 'unread':      return regularConvs.filter(c => (c.unreadCount ?? 0) > 0);
       case 'bookings':    return regularConvs.filter(c => getConvType(c) === 'booking');
       case 'marketplace': return regularConvs.filter(c => getConvType(c) === 'sale');
+      case 'applications':return regularConvs.filter(c => getConvType(c) === 'application');
       case 'archived':    return archivedConvs;
       default:            return regularConvs; // 'all'
     }
@@ -2474,6 +2496,7 @@ export function Inbox() {
                 { key: 'unread',      label: 'Unread',      badge: totalUnread },
                 { key: 'bookings',    label: 'Bookings',    badge: 0 },
                 { key: 'marketplace', label: 'Marketplace', badge: 0 },
+                { key: 'applications',label: 'Applications',badge: 0 },
                 { key: 'archived',    label: 'Archived',    badge: 0 },
               ] as const).map(tab => (
                 <button
@@ -2708,7 +2731,13 @@ export function Inbox() {
                       <Link to={`/host/${otherUser.id}`}><UserAvatar user={otherUser} size={38} /></Link>
                       <div>
                         <Link to={`/host/${otherUser.id}`} className="text-sm font-bold text-gray-900 hover:text-blue-600 transition-colors">{otherUser.name}</Link>
-                        {otherUser.accountType && <div className="mt-0.5"><AccountTypeBadge type={otherUser.accountType} size="sm" /></div>}
+                        {activeConv?.applicationId && activeConv?.opportunityId ? (
+                          <Link to={`/listing/${activeConv.opportunityId}`} className="block text-[11px] font-bold text-indigo-600 mt-0.5">
+                            APPLICATION{oppTitleCache[activeConv.opportunityId] ? ` · ${oppTitleCache[activeConv.opportunityId]}` : ''}
+                          </Link>
+                        ) : (
+                          otherUser.accountType && <div className="mt-0.5"><AccountTypeBadge type={otherUser.accountType} size="sm" /></div>
+                        )}
                       </div>
                     </>
                   )}
@@ -2782,6 +2811,13 @@ export function Inbox() {
 
                   // ── System notice (e.g. "previous conversation was deleted") ──
                   if ((msg.type as string) === 'system') {
+                    // Application status-change events (shortlisted/accepted/declined/
+                    // withdrawn) carry systemText instead of content — non-editable,
+                    // no reply/delete affordance, distinct from the "conversation
+                    // reopened after delete" notice below which uses plain content.
+                    if (msg.systemText) {
+                      return <SystemMessageDivider key={msg.id} text={msg.systemText} createdAt={msg.createdAt} />;
+                    }
                     return (
                       <div key={msg.id} className="flex justify-center my-3 px-4">
                         <div className="flex items-center gap-2 bg-gray-100 text-gray-500 text-xs px-4 py-2 rounded-full max-w-xs text-center leading-snug">
@@ -2827,6 +2863,8 @@ export function Inbox() {
                                 {msg.content && <div className={`mb-1.5 px-3 py-2 rounded-2xl text-sm ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'}`}>{msg.content}</div>}
                                 <SharedPostBubble post={msg.sharedPost} isOwn={isOwn} />
                               </div>
+                            ) : msg.type === 'application' && msg.applicationCard ? (
+                              <ApplicationCardBubble msg={msg} />
                             ) : msg.type === 'rental_request' && msg.rentalRequest ? (
                             <RentalRequestBubble msg={msg} isOwn={isOwn} conversationId={activeConv.id}
                               onStatusChange={(payMsg, status = 'accepted') => {

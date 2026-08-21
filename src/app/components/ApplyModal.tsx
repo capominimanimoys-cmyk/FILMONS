@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { X, Send, CheckCircle, Briefcase, User as UserIcon } from 'lucide-react';
 import { Listing, User } from '../types';
 import { chatApi } from '../lib/api';
+import * as notifs from '../lib/notifications';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
@@ -51,24 +52,41 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
     try {
       const customAnswers = Object.fromEntries(customQuestions.map((q, i) => [q, answers[i] || '']).filter(([, a]) => a));
 
-      const { error: insertError } = await supabase.from('opportunity_applications').insert({
+      const { data: inserted, error: insertError } = await supabase.from('opportunity_applications').insert({
         listing_id: listing.id, applicant_id: user.id, message: message.trim() || null,
         portfolio_url: portfolioUrl.trim() || null, resume_url: resumeUrl.trim() || null,
         demo_reel_url: demoReelUrl.trim() || null, availability: availability.trim() || null,
         expected_rate: expectedRate.trim() || null, custom_answers: customAnswers,
-      });
+        owner_id: host.id,
+      }).select('id').single();
       if (insertError) throw new Error(insertError.message);
+      const applicationId = inserted.id as string;
 
-      const conv = await chatApi.getOrCreateDB(user.id, host.id);
-      const text = `📋 New application for "${listing.title}"${message.trim() ? `:\n\n${message.trim()}` : ''}`;
-      const msg = chatApi.buildTextMessage(conv.id, user.id, user.name, user.avatar, text);
-      await chatApi.sendMessageToDB(conv.id, msg, conv.participantIds, conv.isRequest ?? false, conv.requestedBy ?? null);
+      // One dedicated conversation per (opportunity, applicant) — never the
+      // pair-keyed getOrCreateDB, so applying to a second opportunity from
+      // the same host never collides into the first application's thread.
+      const conv = await chatApi.getOrCreateForApplication(applicationId, listing.id, user.id, host.id);
+      await supabase.from('opportunity_applications').update({ conversation_id: conv.id }).eq('id', applicationId);
 
-      await supabase.from('notifications').insert({
-        user_id: host.id, actor_id: user.id, actor_name: user.name,
-        type: 'application_received', title: `${user.name} applied to "${listing.title}"`,
-        conversation_id: conv.id, is_read: false,
-      }).then(undefined, () => {});
+      // A real Application Card, never a plain text message — everything the
+      // card needs is re-fetched live from applicationId, so it always
+      // reflects the current status regardless of which surface changed it.
+      const cardMsg = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        senderId: user.id, senderName: user.name, senderAvatar: user.avatar,
+        type: 'application' as const,
+        content: undefined,
+        applicationCard: { applicationId, opportunityId: listing.id, applicantId: user.id, ownerId: host.id },
+        createdAt: new Date().toISOString(),
+      };
+      await chatApi.sendMessageToDB(conv.id, cardMsg, conv.participantIds, false, null);
+
+      notifs.push(host.id, {
+        type: 'application_received',
+        fromUserId: user.id, fromUserName: user.name, fromUserAvatar: user.avatar,
+        conversationId: conv.id,
+        listingTitle: listing.title,
+      } as any);
 
       if (listing.boosted) {
         boostApi.logEvent(listing.id, 'application', 'boosted', undefined, user.id);
@@ -92,7 +110,13 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
           </button>
         </div>
 
-        {sent ? (
+        {listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed' ? (
+          <div className="px-5 pb-8 pt-2 flex flex-col items-center text-center gap-2">
+            <p className="text-base font-black text-gray-900">Applications closed</p>
+            <p className="text-sm text-gray-500">{host.name} is no longer accepting applications for this opportunity.</p>
+            <button onClick={onClose} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm mt-2">Close</button>
+          </div>
+        ) : sent ? (
           <div className="px-5 pb-8 pt-4 flex flex-col items-center text-center gap-3">
             <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
               <CheckCircle className="w-7 h-7 text-green-600" />

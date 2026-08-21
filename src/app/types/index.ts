@@ -243,6 +243,11 @@ export interface OpportunityDetails {
   driversLicence?: boolean;
   portfolioRequired?: boolean;
   applicationConfig?: OpportunityApplicationConfig;
+  /** Absent = 'active'. 'applications_closed' hides the Apply CTA but keeps
+   *  existing applicants/conversations. 'completed' is a separate, later
+   *  lifecycle state — the opportunity itself has ended. Neither ever
+   *  deletes application/message history. */
+  opportunityStatus?: 'active' | 'applications_closed' | 'completed';
 }
 
 export interface ChatMessage {
@@ -251,8 +256,10 @@ export interface ChatMessage {
   senderId: string;
   senderName: string;
   senderAvatar?: string;
-  type: 'text' | 'post' | 'rental_request' | 'payment_request' | 'media';
+  type: 'text' | 'post' | 'rental_request' | 'payment_request' | 'media' | 'application' | 'system';
   content?: string;
+  /** type:'system' only — display text for the centered non-editable event divider (e.g. "You were shortlisted for this opportunity."). */
+  systemText?: string;
   // ── Threading ──────────────────────────────────────────────────────────────
   replyTo?: string;            // id of the message being replied to
   replyToMsg?: ChatMessage;    // hydrated reply preview (client-only)
@@ -295,6 +302,16 @@ export interface ChatMessage {
     duration?: number;
     durationType?: 'hours' | 'days';
   };
+  /** type:'application' only — a live pointer, never a data snapshot. The
+   *  card always re-fetches opportunity_applications/listings/profile fresh
+   *  by these ids so status stays correct regardless of which surface
+   *  (Inbox card, Applicants Manager, applicant withdraw) last changed it. */
+  applicationCard?: {
+    applicationId: string;
+    opportunityId: string;
+    applicantId: string;
+    ownerId: string;
+  };
   createdAt: string;
   read?: boolean;   // legacy — prefer message_status table
 }
@@ -315,6 +332,11 @@ export interface Conversation {
   isMuted?:    boolean;
   isPinned?:   boolean;
   isArchived?: boolean;
+  /** Set only for a conversation tied to one specific Opportunity application
+   *  — never a generic DM. Lets the same two users have a separate thread
+   *  per application instead of colliding into one pair-keyed conversation. */
+  opportunityId?: string;
+  applicationId?: string;
 }
 
 export type NotificationType =
@@ -328,6 +350,7 @@ export type NotificationType =
   | 'connection_request' | 'connection_accepted'
   // Applications
   | 'application_received' | 'application_accepted' | 'application_rejected'
+  | 'application_shortlisted' | 'application_withdrawn'
   // Messages
   | 'message' | 'new_message' | 'message_received' | 'message_reply' | 'message_reaction'
   // Marketplace

@@ -10,13 +10,14 @@ import {
   Plus, ChevronRight, Eye, CheckCircle,
   Clock, ArrowUpRight, BarChart3, Wrench, Camera,
   MessageCircle, ShieldCheck, Settings, Bookmark, Heart, MapPin,
-  ShoppingCart, Zap, X, CalendarDays, Lock,
+  ShoppingCart, Zap, X, CalendarDays, Lock, Briefcase,
 } from 'lucide-react';
 import { savedListingsApi, listingsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
 import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier } from '../lib/reliabilityApi';
+import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
 
 function getStoredListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
@@ -454,7 +455,7 @@ function HostDashboardContent({ user }: { user: any }) {
   const navigate = useNavigate();
   const isCreatorPlus = ['creator_plus', 'professional', 'business'].includes(user.accountType ?? '');
   const goCreate = () => navigate(isCreatorPlus ? '/create-listing' : '/creator-plus-required?type=listings');
-  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'orders'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'opportunities' | 'orders'>('overview');
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -577,6 +578,7 @@ function HostDashboardContent({ user }: { user: any }) {
           {[
             { key: 'overview', label: 'Overview', icon: LayoutDashboard },
             { key: 'listings', label: 'Listings', icon: Package },
+            { key: 'opportunities', label: 'Opportunities', icon: Briefcase },
             { key: 'orders',   label: 'My Orders', icon: ShoppingCart },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setActiveTab(key as any)}
@@ -718,6 +720,10 @@ function HostDashboardContent({ user }: { user: any }) {
               </div>
             )}
           </>
+        )}
+
+        {activeTab === 'opportunities' && (
+          <MyOpportunitiesOverview opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
         )}
 
         {activeTab === 'orders' && (

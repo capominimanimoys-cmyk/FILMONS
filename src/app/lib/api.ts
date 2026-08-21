@@ -2435,6 +2435,8 @@ export function dbRowToMsg(raw: any): ChatMessage {
     sharedPost:      meta.sharedPost ? normalizePostMedia(meta.sharedPost) : undefined,
     rentalRequest:   meta.rentalRequest ?? undefined,
     paymentRequest:  meta.paymentRequest?? undefined,
+    applicationCard: meta.applicationCard ?? undefined,
+    systemText:      meta.systemText    ?? undefined,
     replyTo:         raw.reply_to       ?? undefined,
     forwardedFrom:   raw.forwarded_from ?? undefined,
     isPinned:        raw.is_pinned      ?? false,
@@ -2901,37 +2903,45 @@ export const chatApi = {
       if (!error && convId) {
         const { data: row } = await supabase
           .from('conversations')
-          .select('id, is_request, requested_by, participants')
+          .select('id, is_request, requested_by, participants, application_id')
           .eq('id', String(convId))
           .single();
-        // RPC may store requested_by as the alphabetically-sorted first ID,
-        // not necessarily the initiator. Correct it if wrong.
-        if (row && row.requested_by !== userId1) {
-          await supabase.from('conversations')
-            .update({ requested_by: userId1 })
-            .eq('id', String(convId));
+        // An application-linked conversation must never be handed back from a
+        // generic pair-based lookup (e.g. "Message this user" from a profile
+        // page landing a stranger inside someone else's application thread).
+        // Fall through to the manual pair-matching below, which excludes
+        // application-linked rows, instead of trusting the RPC's result here.
+        if (!row || !row.application_id) {
+          // RPC may store requested_by as the alphabetically-sorted first ID,
+          // not necessarily the initiator. Correct it if wrong.
+          if (row && row.requested_by !== userId1) {
+            await supabase.from('conversations')
+              .update({ requested_by: userId1 })
+              .eq('id', String(convId));
+          }
+          return {
+            id:             String(convId),
+            participantIds: [p1, p2],
+            messages:       [],
+            updatedAt:      new Date().toISOString(),
+            isRequest:      row?.is_request ?? true,
+            requestedBy:    userId1,
+          } as Conversation;
         }
-        return {
-          id:             String(convId),
-          participantIds: [p1, p2],
-          messages:       [],
-          updatedAt:      new Date().toISOString(),
-          isRequest:      row?.is_request ?? true,
-          requestedBy:    userId1,
-        } as Conversation;
       }
     } catch {}
 
     // Find existing — check both orderings, prefer accepted conversations
     const { data: rows } = await supabase
       .from('conversations')
-      .select('id, participants, updated_at, is_request, requested_by')
+      .select('id, participants, updated_at, is_request, requested_by, application_id')
       .or(`participants.cs.{"${p1}","${p2}"},participants.cs.{"${p2}","${p1}"}`)
       .eq('deleted_for_everyone', false)
       .order('created_at', { ascending: true })
       .limit(10);
 
     const matches = (rows || []).filter((r: any) => {
+      if (r.application_id) return false; // never surface an application-linked thread here
       const parts: string[] = Array.isArray(r.participants)
         ? r.participants
         : (() => { try { return JSON.parse(r.participants); } catch { return []; } })();
@@ -2996,6 +3006,109 @@ export const chatApi = {
     } as Conversation;
   },
 
+  /** Get or create the ONE conversation for a specific (opportunity, applicant)
+   *  pair — deliberately separate from getOrCreateDB, which is pair-keyed only.
+   *  Applying to two different Opportunities from the same host must produce
+   *  two separate conversations, never a merge. Never a message request —
+   *  applying is an intentional action, not a cold DM. */
+  async getOrCreateForApplication(
+    applicationId: string,
+    opportunityId: string,
+    applicantId: string,
+    ownerId: string,
+  ): Promise<Conversation> {
+    // 1. Trust the application row's own conversation_id if already set.
+    const { data: appRow } = await supabase
+      .from('opportunity_applications')
+      .select('conversation_id')
+      .eq('id', applicationId)
+      .single();
+    if (appRow?.conversation_id) {
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id, participants, is_request, requested_by, opportunity_id, application_id')
+        .eq('id', appRow.conversation_id)
+        .single();
+      if (existing) {
+        return {
+          id: String(existing.id),
+          participantIds: Array.isArray(existing.participants) ? existing.participants : [applicantId, ownerId],
+          messages: [], updatedAt: new Date().toISOString(),
+          isRequest: existing.is_request ?? false, requestedBy: existing.requested_by ?? applicantId,
+          opportunityId: existing.opportunity_id ?? opportunityId, applicationId: existing.application_id ?? applicationId,
+        } as Conversation;
+      }
+    }
+
+    // 2. Fall back to searching conversations by application_id (covers a
+    //    conversation row that exists but the application row's FK wasn't
+    //    back-filled yet, e.g. a retried/interrupted apply).
+    const { data: byApp } = await supabase
+      .from('conversations')
+      .select('id, participants, is_request, requested_by')
+      .eq('application_id', applicationId)
+      .limit(1)
+      .maybeSingle();
+    if (byApp) {
+      void supabase.from('opportunity_applications').update({ conversation_id: byApp.id }).eq('id', applicationId);
+      return {
+        id: String(byApp.id),
+        participantIds: Array.isArray(byApp.participants) ? byApp.participants : [applicantId, ownerId],
+        messages: [], updatedAt: new Date().toISOString(),
+        isRequest: byApp.is_request ?? false, requestedBy: byApp.requested_by ?? applicantId,
+        opportunityId, applicationId,
+      } as Conversation;
+    }
+
+    // 3. Create new.
+    const newId = crypto.randomUUID();
+    const { data: created, error: createErr } = await supabase
+      .from('conversations')
+      .insert({
+        id: newId,
+        participants: [applicantId, ownerId],
+        is_request: false,
+        requested_by: applicantId,
+        deleted_for_everyone: false,
+        opportunity_id: opportunityId,
+        application_id: applicationId,
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (createErr) {
+      // Unique violation on application_id — another call already created it; refetch.
+      if (createErr.code === '23505') {
+        const { data: raced } = await supabase
+          .from('conversations')
+          .select('id, participants, is_request, requested_by')
+          .eq('application_id', applicationId)
+          .single();
+        if (raced) {
+          return {
+            id: String(raced.id),
+            participantIds: Array.isArray(raced.participants) ? raced.participants : [applicantId, ownerId],
+            messages: [], updatedAt: new Date().toISOString(),
+            isRequest: raced.is_request ?? false, requestedBy: raced.requested_by ?? applicantId,
+            opportunityId, applicationId,
+          } as Conversation;
+        }
+      }
+      throw new Error(createErr.message);
+    }
+
+    void supabase.from('opportunity_applications').update({ conversation_id: String(created.id) }).eq('id', applicationId);
+
+    return {
+      id: String(created.id),
+      participantIds: [applicantId, ownerId],
+      messages: [], updatedAt: new Date().toISOString(),
+      isRequest: false, requestedBy: applicantId,
+      opportunityId, applicationId,
+    } as Conversation;
+  },
 
   /** Write a message directly to the `messages` table via Supabase.
    *  Uses `get_or_create_direct_conversation` to guarantee the conv row exists.
@@ -3027,6 +3140,8 @@ export const chatApi = {
         mediaType:     (msg as any).mediaType     || null,
         rentalRequest: (msg as any).rentalRequest || null,
         paymentRequest:(msg as any).paymentRequest|| null,
+        applicationCard: (msg as any).applicationCard || null,
+        systemText:    (msg as any).systemText    || null,
         read: false,
       },
       reply_to:    msg.replyTo || null,
@@ -3048,8 +3163,10 @@ export const chatApi = {
       .then(() => {}).catch(() => {});
 
     // Notify the recipient — skip system messages (senderId='system' or type='system')
+    // and application-card messages (the caller fires its own precisely-worded
+    // application_received notification instead of a generic "sent you a message").
     const recipientId = participantIds.find(pid => pid !== msg.senderId);
-    if (recipientId && msg.senderId && msg.senderId !== 'system' && (msg as any).type !== 'system') {
+    if (recipientId && msg.senderId && msg.senderId !== 'system' && (msg as any).type !== 'system' && (msg as any).type !== 'application') {
       notifs.push(recipientId, {
         type:           'message_received',
         fromUserId:     msg.senderId,
@@ -3091,7 +3208,7 @@ export const chatApi = {
       // 1. Fetch conversations list — two parallel queries:
       //    a) participants array column (fast, covers most cases)
       //    b) conversation_participants join table (catches convs where array column is stale)
-      const convSelect = 'id, participants, updated_at, created_at, is_request, requested_by, deleted_for_everyone';
+      const convSelect = 'id, participants, updated_at, created_at, is_request, requested_by, deleted_for_everyone, opportunity_id, application_id';
       const [{ data: convRows, error: convErr }, { data: cpRows }] = await Promise.all([
         supabase.from('conversations')
           .select(convSelect)
@@ -3157,6 +3274,8 @@ export const chatApi = {
           sharedPost:     m.metadata?.sharedPost ? normalizePostMedia(m.metadata.sharedPost) : undefined,
           mediaUrl:       m.metadata?.mediaUrl    || undefined,
           mediaType:      m.metadata?.mediaType   || undefined,
+          applicationCard: m.metadata?.applicationCard || undefined,
+          systemText:     m.metadata?.systemText  || undefined,
           replyTo:        m.reply_to              || undefined,
           createdAt:      m.created_at, read: m.is_read ?? false,
         });
@@ -3194,6 +3313,8 @@ export const chatApi = {
           updatedAt: row.updated_at || row.created_at,
           unreadCount, isRequest: row.is_request || false,
           requestedBy, isBlocked: false,
+          opportunityId: row.opportunity_id || undefined,
+          applicationId: row.application_id || undefined,
         } as Conversation;
       });
 
@@ -3209,14 +3330,18 @@ export const chatApi = {
 
       // Deduplicate: if two conversations have the same participant pair, keep the accepted one
       // (or most-recent if both are requests). This prevents "duplicated user" in inbox.
+      // Keyed also on applicationId/opportunityId so two different Opportunity
+      // application threads between the same two people never collapse into
+      // one — only plain-DM pairs (no application/opportunity id) dedup.
+      const dedupKey = (c: Conversation) => [...c.participantIds].sort().join('|') + '::' + (c.applicationId || c.opportunityId || '');
       const deduped: Conversation[] = [];
       const seenPairs = new Set<string>();
       for (const conv of result) {
-        const key = [...conv.participantIds].sort().join('|');
+        const key = dedupKey(conv);
         if (!seenPairs.has(key)) { seenPairs.add(key); deduped.push(conv); }
         // If we already have one: replace if this one is accepted and the stored one is still a request
         else {
-          const idx = deduped.findIndex(c => [...c.participantIds].sort().join('|') === key);
+          const idx = deduped.findIndex(c => dedupKey(c) === key);
           if (idx !== -1 && !conv.isRequest && deduped[idx].isRequest) deduped[idx] = conv;
         }
       }

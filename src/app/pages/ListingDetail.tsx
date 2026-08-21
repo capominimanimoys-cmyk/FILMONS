@@ -159,7 +159,8 @@ export function ListingDetail() {
   ];
 
   const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
-  const actionLabel = isOpportunity ? 'Apply'
+  const applicationsClosed = isOpportunity && (listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed');
+  const actionLabel = isOpportunity ? (applicationsClosed ? 'Applications Closed' : 'Apply')
     : listing.listingType === 'service' ? 'Request Service'
     : listing.listingMode === 'sale' ? 'Request to Buy'
     : 'Request to Rent';
@@ -550,9 +551,11 @@ export function ListingDetail() {
                   </div>
                 )}
 
-                <button onClick={handleRequest}
-                  className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-xl transition-colors text-sm ${isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                  <Send className="w-4 h-4" /> {actionLabel}
+                <button onClick={handleRequest} disabled={applicationsClosed}
+                  className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-xl transition-colors text-sm ${
+                    applicationsClosed ? 'bg-gray-300 cursor-not-allowed' : isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
+                  }`}>
+                  {!applicationsClosed && <Send className="w-4 h-4" />} {actionLabel}
                 </button>
 
                 <div className="mt-4 space-y-2 text-xs text-gray-500">

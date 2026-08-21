@@ -16,7 +16,8 @@ const MAX      = 200;
 const DEDUP_MS = 24 * 60 * 60 * 1000;
 
 // ── Title builder ─────────────────────────────────────────────────────────────
-function _notifTitle(type: string, actorName: string): string {
+function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: string }): string {
+  const opp = extra?.listingTitle ? `"${extra.listingTitle}"` : 'this opportunity';
   switch (type) {
     case 'comment_received':    return `${actorName} commented on your post`;
     case 'comment_reply':       return `${actorName} replied to your comment`;
@@ -33,9 +34,11 @@ function _notifTitle(type: string, actorName: string): string {
     case 'follow':              return `${actorName} started following you`;
     case 'follow_request':      return `${actorName} wants to follow you`;
     case 'follow_accepted':     return `${actorName} accepted your follow request`;
-    case 'application_received': return `${actorName} applied to your listing`;
-    case 'application_accepted': return 'Your application was accepted';
-    case 'application_rejected': return 'Your application was not accepted';
+    case 'application_received':    return `${actorName} applied to ${opp}`;
+    case 'application_shortlisted': return `You've been shortlisted for ${opp}`;
+    case 'application_accepted':    return `Your application for ${opp} was accepted`;
+    case 'application_rejected':    return `There's an update to your application for ${opp}`;
+    case 'application_withdrawn':   return `${actorName} withdrew their application for ${opp}`;
     case 'message':             return `${actorName} sent you a message`;
     case 'new_message':         return `${actorName} sent you a message`;
     case 'message_received':    return `${actorName} sent you a message`;
@@ -148,7 +151,7 @@ export function push(
   // Don't notify yourself
   if (toUserId === notif.fromUserId) return;
 
-  const title = _notifTitle(notif.type, notif.fromUserName || 'Someone');
+  const title = _notifTitle(notif.type, notif.fromUserName || 'Someone', { listingTitle: (notif as any).listingTitle });
 
   // Optimistic local write so the recipient sees it immediately on the same device
   const all    = loadLocal(toUserId);
