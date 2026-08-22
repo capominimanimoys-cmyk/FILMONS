@@ -9,6 +9,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Conversation, ChatMessage, User, Post, Listing, PricingPackage } from '../types';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { ApplicationCardBubble, SystemMessageDivider } from '../components/ApplicationCardBubble';
+import { HireRequestCardBubble } from '../components/HireRequestCardBubble';
 import { applicationApi } from '../lib/applicationApi';
 import { toast } from 'sonner';
 import {
@@ -1100,6 +1101,7 @@ function ConvRow({
       last.type === 'rental_request'  ? 'Rental request' :
       last.type === 'payment_request' ? 'Payment request' :
       last.type === 'application'     ? 'Application' :
+      last.type === 'hire'            ? 'Hire request' :
       last.type === 'system'          ? (last.systemText || 'Application update') :
       last.type === 'media'
         ? (last.mediaType === 'audio' ? 'Voice message' : last.mediaType === 'video' ? 'Video' : 'Photo')
@@ -2854,6 +2856,8 @@ export function Inbox() {
                               </div>
                             ) : msg.type === 'application' && msg.applicationCard ? (
                               <ApplicationCardBubble msg={msg} />
+                            ) : msg.type === 'hire' && msg.hireCard ? (
+                              <HireRequestCardBubble msg={msg} />
                             ) : msg.type === 'rental_request' && msg.rentalRequest ? (
                             <RentalRequestBubble msg={msg} isOwn={isOwn} conversationId={activeConv.id}
                               onStatusChange={(payMsg, status = 'accepted') => {

@@ -97,6 +97,21 @@ async function sendFallbackEmail(params: Record<string, unknown>) {
   }
 }
 
+// Generic subject/message template (same one request-payout/manage-hire-
+// request use) for Hire From Portfolio's payment-confirmed email — the
+// rental-agreement template above expects agreement/receipt URLs that
+// don't exist for this flow.
+const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
+async function sendGenericNotificationEmail(toEmail: string, toName: string | null | undefined, subject: string, message: string) {
+  try {
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION, user_id: EMAILJS_PUBLIC_KEY, template_params: { to_email: toEmail, to_name: toName || 'there', subject, message } }),
+    });
+    if (!res.ok) console.warn('Hire payment-confirmed email failed:', res.status, await res.text());
+  } catch (e) { console.warn('Hire payment-confirmed email threw:', e); }
+}
+
 async function insertNotification(row: Record<string, unknown>) {
   await fetch(rest('/notifications'), {
     method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal' }, body: JSON.stringify(row),
@@ -272,6 +287,80 @@ Deno.serve(async (req) => {
         }
         await insertNotification({ user_id: meta.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Opportunity funded ✓ — ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
         await insertNotification({ user_id: meta.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${half.toFixed(2)} available, $${held.toFixed(2)} held for ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+      }
+
+      return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    // Hire From Portfolio funding — same shape as the 'opportunity' branch
+    // above (role names swapped: host earns here, not the metadata's
+    // generic "worker"). Earnings are only ever created here, after Stripe
+    // confirms payment — never at "Accept" or "terms agreed" time.
+    if (meta.charge_type === 'hire') {
+      if (!meta.transaction_id || !meta.host_id || !meta.requester_id) {
+        return new Response(JSON.stringify({ received: true, skipped: 'no transaction_id/host_id/requester_id' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const grossAmount = parseFloat(meta.gross_amount || '0');
+      const feeAmount = parseFloat(meta.fee_amount || '0');
+      const netAmount = parseFloat(meta.net_amount || '0');
+      const holdReviewDays = parseInt(meta.hold_review_days || '7', 10);
+
+      const orderId = `HIRE-${meta.transaction_id}`;
+      await fetch(rest('/orders'), {
+        method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal,resolution=ignore-duplicates' },
+        body: JSON.stringify({
+          id: orderId, type: 'hire', status: 'paid',
+          host_id: meta.host_id, renter_id: meta.requester_id,
+          listing_title: meta.project_title || null, listing_type: 'Direct Hire',
+          total_amount: grossAmount, subtotal: grossAmount, seller_fee_amount: feeAmount, seller_fee_rate: grossAmount ? feeAmount / grossAmount : 0,
+          currency: 'CAD', payment_method: 'Credit/Debit Card',
+          dispute_status: 'none', refund_status: 'none',
+          stripe_payment_intent_id: session.payment_intent || null,
+          conversation_id: meta.conversation_id || null,
+          paid_at: new Date().toISOString(),
+        }),
+      });
+
+      const processed = await rpc('fn_finalize_hire_payment', {
+        p_idempotency_key: event.id,
+        p_transaction_id: meta.transaction_id,
+        p_order_id: orderId,
+        p_host_id: meta.host_id,
+        p_requester_id: meta.requester_id,
+        p_gross_amount: grossAmount,
+        p_fee_amount: feeAmount,
+        p_net_amount: netAmount,
+        p_currency: 'CAD',
+        p_hold_review_days: holdReviewDays,
+        p_stripe_session_id: session.id,
+        p_stripe_payment_intent_id: session.payment_intent || null,
+      });
+
+      if (processed) {
+        const half = Math.round((netAmount / 2 + Number.EPSILON) * 100) / 100;
+        const held = Math.round((netAmount - half + Number.EPSILON) * 100) / 100;
+        if (meta.conversation_id) {
+          await fetch(rest('/messages'), {
+            method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              id: crypto.randomUUID(), conversation_id: meta.conversation_id, sender_id: 'system', sender_name: 'Filmons',
+              content: null, type: 'system',
+              metadata: { systemText: `Payment secured ✓ — $${half.toFixed(2)} available now, $${held.toFixed(2)} held until completion.` },
+              created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_deleted: false, is_pinned: false,
+            }),
+          }).catch(() => {});
+        }
+        await insertNotification({ user_id: meta.requester_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Hire funded ✓ — ${meta.project_title || 'your hire'}`, conversation_id: meta.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.host_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${half.toFixed(2)} available, $${held.toFixed(2)} held for ${meta.project_title || 'your hire'}`, conversation_id: meta.conversation_id || null, is_read: false });
+
+        const hostProfile = await selectOne('profiles', `id=eq.${meta.host_id}`);
+        if (hostProfile?.email) {
+          sendGenericNotificationEmail(
+            hostProfile.email, hostProfile.name,
+            'Hire payment confirmed on Filmons ✓',
+            `"${meta.project_title || 'Your hire'}" is funded — $${half.toFixed(2)} CAD is now available in your Filmons Wallet, $${held.toFixed(2)} CAD held until the work is confirmed complete.`,
+          ).catch(() => {});
+        }
       }
 
       return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });

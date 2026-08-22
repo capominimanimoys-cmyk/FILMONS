@@ -260,7 +260,7 @@ export interface ChatMessage {
   senderId: string;
   senderName: string;
   senderAvatar?: string;
-  type: 'text' | 'post' | 'rental_request' | 'payment_request' | 'media' | 'application' | 'system';
+  type: 'text' | 'post' | 'rental_request' | 'payment_request' | 'media' | 'application' | 'hire' | 'system';
   content?: string;
   /** type:'system' only — display text for the centered non-editable event divider (e.g. "You were shortlisted for this opportunity."). */
   systemText?: string;
@@ -315,6 +315,14 @@ export interface ChatMessage {
     opportunityId: string;
     applicantId: string;
     ownerId: string;
+  };
+  /** type:'hire' only — a live pointer, never a data snapshot, same
+   *  contract as applicationCard: the card always re-fetches
+   *  hire_requests/hire_transactions fresh by these ids. */
+  hireCard?: {
+    hireRequestId: string;
+    requesterId: string;
+    hostId: string;
   };
   createdAt: string;
   read?: boolean;   // legacy — prefer message_status table

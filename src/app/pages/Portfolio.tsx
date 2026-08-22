@@ -7,6 +7,7 @@ import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
+import { HireFlowSheet } from '../components/HireFlowSheet';
 import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
@@ -1020,6 +1021,7 @@ export function Portfolio() {
   const [followingCount, setFollowingCount] = useState<number | null>(null);
   const [following,      setFollowing]      = useState(false);
   const [followLoading,  setFollowLoading]  = useState(false);
+  const [hireSheetOpen,  setHireSheetOpen]  = useState(false);
 
   // Owner-configured display preferences — read from the DB, scoped to whoever's
   // portfolio is being viewed (previously these leaked in from the *viewer's own*
@@ -1388,7 +1390,7 @@ export function Portfolio() {
               )}
               {settings.show_hire_button && (
                 <button
-                  onClick={() => navigate(`/search?host=${profile.id}`)}
+                  onClick={() => setHireSheetOpen(true)}
                   className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
                 >
                   <Briefcase className="w-3.5 h-3.5" /> Hire
@@ -1703,6 +1705,11 @@ export function Portfolio() {
           albums={albums}
           onClose={() => setAddToAlbumTarget(null)}
         />
+      )}
+
+      {/* ── Hire From Portfolio ── */}
+      {hireSheetOpen && profile && (
+        <HireFlowSheet host={profile} onClose={() => setHireSheetOpen(false)} />
       )}
     </div>
   );

@@ -18,7 +18,7 @@ export interface WalletBalance {
 export interface WalletTransaction {
   id: string;
   order_id: string | null;
-  transaction_type: 'rental_earning' | 'service_earning' | 'sale_earning' | 'filmons_fee' | 'refund' | 'payout' | 'adjustment' | 'reversal' | 'boost_purchase' | 'instant_payout_fee';
+  transaction_type: 'rental_earning' | 'service_earning' | 'sale_earning' | 'filmons_fee' | 'refund' | 'payout' | 'adjustment' | 'reversal' | 'boost_purchase' | 'instant_payout_fee' | 'opportunity_earning' | 'hire_earning';
   amount: number;
   currency: string;
   balance_type: 'pending' | 'available';

@@ -428,6 +428,11 @@ export function AdminVerifications() {
   // reuse the existing Marketplace Transactions dispute toggle below,
   // since every Opportunity payment also creates a real orders row)
   const [opportunityPayments, setOpportunityPayments] = useState<any[]>([]);
+  // Hire From Portfolio payments — same read-only reporting shape as
+  // Opportunity Payments; disputes/refunds reuse the same Marketplace
+  // Transactions dispute toggle since every Hire payment also creates a
+  // real orders row.
+  const [hirePayments, setHirePayments] = useState<any[]>([]);
 
   useEffect(() => {
     const session = adminAuthClient.getAdmin();
@@ -559,6 +564,24 @@ export function AdminVerifications() {
       setOpportunityPayments(rows.map((r: any) => ({ ...r, listing_title: listingMap[r.listing_id], owner_name: nameMap[r.owner_id], worker_name: nameMap[r.worker_id] })));
     } catch (e) {
       console.warn('opportunity_transactions query failed:', e);
+    }
+
+    // ── HIRE FROM PORTFOLIO PAYMENTS ────────────────────────────────
+    try {
+      const { data: hireTxns } = await supabase
+        .from('hire_transactions')
+        .select('*, hire_requests(project_title)')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      const rows = hireTxns || [];
+      const userIds = [...new Set(rows.flatMap((r: any) => [r.requester_id, r.host_id]))];
+      const { data: profileRows } = userIds.length
+        ? await supabase.from('profiles').select('id, name').in('id', userIds)
+        : { data: [] as any[] };
+      const nameMap = Object.fromEntries((profileRows || []).map((p: any) => [p.id, p.name]));
+      setHirePayments(rows.map((r: any) => ({ ...r, project_title: r.hire_requests?.project_title, requester_name: nameMap[r.requester_id], host_name: nameMap[r.host_id] })));
+    } catch (e) {
+      console.warn('hire_transactions query failed:', e);
     }
   };
 
@@ -1459,6 +1482,55 @@ export function AdminVerifications() {
                           <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap max-w-[160px] truncate">{p.listing_title || p.listing_id}</td>
                           <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.owner_name || p.owner_id?.slice(0, 8)}</td>
                           <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.worker_name || p.worker_id?.slice(0, 8)}</td>
+                          <td className="px-4 py-2.5 text-gray-900 font-bold whitespace-nowrap">${fmt(Number(p.gross_amount))}</td>
+                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.fee_amount))}</td>
+                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.net_amount))}</td>
+                          <td className="px-4 py-2.5 text-green-600 whitespace-nowrap">${fmt(Number(p.initial_release_amount || 0))}</td>
+                          <td className="px-4 py-2.5 text-amber-600 whitespace-nowrap">${fmt(Number(p.held_amount || 0))}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">{p.payment_status}</span></td>
+                          <td className="px-4 py-2.5 whitespace-nowrap"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">{p.work_status.replace(/_/g, ' ')}</span></td>
+                          <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{p.funded_at ? new Date(p.funded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Hire From Portfolio payments — read-only reporting; same
+                pattern as Opportunity Payments above. */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+              <div className="px-5 py-4 border-b border-gray-50">
+                <h3 className="text-sm font-bold text-gray-900">Hire Payments</h3>
+                <p className="text-xs text-gray-400 mt-0.5">50% releases immediately on funding, 50% holds until work is confirmed complete.</p>
+              </div>
+              {hirePayments.length === 0 ? (
+                <div className="p-8 text-center text-sm text-gray-400">No Hire payments yet.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b border-gray-100">
+                        <th className="px-4 py-2.5 font-bold">Project</th>
+                        <th className="px-4 py-2.5 font-bold">Requester</th>
+                        <th className="px-4 py-2.5 font-bold">Creator</th>
+                        <th className="px-4 py-2.5 font-bold">Gross</th>
+                        <th className="px-4 py-2.5 font-bold">Fee</th>
+                        <th className="px-4 py-2.5 font-bold">Net</th>
+                        <th className="px-4 py-2.5 font-bold">Available</th>
+                        <th className="px-4 py-2.5 font-bold">Held</th>
+                        <th className="px-4 py-2.5 font-bold">Payment</th>
+                        <th className="px-4 py-2.5 font-bold">Work</th>
+                        <th className="px-4 py-2.5 font-bold">Funded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hirePayments.map((p: any) => (
+                        <tr key={p.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                          <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap max-w-[160px] truncate">{p.project_title || p.hire_request_id}</td>
+                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.requester_name || p.requester_id?.slice(0, 8)}</td>
+                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.host_name || p.host_id?.slice(0, 8)}</td>
                           <td className="px-4 py-2.5 text-gray-900 font-bold whitespace-nowrap">${fmt(Number(p.gross_amount))}</td>
                           <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.fee_amount))}</td>
                           <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.net_amount))}</td>

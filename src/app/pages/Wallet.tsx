@@ -25,6 +25,8 @@ const TX_LABELS: Record<string, string> = {
   reversal: 'Reversal',
   boost_purchase: 'Boost purchase',
   instant_payout_fee: 'Instant Payout fee',
+  opportunity_earning: 'Opportunity earning',
+  hire_earning: 'Hire earning',
 };
 
 const PAYOUT_STATUS_LABEL: Record<string, { label: string; className: string }> = {
@@ -416,17 +418,17 @@ export function Wallet() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        {/* On Hold — Opportunity earnings held until work is confirmed complete */}
-        {txs.some(t => t.transaction_type === 'opportunity_earning' && t.status === 'pending') && (
+        {/* On Hold — Opportunity/Hire earnings held until work is confirmed complete */}
+        {txs.some(t => (t.transaction_type === 'opportunity_earning' || t.transaction_type === 'hire_earning') && t.status === 'pending') && (
           <div>
             <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">On Hold</p>
             <div className="bg-white rounded-2xl border border-amber-100 divide-y divide-gray-50 overflow-hidden">
-              {txs.filter(t => t.transaction_type === 'opportunity_earning' && t.status === 'pending').map(tx => (
+              {txs.filter(t => (t.transaction_type === 'opportunity_earning' || t.transaction_type === 'hire_earning') && t.status === 'pending').map(tx => (
                 <div key={tx.id} className="flex items-center gap-3 px-4 py-3.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0"><Clock className="w-4 h-4 text-amber-500" /></div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900">{fmtCad(tx.amount)}</p>
-                    <p className="text-xs text-gray-400">Available after the Opportunity is completed</p>
+                    <p className="text-xs text-gray-400">Available once work is confirmed complete</p>
                   </div>
                 </div>
               ))}
