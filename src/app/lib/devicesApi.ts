@@ -114,6 +114,14 @@ function parseUA(ua: string): { device_name: string; device_type: 'mobile'|'tabl
   return { device_name, device_type, browser, os };
 }
 
+// Same "{Browser} on {OS}" string used for new-device sign-in emails —
+// exposed for other security notifications (e.g. payout method changed)
+// that need the same device label without duplicating the parser.
+export function getDeviceLabel(): string {
+  const { browser, os } = parseUA(navigator.userAgent);
+  return `${browser} on ${os}`;
+}
+
 // ── Session token (stable per browser, not tied to auth) ─────────────────────
 function getSessionToken(): string {
   const KEY = '__fm_dev_token__';

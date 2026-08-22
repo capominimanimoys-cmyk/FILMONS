@@ -1318,7 +1318,12 @@ export function AdminVerifications() {
                       ? dest.email
                       : p.payout_method === 'bank_transfer'
                         ? `${dest.accountHolder || ''} · inst ${dest.institutionNumber || '—'} · transit ${dest.transitNumber || '—'} · acct ${dest.accountNumber || '—'}`
-                        : null;
+                        : p.payout_method === 'card' || p.payout_method === 'bank'
+                          // Stripe Connect-backed — Filmons never has raw numbers for these;
+                          // the connect account id is what lets the admin look this up in
+                          // the Stripe Dashboard to actually send the funds.
+                          ? `${dest.displayName || 'Stripe payout method'} •••• ${dest.last4 || '----'} (Stripe acct ${dest.stripeConnectAccountId || '—'})`
+                          : null;
                     const busy = processingPayoutId === p.id;
                     return (
                       <div key={p.id} className="px-5 py-3.5">
@@ -1336,7 +1341,7 @@ export function AdminVerifications() {
                             )}
                             {p.payout_method && (
                               <p className="text-xs text-gray-500 mt-1 font-mono">
-                                {p.payout_method === 'interac' ? 'Interac' : 'Bank Transfer'}: {destText || '—'}
+                                {p.payout_method === 'interac' ? 'Interac' : p.payout_method === 'card' ? 'Card (Stripe)' : p.payout_method === 'bank' ? 'Bank (Stripe)' : 'Bank Transfer'}: {destText || '—'}
                               </p>
                             )}
                             {p.status === 'rejected' && p.rejection_reason && (

@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     if (!hostId || typeof amount !== 'number' || amount <= 0) {
       return new Response(JSON.stringify({ error: 'Missing hostId or invalid amount' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
-    if (payoutMethod && !['interac', 'bank_transfer'].includes(payoutMethod)) {
+    if (payoutMethod && !['interac', 'bank_transfer', 'card', 'bank'].includes(payoutMethod)) {
       return new Response(JSON.stringify({ error: 'Invalid payout method' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
     const speed = payoutSpeed === 'instant' ? 'instant' : 'standard';

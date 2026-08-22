@@ -24,6 +24,12 @@ export const EMAILJS_CONFIG = {
     // to_email, to_name, device, location, ip_address, sign_in_method, date,
     // secure_account_url.
     newDeviceSignIn:        'template_new_device_signin',
+    // ⚠️ Not yet created in the EmailJS dashboard — payout method
+    // added/changed emails will silently fail (sendEmail() swallows the
+    // error) until a template with this exact ID exists there, with these
+    // merge fields: to_email, to_name, last4, device, location, date,
+    // secure_account_url.
+    payoutMethodChanged:    'template_payout_method_changed',
   },
   filmons: {
     email:    'filmons481@gmail.com',
@@ -80,5 +86,18 @@ export const sendNewDeviceSignInEmail = (email: string, name: string, info: {
     to_email: email, to_name: name, user_name: name,
     device: info.device, location: info.location, ip_address: info.ipAddress,
     sign_in_method: info.signInMethod, date: info.date,
+    secure_account_url: `${window.location.origin}/settings/security`,
+  });
+
+// Security email — must not be treated as a disable-able marketing
+// notification. Same "not yet created in EmailJS dashboard" caveat as
+// newDeviceSignIn until template_payout_method_changed is created there.
+export const sendPayoutMethodChangedEmail = (email: string, name: string, info: {
+  last4: string; device: string; location: string;
+}) =>
+  sendEmail(EMAILJS_CONFIG.templates.payoutMethodChanged, {
+    to_email: email, to_name: name, user_name: name,
+    last4: info.last4, device: info.device, location: info.location,
+    date: new Date().toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' }),
     secure_account_url: `${window.location.origin}/settings/security`,
   });

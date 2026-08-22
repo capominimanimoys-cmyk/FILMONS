@@ -28,7 +28,11 @@ export interface WalletTransaction {
   available_at: string | null;
 }
 
-export type PayoutMethodType = 'interac' | 'bank_transfer';
+// 'card'/'bank' are the new Stripe Connect-backed methods; 'interac'/
+// 'bank_transfer' are grandfathered legacy rows from before Stripe Connect
+// existed in this app — still fully functional for hosts who already saved
+// one, just no longer offered for new Add/Change setups.
+export type PayoutMethodType = 'interac' | 'bank_transfer' | 'card' | 'bank';
 export type PayoutSpeed = 'standard' | 'instant';
 
 export interface InteracDestination {
@@ -49,9 +53,19 @@ export interface PayoutMethod {
   id: string;
   host_id: string;
   method: PayoutMethodType;
-  details: PayoutDestination;
+  details: PayoutDestination | null; // null for Stripe-backed rows — Filmons never has raw numbers to store
   is_default: boolean;
   created_at: string;
+  // Stripe Connect fields — present only when provider === 'stripe'
+  provider?: 'manual' | 'stripe';
+  display_name?: string | null;
+  last4?: string | null;
+  country?: string | null;
+  currency?: string | null;
+  standard_payout_eligible?: boolean;
+  instant_payout_eligible?: boolean;
+  status?: 'pending' | 'ready' | 'incomplete';
+  stripe_connect_account_id?: string | null;
 }
 
 export interface PayoutRequest {
@@ -74,14 +88,15 @@ export interface PayoutRequest {
   estimated_arrival_at: string | null;
 }
 
-function maskDestination(method: PayoutMethodType, details: PayoutDestination): string {
+function maskDestination(method: PayoutMethodType, details: PayoutDestination | null, last4?: string | null): string {
+  if (method === 'card' || method === 'bank') return `•••• ${last4 || '----'}`;
   if (method === 'interac') {
-    const email = (details as InteracDestination).email || '';
+    const email = (details as InteracDestination)?.email || '';
     const [user, domain] = email.split('@');
     if (!domain) return email;
     return `${user.slice(0, 2)}${'•'.repeat(Math.max(user.length - 2, 3))}@${domain}`;
   }
-  const acct = (details as BankTransferDestination).accountNumber || '';
+  const acct = (details as BankTransferDestination)?.accountNumber || '';
   return `••••${acct.slice(-4)}`;
 }
 
@@ -179,4 +194,59 @@ export const walletApi = {
   },
 
   maskDestination,
+
+  // ── "Verify It's You" step-up + Stripe Connect payout method setup ──────
+  async verifyIdentity(userId: string, method: 'password' | 'phone' | 'oauth', payload: Record<string, unknown>): Promise<{ success: boolean; stepUpToken?: string; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/verify-identity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, method, ...payload }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Verification failed' };
+      return { success: true, stepUpToken: data.stepUpToken };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  },
+
+  async startPayoutConnect(userId: string, stepUpToken: string, returnUrl: string, refreshUrl: string, country?: 'CA' | 'US'): Promise<{ url?: string; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/payout-connect-start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, stepUpToken, country, returnUrl, refreshUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { error: data.error || 'Could not start payout method setup' };
+      return { url: data.url };
+    } catch (e: any) {
+      return { error: e?.message || 'Network error' };
+    }
+  },
+
+  async getPayoutConnectStatus(userId: string): Promise<{ success: boolean; payoutMethod: SafePayoutMethodResult | null; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/payout-connect-status?userId=${userId}`, {
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, payoutMethod: null, error: data.error || 'Could not check status' };
+      return { success: true, payoutMethod: data.payoutMethod };
+    } catch (e: any) {
+      return { success: false, payoutMethod: null, error: e?.message || 'Network error' };
+    }
+  },
 };
+
+export interface SafePayoutMethodResult {
+  method: 'card' | 'bank';
+  displayName: string;
+  last4: string | null;
+  country: string | null;
+  currency: string | null;
+  standardPayoutEligible: boolean;
+  instantPayoutEligible: boolean;
+  status: 'pending' | 'ready' | 'incomplete';
+}

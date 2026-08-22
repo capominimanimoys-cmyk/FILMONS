@@ -9,6 +9,8 @@
 // Requires STRIPE_WEBHOOK_SECRET (from the Stripe dashboard's webhook
 // endpoint settings) and STRIPE_SECRET_KEY (already configured for
 // stripe-charge) as environment variables.
+import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -133,6 +135,21 @@ Deno.serve(async (req) => {
         await rpc('fn_deactivate_subscription', { p_user_id: profile.id });
       }
       return new Response(JSON.stringify({ received: true, deactivated: !!profile }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    // Authoritative background sync for the Payout Method Stripe Connect
+    // flow — fires whenever the connected account's status/external
+    // account changes, independent of whether the browser ever returns to
+    // payout-connect-status's fast-path GET.
+    if (event.type === 'account.updated') {
+      const account = event.data?.object;
+      const profile = account?.id ? await selectOne('profiles', `stripe_connect_account_id=eq.${account.id}`) : null;
+      let synced = null;
+      if (profile) {
+        try { synced = await syncPayoutMethodFromStripeAccount(profile.id, account.id); }
+        catch (e) { console.warn('account.updated sync failed:', e); }
+      }
+      return new Response(JSON.stringify({ received: true, synced: !!synced }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     if (event.type !== 'checkout.session.completed') {
