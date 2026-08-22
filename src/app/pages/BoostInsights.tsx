@@ -7,14 +7,26 @@ import { listingsApi } from '../lib/api';
 import { boostApi, ListingBoost, BoostEventType } from '../lib/boostApi';
 import { Listing } from '../types';
 
-const FUNNEL: { type: BoostEventType; label: string; icon: any }[] = [
+const ALL_FUNNEL: { type: BoostEventType; label: string; icon: any }[] = [
   { type: 'impression', label: 'Impressions', icon: TrendingUp },
   { type: 'view', label: 'Views', icon: Eye },
   { type: 'save', label: 'Saves', icon: Bookmark },
   { type: 'message', label: 'Messages', icon: MessageCircle },
   { type: 'rental_request', label: 'Rental Requests', icon: CalendarCheck },
+  { type: 'booking_request', label: 'Booking Interest', icon: CalendarCheck },
   { type: 'application', label: 'Applications', icon: Briefcase },
 ];
+
+// Only show the events that are actually reachable for this listing kind —
+// e.g. a gear listing never produces an "Applications" event, so don't
+// show an always-zero row for it.
+function funnelFor(listing: Listing | null): typeof ALL_FUNNEL {
+  const base = ALL_FUNNEL.filter(f => f.type === 'impression' || f.type === 'view' || f.type === 'save' || f.type === 'message');
+  const isOpportunity = listing?.listingType === 'opportunity' || listing?.listingKind === 'talent';
+  if (isOpportunity) return [...base, ALL_FUNNEL.find(f => f.type === 'application')!];
+  if (listing?.listingType === 'service') return [...base, ALL_FUNNEL.find(f => f.type === 'booking_request')!];
+  return [...base, ALL_FUNNEL.find(f => f.type === 'rental_request')!];
+}
 
 export function BoostInsights() {
   const { listingId } = useParams();
@@ -118,7 +130,7 @@ export function BoostInsights() {
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Performance funnel</p>
           <p className="text-[11px] text-gray-400 mb-3">Split by whether this listing was boosted at the time of each event.</p>
           <div className="space-y-2">
-            {FUNNEL.map(f => {
+            {funnelFor(listing).map(f => {
               const Icon = f.icon;
               const row = insights?.[f.type] || { organic: 0, boosted: 0 };
               const total = row.organic + row.boosted;

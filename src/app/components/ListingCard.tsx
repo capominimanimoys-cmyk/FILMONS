@@ -335,10 +335,10 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
             {typeLabel}
           </span>
 
-          {/* Boosted badge — owner sees "Boosted", everyone else sees "Sponsored" */}
+          {/* Boosted badge — owner sees "Boosted", everyone else sees "Promoted" */}
           {boosted && (
             <span className="absolute top-9 left-2.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-white flex items-center gap-0.5">
-              <Zap className="w-2.5 h-2.5 fill-white" /> {isOwn ? 'Boosted' : 'Sponsored'}
+              <Zap className="w-2.5 h-2.5 fill-white" /> {isOwn ? 'Boosted' : 'Promoted'}
             </span>
           )}
 

@@ -142,7 +142,10 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
       // this request flow — sending a request is also the message.
       const source = listing.boosted ? 'boosted' : 'organic';
       boostApi.logEvent(listing.id, 'message', source, undefined, user.id);
-      boostApi.logEvent(listing.id, 'rental_request', source, undefined, user.id);
+      // Service listings' own funnel event — lets the "More Booking
+      // Requests" boost goal measure something real instead of only ever
+      // being counted as a generic rental_request.
+      boostApi.logEvent(listing.id, isService ? 'booking_request' : 'rental_request', source, undefined, user.id);
       setStep(3);
     } catch (err) {
       console.error('Error sending request:', err);

@@ -708,13 +708,50 @@ export const listingsApi = {
         .from('listings')
         .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted')
         .eq('is_active', true)
-        .order('boosted', { ascending: false })
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(80);
 
       if (!error && data) {
         console.log(`✅ Loaded ${data.length} listings from Supabase`);
-        const listings = data.map(mapRow);
+        let listings = data.map(mapRow);
+
+        // Blended distribution — boost increases the PROBABILITY of being
+        // shown, it never guarantees position #1 over every organic
+        // listing. Boosted listings get a weighted bonus (their boost's
+        // delivery_weight, decayed as the boost's duration elapses) plus a
+        // small jitter, instead of the old blunt "boosted always sorts
+        // first" behavior.
+        const boostedIds = listings.filter(l => l.boosted).map(l => l.id);
+        const boostMap = new Map<string, { weight: number; startsAt?: string; endsAt?: string }>();
+        if (boostedIds.length) {
+          try {
+            const { data: boosts } = await supabase
+              .from('listing_boosts')
+              .select('listing_id, delivery_weight, starts_at, ends_at')
+              .in('listing_id', boostedIds)
+              .eq('status', 'active');
+            (boosts || []).forEach((b: any) => {
+              boostMap.set(b.listing_id, { weight: b.delivery_weight || 1, startsAt: b.starts_at, endsAt: b.ends_at });
+            });
+          } catch {}
+        }
+        const now = Date.now();
+        const scored = listings.map((l, i) => {
+          const organicScore = listings.length - i; // already recency-sorted
+          const b = boostMap.get(l.id);
+          let boostBonus = 0;
+          if (b) {
+            const start = b.startsAt ? new Date(b.startsAt).getTime() : now;
+            const end = b.endsAt ? new Date(b.endsAt).getTime() : now + 1;
+            const total = Math.max(end - start, 1);
+            const remainingFrac = 1 - Math.min(Math.max((now - start) / total, 0), 1);
+            boostBonus = b.weight * remainingFrac * 20;
+          }
+          return { l, score: organicScore + boostBonus + Math.random() * 2 };
+        });
+        scored.sort((a, b) => b.score - a.score);
+        listings = scored.slice(0, 50).map(s => s.l);
+
         _listingsCache = listings;
         _listingsCacheAt = Date.now();
         // Save lightweight version to localStorage (strip base64 to avoid quota errors)

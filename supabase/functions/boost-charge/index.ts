@@ -97,6 +97,16 @@ Deno.serve(async (req) => {
     const clampedDays = Math.min(Math.max(Math.round(Number(durationDays)), config.min_duration_days), config.max_duration_days);
     const totalBudget = Math.round(clampedDaily * clampedDays * 100) / 100;
 
+    // Mirrors boostApi.ts's computeDeliveryWeight/computeImpressionsTarget —
+    // honest, documented formulas used only to weight distribution and
+    // compute the admin delivery-rate ratio, never shown to the owner as a
+    // promised number.
+    const span = Math.max((config.max_daily_budget ?? 100) - (config.min_daily_budget ?? 5), 1);
+    const frac = Math.min(Math.max((clampedDaily - (config.min_daily_budget ?? 5)) / span, 0), 1);
+    const deliveryWeight = 1 + frac * 4;
+    const IMPRESSIONS_PER_DOLLAR = 8;
+    const impressionsTarget = Math.round(clampedDaily * clampedDays * IMPRESSIONS_PER_DOLLAR);
+
     // Create the draft/pending_payment listing_boosts row up front so the
     // webhook has something to activate by id.
     const insertRes = await fetch(rest('/listing_boosts'), {
@@ -113,6 +123,8 @@ Deno.serve(async (req) => {
         currency: config.currency || 'CAD',
         duration_days: clampedDays,
         status: 'pending_payment',
+        delivery_weight: deliveryWeight,
+        impressions_target: impressionsTarget,
       }),
     });
     const inserted = await insertRes.json();

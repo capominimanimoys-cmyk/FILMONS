@@ -2,10 +2,11 @@ import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export type BoostGoal = 'more_views' | 'more_messages' | 'more_rental_requests' | 'more_booking_requests' | 'more_applications';
-export type BoostAudienceType = 'automatic' | 'local' | 'custom';
+export type BoostAudienceType = 'automatic' | 'local' | 'custom' | 'canada_us';
 export type BoostStatus = 'draft' | 'pending_payment' | 'active' | 'paused' | 'completed' | 'stopped' | 'failed' | 'refunded';
-export type BoostEventType = 'impression' | 'view' | 'save' | 'message' | 'rental_request' | 'application';
+export type BoostEventType = 'impression' | 'view' | 'save' | 'message' | 'rental_request' | 'application' | 'booking_request';
 export type BoostEventSource = 'organic' | 'boosted';
+export type AudienceLevel = 'low' | 'moderate' | 'higher';
 
 export interface BoostConfig {
   minDailyBudget: number;
@@ -13,6 +14,10 @@ export interface BoostConfig {
   minDurationDays: number;
   maxDurationDays: number;
   currency: string;
+  priorityMultiplier: number;
+  minAudienceThreshold: number;
+  frequencyCapPerUser: number;
+  frequencyCooldownHours: number;
 }
 
 export interface AudienceConfig {
@@ -37,6 +42,8 @@ export interface ListingBoost {
   endsAt?: string;
   amountSpent: number;
   createdAt: string;
+  deliveryWeight?: number;
+  impressionsTarget?: number;
 }
 
 function mapBoost(row: any): ListingBoost {
@@ -56,7 +63,24 @@ function mapBoost(row: any): ListingBoost {
     endsAt: row.ends_at || undefined,
     amountSpent: row.amount_spent || 0,
     createdAt: row.created_at,
+    deliveryWeight: row.delivery_weight ?? undefined,
+    impressionsTarget: row.impressions_target ?? undefined,
   };
+}
+
+// Simple, honestly-documented formulas — never presented to the boost owner
+// as a promise. Weight scales with budget relative to the configured
+// bounds so a bigger budget lifts distribution probability without
+// guaranteeing rank #1. Target is a conservative constant-per-dollar
+// estimate used only internally to compute the admin "delivery rate."
+const IMPRESSIONS_PER_DOLLAR = 8;
+export function computeDeliveryWeight(dailyBudget: number, config: Pick<BoostConfig, 'minDailyBudget' | 'maxDailyBudget'>): number {
+  const span = Math.max(config.maxDailyBudget - config.minDailyBudget, 1);
+  const frac = Math.min(Math.max((dailyBudget - config.minDailyBudget) / span, 0), 1);
+  return 1 + frac * 4; // 1x (min budget) .. 5x (max budget)
+}
+export function computeImpressionsTarget(dailyBudget: number, durationDays: number): number {
+  return Math.round(dailyBudget * durationDays * IMPRESSIONS_PER_DOLLAR);
 }
 
 const FN_URL = (name: string) => `https://${projectId}.supabase.co/functions/v1/${name}`;
@@ -69,13 +93,20 @@ const _loggedImpressions = new Set<string>();
 export const boostApi = {
   getConfig: async (): Promise<BoostConfig> => {
     const { data } = await supabase.from('boost_config').select('*').eq('id', 1).maybeSingle();
-    if (!data) return { minDailyBudget: 5, maxDailyBudget: 100, minDurationDays: 1, maxDurationDays: 30, currency: 'CAD' };
+    if (!data) return {
+      minDailyBudget: 5, maxDailyBudget: 100, minDurationDays: 1, maxDurationDays: 30, currency: 'CAD',
+      priorityMultiplier: 1, minAudienceThreshold: 20, frequencyCapPerUser: 3, frequencyCooldownHours: 24,
+    };
     return {
       minDailyBudget: data.min_daily_budget,
       maxDailyBudget: data.max_daily_budget,
       minDurationDays: data.min_duration_days,
       maxDurationDays: data.max_duration_days,
       currency: data.currency,
+      priorityMultiplier: data.priority_multiplier ?? 1,
+      minAudienceThreshold: data.min_audience_threshold ?? 20,
+      frequencyCapPerUser: data.frequency_cap_per_user ?? 3,
+      frequencyCooldownHours: data.frequency_cooldown_hours ?? 24,
     };
   },
 
@@ -152,7 +183,8 @@ export const boostApi = {
   getInsights: async (listingId: string): Promise<Record<BoostEventType, { organic: number; boosted: number }>> => {
     const empty = () => ({ organic: 0, boosted: 0 });
     const result: Record<BoostEventType, { organic: number; boosted: number }> = {
-      impression: empty(), view: empty(), save: empty(), message: empty(), rental_request: empty(), application: empty(),
+      impression: empty(), view: empty(), save: empty(), message: empty(),
+      rental_request: empty(), application: empty(), booking_request: empty(),
     };
     const { data } = await supabase.from('boost_events').select('event_type, source').eq('listing_id', listingId);
     for (const row of data || []) {
@@ -160,6 +192,51 @@ export const boostApi = {
       const s = row.source as BoostEventSource;
       if (result[t]) result[t][s] += 1;
     }
+    return result;
+  },
+
+  // Real COUNT queries only — Postgres does the actual counting, the client
+  // never fabricates a number. Only the Low/Moderate/Higher classification
+  // is ever surfaced to the boost owner; the raw count itself is not, per
+  // the spec's explicit "don't reveal exact counts" instruction.
+  getAudienceEstimate: async (
+    audienceType: BoostAudienceType,
+    opts: { city?: string; threshold: number },
+  ): Promise<AudienceLevel> => {
+    let count = 0;
+    try {
+      if (audienceType === 'local' && opts.city) {
+        const { count: c } = await supabase.from('profiles').select('id', { count: 'exact', head: true }).ilike('city', `%${opts.city}%`);
+        count = c || 0;
+      } else if (audienceType === 'canada_us') {
+        const { count: c } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+        count = c || 0; // this app's users are already Canada/US-only in practice — total active count is the honest proxy
+      } else {
+        const { count: c } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+        count = c || 0;
+      }
+    } catch { count = 0; }
+    if (count < opts.threshold) return 'low';
+    if (count < opts.threshold * 5) return 'moderate';
+    return 'higher';
+  },
+
+  // How many times has this viewer already seen this boosted listing
+  // (as a genuine boosted impression) within the configured cooldown
+  // window — used to stop re-prioritizing a boost the same person keeps
+  // getting shown, without ever permanently hiding it.
+  getRecentlySeenBoosted: async (viewerId: string, listingIds: string[], cooldownHours: number): Promise<Record<string, number>> => {
+    const result: Record<string, number> = {};
+    if (!viewerId || !listingIds.length) return result;
+    const since = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase.from('boost_events')
+      .select('listing_id')
+      .eq('viewer_id', viewerId)
+      .eq('event_type', 'impression')
+      .eq('source', 'boosted')
+      .in('listing_id', listingIds)
+      .gte('created_at', since);
+    (data || []).forEach((r: any) => { result[r.listing_id] = (result[r.listing_id] || 0) + 1; });
     return result;
   },
 };

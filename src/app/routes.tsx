@@ -22,6 +22,7 @@ import { ContactSupport } from './pages/ContactSupport';
 import { MySupportCases } from './pages/MySupportCases';
 import { SupportCaseDetail } from './pages/SupportCaseDetail';
 import { AdminSupport } from './pages/AdminSupport';
+import { AdminBoosts } from './pages/AdminBoosts';
 import { Feed } from './pages/Feed';
 import { Inbox } from './pages/Inbox';
 import { Checkout } from './pages/Checkout';
@@ -128,6 +129,7 @@ export const router = createBrowserRouter([
       { path: 'support/cases', Component: MySupportCases },
       { path: 'support/cases/:id', Component: SupportCaseDetail },
       { path: 'admin-support', Component: AdminSupport },
+      { path: 'admin-boosts', Component: AdminBoosts },
     ],
   },
   // ── Auth routes — outside Root layout (no navbar/shell) ──────────────────

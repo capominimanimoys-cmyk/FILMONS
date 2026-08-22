@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, X, Check, Loader2, Zap, Eye, MessageCircle, CalendarCheck, MapPin, Sparkles, ShieldCheck, Briefcase } from 'lucide-react';
+import { ArrowLeft, X, Check, Loader2, Zap, Eye, MessageCircle, CalendarCheck, MapPin, Sparkles, ShieldCheck, Briefcase, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi } from '../lib/api';
-import { boostApi, BoostGoal, BoostAudienceType, BoostConfig, AudienceConfig } from '../lib/boostApi';
+import { boostApi, BoostGoal, BoostAudienceType, BoostConfig, AudienceConfig, AudienceLevel } from '../lib/boostApi';
 import { Listing } from '../types';
 import { ListingCard } from '../components/ListingCard';
 
@@ -39,6 +39,50 @@ function Stepper({ stepIdx }: { stepIdx: number }) {
   );
 }
 
+const VISIBILITY_LABEL: Record<AudienceLevel, string> = { low: 'Low', moderate: 'Moderate', higher: 'Higher' };
+const VISIBILITY_DOTS: Record<AudienceLevel, number> = { low: 1, moderate: 2, higher: 3 };
+
+function VisibilityDots({ level }: { level: AudienceLevel }) {
+  const filled = VISIBILITY_DOTS[level];
+  return (
+    <span className="inline-flex items-center gap-1 text-sm font-black text-gray-900">
+      {[1, 2, 3].map(i => (
+        <span key={i} className={`w-2 h-2 rounded-full ${i <= filled ? 'bg-amber-500' : 'bg-gray-200'}`} />
+      ))}
+      {VISIBILITY_LABEL[level]}
+    </span>
+  );
+}
+
+// Honest, non-numeric visibility signal — Filmons doesn't have enough
+// history yet to promise a reach range, so this shows a real classification
+// (derived from an actual COUNT query, see boostApi.getAudienceEstimate)
+// instead of a fabricated "1,500-3,200 people" estimate.
+function AudienceAvailability({ visibility, loading, onExpand, onUseAutomatic }: {
+  visibility: AudienceLevel | null; loading: boolean; onExpand: () => void; onUseAutomatic: () => void;
+}) {
+  if (loading || !visibility) {
+    return <div className="bg-gray-50 rounded-2xl p-4 h-14 animate-pulse" />;
+  }
+  return (
+    <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold text-gray-500">Audience size</p>
+        <VisibilityDots level={visibility} />
+      </div>
+      {visibility === 'low' && (
+        <>
+          <p className="text-xs text-gray-500">Filmons is still growing in this area. Consider expanding your audience for better visibility.</p>
+          <div className="flex gap-2 pt-1">
+            <button onClick={onExpand} className="flex-1 text-xs font-bold text-amber-700 bg-amber-100 py-2 rounded-xl">Expand to 50 km</button>
+            <button onClick={onUseAutomatic} className="flex-1 text-xs font-bold text-gray-600 bg-gray-100 py-2 rounded-xl">Use Automatic</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const GOAL_OPTIONS: { value: BoostGoal; label: string; sub: string; icon: any; forService?: boolean; forNonService?: boolean; forOpportunity?: boolean }[] = [
   { value: 'more_views', label: 'More Listing Views', sub: 'Get seen by more people browsing Marketplace', icon: Eye },
   { value: 'more_messages', label: 'More Messages', sub: 'Get more people reaching out about this listing', icon: MessageCircle },
@@ -62,9 +106,12 @@ export function BoostListingFlow() {
   const [goal, setGoal] = useState<BoostGoal | ''>('');
   const [audienceType, setAudienceType] = useState<BoostAudienceType>('automatic');
   const [radiusKm, setRadiusKm] = useState(25);
-  const [categories, setCategories] = useState<string[]>([]);
   const [dailyBudget, setDailyBudget] = useState(10);
   const [durationDays, setDurationDays] = useState(7);
+  const [visibility, setVisibility] = useState<AudienceLevel | null>(null);
+  const [visibilityLoading, setVisibilityLoading] = useState(false);
+  const [lowAudienceDismissed, setLowAudienceDismissed] = useState(false);
+  const [completedBoost, setCompletedBoost] = useState<{ endsAt?: string } | null>(null);
 
   const stepIdx = Math.max(0, STEP_LABELS.findIndex(l => l.toLowerCase() === step));
 
@@ -94,7 +141,6 @@ export function BoostListingFlow() {
             if (d.goal) setGoal(d.goal);
             if (d.audienceType) setAudienceType(d.audienceType);
             if (d.radiusKm) setRadiusKm(d.radiusKm);
-            if (d.categories) setCategories(d.categories);
             if (d.dailyBudget) setDailyBudget(d.dailyBudget);
             if (d.durationDays) setDurationDays(d.durationDays);
           } catch {}
@@ -111,8 +157,19 @@ export function BoostListingFlow() {
   // accidental reload or a detour to Stripe and back.
   useEffect(() => {
     if (!listingId || loading) return;
-    sessionStorage.setItem(draftKey(listingId), JSON.stringify({ goal, audienceType, radiusKm, categories, dailyBudget, durationDays }));
-  }, [listingId, loading, goal, audienceType, radiusKm, categories, dailyBudget, durationDays]);
+    sessionStorage.setItem(draftKey(listingId), JSON.stringify({ goal, audienceType, radiusKm, dailyBudget, durationDays }));
+  }, [listingId, loading, goal, audienceType, radiusKm, dailyBudget, durationDays]);
+
+  // Recompute the honest Low/Moderate/Higher visibility indicator whenever
+  // the audience choice changes — real COUNT query, never a fabricated
+  // reach estimate. Re-runs on Review too since it depends on the final combo.
+  useEffect(() => {
+    if (!listing || !config) return;
+    setVisibilityLoading(true);
+    boostApi.getAudienceEstimate(audienceType, { city: listing.city, threshold: config.minAudienceThreshold })
+      .then(setVisibility)
+      .finally(() => setVisibilityLoading(false));
+  }, [audienceType, radiusKm, listing?.city, config?.minAudienceThreshold]);
 
   // ── Return from Stripe ────────────────────────────────────────────
   useEffect(() => {
@@ -134,6 +191,7 @@ export function BoostListingFlow() {
           if (refetched) final = refetched;
         }
         sessionStorage.removeItem(draftKey(listingId));
+        setCompletedBoost({ endsAt: final.endsAt });
         setStep('success');
         window.history.replaceState({}, '', `/boost/${listingId}`);
       } catch (e: any) {
@@ -167,9 +225,9 @@ export function BoostListingFlow() {
     if (!user || !listing || !listingId || !goal) return;
     setSubmitting(true);
     try {
-      const audienceConfig: AudienceConfig = audienceType === 'automatic' ? {}
-        : audienceType === 'local' ? { radiusKm, cities: listing.city ? [listing.city] : [] }
-        : { radiusKm, cities: listing.city ? [listing.city] : [], categories };
+      const audienceConfig: AudienceConfig = audienceType === 'local'
+        ? { radiusKm, cities: listing.city ? [listing.city] : [] }
+        : {};
 
       const origin = window.location.origin;
       const successUrl = `${origin}/boost/${listingId}?boost_success=1&session_id={CHECKOUT_SESSION_ID}`;
@@ -249,18 +307,22 @@ export function BoostListingFlow() {
 
         {step === 'audience' && (
           <div className="px-5 py-5 space-y-3">
-            <h2 className="text-lg font-black text-gray-900">Who should see it?</h2>
+            <h2 className="text-lg font-black text-gray-900">Choose your audience</h2>
+            <p className="text-sm text-gray-500 -mt-2 mb-1">Because Filmons is still growing, we keep targeting simple.</p>
             {([
-              { value: 'automatic', label: 'Automatic', sub: 'Filmons finds the people most likely to be interested' },
-              { value: 'local', label: 'Local', sub: `People near ${listing.city || 'your listing’s location'}` },
-              { value: 'custom', label: 'Custom', sub: 'Set a radius and interest categories yourself' },
-            ] as { value: BoostAudienceType; label: string; sub: string }[]).map(a => {
+              { value: 'automatic', label: 'Automatic', badge: 'Recommended', sub: 'Let Filmons find people most likely to be interested in your listing' },
+              { value: 'local', label: 'Nearby', sub: `Show your listing to people near ${listing.city || 'your listing’s location'}` },
+              { value: 'canada_us', label: 'Canada & U.S.', sub: 'Reach relevant Filmons users across Canada and the United States' },
+            ] as { value: BoostAudienceType; label: string; sub: string; badge?: string }[]).map(a => {
               const active = audienceType === a.value;
               return (
                 <button key={a.value} onClick={() => setAudienceType(a.value)}
                   className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-colors ${active ? 'border-amber-500 bg-amber-50' : 'border-gray-100 hover:border-gray-200'}`}>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900">{a.label}</p>
+                    <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                      {a.label}
+                      {a.badge && <span className="text-[9px] font-black text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">{a.badge}</span>}
+                    </p>
                     <p className="text-xs text-gray-400">{a.sub}</p>
                   </div>
                   {active && <Check className="w-5 h-5 text-amber-600 shrink-0" />}
@@ -268,38 +330,39 @@ export function BoostListingFlow() {
               );
             })}
 
-            {(audienceType === 'local' || audienceType === 'custom') && (
+            {audienceType === 'local' && (
               <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-gray-700 flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Radius</p>
-                  <p className="text-xs font-black text-amber-600">{radiusKm} km</p>
+                <p className="text-xs font-bold text-gray-700 flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Radius</p>
+                <div className="flex gap-2">
+                  {[25, 50, 100].map(km => (
+                    <button key={km} onClick={() => setRadiusKm(km)}
+                      className={`flex-1 text-xs font-bold py-2 rounded-xl border-2 ${radiusKm === km ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-gray-100 text-gray-500'}`}>
+                      {km} km
+                    </button>
+                  ))}
                 </div>
-                <input type="range" min={5} max={100} step={5} value={radiusKm} onChange={e => setRadiusKm(Number(e.target.value))} className="w-full accent-amber-500" />
               </div>
             )}
 
-            {audienceType === 'custom' && (
-              <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
-                <p className="text-xs font-bold text-gray-700">Interest categories</p>
-                <div className="flex flex-wrap gap-2">
-                  {['Photography', 'Videography', 'Audio', 'Lighting', 'Drones', 'Editing'].map(c => {
-                    const active = categories.includes(c);
-                    return (
-                      <button key={c} onClick={() => setCategories(prev => active ? prev.filter(x => x !== c) : [...prev, c])}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-full border ${active ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                        {c}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <AudienceAvailability visibility={visibility} loading={visibilityLoading}
+              onExpand={() => { setAudienceType('local'); setRadiusKm(50); }}
+              onUseAutomatic={() => setAudienceType('automatic')} />
           </div>
         )}
 
         {step === 'budget' && config && (
           <div className="px-5 py-5 space-y-5">
             <h2 className="text-lg font-black text-gray-900">Budget &amp; Duration</h2>
+            <p className="text-sm text-gray-500 -mt-3">Choose how much you'd like to spend.</p>
+            <button
+              onClick={() => { setDailyBudget(Math.min(Math.max(5, config.minDailyBudget), config.maxDailyBudget)); setDurationDays(Math.min(Math.max(5, config.minDurationDays), config.maxDurationDays)); }}
+              className="w-full flex items-center justify-between bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 text-left">
+              <div>
+                <p className="text-[10px] font-black text-amber-600 uppercase tracking-wide">Recommended</p>
+                <p className="text-sm font-bold text-gray-900">$5/day for 5 days</p>
+              </div>
+              <span className="text-xs font-bold text-amber-700">Use this</span>
+            </button>
             <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-bold text-gray-700">Daily budget</p>
@@ -333,14 +396,36 @@ export function BoostListingFlow() {
             </div>
             <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Goal</span><span className="font-bold text-gray-900">{GOAL_OPTIONS.find(g => g.value === goal)?.label}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Audience</span><span className="font-bold text-gray-900 capitalize">{audienceType}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Audience</span><span className="font-bold text-gray-900">{audienceType === 'automatic' ? 'Automatic' : audienceType === 'local' ? `Nearby (${radiusKm} km)` : audienceType === 'canada_us' ? 'Canada & U.S.' : 'Custom'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Daily budget</span><span className="font-bold text-gray-900">${dailyBudget} {config?.currency}/day</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Duration</span><span className="font-bold text-gray-900">{durationDays} day{durationDays === 1 ? '' : 's'}</span></div>
               <div className="flex justify-between border-t border-gray-200 pt-2 mt-1"><span className="font-bold text-gray-900">Total</span><span className="font-black text-gray-900">${totalBudget.toFixed(2)} {config?.currency}</span></div>
             </div>
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-gray-500">Visibility</p>
+                {visibility && !visibilityLoading ? <VisibilityDots level={visibility} /> : <span className="text-xs text-gray-300">Calculating…</span>}
+              </div>
+              <p className="text-xs text-gray-500">Your listing will receive increased placement among relevant Filmons users during the boost. Results depend on marketplace activity, location and user interest.</p>
+            </div>
+            {visibility === 'low' && !lowAudienceDismissed && (
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-amber-800">Limited audience</p>
+                    <p className="text-xs text-amber-700">There may currently be fewer Filmons users matching this audience. Consider expanding your location or extending your boost.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setStep('audience')} className="flex-1 text-xs font-bold text-amber-700 bg-amber-100 py-2 rounded-xl">Adjust Audience</button>
+                  <button onClick={() => setLowAudienceDismissed(true)} className="flex-1 text-xs font-bold text-white bg-amber-600 py-2 rounded-xl">Continue</button>
+                </div>
+              </div>
+            )}
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3.5 flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-800">Filmons doesn't have enough boost history yet to estimate results for this campaign. Once your Boost Insights data builds up, estimates will appear here for future boosts.</p>
+              <p className="text-xs text-blue-800">Boosting increases your listing's visibility but does not guarantee views, messages, applications, bookings or rentals.</p>
             </div>
             <p className="text-[11px] text-gray-400">Boost payment is charged separately from any rental transaction and is not subject to the Filmons rental fee. You'll be redirected to secure Stripe Checkout to complete payment.</p>
           </div>
@@ -352,12 +437,22 @@ export function BoostListingFlow() {
               <ShieldCheck className="w-8 h-8 text-green-600" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-gray-900">Your boost is live!</h2>
-              <p className="text-sm text-gray-500 mt-1">{listing.title} is now being promoted in Marketplace search.</p>
+              <h2 className="text-lg font-black text-gray-900">Your boost is active</h2>
+              <p className="text-sm text-gray-500 mt-1">We'll give your listing increased visibility with relevant Filmons users.</p>
+            </div>
+            <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2 text-sm text-left">
+              <div className="flex justify-between"><span className="text-gray-500">Goal</span><span className="font-bold text-gray-900">{GOAL_OPTIONS.find(g => g.value === goal)?.label}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Audience</span><span className="font-bold text-gray-900">{audienceType === 'automatic' ? 'Automatic' : audienceType === 'local' ? `Nearby (${radiusKm} km)` : 'Canada & U.S.'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Budget</span><span className="font-bold text-gray-900">${dailyBudget}/day</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Duration</span><span className="font-bold text-gray-900">{durationDays} day{durationDays === 1 ? '' : 's'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Total</span><span className="font-bold text-gray-900">${totalBudget.toFixed(2)} {config?.currency}</span></div>
+              {completedBoost?.endsAt && (
+                <div className="flex justify-between border-t border-gray-200 pt-2 mt-1"><span className="text-gray-500">Ends</span><span className="font-bold text-gray-900">{new Date(completedBoost.endsAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</span></div>
+              )}
             </div>
             <div className="w-full flex flex-col gap-2 mt-2">
-              <button onClick={() => navigate(`/boost/${listingId}/insights`)} className="w-full py-3.5 rounded-2xl bg-amber-500 text-white font-bold text-sm">View Boost Insights</button>
-              <button onClick={() => navigate(`/listing/${listingId}`)} className="w-full py-3.5 rounded-2xl border border-gray-200 text-gray-700 font-bold text-sm">Back to Listing</button>
+              <button onClick={() => navigate(`/boost/${listingId}/insights`)} className="w-full py-3.5 rounded-2xl bg-amber-500 text-white font-bold text-sm">View Insights</button>
+              <button onClick={() => navigate(`/listing/${listingId}`)} className="w-full py-3.5 rounded-2xl border border-gray-200 text-gray-700 font-bold text-sm">Done</button>
             </div>
           </div>
         )}
