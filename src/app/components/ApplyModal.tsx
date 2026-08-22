@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { X, Send, CheckCircle, Briefcase, User as UserIcon } from 'lucide-react';
 import { Listing, User } from '../types';
@@ -8,6 +8,9 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { boostApi } from '../lib/boostApi';
+import { entitlementsApi, getOpportunityUsage, getEntitlement, LimitReachedInfo } from '../lib/entitlements';
+import { normalizeTier } from '../lib/reliabilityApi';
+import { OpportunityLimitUpgrade } from './OpportunityLimitUpgrade';
 
 interface ApplyModalProps {
   listing: Listing;
@@ -41,6 +44,14 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
   const [answers, setAnswers] = useState<string[]>(customQuestions.map(() => ''));
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(null);
+  const [usage, setUsage] = useState<{ applications: number } | null>(null);
+
+  const tier = normalizeTier(user?.accountType);
+  useEffect(() => {
+    if (!user || tier === 'business') return;
+    getOpportunityUsage(user.id).then(u => setUsage({ applications: u.applications })).catch(() => {});
+  }, [user?.id]);
 
   const handleApply = async () => {
     if (!user) { navigate('/login'); return; }
@@ -52,15 +63,18 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
     try {
       const customAnswers = Object.fromEntries(customQuestions.map((q, i) => [q, answers[i] || '']).filter(([, a]) => a));
 
-      const { data: inserted, error: insertError } = await supabase.from('opportunity_applications').insert({
-        listing_id: listing.id, applicant_id: user.id, message: message.trim() || null,
-        portfolio_url: portfolioUrl.trim() || null, resume_url: resumeUrl.trim() || null,
-        demo_reel_url: demoReelUrl.trim() || null, availability: availability.trim() || null,
-        expected_rate: expectedRate.trim() || null, custom_answers: customAnswers,
-        owner_id: host.id,
-      }).select('id').single();
-      if (insertError) throw new Error(insertError.message);
-      const applicationId = inserted.id as string;
+      // Server-verified — enforces the monthly application entitlement
+      // atomically (fn_submit_opportunity_application), never a client-side
+      // pre-check followed by a direct insert.
+      const result = await entitlementsApi.submitOpportunityApplication({
+        userId: user.id, listingId: listing.id, ownerId: host.id,
+        message: message.trim() || undefined, portfolioUrl: portfolioUrl.trim() || undefined,
+        resumeUrl: resumeUrl.trim() || undefined, demoReelUrl: demoReelUrl.trim() || undefined,
+        availability: availability.trim() || undefined, expectedRate: expectedRate.trim() || undefined,
+        customAnswers,
+      });
+      if ('limitReached' in result) { setLimitReached(result.limitReached); setSending(false); return; }
+      const applicationId = result.applicationId;
 
       // One dedicated conversation per (opportunity, applicant) — never the
       // pair-keyed getOrCreateDB, so applying to a second opportunity from
@@ -100,6 +114,19 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
     }
   };
 
+  const handleUpgrade = async (plan: 'professional' | 'business') => {
+    if (!user) return;
+    try {
+      const origin = window.location.origin;
+      const { url } = await entitlementsApi.startSubscriptionCheckout(
+        user.id, plan, `${origin}${window.location.pathname}?sub_success=1&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`, `${origin}${window.location.pathname}`,
+      );
+      window.location.href = url;
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not start checkout');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center" onClick={onClose}>
       <div className="bg-white w-full md:max-w-md max-h-[90vh] overflow-y-auto rounded-t-3xl md:rounded-[22px] shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -110,7 +137,10 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
           </button>
         </div>
 
-        {listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed' ? (
+        {limitReached ? (
+          <OpportunityLimitUpgrade kind="applications" plan={limitReached.plan} limit={limitReached.limit}
+            onUpgrade={handleUpgrade} onMaybeLater={() => setLimitReached(null)} />
+        ) : listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed' ? (
           <div className="px-5 pb-8 pt-2 flex flex-col items-center text-center gap-2">
             <p className="text-base font-black text-gray-900">Applications closed</p>
             <p className="text-sm text-gray-500">{host.name} is no longer accepting applications for this opportunity.</p>
@@ -191,6 +221,12 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
                   className="w-full bg-gray-50 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 resize-none" />
               </div>
             ))}
+
+            {usage && tier !== 'business' && (
+              <p className="text-center text-[11px] text-gray-400">
+                Opportunity applications — {usage.applications} of {getEntitlement(user?.accountType).applications} used this month
+              </p>
+            )}
 
             <button
               onClick={handleApply} disabled={sending}

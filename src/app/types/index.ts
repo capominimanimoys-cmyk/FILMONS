@@ -38,6 +38,10 @@ export interface User {
   profileSetupPercentage?: number;
   emailVerified?:  boolean;
   phoneVerified?:  boolean;
+  /** Professional/Business subscription state — set only by stripe-webhook via fn_activate_subscription/fn_deactivate_subscription, never client-written. */
+  subscriptionStatus?: 'active' | 'canceled';
+  subscriptionCurrentPeriodEnd?: string;
+  subscriptionCancelAtPeriodEnd?: boolean;
   /** Parsed `profiles.profile_meta` JSON — skills, gear, socials, secondary roles, etc. */
   profileMeta?: Record<string, any>;
 }

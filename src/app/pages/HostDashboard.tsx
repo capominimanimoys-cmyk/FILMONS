@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { Listing, Conversation } from '../types';
@@ -455,7 +455,11 @@ function HostDashboardContent({ user }: { user: any }) {
   const navigate = useNavigate();
   const isCreatorPlus = ['creator_plus', 'professional', 'business'].includes(user.accountType ?? '');
   const goCreate = () => navigate(isCreatorPlus ? '/create-listing' : '/creator-plus-required?type=listings');
-  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'opportunities' | 'orders'>('overview');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'opportunities' | 'orders'>(
+    initialTab === 'opportunities' || initialTab === 'listings' || initialTab === 'orders' ? initialTab : 'overview',
+  );
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);

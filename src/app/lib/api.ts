@@ -131,6 +131,9 @@ function profileRowToUser(data: Record<string, any>): User {
     following:            parsePgArray(data.following),
     followers:            parsePgArray(data.followers),
     profileMeta:          meta,
+    subscriptionStatus:            data.subscription_status ?? undefined,
+    subscriptionCurrentPeriodEnd:  data.subscription_current_period_end ?? undefined,
+    subscriptionCancelAtPeriodEnd: data.subscription_cancel_at_period_end ?? false,
   } as User;
 }
 
@@ -398,7 +401,7 @@ export const authApi = {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed')
+        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end')
         .eq('id', cached.id)
         .single();
       if (data) {
@@ -434,6 +437,9 @@ export const authApi = {
           phoneVerified:        data.phone_verified  ?? cached.phoneVerified,
           following:            parsePgArray(data.following  ?? cached.following),
           followers:            parsePgArray(data.followers  ?? cached.followers),
+          subscriptionStatus:            data.subscription_status ?? cached.subscriptionStatus,
+          subscriptionCurrentPeriodEnd:  data.subscription_current_period_end ?? cached.subscriptionCurrentPeriodEnd,
+          subscriptionCancelAtPeriodEnd: data.subscription_cancel_at_period_end ?? cached.subscriptionCancelAtPeriodEnd ?? false,
         };
         saveSession(fresh);
         return { user: fresh };

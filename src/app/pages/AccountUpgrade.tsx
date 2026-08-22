@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { captureSnapshot } from '../lib/smartAnimate';
-import { ArrowLeft, Check, ChevronRight, Lock } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Lock, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { authApi } from '../lib/api';
 import { normalizeTier, getTierBadge, type AccountTier } from '../lib/reliabilityApi';
+import { entitlementsApi, ENTITLEMENTS, formatLimit } from '../lib/entitlements';
 import { toast } from 'sonner';
 
 // Each tier shows exactly what IT adds (not inherited features — those are shown via inheritance label)
@@ -49,12 +51,14 @@ const TIERS: {
   },
   {
     id: 'professional', label: 'Professional', emoji: '⭐',
-    price: '$49', sub: '/month',
+    price: '$9.99', sub: 'CAD/month',
     accentColor: '#7c3aed', borderColor: 'border-purple-400', bgColor: 'bg-purple-50',
-    tagline: 'Industry-recognized verified creator.',
-    requires: 'Creator+ required · Portfolio review · Reliability score ≥ 50',
+    tagline: 'For creators who need more opportunities.',
+    requires: 'Creator+ required',
     requiresTier: 'creator_plus',
     ownFeatures: [
+      `${formatLimit(ENTITLEMENTS.professional.posts)} Opportunity posts / month`,
+      `${formatLimit(ENTITLEMENTS.professional.applications)} Opportunity applications / month`,
       '✓ Verified Professional badge',
       'Professionally verified portfolio',
       'Priority creator & service discovery',
@@ -69,13 +73,18 @@ const TIERS: {
   },
   {
     id: 'business', label: 'Business', emoji: '🏢',
-    price: '$149', sub: '/month',
+    price: '$19.99', sub: 'CAD/month',
     accentColor: '#b45309', borderColor: 'border-yellow-400', bgColor: 'bg-yellow-50',
-    tagline: 'Enterprise & company operations.',
-    requires: 'Professional required · Business documents · Company validation',
+    tagline: 'For businesses and high-volume users.',
+    requires: 'Creator+ required',
     requiresTier: 'creator_plus',
     ownFeatures: [
+      'Unlimited Opportunity posts',
+      'Unlimited Opportunity applications',
       '✓ Verified Business badge',
+      'Business profile',
+      'Applicant management',
+      'Opportunity insights',
       'Team management (up to 10 members)',
       'Multi-user roles (owner, admin, manager, editor)',
       'Branded company storefront',
@@ -84,7 +93,6 @@ const TIERS: {
       'Business invoices & tax export tools',
       'Revenue & operational analytics',
       'Business trust dimension',
-      'API access (coming soon)',
     ],
     inherited: 'All Professional + Creator+ + Creator features',
   },
@@ -96,18 +104,87 @@ function tierRank(t: AccountTier) { return TIER_ORDER.indexOf(t); }
 
 export function AccountUpgrade() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const [params] = useSearchParams();
+  const { user, setUserDirectly } = useAuth();
   const current  = normalizeTier(user?.accountType);
   const [expanded, setExpanded] = useState<AccountTier | null>(null);
+  const [activating, setActivating] = useState(false);
+  const [activatedPlan, setActivatedPlan] = useState<AccountTier | null>(null);
 
-  const upgrade = (id: AccountTier) => {
+  // Return from Stripe — mirrors BoostListingFlow.tsx's exact pattern.
+  // Activation itself already happened server-side via the webhook; this
+  // just polls once to confirm before showing the success screen.
+  useEffect(() => {
+    const success = params.get('sub_success');
+    const sessionId = params.get('session_id');
+    const plan = params.get('plan') as AccountTier | null;
+    if (success !== '1' || !sessionId) return;
+    setActivating(true);
+    (async () => {
+      try {
+        let confirmed = false;
+        for (let i = 0; i < 4 && !confirmed; i++) {
+          const { activated } = await entitlementsApi.verifySubscription(sessionId);
+          confirmed = activated;
+          if (!confirmed) await new Promise(r => setTimeout(r, 1500));
+        }
+        if (confirmed && plan) {
+          setActivatedPlan(plan);
+          authApi.getMe().then(({ user: fresh }) => setUserDirectly(fresh)).catch(() => {});
+        } else {
+          toast.error('Payment received — activation is still processing, check back shortly');
+        }
+        window.history.replaceState({}, '', '/account/upgrade');
+      } catch (e: any) {
+        toast.error(e?.message || 'Could not confirm subscription');
+      } finally {
+        setActivating(false);
+      }
+    })();
+  }, [params.get('sub_success')]);
+
+  const upgrade = async (id: AccountTier) => {
     if (id === current) { toast.info('This is your current plan'); return; }
     if (tierRank(id) < tierRank(current)) { toast.info('Contact support to downgrade'); return; }
     if (id === 'creator_plus') { captureSnapshot(); navigate('/verification'); return; }
-    if (id === 'professional') { captureSnapshot(); navigate('/professional-account-steps'); return; }
-    if (id === 'business') { captureSnapshot(); navigate('/business-account-steps'); return; }
+    if (id === 'professional' || id === 'business') {
+      if (!user) { navigate('/login'); return; }
+      try {
+        const origin = window.location.origin;
+        const { url } = await entitlementsApi.startSubscriptionCheckout(
+          user.id, id, `${origin}/account/upgrade?sub_success=1&plan=${id}&session_id={CHECKOUT_SESSION_ID}`, `${origin}/account/upgrade`,
+        );
+        window.location.href = url;
+      } catch (e: any) {
+        toast.error(e?.message || 'Could not start checkout');
+      }
+      return;
+    }
     toast.info(`${TIERS.find(t=>t.id===id)?.label} upgrade — payment flow coming soon`);
   };
+
+  if (activating) {
+    return <div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin" /></div>;
+  }
+
+  if (activatedPlan) {
+    const tier = TIERS.find(t => t.id === activatedPlan)!;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-5">
+        <div className="max-w-sm w-full text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto"><ShieldCheck className="w-8 h-8 text-green-600" /></div>
+          <div>
+            <h2 className="text-lg font-black text-gray-900">Welcome to Filmons {tier.label} ✓</h2>
+            <p className="text-sm text-gray-500 mt-1">Your {tier.label} account is now active. You can now post and apply to {activatedPlan === 'business' ? 'unlimited' : `up to ${ENTITLEMENTS[activatedPlan].posts}`} Opportunities each month.</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button onClick={() => navigate('/marketplace')} className="w-full py-3.5 rounded-2xl text-white font-bold text-sm" style={{ background: tier.accentColor }}>Explore Opportunities</button>
+            <button onClick={() => setActivatedPlan(null)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -234,9 +311,26 @@ export function AccountUpgrade() {
                       </button>
                     )}
                     {isCurrent && (
-                      <div className="w-full py-3 rounded-xl text-sm font-bold text-center"
-                        style={{ background:`${tier.accentColor}15`, color: tier.accentColor }}>
-                        ✓ Your Current Plan
+                      <div className="space-y-2">
+                        <div className="w-full py-3 rounded-xl text-sm font-bold text-center"
+                          style={{ background:`${tier.accentColor}15`, color: tier.accentColor }}>
+                          ✓ Your Current Plan
+                        </div>
+                        {(tier.id === 'professional' || tier.id === 'business') && (
+                          user?.subscriptionCancelAtPeriodEnd ? (
+                            <p className="text-center text-[11px] text-gray-400">
+                              Active until {user.subscriptionCurrentPeriodEnd ? new Date(user.subscriptionCurrentPeriodEnd).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : 'the end of this billing period'}
+                            </p>
+                          ) : (
+                            <button onClick={async () => {
+                              if (!user) return;
+                              try { await entitlementsApi.cancelSubscription(user.id); toast.success('Subscription will end at the current billing period'); }
+                              catch (e: any) { toast.error(e?.message || 'Could not cancel subscription'); }
+                            }} className="w-full text-center text-[11px] font-semibold text-gray-400 underline">
+                              Cancel subscription
+                            </button>
+                          )
+                        )}
                       </div>
                     )}
                   </div>
@@ -244,6 +338,31 @@ export function AccountUpgrade() {
               </div>
             );
           })}
+        </div>
+
+        {/* Plan comparison */}
+        <div className="mt-6 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <p className="text-xs font-black text-gray-700 uppercase tracking-wide px-4 pt-4 pb-2">Plan comparison</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 text-gray-400">
+                  <th className="text-left font-semibold px-4 py-2">&nbsp;</th>
+                  <th className="text-center font-semibold px-2 py-2">Creator</th>
+                  <th className="text-center font-semibold px-2 py-2">Professional</th>
+                  <th className="text-center font-semibold px-2 py-2">Business</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                <tr><td className="px-4 py-2 text-gray-500">Price</td><td className="text-center px-2 py-2">Free</td><td className="text-center px-2 py-2 font-semibold">$9.99/mo</td><td className="text-center px-2 py-2 font-semibold">$19.99/mo</td></tr>
+                <tr><td className="px-4 py-2 text-gray-500">Opportunity Posts</td><td className="text-center px-2 py-2">2/mo</td><td className="text-center px-2 py-2">5/mo</td><td className="text-center px-2 py-2">Unlimited</td></tr>
+                <tr><td className="px-4 py-2 text-gray-500">Applications</td><td className="text-center px-2 py-2">2/mo</td><td className="text-center px-2 py-2">5/mo</td><td className="text-center px-2 py-2">Unlimited</td></tr>
+                <tr><td className="px-4 py-2 text-gray-500">Professional Tools</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">✓</td><td className="text-center px-2 py-2">✓</td></tr>
+                <tr><td className="px-4 py-2 text-gray-500">Business Profile</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">✓</td></tr>
+                <tr><td className="px-4 py-2 text-gray-500">Business Tools</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">✓</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Philosophy note */}
@@ -256,7 +375,7 @@ export function AccountUpgrade() {
         </div>
 
         <p className="text-center text-[10px] text-gray-400 mt-4 pb-24">
-          All paid plans include a 7-day free trial · Cancel anytime
+          Cancel anytime — access continues until the end of your billing period
         </p>
       </div>
     </div>

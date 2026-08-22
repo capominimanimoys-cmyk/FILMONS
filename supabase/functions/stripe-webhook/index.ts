@@ -121,6 +121,20 @@ Deno.serve(async (req) => {
   try {
     const event = JSON.parse(payload);
 
+    // A subscription that has genuinely ended (period ended after
+    // cancel_at_period_end, or payment ultimately failed past retries) —
+    // this is what actually implements "access continues until period end,
+    // then reverts": Stripe itself keeps a canceling subscription live
+    // until the period truly ends and only fires this once it does.
+    if (event.type === 'customer.subscription.deleted') {
+      const sub = event.data?.object;
+      const profile = await selectOne('profiles', `stripe_subscription_id=eq.${sub?.id}`);
+      if (profile) {
+        await rpc('fn_deactivate_subscription', { p_user_id: profile.id });
+      }
+      return new Response(JSON.stringify({ received: true, deactivated: !!profile }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
     if (event.type !== 'checkout.session.completed') {
       // Acknowledge everything else — Stripe retries on non-2xx.
       return new Response(JSON.stringify({ received: true, ignored: event.type }), { headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -128,6 +142,36 @@ Deno.serve(async (req) => {
 
     const session = event.data?.object;
     const meta = session?.metadata || {};
+
+    // Professional/Business subscription activation — never frontend-driven.
+    // Only this webhook (Stripe-confirmed payment) ever calls
+    // fn_activate_subscription.
+    if (meta.charge_type === 'subscription') {
+      if (!meta.user_id || !meta.plan || !session.subscription) {
+        return new Response(JSON.stringify({ received: true, skipped: 'no user_id/plan/subscription' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const SK = Deno.env.get('STRIPE_SECRET_KEY');
+      const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${session.subscription}`, { headers: { Authorization: `Bearer ${SK}` } });
+      const sub = await subRes.json();
+      const periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+
+      await rpc('fn_activate_subscription', {
+        p_user_id: meta.user_id, p_plan: meta.plan,
+        p_customer_id: session.customer || null, p_subscription_id: session.subscription,
+        p_period_end: periodEnd,
+      });
+
+      // Plan switch (e.g. Professional -> Business) — cancel the old
+      // subscription immediately now that the new one is active, so the
+      // user is never left paying for two plans at once.
+      if (meta.previous_subscription_id && meta.previous_subscription_id !== session.subscription) {
+        await fetch(`https://api.stripe.com/v1/subscriptions/${meta.previous_subscription_id}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${SK}` },
+        }).catch(() => {});
+      }
+
+      return new Response(JSON.stringify({ received: true, activated: meta.plan }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
 
     // Boost purchases are a separate charge type — pure platform revenue,
     // no host-earning leg, so they route to fn_finalize_boost_payment

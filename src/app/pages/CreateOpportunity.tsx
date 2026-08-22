@@ -19,6 +19,8 @@ import {
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
 import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { ListingCard } from '../components/ListingCard';
+import { OpportunityLimitUpgrade } from '../components/OpportunityLimitUpgrade';
+import { entitlementsApi, LimitReachedInfo } from '../lib/entitlements';
 import { Listing, OpportunityDetails } from '../types';
 
 // ── Shared UI primitives (duplicated from CreateListing.tsx's pattern —
@@ -563,14 +565,31 @@ function Step9() {
 }
 
 // ── Step 10 — Review ──────────────────────────────────────────────────────
-function Step10({ form, previewListing, onPublish, isSubmitting, onEditStep }: {
+function Step10({ form, previewListing, onPublish, isSubmitting, onEditStep, limitReached, onUpgrade, onDismissLimit, onManageOpportunities }: {
   form: OppFormState; previewListing: Listing; onPublish: () => void; isSubmitting: boolean; onEditStep: (s: number) => void;
+  limitReached: LimitReachedInfo | null; onUpgrade: (plan: 'professional' | 'business') => void;
+  onDismissLimit: () => void; onManageOpportunities: () => void;
 }) {
   const sections: { label: string; step: number }[] = [
     { label: 'Opportunity Type', step: 1 }, { label: 'Details', step: 2 }, { label: 'Media', step: 3 },
     { label: 'Location', step: 4 }, { label: 'Dates', step: 5 }, { label: 'Compensation', step: 6 },
     { label: 'Requirements', step: 7 }, { label: 'Application', step: 8 },
   ];
+
+  if (limitReached) {
+    // Draft/wizard state is completely untouched — this replaces only what
+    // renders, so dismissing returns straight back to this same review step.
+    return (
+      <div className="space-y-4">
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <OpportunityLimitUpgrade kind="posts" plan={limitReached.plan} limit={limitReached.limit}
+            onUpgrade={onUpgrade} onMaybeLater={onDismissLimit} />
+        </div>
+        <button onClick={onManageOpportunities} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Manage Opportunities</button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="text-center mb-6"><h2 className="text-xl font-black text-gray-900">Review your Opportunity</h2></div>
@@ -620,6 +639,7 @@ export function CreateOpportunity() {
   const [form, setFormRaw] = useState<OppFormState>(defaultForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
+  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const set = useCallback((updates: Partial<OppFormState>) => setFormRaw(prev => ({ ...prev, ...updates })), []);
@@ -783,8 +803,14 @@ export function CreateOpportunity() {
       const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      const { error } = await supabase.from('listings').insert({ ...payload, id: newId, user_id: user.id, created_at: new Date().toISOString(), is_active: true });
-      if (error) throw new Error(error.message);
+
+      // Server-verified — enforces the monthly posting entitlement
+      // atomically (fn_publish_opportunity), never a client-side pre-check
+      // followed by a direct insert.
+      const result = await entitlementsApi.publishOpportunity(user.id, {
+        ...payload, id: newId, user_id: user.id, created_at: new Date().toISOString(), is_active: true,
+      });
+      if ('limitReached' in result) { setLimitReached(result.limitReached); return; }
       localStorage.removeItem(DRAFT_KEY);
       invalidateListingsCache();
       setPublishedId(newId);
@@ -792,6 +818,19 @@ export function CreateOpportunity() {
       toast.error(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleUpgrade = async (plan: 'professional' | 'business') => {
+    if (!user) return;
+    try {
+      const origin = window.location.origin;
+      const { url } = await entitlementsApi.startSubscriptionCheckout(
+        user.id, plan, `${origin}/create-opportunity?sub_success=1&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`, `${origin}/create-opportunity`,
+      );
+      window.location.href = url;
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not start checkout');
     }
   };
 
@@ -809,7 +848,9 @@ export function CreateOpportunity() {
       case 7: return <Step7 form={form} set={set} />;
       case 8: return <Step8 form={form} set={set} />;
       case 9: return <Step9 />;
-      case 10: return <Step10 form={form} previewListing={previewListing} onPublish={handlePublish} isSubmitting={isSubmitting} onEditStep={setStep} />;
+      case 10: return <Step10 form={form} previewListing={previewListing} onPublish={handlePublish} isSubmitting={isSubmitting} onEditStep={setStep}
+        limitReached={limitReached} onUpgrade={handleUpgrade} onDismissLimit={() => setLimitReached(null)}
+        onManageOpportunities={() => navigate('/dashboard?tab=opportunities')} />;
       default: return null;
     }
   };

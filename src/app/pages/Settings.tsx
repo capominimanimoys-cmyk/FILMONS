@@ -143,8 +143,8 @@ export function Settings() {
         };
         const nextSub: Record<string, string> = {
           creator:      'Free with ID verification',
-          creator_plus: '$49/month · portfolio review',
-          professional: '$149/month · business tools',
+          creator_plus: '$9.99/month · 5 Opportunities/mo',
+          professional: '$19.99/month · unlimited Opportunities',
           business:     '',
         };
         return (
