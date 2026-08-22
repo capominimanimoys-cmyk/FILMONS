@@ -3,7 +3,6 @@ import { RouterProvider } from 'react-router';
 import { router } from './routes';
 import { AuthProvider } from './context/AuthContext';
 import { PostProvider } from './context/PostContext';
-import { ThemeProvider } from './context/ThemeContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { NotificationBannerProvider } from './components/NotificationBanner';
 import { Toaster } from 'sonner';
@@ -18,21 +17,31 @@ function clearDeprecatedFpStorage() {
   } catch {}
 }
 
+// Filmons is light-mode only now — a returning user's browser may still have
+// a stale 'dark' preference saved from before the theme system was removed.
+function clearDeprecatedThemeStorage() {
+  try {
+    localStorage.removeItem('filmons_theme');
+    document.documentElement.classList.remove('dark');
+  } catch {}
+}
+
 export default function App() {
-  useEffect(() => { clearDeprecatedFpStorage(); }, []);
+  useEffect(() => {
+    clearDeprecatedFpStorage();
+    clearDeprecatedThemeStorage();
+  }, []);
 
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <PostProvider>
-          <NotificationsProvider>
-            <NotificationBannerProvider>
-              <RouterProvider router={router} />
-              <Toaster richColors position="top-center" />
-            </NotificationBannerProvider>
-          </NotificationsProvider>
-        </PostProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <AuthProvider>
+      <PostProvider>
+        <NotificationsProvider>
+          <NotificationBannerProvider>
+            <RouterProvider router={router} />
+            <Toaster richColors position="top-center" />
+          </NotificationBannerProvider>
+        </NotificationsProvider>
+      </PostProvider>
+    </AuthProvider>
   );
 }

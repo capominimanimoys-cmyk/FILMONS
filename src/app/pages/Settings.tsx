@@ -1,14 +1,12 @@
 import { useNavigate, Link } from 'react-router';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { themeSettingsApi } from '../lib/settingsApi';
 import { useT } from '../lib/i18n';
 import {
   User, BarChart2, ShoppingBag, CreditCard, Package, MessageCircle,
   Bell, Shield, Lock, FileText, HelpCircle, ChevronRight, ArrowLeft,
   Smartphone, LogOut, Trash2, Globe, Star, Eye,
-  CheckCircle, Zap, Palette, Sparkles, Search,
+  CheckCircle, Zap, Sparkles, Search,
   MapPin, Info, Layers,
 } from 'lucide-react';
 import { normalizeTier, getTierLabel, getTierBadge } from '../lib/reliabilityApi';
@@ -16,7 +14,6 @@ import { toast } from 'sonner';
 
 export function Settings() {
   const { user, isAuthenticated } = useAuth();
-  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const T = useT();
 
@@ -193,53 +190,10 @@ export function Settings() {
         );
       })()}
 
-      {/* Appearance */}
+      {/* Language & Region */}
       <div className="mx-4 mt-5">
-        <p className="text-[10px] font-black text-gray-400 tracking-widest mb-2 px-1">APPEARANCE</p>
+        <p className="text-[10px] font-black text-gray-400 tracking-widest mb-2 px-1">PREFERENCES</p>
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-4 pt-4 pb-3">
-            <div className="flex items-center gap-2 mb-3">
-              <Palette className="w-4 h-4 text-gray-600"/>
-              <p className="font-bold text-gray-900 text-sm">Theme</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              {([
-                { id: 'light', label: T('settings.light'), icon: '☀️', desc: T('settings.light_desc') },
-                { id: 'dark',  label: T('settings.dark'),  icon: '🌑', desc: T('settings.dark_desc')   },
-              ] as const).map(preset => (
-                <button key={preset.id} onClick={async () => {
-                    setTheme(preset.id);
-                    toast.success(preset.id === 'dark' ? '🌑 Dark mode on' : '☀️ Light mode on');
-                    if (user?.id) {
-                      try {
-                        await themeSettingsApi.save(user.id, preset.id, localStorage.getItem('filmons_language') || 'en-CA');
-                      } catch (e) {
-                        console.warn('[Settings] theme save failed:', e);
-                      }
-                    }
-                  }}
-                  className={`relative flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                    theme === preset.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-50'
-                  }`}>
-                  <div className={`w-full h-12 rounded-xl border ${preset.id === 'dark' ? 'bg-black border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <div className={`h-3 rounded-t-xl ${preset.id === 'dark' ? 'bg-gray-900' : 'bg-gray-100'}`}/>
-                  </div>
-                  <div className="text-center">
-                    <span className="text-lg">{preset.icon}</span>
-                    <p className={`text-xs font-bold mt-0.5 ${theme === preset.id ? 'text-blue-600' : 'text-gray-700'}`}>{preset.label}</p>
-                    <p className="text-[10px] text-gray-400">{preset.desc}</p>
-                  </div>
-                  {theme === preset.id && (
-                    <div className="absolute top-2 right-2 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-[8px] font-black">✓</span>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Language — tappable row */}
           <button onClick={() => go('/settings/language')}
             className="border-t border-gray-50 px-4 py-3 flex items-center gap-3 w-full hover:bg-gray-50 transition-colors">
             <Globe className="w-4 h-4 text-gray-500 shrink-0"/>

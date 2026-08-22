@@ -1,13 +1,11 @@
 import { Link, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import { UserAvatar } from './AccountTypeBadge';
-import { toast } from 'sonner';
 import {
   X, ShoppingBag, Heart, CalendarDays, CreditCard,
   Layers, ShieldCheck, BarChart2, HelpCircle, Mail,
   Settings, Lock, Bell, LogOut, Home, Search, UserPlus,
-  ChevronRight, Moon, Sun,
+  ChevronRight,
 } from 'lucide-react';
 
 type LucideIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -49,7 +47,6 @@ function SectionRow({ icon: Icon, label, to, action, danger }: {
 
 export function SideDrawer({ onClose }: Props) {
   const { user, logout } = useAuth();
-  const { theme, setTheme } = useTheme();
   const navigate   = useNavigate();
   const location   = useLocation();
 
@@ -175,21 +172,6 @@ export function SideDrawer({ onClose }: Props) {
 
         {/* ── Footer ── */}
         <div className="border-t border-gray-100">
-          {/* Theme toggle */}
-          <button
-            onClick={() => {
-              const next = theme === 'dark' ? 'light' : 'dark';
-              setTheme(next);
-              toast.success(next === 'dark' ? 'Dark mode on' : 'Light mode on');
-            }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            {theme === 'dark'
-              ? <Sun  className="w-[18px] h-[18px] shrink-0 text-gray-400" strokeWidth={1.75} />
-              : <Moon className="w-[18px] h-[18px] shrink-0 text-gray-400" strokeWidth={1.75} />}
-            <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-          </button>
-
           {/* Logged-out: Login + Sign up row */}
           {!user && (
             <div className="flex gap-2 px-4 pb-4">

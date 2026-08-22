@@ -1,11 +1,9 @@
 import { Link, useNavigate, useLocation } from 'react-router';
 import { FilmonsLogo } from './FilmonsLogo';
-import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import {
   Home, LayoutGrid, Search, MessageCircle, Bell,
-  User, Settings, LogOut, X, Moon, Sun, UserPlus,
+  User, Settings, LogOut, X, UserPlus,
   ChevronRight,
 } from 'lucide-react';
 import { UserAvatar } from './AccountTypeBadge';
@@ -47,7 +45,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const { user, logout } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { theme, setTheme } = useTheme();
   const [unreadMsgs,   setUnreadMsgs]   = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -153,22 +150,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               <NavRow icon={Settings}      label="Settings"      to="/settings"      active={isActive('/settings')}      onClick={onClose}/>
             </nav>
 
-            {/* Bottom: theme + logout */}
-            <div className="flex-shrink-0 border-t border-gray-100 px-3 py-3 flex items-center gap-1">
-              <button
-                onClick={() => {
-                  const next = theme === 'dark' ? 'light' : 'dark';
-                  setTheme(next);
-                  toast.success(next === 'dark' ? 'Dark mode on' : 'Light mode on');
-                }}
-                className="flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
-                {theme === 'dark'
-                  ? <Sun  className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.75}/>
-                  : <Moon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.75}/>}
-                <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-              </button>
+            {/* Bottom: logout */}
+            <div className="flex-shrink-0 border-t border-gray-100 px-3 py-3">
               <button onClick={handleLogout}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 transition-all">
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 transition-all">
                 <LogOut className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.75}/>
                 <span>Log out</span>
               </button>
