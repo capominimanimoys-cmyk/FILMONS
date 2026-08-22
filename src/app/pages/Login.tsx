@@ -8,8 +8,10 @@ import { Eye, EyeOff, ArrowLeft, Mail, Phone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { supabase } from '../../lib/supabase';
+import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import FilmonsLoader from '../components/FilmonsLoader';
 
 type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'security';
 
@@ -85,18 +87,10 @@ export function Login() {
   const [loading,  setLoading]  = useState(false);
   const [otp,      setOtp]      = useState('');
   const [pwError,  setPwError]  = useState('');
-  const [mounted,  setMounted]  = useState(false);
 
-  useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
   useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/', { replace: true }); } }, [isAuthenticated]);
 
-  // Auto-advance splash after 2s (skipped when email is pre-filled)
-  useEffect(() => {
-    if (screen === 'splash') {
-      const t = setTimeout(() => setScreen('method'), 2200);
-      return () => clearTimeout(t);
-    }
-  }, [screen]);
+  // Splash auto-advances via FilmonsLoader's onComplete (skipped when email is pre-filled)
 
   const goBack = () => {
     if (screen === 'email')    setScreen('method');
@@ -129,25 +123,14 @@ export function Login() {
   const handleOAuth = async (provider: 'google' | 'apple') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: getOAuthRedirectUrl() },
     });
     if (error) toast.error(error.message);
   };
 
   // ── SPLASH ──────────────────────────────────────────────────────────────
   if (screen === 'splash') {
-    return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden"
-        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
-        <CinematicBg/>
-        <div className={`relative z-10 flex flex-col items-center gap-4 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-          <FilmonsLogo iconSize={48} theme="dark"/>
-          <p className="text-white/60 text-sm font-medium tracking-[0.2em] uppercase mt-2">
-            Create. Connect. Film.
-          </p>
-        </div>
-      </div>
-    );
+    return <FilmonsLoader onComplete={() => setScreen('method')} />;
   }
 
   // ── METHOD SELECTOR ──────────────────────────────────────────────────────

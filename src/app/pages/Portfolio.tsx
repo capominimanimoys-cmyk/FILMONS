@@ -7,6 +7,7 @@ import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
+import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
   getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum,
@@ -1011,6 +1012,9 @@ export function Portfolio() {
   const [items,    setItems]    = useState<PortfolioItem[]>([]);
   const [albums,   setAlbums]   = useState<PortfolioAlbum[]>([]);
   const [loading,  setLoading]  = useState(true);
+  // First-load only — the branded loader stays mounted (fading out on its own
+  // schedule) until this flips, so it never abruptly pops off screen.
+  const [introDone, setIntroDone] = useState(false);
 
   const [followerCount,  setFollowerCount]  = useState<number | null>(null);
   const [followingCount, setFollowingCount] = useState<number | null>(null);
@@ -1182,12 +1186,8 @@ export function Portfolio() {
     onAddToAlbum: item => setAddToAlbumTarget(item),
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    );
+  if (!introDone) {
+    return <FilmonsLoader ready={!loading} onComplete={() => setIntroDone(true)} />;
   }
 
   if (!profile) {

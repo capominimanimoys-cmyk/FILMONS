@@ -7,6 +7,7 @@ import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { GuestBanner } from '../components/GuestBanner';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
+import { RouteProgressBar } from '../components/RouteProgressBar';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
@@ -66,6 +67,7 @@ export function Root() {
 
   return (
     <NotificationBannerProvider>
+      <RouteProgressBar />
       <div className="min-h-screen flex flex-col">
         {/* Guest mode banner — shown above everything when browsing without account */}
         {isGuest && !isAuthenticated && <GuestBanner />}
