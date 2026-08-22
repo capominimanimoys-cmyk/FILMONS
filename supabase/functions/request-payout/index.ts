@@ -26,6 +26,21 @@ async function selectOne(table: string, filter: string) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 
+function round2(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
+// No existing business-day helper anywhere in this app — this is the
+// first one. Skips Saturday/Sunday only (no statutory-holiday calendar).
+function addBusinessDays(from: Date, days: number): Date {
+  const d = new Date(from);
+  let added = 0;
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) added++;
+  }
+  return d;
+}
+
 // Same best-effort, generic-template email pattern used by
 // admin-process-payout — see that file for the caveat about there being
 // no payout-specific EmailJS template yet.
@@ -73,13 +88,26 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { hostId, amount, payoutMethod, payoutDestination } = await req.json();
+    const { hostId, amount, payoutMethod, payoutDestination, payoutSpeed } = await req.json();
     if (!hostId || typeof amount !== 'number' || amount <= 0) {
       return new Response(JSON.stringify({ error: 'Missing hostId or invalid amount' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
     if (payoutMethod && !['interac', 'bank_transfer'].includes(payoutMethod)) {
       return new Response(JSON.stringify({ error: 'Invalid payout method' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
+    const speed = payoutSpeed === 'instant' ? 'instant' : 'standard';
+
+    // Fee/arrival estimate are computed server-side from the live config —
+    // never trusted from the client. No real Stripe Connect exists in this
+    // app, so "instant" means priority-processed within the same manual
+    // admin pipeline, not an automated transfer.
+    let feeAmount = 0;
+    if (speed === 'instant') {
+      const config = await selectOne('payout_config', 'id=eq.1');
+      const rate = config?.instant_fee_rate ?? 0.02;
+      feeAmount = round2(amount * rate);
+    }
+    const estimatedArrivalAt = speed === 'instant' ? new Date() : addBusinessDays(new Date(), 3);
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_request_payout`, {
       method: 'POST',
@@ -94,6 +122,9 @@ Deno.serve(async (req) => {
         p_currency: 'CAD',
         p_payout_method: payoutMethod || null,
         p_payout_destination: payoutDestination || null,
+        p_payout_speed: speed,
+        p_fee_amount: feeAmount,
+        p_estimated_arrival_at: estimatedArrivalAt.toISOString(),
       }),
     });
     const result = await res.json();
@@ -104,7 +135,11 @@ Deno.serve(async (req) => {
 
     notifyHostRequested(hostId, amount).catch(() => {});
 
-    return new Response(JSON.stringify({ success: true, payoutRequestId: result }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({
+      success: true, payoutRequestId: result,
+      payoutSpeed: speed, feeAmount, netAmount: round2(amount - feeAmount),
+      estimatedArrivalAt: estimatedArrivalAt.toISOString(),
+    }), { headers: { ...cors, 'Content-Type': 'application/json' } });
   } catch (e) {
     console.error('request-payout error:', e);
     return new Response(JSON.stringify({ error: 'Internal error' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });

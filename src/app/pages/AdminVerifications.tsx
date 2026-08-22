@@ -509,7 +509,16 @@ export function AdminVerifications() {
         .select('*, profiles(name, email)')
         .order('requested_at', { ascending: false })
         .limit(100);
-      setPayoutRequests(data || []);
+      // Instant requests surface first regardless of request time — this
+      // is the entire mechanism behind "Instant" meaning something real,
+      // since every payout is still a human admin sending it manually.
+      const sorted = [...(data || [])].sort((a: any, b: any) => {
+        const ai = a.payout_speed === 'instant' ? 1 : 0;
+        const bi = b.payout_speed === 'instant' ? 1 : 0;
+        if (ai !== bi) return bi - ai;
+        return 0;
+      });
+      setPayoutRequests(sorted);
     } catch (e) {
       console.warn('payout_requests query failed:', e);
     }
@@ -1289,8 +1298,16 @@ export function AdminVerifications() {
                       <div key={p.id} className="px-5 py-3.5">
                         <div className="flex items-center gap-4">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800 truncate">{p.profiles?.name || p.host_id}</p>
+                            <p className="text-sm font-semibold text-gray-800 truncate flex items-center gap-1.5">
+                              {p.profiles?.name || p.host_id}
+                              {p.payout_speed === 'instant' && (
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-0.5">⚡ Instant</span>
+                              )}
+                            </p>
                             <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })} · {p.profiles?.email || ''}</p>
+                            {p.payout_speed === 'instant' && (
+                              <p className="text-xs text-amber-600 mt-0.5">Fee {fmt(Number(p.fee_amount || 0))} · Net to host ${fmt(Number(p.net_amount ?? p.amount))}</p>
+                            )}
                             {p.payout_method && (
                               <p className="text-xs text-gray-500 mt-1 font-mono">
                                 {p.payout_method === 'interac' ? 'Interac' : 'Bank Transfer'}: {destText || '—'}

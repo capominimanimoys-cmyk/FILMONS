@@ -4,11 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import {
   walletApi, type WalletBalance, type WalletTransaction, type PayoutMethodType,
-  type PayoutDestination, type PayoutMethod, type PayoutRequest,
+  type PayoutDestination, type PayoutMethod, type PayoutRequest, type PayoutSpeed,
 } from '../lib/walletApi';
 import {
   Wallet as WalletIcon, ArrowUpRight, RefreshCw, DollarSign, Clock, Loader2,
-  X, ChevronRight, ChevronLeft, Check, Landmark, Send, Pencil,
+  X, ChevronRight, ChevronLeft, Check, Landmark, Send, Pencil, Zap, ShieldCheck,
 } from 'lucide-react';
 
 const fmtCad = (cad: number) =>
@@ -23,6 +23,8 @@ const TX_LABELS: Record<string, string> = {
   payout: 'Payout',
   adjustment: 'Adjustment',
   reversal: 'Reversal',
+  boost_purchase: 'Boost purchase',
+  instant_payout_fee: 'Instant Payout fee',
 };
 
 const PAYOUT_STATUS_LABEL: Record<string, { label: string; className: string }> = {
@@ -40,7 +42,33 @@ const METHOD_LABEL: Record<PayoutMethodType, string> = {
   bank_transfer: 'Bank Transfer',
 };
 
-type Step = 'amount' | 'method' | 'destination' | 'review';
+type Step = 'amount' | 'speed' | 'method' | 'destination' | 'review' | 'success';
+
+interface PayoutResult {
+  amount: number; payoutSpeed: PayoutSpeed; feeAmount: number; netAmount: number;
+  estimatedArrivalAt: string; method: PayoutMethodType; destination: PayoutDestination;
+}
+
+function estimatedArrivalLabel(speed: PayoutSpeed, iso: string): string {
+  if (speed === 'instant') return 'Usually processed the same day';
+  return new Date(iso).toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+// Client-side preview only for the Review step, before the request is
+// actually submitted — the server (request-payout) independently computes
+// and stores the authoritative value; this is purely informational, same
+// spirit as every other frontend-estimate in this app.
+function previewArrivalIso(speed: PayoutSpeed): string {
+  if (speed === 'instant') return new Date().toISOString();
+  const d = new Date();
+  let added = 0;
+  while (added < 3) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) added++;
+  }
+  return d.toISOString();
+}
 
 function RequestPayoutModal({
   available, currency, defaultMethod, onClose, onDone,
@@ -53,6 +81,10 @@ function RequestPayoutModal({
 }) {
   const [step, setStep] = useState<Step>('amount');
   const [amount, setAmount] = useState(String(available.toFixed(2)));
+  const [speed, setSpeed] = useState<PayoutSpeed>('standard');
+  const [instantFeeRate, setInstantFeeRate] = useState(0.02);
+  const [result, setResult] = useState<PayoutResult | null>(null);
+  useEffect(() => { walletApi.getPayoutConfig().then(c => setInstantFeeRate(c.instantFeeRate)); }, []);
   const [method, setMethod] = useState<PayoutMethodType | null>(defaultMethod?.method || null);
   const [useSaved, setUseSaved] = useState(!!defaultMethod);
   // Seed from the saved method (if any) so unchecking "use saved" to edit
@@ -92,15 +124,20 @@ function RequestPayoutModal({
   const handleConfirm = async (hostId: string) => {
     if (!method || !destination) return;
     setSubmitting(true);
-    const { success, error } = await walletApi.requestPayout(hostId, amountNum, method, destination);
-    if (success) {
+    const res = await walletApi.requestPayout(hostId, amountNum, method, destination, speed);
+    if (res.success) {
       if (saveMethod && !(useSaved && defaultMethod)) {
         await walletApi.savePayoutMethod(hostId, method, destination);
       }
-      toast.success(`Payout of ${fmtCad(amountNum)} requested — an admin will review it shortly.`);
-      onDone();
+      setResult({
+        amount: amountNum, payoutSpeed: res.payoutSpeed || speed,
+        feeAmount: res.feeAmount || 0, netAmount: res.netAmount ?? amountNum,
+        estimatedArrivalAt: res.estimatedArrivalAt || new Date().toISOString(),
+        method, destination,
+      });
+      setStep('success');
     } else {
-      toast.error(error || 'Could not request payout.');
+      toast.error(res.error || 'Could not request payout.');
     }
     setSubmitting(false);
   };
@@ -109,12 +146,13 @@ function RequestPayoutModal({
     <PayoutModalInner
       step={step} setStep={setStep}
       amount={amount} setAmount={setAmount} amountValid={amountValid} available={available} currency={currency}
+      speed={speed} setSpeed={setSpeed} instantFeeRate={instantFeeRate}
       method={method} setMethod={setMethod}
       defaultMethod={defaultMethod} useSaved={useSaved} setUseSaved={setUseSaved}
       interac={interac} setInterac={setInterac} bank={bank} setBank={setBank}
       destination={destination} destinationValid={destinationValid}
       saveMethod={saveMethod} setSaveMethod={setSaveMethod}
-      submitting={submitting} onConfirm={handleConfirm} onClose={onClose}
+      submitting={submitting} result={result} onConfirm={handleConfirm} onClose={onClose} onDone={onDone}
     />
   );
 }
@@ -124,23 +162,28 @@ function RequestPayoutModal({
 function PayoutModalInner(props: {
   step: Step; setStep: (s: Step) => void;
   amount: string; setAmount: (v: string) => void; amountValid: boolean; available: number; currency: string;
+  speed: PayoutSpeed; setSpeed: (s: PayoutSpeed) => void; instantFeeRate: number;
   method: PayoutMethodType | null; setMethod: (m: PayoutMethodType) => void;
   defaultMethod: PayoutMethod | null; useSaved: boolean; setUseSaved: (v: boolean) => void;
   interac: { email: string; name: string }; setInterac: (v: any) => void;
   bank: { accountHolder: string; institutionNumber: string; transitNumber: string; accountNumber: string }; setBank: (v: any) => void;
   destination: PayoutDestination | null; destinationValid: boolean;
   saveMethod: boolean; setSaveMethod: (v: boolean) => void;
-  submitting: boolean; onConfirm: (hostId: string) => void; onClose: () => void;
+  submitting: boolean; result: PayoutResult | null; onConfirm: (hostId: string) => void; onClose: () => void; onDone: () => void;
 }) {
   const { user } = useAuth();
   const {
     step, setStep, amount, setAmount, amountValid, available, currency,
+    speed, setSpeed, instantFeeRate,
     method, setMethod, defaultMethod, useSaved, setUseSaved,
     interac, setInterac, bank, setBank, destination, destinationValid,
-    saveMethod, setSaveMethod, submitting, onConfirm, onClose,
+    saveMethod, setSaveMethod, submitting, result, onConfirm, onClose, onDone,
   } = props;
 
-  const steps: Step[] = ['amount', 'method', 'destination', 'review'];
+  const amountNum = Number(amount) || 0;
+  const instantFee = Math.round((amountNum * instantFeeRate + Number.EPSILON) * 100) / 100;
+
+  const steps: Step[] = ['amount', 'speed', 'method', 'destination', 'review'];
   const stepIdx = steps.indexOf(step);
   const goNext = () => {
     if (step === 'destination' && useSaved && defaultMethod) { setStep('review'); return; }
@@ -153,11 +196,13 @@ function PayoutModalInner(props: {
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
-          <button onClick={goBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-            <ChevronLeft className="w-4 h-4 text-gray-500" />
-          </button>
-          <p className="text-sm font-black text-gray-900">Request Payout</p>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+          {step !== 'success' ? (
+            <button onClick={goBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+              <ChevronLeft className="w-4 h-4 text-gray-500" />
+            </button>
+          ) : <div className="w-8 h-8" />}
+          <p className="text-sm font-black text-gray-900">{step === 'success' ? 'Payout Initiated' : 'Request Payout'}</p>
+          <button onClick={step === 'success' ? onDone : onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
             <X className="w-4 h-4 text-gray-500" />
           </button>
         </div>
@@ -181,6 +226,33 @@ function PayoutModalInner(props: {
               {!amountValid && amount !== '' && (
                 <p className="text-xs text-red-500 mt-2">Enter an amount between $0.01 and {fmtCad(available)}.</p>
               )}
+            </div>
+          )}
+
+          {step === 'speed' && (
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Choose payout speed</p>
+              <button onClick={() => setSpeed('standard')}
+                className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-colors ${speed === 'standard' ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black text-gray-900 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-blue-500" /> Standard</span>
+                  {speed === 'standard' && <Check className="w-4 h-4 text-blue-500" />}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Typically 2–3 business days · Free</p>
+                <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(amountNum)}</p>
+              </button>
+              <button onClick={() => setSpeed('instant')}
+                className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-colors ${speed === 'instant' ? 'border-amber-500 bg-amber-50' : 'border-gray-100'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black text-gray-900 flex items-center gap-1.5"><Zap className="w-4 h-4 text-amber-500 fill-amber-500" /> Instant</span>
+                  {speed === 'instant' && <Check className="w-4 h-4 text-amber-500" />}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Usually processed the same day · {(instantFeeRate * 100).toFixed(0)}% fee</p>
+                <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(Math.max(amountNum - instantFee, 0))}</p>
+              </button>
+              <p className="text-[11px] text-gray-400 leading-relaxed px-1">
+                Every payout is still reviewed and sent by a Filmons admin — Instant means priority processing, not an automated transfer.
+              </p>
             </div>
           )}
 
@@ -255,28 +327,68 @@ function PayoutModalInner(props: {
 
           {step === 'review' && method && destination && (
             <div className="space-y-3">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Review request</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Review payout</p>
               <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Amount</span>
-                  <span className="text-sm font-black text-gray-900">{fmtCad(Number(amount))}</span>
+                  <span className="text-xs text-gray-400">Payout Amount</span>
+                  <span className="text-sm font-black text-gray-900">{fmtCad(amountNum)}</span>
+                </div>
+                {speed === 'instant' ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">Instant Payout Fee ({(instantFeeRate * 100).toFixed(0)}%)</span>
+                    <span className="text-sm font-bold text-red-500">−{fmtCad(instantFee)}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">Payout Fee</span>
+                    <span className="text-sm font-bold text-green-600">FREE</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                  <span className="text-xs text-gray-400">You'll Receive</span>
+                  <span className="text-sm font-black text-gray-900">{fmtCad(Math.max(amountNum - (speed === 'instant' ? instantFee : 0), 0))} {currency}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Method</span>
-                  <span className="text-sm font-bold text-gray-900">{METHOD_LABEL[method]}</span>
+                  <span className="text-xs text-gray-400">Payout Method</span>
+                  <span className="text-sm font-bold text-gray-900 flex items-center gap-1">{speed === 'instant' && <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />} {speed === 'instant' ? 'Instant' : 'Standard'}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Sending to</span>
-                  <span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(method, destination)}</span>
+                  <span className="text-xs text-gray-400">Estimated Arrival</span>
+                  <span className="text-sm font-bold text-gray-900">{estimatedArrivalLabel(speed, previewArrivalIso(speed))}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Destination</span>
+                  <span className="text-sm font-bold text-gray-900">{METHOD_LABEL[method]} {walletApi.maskDestination(method, destination)}</span>
                 </div>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                This reserves the funds immediately. An admin manually reviews and sends every payout — this is not an automated transfer, so it may take a few business days.
+                This reserves the funds immediately. Every payout is manually reviewed and sent by a Filmons admin — {speed === 'instant' ? 'Instant requests are prioritized' : 'this typically takes a few business days'}.
               </p>
+            </div>
+          )}
+
+          {step === 'success' && result && (
+            <div className="flex flex-col items-center text-center gap-4 py-4">
+              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"><Check className="w-8 h-8 text-green-600" /></div>
+              <div>
+                <p className="text-base font-black text-gray-900">{result.payoutSpeed === 'instant' ? 'Instant Payout initiated ✓' : 'Payout initiated ✓'}</p>
+                <p className="text-sm text-gray-500 mt-1">Status: Processing</p>
+              </div>
+              <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2.5 text-left">
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Payout Amount</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.amount)}</span></div>
+                {result.payoutSpeed === 'instant' && (
+                  <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Fee</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.feeAmount)}</span></div>
+                )}
+                <div className="flex items-center justify-between border-t border-gray-100 pt-2.5"><span className="text-xs text-gray-400">{result.payoutSpeed === 'instant' ? 'Sent' : "You'll Receive"}</span><span className="text-sm font-black text-gray-900">{fmtCad(result.netAmount)} CAD</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Estimated arrival</span><span className="text-sm font-bold text-gray-900">{estimatedArrivalLabel(result.payoutSpeed, result.estimatedArrivalAt)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Destination</span><span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(result.method, result.destination)}</span></div>
+              </div>
+              <button onClick={onDone} className="w-full py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl">Done</button>
             </div>
           )}
         </div>
 
+        {step !== 'success' && (
         <div className="px-5 py-4 border-t border-gray-100">
           {step !== 'review' ? (
             <button
@@ -294,12 +406,13 @@ function PayoutModalInner(props: {
             <button
               onClick={() => user?.id && onConfirm(user.id)}
               disabled={submitting}
-              className="w-full py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2"
+              className={`w-full py-3.5 text-white font-black text-sm rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2 ${speed === 'instant' ? 'bg-amber-500' : 'bg-blue-600'}`}
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm Request'}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : speed === 'instant' ? 'Confirm Instant Payout' : 'Confirm Payout'}
             </button>
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -420,8 +533,17 @@ export function Wallet() {
                 return (
                   <div key={p.id} className="flex items-center gap-3 px-4 py-3.5">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">{fmtCad(Number(p.amount))}</p>
-                      <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                        {p.payout_speed === 'instant' ? fmtCad(p.net_amount ?? Number(p.amount)) : fmtCad(Number(p.amount))}
+                        {p.payout_speed === 'instant' && <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {' · '}{p.payout_speed === 'instant' ? `Instant · fee ${fmtCad(p.fee_amount)}` : 'Standard · Free'}
+                      </p>
+                      {p.estimated_arrival_at && ['requested', 'under_review', 'approved', 'processing'].includes(p.status) && (
+                        <p className="text-xs text-gray-400">Estimated arrival: {estimatedArrivalLabel(p.payout_speed, p.estimated_arrival_at)}</p>
+                      )}
                       {p.status === 'rejected' && p.rejection_reason && (
                         <p className="text-xs text-red-500 mt-0.5">{p.rejection_reason}</p>
                       )}

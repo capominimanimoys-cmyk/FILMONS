@@ -18,7 +18,7 @@ export interface WalletBalance {
 export interface WalletTransaction {
   id: string;
   order_id: string | null;
-  transaction_type: 'rental_earning' | 'service_earning' | 'sale_earning' | 'filmons_fee' | 'refund' | 'payout' | 'adjustment' | 'reversal';
+  transaction_type: 'rental_earning' | 'service_earning' | 'sale_earning' | 'filmons_fee' | 'refund' | 'payout' | 'adjustment' | 'reversal' | 'boost_purchase' | 'instant_payout_fee';
   amount: number;
   currency: string;
   balance_type: 'pending' | 'available';
@@ -29,6 +29,7 @@ export interface WalletTransaction {
 }
 
 export type PayoutMethodType = 'interac' | 'bank_transfer';
+export type PayoutSpeed = 'standard' | 'instant';
 
 export interface InteracDestination {
   email: string;
@@ -67,6 +68,10 @@ export interface PayoutRequest {
   requested_at: string;
   processed_at: string | null;
   processed_by: string | null;
+  payout_speed: PayoutSpeed;
+  fee_amount: number;
+  net_amount: number | null;
+  estimated_arrival_at: string | null;
 }
 
 function maskDestination(method: PayoutMethodType, details: PayoutDestination): string {
@@ -108,20 +113,35 @@ export const walletApi = {
     hostId: string,
     amount: number,
     payoutMethod?: PayoutMethodType,
-    payoutDestination?: PayoutDestination
-  ): Promise<{ success: boolean; error?: string; payoutRequestId?: string }> {
+    payoutDestination?: PayoutDestination,
+    payoutSpeed?: PayoutSpeed,
+  ): Promise<{
+    success: boolean; error?: string; payoutRequestId?: string;
+    payoutSpeed?: PayoutSpeed; feeAmount?: number; netAmount?: number; estimatedArrivalAt?: string;
+  }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/request-payout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
-        body: JSON.stringify({ hostId, amount, payoutMethod, payoutDestination }),
+        body: JSON.stringify({ hostId, amount, payoutMethod, payoutDestination, payoutSpeed }),
       });
       const data = await res.json();
       if (!res.ok || data.error) return { success: false, error: data.error || 'Could not request payout' };
-      return { success: true, payoutRequestId: data.payoutRequestId };
+      return {
+        success: true, payoutRequestId: data.payoutRequestId,
+        payoutSpeed: data.payoutSpeed, feeAmount: data.feeAmount, netAmount: data.netAmount,
+        estimatedArrivalAt: data.estimatedArrivalAt,
+      };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
+  },
+
+  // Display-only — never used to enforce/compute the actual fee, which is
+  // always resolved server-side inside request-payout from the same table.
+  async getPayoutConfig(): Promise<{ instantFeeRate: number }> {
+    const { data } = await supabase.from('payout_config').select('instant_fee_rate').eq('id', 1).maybeSingle();
+    return { instantFeeRate: data?.instant_fee_rate ?? 0.02 };
   },
 
   async getPayoutRequests(hostId: string): Promise<PayoutRequest[]> {
