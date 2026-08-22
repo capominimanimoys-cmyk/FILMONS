@@ -190,6 +190,76 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
+    // Paid Opportunity hire funding — a separate charge type so it can
+    // never fall through into the generic rental path below even though it
+    // also carries host-earning-shaped metadata. Worker earnings are only
+    // ever created here, after Stripe confirms payment — never at "Choose
+    // Applicant" or "Accept Offer" time.
+    if (meta.charge_type === 'opportunity') {
+      if (!meta.transaction_id || !meta.worker_id || !meta.owner_id) {
+        return new Response(JSON.stringify({ received: true, skipped: 'no transaction_id/worker_id/owner_id' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const grossAmount = parseFloat(meta.gross_amount || '0');
+      const feeAmount = parseFloat(meta.fee_amount || '0');
+      const netAmount = parseFloat(meta.net_amount || '0');
+      const holdReviewDays = parseInt(meta.hold_review_days || '7', 10);
+
+      // A real orders row -- this is what makes dispute-gating
+      // (fn_release_pending_earnings already checks orders.dispute_status)
+      // and admin volume/revenue reporting work with zero new code.
+      const orderId = `OPP-${meta.transaction_id}`;
+      await fetch(rest('/orders'), {
+        method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal,resolution=ignore-duplicates' },
+        body: JSON.stringify({
+          id: orderId, type: 'opportunity', status: 'paid',
+          host_id: meta.worker_id, renter_id: meta.owner_id,
+          listing_title: meta.listing_title || null, listing_type: 'Opportunity',
+          total_amount: grossAmount, subtotal: grossAmount, seller_fee_amount: feeAmount, seller_fee_rate: grossAmount ? feeAmount / grossAmount : 0,
+          currency: 'CAD', payment_method: 'Credit/Debit Card',
+          dispute_status: 'none', refund_status: 'none',
+          stripe_payment_intent_id: session.payment_intent || null,
+          conversation_id: meta.conversation_id || null,
+          paid_at: new Date().toISOString(),
+        }),
+      });
+
+      const processed = await rpc('fn_finalize_opportunity_payment', {
+        p_idempotency_key: event.id,
+        p_transaction_id: meta.transaction_id,
+        p_order_id: orderId,
+        p_worker_id: meta.worker_id,
+        p_owner_id: meta.owner_id,
+        p_gross_amount: grossAmount,
+        p_fee_amount: feeAmount,
+        p_net_amount: netAmount,
+        p_currency: 'CAD',
+        p_hold_review_days: holdReviewDays,
+        p_stripe_session_id: session.id,
+        p_stripe_payment_intent_id: session.payment_intent || null,
+      });
+
+      if (processed) {
+        const half = Math.round((netAmount / 2 + Number.EPSILON) * 100) / 100;
+        const held = Math.round((netAmount - half + Number.EPSILON) * 100) / 100;
+        const app = await selectOne('opportunity_applications', `id=eq.${meta.application_id}`);
+        if (app?.conversation_id) {
+          await fetch(rest('/messages'), {
+            method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              id: crypto.randomUUID(), conversation_id: app.conversation_id, sender_id: 'system', sender_name: 'Filmons',
+              content: null, type: 'system',
+              metadata: { systemText: `Payment secured ✓ — $${half.toFixed(2)} available now, $${held.toFixed(2)} held until completion.` },
+              created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_deleted: false, is_pinned: false,
+            }),
+          }).catch(() => {});
+        }
+        await insertNotification({ user_id: meta.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Opportunity funded ✓ — ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${half.toFixed(2)} available, $${held.toFixed(2)} held for ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+      }
+
+      return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
     const hostId = meta.host_id;
     const subtotal = parseFloat(meta.subtotal || '0');
     const buyerFeeAmount = parseFloat(meta.buyer_fee_amount || '0');

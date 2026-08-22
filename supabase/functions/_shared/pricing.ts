@@ -44,10 +44,15 @@ function calcFee(row: any | undefined, subtotal: number): number {
   return 0;
 }
 
-export async function computeBreakdown(input: { subtotal: number }): Promise<PricingBreakdown> {
+export async function computeBreakdown(input: { subtotal: number; context?: string }): Promise<PricingBreakdown> {
   const subtotal = Math.max(0, Number(input.subtotal) || 0);
+  // Every existing caller (rental/service checkout) passes no context and
+  // gets exactly today's behavior -- 'rental' is the default so a new
+  // context-scoped fee row (e.g. 'opportunity') can never leak into an
+  // unrelated calculation just because it happens to be active.
+  const context = input.context || 'rental';
 
-  const feeRes = await fetch(rest(`/platform_fee_config?active=eq.true&select=*`), { headers: H });
+  const feeRes = await fetch(rest(`/platform_fee_config?active=eq.true&context=eq.${encodeURIComponent(context)}&select=*`), { headers: H });
   const feeRows: any[] = await feeRes.json().catch(() => []);
   const buyerRow = Array.isArray(feeRows) ? feeRows.find((r) => r.payer === "buyer") : undefined;
   const sellerRow = Array.isArray(feeRows) ? feeRows.find((r) => r.payer === "seller") : undefined;

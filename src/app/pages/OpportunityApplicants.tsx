@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi, authApi, chatApi } from '../lib/api';
-import { applicationApi, OpportunityApplicationRow } from '../lib/applicationApi';
+import { applicationApi, opportunityPaymentApi, OpportunityApplicationRow } from '../lib/applicationApi';
 import { supabase } from '../../lib/supabase';
 import { Listing, User } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
@@ -28,14 +28,19 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   shortlisted: { label: 'Shortlisted', color: 'bg-purple-100 text-purple-700' },
   contacted:   { label: 'Contacted',   color: 'bg-blue-100 text-blue-700' },
   accepted:    { label: 'Accepted',    color: 'bg-green-100 text-green-700' },
+  offer_sent:      { label: 'Offer Sent',     color: 'bg-amber-100 text-amber-700' },
+  offer_accepted:  { label: 'Offer Accepted', color: 'bg-green-100 text-green-700' },
+  payment_pending: { label: 'Funding…',       color: 'bg-amber-100 text-amber-700' },
+  hired:           { label: 'Hired',          color: 'bg-green-100 text-green-700' },
+  completed:       { label: 'Completed',      color: 'bg-gray-100 text-gray-600' },
   rejected:    { label: 'Declined',    color: 'bg-red-50 text-red-500' },
   withdrawn:   { label: 'Withdrawn',   color: 'bg-gray-100 text-gray-500' },
 };
-const TERMINAL = new Set(['accepted', 'rejected', 'withdrawn']);
+const TERMINAL = new Set(['accepted', 'rejected', 'withdrawn', 'offer_sent', 'offer_accepted', 'payment_pending', 'hired', 'completed']);
 const tabOf = (status: string): TabKey =>
   status === 'pending' || status === 'viewed' ? 'new' :
   status === 'shortlisted' || status === 'contacted' ? 'shortlisted' :
-  status === 'accepted' ? 'accepted' : 'closed';
+  status === 'rejected' || status === 'withdrawn' ? 'closed' : 'accepted';
 
 export function OpportunityApplicants() {
   const { id } = useParams();
@@ -144,6 +149,19 @@ export function OpportunityApplicants() {
     if (!user) return;
     patch(a.id, { host_notes: notes });
     try { await applicationApi.updateNotes(a.id, user.id, notes); } catch {}
+  };
+  const doSendOffer = async (a: Row) => {
+    if (!user) return;
+    try { await applicationApi.sendOffer(a.id, user.id); patch(a.id, { status: 'offer_sent' } as any); toast.success('Offer sent'); }
+    catch (e: any) { toast.error(e?.message || 'Could not send offer'); }
+  };
+  const doFund = async (a: Row) => {
+    if (!user || !listing) return;
+    try {
+      const origin = window.location.origin;
+      const { url } = await opportunityPaymentApi.startFunding(user.id, a.id, `${origin}/listing/${listing.id}/applicants?opp_fund=1`, `${origin}/listing/${listing.id}/applicants`);
+      window.location.href = url;
+    } catch (e: any) { toast.error(e?.message || 'Could not start payment'); }
   };
 
   const toggleBulk = (id: string) => setBulkIds(prev => {
@@ -280,7 +298,8 @@ export function OpportunityApplicants() {
             <ApplicantDetail a={selected} listing={listing} onBack={() => setSelectedId(null)} showBack={false}
               onMessage={() => messageApplicant(selected)} onShortlist={() => doShortlist(selected)}
               onAccept={(d) => doAccept(selected, d)} onDecline={(r, n) => doDecline(selected, r, n)}
-              onSaveNotes={(n) => saveNotes(selected, n)} />
+              onSaveNotes={(n) => saveNotes(selected, n)}
+              onSendOffer={() => doSendOffer(selected)} onFund={() => doFund(selected)} />
           ) : (
             <div className="h-full flex items-center justify-center text-sm text-gray-400">Select an applicant to view their application</div>
           )}
@@ -294,7 +313,8 @@ export function OpportunityApplicants() {
             <ApplicantDetail a={selected} listing={listing} onBack={() => setSelectedId(null)} showBack
               onMessage={() => messageApplicant(selected)} onShortlist={() => doShortlist(selected)}
               onAccept={(d) => doAccept(selected, d)} onDecline={(r, n) => doDecline(selected, r, n)}
-              onSaveNotes={(n) => saveNotes(selected, n)} />
+              onSaveNotes={(n) => saveNotes(selected, n)}
+              onSendOffer={() => doSendOffer(selected)} onFund={() => doFund(selected)} />
           </BottomSheet>
         </div>
       )}
@@ -378,12 +398,13 @@ function ApplicantRow({ a, active, bulkMode, checked, onToggleBulk, onOpen, onMe
   );
 }
 
-function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist, onAccept, onDecline, onSaveNotes }: {
+function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist, onAccept, onDecline, onSaveNotes, onSendOffer, onFund }: {
   a: Row; listing: Listing; onBack: () => void; showBack: boolean;
   onMessage: () => void; onShortlist: () => void;
   onAccept: (details?: { position?: string; agreedRate?: string; startDate?: string }) => void;
   onDecline: (reason?: string, note?: string) => void;
   onSaveNotes: (notes: string) => void;
+  onSendOffer: () => void; onFund: () => void;
 }) {
   const [notes, setNotes] = useState(a.host_notes || '');
   const [confirmingAccept, setConfirmingAccept] = useState(false);
@@ -477,13 +498,34 @@ function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist,
                 <button onClick={() => setConfirmingAccept(true)} className="flex-1 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold">Accept</button>
               </>
             )}
-            {a.status === 'accepted' && (
+            {a.status === 'accepted' && listing.opportunity?.paid && (
+              <>
+                <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
+                <button onClick={onSendOffer} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold">Choose Applicant</button>
+              </>
+            )}
+            {a.status === 'accepted' && !listing.opportunity?.paid && (
               <>
                 <span className="flex-1 py-2.5 rounded-xl bg-green-50 text-green-700 text-sm font-bold text-center flex items-center justify-center gap-1"><CheckCircle2 className="w-4 h-4" /> Accepted</span>
                 <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
               </>
             )}
-            {TERMINAL.has(a.status) && a.status !== 'accepted' && (
+            {(a.status === 'offer_sent' || a.status === 'payment_pending') && (
+              <span className="flex-1 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-bold text-center">{badge.label}</span>
+            )}
+            {a.status === 'offer_accepted' && (
+              <>
+                <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
+                <button onClick={onFund} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold">Pay for Opportunity</button>
+              </>
+            )}
+            {(a.status === 'hired' || a.status === 'completed') && (
+              <>
+                <span className="flex-1 py-2.5 rounded-xl bg-green-50 text-green-700 text-sm font-bold text-center">{badge.label}</span>
+                <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
+              </>
+            )}
+            {(a.status === 'rejected' || a.status === 'withdrawn') && (
               <span className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-bold text-center">{badge.label}</span>
             )}
           </div>

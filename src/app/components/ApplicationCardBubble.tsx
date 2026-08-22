@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Briefcase, MapPin, ShieldCheck, ExternalLink, CheckCircle2, XCircle, Star } from 'lucide-react';
+import { Briefcase, MapPin, ShieldCheck, ExternalLink, CheckCircle2, XCircle, Star, DollarSign, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { ChatMessage, Listing, User } from '../types';
 import { listingsApi, authApi } from '../lib/api';
-import { applicationApi, OpportunityApplicationRow } from '../lib/applicationApi';
+import { applicationApi, opportunityPaymentApi, OpportunityApplicationRow, OpportunityTransactionRow } from '../lib/applicationApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
@@ -15,6 +15,11 @@ const OWNER_STATUS_LABEL: Record<string, { label: string; color: string }> = {
   shortlisted: { label: 'SHORTLISTED ✓',   color: 'bg-purple-100 text-purple-700' },
   contacted:   { label: 'CONTACTED',       color: 'bg-blue-100 text-blue-700' },
   accepted:    { label: 'ACCEPTED ✓',      color: 'bg-green-100 text-green-700' },
+  offer_sent:      { label: 'OFFER SENT',        color: 'bg-amber-100 text-amber-700' },
+  offer_accepted:  { label: 'OFFER ACCEPTED',    color: 'bg-green-100 text-green-700' },
+  payment_pending: { label: 'FUNDING…',          color: 'bg-amber-100 text-amber-700' },
+  hired:           { label: 'HIRED · FUNDED ✓',  color: 'bg-green-100 text-green-700' },
+  completed:       { label: 'COMPLETED ✓',       color: 'bg-gray-100 text-gray-600' },
   rejected:    { label: 'DECLINED',        color: 'bg-red-50 text-red-500' },
   withdrawn:   { label: 'WITHDRAWN',       color: 'bg-gray-100 text-gray-500' },
 };
@@ -24,10 +29,16 @@ const APPLICANT_STATUS_LABEL: Record<string, { label: string; color: string }> =
   shortlisted: { label: 'Shortlisted ✓',      color: 'bg-purple-100 text-purple-700' },
   contacted:   { label: 'Under Review',       color: 'bg-blue-100 text-blue-700' },
   accepted:    { label: 'Application Accepted ✓', color: 'bg-green-100 text-green-700' },
+  offer_sent:      { label: "You've Been Selected", color: 'bg-amber-100 text-amber-700' },
+  offer_accepted:  { label: 'Offer Accepted ✓',      color: 'bg-green-100 text-green-700' },
+  payment_pending: { label: 'Payment Processing…',   color: 'bg-amber-100 text-amber-700' },
+  hired:           { label: 'Payment Secured ✓',     color: 'bg-green-100 text-green-700' },
+  completed:       { label: 'Opportunity Completed ✓', color: 'bg-gray-100 text-gray-600' },
   rejected:    { label: 'Application Closed', color: 'bg-gray-100 text-gray-500' },
   withdrawn:   { label: 'Application Withdrawn', color: 'bg-gray-100 text-gray-500' },
 };
 const TERMINAL = new Set(['accepted', 'rejected', 'withdrawn']);
+const PAYMENT_FLOW = new Set(['offer_sent', 'offer_accepted', 'payment_pending', 'hired', 'completed']);
 
 export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
   const { user } = useAuth();
@@ -36,6 +47,7 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
   const isOwnerView = user?.id === card.ownerId;
 
   const [app, setApp] = useState<OpportunityApplicationRow | null>(null);
+  const [txn, setTxn] = useState<OpportunityTransactionRow | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [applicant, setApplicant] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +56,12 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
   const [confirmingAccept, setConfirmingAccept] = useState(false);
   const [confirmingDecline, setConfirmingDecline] = useState(false);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
+  const [confirmingFund, setConfirmingFund] = useState(false);
+
+  const reloadTxn = () => {
+    supabase.from('opportunity_transactions').select('*').eq('application_id', card.applicationId).maybeSingle()
+      .then(({ data }) => setTxn(data as OpportunityTransactionRow | null));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -58,12 +76,15 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
       setListing(l);
       setApplicant(applicantProfile);
       setLoading(false);
+      reloadTxn();
     })();
 
     const channel = supabase
       .channel(`app-card:${card.applicationId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'opportunity_applications', filter: `id=eq.${card.applicationId}` },
         (payload) => setApp(payload.new as OpportunityApplicationRow))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_transactions', filter: `application_id=eq.${card.applicationId}` },
+        () => reloadTxn())
       .subscribe();
 
     return () => { cancelled = true; supabase.removeChannel(channel); };
@@ -93,6 +114,21 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
   const doAccept = () => run(async () => { await applicationApi.accept(app.id, user!.id); setConfirmingAccept(false); toast.success('Applicant accepted'); });
   const doDecline = (reason?: string) => run(async () => { await applicationApi.decline(app.id, user!.id, reason); setConfirmingDecline(false); toast.success('Application declined'); });
   const doWithdraw = () => run(async () => { await applicationApi.withdraw(app.id, user!.id); setConfirmingWithdraw(false); toast.success('Application withdrawn'); });
+  const doSendOffer = () => run(async () => { await applicationApi.sendOffer(app.id, user!.id); toast.success('Offer sent'); });
+  const doRespondOffer = (decision: 'accept' | 'decline') => run(async () => {
+    await applicationApi.respondOffer(app.id, user!.id, decision);
+    toast.success(decision === 'accept' ? 'Offer accepted' : 'Offer declined');
+  });
+  const doMarkComplete = () => run(async () => { await applicationApi.markWorkCompleted(app.id, user!.id); toast.success('Marked as completed — awaiting owner confirmation'); });
+  const doConfirmCompletion = () => run(async () => { await applicationApi.confirmCompletion(app.id, user!.id); toast.success('Completion confirmed — remaining funds released'); });
+  const doReportProblem = () => run(async () => { await applicationApi.reportProblem(app.id, user!.id); toast.success('Problem reported — held funds are frozen'); });
+  const doFund = () => run(async () => {
+    const origin = window.location.origin;
+    const { url } = await opportunityPaymentApi.startFunding(
+      user!.id, app.id, `${origin}${window.location.pathname}?opp_fund=1&application_id=${app.id}`, `${origin}${window.location.pathname}`,
+    );
+    window.location.href = url;
+  });
 
   return (
     <div className="max-w-[320px] w-full rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
@@ -137,6 +173,20 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
         <span className={`text-[10px] font-black px-2 py-1 rounded-full ${statusInfo.color}`}>{statusInfo.label}</span>
       </div>
 
+      {txn && PAYMENT_FLOW.has(app.status) && (
+        <div className="mx-3.5 mb-2 bg-gray-50 rounded-xl px-3 py-2.5 space-y-1 text-xs">
+          <div className="flex justify-between"><span className="text-gray-400">Pay</span><span className="font-bold text-gray-900">${txn.gross_amount.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Filmons Fee ({(txn.fee_rate * 100).toFixed(0)}%)</span><span className="text-gray-500">-${txn.fee_amount.toFixed(2)}</span></div>
+          <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">{isOwnerView ? 'Worker Earnings' : "You'll Earn"}</span><span className="font-black text-gray-900">${txn.net_amount.toFixed(2)}</span></div>
+          {txn.payment_status === 'funded' && (
+            <>
+              <div className="flex justify-between"><span className="text-gray-400">Available</span><span className="font-bold text-green-600">${(txn.initial_release_amount ?? 0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Held</span><span className="font-bold text-amber-600">${(txn.held_amount ?? 0).toFixed(2)}</span></div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="px-3.5 pb-3.5 flex gap-2">
         <button onClick={() => setSheetOpen(true)} className="flex-1 text-xs font-bold text-gray-700 bg-gray-100 rounded-xl py-2">View Application</button>
         {isOwnerView && nonTerminal && app.status !== 'shortlisted' && (
@@ -151,7 +201,28 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
             <button disabled={busy} onClick={() => setConfirmingDecline(true)} className="flex-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50">Decline</button>
           </>
         )}
-        {!isOwnerView && nonTerminal && (
+        {isOwnerView && app.status === 'accepted' && listing.opportunity?.paid && (
+          <button disabled={busy} onClick={doSendOffer} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Choose Applicant</button>
+        )}
+        {!isOwnerView && app.status === 'offer_sent' && (
+          <>
+            <button disabled={busy} onClick={() => doRespondOffer('accept')} className="flex-1 text-xs font-bold text-white bg-green-600 rounded-xl py-2 disabled:opacity-50">Accept Offer</button>
+            <button disabled={busy} onClick={() => doRespondOffer('decline')} className="flex-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50">Decline</button>
+          </>
+        )}
+        {isOwnerView && app.status === 'offer_accepted' && (
+          <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Pay for Opportunity</button>
+        )}
+        {!isOwnerView && app.status === 'hired' && txn?.work_status === 'in_progress' && (
+          <button disabled={busy} onClick={doMarkComplete} className="flex-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50">Mark Work Completed</button>
+        )}
+        {isOwnerView && app.status === 'hired' && txn?.work_status === 'marked_complete_by_worker' && (
+          <button disabled={busy} onClick={doConfirmCompletion} className="flex-1 text-xs font-bold text-white bg-green-600 rounded-xl py-2 disabled:opacity-50">Confirm Completion</button>
+        )}
+        {app.status === 'hired' && (
+          <button disabled={busy} onClick={doReportProblem} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50"><AlertTriangle className="w-3 h-3" /> Report a Problem</button>
+        )}
+        {!isOwnerView && nonTerminal && !PAYMENT_FLOW.has(app.status) && (
           <button disabled={busy} onClick={() => setConfirmingWithdraw(true)} className="flex-1 text-xs font-bold text-gray-500 bg-gray-100 rounded-xl py-2 disabled:opacity-50">Withdraw</button>
         )}
       </div>

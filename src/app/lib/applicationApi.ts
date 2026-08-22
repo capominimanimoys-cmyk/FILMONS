@@ -11,7 +11,8 @@ export interface OpportunityApplicationRow {
   listing_id: string;
   applicant_id: string;
   message: string | null;
-  status: 'pending' | 'viewed' | 'shortlisted' | 'contacted' | 'accepted' | 'rejected' | 'withdrawn';
+  status: 'pending' | 'viewed' | 'shortlisted' | 'contacted' | 'accepted' | 'rejected' | 'withdrawn'
+    | 'selected' | 'offer_sent' | 'offer_accepted' | 'payment_pending' | 'hired' | 'completed';
   created_at: string;
   portfolio_url: string | null;
   resume_url: string | null;
@@ -55,4 +56,52 @@ export const applicationApi = {
   updateNotes: (applicationId: string, userId: string, notes: string) => call('update_notes', { applicationId, userId, notes }),
   bulkShortlist: (applicationIds: string[], userId: string) => call('bulk_shortlist', { applicationIds, userId }),
   bulkDecline: (applicationIds: string[], userId: string, reason?: string) => call('bulk_decline', { applicationIds, userId, reason }),
+
+  // Paid Opportunity hire/fund/completion flow.
+  sendOffer: (applicationId: string, userId: string) => call('send_offer', { applicationId, userId }),
+  respondOffer: (applicationId: string, userId: string, decision: 'accept' | 'decline') => call('respond_offer', { applicationId, userId, decision }),
+  markWorkCompleted: (applicationId: string, userId: string) => call('mark_work_completed', { applicationId, userId }),
+  confirmCompletion: (applicationId: string, userId: string) => call('confirm_completion', { applicationId, userId }),
+  reportProblem: (applicationId: string, userId: string) => call('report_problem', { applicationId, userId }),
+};
+
+export interface OpportunityTransactionRow {
+  id: string;
+  application_id: string;
+  listing_id: string;
+  order_id: string | null;
+  owner_id: string;
+  worker_id: string;
+  gross_amount: number;
+  fee_rate: number;
+  fee_amount: number;
+  net_amount: number;
+  currency: string;
+  initial_release_amount: number | null;
+  held_amount: number | null;
+  initial_released_at: string | null;
+  hold_release_at: string | null;
+  hold_released_at: string | null;
+  payment_status: 'pending' | 'funded' | 'completed' | 'refunded' | 'cancelled';
+  work_status: 'in_progress' | 'marked_complete_by_worker' | 'completed';
+  funded_at: string | null;
+  completed_at: string | null;
+}
+
+async function callFund(path: string, opts: { method: 'GET' | 'POST'; body?: Record<string, unknown> }) {
+  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/fund-opportunity${path}`, {
+    method: opts.method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Request failed');
+  return data;
+}
+
+export const opportunityPaymentApi = {
+  startFunding: (userId: string, applicationId: string, successUrl: string, cancelUrl: string): Promise<{ url: string; session_id: string }> =>
+    callFund('', { method: 'POST', body: { userId, applicationId, successUrl, cancelUrl } }),
+  verifyFunding: (sessionId: string): Promise<{ success: boolean; funded: boolean; application: OpportunityApplicationRow | null }> =>
+    callFund(`/verify?session_id=${sessionId}`, { method: 'GET' }),
 };

@@ -47,8 +47,19 @@ async function insertOne(table: string, row: Record<string, unknown>) {
     body: JSON.stringify(row),
   }).catch(() => {});
 }
+async function insertReturning(table: string, row: Record<string, unknown>) {
+  const res = await fetch(rest(`/${table}`), {
+    method: 'POST', headers: { ...H, Prefer: 'return=representation' },
+    body: JSON.stringify(row),
+  });
+  const rows = await res.json().catch(() => null);
+  return Array.isArray(rows) ? rows[0] : null;
+}
+
+import { computeBreakdown } from '../_shared/pricing.ts';
 
 const TERMINAL = new Set(['accepted', 'rejected', 'withdrawn']);
+function round2(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
 function oppTitle(listingTitle: string | null | undefined) {
   return listingTitle ? `"${listingTitle}"` : 'this opportunity';
@@ -99,11 +110,17 @@ async function applyAction(
 ): Promise<{ ok: true; application: any } | { ok: false; status: number; error: string }> {
   const listing = await selectOne('listings', `id=eq.${encodeURIComponent(app.listing_id)}`);
   const listingTitle: string | undefined = listing?.title;
+  const isOwner = !!listing && listing.user_id === userId;
+  const isApplicant = app.applicant_id === userId;
 
-  if (action === 'withdraw') {
-    if (app.applicant_id !== userId) return { ok: false, status: 403, error: 'You do not own this application' };
+  const APPLICANT_GATED = new Set(['withdraw', 'respond_offer', 'mark_work_completed']);
+  const EITHER_GATED = new Set(['report_problem']);
+  if (APPLICANT_GATED.has(action)) {
+    if (!isApplicant) return { ok: false, status: 403, error: 'You do not own this application' };
+  } else if (EITHER_GATED.has(action)) {
+    if (!isApplicant && !isOwner) return { ok: false, status: 403, error: 'Not a party to this application' };
   } else {
-    if (!listing || listing.user_id !== userId) return { ok: false, status: 403, error: 'You do not own this opportunity' };
+    if (!isOwner) return { ok: false, status: 403, error: 'You do not own this opportunity' };
   }
 
   const now = new Date().toISOString();
@@ -153,6 +170,73 @@ async function applyAction(
         systemText = 'The applicant withdrew their application.';
       }
       break;
+
+    // ── Paid Opportunity hire/fund/completion flow ─────────────────────
+    case 'send_offer': {
+      if (app.status !== 'accepted') return { ok: false, status: 400, error: 'Application must be accepted before sending an offer' };
+      const opp = listing?.metadata?.opportunity;
+      const gross = opp?.paid ? Number(opp.compensationAmount ?? opp.compensationMin ?? 0) : 0;
+      if (!gross || gross <= 0) return { ok: false, status: 400, error: 'This opportunity has no payable compensation set' };
+      const breakdown = await computeBreakdown({ subtotal: gross, context: 'opportunity' });
+      const txn = await insertReturning('opportunity_transactions', {
+        application_id: app.id, listing_id: app.listing_id, owner_id: userId, worker_id: app.applicant_id,
+        gross_amount: breakdown.subtotal, fee_rate: breakdown.sellerFeeRate, fee_amount: breakdown.sellerFeeAmount,
+        net_amount: round2(breakdown.subtotal - breakdown.sellerFeeAmount), currency: 'CAD',
+      });
+      if (!txn) return { ok: false, status: 500, error: 'Could not create offer' };
+      await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'offer_sent' });
+      await pushNotification({
+        user_id: app.applicant_id, actor_id: userId, actor_name: '', type: 'application_shortlisted',
+        title: `You've been selected for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id,
+      });
+      await insertSystemMessage(app.conversation_id,
+        `Offer: $${breakdown.subtotal.toFixed(2)} — Filmons Fee $${breakdown.sellerFeeAmount.toFixed(2)} — You'll earn $${(breakdown.subtotal - breakdown.sellerFeeAmount).toFixed(2)}`);
+      return { ok: true, application: { ...app, status: 'offer_sent' } };
+    }
+    case 'respond_offer': {
+      if (app.status !== 'offer_sent') return { ok: false, status: 400, error: 'No pending offer to respond to' };
+      const decision = payload?.decision;
+      if (decision !== 'accept' && decision !== 'decline') return { ok: false, status: 400, error: 'decision must be accept or decline' };
+      if (decision === 'accept') {
+        await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'offer_accepted' });
+        await insertSystemMessage(app.conversation_id, 'Offer accepted ✓');
+        await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_accepted', title: `Your offer for ${oppTitle(listingTitle)} was accepted`, conversation_id: app.conversation_id });
+        return { ok: true, application: { ...app, status: 'offer_accepted' } };
+      }
+      await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'rejected', declined_at: now, decline_reason: 'offer_declined' });
+      await insertSystemMessage(app.conversation_id, 'The offer was declined.');
+      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_rejected', title: `Your offer for ${oppTitle(listingTitle)} was declined`, conversation_id: app.conversation_id });
+      return { ok: true, application: { ...app, status: 'rejected' } };
+    }
+    case 'mark_work_completed': {
+      if (app.status !== 'hired') return { ok: false, status: 400, error: 'This opportunity has not been funded yet' };
+      await updateOne('opportunity_transactions', `application_id=eq.${app.id}`, { work_status: 'marked_complete_by_worker', updated_at: now });
+      await insertSystemMessage(app.conversation_id, 'The worker marked this Opportunity as completed — awaiting owner confirmation.');
+      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'system_notification', title: `Marked complete — confirm completion for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id });
+      return { ok: true, application: app };
+    }
+    case 'confirm_completion': {
+      const txn = await selectOne('opportunity_transactions', `application_id=eq.${app.id}`);
+      if (!txn || txn.payment_status !== 'funded') return { ok: false, status: 400, error: 'No funded payment to release' };
+      await updateOne('opportunity_transactions', `id=eq.${txn.id}`, { work_status: 'completed', completed_at: now, updated_at: now });
+      // Flip the held wallet_transactions row's available_at to now — the
+      // existing hourly fn_release_pending_earnings cron does the rest,
+      // exactly like every other pending->available release in this app.
+      await updateOne('wallet_transactions', `order_id=eq.${txn.order_id}&transaction_type=eq.opportunity_earning&balance_type=eq.pending`, { available_at: now });
+      await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'completed' });
+      await insertSystemMessage(app.conversation_id, `Opportunity completed — the remaining $${Number(txn.held_amount).toFixed(2)} is now available.`);
+      await pushNotification({ user_id: txn.worker_id, actor_id: userId, actor_name: '', type: 'payment_released', title: `Your remaining earnings for ${oppTitle(listingTitle)} are now available`, conversation_id: app.conversation_id });
+      return { ok: true, application: { ...app, status: 'completed' } };
+    }
+    case 'report_problem': {
+      const txn = await selectOne('opportunity_transactions', `application_id=eq.${app.id}`);
+      if (!txn || !txn.order_id) return { ok: false, status: 400, error: 'No funded payment on this application to report a problem with' };
+      await updateOne('orders', `id=eq.${txn.order_id}`, { dispute_status: 'disputed', disputed_at: now });
+      await insertSystemMessage(app.conversation_id, 'A problem was reported — the held funds will stay frozen until Filmons resolves it.');
+      const otherParty = isApplicant ? listing.user_id : app.applicant_id;
+      await pushNotification({ user_id: otherParty, actor_id: userId, actor_name: '', type: 'system_notification', title: `A problem was reported for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id });
+      return { ok: true, application: app };
+    }
     case 'mark_contacted':
       if (app.status === 'viewed' || app.status === 'shortlisted') {
         patch = { status: 'contacted', contacted_at: now };
