@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import FilmonsLoader from '../components/FilmonsLoader';
 
-type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'security';
+type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'oauth_only' | 'security';
 
 // ── Cinematic background ───────────────────────────────────────────────────
 function CinematicBg() {
@@ -87,6 +87,7 @@ export function Login() {
   const [loading,  setLoading]  = useState(false);
   const [otp,      setOtp]      = useState('');
   const [pwError,  setPwError]  = useState('');
+  const [oauthOnlyProviders, setOauthOnlyProviders] = useState<string[]>([]);
 
   useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/', { replace: true }); } }, [isAuthenticated]);
 
@@ -107,12 +108,15 @@ export function Login() {
       captureSnapshot(); navigate('/');
     } catch (e: any) {
       const msg: string = e?.message || '';
-      if (msg === 'EMAIL_NOT_FOUND') {
+      if (e?.code === 'OAUTH_ONLY') {
+        setOauthOnlyProviders(e.providers || []);
+        setScreen('oauth_only');
+      } else if (msg === 'EMAIL_NOT_FOUND') {
         setScreen('email_not_found');
       } else if (msg.includes('confirm') || msg.includes('Confirm')) {
         toast.error(msg, { duration: 6000, description: 'Check your inbox and click the confirmation link, then try again.' });
-      } else if (msg.toLowerCase().includes('incorrect password') || msg.toLowerCase().includes('invalid')) {
-        setPwError('Incorrect password. Please try again or reset your password.');
+      } else if (msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('invalid')) {
+        setPwError('Email or password is incorrect.');
       } else {
         toast.error(msg || 'Something went wrong. Please try again.');
       }
@@ -337,6 +341,58 @@ export function Login() {
               <span className="flex-1 text-left">Continue with Phone Number</span>
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ACCOUNT USES GOOGLE/APPLE — no email/password identity on file ───────
+  if (screen === 'oauth_only') {
+    const providerLabel = oauthOnlyProviders.includes('google') ? 'Google' : oauthOnlyProviders.includes('apple') ? 'Apple' : 'a social account';
+    const provider: 'google' | 'apple' = oauthOnlyProviders.includes('apple') ? 'apple' : 'google';
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden"
+        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
+        <CinematicBg/>
+        <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
+          <button
+            onClick={() => setScreen('email')}
+            className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4"/> Back
+          </button>
+
+          <div className="flex justify-center mb-6">
+            <div className="w-20 h-20 rounded-full bg-white/10 border border-white/20 flex items-center justify-center">
+              <GoogleLogo size={32}/>
+            </div>
+          </div>
+
+          <div className="text-center mb-6">
+            <p className="text-2xl font-black text-white mb-2">Continue to your account</p>
+            <p className="text-white/60 text-sm leading-relaxed">This account was created with {providerLabel}.</p>
+          </div>
+
+          <button
+            onClick={() => handleOAuth(provider)}
+            className="w-full py-4 bg-white hover:bg-gray-100 text-gray-900 font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg mb-4 flex items-center justify-center gap-2.5"
+          >
+            <GoogleLogo size={18}/> Continue with {providerLabel}
+          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 h-px bg-white/10"/>
+            <p className="text-white/30 text-xs">or</p>
+            <div className="flex-1 h-px bg-white/10"/>
+          </div>
+
+          <p className="text-center text-white/40 text-xs mb-3">Want to also sign in with email and password?</p>
+          <button
+            onClick={() => { captureSnapshot(); navigate(`/forgot-password?email=${encodeURIComponent(email)}`); }}
+            className="w-full py-3.5 border border-white/20 hover:bg-white/5 text-white font-semibold text-sm rounded-2xl transition-all active:scale-[0.98]"
+          >
+            Set Up Password
+          </button>
         </div>
       </div>
     );

@@ -289,13 +289,23 @@ const [showPw,  setShowPw]  = useState(false);
                 <p className="text-sm font-semibold text-gray-900">Email & Password</p>
                 <p className="text-xs text-gray-400 truncate">{user?.email || '—'}</p>
               </div>
-              {linkedProviders.includes('email') && (
+              {linkedProviders.includes('email') ? (
                 <CheckCircle className="w-5 h-5 text-green-500 shrink-0"/>
+              ) : (
+                <button
+                  onClick={() => navigate(`/forgot-password?email=${encodeURIComponent(user?.email || '')}`)}
+                  className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full shrink-0 hover:bg-blue-100 transition-colors"
+                >
+                  Set Up Password
+                </button>
               )}
-              {user?.id && (
+              {user?.id && linkedProviders.includes('email') && (
                 <ChangeEmailFlow userId={user.id} currentEmail={user.email || ''} onChanged={email => updateUser?.({ email, emailVerified: true })} />
               )}
             </div>
+            {!linkedProviders.includes('email') && (
+              <p className="text-xs text-gray-400 px-1 -mt-1">Not configured — add a password to also sign in with email.</p>
+            )}
 
             {/* Phone */}
             {user?.phone ? (
@@ -354,7 +364,11 @@ const [showPw,  setShowPw]  = useState(false);
           </div>
         </Section>
 
-        {/* Password */}
+        {/* Password — only shown once the account actually has one. A
+            Google/Apple-only account has no "Current Password" to enter;
+            it uses "Set Up Password" above (the forgot-password flow)
+            instead, which doesn't require one either. */}
+        {linkedProviders.includes('email') && (
         <Section title="Login & Password" icon={<Lock className="w-4 h-4 text-gray-600"/>}>
           <div className="space-y-3 p-4">
             {(['current','next','confirm'] as const).map(k => (
@@ -379,6 +393,7 @@ const [showPw,  setShowPw]  = useState(false);
             </button>
           </div>
         </Section>
+        )}
 
         {/* 2FA */}
         <Section title="Two-Factor Authentication" icon={<Shield className="w-4 h-4 text-gray-600"/>}>

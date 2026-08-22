@@ -309,6 +309,23 @@ export const authApi = {
     return user;
   },
 
+  // Ground truth for "does this email exist, and what auth methods does it
+  // have" — reads the real auth.users/identities record via a service-role
+  // edge function (the admin API isn't callable with the anon key). Used by
+  // signin() to route Google/Apple-only accounts correctly instead of
+  // guessing from a resend() side effect, and reusable anywhere else that
+  // needs to know before assuming "unconfirmed email".
+  checkAuthMethods: async (email: string): Promise<{ exists: boolean; providers: string[]; emailConfirmed: boolean }> => {
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/check-auth-methods`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({ email: email.toLowerCase() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { exists: false, providers: [], emailConfirmed: false };
+    return { exists: !!data.exists, providers: data.providers || [], emailConfirmed: !!data.emailConfirmed };
+  },
+
   signin: async (email: string, password: string): Promise<{ user: User; verificationCode: string }> => {
     // 1. Authenticate via Supabase Auth (real password check)
     console.log('[signin] attempting signInWithPassword for:', email.toLowerCase());
@@ -320,30 +337,28 @@ export const authApi = {
       const msg = authError?.message || '';
       console.warn('[signin] Supabase Auth error:', msg);
 
-      if (msg.toLowerCase().includes('email not confirmed') || msg.toLowerCase().includes('not confirmed')) {
+      // Ground truth from the real auth.users/identities record — never
+      // guess "not confirmed" from a resend() side effect again (that
+      // heuristic was wrong for Google/Apple-only accounts, which have no
+      // email/password identity at all and were being misreported as
+      // "email not confirmed" instead of "this account uses Google").
+      const check = await authApi.checkAuthMethods(email);
+
+      if (!check.exists) throw new Error('EMAIL_NOT_FOUND');
+
+      if (!check.providers.includes('email')) {
+        const err: any = new Error('OAUTH_ONLY');
+        err.code = 'OAUTH_ONLY';
+        err.providers = check.providers;
+        throw err;
+      }
+
+      if (!check.emailConfirmed) {
         await supabase.auth.resend({ type: 'signup', email: email.toLowerCase() }).catch(() => {});
         throw new Error('Please confirm your email first — we just resent the confirmation link.');
       }
 
-      // Distinguish "wrong password" from "email not registered at all"
-      const { data: profileByEmail } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', email.toLowerCase())
-        .maybeSingle();
-
-      if (profileByEmail) {
-        // Profile exists — could be wrong password OR unconfirmed Supabase account.
-        // Try resending signup confirmation: succeeds (no error) only when the account
-        // is unconfirmed, so we can distinguish the two cases.
-        const { error: resendErr } = await supabase.auth.resend({ type: 'signup', email: email.toLowerCase() });
-        if (!resendErr) {
-          throw new Error('Your email address is not confirmed yet. We just resent the confirmation link — please check your inbox, click the link, then sign in again.');
-        }
-        throw new Error('Incorrect password. Please try again or reset your password.');
-      }
-
-      throw new Error('EMAIL_NOT_FOUND');
+      throw new Error('Email or password is incorrect.');
     }
 
     // 2. Load full profile from profiles table

@@ -187,3 +187,8 @@ jobs:
         run: supabase functions deploy payout-connect-status --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy check-auth-methods
+        run: supabase functions deploy check-auth-methods --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
