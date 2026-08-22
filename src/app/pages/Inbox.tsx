@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { AddPhotoAlternateRounded, AddRounded, ArrowBackIosNewRounded, AttachFileRounded, AttachMoneyRounded, CalendarMonthRounded, CameraAltRounded, CancelRounded, ChatBubbleRounded, CheckCircleRounded, CheckRounded, CloseRounded, ConstructionRounded, CreditCardRounded, DeleteRounded, DoneAllRounded, EditRounded, FavoriteRounded, GppBadRounded, GroupRounded, HourglassEmptyRounded, HowToRegRounded, ImageRounded, Inventory2Rounded, KeyboardArrowDownRounded, LocalOfferRounded, LocationOnRounded, MicOffRounded, MicRounded, MoreHorizRounded, MoreVertRounded, MusicNoteRounded, OpenInNewRounded, PaymentRounded, PersonAddRounded, PersonRemoveRounded, PhoneDisabledRounded, PhoneRounded, PhotoCameraRounded, PhotoLibraryRounded, PlayArrowRounded, PushPinRounded, ReplyRounded, ScheduleRounded, SearchRounded, SendRounded, SentimentSatisfiedRounded, StopRounded, VerifiedRounded, VideoLibraryRounded, VideocamOffRounded, VideocamRounded, VolumeUpRounded } from '../components/Icons';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { chatApi, authApi, listingsApi, dbRowToMsg, consumeDeletedConvRecord } from '../lib/api';
+import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord } from '../lib/api';
 import * as notifs from '../lib/notifications';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -1713,14 +1713,6 @@ export function Inbox() {
   const otherUserId = activeConv?.participantIds.find(id => id !== user?.id) || '';
   const otherUser = otherUserId ? authApi.getUserByIdSync(otherUserId) : null;
 
-  // Opportunity title for the "APPLICATION · <title>" header caption —
-  // fetched lazily per opportunityId, not carried on the conversation itself.
-  const [oppTitleCache, setOppTitleCache] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const oid = activeConv?.opportunityId;
-    if (!oid || oppTitleCache[oid]) return;
-    listingsApi.getOne(oid).then(l => setOppTitleCache(prev => ({ ...prev, [oid]: l.title }))).catch(() => {});
-  }, [activeConv?.opportunityId]);
 
   // Mutual follow check for calling
   const canCall = !!(user && otherUser &&
@@ -2054,7 +2046,10 @@ export function Inbox() {
 
   // Infer conversation type from message history
   const getConvType = (c: Conversation): 'booking' | 'sale' | 'collab' | 'general' | 'application' => {
-    if (c.applicationId || c.messages.some(m => m.type === 'application')) return 'application';
+    // A conversation can hold Application Cards from several different
+    // Opportunities (it's the one real thread with this person, not
+    // per-application) — message-type scanning already handles that.
+    if (c.messages.some(m => m.type === 'application')) return 'application';
     if (c.messages.some(m => m.type === 'rental_request')) {
       const req = c.messages.find(m => m.type === 'rental_request' && m.rentalRequest)?.rentalRequest;
       return req?.listingMode === 'sale' || req?.durationType === 'purchase' ? 'sale' : 'booking';
@@ -2731,13 +2726,7 @@ export function Inbox() {
                       <Link to={`/host/${otherUser.id}`}><UserAvatar user={otherUser} size={38} /></Link>
                       <div>
                         <Link to={`/host/${otherUser.id}`} className="text-sm font-bold text-gray-900 hover:text-blue-600 transition-colors">{otherUser.name}</Link>
-                        {activeConv?.applicationId && activeConv?.opportunityId ? (
-                          <Link to={`/listing/${activeConv.opportunityId}`} className="block text-[11px] font-bold text-indigo-600 mt-0.5">
-                            APPLICATION{oppTitleCache[activeConv.opportunityId] ? ` · ${oppTitleCache[activeConv.opportunityId]}` : ''}
-                          </Link>
-                        ) : (
-                          otherUser.accountType && <div className="mt-0.5"><AccountTypeBadge type={otherUser.accountType} size="sm" /></div>
-                        )}
+                        {otherUser.accountType && <div className="mt-0.5"><AccountTypeBadge type={otherUser.accountType} size="sm" /></div>}
                       </div>
                     </>
                   )}

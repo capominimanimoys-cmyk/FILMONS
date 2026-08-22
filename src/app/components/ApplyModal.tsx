@@ -76,10 +76,12 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
       if ('limitReached' in result) { setLimitReached(result.limitReached); setSending(false); return; }
       const applicationId = result.applicationId;
 
-      // One dedicated conversation per (opportunity, applicant) — never the
-      // pair-keyed getOrCreateDB, so applying to a second opportunity from
-      // the same host never collides into the first application's thread.
-      const conv = await chatApi.getOrCreateForApplication(applicationId, listing.id, user.id, host.id);
+      // The ONE real conversation with this host — never a new/duplicate
+      // thread. If they already have a conversation, the Application Card
+      // lands inside it; applying to a second opportunity from the same
+      // host reuses the same conversation too (each card carries its own
+      // applicationId/opportunityId, so contexts never get confused).
+      const conv = await chatApi.getOrCreateDB(user.id, host.id);
       await supabase.from('opportunity_applications').update({ conversation_id: conv.id }).eq('id', applicationId);
 
       // A real Application Card, never a plain text message — everything the

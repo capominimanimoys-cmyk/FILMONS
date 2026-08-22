@@ -119,8 +119,8 @@ export function OpportunityApplicants() {
   };
 
   const messageApplicant = async (a: Row) => {
-    if (!user || !listing) return;
-    const conv = await chatApi.getOrCreateForApplication(a.id, listing.id, a.applicant_id, user.id);
+    if (!user) return;
+    const conv = await chatApi.getOrCreateDB(user.id, a.applicant_id);
     if (!a.conversation_id) patch(a.id, { conversation_id: conv.id });
     navigate(`/inbox?conv=${conv.id}`);
   };

@@ -2946,45 +2946,37 @@ export const chatApi = {
       if (!error && convId) {
         const { data: row } = await supabase
           .from('conversations')
-          .select('id, is_request, requested_by, participants, application_id')
+          .select('id, is_request, requested_by, participants')
           .eq('id', String(convId))
           .single();
-        // An application-linked conversation must never be handed back from a
-        // generic pair-based lookup (e.g. "Message this user" from a profile
-        // page landing a stranger inside someone else's application thread).
-        // Fall through to the manual pair-matching below, which excludes
-        // application-linked rows, instead of trusting the RPC's result here.
-        if (!row || !row.application_id) {
-          // RPC may store requested_by as the alphabetically-sorted first ID,
-          // not necessarily the initiator. Correct it if wrong.
-          if (row && row.requested_by !== userId1) {
-            await supabase.from('conversations')
-              .update({ requested_by: userId1 })
-              .eq('id', String(convId));
-          }
-          return {
-            id:             String(convId),
-            participantIds: [p1, p2],
-            messages:       [],
-            updatedAt:      new Date().toISOString(),
-            isRequest:      row?.is_request ?? true,
-            requestedBy:    userId1,
-          } as Conversation;
+        // RPC may store requested_by as the alphabetically-sorted first ID,
+        // not necessarily the initiator. Correct it if wrong.
+        if (row && row.requested_by !== userId1) {
+          await supabase.from('conversations')
+            .update({ requested_by: userId1 })
+            .eq('id', String(convId));
         }
+        return {
+          id:             String(convId),
+          participantIds: [p1, p2],
+          messages:       [],
+          updatedAt:      new Date().toISOString(),
+          isRequest:      row?.is_request ?? true,
+          requestedBy:    userId1,
+        } as Conversation;
       }
     } catch {}
 
     // Find existing — check both orderings, prefer accepted conversations
     const { data: rows } = await supabase
       .from('conversations')
-      .select('id, participants, updated_at, is_request, requested_by, application_id')
+      .select('id, participants, updated_at, is_request, requested_by')
       .or(`participants.cs.{"${p1}","${p2}"},participants.cs.{"${p2}","${p1}"}`)
       .eq('deleted_for_everyone', false)
       .order('created_at', { ascending: true })
       .limit(10);
 
     const matches = (rows || []).filter((r: any) => {
-      if (r.application_id) return false; // never surface an application-linked thread here
       const parts: string[] = Array.isArray(r.participants)
         ? r.participants
         : (() => { try { return JSON.parse(r.participants); } catch { return []; } })();
@@ -3046,110 +3038,6 @@ export const chatApi = {
       updatedAt:      new Date().toISOString(),
       isRequest:      true,
       requestedBy:    userId1,
-    } as Conversation;
-  },
-
-  /** Get or create the ONE conversation for a specific (opportunity, applicant)
-   *  pair — deliberately separate from getOrCreateDB, which is pair-keyed only.
-   *  Applying to two different Opportunities from the same host must produce
-   *  two separate conversations, never a merge. Never a message request —
-   *  applying is an intentional action, not a cold DM. */
-  async getOrCreateForApplication(
-    applicationId: string,
-    opportunityId: string,
-    applicantId: string,
-    ownerId: string,
-  ): Promise<Conversation> {
-    // 1. Trust the application row's own conversation_id if already set.
-    const { data: appRow } = await supabase
-      .from('opportunity_applications')
-      .select('conversation_id')
-      .eq('id', applicationId)
-      .single();
-    if (appRow?.conversation_id) {
-      const { data: existing } = await supabase
-        .from('conversations')
-        .select('id, participants, is_request, requested_by, opportunity_id, application_id')
-        .eq('id', appRow.conversation_id)
-        .single();
-      if (existing) {
-        return {
-          id: String(existing.id),
-          participantIds: Array.isArray(existing.participants) ? existing.participants : [applicantId, ownerId],
-          messages: [], updatedAt: new Date().toISOString(),
-          isRequest: existing.is_request ?? false, requestedBy: existing.requested_by ?? applicantId,
-          opportunityId: existing.opportunity_id ?? opportunityId, applicationId: existing.application_id ?? applicationId,
-        } as Conversation;
-      }
-    }
-
-    // 2. Fall back to searching conversations by application_id (covers a
-    //    conversation row that exists but the application row's FK wasn't
-    //    back-filled yet, e.g. a retried/interrupted apply).
-    const { data: byApp } = await supabase
-      .from('conversations')
-      .select('id, participants, is_request, requested_by')
-      .eq('application_id', applicationId)
-      .limit(1)
-      .maybeSingle();
-    if (byApp) {
-      void supabase.from('opportunity_applications').update({ conversation_id: byApp.id }).eq('id', applicationId);
-      return {
-        id: String(byApp.id),
-        participantIds: Array.isArray(byApp.participants) ? byApp.participants : [applicantId, ownerId],
-        messages: [], updatedAt: new Date().toISOString(),
-        isRequest: byApp.is_request ?? false, requestedBy: byApp.requested_by ?? applicantId,
-        opportunityId, applicationId,
-      } as Conversation;
-    }
-
-    // 3. Create new.
-    const newId = crypto.randomUUID();
-    const { data: created, error: createErr } = await supabase
-      .from('conversations')
-      .insert({
-        id: newId,
-        participants: [applicantId, ownerId],
-        is_request: false,
-        requested_by: applicantId,
-        deleted_for_everyone: false,
-        opportunity_id: opportunityId,
-        application_id: applicationId,
-        updated_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
-
-    if (createErr) {
-      // Unique violation on application_id — another call already created it; refetch.
-      if (createErr.code === '23505') {
-        const { data: raced } = await supabase
-          .from('conversations')
-          .select('id, participants, is_request, requested_by')
-          .eq('application_id', applicationId)
-          .single();
-        if (raced) {
-          return {
-            id: String(raced.id),
-            participantIds: Array.isArray(raced.participants) ? raced.participants : [applicantId, ownerId],
-            messages: [], updatedAt: new Date().toISOString(),
-            isRequest: raced.is_request ?? false, requestedBy: raced.requested_by ?? applicantId,
-            opportunityId, applicationId,
-          } as Conversation;
-        }
-      }
-      throw new Error(createErr.message);
-    }
-
-    void supabase.from('opportunity_applications').update({ conversation_id: String(created.id) }).eq('id', applicationId);
-
-    return {
-      id: String(created.id),
-      participantIds: [applicantId, ownerId],
-      messages: [], updatedAt: new Date().toISOString(),
-      isRequest: false, requestedBy: applicantId,
-      opportunityId, applicationId,
     } as Conversation;
   },
 
@@ -3372,11 +3260,11 @@ export const chatApi = {
       });
 
       // Deduplicate: if two conversations have the same participant pair, keep the accepted one
-      // (or most-recent if both are requests). This prevents "duplicated user" in inbox.
-      // Keyed also on applicationId/opportunityId so two different Opportunity
-      // application threads between the same two people never collapse into
-      // one — only plain-DM pairs (no application/opportunity id) dedup.
-      const dedupKey = (c: Conversation) => [...c.participantIds].sort().join('|') + '::' + (c.applicationId || c.opportunityId || '');
+      // (or most-recent if both are requests). This prevents "duplicated user" in inbox —
+      // strictly pair-based: a conversation can hold Application Cards from
+      // multiple different Opportunities, so two same-pair conversations must
+      // always collapse into one, never stay separate.
+      const dedupKey = (c: Conversation) => [...c.participantIds].sort().join('|');
       const deduped: Conversation[] = [];
       const seenPairs = new Set<string>();
       for (const conv of result) {
