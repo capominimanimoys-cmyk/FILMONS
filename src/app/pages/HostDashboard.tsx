@@ -194,9 +194,10 @@ function CreatorPlusRequired({ feature, color='blue', navigate }: { feature: str
 // ── Creator Dashboard ──────────────────────────────────────────────
 function CreatorDashboard({ user }: { user: any }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'orders' | 'transactions'>('orders');
+  const [tab, setTab] = useState<'orders' | 'opportunities' | 'transactions'>('orders');
   const [orders, setOrders] = useState<any[]>([]);
   const [savedListings, setSavedListings] = useState<any[]>([]);
+  const [myOpportunities, setMyOpportunities] = useState<Listing[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [rep, setRep] = useState<ReputationScore | null>(null);
 
@@ -212,6 +213,12 @@ function CreatorDashboard({ user }: { user: any }) {
       .then(({ data }) => setOrders(data || []))
       .catch(() => setOrders([]));
     savedListingsApi.getSaved(user.id).then(listings => setSavedListings(Array.isArray(listings) ? listings : [])).catch(() => setSavedListings([]));
+    // Opportunities don't require Creator+ (unlike gear/service listings
+    // below, which stay locked) -- every account tier has a monthly
+    // Opportunity posting entitlement, see src/app/lib/entitlements.ts.
+    listingsApi.getUserListings(user.id)
+      .then(listings => setMyOpportunities(listings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')))
+      .catch(() => setMyOpportunities([]));
   }, [user.id]);
 
   const statusColors: Record<string, string> = {
@@ -237,8 +244,9 @@ function CreatorDashboard({ user }: { user: any }) {
         </div>
         <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-gray-100">
           {[
-            { key: 'orders',       label: 'My Orders',    icon: ShoppingCart },
-            { key: 'transactions', label: 'Transactions', icon: DollarSign   },
+            { key: 'orders',        label: 'My Orders',    icon: ShoppingCart },
+            { key: 'opportunities', label: 'Opportunities', icon: Briefcase   },
+            { key: 'transactions',  label: 'Transactions', icon: DollarSign   },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setTab(key as any)}
               className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
@@ -357,6 +365,18 @@ function CreatorDashboard({ user }: { user: any }) {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Opportunities — open to every account tier, unlike gear/service
+            listings below which stay Creator+-gated. */}
+        {tab === 'opportunities' && (
+          <div className="space-y-3">
+            <button onClick={() => navigate('/create-opportunity')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-2xl transition-colors flex items-center justify-center gap-1.5">
+              <Plus className="w-4 h-4" /> Post Opportunity
+            </button>
+            <MyOpportunitiesOverview opportunities={myOpportunities} />
           </div>
         )}
 

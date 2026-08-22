@@ -644,11 +644,14 @@ export function CreateOpportunity() {
 
   const set = useCallback((updates: Partial<OppFormState>) => setFormRaw(prev => ({ ...prev, ...updates })), []);
 
+  // Unlike gear/studio rental listings (which do require Creator+
+  // verification), posting an Opportunity only requires being signed in —
+  // every account tier has a monthly Opportunity posting entitlement
+  // (see src/app/lib/entitlements.ts; plain Creator and Creator+ both get
+  // 2/month for free, Creator+ verification doesn't raise the limit).
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
-    const type = user?.accountType ?? '';
-    if (!['creator_plus', 'professional', 'business'].includes(type)) navigate('/creator-plus-required?type=listings', { replace: true });
-  }, [isAuthenticated, user?.accountType]);
+  }, [isAuthenticated]);
 
   // Edit mode — prefill from the existing listing
   useEffect(() => {
