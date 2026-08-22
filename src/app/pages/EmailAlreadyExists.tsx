@@ -10,6 +10,7 @@ import { useSearchParams, useNavigate, Link } from 'react-router';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { supabase } from '../../lib/supabase';
+import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { toast } from 'sonner';
 
 function Bg() {
@@ -55,7 +56,7 @@ export function EmailAlreadyExists() {
   const handleOAuth = async (p: 'google' | 'apple') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: p,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: getOAuthRedirectUrl() },
     });
     if (error) toast.error(error.message);
   };

@@ -12,6 +12,7 @@ import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { supabase } from '../../lib/supabase';
+import { getOAuthRedirectUrl } from '../lib/appUrl';
 
 export const PENDING_SIGNUP_KEY = 'filmons_pending_signup';
 
@@ -116,7 +117,7 @@ export function CreateAccount() {
   const handleOAuth = async (provider: 'google' | 'apple') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: getOAuthRedirectUrl() },
     });
     if (error) toast.error(error.message);
   };

@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { securitySettingsApi } from '../lib/settingsApi';
 import { getDevices, type ActiveDevice } from '../lib/devicesApi';
 import { supabase } from '../../lib/supabase';
+import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { authApi } from '../lib/api';
@@ -250,7 +251,7 @@ const [showPw,  setShowPw]  = useState(false);
   const connectGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: getOAuthRedirectUrl() },
     });
     if (error) toast.error(error.message);
   };
