@@ -7,7 +7,7 @@ import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { GuestBanner } from '../components/GuestBanner';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
 
@@ -32,6 +32,12 @@ export function Root() {
   const { user, isAuthenticated, isGuest } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen,  setSearchOpen]  = useState(false);
+
+  // Close the vertical menu on every route change, regardless of how
+  // navigation happened (menu link, back/forward, programmatic redirect) —
+  // it was staying open across pages since only an explicit tap on the
+  // backdrop/link closed it before.
+  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
   const hideAll      = NO_NAV_PAGES.includes(location.pathname);
   const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
