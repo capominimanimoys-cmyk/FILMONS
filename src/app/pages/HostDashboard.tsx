@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -460,6 +460,11 @@ function HostDashboardContent({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'opportunities' | 'orders'>(
     initialTab === 'opportunities' || initialTab === 'listings' || initialTab === 'orders' ? initialTab : 'overview',
   );
+  const tabScrollRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  useEffect(() => {
+    tabRefs.current[activeTab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [activeTab]);
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -578,15 +583,15 @@ function HostDashboardContent({ user }: { user: any }) {
             <Link to="/profile" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"><Settings className="w-4 h-4" /></Link>
           </div>
         </div>
-        <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-gray-100">
+        <div ref={tabScrollRef} className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-gray-100 overflow-x-auto overflow-y-hidden flex-nowrap no-scrollbar" style={{ scrollBehavior: 'smooth' }}>
           {[
             { key: 'overview', label: 'Overview', icon: LayoutDashboard },
             { key: 'listings', label: 'Listings', icon: Package },
             { key: 'opportunities', label: 'Opportunities', icon: Briefcase },
             { key: 'orders',   label: 'My Orders', icon: ShoppingCart },
           ].map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setActiveTab(key as any)}
-              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${activeTab === (key as any) ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <button key={key} ref={el => { tabRefs.current[key] = el; }} onClick={() => setActiveTab(key as any)}
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${activeTab === (key as any) ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
               <Icon className="w-3.5 h-3.5" /> {label}
             </button>
           ))}
