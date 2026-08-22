@@ -698,6 +698,32 @@ export function CreateOpportunity() {
     } catch {}
   }, []);
 
+  // Returning from an in-flow Professional/Business upgrade checkout —
+  // confirm the subscription actually activated (never assume from the
+  // redirect alone), clear the now-stale limitReached state, and drop the
+  // query params so a refresh doesn't re-trigger this. The draft itself
+  // (including which step we were on) is already restored by the draft-
+  // recovery effect above since it reads from localStorage, not the URL.
+  useEffect(() => {
+    const sessionId = params.get('session_id');
+    if (!params.get('sub_success') || !sessionId) return;
+    (async () => {
+      try {
+        const { activated } = await entitlementsApi.verifySubscription(sessionId);
+        if (activated) {
+          toast.success('Upgrade complete — you can publish now.');
+          setLimitReached(null);
+        } else {
+          toast.error('We could not confirm your upgrade yet. Please try publishing again in a moment.');
+        }
+      } catch {
+        toast.error('We could not confirm your upgrade yet. Please try publishing again in a moment.');
+      } finally {
+        navigate(editId ? `/create-opportunity?edit=${editId}` : '/create-opportunity', { replace: true });
+      }
+    })();
+  }, []); // eslint-disable-line
+
   // Auto-save (silent, 300ms debounce)
   useEffect(() => {
     if (editId) return;

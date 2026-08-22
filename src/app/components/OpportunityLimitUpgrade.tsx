@@ -1,10 +1,27 @@
-import { Check, Sparkles } from 'lucide-react';
+import { CircleAlert, BriefcaseBusiness, Building2 } from 'lucide-react';
 import { AccountTier } from '../lib/reliabilityApi';
 import { ENTITLEMENTS, formatPrice } from '../lib/entitlements';
+
+function UsageBar({ used, limit }: { used: number; limit: number }) {
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-xs font-bold text-gray-500">Opportunity Posts</p>
+        <p className="text-xs font-bold text-gray-900">{used} / {limit} used</p>
+      </div>
+      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+        <div className="h-full rounded-full bg-red-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 // Shown inline (never a navigation away) whenever a monthly Opportunity
 // entitlement is hit — preserves whatever draft/form the caller had open,
 // since the caller only swaps this view in without touching its own state.
+// The reported usage is always the limit itself (that's why this is
+// showing at all) — no extra fetch needed for the progress bar.
 export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onMaybeLater }: {
   kind: 'applications' | 'posts';
   plan: AccountTier;
@@ -12,23 +29,32 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onMaybeL
   onUpgrade: (plan: 'professional' | 'business') => void;
   onMaybeLater: () => void;
 }) {
-  const noun = kind === 'applications' ? 'application' : 'post';
   const nounPlural = kind === 'applications' ? 'applications' : 'posts';
-  const actionLabel = kind === 'applications' ? 'applications' : 'posting';
+  const isPosts = kind === 'posts';
 
   if (plan === 'professional') {
     return (
-      <div className="px-5 py-6 text-center space-y-4">
-        <p className="text-base font-black text-gray-900">
-          {kind === 'applications' ? "You've reached your monthly application limit." : "You've reached your monthly Opportunity posting limit."}
-        </p>
-        <p className="text-sm text-gray-500">
-          Your Professional plan includes {limit} Opportunity {nounPlural} per month.
-          {' '}Upgrade to Business for unlimited {kind === 'applications' ? 'applications' : 'Opportunity posting'}.
-        </p>
-        <button onClick={() => onUpgrade('business')} className="w-full py-3.5 rounded-2xl bg-amber-600 text-white font-bold text-sm">
-          Upgrade to Business
-        </button>
+      <div className="px-5 py-6 space-y-4">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
+          <p className="text-base font-black text-gray-900">Opportunity limit reached</p>
+          <p className="text-sm text-gray-500">
+            You've used all {limit} Opportunity {nounPlural} included with Professional this month.
+          </p>
+        </div>
+
+        {isPosts && limit !== null && <UsageBar used={limit} limit={limit} />}
+
+        <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-amber-600" />
+            <p className="text-sm font-black text-amber-700">BUSINESS</p>
+          </div>
+          <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.business.priceCents)} CAD / month</p>
+          <p className="text-xs text-gray-600">Unlimited Opportunity {nounPlural}</p>
+          <button onClick={() => onUpgrade('business')} className="w-full py-2.5 rounded-xl bg-amber-600 text-white font-bold text-sm">Upgrade to Business</button>
+        </div>
+
         <button onClick={onMaybeLater} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Maybe Later</button>
       </div>
     );
@@ -36,39 +62,37 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onMaybeL
 
   return (
     <div className="px-5 py-6 space-y-4">
-      <div className="text-center space-y-1.5">
-        <p className="text-base font-black text-gray-900 flex items-center justify-center gap-1.5">
-          <Sparkles className="w-4 h-4 text-purple-500" /> Unlock more Opportunities
-        </p>
+      <div className="text-center space-y-2">
+        <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
+        <p className="text-base font-black text-gray-900">Opportunity limit reached</p>
         <p className="text-sm text-gray-500">
           {kind === 'applications'
-            ? `You've used your ${limit} Opportunity ${nounPlural} for this month.`
-            : `Your account can post up to ${limit} Opportunit${limit === 1 ? 'y' : 'ies'} per month.`}
+            ? `You've reached your monthly Opportunity application limit.`
+            : `You've reached your monthly Opportunity posting limit.`}
+          {' '}Creator and Creator+ accounts can {kind === 'applications' ? 'submit' : 'publish'} up to {limit} Opportunit{limit === 1 ? 'y' : 'ies'} per month.
         </p>
       </div>
 
+      {isPosts && limit !== null && <UsageBar used={limit} limit={limit} />}
+
       <div className="rounded-2xl border-2 border-purple-200 bg-purple-50 p-4 space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BriefcaseBusiness className="w-4 h-4 text-purple-600" />
           <p className="text-sm font-black text-purple-700">PROFESSIONAL</p>
-          <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.professional.priceCents)}/mo</p>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs text-gray-600 flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-purple-600" /> {ENTITLEMENTS.professional.posts} Opportunity posts/month</p>
-          <p className="text-xs text-gray-600 flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-purple-600" /> {ENTITLEMENTS.professional.applications} Opportunity applications/month</p>
-        </div>
-        <button onClick={() => onUpgrade('professional')} className="w-full py-2.5 rounded-xl bg-purple-600 text-white font-bold text-sm">Choose Professional</button>
+        <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.professional.priceCents)} CAD / month</p>
+        <p className="text-xs text-gray-600">{ENTITLEMENTS.professional.posts} Opportunity {nounPlural} / month</p>
+        <button onClick={() => onUpgrade('professional')} className="w-full py-2.5 rounded-xl bg-purple-600 text-white font-bold text-sm">Upgrade to Professional</button>
       </div>
 
       <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4 text-amber-600" />
           <p className="text-sm font-black text-amber-700">BUSINESS</p>
-          <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.business.priceCents)}/mo</p>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs text-gray-600 flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-600" /> Unlimited Opportunity posts</p>
-          <p className="text-xs text-gray-600 flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-600" /> Unlimited Opportunity applications</p>
-        </div>
-        <button onClick={() => onUpgrade('business')} className="w-full py-2.5 rounded-xl bg-amber-600 text-white font-bold text-sm">Choose Business</button>
+        <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.business.priceCents)} CAD / month</p>
+        <p className="text-xs text-gray-600">Unlimited Opportunity {nounPlural}</p>
+        <button onClick={() => onUpgrade('business')} className="w-full py-2.5 rounded-xl bg-amber-600 text-white font-bold text-sm">Upgrade to Business</button>
       </div>
 
       <button onClick={onMaybeLater} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Maybe Later</button>

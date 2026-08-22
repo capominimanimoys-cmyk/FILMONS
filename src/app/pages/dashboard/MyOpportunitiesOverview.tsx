@@ -72,15 +72,15 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
   const usageHeader = (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 grid grid-cols-2 gap-3">
       <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide">Posting</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide flex items-center gap-1"><Briefcase className="w-3 h-3" /> Opportunity Posts</p>
         <p className="text-sm font-bold text-gray-900">
-          {tier === 'business' ? 'Unlimited' : `${usage?.posts ?? 0} of ${formatLimit(entitlement.posts)} this month`}
+          {tier === 'business' ? 'Unlimited' : `${usage?.posts ?? 0} / ${formatLimit(entitlement.posts)} this month`}
         </p>
       </div>
       <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide">Applications</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide flex items-center gap-1"><Users className="w-3 h-3" /> Applications</p>
         <p className="text-sm font-bold text-gray-900">
-          {tier === 'business' ? 'Unlimited' : `${usage?.applications ?? 0} of ${formatLimit(entitlement.applications)} used this month`}
+          {tier === 'business' ? 'Unlimited' : `${usage?.applications ?? 0} / ${formatLimit(entitlement.applications)} used this month`}
         </p>
       </div>
     </div>
