@@ -46,6 +46,7 @@ function addBusinessDays(from: Date, days: number): Date {
 // no payout-specific EmailJS template yet.
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
+const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
 const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
 
 async function notifyHostRequested(hostId: string, amount: number) {
@@ -68,6 +69,7 @@ async function notifyHostRequested(hostId: string, amount: number) {
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
         user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY,
         template_params: {
           to_email: host.email, to_name: host.name || 'there',
           subject: 'Your Filmons payout request was received',

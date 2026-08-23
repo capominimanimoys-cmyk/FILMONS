@@ -32,6 +32,7 @@ async function selectOne(table: string, filter: string) {
 
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
+const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
 const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
 
 async function notifyCustomer(userId: string, caseNumber: string, caseId: string) {
@@ -54,6 +55,7 @@ async function notifyCustomer(userId: string, caseNumber: string, caseId: string
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
         user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY,
         template_params: {
           to_email: user.email, to_name: user.name || 'there',
           subject: `Filmons Support replied — case ${caseNumber}`,

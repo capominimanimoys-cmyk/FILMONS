@@ -58,6 +58,7 @@ async function insertAuditLog(row: Record<string, unknown>) {
 // other server-side email sends already do.
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
+const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
 const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
 
 async function sendHostEmail(toEmail: string | null | undefined, toName: string, subject: string, message: string) {
@@ -70,6 +71,7 @@ async function sendHostEmail(toEmail: string | null | undefined, toName: string,
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
         user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY,
         template_params: { to_email: toEmail, to_name: toName, subject, message },
       }),
     });

@@ -17,6 +17,7 @@ async function selectOne(table: string, filter: string) {
 
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
+const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
 // Reuses the existing "emailVerification" template (template_p5pgn33,
 // src/app/lib/emailjs-config.ts) — same one ForgotPassword.tsx's OTP
 // step already sends through, so no new EmailJS dashboard template is
@@ -34,6 +35,7 @@ async function sendCodeEmail(email: string, name: string, code: string) {
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_VERIFICATION,
         user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY,
         template_params: {
           to_email: email, to_name: name || 'there', user_email: email,
           subject: 'FILMONS verification code',

@@ -64,13 +64,14 @@ async function insertSystemMessage(conversationId: string | null | undefined, te
 // immediately, no dependency on new unbuilt EmailJS dashboard templates.
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
+const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
 const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
 async function sendHireEmail(toEmail: string | null | undefined, toName: string | null | undefined, subject: string, message: string) {
   if (!toEmail) return;
   try {
     const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION, user_id: EMAILJS_PUBLIC_KEY, template_params: { to_email: toEmail, to_name: toName || 'there', subject, message } }),
+      body: JSON.stringify({ service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION, user_id: EMAILJS_PUBLIC_KEY, accessToken: EMAILJS_PRIVATE_KEY, template_params: { to_email: toEmail, to_name: toName || 'there', subject, message } }),
     });
     if (!res.ok) console.warn('Hire EmailJS send failed:', res.status, await res.text());
   } catch (e) { console.warn('Hire EmailJS send threw:', e); }
