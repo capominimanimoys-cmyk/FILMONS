@@ -1,11 +1,25 @@
 // Client for the device-check / device-send-code / device-verify-code
-// edge functions. All three need credentials: 'include' — the trust
-// cookie is HttpOnly, so it's never read directly in JS, only carried
-// automatically by the browser on these credentialed requests.
+// edge functions.
+//
+// These three go through Vercel rewrite proxies (vercel.json:
+// /api/device-check etc. -> the Supabase function) instead of hitting
+// *.supabase.co directly like every other edge function call in this
+// app. That's deliberate: the trust cookie is set via Set-Cookie in the
+// response, and a cookie set by a *different* domain than the page
+// (filmons.app calling supabase.co) is a third-party cookie — mobile
+// Safari's Intelligent Tracking Prevention (and an increasing number of
+// other browsers) silently drops those, so the cookie would never
+// actually stick and every visit would look untrusted again. Proxying
+// through the app's own origin makes it a first-party cookie instead,
+// which every browser honors normally.
+//
+// Falls back to the direct Supabase URL on localhost, where the Vercel
+// rewrite doesn't exist (Vite's dev server doesn't run vercel.json).
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { getDeviceLabel } from './devicesApi';
 
-const BASE = `https://${projectId}.supabase.co/functions/v1`;
+const isLocalDev = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const BASE = isLocalDev ? `https://${projectId}.supabase.co/functions/v1` : '/api';
 
 function deviceInfoString(): string {
   const ua = navigator.userAgent;

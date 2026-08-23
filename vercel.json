@@ -1,5 +1,8 @@
 {
   "rewrites": [
+    { "source": "/api/device-check",       "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/device-check" },
+    { "source": "/api/device-send-code",   "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/device-send-code" },
+    { "source": "/api/device-verify-code", "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/device-verify-code" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
