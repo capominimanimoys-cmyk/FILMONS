@@ -4,7 +4,7 @@
 // in trusted_devices. 5 wrong attempts on a given code locks it out;
 // the user has to request a fresh one (device-send-code already
 // invalidates prior open codes on each new send).
-import { hashSecret, randomToken, corsHeadersFor } from '../_shared/deviceAuth.ts';
+import { hashSecret, randomToken, readCookie, corsHeadersFor } from '../_shared/deviceAuth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -49,15 +49,40 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ used_at: new Date().toISOString() }),
     });
 
-    const rawToken = randomToken();
-    const tokenHash = await hashSecret(rawToken);
-    await fetch(rest('/trusted_devices'), {
-      method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        user_id: userId, device_token_hash: tokenHash,
-        browser_info: browserInfo || null, device_info: deviceInfo || null,
-      }),
-    });
+    // If this browser already has a trusted_devices row (a stale-reauth
+    // case — the device itself was never untrusted, just its
+    // last_authenticated_at aged past TRUSTED_DEVICE_REAUTH_DAYS),
+    // refresh that row in place rather than piling up a duplicate one
+    // for the same physical device.
+    const nowIso = new Date().toISOString();
+    const existingRawToken = readCookie(req, 'fm_device');
+    const existing = existingRawToken
+      ? await selectOne('trusted_devices', `user_id=eq.${userId}&device_token_hash=eq.${await hashSecret(existingRawToken)}`)
+      : null;
+
+    let rawToken: string;
+    if (existing) {
+      rawToken = existingRawToken!;
+      await fetch(rest(`/trusted_devices?id=eq.${existing.id}`), {
+        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          last_authenticated_at: nowIso, last_used_at: nowIso,
+          expires_at: new Date(Date.now() + DEVICE_TOKEN_MAX_AGE * 1000).toISOString(),
+          revoked_at: null,
+        }),
+      });
+    } else {
+      rawToken = randomToken();
+      const tokenHash = await hashSecret(rawToken);
+      await fetch(rest('/trusted_devices'), {
+        method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          user_id: userId, device_token_hash: tokenHash,
+          browser_info: browserInfo || null, device_info: deviceInfo || null,
+          last_authenticated_at: nowIso,
+        }),
+      });
+    }
 
     const headers = new Headers({ ...cors, 'Content-Type': 'application/json' });
     headers.append('Set-Cookie', `fm_device=${rawToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${DEVICE_TOKEN_MAX_AGE}; Path=/`);
