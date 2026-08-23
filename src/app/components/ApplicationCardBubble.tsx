@@ -179,10 +179,12 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
           <div className="flex justify-between"><span className="text-gray-400">Filmons Fee ({(txn.fee_rate * 100).toFixed(0)}%)</span><span className="text-gray-500">-${txn.fee_amount.toFixed(2)}</span></div>
           <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">{isOwnerView ? 'Worker Earnings' : "You'll Earn"}</span><span className="font-black text-gray-900">${txn.net_amount.toFixed(2)}</span></div>
           {txn.payment_status === 'funded' && (
-            <>
-              <div className="flex justify-between"><span className="text-gray-400">Available</span><span className="font-bold text-green-600">${(txn.initial_release_amount ?? 0).toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">Held</span><span className="font-bold text-amber-600">${(txn.held_amount ?? 0).toFixed(2)}</span></div>
-            </>
+            <div className="flex justify-between border-t border-gray-200 pt-1">
+              <span className="text-gray-400">Status</span>
+              {txn.work_status === 'completed'
+                ? <span className="font-bold text-green-600">${txn.net_amount.toFixed(2)} Available</span>
+                : <span className="font-bold text-amber-600">{isOwnerView ? 'Held for Creator' : 'On Hold'}</span>}
+            </div>
           )}
         </div>
       )}

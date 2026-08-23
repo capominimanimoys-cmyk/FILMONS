@@ -171,7 +171,7 @@ async function applyAction(hr: any, action: string, userId: string, payload: Rec
     case 'confirm_completion': {
       const txn = await selectOne('hire_transactions', `hire_request_id=eq.${hr.id}`);
       if (!txn || txn.payment_status !== 'funded') return { ok: false, status: 400, error: 'No funded payment to release' };
-      await updateOne('hire_transactions', `id=eq.${txn.id}`, { work_status: 'completed', completed_at: now, updated_at: now });
+      await updateOne('hire_transactions', `id=eq.${txn.id}`, { work_status: 'completed', completed_at: now, hold_released_at: now, updated_at: now });
       // Flip the held wallet_transactions row's available_at to now — the
       // existing hourly fn_release_pending_earnings cron does the rest,
       // exactly like Opportunity Payments' confirm_completion.
