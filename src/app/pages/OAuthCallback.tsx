@@ -13,6 +13,15 @@ import { useAuth } from '../context/AuthContext';
 import { User } from '../types';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { getOAuthRedirectUrl } from '../lib/appUrl';
+
+const EXPECTED_EMAIL_KEY = 'fm_expected_login_email';
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return email;
+  return `${local.slice(0, 1)}${'•'.repeat(Math.max(3, local.length - 1))}@${domain}`;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +86,7 @@ export function OAuthCallback() {
   const { completeLogin }  = useAuth();
   const handled            = useRef(false);
   const [loadError, setLoadError] = useState('');
+  const [wrongAccount, setWrongAccount] = useState<{ expected: string; got: string } | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -104,6 +114,20 @@ export function OAuthCallback() {
       const { user } = session;
       const provider = (user.app_metadata?.provider as string) || 'google';
       const email    = user.email?.toLowerCase() ?? null;
+
+      // If this flow started from a specific known account (the "this
+      // account uses Google" screen on Login), the returned identity
+      // MUST match it. Without this check, Google silently reusing a
+      // different already-signed-in Google account in the same browser
+      // would resolve to — and log the user into — a completely
+      // different Filmons account with no warning at all.
+      const expectedEmail = sessionStorage.getItem(EXPECTED_EMAIL_KEY);
+      sessionStorage.removeItem(EXPECTED_EMAIL_KEY);
+      if (expectedEmail && email !== expectedEmail) {
+        await supabase.auth.signOut(); // never leave the wrong session active
+        setWrongAccount({ expected: expectedEmail, got: email || '' });
+        return;
+      }
 
       // 1. Existing profile by Supabase auth ID (returning user)
       const { data: byId } = await supabase
@@ -166,6 +190,47 @@ export function OAuthCallback() {
       console.error('[OAuthCallback]', e);
       setLoadError(e?.message || 'Sign-in failed. Please try again.');
     }
+  }
+
+  const retryWithSelectAccount = async (expectedEmail: string) => {
+    sessionStorage.setItem(EXPECTED_EMAIL_KEY, expectedEmail);
+    handled.current = false;
+    setWrongAccount(null);
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
+    });
+  };
+
+  // ── Wrong Google account selected ────────────────────────────────────────
+  if (wrongAccount) {
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-hidden">
+        <CinematicBg/>
+        <div className="relative z-10 flex flex-col items-center justify-center h-full gap-5 px-6 text-center">
+          <FilmonsLogo iconSize={32} theme="dark"/>
+          <div className="space-y-2 max-w-xs">
+            <p className="text-white font-bold text-base">You selected a different Google account</p>
+            <p className="text-white/60 text-sm leading-relaxed">
+              Please continue with the Google account associated with{' '}
+              <span className="text-white/85 font-semibold">{maskEmail(wrongAccount.expected)}</span>.
+            </p>
+          </div>
+          <button
+            onClick={() => retryWithSelectAccount(wrongAccount.expected)}
+            className="w-full max-w-xs py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-2xl transition-all active:scale-[0.98]"
+          >
+            Choose Another Google Account
+          </button>
+          <button
+            onClick={() => navigate('/login', { replace: true })}
+            className="text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // ── Error screen ─────────────────────────────────────────────────────────

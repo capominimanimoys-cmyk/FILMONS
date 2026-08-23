@@ -91,7 +91,7 @@ export function VerifyItsYouGate({ onVerified }: { onVerified: (stepUpToken: str
     sessionStorage.setItem(OAUTH_RETURN_KEY, 'payout_method');
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: getOAuthRedirectUrl(window.location.pathname) },
+      options: { redirectTo: getOAuthRedirectUrl(window.location.pathname), queryParams: { prompt: 'select_account' } },
     });
     if (error) { sessionStorage.removeItem(OAUTH_RETURN_KEY); toast.error(error.message); }
   };

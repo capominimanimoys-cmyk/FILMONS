@@ -117,7 +117,11 @@ export function CreateAccount() {
   const handleOAuth = async (provider: 'google' | 'apple') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: getOAuthRedirectUrl() },
+      // Forces Google's account chooser instead of silently reusing
+      // whichever Google account is already active in the browser —
+      // without this, a user with multiple Google accounts signed in
+      // could authenticate as the wrong one with no way to pick.
+      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
     });
     if (error) toast.error(error.message);
   };

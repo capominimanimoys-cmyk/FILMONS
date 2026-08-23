@@ -56,7 +56,7 @@ export function EmailAlreadyExists() {
   const handleOAuth = async (p: 'google' | 'apple') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: p,
-      options: { redirectTo: getOAuthRedirectUrl() },
+      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
     });
     if (error) toast.error(error.message);
   };

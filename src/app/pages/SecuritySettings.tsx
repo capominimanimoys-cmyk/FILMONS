@@ -251,7 +251,7 @@ const [showPw,  setShowPw]  = useState(false);
   const connectGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: getOAuthRedirectUrl() },
+      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
     });
     if (error) toast.error(error.message);
   };

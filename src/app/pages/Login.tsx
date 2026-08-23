@@ -125,7 +125,7 @@ export function Login() {
     setLoading(false);
   };
 
-  const handleOAuth = async (provider: 'google' | 'apple') => {
+  const handleOAuth = async (provider: 'google' | 'apple', expectedEmail?: string) => {
     // Without this guard, a slow network round-trip to Supabase's
     // /authorize endpoint before the actual redirect fires left the
     // button looking unresponsive — nothing disabled it and there was no
@@ -133,9 +133,19 @@ export function Login() {
     // spawning multiple concurrent OAuth attempts.
     if (oauthLoading) return;
     setOauthLoading(true);
+    // When this flow started from a specific known email (the "this
+    // account uses Google" screen), remember it — OAuthCallback.tsx
+    // checks the returned identity against this and refuses to log in
+    // as a different account if Google silently authenticated the
+    // wrong one (e.g. a different Google account already active in
+    // this browser).
+    if (expectedEmail) sessionStorage.setItem('fm_expected_login_email', expectedEmail.toLowerCase());
+    else sessionStorage.removeItem('fm_expected_login_email');
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: getOAuthRedirectUrl() },
+      // Forces Google's account chooser instead of silently reusing
+      // whichever Google account is already active in the browser.
+      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
     });
     if (error) { toast.error(error.message); setOauthLoading(false); }
     // On success the browser is navigating away to Google — no need to
@@ -384,7 +394,7 @@ export function Login() {
           </div>
 
           <button
-            onClick={() => handleOAuth(provider)}
+            onClick={() => handleOAuth(provider, email)}
             className="w-full py-4 bg-white hover:bg-gray-100 text-gray-900 font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg mb-4 flex items-center justify-center gap-2.5"
           >
             <GoogleLogo size={18}/> Continue with {providerLabel}
