@@ -1248,6 +1248,17 @@ export function Inbox() {
   const [search, setSearch] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
   const [showNewConv, setShowNewConv] = useState(false);
+
+  // Tells Root.tsx to hide the global mobile bottom nav (and its
+  // reserved bottom padding) while a specific conversation is the
+  // primary mobile view — same condition the thread panel itself uses
+  // to decide whether it's showing on mobile. Always cleared on unmount
+  // so leaving /inbox entirely never leaves the nav hidden.
+  useEffect(() => {
+    const open = !!activeId && !showSidebar;
+    window.dispatchEvent(new CustomEvent('filmons:inbox-conversation-open', { detail: { open } }));
+    return () => window.dispatchEvent(new CustomEvent('filmons:inbox-conversation-open', { detail: { open: false } }));
+  }, [activeId, showSidebar]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -2453,10 +2464,16 @@ export function Inbox() {
     return own[own.length - 1]?.id ?? null;
   })();
 
+  // Mobile only: once a specific conversation is open, this bar would
+  // just duplicate the Thread header's own avatar+name row below it
+  // (which gets the back button instead) — collapsed on mobile, always
+  // kept on desktop where both panels show side by side regardless.
+  const showTopBar = !(activeConv && !showSidebar);
+
   return (
-    <div className="h-screen flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
+    <div className="h-[100dvh] flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
       {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0">
+      <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden md:flex'}`}>
         <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
           className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600">
           <ArrowBackIosNewRounded sx={{fontSize:18}} />
@@ -2722,7 +2739,13 @@ export function Inbox() {
 
               {/* Thread header */}
               <div className="flex items-center justify-between gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Back — mobile only; desktop keeps both panels visible
+                      side by side, so there's nothing to "go back" from. */}
+                  <button onClick={() => { setShowSidebar(true); setActiveId(null); }}
+                    className="md:hidden w-9 h-9 -ml-1.5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
+                    <ArrowBackIosNewRounded sx={{fontSize:18}} />
+                  </button>
                   {otherUser && (
                     <>
                       <Link to={`/host/${otherUser.id}`}><UserAvatar user={otherUser} size={38} /></Link>
@@ -2950,8 +2973,13 @@ export function Inbox() {
                 <div ref={bottomRef} />
               </div>
 
-              {/* Input area — hidden for pending requests (must accept first) */}
-              <div className={`px-4 py-3 bg-white border-t border-gray-200 shrink-0 ${isActiveRequest ? 'opacity-40 pointer-events-none select-none' : ''}`}
+              {/* Input area — hidden for pending requests (must accept first).
+                  pb uses env(safe-area-inset-bottom) additively (composer now
+                  sits at the true bottom edge on mobile since the global
+                  bottom nav is hidden here) — not a flat pb-3, or the home
+                  indicator area on iPhone would sit flush against it. */}
+              <div className={`px-4 pt-3 border-t border-gray-200 shrink-0 bg-white ${isActiveRequest ? 'opacity-40 pointer-events-none select-none' : ''}`}
+                style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
                 title={isActiveRequest ? 'Accept the request to start chatting' : undefined}
               >
                 {/* Reply preview bar */}

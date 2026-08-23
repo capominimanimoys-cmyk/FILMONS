@@ -33,6 +33,20 @@ export function Root() {
   const { user, isAuthenticated, isGuest, deviceVerified } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen,  setSearchOpen]  = useState(false);
+  // Inbox reports whether an active conversation is open on mobile —
+  // same window CustomEvent pattern api.ts already uses for
+  // 'filmons:unread-changed', not a new context, since there's exactly
+  // one producer (Inbox.tsx) and one consumer (here).
+  const [conversationOpen, setConversationOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: any) => setConversationOpen(!!e.detail?.open);
+    window.addEventListener('filmons:inbox-conversation-open', handler);
+    return () => window.removeEventListener('filmons:inbox-conversation-open', handler);
+  }, []);
+  // Defensive reset — Inbox's own unmount cleanup already clears this,
+  // but a route change is a cheap second guarantee against it ever
+  // sticking on an unrelated page.
+  useEffect(() => { if (!location.pathname.startsWith('/inbox')) setConversationOpen(false); }, [location.pathname]);
 
   // Close the vertical menu on every route change, regardless of how
   // navigation happened (menu link, back/forward, programmatic redirect) —
@@ -43,7 +57,7 @@ export function Root() {
   const hideAll      = NO_NAV_PAGES.includes(location.pathname);
   const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
   const hideFooter   = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
-  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p));
+  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || conversationOpen;
 
   // New Browser / First Sign-In Verification — checked before anything
   // else that requires a real session. deviceVerified is null until the
@@ -89,7 +103,7 @@ export function Root() {
           />
         )}
 
-        <main className="flex-1 pb-[calc(54px+env(safe-area-inset-bottom))] md:pb-0">
+        <main className={`flex-1 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
           <Outlet />
         </main>
 
