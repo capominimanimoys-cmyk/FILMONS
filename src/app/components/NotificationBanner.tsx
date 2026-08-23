@@ -220,6 +220,7 @@ function BannerRenderer({ item, compact, onDismiss }: {
 
   const handleTap = () => {
     dismiss();
+    if (user?.id) notifStore.markRead(user.id, primary.id);
     const isMsg = ['message', 'new_message', 'message_received', 'message_reply'].includes(primary.type);
     if (isMsg) {
       navigate(primary.conversationId
@@ -229,6 +230,10 @@ function BannerRenderer({ item, compact, onDismiss }: {
       navigate(`/host/${primary.fromUserId}`);
     } else if (['payment_received', 'payment_released'].includes(primary.type)) {
       navigate('/wallet');
+    } else if (primary.type === 'listing_review') {
+      navigate((primary as any).listingId
+        ? `/listing/${(primary as any).listingId}${(primary as any).reviewId ? `?review=${(primary as any).reviewId}` : ''}`
+        : '/notifications');
     } else if (primary.postId) {
       navigate(`/post/${primary.postId}`);
     } else if (primary.conversationId) {
