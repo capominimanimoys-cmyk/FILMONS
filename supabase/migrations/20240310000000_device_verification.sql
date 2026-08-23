@@ -2,7 +2,7 @@
 -- for both the device token and the 6-digit code -- same "never store
 -- the sensitive raw value" convention as admin_users/payout_methods.
 
-CREATE TABLE public.trusted_devices (
+CREATE TABLE IF NOT EXISTS public.trusted_devices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   device_token_hash text NOT NULL UNIQUE,
@@ -13,11 +13,12 @@ CREATE TABLE public.trusted_devices (
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '90 days'),
   revoked_at timestamptz
 );
-CREATE INDEX idx_trusted_devices_user ON public.trusted_devices(user_id);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON public.trusted_devices(user_id);
 ALTER TABLE public.trusted_devices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trusted_devices_all ON public.trusted_devices;
 CREATE POLICY trusted_devices_all ON public.trusted_devices FOR ALL USING (true) WITH CHECK (true);
 
-CREATE TABLE public.device_verification_codes (
+CREATE TABLE IF NOT EXISTS public.device_verification_codes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   code_hash text NOT NULL,
@@ -26,6 +27,7 @@ CREATE TABLE public.device_verification_codes (
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_device_verification_codes_user ON public.device_verification_codes(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_device_verification_codes_user ON public.device_verification_codes(user_id, created_at DESC);
 ALTER TABLE public.device_verification_codes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS device_verification_codes_all ON public.device_verification_codes;
 CREATE POLICY device_verification_codes_all ON public.device_verification_codes FOR ALL USING (true) WITH CHECK (true);
