@@ -159,9 +159,32 @@ export async function updatePortfolioItem(
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
+function storagePathFromUrl(url: string): string | null {
+  const marker = `/object/public/${PORTFOLIO_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return decodeURIComponent(url.slice(idx + marker.length));
+}
+
 export async function deletePortfolioItem(id: string): Promise<boolean> {
+  const { data: item } = await supabase
+    .from('portfolio_items')
+    .select('media_url, thumbnail_url, media_url_original')
+    .eq('id', id)
+    .maybeSingle();
+
   const { error } = await supabase.from('portfolio_items').delete().eq('id', id);
   if (error) { console.error('[portfolio] delete error:', error.message); return false; }
+
+  if (item) {
+    const paths = [item.media_url, item.thumbnail_url, item.media_url_original]
+      .filter((u): u is string => !!u)
+      .map(storagePathFromUrl)
+      .filter((p): p is string => !!p);
+    if (paths.length) {
+      await supabase.storage.from(PORTFOLIO_BUCKET).remove(paths).catch(() => {});
+    }
+  }
   return true;
 }
 
@@ -219,17 +242,38 @@ function extractVideoFrame(file: File): Promise<string> {
     const video = document.createElement('video');
     video.src = objectUrl;
     video.muted = true;
+    video.playsInline = true;
     video.preload = 'metadata';
-    video.onloadeddata = () => { video.currentTime = 1; };
-    video.onseeked = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.min(video.videoWidth,  720);
-      canvas.height = Math.min(video.videoHeight, 720);
-      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    let settled = false;
+    const finish = (result: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
       URL.revokeObjectURL(objectUrl);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
+      resolve(result);
     };
-    video.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(''); };
+    // Some browsers/codecs never fire onseeked for certain short or oddly
+    // encoded videos -- without a timeout the wrapping promise (and the
+    // upload awaiting it) would hang forever with no error shown.
+    const timeoutId = setTimeout(() => finish(''), 4000);
+
+    const captureFrame = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.min(video.videoWidth  || 720, 720);
+        canvas.height = Math.min(video.videoHeight || 720, 720);
+        canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL('image/jpeg', 0.8));
+      } catch { finish(''); }
+    };
+
+    video.onloadedmetadata = () => {
+      const seekTo = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
+      try { video.currentTime = seekTo; } catch { captureFrame(); }
+    };
+    video.onseeked = captureFrame;
+    video.onerror = () => finish('');
   });
 }
 
