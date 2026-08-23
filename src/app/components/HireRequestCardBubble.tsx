@@ -186,6 +186,9 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
         {hr.status === 'accepted' && isRequester && (
           <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Pay for Hire</button>
         )}
+        {hr.status === 'payment_pending' && isRequester && txn?.payment_status === 'pending' && (
+          <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Retry Payment</button>
+        )}
         {hr.status === 'hired' && txn?.work_status === 'in_progress' && isHost && (
           <button disabled={busy} onClick={doMarkComplete} className="flex-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50">Mark Work Completed</button>
         )}

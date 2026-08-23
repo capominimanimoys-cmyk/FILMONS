@@ -47,7 +47,11 @@ Deno.serve(async (req) => {
     const hr = await selectOne('hire_requests', `id=eq.${hireRequestId}`);
     if (!hr) return json({ error: 'Hire request not found' }, 404);
     if (hr.requester_id !== userId) return json({ error: 'You do not own this hire request' }, 403);
-    if (hr.status !== 'accepted') return json({ error: 'Terms have not been agreed yet' }, 400);
+    // payment_pending is included so an abandoned/expired Stripe Checkout
+    // session can be retried instead of being a dead end — same fix as
+    // fund-opportunity. The transaction row's own payment_status is still
+    // the real guard against re-funding something already paid.
+    if (!['accepted', 'payment_pending'].includes(hr.status)) return json({ error: 'Terms have not been agreed yet' }, 400);
 
     const txn = await selectOne('hire_transactions', `hire_request_id=eq.${hireRequestId}`);
     if (!txn || txn.payment_status !== 'pending') return json({ error: 'No pending hire payment to fund' }, 400);

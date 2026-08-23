@@ -213,6 +213,9 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
         {isOwnerView && app.status === 'offer_accepted' && (
           <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Pay for Opportunity</button>
         )}
+        {isOwnerView && app.status === 'payment_pending' && txn?.payment_status === 'pending' && (
+          <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Retry Payment</button>
+        )}
         {!isOwnerView && app.status === 'hired' && txn?.work_status === 'in_progress' && (
           <button disabled={busy} onClick={doMarkComplete} className="flex-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50">Mark Work Completed</button>
         )}

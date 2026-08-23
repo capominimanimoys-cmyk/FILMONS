@@ -510,8 +510,14 @@ function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist,
                 <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
               </>
             )}
-            {(a.status === 'offer_sent' || a.status === 'payment_pending') && (
+            {a.status === 'offer_sent' && (
               <span className="flex-1 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-bold text-center">{badge.label}</span>
+            )}
+            {a.status === 'payment_pending' && (
+              <>
+                <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
+                <button onClick={onFund} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold">Retry Payment</button>
+              </>
             )}
             {a.status === 'offer_accepted' && (
               <>

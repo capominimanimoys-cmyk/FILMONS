@@ -51,7 +51,14 @@ Deno.serve(async (req) => {
     if (!app) return json({ error: 'Application not found' }, 404);
     const listing = await selectOne('listings', `id=eq.${encodeURIComponent(app.listing_id)}`);
     if (!listing || listing.user_id !== userId) return json({ error: 'You do not own this opportunity' }, 403);
-    if (app.status !== 'offer_accepted') return json({ error: 'This offer has not been accepted yet' }, 400);
+    // payment_pending is included so an abandoned/expired Stripe Checkout
+    // session can be retried — fund-opportunity previously only accepted
+    // 'offer_accepted', a dead end: the first POST already flips status to
+    // 'payment_pending' before redirecting, so cancelling checkout (or just
+    // never finishing it) left no way back in. The transaction row's own
+    // payment_status is still the real guard against re-funding something
+    // already paid.
+    if (!['offer_accepted', 'payment_pending'].includes(app.status)) return json({ error: 'This offer has not been accepted yet' }, 400);
 
     const txn = await selectOne('opportunity_transactions', `application_id=eq.${applicationId}`);
     if (!txn || txn.payment_status !== 'pending') return json({ error: 'No pending offer to fund' }, 400);
