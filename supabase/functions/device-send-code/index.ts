@@ -17,10 +17,13 @@ async function selectOne(table: string, filter: string) {
 
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
-// ⚠️ Not yet created in the EmailJS dashboard — this email will silently
-// fail (best-effort, swallowed) until a template with this exact ID
-// exists there, with merge fields: to_email, to_name, code, expires_in.
-const EMAILJS_TEMPLATE_DEVICE_VERIFY = 'template_device_verify';
+// Reuses the existing "emailVerification" template (template_p5pgn33,
+// src/app/lib/emailjs-config.ts) — same one ForgotPassword.tsx's OTP
+// step already sends through, so no new EmailJS dashboard template is
+// needed. Field names match that call site exactly (verification_code,
+// user_email — not code/to_email alone) since the template body is
+// already built around those.
+const EMAILJS_TEMPLATE_VERIFICATION = 'template_p5pgn33';
 
 async function sendCodeEmail(email: string, name: string, code: string) {
   try {
@@ -29,12 +32,12 @@ async function sendCodeEmail(email: string, name: string, code: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_DEVICE_VERIFY,
+        template_id: EMAILJS_TEMPLATE_VERIFICATION,
         user_id: EMAILJS_PUBLIC_KEY,
         template_params: {
-          to_email: email, to_name: name || 'there',
+          to_email: email, to_name: name || 'there', user_email: email,
           subject: 'FILMONS verification code',
-          code, expires_in: '10 minutes',
+          verification_code: code, expires_in: '10 minutes',
         },
       }),
     });
