@@ -48,6 +48,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [step,        setStep]        = useState<Step>('type');
   const [saving,      setSaving]      = useState(false);
   const [uploading,   setUploading]   = useState(false);
+  const [uploadPct,   setUploadPct]   = useState(0);
 
   // Work type
   const [workType,    setWorkType]    = useState<WorkType>('photo');
@@ -87,7 +88,8 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     }
 
     setUploading(true);
-    const result = await uploadPortfolioMedia(user!.id, file);
+    setUploadPct(0);
+    const result = await uploadPortfolioMedia(user!.id, file, setUploadPct);
     setUploading(false);
     if (!result) { toast.error('Upload failed — try again'); return; }
     setMediaUrl(result.url);
@@ -375,9 +377,17 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
               )}
 
               {uploading && (
-                <div className="flex items-center gap-3 bg-blue-50 rounded-2xl px-4 py-3.5">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
-                  <p className="text-sm text-blue-700">Uploading…</p>
+                <div className="bg-blue-50 rounded-2xl px-4 py-3.5 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
+                    <p className="text-sm text-blue-700">Uploading… {uploadPct}%</p>
+                  </div>
+                  <div className="w-full h-1.5 bg-blue-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-150"
+                      style={{ width: `${uploadPct}%` }}
+                    />
+                  </div>
                 </div>
               )}
 

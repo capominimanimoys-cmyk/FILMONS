@@ -4,6 +4,7 @@
  * Fails gracefully if the table doesn't exist yet.
  */
 import { supabase } from '../../lib/supabase';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link';
 
@@ -202,9 +203,30 @@ export async function toggleFeatured(id: string, current: boolean): Promise<bool
 // guaranteed to exist and have public access configured by the edge function.
 const PORTFOLIO_BUCKET = 'make-ec8fe879-photos';
 
+// Supabase JS's storage .upload() doesn't expose XHR progress events, so
+// real "Uploading… 42%" feedback needs a raw XHR call against the same
+// Storage REST endpoint the SDK itself uses underneath.
+function xhrUploadToStorage(path: string, file: File, onProgress?: (pct: number) => void): Promise<boolean> {
+  return new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `https://${projectId}.supabase.co/storage/v1/object/${PORTFOLIO_BUCKET}/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${publicAnonKey}`);
+    xhr.setRequestHeader('apikey', publicAnonKey);
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+    xhr.onerror = () => resolve(false);
+    xhr.send(file);
+  });
+}
+
 export async function uploadPortfolioMedia(
   userId: string,
   file: File,
+  onProgress?: (pct: number) => void,
 ): Promise<{ url: string; thumbnailUrl?: string } | null> {
   const isVideo = file.type.startsWith('video/');
   const isAudio = file.type.startsWith('audio/');
@@ -213,12 +235,10 @@ export async function uploadPortfolioMedia(
   const ext       = file.name.split('.').pop()?.toLowerCase() || 'bin';
   const path      = `${subfolder}/${userId}-${Date.now()}.${ext}`;
 
-  const { error, data } = await supabase.storage
-    .from(PORTFOLIO_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false });
-  if (error) { console.error('[portfolio] upload error:', error.message); return null; }
+  const ok = await xhrUploadToStorage(path, file, onProgress);
+  if (!ok) { console.error('[portfolio] upload error'); return null; }
 
-  const url = supabase.storage.from(PORTFOLIO_BUCKET).getPublicUrl(data.path).data.publicUrl;
+  const url = supabase.storage.from(PORTFOLIO_BUCKET).getPublicUrl(path).data.publicUrl;
 
   let thumbnailUrl: string | undefined;
   if (isVideo) {

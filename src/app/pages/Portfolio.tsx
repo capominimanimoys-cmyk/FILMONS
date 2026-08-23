@@ -25,7 +25,7 @@ import {
   Star, StarOff, MapPin, Film, Music2, FileText,
   Link as LinkIcon, MoreVertical, Trash2, ExternalLink,
   Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
-  Play, CheckCircle2, Users, MessageSquare, Briefcase,
+  Play, Pause, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, LayoutList, Monitor,
   FolderOpen, Search, UserCheck, FolderPlus, Edit2,
   Heart, MessageCircle, Download, Eye, Lock, Send,
@@ -589,6 +589,69 @@ function WorkTypeBadge({ wt }: { wt?: WorkType }) {
   );
 }
 
+// Inline play/pause + seekable waveform for audio items in the grid, so
+// listening doesn't require opening the full viewer first. Only the play
+// button and waveform strip stop the tap from bubbling — tapping the rest
+// of the tile (title area, blank gradient) still opens the viewer, same
+// as every other media type.
+function AudioTilePlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onTime = () => setProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0);
+    const onEnded = () => { setPlaying(false); setProgress(0); };
+    audio.addEventListener('timeupdate', onTime);
+    audio.addEventListener('ended', onEnded);
+    return () => {
+      audio.removeEventListener('timeupdate', onTime);
+      audio.removeEventListener('ended', onEnded);
+    };
+  }, [src]);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) { audio.pause(); setPlaying(false); }
+    else { audio.play().catch(() => {}); setPlaying(true); }
+  };
+
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio?.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    audio.currentTime = ((e.clientX - rect.left) / rect.width) * audio.duration;
+  };
+
+  const bars = Array.from({ length: 20 }, (_, i) => 6 + Math.sin(i * 0.8) * 4 + Math.cos(i * 1.6) * 3);
+
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-2.5 px-4">
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <button
+        onClick={toggle}
+        className="w-11 h-11 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform shrink-0"
+      >
+        {playing ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
+      </button>
+      <div className="w-full flex items-end gap-px h-6 cursor-pointer" onClick={seek}>
+        {bars.map((h, i) => (
+          <div
+            key={i}
+            style={{ height: `${h}px`, background: progress > (i / bars.length) * 100 ? '#c4b5fd' : 'rgba(255,255,255,0.25)' }}
+            className="flex-1 rounded-full"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ItemCard({
   item, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, className = '', style,
 }: {
@@ -631,7 +694,11 @@ function ItemCard({
     >
       {/* Media — clipped inside its own overflow-hidden layer */}
       <div className="absolute inset-0 rounded-2xl overflow-hidden">
-        {thumb && !isAudio && !isLink ? (
+        {isAudio && item.media_url ? (
+          <div className="w-full h-full min-h-[100px]" style={{ background: 'linear-gradient(135deg,#1e1040,#312e81)' }}>
+            <AudioTilePlayer src={item.media_url} />
+          </div>
+        ) : thumb && !isLink ? (
           <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
         ) : (
           <div
