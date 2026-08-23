@@ -244,7 +244,7 @@ async function applyAction(
     }
     case 'mark_work_completed': {
       if (app.status !== 'hired') return { ok: false, status: 400, error: 'This opportunity has not been funded yet' };
-      await updateOne('opportunity_transactions', `application_id=eq.${app.id}`, { work_status: 'marked_complete_by_worker', updated_at: now });
+      await updateOne('opportunity_transactions', `application_id=eq.${app.id}`, { work_status: 'marked_complete_by_worker', marked_complete_at: now, auto_release_reminder_sent: false, updated_at: now });
       await insertSystemMessage(app.conversation_id, 'The worker marked this Opportunity as completed — awaiting owner confirmation.');
       await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'system_notification', title: `Marked complete — confirm completion for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id });
       return { ok: true, application: app };

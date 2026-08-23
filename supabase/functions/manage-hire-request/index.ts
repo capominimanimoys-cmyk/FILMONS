@@ -162,7 +162,7 @@ async function applyAction(hr: any, action: string, userId: string, payload: Rec
 
     case 'mark_work_completed': {
       if (hr.status !== 'hired') return { ok: false, status: 400, error: 'This hire has not been funded yet' };
-      await updateOne('hire_transactions', `hire_request_id=eq.${hr.id}`, { work_status: 'marked_complete_by_worker', updated_at: now });
+      await updateOne('hire_transactions', `hire_request_id=eq.${hr.id}`, { work_status: 'marked_complete_by_worker', marked_complete_at: now, auto_release_reminder_sent: false, updated_at: now });
       await insertSystemMessage(hr.conversation_id, 'The creator marked this work as completed — awaiting your confirmation.');
       await pushNotification({ user_id: hr.requester_id, actor_id: userId, actor_name: host?.name || '', type: 'system_notification', title: `Marked complete — confirm completion for ${projTitle(hr.project_title)}`, conversation_id: hr.conversation_id });
       return { ok: true, hireRequest: hr };
