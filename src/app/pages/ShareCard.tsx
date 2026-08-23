@@ -224,7 +224,9 @@ export function ShareCard() {
     setTimeout(() => navigate(-1), 320);
   };
 
-  const profileUrl = user?.id ? `${window.location.origin}/host/${user.id}` : window.location.origin;
+  const profileUrl = user?.username
+    ? `${window.location.origin}/${user.username}`
+    : user?.id ? `${window.location.origin}/host/${user.id}` : window.location.origin;
 
   const copyLink = useCallback(async () => {
     await navigator.clipboard.writeText(profileUrl);

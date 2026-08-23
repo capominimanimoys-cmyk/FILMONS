@@ -285,10 +285,11 @@ function ListingRow({ l }: { l: Listing }) {
 }
 
 export function HostProfile() {
-  const { userId } = useParams<{ userId: string }>();
+  const params     = useParams<{ userId?: string; username?: string }>();
   const navigate   = useNavigate();
   const { user: me } = useAuth();
 
+  const [resolvedId,       setResolvedId]       = useState<string | null>(null);
   const [host,             setHost]             = useState<User | null>(null);
   const [listings,         setListings]         = useState<Listing[]>([]);
   const [reviews,          setReviews]          = useState<Review[]>([]);
@@ -310,12 +311,32 @@ export function HostProfile() {
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
   const [showTrustSheet,   setShowTrustSheet]   = useState(false);
 
-  const isOwn = me?.id === userId;
+  // Reached either via the legacy /host/:userId link or the canonical
+  // /:username one — resolve whichever param is present down to a raw id,
+  // then loadProfile() (below) runs exactly like it always did. Own-profile
+  // visits redirect to /profile instead of rendering the public view.
+  useEffect(() => {
+    let cancelled = false;
+    if (params.username) {
+      if (me && me.username === params.username) { navigate('/profile', { replace: true }); return; }
+      authApi.getUserByUsername(params.username).then(found => {
+        if (cancelled) return;
+        if (!found) { setLoading(false); return; } // host stays null -> "Profile not found"
+        if (me?.id === found.id) { navigate('/profile', { replace: true }); return; }
+        setResolvedId(found.id);
+      });
+    } else if (params.userId) {
+      if (me?.id === params.userId) { navigate('/profile', { replace: true }); return; }
+      setResolvedId(params.userId);
+    } else {
+      setLoading(false);
+    }
+    return () => { cancelled = true; };
+  }, [params.username, params.userId, me?.id, me?.username]); // eslint-disable-line
 
   useEffect(() => {
-    if (isOwn) { navigate('/profile', { replace: true }); return; }
-    if (userId) loadProfile(userId);
-  }, [userId, isOwn]); // eslint-disable-line
+    if (resolvedId) loadProfile(resolvedId);
+  }, [resolvedId]); // eslint-disable-line
 
   const loadProfile = async (uid: string) => {
     setLoading(true);
@@ -355,6 +376,12 @@ export function HostProfile() {
       }
       setHost(hostData);
       setLoading(false);
+      // Landed here via the legacy /host/:id link but this profile has a
+      // username -- silently upgrade the address bar to the clean canonical
+      // URL, same as OAuthCallback-style post-auth redirects elsewhere.
+      if (hostData?.username && window.location.pathname !== `/${hostData.username}`) {
+        navigate(`/${hostData.username}`, { replace: true });
+      }
 
       const [hostListings, hostReviews, hostPortfolio, repScore, [fcRes, fgRes, amFollowingRes], followerRows, followingRows] =
         await Promise.all([listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followCountsPromise, followerRowsPromise, followingRowsPromise]);
@@ -454,7 +481,7 @@ export function HostProfile() {
   };
 
   const handleShare = () => {
-    navigate(`/share-card?userId=${userId}`);
+    navigate(`/share-card?userId=${resolvedId}`);
   };
 
   if (loading) return (

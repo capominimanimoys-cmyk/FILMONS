@@ -40,6 +40,20 @@ type Tab = 'portfolio' | 'listings' | 'reviews' | 'about' | 'liked';
 
 const TAB_IDS: Tab[] = ['portfolio', 'listings', 'reviews', 'about', 'liked'];
 
+// Every static top-level route segment in routes.tsx -- a username matching
+// one of these would make that page unreachable at filmons.app/<name> since
+// the profile route (:username) only ever wins when nothing static matches.
+const RESERVED_USERNAMES = new Set([
+  'login', 'signin', 'create-account', 'forgot-password', 'reset-password', 'auth', 'google-signup',
+  'onboarding', 'verify-email', 'verify-device', 'email-already-exists', 'signup', 'phone-already-exists',
+  'marketplace', 'feed', 'inbox', 'checkout', 'dashboard', 'wallet', 'notifications', 'settings', 'account',
+  'creator-plus-required', 'professional-account-steps', 'business-account-steps', 'verification-status',
+  'help', 'post', 'audio', 'reels', 'phone-signup', 'phone-login', 'create-listing', 'create-opportunity',
+  'edit-listing', 'my-listings', 'my-orders', 'listing', 'boost', 'search', 'portfolio', 'profile',
+  'share-card', 'verification', 'refund-policy', 'privacy-policy', 'terms-conditions', 'host',
+  'admin-verifications', 'support', 'admin-support', 'admin-boosts', 'admin', 'api', 'www', 'app', 'filmons',
+]);
+
 const ROLE_CATEGORIES = [
   { label: 'Film & Video', roles: ['Director','Cinematographer','Camera Operator','Gaffer','Grip','Producer','Video Editor','Colorist','VFX Artist','Sound Designer'] },
   { label: 'Photography',  roles: ['Photographer','Fashion Photographer','Retoucher','Studio Manager','Drone Photographer'] },
@@ -966,11 +980,24 @@ export function Profile() {
   // ── Save About form ──────────────────────────────────────────────────────
   const saveAbout = async () => {
     if (!user) return;
+
+    const cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername) {
+      if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+        toast.error('Username must be 3-20 characters: letters, numbers, underscores only');
+        return;
+      }
+      if (RESERVED_USERNAMES.has(cleanUsername)) {
+        toast.error('That username is reserved — try another');
+        return;
+      }
+    }
+
     setAboutSaving(true);
     try {
       await updateUser({
         name:        displayName.trim() || user.name,
-        username:    username.trim()    || undefined,
+        username:    cleanUsername      || undefined,
         bio:         bio.trim()         || undefined,
         location:    location.trim() || undefined,
         city:        location.includes(',') ? location.split(',')[0].trim() : location.trim() || undefined,

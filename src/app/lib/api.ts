@@ -496,6 +496,14 @@ export const authApi = {
     }
   },
 
+  getUserByUsername: async (username: string): Promise<User | null> => {
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('username', username).single();
+      if (data) return profileRowToUser(data);
+    } catch {}
+    return null;
+  },
+
   // Sync version (reads from server-populated localStorage cache or fetches all users)
   getUserByIdSync: (userId: string): User | null => {
     try {

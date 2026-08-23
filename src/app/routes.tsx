@@ -135,6 +135,13 @@ export const router = createBrowserRouter([
       { path: 'support/cases/:id', Component: SupportCaseDetail },
       { path: 'admin-support', Component: AdminSupport },
       { path: 'admin-boosts', Component: AdminBoosts },
+      // Canonical public-profile URL (filmons.app/username). Kept last —
+      // React Router v6 ranks static segments (marketplace, wallet, etc.)
+      // above a dynamic one regardless of declaration order, so this can
+      // never shadow any route above it; it only matches when nothing
+      // else does. HostProfile resolves the username itself and redirects
+      // legacy /host/:userId links here once it knows the host's handle.
+      { path: ':username', Component: HostProfile },
     ],
   },
   // ── Auth routes — outside Root layout (no navbar/shell) ──────────────────

@@ -3,14 +3,15 @@ import { X, Download, Share2 } from 'lucide-react';
 
 interface ProfileQRCodeProps {
   userId: string;
+  username?: string;
   name: string;
   avatar?: string;
   onClose: () => void;
 }
 
-export function ProfileQRCode({ userId, name, avatar, onClose }: ProfileQRCodeProps) {
+export function ProfileQRCode({ userId, username, name, avatar, onClose }: ProfileQRCodeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const profileUrl = `${window.location.origin}/host/${userId}`;
+  const profileUrl = `${window.location.origin}/${username || `host/${userId}`}`;
 
   useEffect(() => {
     // Draw QR using a simple URL-encoded QR service (no external library needed)
