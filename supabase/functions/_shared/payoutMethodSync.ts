@@ -49,7 +49,11 @@ export async function syncPayoutMethodFromStripeAccount(hostId: string, stripeAc
         country: externalAccount.country || account.country || null,
         currency: (externalAccount.currency || '').toUpperCase() || null,
         standardPayoutEligible: !!account.payouts_enabled,
-        instantPayoutEligible: account.capabilities?.card_payouts === 'active',
+        // There's no 'card_payouts' capability (see payout-connect-start's
+        // account-creation call for why) -- Stripe exposes per-card instant
+        // eligibility on the external account itself instead, via
+        // available_payout_methods (e.g. ["standard","instant"]).
+        instantPayoutEligible: !!account.payouts_enabled && !!externalAccount.available_payout_methods?.includes('instant'),
         status: account.details_submitted && account.payouts_enabled ? 'ready' : 'incomplete',
       }
     : {

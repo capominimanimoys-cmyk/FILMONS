@@ -49,12 +49,20 @@ Deno.serve(async (req) => {
       if (!country || !['CA', 'US'].includes(country)) {
         return json({ error: 'Country is required for first-time setup (CA or US)' }, 400);
       }
+      // 'transfers' is what actually matters here — it's what lets Filmons
+      // move money TO this connected account. There's no such thing as a
+      // 'card_payouts' capability (that was a mistaken guess — Stripe's
+      // real card-related capability, card_payments, is for the connected
+      // account to ACCEPT card payments as a merchant, not relevant to a
+      // payout-only account, and requesting it would just add unrelated
+      // verification requirements Filmons doesn't need). Whether a given
+      // debit card can receive an INSTANT payout is a property of the
+      // external account itself once added, not something requested here.
       const params = new URLSearchParams({
         type: 'express',
         country,
         email: profile.email || '',
         'capabilities[transfers][requested]': 'true',
-        'capabilities[card_payouts][requested]': 'true',
       });
       const res = await fetch('https://api.stripe.com/v1/accounts', {
         method: 'POST',
