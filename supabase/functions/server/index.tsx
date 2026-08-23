@@ -1937,7 +1937,7 @@ app.post(
       const formattedPhone = phone.startsWith("+")
         ? phone
         : `+${phone}`;
-      const message = `Welcome to Filmons, ${name || "there"}!\nYour account is ready — browse film gear & creative services.\nhttps://find-apple-87729733.figma.site`;
+      const message = `Welcome to Filmons, ${name || "there"}!\nYour account is ready — browse film gear & creative services.\nhttps://filmons.app`;
       const body = new URLSearchParams({
         To: formattedPhone,
         From: fromPhone,
@@ -2011,7 +2011,7 @@ app.post("/make-server-ec8fe879/send-login-sms", async (c) => {
     const formattedPhone = phone.startsWith("+")
       ? phone
       : `+${phone}`;
-    const message = `Welcome back to Filmons, ${name || "there"}! You just signed in.\nhttps://find-apple-87729733.figma.site`;
+    const message = `Welcome back to Filmons, ${name || "there"}! You just signed in.\nhttps://filmons.app`;
     const body = new URLSearchParams({
       To: formattedPhone,
       From: fromPhone,
