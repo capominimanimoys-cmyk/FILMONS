@@ -56,14 +56,14 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
 }
 
 // ── OAuth button ───────────────────────────────────────────────────────────
-function OAuthBtn({ onClick }: { onClick: () => void }) {
+function OAuthBtn({ onClick, loading }: { onClick: () => void; loading?: boolean }) {
   return (
-    <button onClick={onClick}
-      className="w-full flex items-center gap-3 active:scale-[0.98] border font-semibold text-sm rounded-2xl px-4 py-3.5 transition-all backdrop-blur-sm bg-white hover:bg-gray-50 border-white/80 text-gray-800 shadow-sm">
+    <button onClick={onClick} disabled={loading}
+      className="w-full flex items-center gap-3 active:scale-[0.98] border font-semibold text-sm rounded-2xl px-4 py-3.5 transition-all backdrop-blur-sm bg-white hover:bg-gray-50 border-white/80 text-gray-800 shadow-sm disabled:opacity-60">
       <span className="w-5 h-5 shrink-0 flex items-center justify-center">
-        <GoogleLogo size={20}/>
+        {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/> : <GoogleLogo size={20}/>}
       </span>
-      <span className="flex-1 text-left">Continue with Google</span>
+      <span className="flex-1 text-left">{loading ? 'Connecting…' : 'Continue with Google'}</span>
     </button>
   );
 }
@@ -88,6 +88,7 @@ export function Login() {
   const [otp,      setOtp]      = useState('');
   const [pwError,  setPwError]  = useState('');
   const [oauthOnlyProviders, setOauthOnlyProviders] = useState<string[]>([]);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/', { replace: true }); } }, [isAuthenticated]);
 
@@ -125,11 +126,20 @@ export function Login() {
   };
 
   const handleOAuth = async (provider: 'google' | 'apple') => {
+    // Without this guard, a slow network round-trip to Supabase's
+    // /authorize endpoint before the actual redirect fires left the
+    // button looking unresponsive — nothing disabled it and there was no
+    // visual feedback, so a user would tap it again (and again),
+    // spawning multiple concurrent OAuth attempts.
+    if (oauthLoading) return;
+    setOauthLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo: getOAuthRedirectUrl() },
     });
-    if (error) toast.error(error.message);
+    if (error) { toast.error(error.message); setOauthLoading(false); }
+    // On success the browser is navigating away to Google — no need to
+    // reset the loading state, the component is about to unmount anyway.
   };
 
   // ── SPLASH ──────────────────────────────────────────────────────────────
@@ -155,7 +165,7 @@ export function Login() {
           </div>
           {/* Methods */}
           <div className="space-y-3">
-            <OAuthBtn onClick={() => handleOAuth('google')}/>
+            <OAuthBtn onClick={() => handleOAuth('google')} loading={oauthLoading}/>
             <button onClick={() => setScreen('email')}
               className="w-full flex items-center gap-3 bg-white text-gray-900 font-semibold text-sm rounded-2xl px-4 py-3.5 hover:bg-gray-100 active:scale-[0.98] transition-all">
               <Mail className="w-5 h-5 text-gray-500 shrink-0"/>
@@ -247,7 +257,7 @@ export function Login() {
             <div className="flex-1 h-px bg-white/10"/>
           </div>
           <div className="space-y-2.5">
-            <OAuthBtn onClick={() => handleOAuth('google')}/>
+            <OAuthBtn onClick={() => handleOAuth('google')} loading={oauthLoading}/>
           </div>
           <p className="text-center text-xs text-white/30 mt-6">
             Don't have an account?{' '}
@@ -332,7 +342,7 @@ export function Login() {
 
           {/* OAuth + Phone alternatives */}
           <div className="space-y-3 pb-8">
-            <OAuthBtn onClick={() => handleOAuth('google')}/>
+            <OAuthBtn onClick={() => handleOAuth('google')} loading={oauthLoading}/>
             <button
               onClick={() => { captureSnapshot(); navigate('/phone-login'); }}
               className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all"
