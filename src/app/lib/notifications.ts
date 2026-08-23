@@ -121,6 +121,9 @@ function rowToNotif(r: any): Notification {
     postImage:      r.post_image        ?? undefined,
     commentContent: r.comment_content   ?? r.body ?? undefined,
     conversationId: r.conversation_id   ?? undefined,
+    listingId:      r.listing_id        ?? undefined,
+    reviewId:       r.review_id         ?? undefined,
+    rating:         r.rating            ?? undefined,
     read:           r.is_read           ?? r.read ?? false,
     createdAt:      r.created_at        ?? new Date().toISOString(),
   };

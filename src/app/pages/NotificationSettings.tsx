@@ -95,6 +95,8 @@ export function NotificationSettings() {
       setNewOrders(s.notif_new_orders ?? true);
       setPayments(s.notif_payments ?? true);
       setRentalReqs(s.notif_rental_reqs ?? true);
+      setNotifReviews(s.notif_reviews ?? true);
+      setEmailReviews(s.email_reviews ?? true);
       setPortfolioViews(s.notif_portfolio_views ?? true);
       setProjectSaves(s.notif_project_saves ?? true);
       setContactRequests(s.notif_contact_requests ?? true);
@@ -151,6 +153,7 @@ export function NotificationSettings() {
   const [newOrders,   setNewOrders]   = useState(true);
   const [payments,    setPayments]    = useState(true);
   const [rentalReqs,  setRentalReqs]  = useState(true);
+  const [notifReviews, setNotifReviews] = useState(true);
 
   // Email
   const [emailCollab, setEmailCollab] = useState(true);
@@ -159,6 +162,7 @@ export function NotificationSettings() {
   const [emailSecurity, setEmailSecurity] = useState(true);
   const [productUpdates, setProductUpdates] = useState(false);
   const [creatorTips, setCreatorTips] = useState(false);
+  const [emailReviews, setEmailReviews] = useState(true);
   const [emailFreq, setEmailFreq] = useState('Daily');
 
   // Portfolio
@@ -194,6 +198,7 @@ export function NotificationSettings() {
         notif_booking_reqs: bookingReqs, notif_casting_calls: castingCalls,
         notif_project_invites: projectInvites, notif_file_requests: fileRequests,
         notif_new_orders: newOrders, notif_payments: payments, notif_rental_reqs: rentalReqs,
+        notif_reviews: notifReviews, email_reviews: emailReviews,
         notif_portfolio_views: portfolioViews, notif_project_saves: projectSaves,
         notif_contact_requests: contactRequests,
         notif_reel_trending: reelTrending, notif_milestones: milestones,
@@ -290,6 +295,7 @@ export function NotificationSettings() {
           <Toggle on={payments}    onChange={() => setPayments(!payments)}        label="Booking Approved"     sub="A booking you requested was approved"/>
           <Toggle on={rentalReqs}  onChange={() => setRentalReqs(!rentalReqs)}   label="Rental Requests"      sub="Gear rental inquiries"/>
           <Toggle on={castingCalls} onChange={() => setCastingCalls(!castingCalls)} label="Listing Activity"  sub="Saves, views, and shares on your listings"/>
+          <Toggle on={notifReviews} onChange={() => setNotifReviews(!notifReviews)} label="New Reviews"       sub="Someone left a review on your listing"/>
         </Section>
 
         {/* 5. Portfolio */}
@@ -316,6 +322,7 @@ export function NotificationSettings() {
           <Toggle on={emailSecurity}      onChange={() => setEmailSecurity(!emailSecurity)}           label="Security Alerts"           sub="Always recommended"/>
           <Toggle on={productUpdates}     onChange={() => setProductUpdates(!productUpdates)}         label="Product Updates"/>
           <Toggle on={creatorTips}        onChange={() => setCreatorTips(!creatorTips)}               label="Creator Tips & Guides"/>
+          <Toggle on={emailReviews}       onChange={() => setEmailReviews(!emailReviews)}             label="New Review Emails"/>
           <SelectRow
             label="Email Frequency"
             value={emailFreq}

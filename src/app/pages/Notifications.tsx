@@ -178,6 +178,8 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Your payout request was rejected' };
     case 'support_reply':
       return { icon: MessageCircle, gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Filmons Support replied to your case' };
+    case 'listing_review':
+      return { icon: Star,          gradient: 'from-yellow-400 to-amber-500',    iconColor: 'text-white', ringColor: 'ring-yellow-100',  label: () => `left a ${(n as any).rating ?? ''}-star review on your listing` };
     case 'profile_completion':
       return { icon: Star,          gradient: 'from-yellow-400 to-amber-500',    iconColor: 'text-white', ringColor: 'ring-yellow-100',  label: () => 'Your profile is now 80% complete' };
     case 'trust_level_update':
@@ -502,7 +504,7 @@ function SkeletonRow() {
 type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payments' | 'social' | 'system';
 
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction'];
-const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected'];
+const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','listing_review'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_received','payment_released','payout_requested','payout_processing','payout_paid','payout_rejected'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];
@@ -595,6 +597,10 @@ export function Notifications() {
       navigate('/wallet');
     } else if (n.type === 'support_reply') {
       navigate(n.conversationId ? `/support/cases/${n.conversationId}` : '/support/cases');
+    } else if (n.type === 'listing_review') {
+      navigate((n as any).listingId
+        ? `/listing/${(n as any).listingId}${(n as any).reviewId ? `?review=${(n as any).reviewId}` : ''}`
+        : '/marketplace');
     } else if ([...MARKETPLACE_TYPES, ...SERVICES_TYPES].includes(n.type)) {
       navigate((n as any).listingId ? `/listing/${(n as any).listingId}` : '/marketplace');
     } else if (n.postId) {

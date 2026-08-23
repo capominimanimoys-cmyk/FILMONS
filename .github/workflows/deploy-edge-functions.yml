@@ -217,3 +217,8 @@ jobs:
         run: supabase functions deploy device-verify-code --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy create-review
+        run: supabase functions deploy create-review --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

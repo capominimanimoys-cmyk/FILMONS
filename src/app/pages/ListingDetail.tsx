@@ -1,7 +1,6 @@
-import { useParams, useNavigate, Link } from 'react-router';
-import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
-import { push as pushNotification } from '../lib/notifications';
 import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
@@ -69,6 +68,8 @@ function Lightbox({ items, startIndex, onClose }: {
 export function ListingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightReviewId = searchParams.get('review');
   const { user } = useAuth();
   const [listing, setListing]             = useState<Listing | null>(null);
   const [host, setHost]                   = useState<User | null>(null);
@@ -83,6 +84,19 @@ export function ListingDetail() {
   const [activeImg, setActiveImg]         = useState(0);
 
   useEffect(() => { if (id) loadListing(id); }, [id]);
+
+  // Notification click-through (?review=<id>) — scroll to the specific
+  // review once it's loaded. Guarded so it only fires the first time
+  // reviews arrive, not on every re-render.
+  const scrolledToReviewRef = useRef(false);
+  useEffect(() => {
+    if (!highlightReviewId || scrolledToReviewRef.current || !reviews.length) return;
+    const el = document.getElementById(`review-${highlightReviewId}`);
+    if (el) {
+      scrolledToReviewRef.current = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightReviewId, reviews]);
 
   const loadListing = async (listingId: string) => {
     try {
@@ -107,22 +121,17 @@ export function ListingDetail() {
 
   const handleReviewSubmit = async () => {
     if (!user) { toast.error('Please log in to leave a review'); return; }
+    if (isOwnListing) { toast.error("You can't review your own listing"); return; }
     if (!comment) { toast.error('Please enter a comment'); return; }
     setSubmitting(true);
     try {
+      // create-review handles the owner notification + email itself
+      // server-side once the review is actually saved — never from here.
       await reviewsApi.create({ listingId: listing?.id, userId: user.id, reviewedUserId: listing?.userId, rating, comment });
-      if (listing?.userId) {
-        pushNotification(listing.userId, {
-          type: 'review_received',
-          fromUserId: user.id,
-          fromUserName: user.name || 'Someone',
-          fromUserAvatar: user.avatar,
-        });
-      }
       toast.success('Review submitted!');
       setComment(''); setRating(5);
       loadListing(id!);
-    } catch { toast.error('Failed to submit review'); }
+    } catch (e: any) { toast.error(e?.message || 'Failed to submit review'); }
     finally { setSubmitting(false); }
   };
 
@@ -460,7 +469,10 @@ export function ListingDetail() {
               {reviews.length > 0 ? (
                 <div className="space-y-4">
                   {reviews.map(review => (
-                    <div key={review.id} className="border-b border-gray-100 pb-4 last:border-0">
+                    <div key={review.id} id={`review-${review.id}`}
+                      className={`border-b border-gray-100 pb-4 last:border-0 transition-colors ${
+                        highlightReviewId === review.id ? 'bg-amber-50 -mx-3 px-3 py-2 rounded-xl' : ''
+                      }`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">

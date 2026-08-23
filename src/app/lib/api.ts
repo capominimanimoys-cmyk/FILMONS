@@ -1192,31 +1192,25 @@ export const reviewsApi = {
     } catch { return []; }
   },
 
+  // Server-verified — create-review inserts the same row shape the old
+  // direct client insert used (same reviews columns, so the existing
+  // reputation-score DB trigger on NEW.reviewed_user_id keeps working
+  // unchanged), then creates the owner's notification + sends their
+  // email in the same request. Moved server-side specifically so those
+  // two steps can never be skipped just because the reviewer closed
+  // their browser right after submitting.
   create: async (review: Partial<Review>): Promise<Review> => {
-    // A DB trigger on `reviews` reads NEW.reviewed_user_id (used to update the
-    // reviewed user's reputation score) — without it every insert fails with
-    // "record NEW has no field reviewed_user_id" and silently falls through
-    // to the edge function below, which writes to a KV store the read paths
-    // (getListingReviews/getUserReviews) never look at. Always send it.
-    try {
-      const { data, error } = await supabase.from('reviews').insert({
-        listing_id:       review.listingId,
-        user_id:          review.userId,
-        reviewed_user_id: review.reviewedUserId,
-        rating:           review.rating,
-        comment:          review.comment,
-      }).select().single();
-      if (!error && data) return data;
-      console.error('[reviewsApi.create] Supabase insert failed:', error);
-    } catch (e) {
-      console.error('[reviewsApi.create] Supabase insert threw:', e);
-    }
-    // Fallback edge function — last resort only; reviews created this way
-    // won't show up in getListingReviews/getUserReviews (different store).
-    const { review: created } = await call<any>('/reviews', {
-      method: 'POST', body: JSON.stringify(review),
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/create-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({
+        listingId: review.listingId, userId: review.userId,
+        rating: review.rating, comment: review.comment,
+      }),
     });
-    return created;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not save review');
+    return data.review;
   },
 
   delete: async (id: string): Promise<void> => {

@@ -371,7 +371,7 @@ export type NotificationType =
   | 'payout_requested' | 'payout_processing' | 'payout_paid' | 'payout_rejected'
   | 'support_reply'
   | 'marketplace_order' | 'marketplace_booking' | 'marketplace_reply'
-  | 'review_received'
+  | 'review_received' | 'listing_review'
   // Profile & Trust
   | 'profile_completion' | 'trust_level_update'
   // System
@@ -403,6 +403,9 @@ export interface Notification {
   listingTitle?: string;
   listingPrice?: number;
   listingImage?: string;
+  // Reviews
+  reviewId?: string;
+  rating?: number;
   // Audio
   audioId?: string;
   audioTitle?: string;
