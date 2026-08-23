@@ -14,11 +14,18 @@ import { User } from '../types';
 import { authApi } from '../lib/api';
 import { seedDemoData } from '../lib/initializeData';
 import { registerDevice, checkCurrentDeviceStatus } from '../lib/devicesApi';
+import { checkTrustedDevice } from '../lib/deviceVerification';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+
+  // New Browser / First Sign-In Verification. null = not checked yet
+  // (Root.tsx must not redirect while null, only once it's explicitly
+  // false, so a trusted returning user never sees a flash-redirect).
+  deviceVerified:    boolean | null;
+  setDeviceVerified: (v: boolean) => void;
 
   // Guest mode — browse without an account
   isGuest:        boolean;
@@ -101,6 +108,8 @@ const _noop = () => Promise.resolve() as any;
 const defaultCtx: AuthContextType = {
   user:             null,
   isAuthenticated:  false,
+  deviceVerified:    null,
+  setDeviceVerified: () => {},
   isGuest:          false,
   enterGuestMode:   () => {},
   exitGuestMode:    () => {},
@@ -124,6 +133,17 @@ const AuthContext = createContext<AuthContextType>(defaultCtx);
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Initialise from localStorage so the UI never flashes "logged out"
   const [user, setUser] = useState<User | null>(() => loadCached());
+
+  // New Browser / First Sign-In Verification — re-checked on every mount
+  // where a user is present, same cadence as the existing "refresh
+  // session from server" effect below.
+  const [deviceVerified, setDeviceVerified] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user?.id) { setDeviceVerified(null); return; }
+    let cancelled = false;
+    checkTrustedDevice(user.id).then(trusted => { if (!cancelled) setDeviceVerified(trusted); });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   // Guest mode
   const [isGuest,       setIsGuest]       = useState(() => localStorage.getItem(GUEST_KEY) === 'true');
@@ -301,6 +321,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user,
       isAuthenticated: !!user,
+      deviceVerified,
+      setDeviceVerified,
       isGuest,
       enterGuestMode,
       exitGuestMode,

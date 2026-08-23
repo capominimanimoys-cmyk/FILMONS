@@ -12,7 +12,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
 
-const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login'];
+const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
 const NO_FOOTER_PAGES = ['/login', '/phone-signup', '/phone-login', '/inbox', '/feed', '/reels'];
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
 // These pages render their own fixed bottom action bar (Back/Next, Save, etc.) —
@@ -30,7 +30,7 @@ function isOnboardingIncomplete(user: User | null): boolean {
 
 export function Root() {
   const location = useLocation();
-  const { user, isAuthenticated, isGuest } = useAuth() as any;
+  const { user, isAuthenticated, isGuest, deviceVerified } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen,  setSearchOpen]  = useState(false);
 
@@ -44,6 +44,14 @@ export function Root() {
   const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
   const hideFooter   = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
   const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p));
+
+  // New Browser / First Sign-In Verification — checked before anything
+  // else that requires a real session. deviceVerified is null until the
+  // check resolves; only an explicit false redirects, so a trusted
+  // returning user never sees a flash-redirect while it's in flight.
+  if (isAuthenticated && deviceVerified === false && location.pathname !== '/verify-device') {
+    return <Navigate to="/verify-device" state={{ from: location.pathname + location.search }} replace />;
+  }
 
   // Enforce email verification before anything else (skip for guests — they have no user)
   if (isAuthenticated && user?.emailVerified === false) {

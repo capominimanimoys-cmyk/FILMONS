@@ -60,6 +60,7 @@ import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
 import { Portfolio } from './pages/Portfolio';
 import { VerifyEmail } from './pages/VerifyEmail';
+import { VerifyDevice } from './pages/VerifyDevice';
 import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
 import { SignupPhone }        from './pages/SignupPhone';
 import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
@@ -146,6 +147,7 @@ export const router = createBrowserRouter([
   { path: '/google-signup',    Component: GoogleSignup   },
   { path: '/onboarding',           Component: CompleteProfile    },
   { path: '/verify-email',         Component: VerifyEmail        },
+  { path: '/verify-device',        Component: VerifyDevice       },
   { path: '/email-already-exists', Component: EmailAlreadyExists },
   { path: '/signup/phone',         Component: SignupPhone        },
   { path: '/phone-already-exists', Component: PhoneAlreadyExists },
