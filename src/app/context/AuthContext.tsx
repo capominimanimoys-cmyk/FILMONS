@@ -167,6 +167,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }).catch(() => {});
   }, []); // eslint-disable-line
 
+  // Fallback for a real Supabase Auth session (Google OAuth) existing
+  // with no matching Filmons session yet — normally OAuthCallback.tsx
+  // resolves this on /auth/callback, but if Supabase's Redirect URLs
+  // configuration doesn't include that path, it silently falls back to
+  // redirecting to the bare Site URL instead, landing the user on "/"
+  // with a valid Supabase session that nothing ever picked up (the
+  // classic "Google sign-in succeeds, Home loads logged out" symptom).
+  // This catches that regardless of which page it lands on.
+  useEffect(() => {
+    if (loadCached()) return; // already have a Filmons session, nothing to recover
+    let cancelled = false;
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled || !session?.user) return;
+      const found = await authApi.getUserById(session.user.id);
+      if (!cancelled && found) setAndCache(found);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line
+
   // Update last_seen every 2 minutes while app is open so the notification system
   // can detect if the receiver is currently active (skips email/SMS if online).
   // Piggybacks a check for remote sign-out on the same cadence: this app has
