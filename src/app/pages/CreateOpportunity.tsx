@@ -813,6 +813,7 @@ export function CreateOpportunity() {
         images: imageUrls, videos: videoUrls,
         listing_type: 'opportunity', listing_mode: null, service_category: (form.categoryIndustry || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         metadata: { listingKind: 'talent', opportunity },
+        boosted: false, // listings.boosted is NOT NULL — see 20240308000000_fix_publish_opportunity_boosted.sql
         updated_at: new Date().toISOString(),
       };
 
