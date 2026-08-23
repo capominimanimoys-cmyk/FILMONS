@@ -3,6 +3,9 @@
 // simultaneous request could draw on the same available balance). This
 // runs the whole check-and-reserve as one atomic DB transaction (SELECT
 // ... FOR UPDATE inside the function), not a client-side check-then-insert.
+import { claimEmailEvent } from '../_shared/emailEvents.ts';
+import { sendWithdrawalReceivedEmail } from '../_shared/notificationEmails.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -41,46 +44,29 @@ function addBusinessDays(from: Date, days: number): Date {
   return d;
 }
 
-// Same best-effort, generic-template email pattern used by
-// admin-process-payout — see that file for the caveat about there being
-// no payout-specific EmailJS template yet.
-const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
-const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
-const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
-const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
-
-async function notifyHostRequested(hostId: string, amount: number) {
-  const host = await selectOne('profiles', `id=eq.${hostId}`);
+async function notifyHostRequested(hostId: string, amount: number, payoutRequestId: string, payoutMethod: string | null) {
   const amountStr = `$${amount.toFixed(2)} CAD`;
   await fetch(rest('/notifications'), {
     method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
     body: JSON.stringify({
       user_id: hostId, actor_id: null, actor_name: 'Filmons',
-      type: 'payout_requested', title: 'Your payout request was received', is_read: false,
+      type: 'payout_requested', title: `Your withdrawal request for ${amountStr} has been received`, is_read: false,
     }),
   }).catch(() => {});
 
-  if (!host?.email) return;
-  try {
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
-        user_id: EMAILJS_PUBLIC_KEY,
-        accessToken: EMAILJS_PRIVATE_KEY,
-        template_params: {
-          to_email: host.email, to_name: host.name || 'there',
-          subject: 'Your Filmons payout request was received',
-          message: `We've received your payout request for ${amountStr}. It's now under review — you'll be notified as it moves forward.`,
-        },
-      }),
-    });
-    if (!res.ok) console.warn('EmailJS payout-requested email failed:', res.status, await res.text());
-  } catch (e) {
-    console.warn('EmailJS payout-requested email threw:', e);
-  }
+  const claimed = await claimEmailEvent(`withdrawal_received:${payoutRequestId}`);
+  if (!claimed) return; // already sent for this payout request -- retry/double-click, skip
+
+  const [host, method] = await Promise.all([
+    selectOne('profiles', `id=eq.${hostId}`),
+    selectOne('payout_methods', `host_id=eq.${hostId}&is_default=eq.true`),
+  ]);
+  await sendWithdrawalReceivedEmail({
+    toEmail: host?.email, toName: host?.name,
+    amount, currency: 'CAD', withdrawalId: payoutRequestId,
+    payoutMethod: method?.display_name || payoutMethod || 'Payout method',
+    payoutLast4: method?.last4,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -135,7 +121,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: message.includes('Insufficient') ? 'Insufficient available balance' : message }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    notifyHostRequested(hostId, amount).catch(() => {});
+    notifyHostRequested(hostId, amount, result, payoutMethod || null).catch(() => {});
 
     return new Response(JSON.stringify({
       success: true, payoutRequestId: result,

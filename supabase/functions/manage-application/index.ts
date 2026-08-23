@@ -57,6 +57,8 @@ async function insertReturning(table: string, row: Record<string, unknown>) {
 }
 
 import { computeBreakdown } from '../_shared/pricing.ts';
+import { claimEmailEvent } from '../_shared/emailEvents.ts';
+import { sendOpportunityDeclinedEmail } from '../_shared/notificationEmails.ts';
 
 // Generic subject/message template — same one stripe-webhook.ts and
 // manage-hire-request/index.ts already use for dynamic notification
@@ -183,12 +185,14 @@ async function applyAction(
         };
         notifyUserId = app.applicant_id; notifyType = 'application_rejected';
         systemText = "There's an update to your application status.";
-        selectOne('profiles', `id=eq.${app.applicant_id}`).then(applicant =>
-          sendApplicantEmail(applicant?.email, applicant?.name,
-            'Update on your FILMONS opportunity application',
-            `Thank you for applying for ${listingTitle || 'this opportunity'}.\n\nThe opportunity owner has decided to move forward with another applicant. Your application status has been updated to Not Selected.\n\nKeep exploring FILMONS — new opportunities may be a great match for your skills.`,
-          ),
-        ).catch(() => {});
+        claimEmailEvent(`opportunity_declined:${app.id}`).then(async claimed => {
+          if (!claimed) return; // already sent for this application -- retry/rerender/bulk loop, skip
+          const applicant = await selectOne('profiles', `id=eq.${app.applicant_id}`);
+          await sendOpportunityDeclinedEmail({
+            toEmail: applicant?.email, toName: applicant?.name,
+            opportunityTitle: listingTitle || 'this opportunity',
+          });
+        }).catch(() => {});
       }
       break;
     case 'withdraw':
@@ -293,7 +297,7 @@ async function applyAction(
     let title = '';
     if (notifyType === 'application_shortlisted') title = `You've been shortlisted for ${oppTitle(listingTitle)}`;
     else if (notifyType === 'application_accepted') title = `Your application for ${oppTitle(listingTitle)} was accepted`;
-    else if (notifyType === 'application_rejected') title = `There's an update to your application for ${oppTitle(listingTitle)}`;
+    else if (notifyType === 'application_rejected') title = `Your application for ${oppTitle(listingTitle)} was not selected`;
     else if (notifyType === 'application_withdrawn') title = `${actorName} withdrew their application for ${oppTitle(listingTitle)}`;
     await pushNotification({
       user_id: notifyUserId, actor_id: userId, actor_name: actorName, type: notifyType,
