@@ -273,8 +273,6 @@ Deno.serve(async (req) => {
       });
 
       if (processed) {
-        const half = Math.round((netAmount / 2 + Number.EPSILON) * 100) / 100;
-        const held = Math.round((netAmount - half + Number.EPSILON) * 100) / 100;
         const app = await selectOne('opportunity_applications', `id=eq.${meta.application_id}`);
         if (app?.conversation_id) {
           await fetch(rest('/messages'), {
@@ -282,13 +280,22 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               id: crypto.randomUUID(), conversation_id: app.conversation_id, sender_id: 'system', sender_name: 'Filmons',
               content: null, type: 'system',
-              metadata: { systemText: `Payment secured ✓ — $${half.toFixed(2)} available now, $${held.toFixed(2)} held until completion.` },
+              metadata: { systemText: `Payment secured ✓ — $${netAmount.toFixed(2)} is held for the creator and becomes available once the opportunity is confirmed complete.` },
               created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_deleted: false, is_pinned: false,
             }),
           }).catch(() => {});
         }
-        await insertNotification({ user_id: meta.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Opportunity funded ✓ — ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
-        await insertNotification({ user_id: meta.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${half.toFixed(2)} available, $${held.toFixed(2)} held for ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Payment secured ✓ — held for creator on ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${netAmount.toFixed(2)} on hold for ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+
+        const workerProfile = await selectOne('profiles', `id=eq.${meta.worker_id}`);
+        if (workerProfile?.email) {
+          sendGenericNotificationEmail(
+            workerProfile.email, workerProfile.name,
+            'Payment secured — you can start your FILMONS opportunity',
+            `Your opportunity is officially confirmed!\n\nPayment for "${meta.listing_title || 'your opportunity'}" has been successfully secured.\n\nService Amount: $${netAmount.toFixed(2)} CAD\nPayment: Secured\nWallet Status: On Hold\n\nThe full service amount is now shown in your Filmons Wallet as On Hold. Complete the agreed work and mark it complete when finished — funds move to Available once the owner confirms completion.`,
+          ).catch(() => {});
+        }
       }
 
       return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -339,28 +346,26 @@ Deno.serve(async (req) => {
       });
 
       if (processed) {
-        const half = Math.round((netAmount / 2 + Number.EPSILON) * 100) / 100;
-        const held = Math.round((netAmount - half + Number.EPSILON) * 100) / 100;
         if (meta.conversation_id) {
           await fetch(rest('/messages'), {
             method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal' },
             body: JSON.stringify({
               id: crypto.randomUUID(), conversation_id: meta.conversation_id, sender_id: 'system', sender_name: 'Filmons',
               content: null, type: 'system',
-              metadata: { systemText: `Payment secured ✓ — $${half.toFixed(2)} available now, $${held.toFixed(2)} held until completion.` },
+              metadata: { systemText: `Payment secured ✓ — $${netAmount.toFixed(2)} is held for the host and becomes available once the work is confirmed complete.` },
               created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_deleted: false, is_pinned: false,
             }),
           }).catch(() => {});
         }
-        await insertNotification({ user_id: meta.requester_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Hire funded ✓ — ${meta.project_title || 'your hire'}`, conversation_id: meta.conversation_id || null, is_read: false });
-        await insertNotification({ user_id: meta.host_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${half.toFixed(2)} available, $${held.toFixed(2)} held for ${meta.project_title || 'your hire'}`, conversation_id: meta.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.requester_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Payment secured ✓ — held for host on ${meta.project_title || 'your hire'}`, conversation_id: meta.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.host_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${netAmount.toFixed(2)} on hold for ${meta.project_title || 'your hire'}`, conversation_id: meta.conversation_id || null, is_read: false });
 
         const hostProfile = await selectOne('profiles', `id=eq.${meta.host_id}`);
         if (hostProfile?.email) {
           sendGenericNotificationEmail(
             hostProfile.email, hostProfile.name,
             'Hire payment confirmed on Filmons ✓',
-            `"${meta.project_title || 'Your hire'}" is funded — $${half.toFixed(2)} CAD is now available in your Filmons Wallet, $${held.toFixed(2)} CAD held until the work is confirmed complete.`,
+            `"${meta.project_title || 'Your hire'}" is funded — $${netAmount.toFixed(2)} CAD is held in your Filmons Wallet and becomes available once the work is confirmed complete.`,
           ).catch(() => {});
         }
       }
