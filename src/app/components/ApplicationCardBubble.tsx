@@ -65,6 +65,23 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Subscribe before the initial fetch resolves, not after — a realtime
+    // UPDATE can arrive while that fetch is still in flight (Promise.all
+    // above also waits on the listing + applicant profile, so it isn't
+    // always fast). Without this flag, the fetch's now-stale response would
+    // land after the realtime one and silently revert the card to an old
+    // status. Once any realtime update has been applied, the initial fetch
+    // result is discarded instead of overwriting it — realtime always wins.
+    let realtimeApplied = false;
+
+    const channel = supabase
+      .channel(`app-card:${card.applicationId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'opportunity_applications', filter: `id=eq.${card.applicationId}` },
+        (payload) => { realtimeApplied = true; setApp(payload.new as OpportunityApplicationRow); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_transactions', filter: `application_id=eq.${card.applicationId}` },
+        () => reloadTxn())
+      .subscribe();
+
     (async () => {
       const [{ data: appRow }, l, applicantProfile] = await Promise.all([
         supabase.from('opportunity_applications').select('*').eq('id', card.applicationId).single(),
@@ -72,20 +89,12 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
         authApi.getUserById(card.applicantId).catch(() => null),
       ]);
       if (cancelled) return;
-      if (appRow) setApp(appRow as OpportunityApplicationRow);
+      if (appRow && !realtimeApplied) setApp(appRow as OpportunityApplicationRow);
       setListing(l);
       setApplicant(applicantProfile);
       setLoading(false);
       reloadTxn();
     })();
-
-    const channel = supabase
-      .channel(`app-card:${card.applicationId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'opportunity_applications', filter: `id=eq.${card.applicationId}` },
-        (payload) => setApp(payload.new as OpportunityApplicationRow))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_transactions', filter: `application_id=eq.${card.applicationId}` },
-        () => reloadTxn())
-      .subscribe();
 
     return () => { cancelled = true; supabase.removeChannel(channel); };
   }, [card.applicationId]);

@@ -56,25 +56,31 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Subscribe before the initial fetch resolves — a realtime UPDATE can
+    // arrive while it's still in flight. Once realtime has delivered an
+    // update, the initial fetch's (now possibly stale) result is discarded
+    // instead of overwriting it, so realtime always wins.
+    let realtimeApplied = false;
+
+    const channel = supabase
+      .channel(`hire-card:${card.hireRequestId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'hire_requests', filter: `id=eq.${card.hireRequestId}` },
+        (payload) => { realtimeApplied = true; setHr(payload.new as HireRequestRow); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hire_transactions', filter: `hire_request_id=eq.${card.hireRequestId}` },
+        () => reloadTxn())
+      .subscribe();
+
     (async () => {
       const [{ data: hrRow }, otherProfile] = await Promise.all([
         supabase.from('hire_requests').select('*').eq('id', card.hireRequestId).single(),
         authApi.getUserById(isHost ? card.requesterId : card.hostId).catch(() => null),
       ]);
       if (cancelled) return;
-      if (hrRow) setHr(hrRow as HireRequestRow);
+      if (hrRow && !realtimeApplied) setHr(hrRow as HireRequestRow);
       setOtherParty(otherProfile);
       setLoading(false);
       reloadTxn();
     })();
-
-    const channel = supabase
-      .channel(`hire-card:${card.hireRequestId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'hire_requests', filter: `id=eq.${card.hireRequestId}` },
-        (payload) => setHr(payload.new as HireRequestRow))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'hire_transactions', filter: `hire_request_id=eq.${card.hireRequestId}` },
-        () => reloadTxn())
-      .subscribe();
 
     // Host viewing their own hire request marks it seen.
     if (isHost && user?.id) hireApi.markViewed(card.hireRequestId, user.id).catch(() => {});
