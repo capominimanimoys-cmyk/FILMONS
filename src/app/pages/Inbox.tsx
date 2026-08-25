@@ -1814,16 +1814,20 @@ export function Inbox() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [activeConv?.messages.length]);
 
   // ── Helper: append a sent message to state without touching the DB or localStorage ──
+  // Moves the conversation to the top of the list, same as the realtime
+  // INSERT handler above -- without this, sending a message (or a payment/
+  // rental/offer action, all of which append via this same helper) never
+  // reordered the sidebar for the sender: the realtime echo of their own
+  // message gets skipped as a duplicate (same id, already appended here),
+  // which is exactly the branch that does the reordering.
   const appendMsg = useCallback((convId: string, msg: ChatMessage) => {
-    setConversations(prev => prev.map(c =>
-      c.id !== convId ? c : {
-        ...c,
-        messages: c.messages.some(m => m.id === msg.id)
-          ? c.messages  // already there (realtime duplication guard)
-          : [...c.messages, msg],
-        updatedAt: msg.createdAt,
-      }
-    ));
+    setConversations(prev => {
+      const conv = prev.find(c => c.id === convId);
+      if (!conv) return prev;
+      if (conv.messages.some(m => m.id === msg.id)) return prev;
+      const updated = { ...conv, messages: [...conv.messages, msg], updatedAt: msg.createdAt };
+      return [updated, ...prev.filter(c => c.id !== convId)];
+    });
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
   }, []);
 
@@ -2085,15 +2089,11 @@ export function Inbox() {
   };
 
   // Priority sort: unread first, then bookings, then recency
-  const sortConvs = (a: Conversation, b: Conversation) => {
-    const aUnread = (a.unreadCount ?? 0) > 0 ? 2 : 0;
-    const bUnread = (b.unreadCount ?? 0) > 0 ? 2 : 0;
-    if (aUnread !== bUnread) return bUnread - aUnread;
-    const aBook = getConvType(a) === 'booking' ? 1 : 0;
-    const bBook = getConvType(b) === 'booking' ? 1 : 0;
-    if (aBook !== bBook) return bBook - aBook;
-    return (b.updatedAt || '').localeCompare(a.updatedAt || '');
-  };
+  // Strictly latest-activity DESC -- unread and conversation type are visual
+  // state only, never sort keys (an unread conversation from yesterday must
+  // not outrank a read one from 2 minutes ago).
+  const sortConvs = (a: Conversation, b: Conversation) =>
+    (b.updatedAt || '').localeCompare(a.updatedAt || '');
 
   const tabConvs = (() => {
     switch (inboxTab) {
