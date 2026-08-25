@@ -62,13 +62,12 @@ async function sendEmailJsRaw(toEmail: string | null | undefined, templateId: st
   }
 }
 
-// Dedicated templates, wired in as they're created in the EmailJS
-// dashboard from the application-*-template.html files in
-// src/app/templates/. Not yet created: shortlisted -- that still goes
-// through TEMPLATE_GENERIC below.
-const TEMPLATE_APPLICATION_ACCEPTED = 'template_x7fran3';
-const TEMPLATE_APPLICATION_DECLINED = 'template_0zy19qc';
-const TEMPLATE_APPLICATION_RECEIVED = 'template_cwvzs4w';
+// Dedicated templates, all four now created in the EmailJS dashboard
+// from the application-*-template.html files in src/app/templates/.
+const TEMPLATE_APPLICATION_ACCEPTED    = 'template_x7fran3';
+const TEMPLATE_APPLICATION_DECLINED    = 'template_0zy19qc';
+const TEMPLATE_APPLICATION_RECEIVED    = 'template_cwvzs4w';
+const TEMPLATE_APPLICATION_SHORTLISTED = 'template_uyzvbcd';
 
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
@@ -93,17 +92,13 @@ export function sendNewApplicationEmail(p: {
 }
 
 export function sendApplicationShortlistedEmail(p: {
-  toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
+  toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string; applicationUrl?: string;
 }) {
-  return sendEmailJsTemplate(
-    p.toEmail,
-    `You've been shortlisted for ${p.opportunityTitle}`,
-    `Great news!\n\nYour application for ${p.opportunityTitle} has been shortlisted.\n\n` +
-      `Your application is now being considered for the next stage. We'll notify you when the ` +
-      `opportunity owner makes a final decision.\n\n` +
-      `View Application:\nhttps://filmons.app/inbox`,
-    p.toName,
-  );
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_APPLICATION_SHORTLISTED, {
+    to_name: p.toName || 'there',
+    opportunity_title: p.opportunityTitle,
+    application_url: p.applicationUrl || 'https://filmons.app/inbox',
+  });
 }
 
 export function sendApplicationAcceptedEmail(p: {

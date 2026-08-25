@@ -170,6 +170,7 @@ async function applyAction(
           await sendApplicationShortlistedEmail({
             toEmail: applicant?.email, toName: applicant?.name,
             opportunityTitle: listingTitle || 'this opportunity',
+            applicationUrl: app.conversation_id ? `https://filmons.app/inbox?conv=${app.conversation_id}` : undefined,
           });
         }).catch(() => {});
       }
