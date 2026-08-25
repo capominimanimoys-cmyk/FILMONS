@@ -103,7 +103,7 @@ export function Root() {
           />
         )}
 
-        <main className={`flex-1 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
+        <main className={`flex-1 min-w-0 overflow-x-hidden md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
           <Outlet />
         </main>
 

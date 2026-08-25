@@ -1332,6 +1332,19 @@ export function Inbox() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesAreaRef = useRef<HTMLDivElement>(null);
+
+  // Tapping empty space in the message list (not a bubble's interactive
+  // bits, not a link/button) focuses the composer, like every native
+  // messaging app — mobile only, desktop already has the input in view
+  // and this would just steal focus from someone dragging to select text.
+  const handleChatAreaClick = (e: React.MouseEvent) => {
+    if (window.innerWidth >= 768) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, video, audio, [role="button"]')) return;
+    textareaRef.current?.focus();
+  };
 
   // Populate user cache on mount so getUserByIdSync works in ConvRow
   useEffect(() => {
@@ -2471,7 +2484,7 @@ export function Inbox() {
   const showTopBar = !(activeConv && !showSidebar);
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
+    <div className="h-[100dvh] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
       {/* Top bar */}
       <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden md:flex'}`}>
         <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
@@ -2689,7 +2702,7 @@ export function Inbox() {
         </div>
 
         {/* Thread */}
-        <div className={`flex flex-col flex-1 overflow-hidden ${showSidebar ? 'hidden md:flex' : 'flex'}`}>
+        <div className={`flex flex-col flex-1 min-w-0 overflow-hidden ${showSidebar ? 'hidden md:flex' : 'flex'}`}>
           {!activeConv ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
               <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4"><ChatBubbleRounded sx={{fontSize:40,color:"#60a5fa"}} /></div>
@@ -2815,7 +2828,8 @@ export function Inbox() {
               )}
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+              <div ref={messagesAreaRef} onClick={handleChatAreaClick}
+                className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-3">
                 {activeConv.messages.length === 0 && (
                   <div className="text-center py-10"><p className="text-sm text-gray-400">No messages yet. Say hello! 👋</p></div>
                 )}
@@ -2854,9 +2868,9 @@ export function Inbox() {
                       onTouchEnd={handleMsgTouchEnd}
                       onTouchCancel={handleMsgTouchEnd}
                     >
-                      <div className={`flex items-end gap-2 max-w-[75%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <div className={`flex items-end gap-2 max-w-[75%] min-w-0 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
                         {!isOwn && <UserAvatar user={{ name: msg.senderName, avatar: msg.senderAvatar, id: msg.senderId }} size={28} />}
-                        <div>
+                        <div className="min-w-0">
                           {/* Reply preview */}
                           {replyMsg && (
                             <div className={`mb-0.5 px-2 py-1 rounded-lg border-l-2 border-blue-400 bg-blue-50/80 text-xs text-gray-500 max-w-[200px] truncate ${isOwn ? 'ml-auto' : ''}`}>
@@ -2918,7 +2932,7 @@ export function Inbox() {
                               <button onClick={() => setEditingMsg(null)} className="text-gray-400"><CloseRounded sx={{fontSize:16}} /></button>
                             </div>
                           ) : (
-                            <div className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100 shadow-sm'}`}>
+                            <div className={`px-3.5 py-2 rounded-2xl text-sm leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100 shadow-sm'}`}>
                               {msg.content}
                               {msg.editedAt && <span className="ml-1.5 text-[10px] opacity-60 italic">edited</span>}
                             </div>
@@ -3068,7 +3082,7 @@ export function Inbox() {
 
                                     {/* Text area */}
                   <div className="flex-1 flex items-end bg-gray-100 rounded-2xl px-3 py-2 min-h-[42px]">
-                    <textarea value={message}
+                    <textarea ref={textareaRef} value={message}
                       onChange={e => {
                         setMessage(e.target.value);
                         broadcastTyping();
