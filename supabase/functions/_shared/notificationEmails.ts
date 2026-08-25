@@ -64,23 +64,19 @@ async function sendEmailJsRaw(toEmail: string | null | undefined, templateId: st
 
 // Dedicated templates, wired in as they're created in the EmailJS
 // dashboard from the application-*-template.html files in
-// src/app/templates/. Not yet created: new-application, shortlisted,
-// declined -- those three still go through TEMPLATE_GENERIC below.
+// src/app/templates/. Not yet created: new-application, shortlisted --
+// those still go through TEMPLATE_GENERIC below.
 const TEMPLATE_APPLICATION_ACCEPTED = 'template_x7fran3';
+const TEMPLATE_APPLICATION_DECLINED = 'template_0zy19qc';
 
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
 }) {
-  return sendEmailJsTemplate(
-    p.toEmail,
-    'Update on your FILMONS opportunity application',
-    `Thank you for your interest in ${p.opportunityTitle}.\n\n` +
-      `The opportunity owner has decided not to move forward with your application at this time.\n\n` +
-      `Opportunity: ${p.opportunityTitle}\nStatus: Not Selected\n\n` +
-      `You can continue exploring other opportunities that match your skills and experience on FILMONS.\n\n` +
-      `Explore Opportunities:\nhttps://filmons.app/`,
-    p.toName,
-  );
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_APPLICATION_DECLINED, {
+    to_name: p.toName || 'there',
+    opportunity_title: p.opportunityTitle,
+    application_url: 'https://filmons.app/',
+  });
 }
 
 export function sendNewApplicationEmail(p: {
