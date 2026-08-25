@@ -125,6 +125,7 @@ function rowToNotif(r: any): Notification {
     reviewId:       r.review_id         ?? undefined,
     rating:         r.rating            ?? undefined,
     read:           r.is_read           ?? r.read ?? false,
+    readAt:         r.read_at           ?? undefined,
     createdAt:      r.created_at        ?? new Date().toISOString(),
   };
 }
@@ -232,15 +233,17 @@ export function getUnreadCount(userId: string): number {
 
 // ── Mutations (optimistic local + server) ────────────────────────────────────
 export function markRead(userId: string, notifId: string): void {
-  const updated = loadLocal(userId).map(n => n.id === notifId ? { ...n, read: true } : n);
+  const now = new Date().toISOString();
+  const updated = loadLocal(userId).map(n => n.id === notifId ? { ...n, read: true, readAt: now } : n);
   saveLocal(userId, updated);
-  void supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
+  void supabase.from('notifications').update({ is_read: true, read_at: now }).eq('id', notifId);
 }
 
 export function markAllRead(userId: string): void {
-  saveLocal(userId, loadLocal(userId).map(n => ({ ...n, read: true })));
+  const now = new Date().toISOString();
+  saveLocal(userId, loadLocal(userId).map(n => ({ ...n, read: true, readAt: n.readAt ?? now })));
   localStorage.setItem(CNT_KEY(userId), '0');
-  void supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
+  void supabase.from('notifications').update({ is_read: true, read_at: now }).eq('user_id', userId).eq('is_read', false);
 }
 
 export function remove(userId: string, notifId: string): void {
@@ -255,9 +258,14 @@ export function clearAll(userId: string): void {
 }
 
 // ── Realtime subscription ─────────────────────────────────────────────────────
+// onUpdate fires for is_read/read_at changes made anywhere else — another
+// device, another tab, "Mark all as read" run from a different session —
+// so this one's badge/list reflects it immediately instead of waiting on
+// the 30s polling fallback in NotificationsContext.
 export function subscribe(
   userId: string,
   onNew: (notif: Notification) => void,
+  onUpdate?: (notif: Notification) => void,
 ): () => void {
   const name = `notifs:${userId}:${Date.now()}`;
 
@@ -280,6 +288,20 @@ export function subscribe(
           try { window.dispatchEvent(new CustomEvent('filmons:notif', { detail: notif })); } catch {}
         }
         onNew(notif);
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event:  'UPDATE',
+        schema: 'public',
+        table:  'notifications',
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        const notif = rowToNotif(payload.new as any);
+        saveLocal(userId, loadLocal(userId).map(n => n.id === notif.id ? notif : n));
+        onUpdate?.(notif);
       },
     )
     .subscribe((status) => {

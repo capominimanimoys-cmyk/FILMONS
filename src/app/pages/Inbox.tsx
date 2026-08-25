@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { AddPhotoAlternateRounded, AddRounded, ArrowBackIosNewRounded, AttachFileRounded, AttachMoneyRounded, CalendarMonthRounded, CameraAltRounded, CancelRounded, ChatBubbleRounded, CheckCircleRounded, CheckRounded, CloseRounded, ConstructionRounded, CreditCardRounded, DeleteRounded, DoneAllRounded, EditRounded, FavoriteRounded, GppBadRounded, GroupRounded, HourglassEmptyRounded, HowToRegRounded, ImageRounded, Inventory2Rounded, KeyboardArrowDownRounded, LocalOfferRounded, LocationOnRounded, MicOffRounded, MicRounded, MoreHorizRounded, MoreVertRounded, MusicNoteRounded, OpenInNewRounded, PaymentRounded, PersonAddRounded, PersonRemoveRounded, PhoneDisabledRounded, PhoneRounded, PhotoCameraRounded, PhotoLibraryRounded, PlayArrowRounded, PushPinRounded, ReplyRounded, ScheduleRounded, SearchRounded, SendRounded, SentimentSatisfiedRounded, StopRounded, VerifiedRounded, VideoLibraryRounded, VideocamOffRounded, VideocamRounded, VolumeUpRounded } from '../components/Icons';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord } from '../lib/api';
+import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord, persistConversationsCache } from '../lib/api';
 import * as notifs from '../lib/notifications';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -1243,6 +1243,20 @@ export function Inbox() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  // Keeps the localStorage cache (and therefore every other surface reading
+  // it — MobileBottomNav/Sidebar/TopBar's unread badge via
+  // chatApi.getUnreadCount) live the instant this state changes for any
+  // reason: a new message arriving, a read-status update, anything.
+  // Previously that cache only refreshed on the next fetchConversations()
+  // call (initial load or the 15s fallback poll), so badges elsewhere in
+  // the app could lag up to 15s behind what was actually happening in an
+  // open Inbox tab.
+  useEffect(() => {
+    if (!user) return;
+    persistConversationsCache(conversations);
+  }, [conversations, user]);
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
@@ -1324,7 +1338,6 @@ export function Inbox() {
   const [showMsgSearch, setShowMsgSearch] = useState(false);
   const [msgSearch, setMsgSearch]         = useState('');
   const [msgSearchResults, setMsgSearchResults] = useState<ChatMessage[]>([]);
-  const [msgStatuses, setMsgStatuses]     = useState<Record<string, string>>({});
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1483,22 +1496,6 @@ export function Inbox() {
     if (!activeId) { setPinnedMsgs([]); return; }
     chatApi.getPinnedMessages(activeId).then(setPinnedMsgs).catch(() => {});
   }, [activeId]);
-
-  // ── Fetch seen statuses for own messages ────────────────────────────────
-  useEffect(() => {
-    if (!activeId || !user) return;
-    const conv = conversations.find(c => c.id === activeId);
-    if (!conv) return;
-    const ownIds = conv.messages.filter(m => m.senderId === user.id).map(m => m.id);
-    if (!ownIds.length) return;
-    chatApi.getMessageStatuses(activeId, ownIds).then(statuses => {
-      setMsgStatuses(prev => {
-        const next = { ...prev };
-        statuses.forEach(s => { next[s.messageId] = s.status; });
-        return next;
-      });
-    }).catch(() => {});
-  }, [activeId, conversations, user]);
 
   // ── Realtime: detect when WE are added to a brand-new conversation ───────────
   // `conversation_participants` INSERT fires the instant User B's `createConvOnServer`
@@ -1724,6 +1721,28 @@ export function Inbox() {
             return { ...c, messages: [...c.messages, newMsg], updatedAt: newMsg.createdAt };
           }));
           setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+        },
+      )
+      .on(
+        // Catches read_at changing on our own sent messages — the other
+        // participant opening this conversation (or reading it on another
+        // device) flips read_at via markAsRead, and this is what turns the
+        // single checkmark into "Read" live, without requiring a reload.
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages',
+          filter: `conversation_id=eq.${activeId}` },
+        (payload: any) => {
+          const updated = payload.new;
+          if (!updated?.id) return;
+          setConversations(prev => prev.map(c => {
+            if (c.id !== activeId) return c;
+            return {
+              ...c,
+              messages: c.messages.map(m => m.id === updated.id
+                ? { ...m, read: !!updated.read_at, readAt: updated.read_at ?? undefined }
+                : m),
+            };
+          }));
         },
       )
       .subscribe((status: string) => {
@@ -2857,7 +2876,12 @@ export function Inbox() {
                   }
                   const replyMsg = msg.replyTo ? activeConv.messages.find(m => m.id === msg.replyTo) ?? null : null;
                   const isLastOwn = isOwn && msg.id === lastOwnMsgId;
-                  const seenStatus = isOwn ? msgStatuses[msg.id] : undefined;
+                  // Derived directly from messages.read_at (see dbRowToMsg)
+                  // instead of a separate fetched status map — 'seen' once
+                  // the recipient has read_at set, 'delivered' otherwise
+                  // (any message that made it into this list is at least
+                  // confirmed-saved server-side, i.e. delivered).
+                  const seenStatus = isOwn ? (msg.read ? 'seen' : 'delivered') : undefined;
 
                   return (
                     <div

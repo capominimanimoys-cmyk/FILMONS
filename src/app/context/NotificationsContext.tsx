@@ -111,12 +111,21 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (!user) return;
 
     // Single Supabase Realtime channel for the session
-    const unsub = notifStore.subscribe(user.id, (notif) => {
-      if (seenIds.current.has(notif.id)) return;
-      seenIds.current.add(notif.id);
-      addOne(notif);
-      showToast(notif);
-    });
+    const unsub = notifStore.subscribe(
+      user.id,
+      (notif) => {
+        if (seenIds.current.has(notif.id)) return;
+        seenIds.current.add(notif.id);
+        addOne(notif);
+        showToast(notif);
+      },
+      // Read-status change from elsewhere (another device/tab, or "Mark
+      // all as read" run from a different session) — sync it here too,
+      // instead of waiting on the 30s poll below.
+      (notif) => {
+        setNotifications(prev => prev.map(n => n.id === notif.id ? notif : n));
+      },
+    );
 
     // Same-device push() events (e.g., follow from same browser tab)
     const onPush = (e: Event) => {

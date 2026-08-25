@@ -2439,6 +2439,18 @@ function loadConvs(): Conversation[] {
 function saveConvs(convs: Conversation[]) {
   localStorage.setItem('filmons_conversations', JSON.stringify(convs));
 }
+
+// Inbox.tsx's realtime handlers mutate `conversations` React state directly
+// (new messages, read-status changes) but never used to write that back to
+// the localStorage cache other pages read from (MobileBottomNav/Sidebar/
+// TopBar's unread badge via getUnreadCount) — those only saw fresh data
+// after the next fetchConversations() call (initial load or the 15s poll),
+// not immediately. Call this whenever Inbox's conversations state changes
+// so every surface reading the cache stays live, no polling wait.
+export function persistConversationsCache(convs: Conversation[]) {
+  saveConvs(convs);
+  try { window.dispatchEvent(new CustomEvent('filmons:unread-changed')); } catch {}
+}
 function syncConvToServer(conv: Conversation) {
   // Full upsert — used for metadata changes (accept request, block, etc.)
   // Not used for new messages to avoid double-bumping unread_count.
@@ -2510,7 +2522,11 @@ export function dbRowToMsg(raw: any): ChatMessage {
     createdAt:       typeof raw.created_at === 'string'
                        ? raw.created_at
                        : new Date(raw.created_at).toISOString(),
-    read:            meta.read ?? false,
+    // read_at is the real, persisted source of truth (see
+    // 20240319000000_read_receipts.sql) — metadata.read was set to false
+    // on insert and never updated anywhere, so it always read as unread.
+    read:            !!raw.read_at,
+    readAt:          raw.read_at ?? undefined,
   };
 }
 
@@ -2697,11 +2713,19 @@ export const chatApi = {
     }
     // Notify bottom nav / sidebar badge to update immediately
     try { window.dispatchEvent(new CustomEvent('filmons:unread-changed')); } catch {}
-    // Fire-and-forget: reset unread count in conversation_participants
-    fetch(`${BASE}/conversations/${conversationId}/read`, {
-      method: 'POST', headers: H(),
-      body: JSON.stringify({ userId }),
-    }).catch(e => console.warn('Mark read error:', e));
+    // Real, persisted mark-as-read — the old version only wrote to
+    // localStorage and fired a legacy /conversations/:id/read endpoint
+    // backed by conversation_participants, which has zero rows in
+    // production (nothing else ever wrote to it either), so nothing was
+    // ever actually recorded server-side. This is what the sender's own
+    // "Read" receipt (see Inbox.tsx's messages realtime UPDATE handler)
+    // and cross-device/cross-session persistence actually depend on.
+    supabase.from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', userId)
+      .is('read_at', null)
+      .then(({ error }) => { if (error) console.warn('markAsRead persist error:', error.message); });
   },
 
   // Alias for backwards compatibility
@@ -2922,7 +2946,7 @@ export const chatApi = {
       try {
         const { data, error } = await supabase
           .from('messages')
-          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted')
+          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
           .eq('conversation_id', convId)
           .order('created_at', { ascending: false })
           .limit(100);
@@ -3206,7 +3230,7 @@ export const chatApi = {
       try {
         const { data } = await supabase
           .from('messages')
-          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted')
+          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
           .in('conversation_id', convIds)
           .order('created_at', { ascending: true });
         allMsgs = data;

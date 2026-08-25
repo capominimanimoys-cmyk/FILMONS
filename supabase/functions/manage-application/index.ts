@@ -71,9 +71,13 @@ function oppTitle(listingTitle: string | null | undefined) {
 
 async function pushNotification(row: {
   user_id: string; actor_id?: string | null; actor_name?: string; type: string;
-  title: string; conversation_id?: string | null;
+  title: string; conversation_id?: string | null; application_id?: string | null;
 }) {
   if (!row.user_id || row.user_id === row.actor_id) return;
+  // Unique violation from idx_notifications_application_dedup means this
+  // exact application+type notification already exists (a repeated
+  // shortlist call, a retry) -- insertOne already swallows the error,
+  // this is the expected no-op path, not a failure.
   await insertOne('notifications', {
     user_id: row.user_id,
     actor_id: row.actor_id || null,
@@ -81,6 +85,7 @@ async function pushNotification(row: {
     type: row.type,
     title: row.title,
     conversation_id: row.conversation_id || null,
+    application_id: row.application_id || null,
     is_read: false,
   });
 }
@@ -226,6 +231,7 @@ async function applyAction(
       await pushNotification({
         user_id: app.applicant_id, actor_id: userId, actor_name: '', type: 'application_shortlisted',
         title: `You've been selected for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id,
+        application_id: app.id,
       });
       await insertSystemMessage(app.conversation_id,
         `Offer: $${breakdown.subtotal.toFixed(2)} — Filmons Fee $${breakdown.sellerFeeAmount.toFixed(2)} — You'll earn $${(breakdown.subtotal - breakdown.sellerFeeAmount).toFixed(2)}`);
@@ -258,19 +264,19 @@ async function applyAction(
       if (decision === 'accept') {
         await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'offer_accepted' });
         await insertSystemMessage(app.conversation_id, 'Offer accepted ✓');
-        await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_accepted', title: `Your offer for ${oppTitle(listingTitle)} was accepted`, conversation_id: app.conversation_id });
+        await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_accepted', title: `Your offer for ${oppTitle(listingTitle)} was accepted`, conversation_id: app.conversation_id, application_id: app.id });
         return { ok: true, application: { ...app, status: 'offer_accepted' } };
       }
       await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'rejected', declined_at: now, decline_reason: 'offer_declined' });
       await insertSystemMessage(app.conversation_id, 'The offer was declined.');
-      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_rejected', title: `Your offer for ${oppTitle(listingTitle)} was declined`, conversation_id: app.conversation_id });
+      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_rejected', title: `Your offer for ${oppTitle(listingTitle)} was declined`, conversation_id: app.conversation_id, application_id: app.id });
       return { ok: true, application: { ...app, status: 'rejected' } };
     }
     case 'mark_work_completed': {
       if (app.status !== 'hired') return { ok: false, status: 400, error: 'This opportunity has not been funded yet' };
       await updateOne('opportunity_transactions', `application_id=eq.${app.id}`, { work_status: 'marked_complete_by_worker', marked_complete_at: now, auto_release_reminder_sent: false, updated_at: now });
       await insertSystemMessage(app.conversation_id, 'The worker marked this Opportunity as completed — awaiting owner confirmation.');
-      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'system_notification', title: `Marked complete — confirm completion for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id });
+      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'system_notification', title: `Marked complete — confirm completion for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id, application_id: app.id });
       return { ok: true, application: app };
     }
     case 'confirm_completion': {
@@ -283,7 +289,7 @@ async function applyAction(
       await updateOne('wallet_transactions', `order_id=eq.${txn.order_id}&transaction_type=eq.opportunity_earning&balance_type=eq.pending`, { available_at: now });
       await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'completed' });
       await insertSystemMessage(app.conversation_id, `Opportunity completed — the remaining $${Number(txn.held_amount).toFixed(2)} is now available.`);
-      await pushNotification({ user_id: txn.worker_id, actor_id: userId, actor_name: '', type: 'payment_released', title: `Your remaining earnings for ${oppTitle(listingTitle)} are now available`, conversation_id: app.conversation_id });
+      await pushNotification({ user_id: txn.worker_id, actor_id: userId, actor_name: '', type: 'payment_released', title: `Your remaining earnings for ${oppTitle(listingTitle)} are now available`, conversation_id: app.conversation_id, application_id: app.id });
       return { ok: true, application: { ...app, status: 'completed' } };
     }
     case 'report_problem': {
@@ -292,7 +298,7 @@ async function applyAction(
       await updateOne('orders', `id=eq.${txn.order_id}`, { dispute_status: 'disputed', disputed_at: now });
       await insertSystemMessage(app.conversation_id, 'A problem was reported — the held funds will stay frozen until Filmons resolves it.');
       const otherParty = isApplicant ? listing.user_id : app.applicant_id;
-      await pushNotification({ user_id: otherParty, actor_id: userId, actor_name: '', type: 'system_notification', title: `A problem was reported for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id });
+      await pushNotification({ user_id: otherParty, actor_id: userId, actor_name: '', type: 'system_notification', title: `A problem was reported for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id, application_id: app.id });
       return { ok: true, application: app };
     }
     case 'mark_contacted':
@@ -321,7 +327,7 @@ async function applyAction(
     else if (notifyType === 'application_withdrawn') title = `${actorName} withdrew their application for ${oppTitle(listingTitle)}`;
     await pushNotification({
       user_id: notifyUserId, actor_id: userId, actor_name: actorName, type: notifyType,
-      title, conversation_id: app.conversation_id,
+      title, conversation_id: app.conversation_id, application_id: app.id,
     });
   }
   if (systemText) await insertSystemMessage(app.conversation_id, systemText);

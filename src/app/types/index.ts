@@ -276,6 +276,10 @@ export interface ChatMessage {
   deletedFor?: Record<string, boolean>;  // { userId: true } for "delete for me"
   // ── Per-user delivery status (from message_status table) ───────────────────
   status?: 'sent' | 'delivered' | 'seen';
+  /** Derived from messages.read_at — true once the recipient has opened the conversation past this message. */
+  read?: boolean;
+  /** ISO timestamp the recipient actually read this message, if they have. */
+  readAt?: string;
   sharedPost?: Post;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio';
@@ -412,5 +416,6 @@ export interface Notification {
   audioUses?: number;
   // Meta
   read: boolean;
+  readAt?: string;
   createdAt: string;
 }
