@@ -62,28 +62,6 @@ import {
   sendOpportunityDeclinedEmail, sendApplicationShortlistedEmail, sendApplicationAcceptedEmail,
 } from '../_shared/notificationEmails.ts';
 
-// Generic subject/message template — same one stripe-webhook.ts and
-// manage-hire-request/index.ts already use for dynamic notification
-// emails, so no new EmailJS dashboard template is required for these.
-const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
-const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
-const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
-const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
-async function sendApplicantEmail(toEmail: string | null | undefined, toName: string | null | undefined, subject: string, message: string) {
-  if (!toEmail) return;
-  try {
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
-        user_id: EMAILJS_PUBLIC_KEY, accessToken: EMAILJS_PRIVATE_KEY,
-        template_params: { to_email: toEmail, to_name: toName || 'there', subject, message },
-      }),
-    });
-    if (!res.ok) console.warn('Applicant email failed:', res.status, await res.text());
-  } catch (e) { console.warn('Applicant email threw:', e); }
-}
-
 const TERMINAL = new Set(['accepted', 'rejected', 'withdrawn']);
 function round2(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
@@ -251,12 +229,26 @@ async function applyAction(
       });
       await insertSystemMessage(app.conversation_id,
         `Offer: $${breakdown.subtotal.toFixed(2)} — Filmons Fee $${breakdown.sellerFeeAmount.toFixed(2)} — You'll earn $${(breakdown.subtotal - breakdown.sellerFeeAmount).toFixed(2)}`);
-      const applicant = await selectOne('profiles', `id=eq.${app.applicant_id}`);
-      const owner = await selectOne('profiles', `id=eq.${listing.user_id}`);
-      sendApplicantEmail(applicant?.email, applicant?.name,
-        'You’ve been accepted for an opportunity on FILMONS',
-        `${owner?.name || 'The opportunity owner'} has accepted your application for ${listingTitle || 'this opportunity'}.\n\nAgreed Amount: $${breakdown.subtotal.toFixed(2)} CAD\nStatus: Awaiting payment\n\nThe opportunity owner must complete payment before the opportunity officially begins. Once payment is confirmed, your net earnings will appear in your Filmons Wallet as On Hold.`,
-      ).catch(() => {});
+      claimEmailEvent(`opportunity_offer_sent:${app.id}`).then(async claimed => {
+        if (!claimed) return;
+        const [applicant, owner] = await Promise.all([
+          selectOne('profiles', `id=eq.${app.applicant_id}`),
+          selectOne('profiles', `id=eq.${listing.user_id}`),
+        ]);
+        // Interim: reuses the plain "accepted" template (verified working)
+        // rather than the old generic template_rd3nhik, whose dashboard
+        // content turned out to no longer match what this app sends it —
+        // a live send here rendered as a verification-request email
+        // instead of the intended offer/payment copy. Doesn't mention the
+        // agreed amount or payment status yet; swap to a dedicated
+        // "offer sent, awaiting payment" template (see
+        // application-offer-sent-template.html) once one exists.
+        await sendApplicationAcceptedEmail({
+          toEmail: applicant?.email, toName: applicant?.name,
+          opportunityTitle: listingTitle || 'this opportunity', ownerName: owner?.name,
+          applicationUrl: app.conversation_id ? `https://filmons.app/inbox?conv=${app.conversation_id}` : undefined,
+        });
+      }).catch(() => {});
       return { ok: true, application: { ...app, status: 'offer_sent' } };
     }
     case 'respond_offer': {
