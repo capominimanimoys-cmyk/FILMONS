@@ -50,19 +50,24 @@ Deno.serve(async (req) => {
         return json({ error: 'Country is required for first-time setup (CA or US)' }, 400);
       }
       // 'transfers' is what actually matters here — it's what lets Filmons
-      // move money TO this connected account. There's no such thing as a
-      // 'card_payouts' capability (that was a mistaken guess — Stripe's
-      // real card-related capability, card_payments, is for the connected
-      // account to ACCEPT card payments as a merchant, not relevant to a
-      // payout-only account, and requesting it would just add unrelated
-      // verification requirements Filmons doesn't need). Whether a given
-      // debit card can receive an INSTANT payout is a property of the
-      // external account itself once added, not something requested here.
+      // move money TO this connected account. card_payments is requested
+      // alongside it purely because Stripe requires platform-level approval
+      // (a manual request via Stripe support) to create accounts with
+      // transfers alone and no card_payments — confirmed live: requesting
+      // transfers-only returned "Your platform needs approval for accounts
+      // to have requested the transfers capability without the
+      // card_payments capability." Requesting both is Stripe's standard,
+      // no-approval-needed combo; card_payments is never actually used
+      // here (no connected account ever charges a card through Filmons),
+      // it just needs to be flagged as requested. Whether a given debit
+      // card can receive an INSTANT payout is a property of the external
+      // account itself once added, not something requested here.
       const params = new URLSearchParams({
         type: 'express',
         country,
         email: profile.email || '',
         'capabilities[transfers][requested]': 'true',
+        'capabilities[card_payments][requested]': 'true',
       });
       const res = await fetch('https://api.stripe.com/v1/accounts', {
         method: 'POST',
