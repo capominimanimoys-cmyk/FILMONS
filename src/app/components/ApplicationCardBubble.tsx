@@ -194,13 +194,13 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
         {isOwnerView && nonTerminal && app.status !== 'shortlisted' && (
           <>
             <button disabled={busy} onClick={doShortlist} className="flex-1 text-xs font-bold text-purple-700 bg-purple-50 rounded-xl py-2 disabled:opacity-50">Shortlist</button>
-            <button disabled={busy} onClick={() => setConfirmingDecline(true)} className="flex-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50">Decline</button>
+            <button disabled={busy} onClick={() => { setSheetOpen(true); setConfirmingDecline(true); }} className="flex-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50">Decline</button>
           </>
         )}
         {isOwnerView && app.status === 'shortlisted' && (
           <>
-            <button disabled={busy} onClick={() => setConfirmingAccept(true)} className="flex-1 text-xs font-bold text-green-700 bg-green-50 rounded-xl py-2 disabled:opacity-50">Accept</button>
-            <button disabled={busy} onClick={() => setConfirmingDecline(true)} className="flex-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50">Decline</button>
+            <button disabled={busy} onClick={() => { setSheetOpen(true); setConfirmingAccept(true); }} className="flex-1 text-xs font-bold text-green-700 bg-green-50 rounded-xl py-2 disabled:opacity-50">Accept</button>
+            <button disabled={busy} onClick={() => { setSheetOpen(true); setConfirmingDecline(true); }} className="flex-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50">Decline</button>
           </>
         )}
         {isOwnerView && app.status === 'accepted' && listing.opportunity?.paid && (
@@ -228,7 +228,7 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
           <button disabled={busy} onClick={doReportProblem} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50"><AlertTriangle className="w-3 h-3" /> Report a Problem</button>
         )}
         {!isOwnerView && nonTerminal && !PAYMENT_FLOW.has(app.status) && (
-          <button disabled={busy} onClick={() => setConfirmingWithdraw(true)} className="flex-1 text-xs font-bold text-gray-500 bg-gray-100 rounded-xl py-2 disabled:opacity-50">Withdraw</button>
+          <button disabled={busy} onClick={() => { setSheetOpen(true); setConfirmingWithdraw(true); }} className="flex-1 text-xs font-bold text-gray-500 bg-gray-100 rounded-xl py-2 disabled:opacity-50">Withdraw</button>
         )}
       </div>
 
