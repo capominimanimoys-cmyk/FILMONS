@@ -48,7 +48,7 @@ export function sendOpportunityDeclinedEmail(p: {
       `The opportunity owner has decided not to move forward with your application at this time.\n\n` +
       `Opportunity: ${p.opportunityTitle}\nStatus: Not Selected\n\n` +
       `You can continue exploring other opportunities that match your skills and experience on FILMONS.\n\n` +
-      `Explore Opportunities:\nhttps://filmons.app/marketplace`,
+      `Explore Opportunities:\nhttps://filmons.app/`,
     p.toName,
   );
 }

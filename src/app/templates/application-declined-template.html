@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #475569 0%, #1e293b 100%);
+            color: white;
+            padding: 40px 30px;
+            border-radius: 12px 12px 0 0;
+            text-align: center;
+        }
+        .logo { font-size: 32px; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
+        .header-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.35);
+            color: white;
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 12px;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-left: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+        }
+        .alert-box {
+            background: #f8fafc;
+            border: 2px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .alert-icon { font-size: 36px; margin-bottom: 8px; }
+        .alert-title { font-size: 20px; font-weight: 700; color: #334155; margin: 0; }
+        .alert-sub { font-size: 14px; color: #64748b; margin-top: 4px; }
+        .opportunity-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .opportunity-card-title { font-size: 19px; font-weight: 700; color: #334155; }
+        .opportunity-card-status {
+            display: inline-block;
+            background: #94a3b8;
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 4px 14px;
+            border-radius: 999px;
+            margin-top: 10px;
+        }
+        p.body-copy { font-size: 14px; color: #374151; line-height: 1.7; }
+        .cta-button {
+            display: block;
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            color: white !important;
+            padding: 16px 32px;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 16px;
+            text-align: center;
+            margin: 30px 0 10px 0;
+        }
+        .cta-sub { text-align: center; font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+        .divider { height: 1px; background: #e5e7eb; margin: 25px 0; }
+        .footer {
+            background: #f9fafb;
+            padding: 30px;
+            text-align: center;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid #e5e7eb;
+            border-top: none;
+        }
+        .footer-text { color: #6b7280; font-size: 14px; margin: 8px 0; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo">FILMONS 🎬</div>
+        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Application Update</p>
+        <div class="header-badge">Application Status</div>
+    </div>
+
+    <div class="content">
+
+        <div class="alert-box">
+            <div class="alert-icon">📩</div>
+            <p class="alert-title">Hi {{to_name}},</p>
+            <p class="alert-sub">Thank you for your interest in {{opportunity_title}}</p>
+        </div>
+
+        <div class="opportunity-card">
+            <div class="opportunity-card-title">{{opportunity_title}}</div>
+            <div class="opportunity-card-status">NOT SELECTED</div>
+        </div>
+
+        <p class="body-copy">
+            The opportunity owner has decided not to move forward with your
+            application at this time. This isn't a reflection of your work —
+            opportunities often get more applicants than positions available.
+        </p>
+        <p class="body-copy">
+            You can continue exploring other opportunities that match your
+            skills and experience on FILMONS.
+        </p>
+
+        <div class="divider"></div>
+
+        <a href="{{application_url}}" class="cta-button">
+            Explore Opportunities →
+        </a>
+        <p class="cta-sub">New opportunities are added to FILMONS every day.</p>
+
+    </div>
+
+    <div class="footer">
+        <p class="footer-text"><strong>FILMONS</strong> — Application Notifications</p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
+            © 2026 Filmons. All rights reserved.
+        </p>
+    </div>
+
+</body>
+</html>
