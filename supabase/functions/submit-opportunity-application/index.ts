@@ -70,6 +70,7 @@ Deno.serve(async (req) => {
         toEmail: owner?.email, toName: owner?.name,
         opportunityTitle: listing?.title || 'your opportunity',
         applicantName: profile.name || profile.username || 'A creator',
+        applicationUrl: `https://filmons.app/listing/${listingId}/applicants`,
       });
     }).catch(() => {});
 
