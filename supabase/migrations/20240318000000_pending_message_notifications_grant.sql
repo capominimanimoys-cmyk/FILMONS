@@ -1,0 +1,14 @@
+-- 20240316000000_pending_message_notifications.sql created a permissive
+-- RLS INSERT policy (WITH CHECK (true)) but never granted the base table
+-- privilege -- Postgres requires BOTH a GRANT and a passing RLS policy for
+-- an operation to succeed, RLS alone doesn't hand out access. Every insert
+-- (the app's own client-side call included) has been failing with a
+-- permission-denied/RLS-violation error since the table was created;
+-- confirmed live via a direct anon-key insert attempt returning 401 "new
+-- row violates row-level security policy". No pending_message_notifications
+-- row has ever actually been created, so send-message-notifications has had
+-- nothing to send -- every "new message" email has silently never gone out.
+--
+-- Same GRANT every other client-writable table in this app already has
+-- (see notifications_realtime.sql's GRANT for the same pattern).
+GRANT INSERT ON public.pending_message_notifications TO anon, authenticated;
