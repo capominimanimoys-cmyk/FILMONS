@@ -2,22 +2,28 @@
 // VerifyItsYouGate; once past that, collects only a country (first-time
 // only) and hands off to Stripe's own hosted onboarding for the actual
 // sensitive details — Filmons never sees or stores them.
+//
+// Deliberately no card-vs-bank picker here — a debit/credit card is a way
+// to PAY Filmons, not a payout destination a host chooses upfront. Stripe's
+// Connect onboarding itself determines what identity/payout information is
+// actually required and collects the real destination (bank account,
+// eligible debit card for Instant Payouts, etc.); Filmons doesn't get to
+// (and shouldn't try to) decide that in its own UI beforehand. An earlier
+// version of this screen had exactly that picker, but the selection was
+// never even sent to payout-connect-start — purely decorative.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, CreditCard, Landmark, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { walletApi } from '../lib/walletApi';
 import { VerifyItsYouGate } from '../components/VerifyItsYouGate';
 
-type MethodChoice = 'card' | 'bank';
-
 export function PayoutMethodSetup() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
-  const [choice, setChoice] = useState<MethodChoice | null>(null);
   const [needsCountry, setNeedsCountry] = useState(false);
   const [country, setCountry] = useState<'CA' | 'US' | null>(null);
   const [checkingAccount, setCheckingAccount] = useState(true);
@@ -43,7 +49,6 @@ export function PayoutMethodSetup() {
   }
 
   const continueSecurely = async () => {
-    if (!choice) return;
     if (needsCountry && !country) { toast.error('Select your country to continue'); return; }
     setStarting(true);
     const origin = window.location.origin;
@@ -59,34 +64,20 @@ export function PayoutMethodSetup() {
       <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 -ml-2 mb-2">
         <ArrowLeft className="w-4 h-4 text-gray-500" />
       </button>
-      <h1 className="text-xl font-black text-gray-900">Add Payout Method</h1>
-      <p className="text-sm text-gray-500 mt-1.5">Choose where you'd like to receive your Filmons payouts.</p>
+      <h1 className="text-xl font-black text-gray-900">Set up your payout account</h1>
+      <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
+        To receive money from rentals and projects, Stripe needs to verify your identity and payout information. This usually takes only a few minutes.
+      </p>
 
       {checkingAccount ? (
         <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
       ) : (
         <>
-          <div className="mt-6 space-y-3">
-            <button
-              onClick={() => setChoice('card')}
-              className={`w-full text-left px-4 py-4 rounded-2xl border-2 transition-colors ${choice === 'card' ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-black text-gray-900 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500" /> Debit / Eligible Card</span>
-                {choice === 'card' && <Check className="w-4 h-4 text-blue-500" />}
-              </div>
-              <p className="text-xs text-gray-400 mt-1">Usually best for Instant Payouts when supported.</p>
-            </button>
-            <button
-              onClick={() => setChoice('bank')}
-              className={`w-full text-left px-4 py-4 rounded-2xl border-2 transition-colors ${choice === 'bank' ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-black text-gray-900 flex items-center gap-2"><Landmark className="w-4 h-4 text-blue-500" /> Bank Transfer</span>
-                {choice === 'bank' && <Check className="w-4 h-4 text-blue-500" />}
-              </div>
-              <p className="text-xs text-gray-400 mt-1">Receive payouts directly to your bank account.</p>
-            </button>
+          <div className="mt-6 flex items-start gap-3 bg-blue-50 rounded-2xl p-4">
+            <ShieldCheck className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-700 leading-relaxed">
+              Stripe securely collects whatever it needs for your situation — usually a bank account, your legal name, and address. Filmons never sees or stores this information.
+            </p>
           </div>
 
           {needsCountry && (
@@ -112,17 +103,16 @@ export function PayoutMethodSetup() {
               <p className="text-xs font-bold text-gray-900">Instant Payout</p>
               <p className="text-xs text-gray-400">Usually within minutes when eligible · 2% Filmons fee</p>
             </div>
-            <p className="text-[11px] text-gray-400 leading-relaxed">Instant Payout eligibility depends on your connected account and payout destination — not every card qualifies.</p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">Instant Payout eligibility depends on the payout destination you set up with Stripe — not every account qualifies.</p>
           </div>
 
           <button
             onClick={continueSecurely}
-            disabled={!choice || starting || (needsCountry && !country)}
+            disabled={starting || (needsCountry && !country)}
             className="w-full mt-6 py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 flex items-center justify-center gap-2"
           >
-            {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Continue Securely'}
+            {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Continue with Stripe'}
           </button>
-          <p className="text-[11px] text-gray-400 text-center mt-3">You'll enter your details directly with Stripe. Filmons never sees or stores your full account or card number.</p>
         </>
       )}
     </div>
