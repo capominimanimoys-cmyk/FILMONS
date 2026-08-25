@@ -27,7 +27,7 @@ function priorityOf(type: string): number {
   if (['message','new_message','message_received','message_reply','message_reaction'].includes(type)) return 0;
   if (['payment_received','payment_released'].includes(type)) return 1;
   if (['service_booked','booking_accepted','booking_rejected','marketplace_order','marketplace_booking'].includes(type)) return 2;
-  if (['application_received','application_accepted','application_rejected'].includes(type)) return 3;
+  if (['application_received','application_shortlisted','application_accepted','application_rejected'].includes(type)) return 3;
   if (['connection_request','follow_request','connection_accepted','follow_accepted','new_follower'].includes(type)) return 4;
   if (['comment_received','comment_reply','comment_like','comment_mention','comment_pinned'].includes(type)) return 5;
   if (['content_like','content_repost','new_post'].includes(type)) return 6;
@@ -141,6 +141,8 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: UserCheck,     gradient: 'from-blue-500 to-indigo-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'accepted your connection request' };
     case 'application_received':
       return { icon: Bell,          gradient: 'from-purple-400 to-violet-500',   iconColor: 'text-white', ringColor: 'ring-purple-100',  label: () => 'applied to your listing' };
+    case 'application_shortlisted':
+      return { icon: Bell,          gradient: 'from-indigo-400 to-blue-500',     iconColor: 'text-white', ringColor: 'ring-indigo-100',  label: () => 'shortlisted your application' };
     case 'application_accepted':
       return { icon: Check,         gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your application was accepted' };
     case 'application_rejected':
@@ -505,7 +507,7 @@ type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payment
 
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction'];
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','listing_review'];
-const SERVICES_TYPES       = ['service_booked','application_received','application_accepted','application_rejected'];
+const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_received','payment_released','payout_requested','payout_processing','payout_paid','payout_rejected'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
@@ -601,6 +603,13 @@ export function Notifications() {
       navigate((n as any).listingId
         ? `/listing/${(n as any).listingId}${(n as any).reviewId ? `?review=${(n as any).reviewId}` : ''}`
         : '/');
+    } else if (['application_received', 'application_shortlisted', 'application_accepted', 'application_rejected'].includes(n.type)) {
+      // These always carry the real conversation the Application Card lives
+      // in (see pushNotification's conversation_id in manage-application and
+      // ApplyModal's conversationId) -- was falling into the generic
+      // MARKETPLACE/SERVICES branch below and landing on the listing page
+      // instead of the actual application.
+      navigate(n.conversationId ? `/inbox?conv=${n.conversationId}` : '/notifications');
     } else if ([...MARKETPLACE_TYPES, ...SERVICES_TYPES].includes(n.type)) {
       navigate((n as any).listingId ? `/listing/${(n as any).listingId}` : '/');
     } else if (n.postId) {
