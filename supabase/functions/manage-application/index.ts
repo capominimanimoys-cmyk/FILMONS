@@ -197,6 +197,7 @@ async function applyAction(
             await sendApplicationAcceptedEmail({
               toEmail: applicant?.email, toName: applicant?.name,
               opportunityTitle: listingTitle || 'this opportunity', ownerName: owner?.name,
+              applicationUrl: app.conversation_id ? `https://filmons.app/inbox?conv=${app.conversation_id}` : undefined,
             });
           }).catch(() => {});
         }

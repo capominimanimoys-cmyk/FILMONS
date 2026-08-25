@@ -38,6 +38,36 @@ async function sendEmailJsTemplate(toEmail: string | null | undefined, subject: 
   }
 }
 
+// Low-level sender for dedicated per-purpose templates (as opposed to the
+// shared subject/message TEMPLATE_GENERIC above) -- each such template has
+// its own "To Email" field wired to {{to_email}} in the EmailJS dashboard
+// (see application-*-template.html for the matching HTML source) and its
+// own variable schema, so callers pass exactly the params that template
+// expects instead of a generic subject/message pair.
+async function sendEmailJsRaw(toEmail: string | null | undefined, templateId: string, params: Record<string, unknown>) {
+  if (!toEmail) return;
+  try {
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID, template_id: templateId,
+        user_id: EMAILJS_PUBLIC_KEY, accessToken: EMAILJS_PRIVATE_KEY,
+        template_params: { to_email: toEmail, ...params },
+      }),
+    });
+    if (!res.ok) console.warn('EmailJS send failed:', templateId, res.status, await res.text());
+  } catch (e) {
+    console.warn('EmailJS send threw:', templateId, e);
+  }
+}
+
+// Dedicated templates, wired in as they're created in the EmailJS
+// dashboard from the application-*-template.html files in
+// src/app/templates/. Not yet created: new-application, shortlisted,
+// declined -- those three still go through TEMPLATE_GENERIC below.
+const TEMPLATE_APPLICATION_ACCEPTED = 'template_x7fran3';
+
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
 }) {
@@ -84,17 +114,15 @@ export function sendApplicationShortlistedEmail(p: {
 }
 
 export function sendApplicationAcceptedEmail(p: {
-  toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string; ownerName?: string | null;
+  toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
+  ownerName?: string | null; applicationUrl?: string;
 }) {
-  return sendEmailJsTemplate(
-    p.toEmail,
-    `You've been accepted for ${p.opportunityTitle}`,
-    `Congratulations! Your application for ${p.opportunityTitle} has been accepted by ` +
-      `${p.ownerName || 'the opportunity owner'}.\n\n` +
-      `You can now continue with the project details and communication through FILMONS.\n\n` +
-      `View Application:\nhttps://filmons.app/inbox`,
-    p.toName,
-  );
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_APPLICATION_ACCEPTED, {
+    to_name: p.toName || 'there',
+    opportunity_title: p.opportunityTitle,
+    owner_name: p.ownerName || 'the opportunity owner',
+    application_url: p.applicationUrl || 'https://filmons.app/inbox',
+  });
 }
 
 export function sendWithdrawalReceivedEmail(p: {
