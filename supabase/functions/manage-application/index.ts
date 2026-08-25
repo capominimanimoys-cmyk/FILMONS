@@ -58,7 +58,9 @@ async function insertReturning(table: string, row: Record<string, unknown>) {
 
 import { computeBreakdown } from '../_shared/pricing.ts';
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
-import { sendOpportunityDeclinedEmail } from '../_shared/notificationEmails.ts';
+import {
+  sendOpportunityDeclinedEmail, sendApplicationShortlistedEmail, sendApplicationAcceptedEmail,
+} from '../_shared/notificationEmails.ts';
 
 // Generic subject/message template — same one stripe-webhook.ts and
 // manage-hire-request/index.ts already use for dynamic notification
@@ -162,6 +164,14 @@ async function applyAction(
         patch = { status: 'shortlisted', shortlisted_at: now };
         notifyUserId = app.applicant_id; notifyType = 'application_shortlisted';
         systemText = 'You were shortlisted for this opportunity.';
+        claimEmailEvent(`application_shortlisted:${app.id}`).then(async claimed => {
+          if (!claimed) return;
+          const applicant = await selectOne('profiles', `id=eq.${app.applicant_id}`);
+          await sendApplicationShortlistedEmail({
+            toEmail: applicant?.email, toName: applicant?.name,
+            opportunityTitle: listingTitle || 'this opportunity',
+          });
+        }).catch(() => {});
       }
       break;
     case 'accept':
@@ -174,6 +184,22 @@ async function applyAction(
         };
         notifyUserId = app.applicant_id; notifyType = 'application_accepted';
         systemText = 'Your application was accepted.';
+        // Paid opportunities send their own, more specific "accepted —
+        // awaiting payment" email from the owner's follow-up send_offer
+        // action below -- sending this one too would double-email them.
+        if (!listing?.metadata?.opportunity?.paid) {
+          claimEmailEvent(`application_accepted:${app.id}`).then(async claimed => {
+            if (!claimed) return;
+            const [applicant, owner] = await Promise.all([
+              selectOne('profiles', `id=eq.${app.applicant_id}`),
+              selectOne('profiles', `id=eq.${userId}`),
+            ]);
+            await sendApplicationAcceptedEmail({
+              toEmail: applicant?.email, toName: applicant?.name,
+              opportunityTitle: listingTitle || 'this opportunity', ownerName: owner?.name,
+            });
+          }).catch(() => {});
+        }
       }
       break;
     case 'decline':

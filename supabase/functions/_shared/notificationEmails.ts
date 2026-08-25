@@ -1,9 +1,10 @@
-// Reusable EmailJS senders for "Opportunity application declined" and
-// "Withdrawal request received" -- kept out of manage-application/
+// Reusable EmailJS senders for the opportunity-application lifecycle (new
+// application / shortlisted / accepted / declined) and withdrawal-received
+// -- kept out of manage-application/submit-opportunity-application/
 // request-payout so the email copy lives in exactly one place instead of
 // being re-typed at every call site.
 //
-// Both still go through the same generic subject/message template
+// All of these go through the same generic subject/message template
 // (template_rd3nhik) every other transactional email in this app already
 // uses, rather than the two brand-new per-purpose templates a client-side
 // EmailJS integration would need -- EmailJS templates can only be created
@@ -47,7 +48,51 @@ export function sendOpportunityDeclinedEmail(p: {
       `The opportunity owner has decided not to move forward with your application at this time.\n\n` +
       `Opportunity: ${p.opportunityTitle}\nStatus: Not Selected\n\n` +
       `You can continue exploring other opportunities that match your skills and experience on FILMONS.\n\n` +
-      `Explore Opportunities:\nhttps://filmons.app/marketplace?type=opportunity`,
+      `Explore Opportunities:\nhttps://filmons.app/marketplace`,
+    p.toName,
+  );
+}
+
+export function sendNewApplicationEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  opportunityTitle: string; applicantName: string;
+}) {
+  return sendEmailJsTemplate(
+    p.toEmail,
+    `New application for ${p.opportunityTitle}`,
+    `You have a new application for your opportunity ${p.opportunityTitle}.\n\n` +
+      `Applicant: ${p.applicantName}\n\n` +
+      `You can review the applicant's profile, shortlist them, or accept/decline the application ` +
+      `directly from your FILMONS Inbox.\n\n` +
+      `View Application:\nhttps://filmons.app/inbox`,
+    p.toName,
+  );
+}
+
+export function sendApplicationShortlistedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
+}) {
+  return sendEmailJsTemplate(
+    p.toEmail,
+    `You've been shortlisted for ${p.opportunityTitle}`,
+    `Great news!\n\nYour application for ${p.opportunityTitle} has been shortlisted.\n\n` +
+      `Your application is now being considered for the next stage. We'll notify you when the ` +
+      `opportunity owner makes a final decision.\n\n` +
+      `View Application:\nhttps://filmons.app/inbox`,
+    p.toName,
+  );
+}
+
+export function sendApplicationAcceptedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string; ownerName?: string | null;
+}) {
+  return sendEmailJsTemplate(
+    p.toEmail,
+    `You've been accepted for ${p.opportunityTitle}`,
+    `Congratulations! Your application for ${p.opportunityTitle} has been accepted by ` +
+      `${p.ownerName || 'the opportunity owner'}.\n\n` +
+      `You can now continue with the project details and communication through FILMONS.\n\n` +
+      `View Application:\nhttps://filmons.app/inbox`,
     p.toName,
   );
 }

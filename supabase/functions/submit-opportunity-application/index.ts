@@ -25,6 +25,8 @@ async function selectOne(table: string, filter: string) {
 }
 
 import { ENTITLEMENTS, normalizeTier } from '../_shared/entitlements.ts';
+import { claimEmailEvent } from '../_shared/emailEvents.ts';
+import { sendNewApplicationEmail } from '../_shared/notificationEmails.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -58,6 +60,19 @@ Deno.serve(async (req) => {
       console.error('fn_submit_opportunity_application error:', data);
       return json({ error: 'Could not submit application' }, 500);
     }
+    claimEmailEvent(`application_received:${data.id}`).then(async claimed => {
+      if (!claimed) return;
+      const [listing, owner] = await Promise.all([
+        selectOne('listings', `id=eq.${encodeURIComponent(listingId)}`),
+        selectOne('profiles', `id=eq.${ownerId}`),
+      ]);
+      await sendNewApplicationEmail({
+        toEmail: owner?.email, toName: owner?.name,
+        opportunityTitle: listing?.title || 'your opportunity',
+        applicantName: profile.name || profile.username || 'A creator',
+      });
+    }).catch(() => {});
+
     return json({ success: true, application: data });
   } catch (e) {
     console.error('submit-opportunity-application error:', e);

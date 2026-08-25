@@ -10,7 +10,7 @@ import {
   Plus, ChevronRight, Eye, CheckCircle,
   Clock, ArrowUpRight, BarChart3, Wrench, Camera,
   MessageCircle, ShieldCheck, Settings, Bookmark, Heart, MapPin,
-  ShoppingCart, Zap, X, CalendarDays, Lock, Briefcase,
+  ShoppingCart, Zap, X, CalendarDays, Lock, Briefcase, FileText,
 } from 'lucide-react';
 import { savedListingsApi, listingsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
@@ -192,12 +192,32 @@ function CreatorPlusRequired({ feature, color='blue', navigate }: { feature: str
 }
 
 // ── Creator Dashboard ──────────────────────────────────────────────
+// Real status enum from opportunity_applications.status (includes the paid
+// Opportunity hire/fund substates) mapped to what an applicant actually
+// wants to see, not the raw DB value.
+const APPLICATION_STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending:          { label: 'Pending',                        cls: 'text-amber-600 bg-amber-50' },
+  viewed:           { label: 'Pending',                        cls: 'text-amber-600 bg-amber-50' },
+  contacted:        { label: 'Pending',                        cls: 'text-amber-600 bg-amber-50' },
+  shortlisted:      { label: 'Shortlisted',                    cls: 'text-blue-600 bg-blue-50' },
+  selected:         { label: 'Shortlisted',                    cls: 'text-blue-600 bg-blue-50' },
+  accepted:         { label: 'Accepted 🎉',                    cls: 'text-green-600 bg-green-50' },
+  offer_sent:       { label: 'Offer Sent — Awaiting Payment',  cls: 'text-indigo-600 bg-indigo-50' },
+  offer_accepted:   { label: 'Offer Accepted',                 cls: 'text-indigo-600 bg-indigo-50' },
+  payment_pending:  { label: 'Payment Pending',                cls: 'text-indigo-600 bg-indigo-50' },
+  hired:            { label: 'Hired',                          cls: 'text-green-600 bg-green-50' },
+  completed:        { label: 'Completed',                      cls: 'text-green-600 bg-green-50' },
+  rejected:         { label: 'Not selected',                   cls: 'text-gray-500 bg-gray-100' },
+  withdrawn:        { label: 'Withdrawn',                      cls: 'text-gray-500 bg-gray-100' },
+};
+
 function CreatorDashboard({ user }: { user: any }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'orders' | 'opportunities' | 'transactions'>('orders');
+  const [tab, setTab] = useState<'orders' | 'opportunities' | 'applications' | 'transactions'>('orders');
   const [orders, setOrders] = useState<any[]>([]);
   const [savedListings, setSavedListings] = useState<any[]>([]);
   const [myOpportunities, setMyOpportunities] = useState<Listing[]>([]);
+  const [myApplications, setMyApplications] = useState<any[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [rep, setRep] = useState<ReputationScore | null>(null);
 
@@ -219,6 +239,30 @@ function CreatorDashboard({ user }: { user: any }) {
     listingsApi.getUserListings(user.id)
       .then(listings => setMyOpportunities(listings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')))
       .catch(() => setMyOpportunities([]));
+    // opportunity_applications.listing_id is a plain text column (listings
+    // ids aren't uuids), so there's no FK for an embedded select -- fetch
+    // applications, then the listings/owners they reference, then merge.
+    (async () => {
+      try {
+        const { data: apps } = await supabase.from('opportunity_applications')
+          .select('*').eq('applicant_id', user.id).order('created_at', { ascending: false }).limit(50);
+        if (!apps?.length) { setMyApplications([]); return; }
+        const listingIds = [...new Set(apps.map(a => a.listing_id).filter(Boolean))];
+        const ownerIds   = [...new Set(apps.map(a => a.owner_id).filter(Boolean))];
+        const [{ data: listings }, { data: owners }] = await Promise.all([
+          listingIds.length ? supabase.from('listings').select('id, title, city, province').in('id', listingIds) : Promise.resolve({ data: [] as any[] }),
+          ownerIds.length   ? supabase.from('profiles').select('id, name').in('id', ownerIds)                   : Promise.resolve({ data: [] as any[] }),
+        ]);
+        const listingById = new Map((listings || []).map((l: any) => [l.id, l]));
+        const ownerById    = new Map((owners   || []).map((o: any) => [o.id, o]));
+        setMyApplications(apps.map(a => ({
+          ...a,
+          listingTitle: listingById.get(a.listing_id)?.title || 'Opportunity',
+          listingLocation: [listingById.get(a.listing_id)?.city, listingById.get(a.listing_id)?.province].filter(Boolean).join(', '),
+          ownerName: ownerById.get(a.owner_id)?.name || 'Filmons host',
+        })));
+      } catch { setMyApplications([]); }
+    })();
   }, [user.id]);
 
   const statusColors: Record<string, string> = {
@@ -246,6 +290,7 @@ function CreatorDashboard({ user }: { user: any }) {
           {[
             { key: 'orders',        label: 'My Orders',    icon: ShoppingCart },
             { key: 'opportunities', label: 'Opportunities', icon: Briefcase   },
+            { key: 'applications',  label: 'Applications', icon: FileText    },
             { key: 'transactions',  label: 'Transactions', icon: DollarSign   },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setTab(key as any)}
@@ -377,6 +422,52 @@ function CreatorDashboard({ user }: { user: any }) {
               <Plus className="w-4 h-4" /> Post Opportunity
             </button>
             <MyOpportunitiesOverview opportunities={myOpportunities} />
+          </div>
+        )}
+
+        {/* Applications — Opportunities this user has applied to, tracked
+            separately from "Opportunities" above (the ones they posted). */}
+        {tab === 'applications' && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-500" />
+              <h3 className="text-sm font-bold text-gray-900">My Applications</h3>
+              <span className="text-xs text-gray-400">({myApplications.length})</span>
+            </div>
+            {myApplications.length === 0 ? (
+              <div className="p-8 text-center">
+                <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                <p className="text-sm text-gray-400 font-medium">No applications yet</p>
+                <p className="text-xs text-gray-300 mt-1">Track the opportunities you've applied to and their status here.</p>
+                <button onClick={() => navigate('/marketplace')} className="mt-4 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors">
+                  Browse opportunities
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {myApplications.map((app: any) => {
+                  const meta = APPLICATION_STATUS_META[app.status] || { label: app.status, cls: 'text-gray-500 bg-gray-100' };
+                  return (
+                    <div key={app.id} className="px-4 py-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{app.listingTitle}</p>
+                          {app.listingLocation && <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{app.listingLocation}</p>}
+                          <p className="text-xs text-gray-400 mt-0.5">Posted by {app.ownerName} · Applied {new Date(app.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</p>
+                        </div>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap ${meta.cls}`}>{meta.label}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-2.5">
+                        <button onClick={() => navigate(`/listing/${app.listing_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Opportunity</button>
+                        {app.conversation_id && (
+                          <button onClick={() => navigate(`/inbox?conv=${app.conversation_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Application</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
