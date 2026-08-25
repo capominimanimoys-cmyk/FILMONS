@@ -2614,7 +2614,8 @@ export const chatApi = {
         messageId:      message.id,
         commentContent: content?.slice(0, 100),
       });
-      // External notification — schedules email (5 min) + SMS (10 min) if unread
+      // External notification — schedules a delayed email (server-side cron,
+      // see send-message-notifications) if still unread/offline
       import('./messageNotification').then(mod => {
         mod.notifyReceiverForMessage({
           receiverId:     recipientId,
@@ -3126,10 +3127,10 @@ export const chatApi = {
         messageId:      id,
         commentContent: (msg.content || '').slice(0, 100) || undefined,
       } as any);
-      // Delayed email (5 min, only if still unread + offline) + SMS (10 min) —
-      // this is the path Inbox.tsx actually sends through; it was previously
-      // only wired into the unused sendMessage() local-first variant, so no
-      // message ever actually triggered this flow.
+      // Delayed email (server-side cron, only if still unread + offline when
+      // due) — this is the path Inbox.tsx actually sends through; it was
+      // previously only wired into the unused sendMessage() local-first
+      // variant, so no message ever actually triggered this flow.
       import('./messageNotification').then(mod => {
         mod.notifyReceiverForMessage({
           receiverId:     recipientId,
