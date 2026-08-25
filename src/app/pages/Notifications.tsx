@@ -600,9 +600,9 @@ export function Notifications() {
     } else if (n.type === 'listing_review') {
       navigate((n as any).listingId
         ? `/listing/${(n as any).listingId}${(n as any).reviewId ? `?review=${(n as any).reviewId}` : ''}`
-        : '/marketplace');
+        : '/');
     } else if ([...MARKETPLACE_TYPES, ...SERVICES_TYPES].includes(n.type)) {
-      navigate((n as any).listingId ? `/listing/${(n as any).listingId}` : '/marketplace');
+      navigate((n as any).listingId ? `/listing/${(n as any).listingId}` : '/');
     } else if (n.postId) {
       navigate(`/post/${n.postId}`);
     } else if (n.fromUserId) {

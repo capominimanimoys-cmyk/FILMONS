@@ -439,7 +439,7 @@ function CreatorDashboard({ user }: { user: any }) {
                 <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
                 <p className="text-sm text-gray-400 font-medium">No applications yet</p>
                 <p className="text-xs text-gray-300 mt-1">Track the opportunities you've applied to and their status here.</p>
-                <button onClick={() => navigate('/marketplace')} className="mt-4 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors">
+                <button onClick={() => navigate('/')} className="mt-4 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors">
                   Browse opportunities
                 </button>
               </div>

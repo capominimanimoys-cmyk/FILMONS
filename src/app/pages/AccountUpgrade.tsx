@@ -178,7 +178,7 @@ export function AccountUpgrade() {
             <p className="text-sm text-gray-500 mt-1">Your {tier.label} account is now active. You can now post and apply to {activatedPlan === 'business' ? 'unlimited' : `up to ${ENTITLEMENTS[activatedPlan].posts}`} Opportunities each month.</p>
           </div>
           <div className="flex flex-col gap-2">
-            <button onClick={() => navigate('/marketplace')} className="w-full py-3.5 rounded-2xl text-white font-bold text-sm" style={{ background: tier.accentColor }}>Explore Opportunities</button>
+            <button onClick={() => navigate('/')} className="w-full py-3.5 rounded-2xl text-white font-bold text-sm" style={{ background: tier.accentColor }}>Explore Opportunities</button>
             <button onClick={() => setActivatedPlan(null)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Done</button>
           </div>
         </div>

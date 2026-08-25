@@ -107,7 +107,7 @@ export function MyListings() {
           actionLabel="Create your first listing"
           onAction={() => navigate('/create-listing')}
           secondaryLabel="Browse marketplace"
-          onSecondaryAction={() => navigate('/marketplace')}
+          onSecondaryAction={() => navigate('/')}
         />
       ) : listings.length > 0 ? (
         (() => {

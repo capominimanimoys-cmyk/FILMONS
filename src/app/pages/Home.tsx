@@ -239,12 +239,6 @@ export function Home() {
             className="text-sm text-blue-600 font-semibold underline">
             See them again
           </button>
-          <span className="text-gray-300 mx-2">·</span>
-          <button
-            onClick={() => navigate('/marketplace')}
-            className="text-sm text-blue-600 font-semibold underline">
-            Browse marketplace
-          </button>
         </div>
       )}
 

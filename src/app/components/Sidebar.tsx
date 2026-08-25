@@ -2,7 +2,7 @@ import { Link, useNavigate, useLocation } from 'react-router';
 import { FilmonsLogo } from './FilmonsLogo';
 import { useAuth } from '../context/AuthContext';
 import {
-  Home, LayoutGrid, Search, MessageCircle, Bell,
+  Home, Search, MessageCircle, Bell,
   User, Settings, LogOut, X, UserPlus,
   ChevronRight,
 } from 'lucide-react';
@@ -179,7 +179,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
             <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-0.5">
               <NavRow icon={Home}       label="Home"        to="/"            active={isActive('/')}            onClick={onClose}/>
-              <NavRow icon={LayoutGrid} label="Marketplace" to="/marketplace" active={isActive('/marketplace')} onClick={onClose}/>
               <NavRow icon={Search}     label="Search"      to="/search"      active={isActive('/search')}      onClick={onClose}/>
             </nav>
 

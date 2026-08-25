@@ -81,7 +81,7 @@ export function Feed() {
         {/* CTA */}
         <div className="w-full max-w-xs space-y-3">
           <button
-            onClick={() => navigate('/marketplace')}
+            onClick={() => navigate('/')}
             className="w-full py-4 rounded-2xl font-black text-white text-[15px] transition-all active:scale-[0.98]"
             style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)', boxShadow: '0 8px 24px rgba(99,102,241,0.3)' }}
           >

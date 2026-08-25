@@ -18,7 +18,7 @@ export function Footer() {
           <div>
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Platform</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/marketplace" className="text-gray-600 hover:text-blue-600 transition-colors">Marketplace</Link></li>
+              <li><Link to="/" className="text-gray-600 hover:text-blue-600 transition-colors">Marketplace</Link></li>
               <li><Link to="/feed" className="text-gray-600 hover:text-blue-600 transition-colors">Feed</Link></li>
               <li><Link to="/create-listing" className="text-gray-600 hover:text-blue-600 transition-colors">List your gear</Link></li>
               <li><Link to="/wallet" className="text-gray-600 hover:text-blue-600 transition-colors">Wallet</Link></li>
