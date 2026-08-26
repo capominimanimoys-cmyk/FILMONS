@@ -5,6 +5,7 @@ import {
   Check, Trash2, X, BellOff, UserCheck, Inbox, ArrowRight, Repeat2,
   ShoppingBag, Zap, Trophy, AtSign, Shield, Star,
   Rocket, Wrench, PartyPopper, Eye, ChevronRight,
+  CalendarDays, CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
@@ -167,6 +168,10 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Check,         gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your booking was accepted' };
     case 'booking_rejected':
       return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Your booking was declined' };
+    case 'rental_request':
+      return { icon: CalendarDays,  gradient: 'from-blue-400 to-indigo-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'sent you a rental request' };
+    case 'payment_request':
+      return { icon: CreditCard,    gradient: 'from-emerald-500 to-green-600',   iconColor: 'text-white', ringColor: 'ring-emerald-100', label: (n) => `sent you a payment request for $${(n as any).listingPrice ?? ''} CAD` };
     case 'payment_received':
       return { icon: Zap,           gradient: 'from-emerald-500 to-green-600',   iconColor: 'text-white', ringColor: 'ring-emerald-100', label: () => 'Payment received' };
     case 'payment_released':
@@ -508,9 +513,9 @@ function SkeletonRow() {
 type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payments' | 'social' | 'system';
 
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction'];
-const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','listing_review'];
+const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','listing_review'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
-const PAYMENTS_TYPES       = ['payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed'];
+const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
@@ -636,7 +641,7 @@ export function Notifications() {
 
   return (
     <div className="min-h-screen bg-[#F5F7FA]">
-      <div className="max-w-lg mx-auto pb-10">
+      <div className="max-w-lg lg:max-w-2xl mx-auto pb-10">
 
         {/* ── Sticky header ── */}
         <div className="bg-white border-b border-gray-100 sticky top-0 z-20 px-5 pt-5 pb-0">

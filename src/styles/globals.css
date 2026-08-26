@@ -13,6 +13,22 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* ── Full-screen mobile backgrounds ───────────────────────────────────────
+   `min-h-screen`/`h-screen` compile to 100vh, a static value that doesn't
+   track the actual visible viewport as mobile browser chrome (address bar,
+   toolbars) shows/hides — the page's background then falls short of the
+   real bottom of the screen, exposing html/body's flat color underneath
+   (most visible on dark full-bleed screens like Login). `dvh` is the
+   dynamic viewport unit that keeps up automatically. Scoped to mobile only
+   (matches every other page's shared `md:`/`lg:` breakpoint scheme) so
+   desktop's existing 100vh-based layouts are untouched. Overriding the
+   utility classes here fixes every page using them app-wide instead of
+   editing each page's className individually. */
+@media (max-width: 767px) {
+  .min-h-screen { min-height: 100dvh; }
+  .h-screen     { height: 100dvh; }
+}
+
 /* ── Prevent iOS Safari auto-zoom on input focus ──────────────────────────
    Mobile Safari zooms the whole page in whenever a focused form control's
    computed font-size is under 16px. A lot of inputs/textareas/selects here

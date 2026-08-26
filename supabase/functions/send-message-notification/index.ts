@@ -24,7 +24,7 @@ async function selectOne(table: string, filter: string) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 
-import { sendNewMessageEmail, type MessageKind } from '../_shared/notificationEmails.ts';
+import { sendNewMessageEmail, sendRentalRequestEmail, sendPurchaseRequestEmail, type MessageKind } from '../_shared/notificationEmails.ts';
 
 const SPAM_TTL_MS = 60 * 60 * 1000;
 
@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
     const {
       receiverId, senderId, senderName, messageText, conversationId,
       kind, listingTitle, listingId, messageId,
+      requestType, rentalDates, requestMessage,
     } = await req.json();
     if (!receiverId || !senderId || !conversationId) return json({ error: 'Missing required fields' }, 400);
     if (receiverId === senderId) return json({ sent: false, reason: 'self' });
@@ -54,11 +55,31 @@ Deno.serve(async (req) => {
     if (Array.isArray(recentSent) && recentSent.length) return json({ sent: false, reason: 'rate_limited' });
 
     const preview = (messageText || 'New message').slice(0, 120);
-    await sendNewMessageEmail({
-      toEmail: receiver.email, toName: receiver.name || receiver.username,
-      fromName: senderName || 'Someone', messagePreview: preview,
-      conversationId, kind: (kind as MessageKind) || 'direct', listingTitle,
-    });
+    // Rental/purchase requests get their own dedicated template instead of
+    // the generic new-message copy -- same underlying rental_request
+    // message type, differentiated by requestType (set client-side from
+    // the request's listingMode) so a "Purchase Request" never shows up
+    // captioned as a rental, or vice versa.
+    if (requestType === 'rental_request') {
+      await sendRentalRequestEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', listingTitle: listingTitle || 'your listing',
+        rentalDates: rentalDates || 'See conversation for details',
+        requestMessage, conversationId,
+      });
+    } else if (requestType === 'purchase_request') {
+      await sendPurchaseRequestEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', listingTitle: listingTitle || 'your listing',
+        requestMessage, conversationId,
+      });
+    } else {
+      await sendNewMessageEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', messagePreview: preview,
+        conversationId, kind: (kind as MessageKind) || 'direct', listingTitle,
+      });
+    }
 
     // Sent-log entry, purely for the rate-limit lookup above — not a queue.
     await fetch(rest('/pending_message_notifications'), {

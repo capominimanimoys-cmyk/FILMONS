@@ -2661,6 +2661,37 @@ export const chatApi = {
     convs[idx].updatedAt = new Date().toISOString();
     saveConvs(convs);
     syncMessageToServer(conversationId, message);
+    const recipientId = convs[idx].participantIds.find(id => id !== senderId);
+    if (recipientId) {
+      notifs.push(recipientId, {
+        type: 'rental_request',
+        fromUserId:     senderId,
+        fromUserName:   senderName,
+        fromUserAvatar: senderAvatar,
+        conversationId,
+        messageId:      message.id,
+        listingId:      request?.listingId,
+        listingTitle:   request?.listingTitle,
+      });
+      // Same underlying message type covers both rentals and equipment
+      // purchases (distinguished by listingMode/durationType) -- pick the
+      // matching dedicated email template rather than the generic one.
+      const isPurchase = (request as any)?.listingMode === 'sale' || request?.durationType === 'purchase';
+      const dates = isPurchase ? 'One-time purchase' : `${request?.startDate?.slice(0, 10) || ''} · ${request?.duration ?? ''} ${request?.durationType ?? ''}`;
+      import('./messageNotification').then(mod => {
+        mod.notifyReceiverForMessage({
+          receiverId:     recipientId,
+          sender:         { id: senderId, name: senderName },
+          messageText:    request?.message || `${isPurchase ? 'Purchase' : 'Rental'} request for ${request?.listingTitle || 'your listing'}`,
+          conversationId,
+          messageId:      message.id,
+          listing:        { id: request?.listingId, title: request?.listingTitle },
+          requestType:    isPurchase ? 'purchase_request' : 'rental_request',
+          rentalDates:    dates,
+          requestMessage: request?.message,
+        });
+      }).catch(() => {});
+    }
     return message;
   },
 
@@ -2675,6 +2706,23 @@ export const chatApi = {
     convs[idx].updatedAt = new Date().toISOString();
     saveConvs(convs);
     syncMessageToServer(conversationId, message);
+    // Distinct from rental_request — must never fall back to "Rental
+    // request" copy; this is its own notification type with its own title
+    // ("Payment request") and amount-bearing detail line.
+    const recipientId = convs[idx].participantIds.find(id => id !== senderId);
+    if (recipientId) {
+      notifs.push(recipientId, {
+        type: 'payment_request',
+        fromUserId:     senderId,
+        fromUserName:   senderName,
+        fromUserAvatar: senderAvatar,
+        conversationId,
+        messageId:      message.id,
+        listingId:      payment?.listingId,
+        listingTitle:   payment?.listingTitle,
+        listingPrice:   payment?.amount,
+      });
+    }
     return message;
   },
 

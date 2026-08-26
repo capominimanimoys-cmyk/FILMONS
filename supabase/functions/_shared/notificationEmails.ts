@@ -44,6 +44,12 @@ const TEMPLATE_WITHDRAWAL_RECEIVED     = 'template_ayhphv9';
 const TEMPLATE_NEW_MESSAGE             = 'template_d5zpvid';
 const TEMPLATE_NEW_FOLLOWER            = 'template_z3vit7l';
 const TEMPLATE_MESSAGE_REQUEST         = 'template_tun19ep';
+// Rental/purchase-request emails -- placeholders until created in the
+// EmailJS dashboard from rental-request-template.html /
+// purchase-request-template.html (same process as every other template
+// above: build the .html, wire the sender, then swap in the real id).
+const TEMPLATE_RENTAL_REQUEST          = 'template_rental_request';
+const TEMPLATE_PURCHASE_REQUEST        = 'template_purchase_request';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
 // template above: build the .html, wire the sender, then ask for the id).
@@ -95,6 +101,35 @@ export function sendApplicationAcceptedEmail(p: {
     opportunity_title: p.opportunityTitle,
     owner_name: p.ownerName || 'the opportunity owner',
     application_url: p.applicationUrl || 'https://filmons.app/inbox',
+  });
+}
+
+export function sendRentalRequestEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingTitle: string; rentalDates: string;
+  requestMessage?: string | null; conversationId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_RENTAL_REQUEST, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    rental_dates: p.rentalDates,
+    request_message: p.requestMessage || 'No message included',
+    conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
+  });
+}
+
+export function sendPurchaseRequestEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingTitle: string;
+  requestMessage?: string | null; conversationId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PURCHASE_REQUEST, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    request_message: p.requestMessage || 'No message included',
+    conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
   });
 }
 

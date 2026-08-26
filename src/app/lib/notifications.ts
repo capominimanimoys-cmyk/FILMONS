@@ -49,6 +49,8 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'service_booked':      return `${actorName} booked your service`;
     case 'booking_accepted':    return 'Your booking was accepted';
     case 'booking_rejected':    return 'Your booking was declined';
+    case 'rental_request':      return `${actorName} sent a rental request`;
+    case 'payment_request':     return 'Payment request';
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';
     case 'payout_requested':    return 'Your payout request was received';

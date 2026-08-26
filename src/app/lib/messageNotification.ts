@@ -36,6 +36,9 @@ export function notifyReceiverForMessage({
   kind = 'direct',
   listing,
   messageId,
+  requestType,
+  rentalDates,
+  requestMessage,
 }: {
   receiverId: string;
   sender: Sender;
@@ -44,6 +47,11 @@ export function notifyReceiverForMessage({
   kind?: MessageKind;
   listing?: ListingContext;
   messageId?: string;
+  /** Set for rental_request messages -- picks the dedicated rental/purchase
+   *  request email template instead of the generic new-message one. */
+  requestType?: 'rental_request' | 'purchase_request';
+  rentalDates?: string;
+  requestMessage?: string | null;
 }): void {
   if (receiverId === sender.id) return;
 
@@ -60,6 +68,9 @@ export function notifyReceiverForMessage({
       listingTitle: listing?.title,
       listingId:    listing?.id,
       messageId,
+      requestType,
+      rentalDates,
+      requestMessage,
     }),
   }).catch(e => console.warn('[msgNotif] send failed:', e));
 }

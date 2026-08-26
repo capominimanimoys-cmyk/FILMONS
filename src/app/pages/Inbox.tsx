@@ -1353,7 +1353,7 @@ export function Inbox() {
   // messaging app — mobile only, desktop already has the input in view
   // and this would just steal focus from someone dragging to select text.
   const handleChatAreaClick = (e: React.MouseEvent) => {
-    if (window.innerWidth >= 768) return;
+    if (window.innerWidth >= 1024) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, a, input, textarea, video, audio, [role="button"]')) return;
     textareaRef.current?.focus();
@@ -2114,17 +2114,22 @@ export function Inbox() {
   const requestCount = requestConvs.length;
   const totalUnread  = regularConvs.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
 
-  // Infer conversation type from message history
+  // Infer conversation type from message history. Uses the MOST RECENT
+  // categorizing message, not "any message of this type ever" — a thread
+  // that started as an Opportunity application but later got a rental
+  // request (e.g. hired, then the gear rental gets arranged in the same
+  // thread) must move to Booking immediately, not stay pinned under
+  // Applications forever just because an application message exists
+  // somewhere earlier in its history.
   const getConvType = (c: Conversation): 'booking' | 'sale' | 'collab' | 'general' | 'application' => {
-    // A conversation can hold Application Cards from several different
-    // Opportunities (it's the one real thread with this person, not
-    // per-application) — message-type scanning already handles that.
-    if (c.messages.some(m => m.type === 'application')) return 'application';
-    if (c.messages.some(m => m.type === 'rental_request')) {
-      const req = c.messages.find(m => m.type === 'rental_request' && m.rentalRequest)?.rentalRequest;
-      return req?.listingMode === 'sale' || req?.durationType === 'purchase' ? 'sale' : 'booking';
+    for (let i = c.messages.length - 1; i >= 0; i--) {
+      const m = c.messages[i];
+      if (m.type === 'rental_request') {
+        return m.rentalRequest?.listingMode === 'sale' || m.rentalRequest?.durationType === 'purchase' ? 'sale' : 'booking';
+      }
+      if (m.type === 'application') return 'application';
+      if (m.type === 'payment_request') return 'sale';
     }
-    if (c.messages.some(m => m.type === 'payment_request')) return 'sale';
     return 'general';
   };
 
@@ -2526,7 +2531,7 @@ export function Inbox() {
   return (
     <div className="h-[100dvh] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
       {/* Top bar */}
-      <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden lg:flex'}`}>
         <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
           className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600">
           <ArrowBackIosNewRounded sx={{fontSize:18}} />
@@ -2549,7 +2554,7 @@ export function Inbox() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className={`relative flex flex-col border-r border-gray-200 bg-white ${showSidebar ? 'flex w-full md:w-80 shrink-0' : 'hidden md:flex md:w-80 shrink-0'}`}>
+        <div className={`relative flex flex-col border-r border-gray-200 bg-white ${showSidebar ? 'flex w-full lg:w-80 shrink-0' : 'hidden lg:flex lg:w-80 shrink-0'}`}>
           <div className="px-3 py-3 border-b border-gray-100 space-y-2">
             <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
               <SearchRounded sx={{fontSize:18,color:"#9ca3af",flexShrink:0}} />
@@ -2742,7 +2747,7 @@ export function Inbox() {
         </div>
 
         {/* Thread */}
-        <div className={`flex flex-col flex-1 min-w-0 overflow-hidden ${showSidebar ? 'hidden md:flex' : 'flex'}`}>
+        <div className={`flex flex-col flex-1 min-w-0 overflow-hidden ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
           {!activeConv ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
               <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4"><ChatBubbleRounded sx={{fontSize:40,color:"#60a5fa"}} /></div>
@@ -2796,7 +2801,7 @@ export function Inbox() {
                   {/* Back — mobile only; desktop keeps both panels visible
                       side by side, so there's nothing to "go back" from. */}
                   <button onClick={() => { setShowSidebar(true); setActiveId(null); }}
-                    className="md:hidden w-9 h-9 -ml-1.5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
+                    className="lg:hidden w-9 h-9 -ml-1.5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
                     <ArrowBackIosNewRounded sx={{fontSize:18}} />
                   </button>
                   {otherUser && (

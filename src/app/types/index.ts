@@ -371,6 +371,7 @@ export type NotificationType =
   | 'message' | 'new_message' | 'message_received' | 'message_reply' | 'message_reaction'
   // Marketplace
   | 'service_booked' | 'booking_accepted' | 'booking_rejected'
+  | 'rental_request' | 'payment_request'
   | 'payment_received' | 'payment_released'
   | 'payout_requested' | 'payout_processing' | 'payout_paid' | 'payout_rejected'
   | 'support_reply'
