@@ -11,6 +11,7 @@ import { Eye, EyeOff, Loader2, Phone } from 'lucide-react';
 import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
 
@@ -127,7 +128,7 @@ export function CreateAccount() {
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-gray-950">
+    <AuthScreenLayout className="bg-gray-950">
       {/* Ambient */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />
@@ -135,7 +136,7 @@ export function CreateAccount() {
         <div className="absolute bottom-1/3 right-1/4 w-56 h-56 rounded-full bg-violet-500 opacity-10 blur-[80px]" />
       </div>
 
-      <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-14 pb-10">
+      <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
         <div className="flex flex-col items-center mb-8">
           <FilmonsLogo iconSize={34} theme="dark" className="mb-7" />
           <h1 className="text-2xl font-black text-white mb-1">Create your account</h1>
@@ -326,6 +327,6 @@ export function CreateAccount() {
           <Link to="/login" className="text-blue-400 font-bold hover:text-blue-300">Sign In</Link>
         </p>
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { ProfessionPicker } from '../components/ProfessionPicker';
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { User } from '../types';
 import { toast } from 'sonner';
 import { claimIdentity } from '../lib/identity';
@@ -290,9 +291,9 @@ export function GoogleSignup() {
   // ── Success screen ────────────────────────────────────────────────────────
   if (success) {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center gap-6">
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-6 text-center gap-6">
           {/* Big check */}
           <div className="w-24 h-24 rounded-full bg-green-500/20 border-2 border-green-500/50 flex items-center justify-center">
             <Check className="w-12 h-12 text-green-400"/>
@@ -330,25 +331,25 @@ export function GoogleSignup() {
             Continue to Filmons
           </button>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   if (sessionOk === null) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-gray-950">
+      <AuthScreenLayout className="items-center justify-center bg-gray-950">
         <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"/>
-      </div>
+      </AuthScreenLayout>
     );
   }
   if (sessionOk === false) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden">
+    <AuthScreenLayout>
       <CinematicBg/>
 
       {/* Header */}
-      <div className="relative z-10 flex items-center px-4 pt-14 pb-4">
+      <div className="relative z-10 flex items-center px-4 pb-4" style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))' }}>
         <Link
           to="/login"
           className="flex items-center gap-2 text-white/50 hover:text-white transition-colors text-sm"
@@ -362,7 +363,7 @@ export function GoogleSignup() {
       </div>
 
       {/* Scrollable body */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-5 pb-12">
+      <div className="relative z-10 flex-1 overflow-y-auto px-5" style={{ paddingBottom: 'calc(3rem + env(safe-area-inset-bottom))' }}>
 
         {/* Google branding badge */}
         <div className="flex items-center justify-center mb-6 mt-1">
@@ -619,6 +620,6 @@ export function GoogleSignup() {
           <Link to="/login" className="text-blue-400 font-semibold hover:underline">Sign in</Link>
         </p>
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

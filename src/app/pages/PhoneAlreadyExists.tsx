@@ -6,6 +6,7 @@
 import { useSearchParams, useNavigate } from 'react-router';
 import { ArrowLeft, Smartphone } from 'lucide-react';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 
 function Bg() {
   return (
@@ -34,11 +35,11 @@ export function PhoneAlreadyExists() {
     : 'this phone number';
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden">
+    <AuthScreenLayout>
       <Bg/>
 
       {/* Header */}
-      <div className="relative z-10 pt-14 px-5 flex items-center justify-between">
+      <div className="relative z-10 px-5 flex items-center justify-between" style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))' }}>
         <button
           onClick={() => navigate('/signup/phone')}
           aria-label="Back to phone sign up"
@@ -51,7 +52,7 @@ export function PhoneAlreadyExists() {
       </div>
 
       {/* Body */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-5 pb-12">
+      <div className="relative z-10 flex-1 overflow-y-auto px-5" style={{ paddingBottom: 'calc(3rem + env(safe-area-inset-bottom))' }}>
         <div className="pt-8 max-w-sm mx-auto space-y-6">
 
           {/* Illustration */}
@@ -108,6 +109,6 @@ export function PhoneAlreadyExists() {
           </p>
         </div>
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

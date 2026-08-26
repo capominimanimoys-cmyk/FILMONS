@@ -9,6 +9,7 @@
 import { useSearchParams, useNavigate, Link } from 'react-router';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { toast } from 'sonner';
@@ -80,11 +81,11 @@ export function EmailAlreadyExists() {
   const providerLabel = provider === 'google' ? 'Google' : provider === 'apple' ? 'Apple' : '';
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <AuthScreenLayout>
       <Bg/>
 
       {/* Header */}
-      <div className="relative z-10 pt-14 px-5 flex items-center justify-between">
+      <div className="relative z-10 px-5 flex items-center justify-between" style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))' }}>
         <button
           onClick={() => navigate('/create-account')}
           className="flex items-center gap-2 text-white/50 hover:text-white transition-colors text-sm min-h-[44px] min-w-[44px]"
@@ -97,7 +98,7 @@ export function EmailAlreadyExists() {
       </div>
 
       {/* Body */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-5 pb-12">
+      <div className="relative z-10 flex-1 overflow-y-auto px-5" style={{ paddingBottom: 'calc(3rem + env(safe-area-inset-bottom))' }}>
         <div className="pt-8 max-w-sm mx-auto space-y-6">
 
           {/* Illustration */}
@@ -230,6 +231,6 @@ export function EmailAlreadyExists() {
           </p>
         </div>
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

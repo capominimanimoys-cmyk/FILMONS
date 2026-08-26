@@ -12,6 +12,7 @@ import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import FilmonsLoader from '../components/FilmonsLoader';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 
 type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'oauth_only' | 'security';
 
@@ -159,9 +160,9 @@ export function Login() {
   // ── METHOD SELECTOR ──────────────────────────────────────────────────────
   if (screen === 'method') {
     return (
-      <div className="h-screen flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col h-full px-5 py-safe">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
           {/* Logo top */}
           <div className="flex justify-center pt-16 pb-10">
             <FilmonsLogo iconSize={32} theme="dark"/>
@@ -200,16 +201,16 @@ export function Login() {
             Continue as Guest
           </button>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   // ── EMAIL LOGIN ──────────────────────────────────────────────────────────
   if (screen === 'email') {
     return (
-      <div className="h-screen flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col h-full px-5">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4"/> Back
           </button>
@@ -271,16 +272,16 @@ export function Login() {
             <Link to="/create-account" className="text-blue-400 font-semibold hover:underline">Create one</Link>
           </p>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   // ── EMAIL NOT FOUND ──────────────────────────────────────────────────────
   if (screen === 'email_not_found') {
     return (
-      <div className="h-screen flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           {/* Back */}
           <button
             onClick={() => setScreen('email')}
@@ -358,7 +359,7 @@ export function Login() {
             </button>
           </div>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
@@ -367,9 +368,9 @@ export function Login() {
     const providerLabel = oauthOnlyProviders.includes('google') ? 'Google' : oauthOnlyProviders.includes('apple') ? 'Apple' : 'a social account';
     const provider: 'google' | 'apple' = oauthOnlyProviders.includes('apple') ? 'apple' : 'google';
     return (
-      <div className="h-screen flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           <button
             onClick={() => setScreen('email')}
             className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors"
@@ -409,15 +410,15 @@ export function Login() {
             Set Up Password
           </button>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   // ── SECURITY / OTP ───────────────────────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <AuthScreenLayout>
       <CinematicBg/>
-      <div className="relative z-10 flex flex-col h-full px-5">
+      <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
           <ArrowLeft className="w-4 h-4"/> Back
         </button>
@@ -436,6 +437,6 @@ export function Login() {
           Resend code
         </button>
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

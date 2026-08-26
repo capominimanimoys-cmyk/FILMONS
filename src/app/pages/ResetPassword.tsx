@@ -10,6 +10,7 @@ import { Eye, EyeOff, Check } from 'lucide-react';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 
 type Status = 'waiting' | 'enter_password' | 'updating' | 'done' | 'error';
 
@@ -86,7 +87,7 @@ export function ResetPassword() {
   const inputCls = "w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all";
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden">
+    <AuthScreenLayout className="items-center justify-center">
       <Bg/>
       <div className="relative z-10 w-full max-w-sm px-6 space-y-6">
 
@@ -173,6 +174,6 @@ export function ResetPassword() {
           </div>
         )}
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

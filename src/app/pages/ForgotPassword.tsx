@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 
 type Step = 'email' | 'otp' | 'password' | 'sessions' | 'done';
 
@@ -184,10 +185,10 @@ export function ForgotPassword() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden">
+    <AuthScreenLayout>
       <Bg/>
       {step !== 'done' && (
-        <div className="relative z-10 pt-14 px-5 flex items-center justify-between">
+        <div className="relative z-10 px-5 flex items-center justify-between" style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))' }}>
           <button onClick={() => {
             if (step === 'otp')           setStep('email');
             else if (step === 'password') setStep('otp');
@@ -200,7 +201,7 @@ export function ForgotPassword() {
         </div>
       )}
 
-      <div className="relative z-10 flex-1 overflow-y-auto px-5 pb-12">
+      <div className="relative z-10 flex-1 overflow-y-auto px-5" style={{ paddingBottom: 'calc(3rem + env(safe-area-inset-bottom))' }}>
 
         {/* ── EMAIL ── */}
         {step === 'email' && (
@@ -369,6 +370,6 @@ export function ForgotPassword() {
           </div>
         )}
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

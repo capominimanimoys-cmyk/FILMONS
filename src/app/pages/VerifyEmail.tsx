@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { PENDING_SIGNUP_KEY } from './CreateAccount';
 import type { User } from '../types';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { claimIdentity } from '../lib/identity';
 
 interface PendingSignup {
@@ -240,13 +241,14 @@ export function VerifyEmail() {
   if (!pending) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-gray-950">
+    <AuthScreenLayout className="bg-gray-950">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />
         <div className="absolute top-1/3 left-1/4 w-80 h-80 rounded-full bg-blue-600 opacity-10 blur-[100px]" />
       </div>
 
-      <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-14 pb-10">
+      <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5"
+        style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))', paddingBottom: 'calc(2.5rem + env(safe-area-inset-bottom))' }}>
         <Link to="/create-account" className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-sm mb-10 w-fit">
           <ArrowLeft className="w-4 h-4" /> Back
         </Link>
@@ -342,6 +344,6 @@ export function VerifyEmail() {
           )}
         </div>
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

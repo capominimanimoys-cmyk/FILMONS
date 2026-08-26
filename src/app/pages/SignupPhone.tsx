@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
 import { claimIdentity } from '../lib/identity';
 
@@ -300,9 +301,9 @@ export function SignupPhone() {
   // ── Success screen ─────────────────────────────────────────────────────────
   if (step === 'success') {
     return (
-      <div className="h-screen flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col items-center justify-center h-full gap-5 px-6 text-center">
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 gap-5 px-6 text-center">
           <style>{`
             @keyframes sp-pop { 0%{transform:scale(0.5);opacity:0} 60%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
             @keyframes sp-check { 0%{stroke-dashoffset:40} 100%{stroke-dashoffset:0} }
@@ -333,16 +334,16 @@ export function SignupPhone() {
             ))}
           </div>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <AuthScreenLayout>
       <CinematicBg/>
 
       {/* Header */}
-      <div className="relative z-10 flex items-center gap-3 px-4 pt-14 pb-3">
+      <div className="relative z-10 flex items-center gap-3 px-4 pb-3" style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))' }}>
         <button
           onClick={() => step === 'otp' ? setStep('form') : navigate('/create-account')}
           aria-label="Go back"
@@ -363,7 +364,8 @@ export function SignupPhone() {
       </div>
 
       {/* Scrollable body */}
-      <div className={`relative z-10 flex-1 overflow-y-auto px-5 pb-12 transition-all duration-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+      <div className={`relative z-10 flex-1 overflow-y-auto px-5 transition-all duration-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+        style={{ paddingBottom: 'calc(3rem + env(safe-area-inset-bottom))' }}>
 
         {/* ── STEP 1: Name + Phone ──────────────────────────────────────────── */}
         {step === 'form' && (
@@ -543,6 +545,6 @@ export function SignupPhone() {
           </div>
         )}
       </div>
-    </div>
+    </AuthScreenLayout>
   );
 }

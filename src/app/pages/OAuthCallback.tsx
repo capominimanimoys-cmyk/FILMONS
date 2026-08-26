@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { User } from '../types';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
+import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
 
 const EXPECTED_EMAIL_KEY = 'fm_expected_login_email';
@@ -205,9 +206,9 @@ export function OAuthCallback() {
   // ── Wrong Google account selected ────────────────────────────────────────
   if (wrongAccount) {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col items-center justify-center h-full gap-5 px-6 text-center">
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 gap-5 px-6 text-center">
           <FilmonsLogo iconSize={32} theme="dark"/>
           <div className="space-y-2 max-w-xs">
             <p className="text-white font-bold text-base">You selected a different Google account</p>
@@ -229,16 +230,16 @@ export function OAuthCallback() {
             Cancel
           </button>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   // ── Error screen ─────────────────────────────────────────────────────────
   if (loadError) {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col items-center justify-center h-full gap-5 px-6">
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 gap-5 px-6">
           <FilmonsLogo iconSize={32} theme="dark"/>
           <p className="text-white/60 text-sm text-center max-w-xs">{loadError}</p>
           <button
@@ -248,16 +249,16 @@ export function OAuthCallback() {
             Back to sign in
           </button>
         </div>
-      </div>
+      </AuthScreenLayout>
     );
   }
 
   // ── Loading screen ────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 bg-gray-950">
+    <AuthScreenLayout className="items-center justify-center gap-5 bg-gray-950">
       <FilmonsLogo iconSize={32} theme="dark"/>
       <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"/>
       <p className="text-white/40 text-sm">Signing you in…</p>
-    </div>
+    </AuthScreenLayout>
   );
 }
