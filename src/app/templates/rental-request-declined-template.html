@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: white;
+            padding: 40px 30px;
+            border-radius: 12px 12px 0 0;
+            text-align: center;
+        }
+        .logo { font-size: 32px; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
+        .header-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 12px;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-left: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+        }
+        .alert-box {
+            background: #f9fafb;
+            border: 2px solid #d1d5db;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .alert-icon { font-size: 36px; margin-bottom: 8px; }
+        .alert-title { font-size: 20px; font-weight: 700; color: #374151; margin: 0; }
+        .alert-sub { font-size: 14px; color: #6b7280; margin-top: 4px; }
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 28px 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .info-block { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; }
+        .info-row { display: table; width: 100%; margin-bottom: 12px; }
+        .info-row:last-child { margin-bottom: 0; }
+        .info-label { display: table-cell; font-weight: 600; color: #374151; font-size: 14px; width: 40%; vertical-align: top; padding: 8px 0; }
+        .info-value { display: table-cell; color: #111827; font-size: 14px; vertical-align: top; padding: 8px 0; }
+        p.body-copy { font-size: 14px; color: #374151; line-height: 1.7; }
+        .cta-button {
+            display: block;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white !important;
+            padding: 16px 32px;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 16px;
+            text-align: center;
+            margin: 30px 0 10px 0;
+        }
+        .cta-sub { text-align: center; font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+        .divider { height: 1px; background: #e5e7eb; margin: 25px 0; }
+        .footer {
+            background: #f9fafb;
+            padding: 30px;
+            text-align: center;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid #e5e7eb;
+            border-top: none;
+        }
+        .footer-text { color: #6b7280; font-size: 14px; margin: 8px 0; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo">FILMONS 🎬</div>
+        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Messages</p>
+        <div class="header-badge">Rental Request Declined</div>
+    </div>
+
+    <div class="content">
+
+        <div class="alert-box">
+            <div class="alert-icon">🚫</div>
+            <p class="alert-title">Hi {{to_name}},</p>
+            <p class="alert-sub">{{from_name}} declined your rental request</p>
+        </div>
+
+        <div class="section-title">Request Details</div>
+        <div class="info-block">
+            <div class="info-row">
+                <div class="info-label">🎬 Listing</div>
+                <div class="info-value">{{listing_title}}</div>
+            </div>
+        </div>
+
+        <p class="body-copy">
+            This listing isn't available for your request right now. Browse
+            FILMONS for similar gear and services from other creators nearby.
+        </p>
+
+        <div class="divider"></div>
+
+        <a href="{{browse_url}}" class="cta-button">
+            Browse More Listings →
+        </a>
+        <p class="cta-sub">There's always more to discover on FILMONS.</p>
+
+    </div>
+
+    <div class="footer">
+        <p class="footer-text"><strong>FILMONS</strong> — Message Notifications</p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
+            © 2026 Filmons. All rights reserved.
+        </p>
+    </div>
+
+</body>
+</html>

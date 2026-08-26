@@ -24,7 +24,12 @@ async function selectOne(table: string, filter: string) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 
-import { sendNewMessageEmail, sendRentalRequestEmail, sendPurchaseRequestEmail, type MessageKind } from '../_shared/notificationEmails.ts';
+import {
+  sendNewMessageEmail, sendRentalRequestEmail, sendPurchaseRequestEmail,
+  sendRentalAcceptedEmail, sendRentalDeclinedEmail,
+  sendPurchaseAcceptedEmail, sendPurchaseDeclinedEmail,
+  type MessageKind,
+} from '../_shared/notificationEmails.ts';
 
 const SPAM_TTL_MS = 60 * 60 * 1000;
 
@@ -72,6 +77,27 @@ Deno.serve(async (req) => {
         toEmail: receiver.email, toName: receiver.name || receiver.username,
         fromName: senderName || 'Someone', listingTitle: listingTitle || 'your listing',
         requestMessage, conversationId,
+      });
+    } else if (requestType === 'rental_accepted') {
+      await sendRentalAcceptedEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', listingTitle: listingTitle || 'the listing',
+        rentalDates: rentalDates || 'See conversation for details', conversationId,
+      });
+    } else if (requestType === 'rental_declined') {
+      await sendRentalDeclinedEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', listingTitle: listingTitle || 'the listing',
+      });
+    } else if (requestType === 'purchase_accepted') {
+      await sendPurchaseAcceptedEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', listingTitle: listingTitle || 'the listing', conversationId,
+      });
+    } else if (requestType === 'purchase_declined') {
+      await sendPurchaseDeclinedEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', listingTitle: listingTitle || 'the listing',
       });
     } else {
       await sendNewMessageEmail({

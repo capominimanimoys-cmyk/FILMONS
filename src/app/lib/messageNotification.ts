@@ -49,7 +49,8 @@ export function notifyReceiverForMessage({
   messageId?: string;
   /** Set for rental_request messages -- picks the dedicated rental/purchase
    *  request email template instead of the generic new-message one. */
-  requestType?: 'rental_request' | 'purchase_request';
+  requestType?: 'rental_request' | 'purchase_request'
+    | 'rental_accepted' | 'rental_declined' | 'purchase_accepted' | 'purchase_declined';
   rentalDates?: string;
   requestMessage?: string | null;
 }): void {

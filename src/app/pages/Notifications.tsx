@@ -172,6 +172,14 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: CalendarDays,  gradient: 'from-blue-400 to-indigo-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'sent you a rental request' };
     case 'payment_request':
       return { icon: CreditCard,    gradient: 'from-emerald-500 to-green-600',   iconColor: 'text-white', ringColor: 'ring-emerald-100', label: (n) => `sent you a payment request for $${(n as any).listingPrice ?? ''} CAD` };
+    case 'rental_request_accepted':
+      return { icon: Check,         gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'accepted your rental request' };
+    case 'rental_request_declined':
+      return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'declined your rental request' };
+    case 'purchase_request_accepted':
+      return { icon: Check,         gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'accepted your purchase request' };
+    case 'purchase_request_declined':
+      return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'declined your purchase request' };
     case 'payment_received':
       return { icon: Zap,           gradient: 'from-emerald-500 to-green-600',   iconColor: 'text-white', ringColor: 'ring-emerald-100', label: () => 'Payment received' };
     case 'payment_released':
@@ -513,7 +521,7 @@ function SkeletonRow() {
 type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payments' | 'social' | 'system';
 
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction'];
-const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','listing_review'];
+const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];

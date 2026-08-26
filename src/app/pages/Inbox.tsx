@@ -254,6 +254,25 @@ function RentalRequestBubble({
         listingId: req.listingId, listingTitle: req.listingTitle, listingType: req.listingType,
         listingMode: listing?.listingMode ?? 'rent', startDate: req.startDate, duration: req.duration, durationType: req.durationType,
       });
+      // Tell the requester their request was accepted -- separate from the
+      // payment_request message/notification above, which is about the
+      // follow-up checkout step, not the accept decision itself.
+      notifs.push(msg.senderId, {
+        type: isSaleReq ? 'purchase_request_accepted' : 'rental_request_accepted',
+        fromUserId: hostUser.id, fromUserName: hostUser.name, fromUserAvatar: hostUser.avatar,
+        conversationId, messageId: msg.id, listingId: req.listingId, listingTitle: req.listingTitle,
+      });
+      import('../lib/messageNotification').then(mod => {
+        mod.notifyReceiverForMessage({
+          receiverId: msg.senderId,
+          sender: { id: hostUser.id, name: hostUser.name },
+          messageText: `${isSaleReq ? 'Purchase' : 'Rental'} request accepted for ${req.listingTitle}`,
+          conversationId,
+          listing: { id: req.listingId, title: req.listingTitle },
+          requestType: isSaleReq ? 'purchase_accepted' : 'rental_accepted',
+          rentalDates: durLabel + (dateLabel ? ` starting ${dateLabel}` : ''),
+        });
+      }).catch(() => {});
       toast.success('Request approved! Payment request sent 💳');
       onStatusChange(payMsg, 'accepted');
     } else {
@@ -277,6 +296,21 @@ function RentalRequestBubble({
         chatApi.sendMessageToDB(conversationId, denyMsg, conv.participantIds ?? [], false, null).catch(() => {});
         chatApi.addMessage(conversationId, denyMsg);
       }
+      notifs.push(msg.senderId, {
+        type: isSale ? 'purchase_request_declined' : 'rental_request_declined',
+        fromUserId: hostUser.id, fromUserName: hostUser.name, fromUserAvatar: hostUser.avatar,
+        conversationId, messageId: msg.id, listingId: req.listingId, listingTitle: req.listingTitle,
+      });
+      import('../lib/messageNotification').then(mod => {
+        mod.notifyReceiverForMessage({
+          receiverId: msg.senderId,
+          sender: { id: hostUser.id, name: hostUser.name },
+          messageText: `${isSale ? 'Purchase' : 'Rental'} request declined for ${req.listingTitle}`,
+          conversationId,
+          listing: { id: req.listingId, title: req.listingTitle },
+          requestType: isSale ? 'purchase_declined' : 'rental_declined',
+        });
+      }).catch(() => {});
     }
     onStatusChange(undefined, 'declined');
     toast.info('Request declined. User has been notified.');

@@ -51,6 +51,10 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'booking_rejected':    return 'Your booking was declined';
     case 'rental_request':      return `${actorName} sent a rental request`;
     case 'payment_request':     return 'Payment request';
+    case 'rental_request_accepted':   return `${actorName} accepted your rental request`;
+    case 'rental_request_declined':   return `${actorName} declined your rental request`;
+    case 'purchase_request_accepted': return `${actorName} accepted your purchase request`;
+    case 'purchase_request_declined': return `${actorName} declined your purchase request`;
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';
     case 'payout_requested':    return 'Your payout request was received';

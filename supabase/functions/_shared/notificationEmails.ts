@@ -50,6 +50,10 @@ const TEMPLATE_MESSAGE_REQUEST         = 'template_tun19ep';
 // above: build the .html, wire the sender, then swap in the real id).
 const TEMPLATE_RENTAL_REQUEST          = 'template_rental_request';
 const TEMPLATE_PURCHASE_REQUEST        = 'template_purchase_request';
+const TEMPLATE_RENTAL_ACCEPTED         = 'template_rental_accepted';
+const TEMPLATE_RENTAL_DECLINED         = 'template_rental_declined';
+const TEMPLATE_PURCHASE_ACCEPTED       = 'template_purchase_accepted';
+const TEMPLATE_PURCHASE_DECLINED       = 'template_purchase_declined';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
 // template above: build the .html, wire the sender, then ask for the id).
@@ -130,6 +134,55 @@ export function sendPurchaseRequestEmail(p: {
     listing_title: p.listingTitle,
     request_message: p.requestMessage || 'No message included',
     conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
+  });
+}
+
+export function sendRentalAcceptedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingTitle: string; rentalDates: string; conversationId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_RENTAL_ACCEPTED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    rental_dates: p.rentalDates,
+    conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
+  });
+}
+
+export function sendRentalDeclinedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingTitle: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_RENTAL_DECLINED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    browse_url: 'https://filmons.app/',
+  });
+}
+
+export function sendPurchaseAcceptedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingTitle: string; conversationId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PURCHASE_ACCEPTED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
+  });
+}
+
+export function sendPurchaseDeclinedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingTitle: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PURCHASE_DECLINED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    browse_url: 'https://filmons.app/',
   });
 }
 
