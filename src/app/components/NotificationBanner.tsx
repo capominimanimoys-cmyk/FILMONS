@@ -18,10 +18,10 @@ import {
   DollarSign, ShoppingBag, CheckCircle, AlertTriangle, Star, Megaphone,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
 import * as notifStore from '../lib/notifications';
 import { useNotifications } from '../context/NotificationsContext';
-import { socialApi } from '../lib/api';
-import { Notification, User } from '../types';
+import { Notification } from '../types';
 
 // ── Priority map ──────────────────────────────────────────────────────────────
 const PRIORITY: Record<string, 'high' | 'medium' | 'low'> = {
@@ -383,7 +383,7 @@ function BannerRenderer({ item, compact, onDismiss }: {
                 </button>
               )}
               {primary.type === 'new_follower' && user && (
-                <FollowBackAction targetId={primary.fromUserId} currentUser={user} />
+                <FollowBackAction targetId={primary.fromUserId} />
               )}
               {(primary.type === 'booking_accepted' || primary.type === 'service_booked') && (
                 <button
@@ -423,19 +423,14 @@ function BannerRenderer({ item, compact, onDismiss }: {
 }
 
 // ── Follow-back inline action ─────────────────────────────────────────────────
-function FollowBackAction({ targetId, currentUser }: { targetId: string; currentUser: User }) {
-  const alreadyFollowing = (currentUser.following || []).includes(targetId);
-  const [done, setDone]       = useState(alreadyFollowing);
-  const [loading, setLoading] = useState(false);
+function FollowBackAction({ targetId }: { targetId: string }) {
+  const { isFollowing, isPending, follow } = useFollow();
+  const done    = isFollowing(targetId);
+  const loading = isPending(targetId);
   if (done) return <span className="text-[10px] text-gray-400 font-semibold">Following ✓</span>;
   return (
     <button
-      onClick={async e => {
-        e.stopPropagation();
-        setLoading(true);
-        try { await socialApi.follow(targetId); setDone(true); } catch {}
-        finally { setLoading(false); }
-      }}
+      onClick={e => { e.stopPropagation(); follow(targetId); }}
       disabled={loading}
       className="text-[10px] font-bold text-white bg-blue-500 hover:bg-blue-600 px-2.5 py-1 rounded-full transition-colors disabled:opacity-60"
     >

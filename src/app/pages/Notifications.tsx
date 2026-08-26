@@ -7,9 +7,10 @@ import {
   Rocket, Wrench, PartyPopper, Eye, ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { Notification, User } from '../types';
-import { authApi, socialApi } from '../lib/api';
+import { authApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 
 // ── Time helper ───────────────────────────────────────────────────────────────
@@ -230,16 +231,14 @@ function systemIcon(type: string): ElementType {
 }
 
 // ── Follow-back inline button ─────────────────────────────────────────────────
-function FollowBackBtn({ targetUserId, already }: { targetUserId: string; already: boolean }) {
-  const [done,    setDone]    = useState(already);
-  const [loading, setLoading] = useState(false);
-  const handle = async (e: MouseEvent) => {
+function FollowBackBtn({ targetUserId }: { targetUserId: string }) {
+  const { isFollowing, isPending, follow } = useFollow();
+  const done    = isFollowing(targetUserId);
+  const loading = isPending(targetUserId);
+  const handle = (e: MouseEvent) => {
     e.stopPropagation();
     if (done || loading) return;
-    setLoading(true);
-    try { await socialApi.follow(targetUserId); setDone(true); }
-    catch {}
-    finally { setLoading(false); }
+    follow(targetUserId);
   };
   if (done) {
     return (
@@ -279,7 +278,6 @@ function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate }: {
   const isSystem = isSystemType(primary.type);
   const SysIcon  = systemIcon(primary.type);
   const fromUser = authApi.getUserByIdSync(primary.fromUserId);
-  const alreadyFollowing = (currentUser.following || []).includes(primary.fromUserId);
   const preview  = primary.messageContent || primary.commentContent;
   const isMsg    = MESSAGE_TYPES_ROW.includes(primary.type);
 
@@ -400,7 +398,7 @@ function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate }: {
             </button>
           )}
           {(primary.type === 'new_follower' || primary.type === 'connection_accepted') && primary.fromUserId !== currentUser.id && (
-            <FollowBackBtn targetUserId={primary.fromUserId} already={alreadyFollowing} />
+            <FollowBackBtn targetUserId={primary.fromUserId} />
           )}
           {(primary.type === 'connection_request' || primary.type === 'follow_request') && (
             <button
@@ -453,17 +451,15 @@ function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate }: {
 }
 
 // ── Suggested follow-back card ────────────────────────────────────────────────
-function SuggestedCard({ user, following }: { user: User; following: string[] }) {
+function SuggestedCard({ user }: { user: User }) {
   const navigate = useNavigate();
-  const [followed, setFollowed] = useState(following.includes(user.id));
-  const [loading,  setLoading]  = useState(false);
-  const handleFollow = async (e: MouseEvent) => {
+  const { isFollowing, isPending, follow } = useFollow();
+  const followed = isFollowing(user.id);
+  const loading  = isPending(user.id);
+  const handleFollow = (e: MouseEvent) => {
     e.stopPropagation();
     if (followed || loading) return;
-    setLoading(true);
-    try { await socialApi.follow(user.id); setFollowed(true); }
-    catch {}
-    finally { setLoading(false); }
+    follow(user.id);
   };
   return (
     <div
@@ -719,7 +715,7 @@ export function Notifications() {
               </span>
             </div>
             {suggestions.map(s => (
-              <SuggestedCard key={s.id} user={s} following={user.following || []} />
+              <SuggestedCard key={s.id} user={s} />
             ))}
           </div>
         )}

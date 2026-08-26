@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
+import { useFollowCounts } from '../lib/useFollowCounts';
 import { authApi, socialApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
@@ -94,11 +96,10 @@ function FollowSheet({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
   const [search,      setSearch]      = useState('');
   const [users,       setUsers]       = useState<any[]>([]);
-  const [meFollowing, setMeFollowing] = useState<Set<string>>(new Set());
   const [loading,     setLoading]     = useState(true);
-  const [toggling,    setToggling]    = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -114,7 +115,7 @@ function FollowSheet({
       .select(idCol)
       .eq(filterCol, userId);
 
-    if (!rows?.length) { setLoading(false); return; }
+    if (!rows?.length) { setUsers([]); setLoading(false); return; }
 
     const ids = rows.map((r: any) => r[idCol]);
 
@@ -124,34 +125,13 @@ function FollowSheet({
       .in('id', ids);
 
     setUsers(profiles ?? []);
-
-    if (meId) {
-      const { data: myFollows } = await supabase
-        .from('follows')
-        .select('following_id')
-        .eq('follower_id', meId)
-        .in('following_id', ids);
-      setMeFollowing(new Set((myFollows ?? []).map((r: any) => r.following_id)));
-    }
     setLoading(false);
   };
 
-  const handleToggle = async (targetId: string) => {
+  const handleToggle = (targetId: string) => {
     if (!meId) { navigate('/login'); return; }
-    setToggling(targetId);
-    try {
-      if (meFollowing.has(targetId)) {
-        await socialApi.unfollow(targetId);
-        setMeFollowing(prev => { const s = new Set(prev); s.delete(targetId); return s; });
-      } else {
-        await socialApi.follow(targetId);
-        setMeFollowing(prev => new Set([...prev, targetId]));
-      }
-    } catch {
-      toast.error('Could not update follow status');
-    } finally {
-      setToggling(null);
-    }
+    if (isFollowing(targetId)) unfollow(targetId);
+    else follow(targetId);
   };
 
   const filtered = users.filter(u =>
@@ -211,7 +191,7 @@ function FollowSheet({
             <div className="space-y-1">
               {filtered.map(u => {
                 const isMe   = u.id === meId;
-                const isFoll = meFollowing.has(u.id);
+                const isFoll = isFollowing(u.id);
                 return (
                   <div
                     key={u.id}
@@ -238,14 +218,14 @@ function FollowSheet({
                     {!isMe && meId && (
                       <button
                         onClick={e => { e.stopPropagation(); handleToggle(u.id); }}
-                        disabled={toggling === u.id}
+                        disabled={isPending(u.id)}
                         className={`shrink-0 flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-xl transition-all disabled:opacity-50 ${
                           isFoll
                             ? 'bg-gray-100 text-gray-600 border border-gray-200'
                             : 'text-white bg-blue-600'
                         }`}
                       >
-                        {toggling === u.id
+                        {isPending(u.id)
                           ? <Loader2 className="w-3 h-3 animate-spin" />
                           : isFoll
                           ? <><UserCheck className="w-3 h-3" /> Following</>
@@ -1032,11 +1012,8 @@ export function Portfolio() {
   // schedule) until this flips, so it never abruptly pops off screen.
   const [introDone, setIntroDone] = useState(false);
 
-  const [followerCount,  setFollowerCount]  = useState<number | null>(null);
-  const [followingCount, setFollowingCount] = useState<number | null>(null);
-  const [following,      setFollowing]      = useState(false);
-  const [followLoading,  setFollowLoading]  = useState(false);
   const [hireSheetOpen,  setHireSheetOpen]  = useState(false);
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
 
   // Owner-configured display preferences — read from the DB, scoped to whoever's
   // portfolio is being viewed (previously these leaked in from the *viewer's own*
@@ -1064,6 +1041,7 @@ export function Portfolio() {
 
   const targetId = paramUserId ?? me?.id;
   const isOwner  = !!me && !!targetId && me.id === targetId;
+  const { followerCount, followingCount } = useFollowCounts(targetId);
 
   useEffect(() => {
     if (!targetId) {
@@ -1090,21 +1068,6 @@ export function Portfolio() {
       setItems(sortItems(portfolioData, settingsData?.sort_order ?? DEFAULT_PORTFOLIO_SETTINGS.sort_order));
       setAlbums(albumData);
       setSettings(settingsData ?? { ...DEFAULT_PORTFOLIO_SETTINGS, id: '', user_id: uid, updated_at: '' });
-
-      const followQueries: Promise<any>[] = [
-        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
-        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
-      ];
-      if (me?.id && me.id !== uid) {
-        followQueries.push(
-          supabase.from('follows').select('*', { count: 'exact', head: true })
-            .eq('follower_id', me.id).eq('following_id', uid),
-        );
-      }
-      const [fcRes, fgRes, amFollowingRes] = await Promise.all(followQueries);
-      setFollowerCount(fcRes.count ?? null);
-      setFollowingCount(fgRes.count ?? null);
-      if (amFollowingRes !== undefined) setFollowing((amFollowingRes.count ?? 0) > 0);
     } finally {
       setLoading(false);
     }
@@ -1145,24 +1108,10 @@ export function Portfolio() {
     return `Share "${target.item.title}"`;
   };
 
-  const handleFollow = async () => {
+  const handleFollow = () => {
     if (!me) { navigate('/login'); return; }
-    setFollowLoading(true);
-    try {
-      if (following) {
-        await socialApi.unfollow(profile!.id);
-        setFollowing(false);
-        setFollowerCount(c => (c !== null ? Math.max(0, c - 1) : null));
-      } else {
-        await socialApi.follow(profile!.id);
-        setFollowing(true);
-        setFollowerCount(c => (c !== null ? c + 1 : null));
-      }
-    } catch {
-      toast.error('Unable to update follow status. Please try again.');
-    } finally {
-      setFollowLoading(false);
-    }
+    if (isFollowing(profile!.id)) unfollow(profile!.id);
+    else follow(profile!.id);
   };
 
   const handleToggle = async (item: PortfolioItem) => {
@@ -1235,10 +1184,10 @@ export function Portfolio() {
               ? 'Only the creator can view this portfolio.'
               : 'Only approved followers can view this portfolio.'}
           </p>
-          {settings.visibility === 'followers' && !following && me && (
-            <button onClick={handleFollow} disabled={followLoading}
+          {settings.visibility === 'followers' && !isFollowing(profile.id) && me && (
+            <button onClick={handleFollow} disabled={isPending(profile.id)}
               className="text-sm font-black text-white bg-blue-600 px-5 py-2.5 rounded-2xl disabled:opacity-60">
-              {followLoading ? 'Following…' : 'Follow'}
+              {isPending(profile.id) ? 'Following…' : 'Follow'}
             </button>
           )}
         </div>
@@ -1381,14 +1330,14 @@ export function Portfolio() {
             <div className="flex gap-2 shrink-0">
               <button
                 onClick={handleFollow}
-                disabled={followLoading}
+                disabled={isPending(profile.id)}
                 className={`flex items-center gap-1.5 text-sm font-black px-4 py-2 rounded-2xl transition-all active:scale-95 disabled:opacity-60 ${
-                  following ? 'bg-gray-100 text-gray-700 border border-gray-200' : 'text-white'
+                  isFollowing(profile.id) ? 'bg-gray-100 text-gray-700 border border-gray-200' : 'text-white'
                 }`}
-                style={following ? {} : { background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+                style={isFollowing(profile.id) ? {} : { background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
               >
-                {followLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-                {following ? 'Following' : 'Follow'}
+                {isPending(profile.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                {isFollowing(profile.id) ? 'Following' : 'Follow'}
               </button>
               <button
                 onClick={() => navigate(`/share-card?userId=${profile.id}`)}

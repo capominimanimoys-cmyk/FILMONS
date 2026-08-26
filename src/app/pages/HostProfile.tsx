@@ -1,9 +1,11 @@
 import { useParams, useNavigate } from 'react-router';
 import { useState, useEffect, useRef } from 'react';
-import { authApi, listingsApi, reviewsApi, socialApi } from '../lib/api';
+import { authApi, listingsApi, reviewsApi } from '../lib/api';
 import { getPortfolioItems, type PortfolioItem } from '../lib/portfolioApi';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
+import { useFollowCounts } from '../lib/useFollowCounts';
 import { User, Listing, Review } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
@@ -296,12 +298,10 @@ export function HostProfile() {
   const [portfolioItems,   setPortfolioItems]   = useState<PortfolioItem[]>([]);
   const [reliabilityLevel, setReliabilityLevel] = useState<string>('new_user');
   const [reliabilityScore, setReliabilityScore] = useState<number>(0);
-  const [following,        setFollowing]        = useState(false);
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
+  const { followerCount, followingCount } = useFollowCounts(resolvedId ?? undefined);
   const [confirmUnfollow,  setConfirmUnfollow]  = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [followLoading,    setFollowLoading]    = useState(false);
-  const [followerCount,    setFollowerCount]    = useState<number | null>(null);
-  const [followingCount,   setFollowingCount]   = useState<number | null>(null);
   const [loading,          setLoading]          = useState(true);
   const [tab,              setTab]              = useState<Tab>('portfolio');
   const [listView,         setListView]         = useState(false);
@@ -346,24 +346,12 @@ export function HostProfile() {
       // following ids" below depends on something, and that something is
       // the id-list queries also started here), so staging them one Promise.all
       // after another was pure serial wait for no reason.
-      const followCountQueries: Promise<any>[] = [
-        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
-        supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
-      ];
-      if (me?.id) {
-        followCountQueries.push(
-          supabase.from('follows').select('*', { count: 'exact', head: true })
-            .eq('follower_id', me.id).eq('following_id', uid)
-        );
-      }
-
       const hostPromise          = authApi.getUserById(uid);
       const listingsPromise      = listingsApi.getUserListings(uid).catch(() => []);
       // Received reviews (about this host), not reviews they wrote about others.
       const reviewsPromise       = reviewsApi.getReceivedReviews(uid).catch(() => []);
       const portfolioPromise     = getPortfolioItems(uid).catch(() => []);
       const repScorePromise      = supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single();
-      const followCountsPromise  = Promise.all(followCountQueries);
       const followerRowsPromise  = supabase.from('follows').select('follower_id').eq('following_id', uid).limit(50);
       const followingRowsPromise = supabase.from('follows').select('following_id').eq('follower_id', uid).limit(50);
 
@@ -383,18 +371,14 @@ export function HostProfile() {
         navigate(`/${hostData.username}`, { replace: true });
       }
 
-      const [hostListings, hostReviews, hostPortfolio, repScore, [fcRes, fgRes, amFollowingRes], followerRows, followingRows] =
-        await Promise.all([listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followCountsPromise, followerRowsPromise, followingRowsPromise]);
+      const [hostListings, hostReviews, hostPortfolio, repScore, followerRows, followingRows] =
+        await Promise.all([listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followerRowsPromise, followingRowsPromise]);
 
       if (repScore.data?.reliability_level) setReliabilityLevel(repScore.data.reliability_level);
       if (repScore.data?.reliability_score != null) setReliabilityScore(repScore.data.reliability_score);
       setListings(hostListings);
       setReviews(hostReviews);
       setPortfolioItems(hostPortfolio);
-
-      setFollowerCount(fcRes.count ?? null);
-      setFollowingCount(fgRes.count ?? null);
-      if (amFollowingRes !== undefined) setFollowing((amFollowingRes.count ?? 0) > 0);
 
       const followerIds  = (followerRows.data  || []).map((r: any) => r.follower_id).filter(Boolean);
       const followingIds = (followingRows.data || []).map((r: any) => r.following_id).filter(Boolean);
@@ -429,42 +413,15 @@ export function HostProfile() {
     }
   };
 
-  /** Refresh follower/following counts from the follows table after a follow/unfollow. */
-  const refreshCounts = async (uid: string) => {
-    const [fcRes, fgRes] = await Promise.all([
-      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', uid),
-      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
-    ]);
-    setFollowerCount(fcRes.count ?? null);
-    setFollowingCount(fgRes.count ?? null);
-  };
-
-  const handleFollow = async () => {
+  const handleFollow = () => {
     if (!me) { navigate('/login'); return; }
-    setFollowLoading(true);
-    try {
-      if (following) {
-        await socialApi.unfollow(host!.id);
-        setFollowing(false);
-        setFollowerCount(c => (c !== null ? Math.max(0, c - 1) : null));
-      } else {
-        await socialApi.follow(host!.id);
-        setFollowing(true);
-        setFollowerCount(c => (c !== null ? c + 1 : null));
-      }
-      // Refresh authoritative counts from DB
-      refreshCounts(host!.id).catch(() => {});
-    } catch (err: any) {
-      toast.error('Unable to follow this user. Please try again.');
-      console.error('[handleFollow] error:', err?.message);
-    } finally {
-      setFollowLoading(false);
-    }
+    if (isFollowing(host!.id)) unfollow(host!.id);
+    else follow(host!.id);
   };
 
   const handleFollowClick = () => {
     if (!me) { navigate('/login'); return; }
-    if (following && !confirmUnfollow) {
+    if (isFollowing(host!.id) && !confirmUnfollow) {
       setConfirmUnfollow(true);
       clearTimeout(confirmTimerRef.current);
       confirmTimerRef.current = setTimeout(() => setConfirmUnfollow(false), 3000);
@@ -559,17 +516,17 @@ export function HostProfile() {
             </button>
 
             {/* Follow */}
-            <button onClick={handleFollowClick} disabled={followLoading}
+            <button onClick={handleFollowClick} disabled={isPending(host.id)}
               className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors shrink-0 ${
                 confirmUnfollow
                   ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                  : following
+                  : isFollowing(host.id)
                   ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}>
-              {followLoading ? <Loader2 className="w-3 h-3 animate-spin"/>
+              {isPending(host.id) ? <Loader2 className="w-3 h-3 animate-spin"/>
                 : confirmUnfollow ? 'Unfollow?'
-                : following ? <><UserCheck className="w-3 h-3"/> Following</>
+                : isFollowing(host.id) ? <><UserCheck className="w-3 h-3"/> Following</>
                 : <><UserPlus className="w-3 h-3"/> Follow</>
               }
             </button>

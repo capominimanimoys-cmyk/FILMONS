@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { RouterProvider } from 'react-router';
 import { router } from './routes';
 import { AuthProvider } from './context/AuthContext';
+import { FollowProvider } from './context/FollowContext';
 import { PostProvider } from './context/PostContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { NotificationBannerProvider } from './components/NotificationBanner';
@@ -34,14 +35,16 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <PostProvider>
-        <NotificationsProvider>
-          <NotificationBannerProvider>
-            <RouterProvider router={router} />
-            <Toaster richColors position="top-center" />
-          </NotificationBannerProvider>
-        </NotificationsProvider>
-      </PostProvider>
+      <FollowProvider>
+        <PostProvider>
+          <NotificationsProvider>
+            <NotificationBannerProvider>
+              <RouterProvider router={router} />
+              <Toaster richColors position="top-center" />
+            </NotificationBannerProvider>
+          </NotificationsProvider>
+        </PostProvider>
+      </FollowProvider>
     </AuthProvider>
   );
 }

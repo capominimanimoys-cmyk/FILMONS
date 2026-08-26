@@ -3,7 +3,7 @@ import { X, Search } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { socialApi } from '../lib/api';
+import { useFollow } from '../context/FollowContext';
 import { UserAvatar } from './AccountTypeBadge';
 
 interface LikeUser {
@@ -23,10 +23,10 @@ interface Props {
 export function LikesSheet({ postId, likeIds, onClose }: Props) {
   const navigate         = useNavigate();
   const { user }         = useAuth();
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
   const [users,  setUsers]  = useState<LikeUser[]>([]);
   const [query,  setQuery]  = useState('');
   const [loading, setLoading] = useState(true);
-  const [following, setFollowing] = useState<Set<string>>(new Set(user?.following || []));
 
   useEffect(() => {
     const load = async () => {
@@ -74,11 +74,9 @@ export function LikesSheet({ postId, likeIds, onClose }: Props) {
       )
     : users;
 
-  const handleFollow = async (targetId: string) => {
-    try {
-      await socialApi.follow(targetId);
-      setFollowing(prev => new Set([...prev, targetId]));
-    } catch {}
+  const handleFollow = (targetId: string) => {
+    if (isFollowing(targetId)) unfollow(targetId);
+    else follow(targetId);
   };
 
   return (
@@ -128,8 +126,8 @@ export function LikesSheet({ postId, likeIds, onClose }: Props) {
             </p>
           ) : (
             filtered.map(u => {
-              const isMe        = u.id === user?.id;
-              const isFollowing = following.has(u.id);
+              const isMe      = u.id === user?.id;
+              const following = isFollowing(u.id);
               return (
                 <div key={u.id}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0"
@@ -142,14 +140,15 @@ export function LikesSheet({ postId, likeIds, onClose }: Props) {
                   </div>
                   {!isMe && (
                     <button
-                      onClick={e => { e.stopPropagation(); if (!isFollowing) handleFollow(u.id); }}
-                      className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-full transition-all ${
-                        isFollowing
+                      onClick={e => { e.stopPropagation(); handleFollow(u.id); }}
+                      disabled={isPending(u.id)}
+                      className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-full transition-all disabled:opacity-60 ${
+                        following
                           ? 'bg-gray-100 text-gray-500'
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
                     >
-                      {isFollowing ? 'Following' : 'Follow'}
+                      {following ? 'Following' : 'Follow'}
                     </button>
                   )}
                 </div>

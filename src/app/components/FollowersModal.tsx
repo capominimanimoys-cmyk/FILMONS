@@ -1,10 +1,8 @@
 import { useNavigate } from 'react-router';
 import { X, Search, UserCheck, UserPlus } from 'lucide-react';
 import { UserAvatar } from './AccountTypeBadge';
-import { socialApi } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
 
 interface FollowerUser {
   id: string; name: string; username?: string;
@@ -22,11 +20,8 @@ interface FollowersModalProps {
 
 export function FollowersModal({ tab, followers, following, onClose, onTabChange, currentUserId }: FollowersModalProps) {
   const navigate  = useNavigate();
-  const { user }  = useAuth();
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
   const [search,  setSearch]  = useState('');
-  const [followed, setFollowed] = useState<Set<string>>(
-    new Set(user?.following || [])
-  );
 
   // Slide-in animation state
   const [visible, setVisible] = useState(false);
@@ -46,16 +41,9 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
     u.username?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleFollow = async (targetId: string) => {
-    try {
-      if (followed.has(targetId)) {
-        await socialApi.unfollow(targetId);
-        setFollowed(prev => { const s = new Set(prev); s.delete(targetId); return s; });
-      } else {
-        await socialApi.follow(targetId);
-        setFollowed(prev => new Set([...prev, targetId]));
-      }
-    } catch { toast.error('Could not update follow'); }
+  const handleFollow = (targetId: string) => {
+    if (isFollowing(targetId)) unfollow(targetId);
+    else follow(targetId);
   };
 
   return (
@@ -111,7 +99,7 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
             ) : (
               filtered.map(u => {
                 const isMe = u.id === currentUserId;
-                const isFollowing = followed.has(u.id);
+                const following = isFollowing(u.id);
                 return (
                   <div key={u.id}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
@@ -126,13 +114,13 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
                       {u.bio && <p className="text-xs text-gray-500 truncate mt-0.5">{u.bio}</p>}
                     </button>
                     {!isMe && (
-                      <button onClick={() => handleFollow(u.id)}
-                        className={`shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full transition-all ${
-                          isFollowing
+                      <button onClick={() => handleFollow(u.id)} disabled={isPending(u.id)}
+                        className={`shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full transition-all disabled:opacity-60 ${
+                          following
                             ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}>
-                        {isFollowing
+                        {following
                           ? <><UserCheck className="w-3 h-3" /> Following</>
                           : <><UserPlus className="w-3 h-3" /> Follow</>
                         }
