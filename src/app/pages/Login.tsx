@@ -161,6 +161,7 @@ export function Login() {
   if (screen === 'method') {
     return (
       <div className="fixed inset-0 flex flex-col overflow-hidden touch-manipulation"
+        onTouchStart={() => {}}
         style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 py-safe">
@@ -210,6 +211,7 @@ export function Login() {
   if (screen === 'email') {
     return (
       <div className="fixed inset-0 flex flex-col overflow-hidden"
+        onTouchStart={() => {}}
         style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5">
@@ -282,6 +284,7 @@ export function Login() {
   if (screen === 'email_not_found') {
     return (
       <div className="fixed inset-0 flex flex-col overflow-hidden"
+        onTouchStart={() => {}}
         style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
@@ -372,6 +375,7 @@ export function Login() {
     const provider: 'google' | 'apple' = oauthOnlyProviders.includes('apple') ? 'apple' : 'google';
     return (
       <div className="fixed inset-0 flex flex-col overflow-hidden"
+        onTouchStart={() => {}}
         style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
@@ -421,6 +425,7 @@ export function Login() {
   // ── SECURITY / OTP ───────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden"
+        onTouchStart={() => {}}
         style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
       <CinematicBg/>
       <div className="relative z-10 flex flex-col h-full px-5">

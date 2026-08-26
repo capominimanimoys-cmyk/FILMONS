@@ -127,7 +127,7 @@ export function CreateAccount() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-gray-950">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-gray-950" onTouchStart={() => {}}>
       {/* Ambient */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />

@@ -300,7 +300,7 @@ export function SignupPhone() {
   // ── Success screen ─────────────────────────────────────────────────────────
   if (step === 'success') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <div className="fixed inset-0 flex flex-col overflow-hidden" onTouchStart={() => {}}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col items-center justify-center h-full gap-5 px-6 text-center">
           <style>{`
@@ -338,7 +338,7 @@ export function SignupPhone() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 flex flex-col overflow-hidden" onTouchStart={() => {}}>
       <CinematicBg/>
 
       {/* Header */}
