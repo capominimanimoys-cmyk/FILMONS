@@ -47,11 +47,11 @@ const TEMPLATE_MESSAGE_REQUEST         = 'template_tun19ep';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
 // template above: build the .html, wire the sender, then ask for the id).
-const TEMPLATE_CASHOUT_REQUEST_ADMIN   = 'template_cashout_request';
-const TEMPLATE_CASHOUT_APPROVED        = 'template_cashout_approved';
-const TEMPLATE_CASHOUT_SENT            = 'template_cashout_sent';
-const TEMPLATE_CASHOUT_REJECTED        = 'template_cashout_rejected';
-const TEMPLATE_CASHOUT_FAILED          = 'template_cashout_failed';
+const TEMPLATE_CASHOUT_REQUEST_ADMIN   = 'template_730vofa';
+const TEMPLATE_CASHOUT_APPROVED        = 'template_afvgn6q';
+const TEMPLATE_CASHOUT_SENT            = 'template_bqxis6g';
+const TEMPLATE_CASHOUT_REJECTED        = 'template_in4wz0r';
+const TEMPLATE_CASHOUT_FAILED          = 'template_o7wwsdk';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
