@@ -54,14 +54,19 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
         onClick={handleClose}
       />
 
-      {/* Sheet */}
-      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center pointer-events-none">
+      {/* Sheet — always slides up from the bottom, mobile and desktop alike */}
+      <div className="fixed inset-0 z-50 flex items-end justify-center pointer-events-none">
         <div
-          className={`bg-white w-full md:max-w-sm md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col pointer-events-auto
+          className={`bg-white w-full md:max-w-sm rounded-t-3xl shadow-2xl flex flex-col pointer-events-auto
             transition-transform duration-300 ease-out
             ${visible ? 'translate-y-0' : 'translate-y-full'}`}
           style={{ maxHeight: '80vh' }}
         >
+          {/* Handle */}
+          <div className="flex justify-center pt-3 pb-1 shrink-0 md:hidden">
+            <div className="w-10 h-1 bg-gray-200 rounded-full" />
+          </div>
+
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div className="w-8" />
