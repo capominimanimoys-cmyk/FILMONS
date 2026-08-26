@@ -2,9 +2,9 @@
 // reserved (moved out of available_balance) at request time by
 // fn_request_payout — 'approve'/'mark_processing'/'paid' never touch
 // balances again, they only move payout_requests.status forward. 'reject'
-// is the one action that moves money: it creates a reversal ledger entry
-// that returns the reserved amount to available_balance, since a
-// rejected payout means the money never actually left.
+// and 'mark_failed' are the actions that move money: they create a
+// reversal ledger entry that returns the reserved amount to
+// available_balance, since neither means the money actually left.
 //
 // Every action writes an immutable payout_audit_log row and best-effort
 // notifies + emails the host — this endpoint is the only place an admin
@@ -14,6 +14,10 @@
 // Requires a verified admin token (X-Admin-Token) — see _shared/adminAuth.ts.
 // The verified name is used for processed_by/audit_log, not the client body.
 import { verifyAdminToken } from '../_shared/adminAuth.ts';
+import {
+  sendCashOutApprovedEmail, sendCashOutSentEmail,
+  sendCashOutRejectedEmail, sendCashOutFailedEmail,
+} from '../_shared/notificationEmails.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -50,46 +54,34 @@ async function insertAuditLog(row: Record<string, unknown>) {
   }).catch(() => {});
 }
 
-// EmailJS's public key + service/template ids are meant to be client-
-// embedded (not secrets) — same values already used in
-// src/app/lib/emailjs-config.ts. Reuses the generic "adminNotification"
-// template since there's no payout-specific template in the dashboard yet
-// — best-effort only, failures are swallowed the same way the wallet's
-// other server-side email sends already do.
-const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
-const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
-const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
-const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
-
-async function sendHostEmail(toEmail: string | null | undefined, toName: string, subject: string, message: string) {
-  if (!toEmail) return;
-  try {
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
-        user_id: EMAILJS_PUBLIC_KEY,
-        accessToken: EMAILJS_PRIVATE_KEY,
-        template_params: { to_email: toEmail, to_name: toName, subject, message },
-      }),
+async function reverseReservation(payout: any, note: string) {
+  await fetch(rest('/wallet_transactions'), {
+    method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      wallet_id: payout.wallet_id, transaction_type: 'reversal', amount: Number(payout.amount),
+      currency: payout.currency, balance_type: 'available', status: 'reversed',
+      description: note, completed_at: new Date().toISOString(),
+    }),
+  });
+  const wallet = await selectOne('wallets', `id=eq.${payout.wallet_id}`);
+  if (wallet) {
+    await fetch(rest(`/wallets?id=eq.${payout.wallet_id}`), {
+      method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ available_balance: Number(wallet.available_balance) + Number(payout.amount) }),
     });
-    if (!res.ok) console.warn('EmailJS payout notification failed:', res.status, await res.text());
-  } catch (e) {
-    console.warn('EmailJS payout notification threw:', e);
   }
 }
 
-const VALID_ACTIONS = ['approve', 'mark_processing', 'paid', 'reject'] as const;
+const VALID_ACTIONS = ['approve', 'mark_processing', 'paid', 'reject', 'mark_failed'] as const;
 type Action = typeof VALID_ACTIONS[number];
 
-// action -> { from statuses it's valid from, to status, audit_log action label }
-const TRANSITIONS: Record<Action, { from: string[]; to: string; auditAction: string }> = {
-  approve:         { from: ['requested', 'under_review'], to: 'approved',   auditAction: 'approved' },
-  mark_processing: { from: ['requested', 'under_review', 'approved'], to: 'processing', auditAction: 'marked_processing' },
-  paid:            { from: ['approved', 'processing'], to: 'paid',         auditAction: 'marked_paid' },
-  reject:          { from: ['requested', 'under_review', 'approved', 'processing'], to: 'rejected', auditAction: 'rejected' },
+// action -> { from statuses it's valid from, to status, audit_log action label, timestamp column }
+const TRANSITIONS: Record<Action, { from: string[]; to: string; auditAction: string; atColumn: string }> = {
+  approve:         { from: ['requested', 'under_review'], to: 'approved',   auditAction: 'approved',          atColumn: 'approved_at' },
+  mark_processing: { from: ['requested', 'under_review', 'approved'], to: 'processing', auditAction: 'marked_processing', atColumn: 'processing_at' },
+  paid:            { from: ['approved', 'processing'], to: 'paid',         auditAction: 'marked_paid',        atColumn: 'completed_at' },
+  reject:          { from: ['requested', 'under_review', 'approved', 'processing'], to: 'rejected', auditAction: 'rejected', atColumn: 'rejected_at' },
+  mark_failed:     { from: ['processing'], to: 'failed', auditAction: 'marked_failed', atColumn: 'completed_at' },
 };
 
 Deno.serve(async (req) => {
@@ -131,23 +123,9 @@ Deno.serve(async (req) => {
       // The reservation never actually paid out — return the funds to
       // available_balance with an explicit reversal entry (the original
       // 'processing' entry from fn_request_payout is never deleted or edited).
-      await fetch(rest('/wallet_transactions'), {
-        method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-        body: JSON.stringify({
-          wallet_id: payout.wallet_id, transaction_type: 'reversal', amount: Number(payout.amount),
-          currency: payout.currency, balance_type: 'available', status: 'reversed',
-          description: `Payout rejected — funds returned to available balance${reason ? `: ${reason}` : ''}`,
-          completed_at: new Date().toISOString(),
-        }),
-      });
-
-      const wallet = await selectOne('wallets', `id=eq.${payout.wallet_id}`);
-      if (wallet) {
-        await fetch(rest(`/wallets?id=eq.${payout.wallet_id}`), {
-          method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-          body: JSON.stringify({ available_balance: Number(wallet.available_balance) + Number(payout.amount) }),
-        });
-      }
+      await reverseReservation(payout, `Payout rejected — funds returned to available balance: ${reason}`);
+    } else if (action === 'mark_failed') {
+      await reverseReservation(payout, 'Payout attempt failed — funds returned to available balance');
     } else if (action === 'paid') {
       // Balance was already debited at request time — just settle the
       // reservation's ledger entry status so the ledger reads correctly.
@@ -158,10 +136,11 @@ Deno.serve(async (req) => {
     }
     // approve / mark_processing never touch balances — status-only moves.
 
-    const patchBody: Record<string, unknown> = { status: transition.to, processed_by: adminName || 'Admin' };
+    const nowIso = new Date().toISOString();
+    const patchBody: Record<string, unknown> = { status: transition.to, processed_by: adminName || 'Admin', [transition.atColumn]: nowIso };
     if (action === 'reject') patchBody.rejection_reason = reason;
-    if (action === 'paid') { patchBody.payment_reference = paymentReference; patchBody.admin_notes = notes || null; patchBody.processed_at = new Date().toISOString(); }
-    if (action === 'reject') patchBody.processed_at = new Date().toISOString();
+    if (action === 'paid') { patchBody.payment_reference = paymentReference; patchBody.admin_notes = notes || null; patchBody.processed_at = nowIso; }
+    if (action === 'reject') patchBody.processed_at = nowIso;
 
     await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), {
       method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
@@ -178,33 +157,50 @@ Deno.serve(async (req) => {
 
     const host = await selectOne('profiles', `id=eq.${payout.host_id}`);
     const hostName = host?.name || 'there';
-    const amountStr = `$${Number(payout.amount).toFixed(2)} ${payout.currency}`;
+    const amount = Number(payout.amount);
+    const netAmount = payout.net_amount != null ? Number(payout.net_amount) : amount;
+    const feeAmount = amount - netAmount;
+    const currency = payout.currency || 'CAD';
+    const methodLabel = payout.payout_method || 'your payout method';
 
-    const notifByAction: Record<Action, { type: string; message: string; subject: string } | null> = {
-      approve: null, // status-only step, no separate host-facing notification
+    const notifByAction: Record<Action, { type: string; title: string } | null> = {
+      approve: {
+        type: 'payout_approved',
+        title: `Your cash-out request of $${amount.toFixed(2)} ${currency} has been approved`,
+      },
       mark_processing: {
         type: 'payout_processing',
-        subject: 'Your Filmons payout is being processed',
-        message: `Your payout request for ${amountStr} is now being processed.`,
+        title: `Your payout request for $${amount.toFixed(2)} ${currency} is now being processed`,
       },
       paid: {
         type: 'payout_paid',
-        subject: 'Your Filmons payout has been sent',
-        message: `Your payout of ${amountStr} has been sent (reference: ${paymentReference}).`,
+        title: `Your $${netAmount.toFixed(2)} ${currency} payout has been sent`,
       },
       reject: {
         type: 'payout_rejected',
-        subject: 'Your Filmons payout request was rejected',
-        message: `Your payout request for ${amountStr} was rejected: ${reason}. The funds have been returned to your available balance.`,
+        title: `Your cash-out request for $${amount.toFixed(2)} ${currency} was rejected`,
+      },
+      mark_failed: {
+        type: 'payout_failed',
+        title: `Your cash-out of $${amount.toFixed(2)} ${currency} could not be completed`,
       },
     };
     const notif = notifByAction[action];
     if (notif) {
       await insertNotification({
         user_id: payout.host_id, actor_id: null, actor_name: 'Filmons',
-        type: notif.type, title: notif.subject, is_read: false,
+        type: notif.type, title: notif.title, is_read: false,
       });
-      await sendHostEmail(host?.email, hostName, notif.subject, notif.message);
+    }
+
+    if (action === 'approve') {
+      await sendCashOutApprovedEmail({ toEmail: host?.email, toName: hostName, amount, currency, withdrawalId: payoutRequestId }).catch(() => {});
+    } else if (action === 'paid') {
+      await sendCashOutSentEmail({ toEmail: host?.email, toName: hostName, netAmount, feeAmount, currency, withdrawalId: payoutRequestId, payoutMethod: methodLabel }).catch(() => {});
+    } else if (action === 'reject') {
+      await sendCashOutRejectedEmail({ toEmail: host?.email, toName: hostName, amount, currency, withdrawalId: payoutRequestId, reason: reason! }).catch(() => {});
+    } else if (action === 'mark_failed') {
+      await sendCashOutFailedEmail({ toEmail: host?.email, toName: hostName, amount, currency, withdrawalId: payoutRequestId }).catch(() => {});
     }
 
     return new Response(JSON.stringify({ success: true, status: transition.to }), { headers: { ...cors, 'Content-Type': 'application/json' } });

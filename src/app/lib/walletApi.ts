@@ -73,7 +73,7 @@ export interface PayoutRequest {
   host_id: string;
   amount: number;
   currency: string;
-  status: 'requested' | 'under_review' | 'approved' | 'processing' | 'paid' | 'rejected' | 'cancelled';
+  status: 'requested' | 'under_review' | 'approved' | 'processing' | 'paid' | 'rejected' | 'cancelled' | 'failed';
   payout_method: PayoutMethodType | null;
   payout_destination: PayoutDestination | null;
   payment_reference: string | null;
@@ -86,6 +86,12 @@ export interface PayoutRequest {
   fee_amount: number;
   net_amount: number | null;
   estimated_arrival_at: string | null;
+  platform_fee_rate: number | null;
+  platform_fee_amount: number | null;
+  approved_at: string | null;
+  processing_at: string | null;
+  completed_at: string | null;
+  rejected_at: string | null;
 }
 
 function maskDestination(method: PayoutMethodType, details: PayoutDestination | null, last4?: string | null): string {
@@ -133,6 +139,7 @@ export const walletApi = {
   ): Promise<{
     success: boolean; error?: string; payoutRequestId?: string;
     payoutSpeed?: PayoutSpeed; feeAmount?: number; netAmount?: number; estimatedArrivalAt?: string;
+    platformFeeRate?: number; platformFeeAmount?: number;
   }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/request-payout`, {
@@ -146,7 +153,23 @@ export const walletApi = {
         success: true, payoutRequestId: data.payoutRequestId,
         payoutSpeed: data.payoutSpeed, feeAmount: data.feeAmount, netAmount: data.netAmount,
         estimatedArrivalAt: data.estimatedArrivalAt,
+        platformFeeRate: data.platformFeeRate, platformFeeAmount: data.platformFeeAmount,
       };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  },
+
+  async cancelPayoutRequest(hostId: string, payoutRequestId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/request-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ action: 'cancel', hostId, payoutRequestId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not cancel' };
+      return { success: true };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
@@ -154,9 +177,9 @@ export const walletApi = {
 
   // Display-only — never used to enforce/compute the actual fee, which is
   // always resolved server-side inside request-payout from the same table.
-  async getPayoutConfig(): Promise<{ instantFeeRate: number }> {
-    const { data } = await supabase.from('payout_config').select('instant_fee_rate').eq('id', 1).maybeSingle();
-    return { instantFeeRate: data?.instant_fee_rate ?? 0.02 };
+  async getPayoutConfig(): Promise<{ instantFeeRate: number; withdrawalFeeRate: number }> {
+    const { data } = await supabase.from('payout_config').select('instant_fee_rate, withdrawal_fee_rate').eq('id', 1).maybeSingle();
+    return { instantFeeRate: data?.instant_fee_rate ?? 0.02, withdrawalFeeRate: data?.withdrawal_fee_rate ?? 0.08 };
   },
 
   async getPayoutRequests(hostId: string): Promise<PayoutRequest[]> {

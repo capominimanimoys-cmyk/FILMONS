@@ -52,9 +52,11 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';
     case 'payout_requested':    return 'Your payout request was received';
+    case 'payout_approved':     return 'Your cash-out request was approved';
     case 'payout_processing':   return 'Your payout is being processed';
     case 'payout_paid':         return 'Your payout has been sent';
     case 'payout_rejected':     return 'Your payout request was rejected';
+    case 'payout_failed':       return 'Your cash-out could not be completed';
     case 'support_reply':       return 'Filmons Support replied';
     case 'marketplace_order':   return `${actorName} placed a new order`;
     case 'marketplace_booking': return `${actorName} requested a booking`;

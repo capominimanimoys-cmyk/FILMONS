@@ -415,7 +415,7 @@ export function AdminVerifications() {
   >("all");
   const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
   const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
-  const [payoutAction, setPayoutAction] = useState<{ payout: any; action: 'reject' | 'paid' } | null>(null);
+  const [payoutAction, setPayoutAction] = useState<{ payout: any; action: 'reject' | 'paid' | 'mark_failed' } | null>(null);
   const [payoutActionInput, setPayoutActionInput] = useState('');
   const [payoutActionNotes, setPayoutActionNotes] = useState('');
 
@@ -616,6 +616,7 @@ export function AdminVerifications() {
     try {
       const body: Record<string, unknown> = { payoutRequestId: payout.id, adminName };
       if (action === 'reject') { body.action = 'reject'; body.reason = payoutActionInput.trim(); }
+      else if (action === 'mark_failed') { body.action = 'mark_failed'; body.notes = payoutActionInput.trim() || undefined; }
       else { body.action = 'paid'; body.paymentReference = payoutActionInput.trim(); body.notes = payoutActionNotes.trim() || undefined; }
 
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
@@ -625,7 +626,7 @@ export function AdminVerifications() {
       });
       const result = await res.json();
       if (!res.ok || result.error) throw new Error(result.error || 'Failed');
-      toast.success(action === 'reject' ? 'Payout rejected' : 'Payout marked as paid');
+      toast.success(action === 'reject' ? 'Payout rejected' : action === 'mark_failed' ? 'Payout marked as failed' : 'Payout marked as paid');
       setPayoutAction(null);
       setPayoutActionInput('');
       setPayoutActionNotes('');
@@ -1354,14 +1355,16 @@ export function AdminVerifications() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-gray-800 truncate flex items-center gap-1.5">
                               {p.profiles?.name || p.host_id}
+                              <span className="text-[10px] font-mono text-gray-400">WD-{String(p.id).replace(/-/g, '').slice(0, 6).toUpperCase()}</span>
                               {p.payout_speed === 'instant' && (
                                 <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-0.5">⚡ Instant</span>
                               )}
                             </p>
                             <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })} · {p.profiles?.email || ''}</p>
-                            {p.payout_speed === 'instant' && (
-                              <p className="text-xs text-amber-600 mt-0.5">Fee {fmt(Number(p.fee_amount || 0))} · Net to host ${fmt(Number(p.net_amount ?? p.amount))}</p>
-                            )}
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              FILMONS fee {fmt((Number(p.platform_fee_amount) || 0) + (p.payout_speed === 'instant' ? Number(p.fee_amount || 0) : 0))}
+                              {' · '}Net payout ${fmt(Number(p.net_amount ?? p.amount))}
+                            </p>
                             {p.payout_method && (
                               <p className="text-xs text-gray-500 mt-1 font-mono">
                                 {p.payout_method === 'interac' ? 'Interac' : p.payout_method === 'card' ? 'Card (Stripe)' : p.payout_method === 'bank' ? 'Bank (Stripe)' : 'Bank Transfer'}: {destText || '—'}
@@ -1392,7 +1395,13 @@ export function AdminVerifications() {
                               {(p.status === 'approved' || p.status === 'processing') && (
                                 <button onClick={() => setPayoutAction({ payout: p, action: 'paid' })} disabled={busy}
                                   className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
-                                  Mark Paid
+                                  Mark as Completed
+                                </button>
+                              )}
+                              {p.status === 'processing' && (
+                                <button onClick={() => setPayoutAction({ payout: p, action: 'mark_failed' })} disabled={busy}
+                                  className="px-3 py-1.5 rounded-lg border border-red-200 text-red-500 text-xs font-bold disabled:opacity-50">
+                                  Mark Failed
                                 </button>
                               )}
                               <button onClick={() => setPayoutAction({ payout: p, action: 'reject' })} disabled={busy}
@@ -1401,7 +1410,9 @@ export function AdminVerifications() {
                               </button>
                             </div>
                           ) : (
-                            <span className={`text-xs font-bold uppercase shrink-0 ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>{p.status}</span>
+                            <span className={`text-xs font-bold uppercase shrink-0 ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
+                              {p.status === 'paid' ? 'Completed' : p.status}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -2076,14 +2087,30 @@ export function AdminVerifications() {
         <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-5">
             <h3 className="text-sm font-bold text-gray-900 mb-1">
-              {payoutAction.action === 'reject' ? 'Reject payout request' : 'Mark payout as paid'}
+              {payoutAction.action === 'reject' ? 'Reject payout request'
+                : payoutAction.action === 'mark_failed' ? 'Mark payout as failed'
+                : 'Confirm payout'}
             </h3>
             <p className="text-xs text-gray-400 mb-4">${fmt(Number(payoutAction.payout.amount))} — {payoutAction.payout.profiles?.name || payoutAction.payout.host_id}</p>
+
+            {payoutAction.action === 'paid' && (
+              <div className="bg-green-50 border border-green-100 rounded-xl px-3 py-3 mb-3 space-y-1">
+                <p className="text-xs text-green-800">
+                  User will receive <span className="font-bold">${fmt(Number(payoutAction.payout.net_amount ?? payoutAction.payout.amount))} {payoutAction.payout.currency || 'CAD'}</span>
+                </p>
+                <p className="text-[11px] text-green-700">Estimated delivery: 1–2 business days</p>
+              </div>
+            )}
+
             <input
               type="text"
               value={payoutActionInput}
               onChange={(e) => setPayoutActionInput(e.target.value)}
-              placeholder={payoutAction.action === 'reject' ? 'Rejection reason (required)' : 'Payment reference (required)'}
+              placeholder={
+                payoutAction.action === 'reject' ? 'Rejection reason (required)'
+                : payoutAction.action === 'mark_failed' ? 'Reason (optional)'
+                : 'Payment reference (required)'
+              }
               className="w-full border-2 border-gray-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2"
             />
             {payoutAction.action === 'paid' && (
@@ -2105,9 +2132,9 @@ export function AdminVerifications() {
               <button
                 onClick={submitPayoutAction}
                 disabled={processingPayoutId === payoutAction.payout.id}
-                className={`flex-1 py-2.5 rounded-xl text-white text-xs font-bold disabled:opacity-50 ${payoutAction.action === 'reject' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                className={`flex-1 py-2.5 rounded-xl text-white text-xs font-bold disabled:opacity-50 ${payoutAction.action === 'reject' || payoutAction.action === 'mark_failed' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
               >
-                {payoutAction.action === 'reject' ? 'Reject' : 'Confirm Paid'}
+                {payoutAction.action === 'reject' ? 'Reject' : payoutAction.action === 'mark_failed' ? 'Mark Failed' : 'Mark as Completed'}
               </button>
             </div>
           </div>

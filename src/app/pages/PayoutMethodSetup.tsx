@@ -1,62 +1,65 @@
-// Wallet -> Payout Settings -> Add/Change Payout Method. Gated behind
-// VerifyItsYouGate; once past that, collects only a country (first-time
-// only) and hands off to Stripe's own hosted onboarding for the actual
-// sensitive details — Filmons never sees or stores them.
+// Wallet -> Payout Settings -> Add/Change Payout Method.
 //
-// Deliberately no card-vs-bank picker here — a debit/credit card is a way
-// to PAY Filmons, not a payout destination a host chooses upfront. Stripe's
-// Connect onboarding itself determines what identity/payout information is
-// actually required and collects the real destination (bank account,
-// eligible debit card for Instant Payouts, etc.); Filmons doesn't get to
-// (and shouldn't try to) decide that in its own UI beforehand. An earlier
-// version of this screen had exactly that picker, but the selection was
-// never even sent to payout-connect-start — purely decorative.
-import { useEffect, useState } from 'react';
+// Manual entry, not Stripe Connect — FILMONS is in a temporary manual-
+// payout phase where every cash-out is sent by a human admin outside any
+// payment processor, so there's nothing for Stripe onboarding to actually
+// gate here. Only offers methods FILMONS can actually fulfill manually:
+// bank transfer (everywhere) and Interac e-Transfer (Canada only, per
+// FILMONS's own eligibility rule). Deliberately no debit/credit card
+// option — FILMONS has no way to manually push money onto a card number
+// typed into a form; presenting that as a cash-out destination would be
+// a promise the platform can't keep.
+//
+// Existing Stripe-Connect-backed payout_methods rows (provider='stripe')
+// from before this change are untouched and keep working — this only
+// changes what *new* payout-method setup looks like.
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, ShieldCheck, Loader2 } from 'lucide-react';
+import { ArrowLeft, Landmark, Mail, Loader2, Check, Globe } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../../lib/supabase';
-import { walletApi } from '../lib/walletApi';
+import { walletApi, type PayoutMethodType } from '../lib/walletApi';
 import { VerifyItsYouGate } from '../components/VerifyItsYouGate';
+
+type Country = 'CA' | 'OTHER';
 
 export function PayoutMethodSetup() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
-  const [needsCountry, setNeedsCountry] = useState(false);
-  const [country, setCountry] = useState<'CA' | 'US' | null>(null);
-  const [checkingAccount, setCheckingAccount] = useState(true);
-  const [starting, setStarting] = useState(false);
 
-  useEffect(() => {
-    if (!isAuthenticated) { navigate('/login', { replace: true }); return; }
-  }, [isAuthenticated]); // eslint-disable-line
+  const [country, setCountry] = useState<Country | null>(null);
+  const [method, setMethod] = useState<PayoutMethodType | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!stepUpToken || !user?.id) return;
-    (async () => {
-      const { data } = await supabase.from('profiles').select('stripe_connect_account_id').eq('id', user.id).maybeSingle();
-      setNeedsCountry(!data?.stripe_connect_account_id);
-      setCheckingAccount(false);
-    })();
-  }, [stepUpToken, user?.id]);
+  // Interac fields
+  const [interacEmail, setInteracEmail] = useState('');
+  const [interacName, setInteracName] = useState('');
+
+  // Bank transfer fields
+  const [accountHolder, setAccountHolder] = useState('');
+  const [institutionNumber, setInstitutionNumber] = useState('');
+  const [transitNumber, setTransitNumber] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
 
   if (!isAuthenticated || !user) return null;
+  if (!stepUpToken) return <VerifyItsYouGate onVerified={setStepUpToken} />;
 
-  if (!stepUpToken) {
-    return <VerifyItsYouGate onVerified={setStepUpToken} />;
-  }
+  const canSave =
+    method === 'interac' ? interacEmail.trim().length > 3 && interacName.trim().length > 1 :
+    method === 'bank_transfer' ? [accountHolder, institutionNumber, transitNumber, accountNumber].every(v => v.trim().length > 0) :
+    false;
 
-  const continueSecurely = async () => {
-    if (needsCountry && !country) { toast.error('Select your country to continue'); return; }
-    setStarting(true);
-    const origin = window.location.origin;
-    const returnUrl = `${origin}/wallet/payout-method/return`;
-    const res = await walletApi.startPayoutConnect(user.id, stepUpToken, returnUrl, returnUrl, needsCountry ? country! : undefined);
-    setStarting(false);
-    if (res.url) window.location.href = res.url;
-    else toast.error(res.error || 'Could not start payout method setup');
+  const handleSave = async () => {
+    if (!method || !canSave) return;
+    setSaving(true);
+    const details = method === 'interac'
+      ? { email: interacEmail.trim(), name: interacName.trim() }
+      : { accountHolder: accountHolder.trim(), institutionNumber: institutionNumber.trim(), transitNumber: transitNumber.trim(), accountNumber: accountNumber.trim() };
+    const res = await walletApi.savePayoutMethod(user.id, method, details as any);
+    setSaving(false);
+    if (res.success) { toast.success('Payout method saved'); navigate('/wallet'); }
+    else toast.error(res.error || 'Could not save payout method');
   };
 
   return (
@@ -64,55 +67,100 @@ export function PayoutMethodSetup() {
       <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 -ml-2 mb-2">
         <ArrowLeft className="w-4 h-4 text-gray-500" />
       </button>
-      <h1 className="text-xl font-black text-gray-900">Set up your payout account</h1>
+      <h1 className="text-xl font-black text-gray-900">Add a payout method</h1>
       <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
-        To receive money from rentals and projects, Stripe needs to verify your identity and payout information. This usually takes only a few minutes.
+        Cash-outs are processed manually by FILMONS and typically arrive within 1–2 business days after approval. Tell us where to send your money.
       </p>
 
-      {checkingAccount ? (
-        <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
+      {!country ? (
+        <div className="mt-6">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Country</p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button onClick={() => setCountry('CA')} className="py-3 rounded-xl border-2 border-gray-100 text-sm font-bold text-gray-600 hover:border-blue-300">
+              🇨🇦 Canada
+            </button>
+            <button onClick={() => setCountry('OTHER')} className="py-3 rounded-xl border-2 border-gray-100 text-sm font-bold text-gray-600 hover:border-blue-300">
+              🌍 Other
+            </button>
+          </div>
+        </div>
       ) : (
         <>
-          <div className="mt-6 flex items-start gap-3 bg-blue-50 rounded-2xl p-4">
-            <ShieldCheck className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-blue-700 leading-relaxed">
-              Stripe securely collects whatever it needs for your situation — usually a bank account, your legal name, and address. Filmons never sees or stores this information.
-            </p>
+          <div className="mt-6">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Choose payout method</p>
+            <div className="space-y-2.5">
+              <button onClick={() => setMethod('bank_transfer')}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 text-left transition-colors ${method === 'bank_transfer' ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}>
+                <Landmark className="w-5 h-5 text-blue-500 shrink-0" />
+                <span className="flex-1 text-sm font-bold text-gray-900">🏦 Bank Account</span>
+                {method === 'bank_transfer' && <Check className="w-4 h-4 text-blue-500" />}
+              </button>
+              {country === 'CA' && (
+                <button onClick={() => setMethod('interac')}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 text-left transition-colors ${method === 'interac' ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}>
+                  <Mail className="w-5 h-5 text-blue-500 shrink-0" />
+                  <span className="flex-1 text-sm font-bold text-gray-900">🇨🇦 Interac e-Transfer</span>
+                  {method === 'interac' && <Check className="w-4 h-4 text-blue-500" />}
+                </button>
+              )}
+            </div>
           </div>
 
-          {needsCountry && (
-            <div className="mt-5">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Country</p>
-              <div className="grid grid-cols-2 gap-2.5">
-                {(['CA', 'US'] as const).map(c => (
-                  <button key={c} onClick={() => setCountry(c)}
-                    className={`py-3 rounded-xl border-2 text-sm font-bold transition-colors ${country === c ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-100 text-gray-600'}`}>
-                    {c === 'CA' ? 'Canada' : 'United States'}
-                  </button>
-                ))}
+          {method === 'interac' && (
+            <div className="mt-5 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Interac email</label>
+                <input value={interacEmail} onChange={e => setInteracEmail(e.target.value)} type="email" placeholder="you@example.com"
+                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Full name</label>
+                <input value={interacName} onChange={e => setInteracName(e.target.value)} placeholder="As it appears on your account"
+                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
               </div>
             </div>
           )}
 
-          <div className="mt-6 bg-gray-50 rounded-2xl p-4 space-y-3">
-            <div>
-              <p className="text-xs font-bold text-gray-900">Standard Payout</p>
-              <p className="text-xs text-gray-400">Typically 2–3 business days · Free</p>
+          {method === 'bank_transfer' && (
+            <div className="mt-5 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Account holder name</label>
+                <input value={accountHolder} onChange={e => setAccountHolder(e.target.value)}
+                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Institution #</label>
+                  <input value={institutionNumber} onChange={e => setInstitutionNumber(e.target.value)}
+                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Transit #</label>
+                  <input value={transitNumber} onChange={e => setTransitNumber(e.target.value)}
+                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Account number</label>
+                <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
+                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-gray-900">Instant Payout</p>
-              <p className="text-xs text-gray-400">Usually within minutes when eligible · 2% Filmons fee</p>
-            </div>
-            <p className="text-[11px] text-gray-400 leading-relaxed">Instant Payout eligibility depends on the payout destination you set up with Stripe — not every account qualifies.</p>
-          </div>
+          )}
 
-          <button
-            onClick={continueSecurely}
-            disabled={starting || (needsCountry && !country)}
-            className="w-full mt-6 py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 flex items-center justify-center gap-2"
-          >
-            {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Continue with Stripe'}
-          </button>
+          {method && (
+            <button
+              onClick={handleSave}
+              disabled={saving || !canSave}
+              className="w-full mt-6 py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Payout Method'}
+            </button>
+          )}
+
+          <p className="text-[11px] text-gray-400 leading-relaxed mt-4">
+            Only masked details (e.g. •••• 4821) are ever shown after saving. Cash-outs are reviewed and sent manually by FILMONS — never automated.
+          </p>
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import {
   walletApi, type WalletBalance, type WalletTransaction, type PayoutMethodType,
@@ -30,13 +31,14 @@ const TX_LABELS: Record<string, string> = {
 };
 
 const PAYOUT_STATUS_LABEL: Record<string, { label: string; className: string }> = {
-  requested:    { label: 'Requested',    className: 'bg-blue-100 text-blue-600' },
+  requested:    { label: 'Pending',      className: 'bg-blue-100 text-blue-600' },
   under_review: { label: 'Under review', className: 'bg-blue-100 text-blue-600' },
   approved:     { label: 'Approved',     className: 'bg-indigo-100 text-indigo-600' },
   processing:   { label: 'Processing',   className: 'bg-amber-100 text-amber-600' },
-  paid:         { label: 'Paid',         className: 'bg-green-100 text-green-600' },
+  paid:         { label: 'Completed',    className: 'bg-green-100 text-green-600' },
   rejected:     { label: 'Rejected',     className: 'bg-red-100 text-red-600' },
   cancelled:    { label: 'Cancelled',    className: 'bg-gray-100 text-gray-500' },
+  failed:       { label: 'Failed',       className: 'bg-red-100 text-red-600' },
 };
 
 const METHOD_LABEL: Record<PayoutMethodType, string> = {
@@ -50,6 +52,7 @@ type Step = 'amount' | 'speed' | 'review' | 'success';
 
 interface PayoutResult {
   amount: number; payoutSpeed: PayoutSpeed; feeAmount: number; netAmount: number;
+  platformFeeAmount: number;
   estimatedArrivalAt: string; method: PayoutMethodType; destination: PayoutDestination;
 }
 
@@ -66,7 +69,7 @@ function previewArrivalIso(speed: PayoutSpeed): string {
   if (speed === 'instant') return new Date().toISOString();
   const d = new Date();
   let added = 0;
-  while (added < 3) {
+  while (added < 2) {
     d.setDate(d.getDate() + 1);
     const day = d.getDay();
     if (day !== 0 && day !== 6) added++;
@@ -87,8 +90,11 @@ function RequestPayoutModal({
   const [amount, setAmount] = useState(String(available.toFixed(2)));
   const [speed, setSpeed] = useState<PayoutSpeed>('standard');
   const [instantFeeRate, setInstantFeeRate] = useState(0.02);
+  const [withdrawalFeeRate, setWithdrawalFeeRate] = useState(0.08);
   const [result, setResult] = useState<PayoutResult | null>(null);
-  useEffect(() => { walletApi.getPayoutConfig().then(c => setInstantFeeRate(c.instantFeeRate)); }, []);
+  useEffect(() => {
+    walletApi.getPayoutConfig().then(c => { setInstantFeeRate(c.instantFeeRate); setWithdrawalFeeRate(c.withdrawalFeeRate); });
+  }, []);
   const [submitting, setSubmitting] = useState(false);
 
   const amountNum = Number(amount);
@@ -112,6 +118,7 @@ function RequestPayoutModal({
       setResult({
         amount: amountNum, payoutSpeed: res.payoutSpeed || speed,
         feeAmount: res.feeAmount || 0, netAmount: res.netAmount ?? amountNum,
+        platformFeeAmount: res.platformFeeAmount || 0,
         estimatedArrivalAt: res.estimatedArrivalAt || new Date().toISOString(),
         method, destination,
       });
@@ -126,7 +133,7 @@ function RequestPayoutModal({
     <PayoutModalInner
       step={step} setStep={setStep}
       amount={amount} setAmount={setAmount} amountValid={amountValid} available={available} currency={currency}
-      speed={speed} setSpeed={setSpeed} instantFeeRate={instantFeeRate}
+      speed={speed} setSpeed={setSpeed} instantFeeRate={instantFeeRate} withdrawalFeeRate={withdrawalFeeRate}
       defaultMethod={defaultMethod} method={method} destination={destination}
       submitting={submitting} result={result} onConfirm={handleConfirm} onClose={onClose} onDone={onDone}
     />
@@ -138,7 +145,7 @@ function RequestPayoutModal({
 function PayoutModalInner(props: {
   step: Step; setStep: (s: Step) => void;
   amount: string; setAmount: (v: string) => void; amountValid: boolean; available: number; currency: string;
-  speed: PayoutSpeed; setSpeed: (s: PayoutSpeed) => void; instantFeeRate: number;
+  speed: PayoutSpeed; setSpeed: (s: PayoutSpeed) => void; instantFeeRate: number; withdrawalFeeRate: number;
   defaultMethod: PayoutMethod | null; method: PayoutMethodType | null;
   destination: PayoutDestination | null;
   submitting: boolean; result: PayoutResult | null; onConfirm: (hostId: string) => void; onClose: () => void; onDone: () => void;
@@ -147,13 +154,16 @@ function PayoutModalInner(props: {
   const navigate = useNavigate();
   const {
     step, setStep, amount, setAmount, amountValid, available, currency,
-    speed, setSpeed, instantFeeRate,
+    speed, setSpeed, instantFeeRate, withdrawalFeeRate,
     defaultMethod, method, destination,
     submitting, result, onConfirm, onClose, onDone,
   } = props;
 
   const amountNum = Number(amount) || 0;
   const instantFee = Math.round((amountNum * instantFeeRate + Number.EPSILON) * 100) / 100;
+  const platformFee = Math.round((amountNum * withdrawalFeeRate + Number.EPSILON) * 100) / 100;
+  // FILMONS fee always applies; the instant-speed fee stacks on top only when selected.
+  const totalFee = platformFee + (speed === 'instant' ? instantFee : 0);
 
   const steps: Step[] = ['amount', 'speed', 'review'];
   const stepIdx = steps.indexOf(step);
@@ -209,8 +219,8 @@ function PayoutModalInner(props: {
                   <span className="text-sm font-black text-gray-900 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-blue-500" /> Standard</span>
                   {speed === 'standard' && <Check className="w-4 h-4 text-blue-500" />}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Typically 2–3 business days · Free</p>
-                <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(amountNum)}</p>
+                <p className="text-xs text-gray-400 mt-1">Typically 1–2 business days after approval · FILMONS fee {(withdrawalFeeRate * 100).toFixed(0)}%</p>
+                <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(Math.max(amountNum - platformFee, 0))}</p>
               </button>
               <button onClick={() => setSpeed('instant')}
                 className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-colors ${speed === 'instant' ? 'border-amber-500 bg-amber-50' : 'border-gray-100'}`}>
@@ -218,8 +228,8 @@ function PayoutModalInner(props: {
                   <span className="text-sm font-black text-gray-900 flex items-center gap-1.5"><Zap className="w-4 h-4 text-amber-500 fill-amber-500" /> Instant</span>
                   {speed === 'instant' && <Check className="w-4 h-4 text-amber-500" />}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Usually processed the same day · {(instantFeeRate * 100).toFixed(0)}% fee</p>
-                <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(Math.max(amountNum - instantFee, 0))}</p>
+                <p className="text-xs text-gray-400 mt-1">Usually processed the same day · FILMONS fee {(withdrawalFeeRate * 100).toFixed(0)}% + {(instantFeeRate * 100).toFixed(0)}% instant fee</p>
+                <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(Math.max(amountNum - platformFee - instantFee, 0))}</p>
               </button>
               <p className="text-[11px] text-gray-400 leading-relaxed px-1">
                 Every payout is still reviewed and sent by a Filmons admin — Instant means priority processing, not an automated transfer.
@@ -251,20 +261,19 @@ function PayoutModalInner(props: {
                   <span className="text-xs text-gray-400">Payout Amount</span>
                   <span className="text-sm font-black text-gray-900">{fmtCad(amountNum)}</span>
                 </div>
-                {speed === 'instant' ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">FILMONS Fee ({(withdrawalFeeRate * 100).toFixed(0)}%)</span>
+                  <span className="text-sm font-bold text-red-500">−{fmtCad(platformFee)}</span>
+                </div>
+                {speed === 'instant' && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-400">Instant Payout Fee ({(instantFeeRate * 100).toFixed(0)}%)</span>
                     <span className="text-sm font-bold text-red-500">−{fmtCad(instantFee)}</span>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Payout Fee</span>
-                    <span className="text-sm font-bold text-green-600">FREE</span>
-                  </div>
                 )}
                 <div className="flex items-center justify-between border-t border-gray-100 pt-3">
                   <span className="text-xs text-gray-400">You'll Receive</span>
-                  <span className="text-sm font-black text-gray-900">{fmtCad(Math.max(amountNum - (speed === 'instant' ? instantFee : 0), 0))} {currency}</span>
+                  <span className="text-sm font-black text-gray-900">{fmtCad(Math.max(amountNum - totalFee, 0))} {currency}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400">Payout Method</span>
@@ -280,7 +289,7 @@ function PayoutModalInner(props: {
                 </div>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                This reserves the funds immediately. Every payout is manually reviewed and sent by a Filmons admin — {speed === 'instant' ? 'Instant requests are prioritized' : 'this typically takes a few business days'}.
+                This reserves the funds immediately. Cash-outs are reviewed and processed manually by FILMONS — once approved and sent, payment typically arrives within 1–2 business days, depending on your payment method and financial institution.
               </p>
             </div>
           )}
@@ -289,15 +298,13 @@ function PayoutModalInner(props: {
             <div className="flex flex-col items-center text-center gap-4 py-4">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"><Check className="w-8 h-8 text-green-600" /></div>
               <div>
-                <p className="text-base font-black text-gray-900">{result.payoutSpeed === 'instant' ? 'Instant Payout initiated ✓' : 'Payout initiated ✓'}</p>
-                <p className="text-sm text-gray-500 mt-1">Status: Processing</p>
+                <p className="text-base font-black text-gray-900">Cash-Out Requested ✓</p>
+                <p className="text-sm text-gray-500 mt-1">Status: Pending</p>
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2.5 text-left">
-                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Payout Amount</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.amount)}</span></div>
-                {result.payoutSpeed === 'instant' && (
-                  <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Fee</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.feeAmount)}</span></div>
-                )}
-                <div className="flex items-center justify-between border-t border-gray-100 pt-2.5"><span className="text-xs text-gray-400">{result.payoutSpeed === 'instant' ? 'Sent' : "You'll Receive"}</span><span className="text-sm font-black text-gray-900">{fmtCad(result.netAmount)} CAD</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Requested Amount</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.amount)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">FILMONS Fee</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.platformFeeAmount + (result.payoutSpeed === 'instant' ? result.feeAmount : 0))}</span></div>
+                <div className="flex items-center justify-between border-t border-gray-100 pt-2.5"><span className="text-xs text-gray-400">You'll Receive</span><span className="text-sm font-black text-gray-900">{fmtCad(result.netAmount)} CAD</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Estimated arrival</span><span className="text-sm font-bold text-gray-900">{estimatedArrivalLabel(result.payoutSpeed, result.estimatedArrivalAt)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Destination</span><span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}</span></div>
               </div>
@@ -349,6 +356,16 @@ export function Wallet() {
   const [defaultMethod, setDefaultMethod] = useState<PayoutMethod | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const cancelPayout = async (payoutRequestId: string) => {
+    if (!user?.id || !window.confirm('Cancel this cash-out request? The reserved funds will be returned to your available balance.')) return;
+    setCancellingId(payoutRequestId);
+    const res = await walletApi.cancelPayoutRequest(user.id, payoutRequestId);
+    setCancellingId(null);
+    if (res.success) { toast.success('Cash-out request cancelled'); refresh(); }
+    else toast.error(res.error || 'Could not cancel request');
+  };
 
   const refresh = async () => {
     if (!user?.id) return;
@@ -373,6 +390,27 @@ export function Wallet() {
     window.addEventListener('filmons:wallet:updated', onUpdate);
     return () => window.removeEventListener('filmons:wallet:updated', onUpdate);
   }, [isAuthenticated, user?.id]); // eslint-disable-line
+
+  // Live status/balance sync — an admin approving/processing/paying a
+  // cash-out (or a wallet credit landing) should update this page without
+  // the user having to refresh.
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`wallet_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'payout_requests', filter: `host_id=eq.${user.id}` },
+        () => refresh(),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wallets', filter: `owner_id=eq.${user.id}` },
+        () => refresh(),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]); // eslint-disable-line
 
   if (!isAuthenticated || !user) return null;
 
@@ -490,7 +528,7 @@ export function Wallet() {
                       </p>
                       <p className="text-xs text-gray-400">
                         {new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        {' · '}{p.payout_speed === 'instant' ? `Instant · fee ${fmtCad(p.fee_amount)}` : 'Standard · Free'}
+                        {' · '}FILMONS fee {fmtCad((p.platform_fee_amount ?? 0) + (p.payout_speed === 'instant' ? p.fee_amount : 0))}
                       </p>
                       {p.estimated_arrival_at && ['requested', 'under_review', 'approved', 'processing'].includes(p.status) && (
                         <p className="text-xs text-gray-400">Estimated arrival: {estimatedArrivalLabel(p.payout_speed, p.estimated_arrival_at)}</p>
@@ -501,14 +539,24 @@ export function Wallet() {
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${s.className}`}>{s.label}</span>
-                      <button
-                        onClick={() => navigate('/support', { state: {
-                          payoutRequestId: p.id, category: 'wallet_payouts',
-                        } })}
-                        className="text-[10px] font-bold text-gray-400 hover:text-blue-600"
-                      >
-                        Get Help
-                      </button>
+                      {['requested', 'under_review'].includes(p.status) ? (
+                        <button
+                          onClick={() => cancelPayout(p.id)}
+                          disabled={cancellingId === p.id}
+                          className="text-[10px] font-bold text-gray-400 hover:text-red-600 disabled:opacity-50"
+                        >
+                          {cancellingId === p.id ? 'Cancelling…' : 'Cancel request'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => navigate('/support', { state: {
+                            payoutRequestId: p.id, category: 'wallet_payouts',
+                          } })}
+                          className="text-[10px] font-bold text-gray-400 hover:text-blue-600"
+                        >
+                          Get Help
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

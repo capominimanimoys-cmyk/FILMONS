@@ -173,12 +173,16 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Zap,           gradient: 'from-green-500 to-teal-500',      iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your payment has been released' };
     case 'payout_requested':
       return { icon: Zap,           gradient: 'from-blue-400 to-indigo-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your payout request was received' };
+    case 'payout_approved':
+      return { icon: Check,         gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your cash-out request was approved' };
     case 'payout_processing':
       return { icon: Zap,           gradient: 'from-amber-400 to-orange-500',    iconColor: 'text-white', ringColor: 'ring-amber-100',   label: () => 'Your payout is being processed' };
     case 'payout_paid':
       return { icon: Check,         gradient: 'from-green-500 to-emerald-600',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your payout has been sent' };
     case 'payout_rejected':
       return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Your payout request was rejected' };
+    case 'payout_failed':
+      return { icon: X,             gradient: 'from-red-500 to-rose-600',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Your cash-out could not be completed' };
     case 'support_reply':
       return { icon: MessageCircle, gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Filmons Support replied to your case' };
     case 'listing_review':
@@ -204,7 +208,7 @@ const SYSTEM_TYPES: string[] = [
   'account_verified','account_warning','system_announcement','system_notification',
   'profile_completion','trust_level_update','booking_accepted','booking_rejected',
   'payment_released','application_accepted','application_rejected',
-  'payout_requested','payout_processing','payout_paid','payout_rejected',
+  'payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed',
   'support_reply',
 ];
 function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
@@ -221,8 +225,10 @@ function systemIcon(type: string): ElementType {
     case 'payment_released':     return Zap;
     case 'payout_requested':
     case 'payout_processing':    return Zap;
+    case 'payout_approved':      return Check;
     case 'payout_paid':          return Check;
     case 'payout_rejected':      return X;
+    case 'payout_failed':        return X;
     case 'support_reply':        return MessageCircle;
     case 'application_accepted': return PartyPopper;
     case 'application_rejected': return Bell;
@@ -504,7 +510,7 @@ type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payment
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction'];
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','listing_review'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
-const PAYMENTS_TYPES       = ['payment_received','payment_released','payout_requested','payout_processing','payout_paid','payout_rejected'];
+const PAYMENTS_TYPES       = ['payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 

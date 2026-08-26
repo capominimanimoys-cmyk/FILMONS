@@ -44,6 +44,15 @@ const TEMPLATE_WITHDRAWAL_RECEIVED     = 'template_ayhphv9';
 const TEMPLATE_NEW_MESSAGE             = 'template_d5zpvid';
 const TEMPLATE_NEW_FOLLOWER            = 'template_z3vit7l';
 const TEMPLATE_MESSAGE_REQUEST         = 'template_tun19ep';
+// Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
+// and the real template ids are swapped in (same process as every other
+// template above: build the .html, wire the sender, then ask for the id).
+const TEMPLATE_CASHOUT_REQUEST_ADMIN   = 'template_cashout_request';
+const TEMPLATE_CASHOUT_APPROVED        = 'template_cashout_approved';
+const TEMPLATE_CASHOUT_SENT            = 'template_cashout_sent';
+const TEMPLATE_CASHOUT_REJECTED        = 'template_cashout_rejected';
+const TEMPLATE_CASHOUT_FAILED          = 'template_cashout_failed';
+const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
@@ -137,6 +146,7 @@ export function sendWithdrawalReceivedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null;
   amount: number; currency: string; withdrawalId: string;
   payoutMethod: string; payoutLast4?: string | null;
+  feeAmount?: number; netAmount?: number;
 }) {
   const methodLine = p.payoutLast4 ? `${p.payoutMethod} •••• ${p.payoutLast4}` : p.payoutMethod;
   return sendEmailJsRaw(p.toEmail, TEMPLATE_WITHDRAWAL_RECEIVED, {
@@ -146,5 +156,79 @@ export function sendWithdrawalReceivedEmail(p: {
     withdrawal_id: p.withdrawalId,
     payout_method: methodLine,
     withdrawal_url: 'https://filmons.app/wallet',
+    fee_amount: p.feeAmount != null ? p.feeAmount.toFixed(2) : undefined,
+    net_amount: p.netAmount != null ? p.netAmount.toFixed(2) : undefined,
+  });
+}
+
+/** Notifies FILMONS ops (not the requesting user) that a new cash-out needs review. */
+export function sendCashOutRequestAdminEmail(p: {
+  withdrawalId: string; userName: string; userEmail: string | null | undefined;
+  requestedAmount: number; feeAmount: number; netAmount: number; currency: string;
+  payoutMethod: string; payoutDetails: string; requestedAt: string;
+}) {
+  return sendEmailJsRaw(FILMONS_ADMIN_EMAIL, TEMPLATE_CASHOUT_REQUEST_ADMIN, {
+    withdrawal_id: p.withdrawalId,
+    user_name: p.userName,
+    user_email: p.userEmail || 'unknown',
+    requested_amount: `$${p.requestedAmount.toFixed(2)} ${p.currency}`,
+    fee_amount: `$${p.feeAmount.toFixed(2)} ${p.currency}`,
+    net_amount: `$${p.netAmount.toFixed(2)} ${p.currency}`,
+    payout_method: p.payoutMethod,
+    payout_details: p.payoutDetails,
+    requested_at: p.requestedAt,
+    admin_withdrawal_url: 'https://filmons.app/admin-verifications',
+  });
+}
+
+export function sendCashOutApprovedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  amount: number; currency: string; withdrawalId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CASHOUT_APPROVED, {
+    to_name: p.toName || 'there',
+    amount: `$${p.amount.toFixed(2)} ${p.currency}`,
+    withdrawal_id: p.withdrawalId,
+    wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+export function sendCashOutSentEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  netAmount: number; feeAmount: number; currency: string;
+  withdrawalId: string; payoutMethod: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CASHOUT_SENT, {
+    to_name: p.toName || 'there',
+    net_amount: `$${p.netAmount.toFixed(2)} ${p.currency}`,
+    fee_amount: `$${p.feeAmount.toFixed(2)} ${p.currency}`,
+    withdrawal_id: p.withdrawalId,
+    payout_method: p.payoutMethod,
+    wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+export function sendCashOutRejectedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  amount: number; currency: string; withdrawalId: string; reason: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CASHOUT_REJECTED, {
+    to_name: p.toName || 'there',
+    amount: `$${p.amount.toFixed(2)} ${p.currency}`,
+    withdrawal_id: p.withdrawalId,
+    rejection_reason: p.reason,
+    wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+export function sendCashOutFailedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  amount: number; currency: string; withdrawalId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CASHOUT_FAILED, {
+    to_name: p.toName || 'there',
+    amount: `$${p.amount.toFixed(2)} ${p.currency}`,
+    withdrawal_id: p.withdrawalId,
+    wallet_url: 'https://filmons.app/wallet',
   });
 }

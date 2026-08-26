@@ -4,7 +4,7 @@
 // runs the whole check-and-reserve as one atomic DB transaction (SELECT
 // ... FOR UPDATE inside the function), not a client-side check-then-insert.
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
-import { sendWithdrawalReceivedEmail } from '../_shared/notificationEmails.ts';
+import { sendWithdrawalReceivedEmail, sendCashOutRequestAdminEmail } from '../_shared/notificationEmails.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -44,7 +44,17 @@ function addBusinessDays(from: Date, days: number): Date {
   return d;
 }
 
-async function notifyHostRequested(hostId: string, amount: number, payoutRequestId: string, payoutMethod: string | null) {
+function describePayoutDestination(method: any, destination: any): string {
+  if (method?.display_name) return method.last4 ? `${method.display_name} ••••${method.last4}` : method.display_name;
+  if (destination?.email) return `Interac — ${destination.email}`;
+  if (destination?.accountNumber) return `Bank transfer — account ending ${String(destination.accountNumber).slice(-4)}`;
+  return 'Not specified';
+}
+
+async function notifyHostRequested(
+  hostId: string, amount: number, feeAmount: number, netAmount: number,
+  payoutRequestId: string, payoutMethod: string | null, payoutDestination: any,
+) {
   const amountStr = `$${amount.toFixed(2)} CAD`;
   await fetch(rest('/notifications'), {
     method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
@@ -66,7 +76,15 @@ async function notifyHostRequested(hostId: string, amount: number, payoutRequest
     amount, currency: 'CAD', withdrawalId: payoutRequestId,
     payoutMethod: method?.display_name || payoutMethod || 'Payout method',
     payoutLast4: method?.last4,
+    feeAmount, netAmount,
   });
+  await sendCashOutRequestAdminEmail({
+    withdrawalId: payoutRequestId, userName: host?.name || 'Unknown', userEmail: host?.email,
+    requestedAmount: amount, feeAmount, netAmount, currency: 'CAD',
+    payoutMethod: method?.display_name || payoutMethod || 'Not specified',
+    payoutDetails: describePayoutDestination(method, payoutDestination),
+    requestedAt: new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }),
+  }).catch(() => {});
 }
 
 Deno.serve(async (req) => {
@@ -76,7 +94,29 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { hostId, amount, payoutMethod, payoutDestination, payoutSpeed } = await req.json();
+    const body = await req.json();
+
+    // Cancel path: user backing out of their own still-open request.
+    // Reuses this function rather than a new one since it already holds
+    // the service-role RPC-calling setup.
+    if (body.action === 'cancel') {
+      const { hostId, payoutRequestId } = body;
+      if (!hostId || !payoutRequestId) {
+        return new Response(JSON.stringify({ error: 'Missing hostId or payoutRequestId' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_cancel_payout_request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY },
+        body: JSON.stringify({ p_payout_request_id: payoutRequestId, p_host_id: hostId }),
+      });
+      const cancelled = await res.json();
+      if (!res.ok || cancelled !== true) {
+        return new Response(JSON.stringify({ error: 'Could not cancel — it may have already been reviewed' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ success: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const { hostId, amount, payoutMethod, payoutDestination, payoutSpeed } = body;
     if (!hostId || typeof amount !== 'number' || amount <= 0) {
       return new Response(JSON.stringify({ error: 'Missing hostId or invalid amount' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
@@ -85,17 +125,20 @@ Deno.serve(async (req) => {
     }
     const speed = payoutSpeed === 'instant' ? 'instant' : 'standard';
 
-    // Fee/arrival estimate are computed server-side from the live config —
+    // Fees/arrival estimate are computed server-side from the live config —
     // never trusted from the client. No real Stripe Connect exists in this
     // app, so "instant" means priority-processed within the same manual
     // admin pipeline, not an automated transfer.
+    const config = await selectOne('payout_config', 'id=eq.1');
+    const platformFeeRate = config?.withdrawal_fee_rate ?? 0.08;
+    const platformFeeAmount = round2(amount * platformFeeRate);
+
     let feeAmount = 0;
     if (speed === 'instant') {
-      const config = await selectOne('payout_config', 'id=eq.1');
       const rate = config?.instant_fee_rate ?? 0.02;
       feeAmount = round2(amount * rate);
     }
-    const estimatedArrivalAt = speed === 'instant' ? new Date() : addBusinessDays(new Date(), 3);
+    const estimatedArrivalAt = speed === 'instant' ? new Date() : addBusinessDays(new Date(), 2);
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_request_payout`, {
       method: 'POST',
@@ -113,6 +156,8 @@ Deno.serve(async (req) => {
         p_payout_speed: speed,
         p_fee_amount: feeAmount,
         p_estimated_arrival_at: estimatedArrivalAt.toISOString(),
+        p_platform_fee_rate: platformFeeRate,
+        p_platform_fee_amount: platformFeeAmount,
       }),
     });
     const result = await res.json();
@@ -121,12 +166,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: message.includes('Insufficient') ? 'Insufficient available balance' : message }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    notifyHostRequested(hostId, amount, result, payoutMethod || null).catch(() => {});
+    const netAmount = round2(amount - feeAmount - platformFeeAmount);
+    notifyHostRequested(hostId, amount, feeAmount + platformFeeAmount, netAmount, result, payoutMethod || null, payoutDestination).catch(() => {});
 
     return new Response(JSON.stringify({
       success: true, payoutRequestId: result,
-      payoutSpeed: speed, feeAmount, netAmount: round2(amount - feeAmount),
-      estimatedArrivalAt: estimatedArrivalAt.toISOString(),
+      payoutSpeed: speed, feeAmount, platformFeeRate, platformFeeAmount,
+      netAmount, estimatedArrivalAt: estimatedArrivalAt.toISOString(),
     }), { headers: { ...cors, 'Content-Type': 'application/json' } });
   } catch (e) {
     console.error('request-payout error:', e);

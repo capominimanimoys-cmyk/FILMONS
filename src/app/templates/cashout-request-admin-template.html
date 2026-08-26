@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+<div style="font-family: Arial, Helvetica, sans-serif; max-width: 620px; margin: 0 auto; padding: 30px; color: #1f2937; background-color: #ffffff;">
+
+  <div style="text-align: center; margin-bottom: 30px;">
+    <h1 style="margin: 0; font-size: 24px; color: #111827;">
+      FILMONS
+    </h1>
+    <p style="margin: 6px 0 0; color: #6b7280;">
+      New Cash-Out Request
+    </p>
+  </div>
+
+  <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;">
+
+    <h2 style="margin-top: 0; font-size: 18px;">
+      Cash-Out Request
+    </h2>
+
+    <p>
+      A FILMONS creator has submitted a new cash-out request.
+    </p>
+
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+    <p>
+      <strong>Withdrawal ID:</strong><br>
+      {{withdrawal_id}}
+    </p>
+
+    <p>
+      <strong>Creator:</strong><br>
+      {{user_name}}
+    </p>
+
+    <p>
+      <strong>Email:</strong><br>
+      {{user_email}}
+    </p>
+
+    <p>
+      <strong>Requested Amount:</strong><br>
+      {{requested_amount}}
+    </p>
+
+    <p>
+      <strong>FILMONS Fee:</strong><br>
+      {{fee_amount}}
+    </p>
+
+    <p>
+      <strong>Creator Receives:</strong><br>
+      <strong>{{net_amount}}</strong>
+    </p>
+
+    <p>
+      <strong>Payout Method:</strong><br>
+      {{payout_method}}
+    </p>
+
+    <p>
+      <strong>Payout Details:</strong><br>
+      {{payout_details}}
+    </p>
+
+    <p>
+      <strong>Request Date:</strong><br>
+      {{requested_at}}
+    </p>
+
+    <p>
+      <strong>Status:</strong><br>
+      <span style="color: #d97706; font-weight: 600;">
+        Pending
+      </span>
+    </p>
+
+  </div>
+
+  <div style="text-align: center; margin: 30px 0;">
+
+    <a
+      href="{{admin_withdrawal_url}}"
+      style="
+        display: inline-block;
+        padding: 13px 24px;
+        background: #111827;
+        color: #ffffff;
+        text-decoration: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+      "
+    >
+      Review Cash-Out Request
+    </a>
+
+  </div>
+
+  <p style="font-size: 12px; color: #9ca3af; text-align: center;">
+    This is an automated notification from FILMONS.
+  </p>
+
+</div>
+</body>
+</html>
