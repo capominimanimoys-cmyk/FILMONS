@@ -80,7 +80,7 @@ export function EmailAlreadyExists() {
   const providerLabel = provider === 'google' ? 'Google' : provider === 'apple' ? 'Apple' : '';
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden">
       <Bg/>
 
       {/* Header */}

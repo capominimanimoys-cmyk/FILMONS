@@ -214,7 +214,7 @@ export function PhoneLogin() {
   const pct = ((step - 1) / 1) * 100;
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden" onTouchStart={() => {}}>
+    <div className="h-screen flex flex-col overflow-hidden">
       <CinematicBg/>
 
       {/* Header */}

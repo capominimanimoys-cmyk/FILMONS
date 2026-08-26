@@ -37,7 +37,6 @@ function CinematicBg() {
       ))}
       <style>{`
         @keyframes float { from { transform: translateY(0px); } to { transform: translateY(-20px); } }
-        @keyframes loginPageEnter { from { transform: translateX(100%); } to { transform: translateX(0); } }
       `}</style>
     </div>
   );
@@ -160,9 +159,7 @@ export function Login() {
   // ── METHOD SELECTOR ──────────────────────────────────────────────────────
   if (screen === 'method') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden touch-manipulation"
-        onTouchStart={() => {}}
-        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
+      <div className="h-screen flex flex-col overflow-hidden">
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 py-safe">
           {/* Logo top */}
@@ -210,9 +207,7 @@ export function Login() {
   // ── EMAIL LOGIN ──────────────────────────────────────────────────────────
   if (screen === 'email') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden"
-        onTouchStart={() => {}}
-        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
+      <div className="h-screen flex flex-col overflow-hidden">
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5">
           <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
@@ -283,9 +278,7 @@ export function Login() {
   // ── EMAIL NOT FOUND ──────────────────────────────────────────────────────
   if (screen === 'email_not_found') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden"
-        onTouchStart={() => {}}
-        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
+      <div className="h-screen flex flex-col overflow-hidden">
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
           {/* Back */}
@@ -374,9 +367,7 @@ export function Login() {
     const providerLabel = oauthOnlyProviders.includes('google') ? 'Google' : oauthOnlyProviders.includes('apple') ? 'Apple' : 'a social account';
     const provider: 'google' | 'apple' = oauthOnlyProviders.includes('apple') ? 'apple' : 'google';
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden"
-        onTouchStart={() => {}}
-        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
+      <div className="h-screen flex flex-col overflow-hidden">
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 overflow-y-auto">
           <button
@@ -424,9 +415,7 @@ export function Login() {
 
   // ── SECURITY / OTP ───────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden"
-        onTouchStart={() => {}}
-        style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
+    <div className="h-screen flex flex-col overflow-hidden">
       <CinematicBg/>
       <div className="relative z-10 flex flex-col h-full px-5">
         <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
