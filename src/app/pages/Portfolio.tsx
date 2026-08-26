@@ -16,7 +16,7 @@ import { EditAlbumScreen } from '../components/EditAlbumScreen';
 import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
-  getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum,
+  getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum, createAlbum,
   getPortfolioSettings, upsertPortfolioSettings, DEFAULT_PORTFOLIO_SETTINGS,
   isItemLiked, toggleItemLike, getItemComments, addItemComment,
   incrementItemView,
@@ -32,7 +32,7 @@ import {
   Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
   Play, Pause, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, LayoutList, Monitor,
-  FolderOpen, Search, UserCheck,
+  FolderOpen, Search, UserCheck, Check, CheckSquare, FolderPlus,
   Heart, MessageCircle, Download, Eye, Lock, Send,
 } from 'lucide-react';
 
@@ -557,6 +557,9 @@ interface CardProps {
   onDelete:     (id: string) => void;
   onShare:      (item: PortfolioItem) => void;
   onAddToAlbum: (item: PortfolioItem) => void;
+  selectMode?:      boolean;
+  selectedIds?:     Set<string>;
+  onToggleSelect?:  (id: string) => void;
 }
 
 function WorkTypeBadge({ wt }: { wt?: WorkType }) {
@@ -637,6 +640,7 @@ function AudioTilePlayer({ src }: { src: string }) {
 
 function ItemCard({
   item, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, className = '', style,
+  selectMode = false, selected = false, onSelectToggle,
 }: {
   item:          CardProps['items'][0];
   isOwner:       boolean;
@@ -647,6 +651,9 @@ function ItemCard({
   onAddToAlbum:  () => void;
   className?:    string;
   style?:        React.CSSProperties;
+  selectMode?:      boolean;
+  selected?:        boolean;
+  onSelectToggle?:  () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -661,9 +668,9 @@ function ItemCard({
 
   return (
     <div
-      className={`relative rounded-2xl bg-gray-100 cursor-pointer group ${className}`}
+      className={`relative rounded-2xl bg-gray-100 cursor-pointer group ${className} ${selectMode && selected ? 'ring-2 ring-blue-500' : ''}`}
       style={style}
-      onClick={onTap}
+      onClick={selectMode ? onSelectToggle : onTap}
     >
       {/* Media — clipped inside its own overflow-hidden layer */}
       <div className="absolute inset-0 rounded-2xl overflow-hidden">
@@ -714,7 +721,7 @@ function ItemCard({
       )}
 
       {/* Three-dot button — opens the shared bottom-sheet menu (portal-rendered) */}
-      {isOwner && (
+      {isOwner && !selectMode && (
         <div className="absolute bottom-2 right-2 z-[10]" onClick={e => e.stopPropagation()}>
           <button
             onClick={openMenu}
@@ -737,12 +744,21 @@ function ItemCard({
           )}
         </div>
       )}
+
+      {/* Selection checkbox */}
+      {selectMode && (
+        <div className={`absolute top-2 right-2 z-[10] w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+          selected ? 'bg-blue-600 border-blue-600' : 'bg-black/30 border-white'
+        }`}>
+          {selected && <Check className="w-3.5 h-3.5 text-white" />}
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Layouts ───────────────────────────────────────────────────────────────────
-function GridLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
+function GridLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, selectMode, selectedIds, onToggleSelect }: CardProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
       {items.map((item, i) => (
@@ -756,13 +772,16 @@ function GridLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddT
           onDelete={() => onDelete(item.id)}
           onShare={() => onShare(item)}
           onAddToAlbum={() => onAddToAlbum(item)}
+          selectMode={selectMode}
+          selected={selectedIds?.has(item.id)}
+          onSelectToggle={() => onToggleSelect?.(item.id)}
         />
       ))}
     </div>
   );
 }
 
-function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
+function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, selectMode, selectedIds, onToggleSelect }: CardProps) {
   const [first, ...rest] = items;
   return (
     <div className="space-y-2">
@@ -776,6 +795,9 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, o
           onDelete={() => onDelete(first.id)}
           onShare={() => onShare(first)}
           onAddToAlbum={() => onAddToAlbum(first)}
+          selectMode={selectMode}
+          selected={selectedIds?.has(first.id)}
+          onSelectToggle={() => onToggleSelect?.(first.id)}
         />
       )}
       {rest.length > 0 && (
@@ -791,6 +813,9 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, o
               onDelete={() => onDelete(item.id)}
               onShare={() => onShare(item)}
               onAddToAlbum={() => onAddToAlbum(item)}
+              selectMode={selectMode}
+              selected={selectedIds?.has(item.id)}
+              onSelectToggle={() => onToggleSelect?.(item.id)}
             />
           ))}
         </div>
@@ -833,19 +858,25 @@ function ServiceItemMenu({
   );
 }
 
-function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
+function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, selectMode, selectedIds, onToggleSelect }: CardProps) {
   return (
     <div className="space-y-2">
       {items.map((item, i) => {
         const thumb   = item.thumbnail_url || item.media_url;
         const isAudio = item.work_type === 'audio' || item.media_type === 'audio';
         const isLink  = item.work_type === 'link'  || item.media_type === 'link';
+        const selected = !!selectedIds?.has(item.id);
         return (
           <div
             key={item.id}
-            className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => onTap(item, i)}
+            className={`flex gap-3 bg-white rounded-2xl p-3 shadow-sm border cursor-pointer hover:shadow-md transition-shadow ${selectMode && selected ? 'border-blue-500 ring-1 ring-blue-500' : 'border-gray-100'}`}
+            onClick={() => selectMode ? onToggleSelect?.(item.id) : onTap(item, i)}
           >
+            {selectMode && (
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 self-center ${selected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'}`}>
+                {selected && <Check className="w-3.5 h-3.5 text-white" />}
+              </div>
+            )}
             <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 shrink-0">
               {thumb && !isAudio && !isLink ? (
                 <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
@@ -864,7 +895,7 @@ function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {item.is_featured && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-300" />}
-                  {isOwner && (
+                  {isOwner && !selectMode && (
                     <ServiceItemMenu
                       item={item}
                       onToggle={() => onToggle(item)}
@@ -886,19 +917,25 @@ function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
   );
 }
 
-function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum }: CardProps) {
+function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, selectMode, selectedIds, onToggleSelect }: CardProps) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {items.map((item, i) => {
         const thumb   = item.thumbnail_url || item.media_url;
         const isAudio = item.work_type === 'audio' || item.media_type === 'audio';
         const isLink  = item.work_type === 'link'  || item.media_type === 'link';
+        const selected = !!selectedIds?.has(item.id);
         return (
           <div
             key={item.id}
-            className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}
-            onClick={() => onTap(item, i)}
+            className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-50' : ''} ${selectMode && selected ? 'bg-blue-50' : ''}`}
+            onClick={() => selectMode ? onToggleSelect?.(item.id) : onTap(item, i)}
           >
+            {selectMode && (
+              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'}`}>
+                {selected && <Check className="w-3 h-3 text-white" />}
+              </div>
+            )}
             <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
               {thumb && !isAudio && !isLink ? (
                 <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
@@ -914,7 +951,7 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {item.is_featured && <Star className="w-4 h-4 text-amber-400 fill-amber-300" />}
-              {isOwner && (
+              {isOwner && !selectMode && (
                 <ServiceItemMenu
                   item={item}
                   onToggle={() => onToggle(item)}
@@ -998,6 +1035,163 @@ function AddToAlbumSheet({
   );
 }
 
+// ── Create album from a multi-selection ─────────────────────────────────────
+// Bulk-adds every selected item to either a brand-new album or an existing
+// one. If any selected item already belongs to an album, asks which the
+// user wants first rather than silently duplicating membership.
+type SelectionAlbumStep = 'checking' | 'choice' | 'name' | 'pick';
+
+function CreateAlbumFromSelectionSheet({
+  selectedIds, albums, onClose, onDone, onAddedToExisting,
+}: {
+  selectedIds: string[];
+  albums: PortfolioAlbum[];
+  onClose: () => void;
+  onDone: (album: PortfolioAlbum) => void;
+  onAddedToExisting: () => void;
+}) {
+  const { user } = useAuth();
+  const [step, setStep] = useState<SelectionAlbumStep>('checking');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('portfolio_album_items')
+        .select('item_id')
+        .in('item_id', selectedIds);
+      setStep((data ?? []).length > 0 ? 'choice' : 'name');
+    })();
+  }, []); // eslint-disable-line
+
+  const handleCreate = async () => {
+    if (!user || !title.trim()) { toast.error('Add an album name'); return; }
+    setSaving(true);
+    const album = await createAlbum(user.id, { title: title.trim(), description: description.trim() || undefined, visibility: 'public' });
+    if (!album) { setSaving(false); toast.error('Could not create album'); return; }
+    await Promise.all(selectedIds.map(id => addItemToAlbum(album.id, id)));
+    setSaving(false);
+    onDone(album);
+  };
+
+  const handleAddToExisting = async (albumId: string) => {
+    setSaving(true);
+    await Promise.all(selectedIds.map(id => addItemToAlbum(albumId, id)));
+    setSaving(false);
+    onAddedToExisting();
+  };
+
+  return (
+    <>
+      <style>{`@keyframes casUp{from{transform:translateY(100%);opacity:.8}to{transform:translateY(0);opacity:1}}`}</style>
+      <div className="fixed inset-0 z-[60] bg-black/50" onClick={onClose} />
+      <div
+        className="fixed inset-x-0 bottom-0 z-[61] bg-white rounded-t-3xl flex flex-col"
+        style={{ maxHeight: '85vh', animation: 'casUp 0.3s cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full" />
+        </div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+          <p className="text-sm font-black text-gray-900">
+            {step === 'pick' ? 'Add to Album' : 'Create Album'}
+          </p>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+            <X className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+
+        {step === 'checking' && (
+          <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+        )}
+
+        {step === 'choice' && (
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-gray-400 px-1">
+              Some of these items are already in an album. What would you like to do?
+            </p>
+            <button
+              onClick={() => setStep('name')}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-gray-100 text-left"
+            >
+              <FolderPlus className="w-4 h-4 text-blue-500 shrink-0" />
+              <span className="text-sm font-bold text-gray-900">Create new album</span>
+            </button>
+            <button
+              onClick={() => setStep('pick')}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-gray-100 text-left"
+            >
+              <FolderOpen className="w-4 h-4 text-blue-500 shrink-0" />
+              <span className="text-sm font-bold text-gray-900">Add to existing album</span>
+            </button>
+          </div>
+        )}
+
+        {step === 'name' && (
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Album Name</label>
+              <input
+                value={title} onChange={e => setTitle(e.target.value)} maxLength={60}
+                placeholder="My Portfolio"
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Description (optional)</label>
+              <textarea
+                value={description} onChange={e => setDescription(e.target.value)} rows={3} maxLength={300}
+                placeholder="What's this album about?"
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none"
+              />
+            </div>
+            <p className="text-xs text-gray-400">{selectedIds.length} items will be added to this album.</p>
+            <button
+              onClick={handleCreate}
+              disabled={saving || !title.trim()}
+              className="w-full py-4 rounded-2xl font-black text-white text-sm disabled:opacity-40 active:scale-[0.98] transition-all"
+              style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Album'}
+            </button>
+          </div>
+        )}
+
+        {step === 'pick' && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {albums.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No albums yet.</p>
+            ) : (
+              albums.map(album => (
+                <button
+                  key={album.id}
+                  onClick={() => handleAddToExisting(album.id)}
+                  disabled={saving}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-gray-100 active:scale-[0.98] transition-all text-left disabled:opacity-60"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
+                    {album.cover_url
+                      ? <img src={album.cover_url} alt={album.title} className="w-full h-full object-cover" />
+                      : <FolderOpen className="w-5 h-5 text-gray-400" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{album.title}</p>
+                    <p className="text-xs text-gray-400 capitalize">{album.visibility}</p>
+                  </div>
+                  {saving && <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Portfolio() {
   const { userId: paramUserId } = useParams<{ userId?: string }>();
@@ -1007,6 +1201,7 @@ export function Portfolio() {
   const [profile,  setProfile]  = useState<User | null>(null);
   const [items,    setItems]    = useState<PortfolioItem[]>([]);
   const [albums,   setAlbums]   = useState<PortfolioAlbum[]>([]);
+  const [albumCounts, setAlbumCounts] = useState<Record<string, number>>({});
   const [loading,  setLoading]  = useState(true);
   // First-load only — the branded loader stays mounted (fading out on its own
   // schedule) until this flips, so it never abruptly pops off screen.
@@ -1026,6 +1221,19 @@ export function Portfolio() {
   const [viewer,          setViewer]          = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [showAdd,         setShowAdd]         = useState(false);
   const [showFollowSheet, setShowFollowSheet] = useState<null | 'followers' | 'following'>(null);
+
+  // Multi-select → automatic album creation
+  const [selectMode,  setSelectMode]  = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showAlbumFromSelection, setShowAlbumFromSelection] = useState(false);
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
 
   // Albums
   const [activeAlbum,      setActiveAlbum]      = useState<PortfolioAlbum | null>(null);
@@ -1068,6 +1276,18 @@ export function Portfolio() {
       setItems(sortItems(portfolioData, settingsData?.sort_order ?? DEFAULT_PORTFOLIO_SETTINGS.sort_order));
       setAlbums(albumData);
       setSettings(settingsData ?? { ...DEFAULT_PORTFOLIO_SETTINGS, id: '', user_id: uid, updated_at: '' });
+
+      if (albumData.length) {
+        supabase
+          .from('portfolio_album_items')
+          .select('album_id')
+          .in('album_id', albumData.map(a => a.id))
+          .then(({ data }) => {
+            const counts: Record<string, number> = {};
+            (data ?? []).forEach((r: any) => { counts[r.album_id] = (counts[r.album_id] ?? 0) + 1; });
+            setAlbumCounts(counts);
+          });
+      }
     } finally {
       setLoading(false);
     }
@@ -1151,6 +1371,9 @@ export function Portfolio() {
     onDelete:     handleDelete,
     onShare:      item => setShareTarget({ type: 'item', item }),
     onAddToAlbum: item => setAddToAlbumTarget(item),
+    selectMode,
+    selectedIds,
+    onToggleSelect: toggleSelect,
   };
 
   if (!introDone) {
@@ -1367,6 +1590,16 @@ export function Portfolio() {
           {/* Owner action buttons */}
           {isOwner && (
             <div className="flex gap-2 shrink-0">
+              {activeTab !== 'albums' && (
+                <button
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                  className={`flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl active:scale-95 transition-all ${
+                    selectMode ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <CheckSquare className="w-3.5 h-3.5" /> {selectMode ? 'Cancel' : 'Select'}
+                </button>
+              )}
               <button
                 onClick={() => setShowAdd(true)}
                 className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2 rounded-2xl active:scale-95 transition-all"
@@ -1520,7 +1753,8 @@ export function Portfolio() {
                             <div className="absolute inset-x-0 bottom-0 p-3">
                               <p className="text-white font-black text-sm truncate leading-tight">{album.title}</p>
                               <p className="text-white/60 text-[10px] mt-0.5 capitalize">
-                                {album.visibility !== 'public' && `${album.visibility} · `}album
+                                {album.visibility !== 'public' && `${album.visibility} · `}
+                                {albumCounts[album.id] ?? 0} item{(albumCounts[album.id] ?? 0) === 1 ? '' : 's'}
                               </p>
                             </div>
                           </div>
@@ -1613,6 +1847,44 @@ export function Portfolio() {
         <AddPortfolioItemSheet
           onClose={() => setShowAdd(false)}
           onAdded={item => setItems(prev => [item, ...prev])}
+        />
+      )}
+
+      {/* ── Selection bar (Select mode) ── */}
+      {selectMode && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 py-3 flex items-center justify-between"
+          style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+        >
+          <p className="text-sm font-bold text-gray-900">{selectedIds.size} item{selectedIds.size === 1 ? '' : 's'} selected</p>
+          <button
+            onClick={() => setShowAlbumFromSelection(true)}
+            disabled={selectedIds.size < 2}
+            className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2.5 rounded-2xl disabled:opacity-40 active:scale-95 transition-all"
+            style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+          >
+            <FolderPlus className="w-4 h-4" /> Create Album
+          </button>
+        </div>
+      )}
+
+      {/* ── Create album from selection ── */}
+      {showAlbumFromSelection && (
+        <CreateAlbumFromSelectionSheet
+          selectedIds={[...selectedIds]}
+          albums={albums}
+          onClose={() => setShowAlbumFromSelection(false)}
+          onDone={album => {
+            setAlbums(prev => [album, ...prev]);
+            setShowAlbumFromSelection(false);
+            exitSelectMode();
+            toast.success(`Album "${album.title}" created`);
+          }}
+          onAddedToExisting={() => {
+            setShowAlbumFromSelection(false);
+            exitSelectMode();
+            toast.success('Added to album');
+          }}
         />
       )}
 
