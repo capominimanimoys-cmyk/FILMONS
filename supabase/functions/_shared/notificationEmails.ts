@@ -43,6 +43,7 @@ const TEMPLATE_APPLICATION_SHORTLISTED = 'template_uyzvbcd';
 const TEMPLATE_WITHDRAWAL_RECEIVED     = 'template_ayhphv9';
 const TEMPLATE_NEW_MESSAGE             = 'template_d5zpvid';
 const TEMPLATE_NEW_FOLLOWER            = 'template_z3vit7l';
+const TEMPLATE_MESSAGE_REQUEST         = 'template_tun19ep';
 
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
@@ -106,7 +107,8 @@ export function sendNewMessageEmail(p: {
   fromName: string; messagePreview: string; conversationId: string;
   kind?: MessageKind; listingTitle?: string | null;
 }) {
-  return sendEmailJsRaw(p.toEmail, TEMPLATE_NEW_MESSAGE, {
+  const templateId = p.kind === 'request' ? TEMPLATE_MESSAGE_REQUEST : TEMPLATE_NEW_MESSAGE;
+  return sendEmailJsRaw(p.toEmail, templateId, {
     to_name: p.toName || 'there',
     from_name: p.fromName,
     subject: buildMessageSubject(p.fromName, p.kind || 'direct', p.listingTitle),

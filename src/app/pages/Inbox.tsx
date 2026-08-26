@@ -1439,8 +1439,16 @@ export function Inbox() {
           // fetchMessages or realtime but happen to be outside the server's result window.
           const prevMsgs   = prevConv.messages || [];
           const serverMsgs = c.messages || [];
-          const serverMap  = new Map(serverMsgs.map((m: ChatMessage) => [m.id, m]));
-          // Server version wins for known IDs (picks up edits / status changes)
+          // Server version wins for known IDs (picks up edits / status changes),
+          // EXCEPT read state — markAsRead's UPDATE and this SELECT can race
+          // (this fires on every focus/visibility change, including right after
+          // opening a conversation), so a server row can still show read_at:null
+          // moments after we already marked it read locally. Never let a racing
+          // fetch downgrade an already-read message back to unread.
+          const serverMap = new Map(serverMsgs.map((m: ChatMessage) => {
+            const localMsg = prevMsgs.find(p => p.id === m.id);
+            return [m.id, localMsg?.read && !m.read ? { ...m, read: true } : m];
+          }));
           const serverOnly = serverMsgs.filter((m: ChatMessage) => !prevMsgs.some(p => p.id === m.id));
           const kept       = prevMsgs.map((m: ChatMessage) => serverMap.get(m.id) ?? m);
 
@@ -1448,7 +1456,11 @@ export function Inbox() {
             new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
           );
 
-          return { ...c, messages: merged };
+          // Recompute unreadCount from the merged messages rather than trusting
+          // fromServer's own count, which is derived from the same racy SELECT.
+          const unreadCount = merged.filter(m => !m.read && m.senderId !== user.id).length;
+
+          return { ...c, messages: merged, unreadCount };
         });
 
         // Preserve conversations that exist in prev but are absent from fromServer
@@ -1788,15 +1800,20 @@ export function Inbox() {
         if (c.id !== activeConv.id) return c;
         // Empty response means edge function failed — keep what we have
         if (!msgs.length && c.messages.length > 0) return c;
-        // Union merge: server version wins for known IDs; keep state messages not
-        // returned by this fetch (they may be outside the fetch window — loadConversations
-        // fetches all rows but fetchMessages uses limit=100, so older/newer messages
-        // already in state must not be dropped)
-        const serverMap = new Map(msgs.map((m: ChatMessage) => [m.id, m]));
+        // Union merge: server version wins for known IDs, EXCEPT read state —
+        // markAsRead's UPDATE and this SELECT race each other (both fire on
+        // conversation open), so a server row can still show read_at:null
+        // even though we just marked it read optimistically a moment ago.
+        // Once read locally, never let a racing fetch downgrade it back.
+        const localReadMap = new Map(c.messages.map(m => [m.id, m.read]));
+        const merged = msgs.map((m: ChatMessage) =>
+          localReadMap.get(m.id) && !m.read ? { ...m, read: true } : m,
+        );
+        const serverMap = new Map(merged.map((m: ChatMessage) => [m.id, m]));
         const kept = c.messages.filter(m => !serverMap.has(m.id));
         return {
           ...c,
-          messages: [...kept, ...msgs].sort(
+          messages: [...kept, ...merged].sort(
             (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
           ),
         };
@@ -1811,12 +1828,16 @@ export function Inbox() {
           if (c.id !== activeConv.id) return c;
           const hasNew = msgs.some((m: ChatMessage) => !c.messages.some(x => x.id === m.id));
           if (!hasNew) return c;
-          // Same union merge: never drop messages outside the fetch window
-          const serverMap = new Map(msgs.map((m: ChatMessage) => [m.id, m]));
+          // Same union merge, same read-state race guard as the on-open fetch above.
+          const localReadMap = new Map(c.messages.map(m => [m.id, m.read]));
+          const merged = msgs.map((m: ChatMessage) =>
+            localReadMap.get(m.id) && !m.read ? { ...m, read: true } : m,
+          );
+          const serverMap = new Map(merged.map((m: ChatMessage) => [m.id, m]));
           const kept = c.messages.filter(m => !serverMap.has(m.id));
           return {
             ...c,
-            messages: [...kept, ...msgs].sort(
+            messages: [...kept, ...merged].sort(
               (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
             ),
           };

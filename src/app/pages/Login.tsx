@@ -59,7 +59,7 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
 function OAuthBtn({ onClick, loading }: { onClick: () => void; loading?: boolean }) {
   return (
     <button onClick={onClick} disabled={loading}
-      className="w-full flex items-center gap-3 active:scale-[0.98] border font-semibold text-sm rounded-2xl px-4 py-3.5 transition-all backdrop-blur-sm bg-white hover:bg-gray-50 border-white/80 text-gray-800 shadow-sm disabled:opacity-60">
+      className="w-full flex items-center gap-3 active:scale-[0.98] border font-semibold text-sm rounded-2xl px-4 py-3.5 transition-all backdrop-blur-sm bg-white hover:bg-gray-50 border-white/80 text-gray-800 shadow-sm disabled:opacity-60 touch-manipulation">
       <span className="w-5 h-5 shrink-0 flex items-center justify-center">
         {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/> : <GoogleLogo size={20}/>}
       </span>
@@ -160,7 +160,7 @@ export function Login() {
   // ── METHOD SELECTOR ──────────────────────────────────────────────────────
   if (screen === 'method') {
     return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden"
+      <div className="fixed inset-0 flex flex-col overflow-hidden touch-manipulation"
         style={{ animation: 'loginPageEnter var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both' }}>
         <CinematicBg/>
         <div className="relative z-10 flex flex-col h-full px-5 py-safe">
@@ -177,12 +177,12 @@ export function Login() {
           <div className="space-y-3">
             <OAuthBtn onClick={() => handleOAuth('google')} loading={oauthLoading}/>
             <button onClick={() => setScreen('email')}
-              className="w-full flex items-center gap-3 bg-white text-gray-900 font-semibold text-sm rounded-2xl px-4 py-3.5 hover:bg-gray-100 active:scale-[0.98] transition-all">
+              className="w-full flex items-center gap-3 bg-white text-gray-900 font-semibold text-sm rounded-2xl px-4 py-3.5 hover:bg-gray-100 active:scale-[0.98] transition-all touch-manipulation">
               <Mail className="w-5 h-5 text-gray-500 shrink-0"/>
               <span className="flex-1 text-left">Continue with Email</span>
             </button>
             <button onClick={() => { captureSnapshot(); navigate('/phone-login'); }}
-              className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all">
+              className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all touch-manipulation">
               <Phone className="w-5 h-5 shrink-0"/>
               <span className="flex-1 text-left">Continue with Phone</span>
             </button>
