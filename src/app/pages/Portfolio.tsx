@@ -8,6 +8,9 @@ import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import { HireFlowSheet } from '../components/HireFlowSheet';
+import { ItemActionsSheet } from '../components/ItemActionsSheet';
+import { AlbumActionsSheet, type EditAlbumSection } from '../components/AlbumActionsSheet';
+import { EditAlbumScreen } from '../components/EditAlbumScreen';
 import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
@@ -22,12 +25,12 @@ import { supabase } from '../../lib/supabase';
 import type { User } from '../types';
 import { toast } from 'sonner';
 import {
-  Star, StarOff, MapPin, Film, Music2, FileText,
-  Link as LinkIcon, MoreVertical, Trash2, ExternalLink,
+  Star, MapPin, Film, Music2, FileText,
+  Link as LinkIcon, MoreVertical, ExternalLink,
   Plus, Loader2, ChevronLeft, ChevronRight, X, Share2,
   Play, Pause, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, LayoutList, Monitor,
-  FolderOpen, Search, UserCheck, FolderPlus, Edit2,
+  FolderOpen, Search, UserCheck,
   Heart, MessageCircle, Download, Eye, Lock, Send,
 } from 'lucide-react';
 
@@ -666,8 +669,6 @@ function ItemCard({
   style?:        React.CSSProperties;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos,  setMenuPos]  = useState<{ bottom: number; right: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   const thumb   = item.thumbnail_url || item.media_url;
   const wt      = item.work_type;
@@ -675,16 +676,8 @@ function ItemCard({
   const isLink  = wt === 'link'  || item.media_type === 'link';
   const isVideo = wt === 'video' || wt === 'reel' || item.media_type === 'video';
 
-  const openMenu = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      setMenuPos({ bottom: window.innerHeight - r.top + 4, right: window.innerWidth - r.right });
-    }
-    setMenuOpen(v => !v);
-  };
-
-  const closeMenu = () => { setMenuOpen(false); setMenuPos(null); };
+  const openMenu = (e: React.MouseEvent) => { e.stopPropagation(); setMenuOpen(true); };
+  const closeMenu = () => setMenuOpen(false);
 
   return (
     <div
@@ -740,57 +733,26 @@ function ItemCard({
         </div>
       )}
 
-      {/* Three-dot button — portal-rendered dropdown escapes all stacking contexts */}
+      {/* Three-dot button — opens the shared bottom-sheet menu (portal-rendered) */}
       {isOwner && (
         <div className="absolute bottom-2 right-2 z-[10]" onClick={e => e.stopPropagation()}>
           <button
-            ref={btnRef}
             onClick={openMenu}
             className="w-7 h-7 rounded-full bg-black/55 flex items-center justify-center"
           >
             <MoreVertical className="w-4 h-4 text-white" />
           </button>
 
-          {menuOpen && menuPos && createPortal(
-            <>
-              <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={closeMenu} />
-              <div
-                style={{ position: 'fixed', bottom: menuPos.bottom, right: menuPos.right, zIndex: 9999 }}
-                className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[170px]"
-                onClick={e => e.stopPropagation()}
-              >
-                <button
-                  onClick={() => { closeMenu(); onToggle(); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
-                >
-                  {item.is_featured
-                    ? <><StarOff className="w-3.5 h-3.5 text-gray-400" /> Unfeature</>
-                    : <><Star    className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
-                </button>
-                <button
-                  onClick={() => { closeMenu(); onShare(); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
-                >
-                  <Share2 className="w-3.5 h-3.5 text-gray-500" /> Share
-                </button>
-                <button
-                  onClick={() => { closeMenu(); onAddToAlbum(); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50"
-                >
-                  <FolderPlus className="w-3.5 h-3.5 text-gray-500" /> Add to Album
-                </button>
-                <div className="border-t border-gray-50" />
-                <button
-                  onClick={() => {
-                    closeMenu();
-                    if (window.confirm('Delete this portfolio item? This action cannot be undone.')) onDelete();
-                  }}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
-              </div>
-            </>,
+          {createPortal(
+            <ItemActionsSheet
+              item={item}
+              open={menuOpen}
+              onClose={closeMenu}
+              onToggle={onToggle}
+              onShare={onShare}
+              onAddToAlbum={onAddToAlbum}
+              onDelete={onDelete}
+            />,
             document.body,
           )}
         </div>
@@ -868,38 +830,24 @@ function ServiceItemMenu({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
+    <div className="relative" onClick={e => e.stopPropagation()}>
       <button
-        onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
+        onClick={() => setOpen(true)}
         className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100"
       >
         <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-[40]" onClick={e => { e.stopPropagation(); setOpen(false); }} />
-          <div
-            className="absolute right-0 top-8 z-[50] bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[170px]"
-            onClick={e => e.stopPropagation()}
-          >
-            <button onClick={() => { setOpen(false); onToggle(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
-              {item.is_featured ? <><StarOff className="w-3.5 h-3.5 text-gray-400" /> Unfeature</> : <><Star className="w-3.5 h-3.5 text-amber-500" /> Feature</>}
-            </button>
-            <button onClick={() => { setOpen(false); onShare(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
-              <Share2 className="w-3.5 h-3.5 text-gray-500" /> Share
-            </button>
-            <button onClick={() => { setOpen(false); onAddToAlbum(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50">
-              <FolderPlus className="w-3.5 h-3.5 text-gray-500" /> Add to Album
-            </button>
-            <div className="border-t border-gray-50" />
-            <button
-              onClick={() => { setOpen(false); if (window.confirm('Delete this portfolio item? This action cannot be undone.')) onDelete(); }}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-500 hover:bg-red-50"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          </div>
-        </>
+      {createPortal(
+        <ItemActionsSheet
+          item={item}
+          open={open}
+          onClose={() => setOpen(false)}
+          onToggle={onToggle}
+          onShare={onShare}
+          onAddToAlbum={onAddToAlbum}
+          onDelete={onDelete}
+        />,
+        document.body,
       )}
     </div>
   );
@@ -1108,6 +1056,7 @@ export function Portfolio() {
   const [albumLoading,     setAlbumLoading]     = useState(false);
   const [showCreateAlbum,  setShowCreateAlbum]  = useState(false);
   const [albumMenuId,      setAlbumMenuId]      = useState<string | null>(null);
+  const [editingAlbum,     setEditingAlbum]     = useState<{ album: PortfolioAlbum; focusSection?: EditAlbumSection } | null>(null);
 
   // Share + add-to-album
   const [shareTarget,      setShareTarget]      = useState<ShareTarget | null>(null);
@@ -1627,41 +1576,23 @@ export function Portfolio() {
                             </div>
                           </div>
 
-                          {/* three-dot menu — outside clip */}
+                          {/* three-dot menu — opens the shared bottom-sheet menu */}
                           {isOwner && (
                             <div className="absolute top-2 right-2 z-10" onClick={e => e.stopPropagation()}>
                               <button
-                                onClick={() => setAlbumMenuId(menuOpen ? null : album.id)}
+                                onClick={() => setAlbumMenuId(album.id)}
                                 className="w-7 h-7 rounded-full bg-black/50 flex items-center justify-center"
                               >
                                 <MoreVertical className="w-3.5 h-3.5 text-white" />
                               </button>
-                              {menuOpen && (
-                                <>
-                                  <div className="fixed inset-0 z-[19]" onClick={() => setAlbumMenuId(null)} />
-                                  <div className="absolute top-8 right-0 z-[20] bg-white rounded-2xl shadow-xl border border-gray-100 min-w-[160px] py-1.5 overflow-hidden">
-                                    <button
-                                      onClick={() => { setAlbumMenuId(null); toast('Edit album coming soon'); }}
-                                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 text-left"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5 text-gray-400" /> Edit Album
-                                    </button>
-                                    <button
-                                      onClick={() => { setAlbumMenuId(null); setShareTarget({ type: 'album', album }); }}
-                                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-gray-50 text-sm text-gray-700 text-left"
-                                    >
-                                      <Share2 className="w-3.5 h-3.5 text-gray-400" /> Share Album
-                                    </button>
-                                    <div className="h-px bg-gray-100 my-1" />
-                                    <button
-                                      onClick={() => handleDeleteAlbum(album.id)}
-                                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-red-50 text-sm text-red-500 text-left"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" /> Delete Album
-                                    </button>
-                                  </div>
-                                </>
-                              )}
+                              <AlbumActionsSheet
+                                album={album}
+                                open={menuOpen}
+                                onClose={() => setAlbumMenuId(null)}
+                                onEditAlbum={section => setEditingAlbum({ album, focusSection: section })}
+                                onShare={() => setShareTarget({ type: 'album', album })}
+                                onDelete={() => handleDeleteAlbum(album.id)}
+                              />
                             </div>
                           )}
                         </div>
@@ -1752,6 +1683,21 @@ export function Portfolio() {
           existingItems={items}
           onCreated={album => setAlbums(prev => [album, ...prev])}
           onClose={() => setShowCreateAlbum(false)}
+        />
+      )}
+
+      {/* ── Edit album screen (owner only) ── */}
+      {editingAlbum && isOwner && me && (
+        <EditAlbumScreen
+          album={editingAlbum.album}
+          focusSection={editingAlbum.focusSection}
+          userId={me.id}
+          albums={albums}
+          onClose={() => setEditingAlbum(null)}
+          onSaved={updated => {
+            setAlbums(prev => prev.map(a => a.id === updated.id ? updated : a));
+            if (activeAlbum?.id === updated.id) setActiveAlbum(updated);
+          }}
         />
       )}
 

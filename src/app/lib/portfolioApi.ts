@@ -43,16 +43,33 @@ export interface PortfolioItem {
 }
 
 export interface PortfolioAlbum {
-  id:             string;
-  user_id:        string;
-  title:          string;
-  description?:   string;
-  cover_item_id?: string;
-  cover_url?:     string;  // uploaded cover image URL (DB column, see migration 20240128)
-  visibility:     'public' | 'followers' | 'private';
-  sort_order:     number;
-  created_at:     string;
-  item_count?:    number;  // client-side computed
+  id:                string;
+  user_id:           string;
+  title:             string;
+  description?:      string;
+  cover_item_id?:    string;
+  cover_url?:        string;  // uploaded cover image URL (DB column, see migration 20240128)
+  visibility:        'public' | 'followers' | 'private';
+  sort_order:        number;
+  created_at:        string;
+  item_count?:       number;  // client-side computed
+  primary_role?:     string;
+  additional_roles?: string[];
+  category?:         string;
+  tags?:             string[];
+  location?:         string;
+  work_date?:        string;
+  show_on_profile?:  boolean;
+}
+
+export interface AlbumCredit {
+  id:               string;
+  album_id:         string;
+  role:             string;
+  creator_user_id?: string | null;
+  unlisted_name?:   string | null;
+  sort_order:       number;
+  created_at:       string;
 }
 
 export type PortfolioVisibility = 'public' | 'followers' | 'private';
@@ -340,11 +357,33 @@ export async function createAlbum(
 
 export async function updateAlbum(
   id: string,
-  updates: Partial<Pick<PortfolioAlbum, 'title' | 'description' | 'visibility' | 'cover_item_id' | 'cover_url'>>,
+  updates: Partial<Pick<PortfolioAlbum,
+    'title' | 'description' | 'visibility' | 'cover_item_id' | 'cover_url' |
+    'primary_role' | 'additional_roles' | 'category' | 'tags' | 'location' | 'work_date' | 'show_on_profile'
+  >>,
 ): Promise<boolean> {
   const { error } = await supabase.from('portfolio_albums').update(updates).eq('id', id);
   if (error) { console.error('[albums] update error:', error.message); return false; }
   return true;
+}
+
+/** Sets an album's cover to one of its own existing items — never uploads or duplicates media. */
+export async function setAlbumCoverFromItem(albumId: string, itemId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('portfolio_albums')
+    .update({ cover_item_id: itemId, cover_url: null })
+    .eq('id', albumId);
+  if (error) { console.error('[albums] set cover error:', error.message); return false; }
+  return true;
+}
+
+/** Uploads a new file for an existing portfolio item and swaps its media in place. */
+export async function replaceItemMedia(itemId: string, file: File): Promise<boolean> {
+  const { data: item } = await supabase.from('portfolio_items').select('user_id').eq('id', itemId).maybeSingle();
+  if (!item) return false;
+  const result = await uploadPortfolioMedia(item.user_id, file);
+  if (!result) return false;
+  return updatePortfolioItem(itemId, { media_url: result.url, thumbnail_url: result.thumbnailUrl || result.url });
 }
 
 export async function deleteAlbum(id: string): Promise<boolean> {
@@ -409,6 +448,58 @@ export async function deleteAlbumCascadeItems(albumId: string): Promise<boolean>
     if (delItemsError) { console.error('[albums] cascade delete items error:', delItemsError.message); return false; }
   }
   return deleteAlbum(albumId);
+}
+
+// ── Album credits ─────────────────────────────────────────────────────────────
+export async function getAlbumCredits(albumId: string): Promise<AlbumCredit[]> {
+  try {
+    const { data, error } = await supabase
+      .from('portfolio_album_credits')
+      .select('*')
+      .eq('album_id', albumId)
+      .order('sort_order');
+    if (error) { console.warn('[albums] credits fetch error:', error.message); return []; }
+    return (data ?? []) as AlbumCredit[];
+  } catch { return []; }
+}
+
+export async function addAlbumCredit(
+  albumId: string,
+  credit: { role: string; creatorUserId?: string | null; unlistedName?: string | null; sortOrder?: number },
+): Promise<AlbumCredit | null> {
+  const { data, error } = await supabase
+    .from('portfolio_album_credits')
+    .insert({
+      album_id: albumId,
+      role: credit.role,
+      creator_user_id: credit.creatorUserId || null,
+      unlisted_name: credit.unlistedName || null,
+      sort_order: credit.sortOrder ?? 0,
+    })
+    .select()
+    .single();
+  if (error) { console.error('[albums] add credit error:', error.message); return null; }
+  return data as AlbumCredit;
+}
+
+export async function updateAlbumCredit(
+  id: string,
+  updates: Partial<{ role: string; creator_user_id: string | null; unlisted_name: string | null }>,
+): Promise<boolean> {
+  const { error } = await supabase.from('portfolio_album_credits').update(updates).eq('id', id);
+  return !error;
+}
+
+export async function deleteAlbumCredit(id: string): Promise<boolean> {
+  const { error } = await supabase.from('portfolio_album_credits').delete().eq('id', id);
+  return !error;
+}
+
+export async function reorderAlbumCredits(order: { id: string; sort_order: number }[]): Promise<boolean> {
+  const results = await Promise.all(
+    order.map(({ id, sort_order }) => supabase.from('portfolio_album_credits').update({ sort_order }).eq('id', id)),
+  );
+  return results.every(r => !r.error);
 }
 
 // ── Portfolio settings ───────────────────────────────────────────────────────
