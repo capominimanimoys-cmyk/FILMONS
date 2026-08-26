@@ -2911,68 +2911,55 @@ export const chatApi = {
   },
 
   async fetchMessages(convId: string): Promise<ChatMessage[]> {
+    // Direct Supabase, not the legacy /conversations/:id/messages edge
+    // function -- that function pre-dates read_at entirely and has its own
+    // (older, incomplete) row shape, so any column added directly to the
+    // messages table since (read_at included) never reached the client
+    // through it. It used to be the primary path here with direct Supabase
+    // only as a fallback on failure, but the edge function doesn't fail,
+    // it just silently returns stale-shaped rows -- so the fallback,
+    // already fixed to select read_at, never actually ran. Confirmed live:
+    // messages marked read via markAsRead (a real, verified-working DB
+    // update) still came back unread on the next fetch through the edge
+    // function path. RLS already permits direct anon SELECT on messages
+    // (edit/pin/delete-for-me and this table's own UPDATE all already
+    // depend on that), so there's no remaining reason to route through it.
     try {
-      // Route through the server edge function to bypass RLS
-      const data = await call<any>(`/conversations/${encodeURIComponent(convId)}/messages?limit=100`);
-      const messages: ChatMessage[] = (data?.messages || []).map(dbRowToMsg);
-
-      if (!messages.length) {
-        console.warn('[fetchMessages] edge fn returned 0 messages for conv', convId,
-          '— check: (1) SUPABASE_DB_URL set in edge function secrets, (2) conversation_id in messages table matches this ID');
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
+        .eq('conversation_id', convId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) {
+        console.warn('[fetchMessages] error:', error.message);
+        return loadConvs().find(c => c.id === convId)?.messages ?? [];
       }
-
-      // Merge into localStorage cache
+      // Reverse so messages are oldest-first after fetching newest-first
+      const messages: ChatMessage[] = (data ?? []).reverse().map(dbRowToMsg);
+      // Union-merge into localStorage cache — server wins for known IDs,
+      // any local-only (optimistic, not yet confirmed) messages are kept.
       const convs = loadConvs();
-      const idx   = convs.findIndex(c => c.id === convId);
+      const idx = convs.findIndex(c => c.id === convId);
       if (idx !== -1) {
-        const serverMsgIds = new Set(messages.map((m: ChatMessage) => m.id));
-        const pendingLocal = convs[idx].messages.filter(m => !serverMsgIds.has(m.id));
-        const merged = [...messages, ...pendingLocal].sort(
+        const serverMap = new Map(messages.map(m => [m.id, m]));
+        const kept = convs[idx].messages.filter(m => !serverMap.has(m.id));
+        convs[idx].messages = [...kept, ...messages].sort(
           (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
-        convs[idx].messages = merged;
         saveConvs(convs);
-        return merged;
-      } else {
+      } else if (messages.length) {
         convs.push({
           id: convId, participantIds: [], messages,
           updatedAt: new Date().toISOString(), isRequest: false, requestedBy: null,
         } as Conversation);
         saveConvs(convs);
-        return messages;
       }
+      return messages;
     } catch (e) {
-      console.warn('[fetchMessages] edge fn failed for conv', convId, ':', e, '— trying direct Supabase');
-      try {
-        const { data, error } = await supabase
-          .from('messages')
-          .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
-          .eq('conversation_id', convId)
-          .order('created_at', { ascending: false })
-          .limit(100);
-        if (error) {
-          console.warn('[fetchMessages] direct Supabase error:', error.message,
-            '— likely missing RLS SELECT policy on messages table. Fix: add policy "auth.uid()::text = ANY(SELECT unnest(participants) FROM conversations WHERE id = conversation_id)"');
-        }
-        if (data && data.length > 0) {
-          // Reverse so messages are oldest-first after fetching newest-first
-          const messages: ChatMessage[] = data.reverse().map(dbRowToMsg);
-          // Union-merge into localStorage cache
-          const convs = loadConvs();
-          const idx = convs.findIndex(c => c.id === convId);
-          if (idx !== -1) {
-            const serverMap = new Map(messages.map(m => [m.id, m]));
-            const kept = convs[idx].messages.filter(m => !serverMap.has(m.id));
-            convs[idx].messages = [...kept, ...messages].sort(
-              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-            );
-            saveConvs(convs);
-          }
-          return messages;
-        }
-      } catch (supaErr) { console.warn('[fetchMessages] direct Supabase also failed:', supaErr); }
+      console.warn('[fetchMessages] threw:', e);
+      return loadConvs().find(c => c.id === convId)?.messages ?? [];
     }
-    return loadConvs().find(c => c.id === convId)?.messages ?? [];
   },
 
   /** Get or create a conversation via `get_or_create_direct_conversation` RPC.
@@ -3253,7 +3240,14 @@ export const chatApi = {
           hireCard:       m.metadata?.hireCard    || undefined,
           systemText:     m.metadata?.systemText  || undefined,
           replyTo:        m.reply_to              || undefined,
-          createdAt:      m.created_at, read: m.is_read ?? false,
+          createdAt:      m.created_at,
+          // m.is_read was never a real column on messages (that's a
+          // notifications-table name) -- always evaluated to false via the
+          // ?? fallback, so every load through this path (the one Inbox.tsx
+          // actually calls) re-marked every message unread, undoing
+          // whatever markAsRead had just set. read_at is the real column.
+          read:           !!m.read_at,
+          readAt:         m.read_at ?? undefined,
         });
         msgsByConv.set(m.conversation_id, msgs);
       });
