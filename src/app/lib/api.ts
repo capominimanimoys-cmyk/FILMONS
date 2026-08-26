@@ -2192,6 +2192,15 @@ export const socialApi = {
         fromUserAvatar: currentUser.avatar,
       });
       console.log('[follow] notification pushed for', targetUserId);
+
+      import('./followNotification').then(mod => {
+        mod.notifyReceiverForFollow({
+          followedId:       targetUserId,
+          followerId:       currentUser.id,
+          followerName:     currentUser.name,
+          followerUsername: currentUser.username,
+        });
+      });
     }
 
     // Update local session so isFollowing() stays accurate

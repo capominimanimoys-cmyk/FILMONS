@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            color: white;
+            padding: 40px 30px;
+            border-radius: 12px 12px 0 0;
+            text-align: center;
+        }
+        .logo { font-size: 32px; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
+        .header-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 12px;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-left: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+        }
+        .sender-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .sender-avatar { display: table-cell; width: 52px; vertical-align: middle; }
+        .sender-avatar-circle {
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .sender-info { display: table-cell; vertical-align: middle; padding-left: 14px; }
+        .sender-name { font-size: 16px; font-weight: 700; color: #111827; }
+        .sender-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+        .request-note {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #92400e;
+        }
+        .message-bubble {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-left: 3px solid #d97706;
+            border-radius: 10px;
+            padding: 18px 20px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #374151;
+            line-height: 1.7;
+            font-style: italic;
+        }
+        p.body-copy { font-size: 14px; color: #374151; line-height: 1.7; }
+        .cta-button {
+            display: block;
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            color: white !important;
+            padding: 16px 32px;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 16px;
+            text-align: center;
+            margin: 30px 0 10px 0;
+        }
+        .cta-sub { text-align: center; font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+        .divider { height: 1px; background: #e5e7eb; margin: 25px 0; }
+        .footer {
+            background: #f9fafb;
+            padding: 30px;
+            text-align: center;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid #e5e7eb;
+            border-top: none;
+        }
+        .footer-text { color: #6b7280; font-size: 14px; margin: 8px 0; }
+        .footer-link { color: #6b7280; font-size: 12px; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo">FILMONS 🎬</div>
+        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Inbox Notification</p>
+        <div class="header-badge">✉️ Message Request</div>
+    </div>
+
+    <div class="content">
+
+        <div class="sender-row">
+            <div class="sender-avatar">
+                <div class="sender-avatar-circle">✉️</div>
+            </div>
+            <div class="sender-info">
+                <div class="sender-name">{{from_name}}</div>
+                <div class="sender-sub">sent you a message request on FILMONS</div>
+            </div>
+        </div>
+
+        <div class="request-note">
+            You don't follow each other yet, so this has been sent as a
+            request. Accept it to start the conversation, or decline if
+            you'd rather not.
+        </div>
+
+        <div class="message-bubble">
+            "{{message_preview}}"
+        </div>
+
+        <p class="body-copy">
+            Hi {{to_name}}, review this request from your FILMONS Inbox —
+            you can accept, decline, or block the sender.
+        </p>
+
+        <div class="divider"></div>
+
+        <a href="{{conversation_link}}" class="cta-button">
+            Review Request →
+        </a>
+        <p class="cta-sub">You're receiving this because you were offline when the request arrived.</p>
+
+    </div>
+
+    <div class="footer">
+        <p class="footer-text"><strong>FILMONS</strong> — Inbox Notifications</p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 12px;">
+            <a href="{{settings_url}}" class="footer-link">Manage notification settings</a>
+        </p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 8px;">
+            © 2026 Filmons. All rights reserved.
+        </p>
+    </div>
+
+</body>
+</html>

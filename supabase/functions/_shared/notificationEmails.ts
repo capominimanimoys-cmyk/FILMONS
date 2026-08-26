@@ -42,6 +42,7 @@ const TEMPLATE_APPLICATION_RECEIVED    = 'template_cwvzs4w';
 const TEMPLATE_APPLICATION_SHORTLISTED = 'template_uyzvbcd';
 const TEMPLATE_WITHDRAWAL_RECEIVED     = 'template_ayhphv9';
 const TEMPLATE_NEW_MESSAGE             = 'template_d5zpvid';
+const TEMPLATE_NEW_FOLLOWER            = 'template_z3vit7l';
 
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
@@ -111,6 +112,21 @@ export function sendNewMessageEmail(p: {
     subject: buildMessageSubject(p.fromName, p.kind || 'direct', p.listingTitle),
     message_preview: p.messagePreview,
     conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
+    settings_url: 'https://filmons.app/settings/notifications',
+  });
+}
+
+export function sendNewFollowerEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  followerName: string; followerUsername?: string | null;
+}) {
+  const initial = (p.followerName || '?').trim().charAt(0).toUpperCase() || '?';
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_NEW_FOLLOWER, {
+    to_name: p.toName || 'there',
+    follower_name: p.followerName,
+    follower_username: p.followerUsername || '',
+    follower_initial: initial,
+    follower_profile_url: p.followerUsername ? `https://filmons.app/${p.followerUsername}` : 'https://filmons.app/',
     settings_url: 'https://filmons.app/settings/notifications',
   });
 }
