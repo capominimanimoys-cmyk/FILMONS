@@ -2,6 +2,7 @@ import { Outlet, useLocation, Navigate } from 'react-router';
 import { SideDrawer } from '../components/SideDrawer';
 import { TopBar } from '../components/TopBar';
 import { MobileBottomNav } from '../components/MobileBottomNav';
+import { DesktopSidebar } from '../components/DesktopSidebar';
 import { Footer } from '../components/Footer';
 import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
@@ -96,6 +97,8 @@ export function Root() {
 
         {sidebarOpen && <SideDrawer onClose={() => setSidebarOpen(false)} />}
 
+        <DesktopSidebar />
+
         {!hideTopBar && (
           <TopBar
             onMenuClick={() => setSidebarOpen(v => !v)}
@@ -103,12 +106,12 @@ export function Root() {
           />
         )}
 
-        <main className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
+        <main className={`flex-1 min-w-0 md:pb-0 md:pl-16 lg:pl-64 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
           <Outlet />
         </main>
 
         {!hideFooter && (
-          <div className="hidden md:block">
+          <div className="hidden md:block md:pl-16 lg:pl-64">
             <Footer />
           </div>
         )}

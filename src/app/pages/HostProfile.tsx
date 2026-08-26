@@ -489,7 +489,7 @@ export function HostProfile() {
         }
       </div>
 
-      <div className="max-w-4xl mx-auto px-4">
+      <div className="max-w-4xl lg:max-w-5xl mx-auto px-4">
 
         {/* ── Profile identity card — same structure as Profile.tsx ── */}
         <div className="relative bg-white rounded-b-2xl shadow-sm pb-4 mb-3 border border-gray-100">
@@ -631,7 +631,7 @@ export function HostProfile() {
                   {listings.map(l => <ListingRow key={l.id} l={l}/>)}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {listings.map(l => <ListingCard key={l.id} listing={l}/>)}
                 </div>
               )}

@@ -1102,7 +1102,7 @@ export function Profile() {
         <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
       </div>
 
-      <div className="max-w-4xl mx-auto px-4">
+      <div className="max-w-4xl lg:max-w-5xl mx-auto px-4">
 
         {/* ── Profile identity card ── */}
         <div className="relative bg-white rounded-b-2xl shadow-sm pb-4 mb-3 border border-gray-100">
@@ -1308,7 +1308,7 @@ export function Profile() {
                   {portfolioItems.filter(i => i.is_featured).length > 0 && (
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2.5">All Work</p>
                   )}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
                     {portfolioItems.filter(i => !i.is_featured).map(item => (
                       <PortfolioCard key={item.id} item={item} userId={user.id}
                         onTap={() => setPortfolioDetail(item)}
@@ -1650,7 +1650,7 @@ export function Profile() {
               </div>
               {listings.length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
-                : <div className="grid grid-cols-2 md:grid-cols-3 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>
+                : <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>
               }
             </div>
           )}

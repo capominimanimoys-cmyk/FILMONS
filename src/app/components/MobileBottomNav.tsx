@@ -53,7 +53,7 @@ export function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100/80"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100/80 md:hidden"
       style={{
         background: 'rgba(255,255,255,0.92)',
         backdropFilter: 'blur(20px) saturate(180%)',

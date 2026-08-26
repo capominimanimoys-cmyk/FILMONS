@@ -20,7 +20,7 @@ export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
   }, [user?.id]);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 lg:hidden">
       <div className="flex items-center gap-3 px-4 h-14">
         {/* Burger */}
         <button onClick={onMenuClick}

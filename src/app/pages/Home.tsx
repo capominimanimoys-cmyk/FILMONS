@@ -11,6 +11,9 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
 import { SwipeStack, type DeckItem, type CreatorProfile } from '../components/SwipeStack';
+import { ListingCardStack } from '../components/ListingCardStack';
+import { ListingCardProgress } from '../components/ListingCardProgress';
+import { useListingCardNavigation } from '../lib/useListingCardNavigation';
 
 // ── Filter system ─────────────────────────────────────────────────────────────
 type FilterId = 'all' | 'rentals' | 'sales' | 'services' | 'creators' | 'studios' | 'talent';
@@ -166,32 +169,51 @@ export function Home() {
   // Rebuild deck whenever filter or source data changes; reset deck state via key
   const deck = useMemo(() => buildDeck(listings, creators, filter), [listings, creators, filter]);
 
+  // Desktop-only (lg:) stacked-card navigation — independent of SwipeStack's
+  // own idx state, since mobile keeps its swipe-to-like/pass gestures while
+  // desktop is pure prev/next browsing over the same deck.
+  const desktopNav = useListingCardNavigation(deck.length);
+
   // Reset done-state when filter changes
   const [filterKey, setFilterKey] = useState(0);
   const handleFilter = (id: FilterId) => {
     setFilter(id);
     setDeckDone(false);
     setFilterKey(k => k + 1);
+    desktopNav.goTo(0);
   };
 
+  const emptyState = (
+    <div className="flex flex-col items-center py-24 px-6 text-center">
+      <span className="text-5xl mb-4">🎬</span>
+      <p className="font-black text-gray-900 text-lg mb-1">Nothing here yet</p>
+      <p className="text-sm text-gray-400">Try a different filter or list your own gear.</p>
+      <button
+        onClick={() => navigate('/create-listing')}
+        className="mt-5 bg-blue-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl active:opacity-80">
+        + List your gear
+      </button>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-100 pb-24">
+    <div className="min-h-screen bg-gray-100 pb-24 lg:pb-16">
 
       {/* ── Search bar ── */}
       <div
-        className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4"
+        className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 lg:px-8"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '10px' }}
       >
         <button
           onClick={() => navigate('/search')}
-          className="w-full flex items-center gap-2.5 bg-gray-100 rounded-2xl px-3.5 py-2.5 text-left hover:bg-gray-200 transition-colors active:scale-[0.99]">
+          className="w-full lg:max-w-xl flex items-center gap-2.5 bg-gray-100 rounded-2xl px-3.5 py-2.5 text-left hover:bg-gray-200 transition-colors active:scale-[0.99]">
           <Search className="w-4 h-4 text-blue-500 shrink-0"/>
           <span className="text-sm text-gray-400">Search creators, gear, services…</span>
         </button>
       </div>
 
       {/* ── Filter chips ── */}
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto no-scrollbar">
+      <div className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
         {FILTERS.map(f => (
           <button
             key={f.id}
@@ -207,22 +229,11 @@ export function Home() {
         ))}
       </div>
 
-      {/* ── Deck ── */}
-      <div className="mt-2">
+      {/* ── Deck — mobile/tablet: SwipeStack (swipe-to-like/pass), untouched ── */}
+      <div className="mt-2 lg:hidden">
         {loading ? (
           <SkeletonDeck/>
-        ) : deck.length === 0 ? (
-          <div className="flex flex-col items-center py-24 px-6 text-center">
-            <span className="text-5xl mb-4">🎬</span>
-            <p className="font-black text-gray-900 text-lg mb-1">Nothing here yet</p>
-            <p className="text-sm text-gray-400">Try a different filter or list your own gear.</p>
-            <button
-              onClick={() => navigate('/create-listing')}
-              className="mt-5 bg-blue-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl active:opacity-80">
-              + List your gear
-            </button>
-          </div>
-        ) : (
+        ) : deck.length === 0 ? emptyState : (
           <SwipeStack
             key={filterKey}
             items={deck}
@@ -231,9 +242,9 @@ export function Home() {
         )}
       </div>
 
-      {/* ── After deck exhausted — restart nudge ── */}
+      {/* ── After deck exhausted — restart nudge (mobile/tablet only) ── */}
       {deckDone && !loading && (
-        <div className="px-4 mt-4 text-center">
+        <div className="px-4 mt-4 text-center lg:hidden">
           <button
             onClick={() => { setDeckDone(false); setFilterKey(k => k + 1); }}
             className="text-sm text-blue-600 font-semibold underline">
@@ -241,6 +252,27 @@ export function Home() {
           </button>
         </div>
       )}
+
+      {/* ── Deck — desktop (lg:): stacked-card browsing, no like/pass semantics ── */}
+      <div className="hidden lg:block mt-6 px-8">
+        {loading ? (
+          <div className="flex justify-center"><SkeletonDeck/></div>
+        ) : deck.length === 0 ? emptyState : (
+          <div className="flex flex-col items-center gap-5">
+            <ListingCardStack
+              items={deck}
+              idx={desktopNav.idx}
+              goNext={desktopNav.goNext}
+              goPrev={desktopNav.goPrev}
+              goTo={desktopNav.goTo}
+              isFirst={desktopNav.isFirst}
+              isLast={desktopNav.isLast}
+            />
+            <ListingCardProgress index={desktopNav.idx} total={deck.length} onJump={desktopNav.goTo} />
+            <p className="text-xs text-gray-400">Use ← → or drag to browse · click a card to view details</p>
+          </div>
+        )}
+      </div>
 
     </div>
   );

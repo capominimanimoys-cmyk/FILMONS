@@ -111,7 +111,7 @@ export function ReviewsSettings() {
         <button onClick={saveAll} className="text-xs font-bold text-blue-600">Save</button>
       </div>
 
-      <div className="py-4 space-y-5">
+      <div className="py-4 space-y-5 lg:max-w-2xl lg:mx-auto">
 
         {/* ── Dashboard ── */}
         <div className="mx-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">

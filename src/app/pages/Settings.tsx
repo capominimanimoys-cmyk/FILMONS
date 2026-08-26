@@ -103,6 +103,7 @@ export function Settings() {
         <h1 className="text-base font-black text-gray-900">Settings</h1>
       </div>
 
+      <div className="lg:max-w-2xl lg:mx-auto">
       {/* User card — tappable → goes to About in profile */}
       <button onClick={() => { captureSnapshot(); navigate('/profile?tab=about'); }}
         className="bg-white mx-4 mt-4 rounded-2xl p-4 flex items-center gap-3 shadow-sm border border-gray-100 w-[calc(100%-32px)] text-left hover:bg-gray-50 transition-colors active:scale-[0.99]">
@@ -312,6 +313,7 @@ export function Settings() {
 
       <div className="text-center py-4 pb-24">
         <p className="text-[10px] text-gray-300 font-medium">Filmons v1.0 · Made for creators in Canada</p>
+      </div>
       </div>
     </div>
   );

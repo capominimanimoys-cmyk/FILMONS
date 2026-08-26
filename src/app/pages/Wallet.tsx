@@ -175,7 +175,7 @@ function PayoutModalInner(props: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[90vh] flex flex-col">
+      <div className="bg-white w-full sm:max-w-md lg:max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
           {step !== 'success' ? (
             <button onClick={goBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
@@ -418,7 +418,7 @@ export function Wallet() {
     <div className="min-h-screen bg-gray-50">
       {/* Hero */}
       <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white">
-        <div className="max-w-2xl mx-auto px-4 pt-6 pb-8">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 pt-6 pb-8">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
@@ -431,8 +431,8 @@ export function Wallet() {
             </button>
           </div>
 
-          {/* Balance */}
-          <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
+          {/* Balance — mobile/tablet: single Available-focused card */}
+          <div className="bg-white/10 backdrop-blur rounded-3xl p-6 lg:hidden">
             <div className="flex items-center justify-between mb-1">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">Available</p>
               <span className="text-[10px] text-blue-300 bg-white/10 px-2 py-0.5 rounded-full font-semibold">{balance.currency}</span>
@@ -452,10 +452,38 @@ export function Wallet() {
               Request Payout
             </button>
           </div>
+
+          {/* Balance — desktop: 3-tile row (Available / Pending / Total earned) */}
+          <div className="hidden lg:grid grid-cols-3 gap-4">
+            <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Available</p>
+              <span className="text-4xl font-black leading-none">{fmtCad(balance.available)}</span>
+              <button
+                onClick={() => setShowModal(true)}
+                disabled={balance.available <= 0}
+                className="w-full mt-4 py-2.5 bg-white text-blue-700 font-black text-sm rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              >
+                Request Payout
+              </button>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Pending</p>
+              <span className="text-4xl font-black leading-none">{fmtCad(balance.pending)}</span>
+              <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                Releases ~48h after each rental ends
+              </p>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Total Earned</p>
+              <span className="text-4xl font-black leading-none">{fmtCad(balance.available + balance.pending)}</span>
+              <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* On Hold — Opportunity/Hire earnings held until work is confirmed complete */}
         {txs.some(t => (t.transaction_type === 'opportunity_earning' || t.transaction_type === 'hire_earning') && t.status === 'pending') && (
           <div>
