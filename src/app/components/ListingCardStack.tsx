@@ -70,7 +70,12 @@ export function ListingCardStack({ items, idx, goNext, goPrev, goTo, isFirst, is
   };
 
   return (
-    <div className="flex items-center justify-center gap-6 w-full">
+    // isolate confines the deck's internal z-index scale (0-50, for the
+    // card fan) to its own stacking context -- without it those values
+    // compare directly against the page's sticky search bar (z-20) in the
+    // shared root stacking context and win, so the deck painted in front
+    // of the search bar while scrolling past it.
+    <div className="flex items-center justify-center gap-6 w-full isolate">
       <button
         onClick={goPrev}
         disabled={isFirst}

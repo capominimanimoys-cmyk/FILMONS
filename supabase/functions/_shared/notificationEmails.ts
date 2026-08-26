@@ -44,16 +44,14 @@ const TEMPLATE_WITHDRAWAL_RECEIVED     = 'template_ayhphv9';
 const TEMPLATE_NEW_MESSAGE             = 'template_d5zpvid';
 const TEMPLATE_NEW_FOLLOWER            = 'template_z3vit7l';
 const TEMPLATE_MESSAGE_REQUEST         = 'template_tun19ep';
-// Rental/purchase-request emails -- placeholders until created in the
-// EmailJS dashboard from rental-request-template.html /
-// purchase-request-template.html (same process as every other template
-// above: build the .html, wire the sender, then swap in the real id).
-const TEMPLATE_RENTAL_REQUEST          = 'template_rental_request';
-const TEMPLATE_PURCHASE_REQUEST        = 'template_purchase_request';
-const TEMPLATE_RENTAL_ACCEPTED         = 'template_rental_accepted';
-const TEMPLATE_RENTAL_DECLINED         = 'template_rental_declined';
-const TEMPLATE_PURCHASE_ACCEPTED       = 'template_purchase_accepted';
-const TEMPLATE_PURCHASE_DECLINED       = 'template_purchase_declined';
+// Rental/purchase-request emails -- all six now created in the EmailJS
+// dashboard from the rental/purchase-request-*-template.html files above.
+const TEMPLATE_RENTAL_REQUEST          = 'template_8r09h83';
+const TEMPLATE_PURCHASE_REQUEST        = 'template_vrpaeuc';
+const TEMPLATE_RENTAL_ACCEPTED         = 'template_ddbut3l';
+const TEMPLATE_RENTAL_DECLINED         = 'template_ofpg4m7';
+const TEMPLATE_PURCHASE_ACCEPTED       = 'template_cjv2gal';
+const TEMPLATE_PURCHASE_DECLINED       = 'template_z4t6xak';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
 // template above: build the .html, wire the sender, then ask for the id).
