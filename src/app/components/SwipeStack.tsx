@@ -18,6 +18,21 @@ import { isProfessional, normalizeTier } from '../lib/reliabilityApi';
 import { swipeApi } from '../lib/swipeApi';
 import { ENTITLEMENTS } from '../lib/entitlements';
 
+// Guests (no account at all) get the same 10/day ceiling as Creator, but
+// there's no user_id to enforce it against server-side -- there's no
+// account to attach a `swipes` row to. Tracked client-side only, keyed by
+// UTC date, same caveat every anonymous-visitor rate limit has (clearing
+// storage or a new browser resets it); the real, unbypassable limits are
+// the signed-in ones enforced by record-swipe.
+const GUEST_DAILY_LIMIT = 10;
+function guestSwipeKey(): string { return `filmons_guest_swipes_${new Date().toISOString().slice(0, 10)}`; }
+function readGuestSwipeCount(): number {
+  try { return parseInt(localStorage.getItem(guestSwipeKey()) || '0', 10) || 0; } catch { return 0; }
+}
+function writeGuestSwipeCount(n: number): void {
+  try { localStorage.setItem(guestSwipeKey(), String(n)); } catch {}
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type EnrichedListing = Listing & { distance?: number };
 
@@ -282,11 +297,12 @@ function UndoUpgradePrompt({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ── Daily swipe limit reached (Creator/Creator+ only -- Professional and
-// Business have no limit, so this never shows for them) ────────────────────
-function DailyLimitPrompt({ tier, limit, onClose }: { tier: 'creator' | 'creator_plus'; limit: number; onClose: () => void }) {
+// ── Daily swipe limit reached (Creator/Creator+/guest only -- Professional
+// and Business have no limit, so this never shows for them) ────────────────
+function DailyLimitPrompt({ tier, limit, onClose }: { tier: 'creator' | 'creator_plus' | 'guest'; limit: number; onClose: () => void }) {
   const navigate = useNavigate();
   const isCreatorPlus = tier === 'creator_plus';
+  const isGuest = tier === 'guest';
   return (
     <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center" onClick={e => e.stopPropagation()}>
@@ -295,15 +311,17 @@ function DailyLimitPrompt({ tier, limit, onClose }: { tier: 'creator' | 'creator
         </div>
         <h3 className="text-base font-black text-gray-900 mb-1.5">You've reached your daily limit</h3>
         <p className="text-sm text-gray-500 mb-5">
-          You've used all {limit} of your daily swipes.{' '}
-          {isCreatorPlus
-            ? 'Upgrade to Professional for unlimited swipes and the ability to undo your passes.'
-            : 'Upgrade to Creator+ for 25 daily swipes or Professional for unlimited swipes.'}
+          You've used all {limit} of your{isGuest ? ' free' : ' daily'} swipes{isGuest ? ' today' : ''}.{' '}
+          {isGuest
+            ? 'Create a free account to keep discovering creators, gear, and opportunities.'
+            : isCreatorPlus
+              ? 'Upgrade to Professional for unlimited swipes and the ability to undo your passes.'
+              : 'Upgrade to Creator+ for 25 daily swipes or Professional for unlimited swipes.'}
         </p>
         <div className="flex flex-col gap-2">
-          <button onClick={() => navigate('/account/upgrade')}
+          <button onClick={() => navigate(isGuest ? '/create-account' : '/account/upgrade')}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm">
-            {isCreatorPlus ? 'Upgrade to Professional' : 'Upgrade'}
+            {isGuest ? 'Sign Up' : isCreatorPlus ? 'Upgrade to Professional' : 'Upgrade'}
           </button>
           <button onClick={onClose} className="w-full py-2 text-gray-400 font-semibold text-xs">
             Continue Browsing
@@ -338,12 +356,14 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
   const [undoing, setUndoing] = useState(false);
 
   const tier = normalizeTier(user?.accountType);
-  const dailyLimit = ENTITLEMENTS[tier].swipesPerDay; // null = unlimited (Professional/Business)
-  const [swipesUsed, setSwipesUsed] = useState(0);
+  const dailyLimit = user ? ENTITLEMENTS[tier].swipesPerDay : GUEST_DAILY_LIMIT; // null = unlimited (Professional/Business)
+  const [swipesUsed, setSwipesUsed] = useState(() => (user ? 0 : readGuestSwipeCount()));
   const [showDailyLimit, setShowDailyLimit] = useState(false);
 
   // Initial "N used today" for the display counter -- the record-swipe
-  // edge function is the real gate; this is just what the badge starts at.
+  // edge function is the real gate for signed-in accounts; this is just
+  // what the badge starts at (and the only source of truth at all for
+  // guests, who have no server-side count to read).
   useEffect(() => {
     if (!user?.id || dailyLimit === null) return;
     swipeApi.getTodaySwipeCount(user.id).then(setSwipesUsed);
@@ -407,6 +427,15 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         const res = await swipeApi.recordSwipe(user.id, item.data.id, item.kind, dir === 'L' ? 'left' : 'right');
         if (!res.ok && res.limitReached) { setSwipesUsed(res.limit); setShowDailyLimit(true); }
         else setSwipesUsed(n => n + 1);
+      } else if (!user && item && (dir === 'L' || dir === 'R')) {
+        // No account to persist against (no favorites, no swipe history) --
+        // just the local guest counter, which is the whole enforcement for
+        // this tier anyway (see GUEST_DAILY_LIMIT above).
+        setSwipesUsed(n => {
+          const next = n + 1;
+          writeGuestSwipeCount(next);
+          return next;
+        });
       }
       setIdx(i => {
         const next = i + 1;
@@ -529,8 +558,8 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
       <p className="text-[11px] text-gray-300 mt-4">← Pass  ·  Like →</p>
 
       {showUpgradePrompt && <UndoUpgradePrompt onClose={() => setShowUpgradePrompt(false)} />}
-      {showDailyLimit && dailyLimit !== null && (tier === 'creator' || tier === 'creator_plus') && (
-        <DailyLimitPrompt tier={tier} limit={dailyLimit} onClose={() => setShowDailyLimit(false)} />
+      {showDailyLimit && dailyLimit !== null && (!user || tier === 'creator' || tier === 'creator_plus') && (
+        <DailyLimitPrompt tier={!user ? 'guest' : tier} limit={dailyLimit} onClose={() => setShowDailyLimit(false)} />
       )}
     </div>
   );
