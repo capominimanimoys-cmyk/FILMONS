@@ -152,6 +152,66 @@ export function Login() {
     // reset the loading state, the component is about to unmount anyway.
   };
 
+  // ── DESKTOP (lg:1024px+) two-column panel — shared by 'method' and
+  // 'email' screens, which collapse into one direct email+password form on
+  // desktop instead of mobile's multi-step chooser. Mobile markup in those
+  // two branches is untouched, just wrapped in lg:hidden alongside this.
+  const desktopPanel = (
+    <div className="hidden lg:flex relative z-10 flex-1 items-center">
+      <div className="flex-1 flex flex-col justify-center px-16 xl:px-24">
+        <FilmonsLogo iconSize={40} theme="dark"/>
+        <p className="text-white/70 text-lg font-semibold mt-3">The Creator's Marketplace</p>
+        <p className="text-white/40 text-sm mt-6 max-w-sm leading-relaxed">
+          Connect, create, rent, and grow with creators.
+        </p>
+      </div>
+      <div className="flex-1 flex items-center justify-center px-16 xl:px-24">
+        <div className="w-full max-w-[440px] bg-white rounded-3xl shadow-2xl p-10">
+          <p className="text-2xl font-black text-gray-900">Welcome back</p>
+          <p className="text-sm text-gray-500 mt-1 mb-7">Sign in to your FILMONS account.</p>
+          <div className="space-y-3">
+            <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
+              type="email" placeholder="Email address" autoComplete="email"
+              onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
+              className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white transition-all"/>
+            <div className="relative">
+              <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
+                type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
+                onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
+                className={`w-full bg-gray-50 border text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'}`}/>
+              <button onClick={() => setShowPw(p => !p)} type="button"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+              </button>
+            </div>
+            {pwError && <p className="text-red-500 text-xs font-medium px-1 leading-snug">{pwError}</p>}
+            <div className="flex justify-end">
+              <Link to="/forgot-password" className="text-xs text-blue-600 font-semibold hover:underline">Forgot password?</Link>
+            </div>
+          </div>
+          <button onClick={handleEmailLogin} disabled={loading}
+            className="mt-5 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-blue-900/20">
+            {loading ? 'Signing in…' : 'Sign In'}
+          </button>
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-gray-100"/>
+            <p className="text-gray-400 text-xs font-semibold">OR</p>
+            <div className="flex-1 h-px bg-gray-100"/>
+          </div>
+          <button onClick={() => handleOAuth('google')} disabled={oauthLoading}
+            className="w-full flex items-center gap-3 justify-center border border-gray-200 font-semibold text-sm text-gray-800 rounded-2xl px-4 py-3.5 hover:bg-gray-50 transition-all disabled:opacity-60">
+            {oauthLoading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/> : <GoogleLogo size={18}/>}
+            {oauthLoading ? 'Connecting…' : 'Continue with Google'}
+          </button>
+          <p className="text-center text-xs text-gray-400 mt-6">
+            Don't have an account?{' '}
+            <Link to="/create-account" className="text-blue-600 font-semibold hover:underline">Create one</Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── SPLASH ──────────────────────────────────────────────────────────────
   if (screen === 'splash') {
     return <FilmonsLoader onComplete={() => setScreen('method')} />;
@@ -162,7 +222,8 @@ export function Login() {
     return (
       <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+        {desktopPanel}
+        <div className="lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
           {/* Logo top */}
           <div className="flex justify-center pt-16 pb-10">
             <FilmonsLogo iconSize={32} theme="dark"/>
@@ -210,7 +271,8 @@ export function Login() {
     return (
       <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
+        {desktopPanel}
+        <div className="lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4"/> Back
           </button>

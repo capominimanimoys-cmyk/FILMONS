@@ -13,9 +13,15 @@ import { normalizeTier, getTierLabel, getTierBadge } from '../lib/reliabilityApi
 import { toast } from 'sonner';
 
 export function Settings() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const T = useT();
+
+  const handleLogout = async () => {
+    localStorage.removeItem('filmons_current_user');
+    await logout();
+    navigate('/login');
+  };
 
   if (!isAuthenticated || !user) {
     return (
@@ -87,7 +93,7 @@ export function Settings() {
       title: T('settings.actions'),
       items: [
         { icon: Smartphone, label: T('settings.devices'), sub: 'Active sessions, apps, security', action: () => go('/settings/devices') },
-        { icon: LogOut,     label: 'Log Out',        action: () => navigate('/login'), danger: true },
+        { icon: LogOut,     label: 'Log Out',        action: handleLogout, danger: true },
         { icon: Trash2,     label: 'Delete Account', sub: 'Permanently remove account', action: () => toast.error('Contact support to delete your account'), danger: true },
       ],
     },
