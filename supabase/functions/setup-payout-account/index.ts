@@ -113,6 +113,25 @@ Deno.serve(async (req) => {
     let accountId = profile.stripe_connect_account_id as string | null;
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || '0.0.0.0';
 
+    // A stripe_connect_account_id can be left over from the old Express +
+    // Account Link flow this replaced (deleted this session, but nothing
+    // ever cleared accounts it had already created for hosts who tried it
+    // earlier). Stripe only allows a platform to directly write
+    // business_type/email/individual via the API on accounts it created as
+    // type=custom -- doing this against an Express/Standard account
+    // returns "This application is not authorized to edit the following
+    // attributes," pointing you at a Stripe-hosted remediation link
+    // instead. Treat any non-Custom (or no-longer-resolvable) account the
+    // same as having none at all, and create a fresh Custom one rather
+    // than trying to edit it.
+    if (accountId) {
+      const checkRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
+        headers: { Authorization: `Bearer ${SK}` },
+      });
+      const existingAccount = await checkRes.json();
+      if (existingAccount.error || existingAccount.type !== 'custom') accountId = null;
+    }
+
     // `country` is a create-only, immutable Account field -- Stripe's
     // update endpoint (POST /v1/accounts/{id}) doesn't recognize it at all
     // and returns "Unknown parameter: country" if it's included, so it's

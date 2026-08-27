@@ -189,6 +189,15 @@ export function PayoutMethodSetup() {
     });
     setSaving(false);
     if (res.success) { toast.success('Payout method saved'); navigate('/wallet'); }
+    else if (res.error === 'reauth_required') {
+      // The account this profile pointed at wasn't a Custom account this
+      // flow can edit (e.g. a leftover from the old Express-based setup) --
+      // the edge function already cleared it, so start over from scratch.
+      toast.error('Please set up your payout account again.');
+      setCountry(null);
+      setDefaultMethod(null);
+      setStep('country');
+    }
     else toast.error(res.error || 'Could not save payout method');
   };
 

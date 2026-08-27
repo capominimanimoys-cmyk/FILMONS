@@ -49,6 +49,22 @@ Deno.serve(async (req) => {
     if (!SK) return json({ error: 'Stripe not configured' }, 500);
     const authHeader = { Authorization: `Bearer ${SK}` };
 
+    // Same stale-Express-account guard as setup-payout-account: "Change
+    // bank account" mode skips identity entirely (it's assumed already
+    // done), so this is the only place left to catch a leftover Express
+    // account id from before this session's Custom-account rewrite. Clear
+    // it and ask the frontend to restart setup from scratch rather than
+    // attempting a call Stripe will reject anyway.
+    const typeCheck = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, { headers: authHeader });
+    const existingAccount = await typeCheck.json();
+    if (existingAccount.error || existingAccount.type !== 'custom') {
+      await fetch(rest(`/profiles?id=eq.${userId}`), {
+        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
+      });
+      return json({ error: 'reauth_required' }, 409);
+    }
+
     if (action === 'remove') {
       const existing = await selectOne('payout_methods', `host_id=eq.${userId}&stripe_connect_account_id=eq.${accountId}`);
       if (existing?.stripe_external_account_id) {
