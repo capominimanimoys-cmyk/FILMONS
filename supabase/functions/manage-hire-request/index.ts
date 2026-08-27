@@ -39,6 +39,7 @@ async function insertReturning(table: string, row: Record<string, unknown>) {
 }
 
 import { computeBreakdown } from '../_shared/pricing.ts';
+import { sendHireRequestReceivedEmail } from '../_shared/notificationEmails.ts';
 
 function round2(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function projTitle(t: string | null | undefined) { return t ? `"${t}"` : 'this hire request'; }
@@ -243,7 +244,10 @@ Deno.serve(async (req) => {
       await updateOne('conversations', `id=eq.${conversationId}`, { updated_at: new Date().toISOString() });
 
       await pushNotification({ user_id: hostId, actor_id: userId, actor_name: requester?.name || '', type: 'system_notification', title: `${requester?.name || 'Someone'} wants to hire you for ${projTitle(projectTitle)}`, conversation_id: conversationId });
-      await sendHireEmail(host?.email, host?.name, `New Hire Request on Filmons`, `${requester?.name || 'Someone'} wants to hire you for "${projectTitle}".`);
+      await sendHireRequestReceivedEmail({
+        toEmail: host?.email, toName: host?.name,
+        fromName: requester?.name || 'Someone', projectTitle, serviceLabel, conversationId,
+      });
 
       return json({ success: true, hireRequest: hr });
     }

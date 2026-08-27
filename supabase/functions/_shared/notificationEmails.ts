@@ -67,6 +67,9 @@ const TEMPLATE_CASHOUT_APPROVED        = 'template_afvgn6q';
 const TEMPLATE_CASHOUT_SENT            = 'template_bqxis6g';
 const TEMPLATE_CASHOUT_REJECTED        = 'template_in4wz0r';
 const TEMPLATE_CASHOUT_FAILED          = 'template_o7wwsdk';
+// Placeholder until created in the EmailJS dashboard from
+// hire-request-received-template.html and the real id is swapped in.
+const TEMPLATE_HIRE_REQUEST_RECEIVED   = 'template_hire_request_received';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
@@ -335,6 +338,20 @@ export function sendListingLikedEmail(p: {
     from_name: p.fromName,
     listing_title: p.listingTitle,
     listing_url: `https://filmons.app/listing/${p.listingId}`,
+  });
+}
+
+/** Someone tapped "Hire" on a creator's Portfolio and sent a hire request. */
+export function sendHireRequestReceivedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; projectTitle: string; serviceLabel: string; conversationId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_HIRE_REQUEST_RECEIVED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    project_title: p.projectTitle,
+    service_label: p.serviceLabel,
+    conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
   });
 }
 

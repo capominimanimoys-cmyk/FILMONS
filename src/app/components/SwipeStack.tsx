@@ -6,7 +6,7 @@
  * doesn't advance the deck; the same card is shown again on return).
  */
 import { useState, useRef, useEffect } from 'react';
-import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw } from 'lucide-react';
+import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -305,8 +305,11 @@ function UndoUpgradePrompt({ onClose }: { onClose: () => void }) {
 }
 
 // ── Daily swipe limit reached (Creator/Creator+/guest only -- Professional
-// and Business have no limit, so this never shows for them) ────────────────
-function DailyLimitPrompt({ tier, limit, onClose }: { tier: 'creator' | 'creator_plus' | 'guest'; limit: number; onClose: () => void }) {
+// and Business have no limit, so this never shows for them). This is a
+// one-time interstitial shown the moment the limit is hit -- it never
+// replaces the deck screen (the card stays mounted underneath) and is
+// always dismissible without losing access to browsing/See Listing. ───────
+function DailyLimitPrompt({ tier, limit, onClose, onViewListing }: { tier: 'creator' | 'creator_plus' | 'guest'; limit: number; onClose: () => void; onViewListing: () => void }) {
   const navigate = useNavigate();
   const isCreatorPlus = tier === 'creator_plus';
   const isGuest = tier === 'guest';
@@ -316,22 +319,22 @@ function DailyLimitPrompt({ tier, limit, onClose }: { tier: 'creator' | 'creator
         <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
           <Heart className="w-6 h-6 text-blue-600" />
         </div>
-        <h3 className="text-base font-black text-gray-900 mb-1.5">You've reached your daily limit</h3>
+        <h3 className="text-base font-black text-gray-900 mb-1.5">You've reached your daily swipe limit</h3>
         <p className="text-sm text-gray-500 mb-5">
           You've used all {limit} of your{isGuest ? ' free' : ' daily'} swipes{isGuest ? ' today' : ''}.{' '}
           {isGuest
             ? 'Create a free account to keep discovering creators, gear, and opportunities.'
             : isCreatorPlus
-              ? 'Upgrade to Professional for unlimited swipes and the ability to undo your passes.'
-              : 'Upgrade to Creator+ for 25 daily swipes or Professional for unlimited swipes.'}
+              ? 'Upgrade to Professional for unlimited swipes and Undo.'
+              : 'Your swipes will reset tomorrow. Upgrade to Creator+ for 25 daily swipes or Professional for unlimited swipes.'}
         </p>
         <div className="flex flex-col gap-2">
           <button onClick={() => navigate(isGuest ? '/create-account' : '/account/upgrade')}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm">
-            {isGuest ? 'Sign Up' : isCreatorPlus ? 'Upgrade to Professional' : 'Upgrade'}
+            {isGuest ? 'Sign Up' : isCreatorPlus ? 'Upgrade to Professional' : 'Upgrade to Creator+'}
           </button>
-          <button onClick={onClose} className="w-full py-2 text-gray-400 font-semibold text-xs">
-            Continue Browsing
+          <button onClick={() => { onClose(); onViewListing(); }} className="w-full py-2 text-gray-400 font-semibold text-xs">
+            View Listing
           </button>
         </div>
       </div>
@@ -432,17 +435,34 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
       // gate above is just the fast path for the common case.
       if (user && item && (dir === 'L' || dir === 'R')) {
         const res = await swipeApi.recordSwipe(user.id, item.data.id, item.kind, dir === 'L' ? 'left' : 'right');
-        if (!res.ok && res.limitReached) { setSwipesUsed(res.limit); setShowDailyLimit(true); }
-        else setSwipesUsed(n => n + 1);
+        if (res.ok) {
+          // Only a confirmed write bumps the displayed count -- counting
+          // this optimistically regardless of res.ok let the local number
+          // drift ahead of what the server actually has (e.g. every call
+          // silently failing while record-swipe was undeployed still
+          // incremented the badge to 9 while only 3 rows ever landed in
+          // `swipes`; a refresh re-syncs from getTodaySwipeCount and the
+          // badge visibly "drops"). Show the limit message the moment this
+          // swipe is the one that fills the quota, not just on the next
+          // (blocked) attempt -- the card underneath stays put either way.
+          const next = swipesUsed + 1;
+          setSwipesUsed(next);
+          if (dailyLimit !== null && next >= dailyLimit) setShowDailyLimit(true);
+        } else if (res.limitReached) {
+          setSwipesUsed(res.limit);
+          setShowDailyLimit(true);
+        }
+        // else: network/server error recording the swipe -- don't count it
+        // against the local daily-limit display; the `swipes` table (and
+        // getTodaySwipeCount on next load) stays the source of truth.
       } else if (!user && item && (dir === 'L' || dir === 'R')) {
         // No account to persist against (no favorites, no swipe history) --
         // just the local guest counter, which is the whole enforcement for
         // this tier anyway (see GUEST_DAILY_LIMIT above).
-        setSwipesUsed(n => {
-          const next = n + 1;
-          writeGuestSwipeCount(next);
-          return next;
-        });
+        const next = swipesUsed + 1;
+        writeGuestSwipeCount(next);
+        setSwipesUsed(next);
+        if (dailyLimit !== null && next >= dailyLimit) setShowDailyLimit(true);
       }
       setIdx(i => {
         const next = i + 1;
@@ -481,6 +501,11 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
   if (!current || idx >= items.length) return null;
 
   const canUndo = isProfessional(user?.accountType);
+  // Reached the daily cap -- the card stays put and See Listing stays
+  // active; only Like/Pass lock, and only for the tiers that have a cap
+  // at all (Professional/Business have dailyLimit === null, so this is
+  // always false for them).
+  const atLimit = dailyLimit !== null && swipesUsed >= dailyLimit;
 
   return (
     // isolate confines the card stack's internal z-index scale (up to 30,
@@ -520,8 +545,8 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
           {idx + 1} of {items.length}
         </p>
         {dailyLimit !== null && (
-          <p className="text-[11px] text-blue-500 font-semibold">
-            {Math.min(swipesUsed, dailyLimit)} / {dailyLimit} swipes used
+          <p className={`text-[11px] font-semibold ${atLimit ? 'text-red-500' : 'text-blue-500'}`}>
+            {Math.min(swipesUsed, dailyLimit)} / {dailyLimit} daily swipes
           </p>
         )}
       </div>
@@ -543,11 +568,16 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         )}
         <div className="flex flex-col items-center gap-1.5">
           <button
-            onClick={() => fly('L')}
-            className="w-14 h-14 lg:w-16 lg:h-16 rounded-full bg-white border-2 border-red-200 shadow-md flex items-center justify-center hover:border-red-400 hover:bg-red-50 transition-all active:scale-90">
-            <X className="w-6 h-6 lg:w-7 lg:h-7 text-red-400"/>
+            onClick={() => atLimit ? setShowDailyLimit(true) : fly('L')}
+            aria-label={atLimit ? 'Daily swipe limit reached' : 'Pass'}
+            className={`w-14 h-14 lg:w-16 lg:h-16 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+              atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-red-200 hover:border-red-400 hover:bg-red-50'
+            }`}>
+            {atLimit
+              ? <Lock className="w-5 h-5 lg:w-6 lg:h-6 text-gray-300"/>
+              : <X className="w-6 h-6 lg:w-7 lg:h-7 text-red-400"/>}
           </button>
-          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">Pass</span>
+          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">{atLimit ? 'Locked' : 'Pass'}</span>
         </div>
         <div className="flex flex-col items-center gap-1.5">
           <button
@@ -559,19 +589,26 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         </div>
         <div className="flex flex-col items-center gap-1.5">
           <button
-            onClick={() => fly('R')}
-            className="w-14 h-14 lg:w-16 lg:h-16 rounded-full bg-white border-2 border-green-200 shadow-md flex items-center justify-center hover:border-green-400 hover:bg-green-50 transition-all active:scale-90">
-            <Heart className="w-6 h-6 lg:w-7 lg:h-7 text-green-500"/>
+            onClick={() => atLimit ? setShowDailyLimit(true) : fly('R')}
+            aria-label={atLimit ? 'Daily swipe limit reached' : 'Like'}
+            className={`w-14 h-14 lg:w-16 lg:h-16 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+              atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-green-200 hover:border-green-400 hover:bg-green-50'
+            }`}>
+            {atLimit
+              ? <Lock className="w-5 h-5 lg:w-6 lg:h-6 text-gray-300"/>
+              : <Heart className="w-6 h-6 lg:w-7 lg:h-7 text-green-500"/>}
           </button>
-          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">Like</span>
+          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">{atLimit ? 'Locked' : 'Like'}</span>
         </div>
       </div>
 
-      <p className="text-[11px] text-gray-300 mt-4">← Pass  ·  Like →</p>
+      <p className="text-[11px] text-gray-300 mt-4">
+        {atLimit ? 'Upgrade to unlock more swipes today' : '← Pass  ·  Like →'}
+      </p>
 
       {showUpgradePrompt && <UndoUpgradePrompt onClose={() => setShowUpgradePrompt(false)} />}
       {showDailyLimit && dailyLimit !== null && (!user || tier === 'creator' || tier === 'creator_plus') && (
-        <DailyLimitPrompt tier={!user ? 'guest' : tier} limit={dailyLimit} onClose={() => setShowDailyLimit(false)} />
+        <DailyLimitPrompt tier={!user ? 'guest' : tier} limit={dailyLimit} onClose={() => setShowDailyLimit(false)} onViewListing={() => viewItem(current)} />
       )}
     </div>
   );
