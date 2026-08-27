@@ -374,6 +374,7 @@ export type NotificationType =
   | 'rental_request' | 'payment_request'
   | 'rental_request_accepted' | 'rental_request_declined'
   | 'purchase_request_accepted' | 'purchase_request_declined'
+  | 'listing_liked' | 'followed_creator_posted' | 'message_request_accepted'
   | 'payment_received' | 'payment_released'
   | 'payout_requested' | 'payout_processing' | 'payout_paid' | 'payout_rejected'
   | 'support_reply'

@@ -52,6 +52,13 @@ const TEMPLATE_RENTAL_ACCEPTED         = 'template_ddbut3l';
 const TEMPLATE_RENTAL_DECLINED         = 'template_ofpg4m7';
 const TEMPLATE_PURCHASE_ACCEPTED       = 'template_cjv2gal';
 const TEMPLATE_PURCHASE_DECLINED       = 'template_z4t6xak';
+// Placeholders until created in the EmailJS dashboard from the matching
+// *-template.html files in src/app/templates/.
+const TEMPLATE_LISTING_LIKED           = 'template_listing_liked';
+const TEMPLATE_FOLLOWED_CREATOR_POSTED = 'template_followed_creator_posted';
+const TEMPLATE_LISTING_SUGGESTION      = 'template_listing_suggestion';
+const TEMPLATE_SUPPORT_CASE_ADMIN      = 'template_support_case_admin';
+const TEMPLATE_MESSAGE_REQUEST_ACCEPTED = 'template_message_request_accepted';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
 // template above: build the .html, wire the sender, then ask for the id).
@@ -316,5 +323,72 @@ export function sendCashOutFailedEmail(p: {
     amount: `$${p.amount.toFixed(2)} ${p.currency}`,
     withdrawal_id: p.withdrawalId,
     wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+export function sendListingLikedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingId: string; listingTitle: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_LISTING_LIKED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    listing_url: `https://filmons.app/listing/${p.listingId}`,
+  });
+}
+
+export function sendFollowedCreatorPostedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; listingId: string; listingTitle: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_FOLLOWED_CREATOR_POSTED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    listing_title: p.listingTitle,
+    listing_url: `https://filmons.app/listing/${p.listingId}`,
+  });
+}
+
+/** No automatic trigger exists yet -- Filmons has no recommendation
+ *  engine. Template + sender only, ready for whatever surfaces a real
+ *  suggestion (e.g. a future "similar listings" feature) to call. */
+export function sendListingSuggestionEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  listingId: string; listingTitle: string; listingLocation?: string; reason: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_LISTING_SUGGESTION, {
+    to_name: p.toName || 'there',
+    listing_title: p.listingTitle,
+    listing_location: p.listingLocation || '',
+    suggestion_reason: p.reason,
+    listing_url: `https://filmons.app/listing/${p.listingId}`,
+  });
+}
+
+/** Notifies FILMONS support (not the user) that a new case was opened. */
+export function sendSupportCaseAdminEmail(p: {
+  caseId: string; userName: string; userEmail: string | null | undefined;
+  category: string; message: string; submittedAt: string;
+}) {
+  return sendEmailJsRaw(FILMONS_ADMIN_EMAIL, TEMPLATE_SUPPORT_CASE_ADMIN, {
+    case_id: p.caseId,
+    user_name: p.userName,
+    user_email: p.userEmail || 'unknown',
+    case_category: p.category,
+    case_message: p.message,
+    submitted_at: p.submittedAt,
+    admin_case_url: `https://filmons.app/admin-support`,
+  });
+}
+
+export function sendMessageRequestAcceptedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; conversationId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_MESSAGE_REQUEST_ACCEPTED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
   });
 }

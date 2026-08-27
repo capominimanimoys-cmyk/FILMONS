@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { boostApi } from '../lib/boostApi';
+import * as notifs from '../lib/notifications';
 
 interface ListingCardProps {
   listing: Listing & { distance?: number };
@@ -265,6 +266,16 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         if (!ids.includes(listing.id)) localStorage.setItem(key, JSON.stringify([...ids, listing.id]));
         boostApi.logEvent(listing.id, 'save', boosted ? 'boosted' : 'organic', undefined, user.id);
         toast('❤️ Saved!', { duration: 1500 });
+        if (listing.userId && listing.userId !== user.id) {
+          notifs.push(listing.userId, {
+            type: 'listing_liked', fromUserId: user.id, fromUserName: user.name, fromUserAvatar: user.avatar,
+            listingId: listing.id, listingTitle: listing.title,
+          });
+          fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+            body: JSON.stringify({ type: 'listing_liked', ownerId: listing.userId, likerId: user.id, likerName: user.name, listingId: listing.id, listingTitle: listing.title }),
+          }).catch(() => {});
+        }
       } else {
         await supabase.from('favorites').delete().eq('user_id', user.id).eq('item_id', listing.id);
         const key = `saved_listings_cache_${user.id}`;

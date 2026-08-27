@@ -12,6 +12,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { Listing } from '../types';
+import * as notifs from '../lib/notifications';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { isProfessional, normalizeTier } from '../lib/reliabilityApi';
 import { swipeApi } from '../lib/swipeApi';
 import { ENTITLEMENTS } from '../lib/entitlements';
@@ -378,6 +380,16 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
             item_data: { title: item.data.title, image: cover, price: item.data.price, city: item.data.city },
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Saved: ${item.data.title}`);
+          if (item.data.userId && item.data.userId !== user.id) {
+            notifs.push(item.data.userId, {
+              type: 'listing_liked', fromUserId: user.id, fromUserName: user.name, fromUserAvatar: user.avatar,
+              listingId: item.data.id, listingTitle: item.data.title,
+            });
+            fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+              body: JSON.stringify({ type: 'listing_liked', ownerId: item.data.userId, likerId: user.id, likerName: user.name, listingId: item.data.id, listingTitle: item.data.title }),
+            }).catch(() => {});
+          }
         } else {
           await supabase.from('favorites').upsert({
             user_id: user.id, item_id: item.data.id, item_type: 'creator',

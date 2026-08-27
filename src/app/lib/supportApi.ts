@@ -128,6 +128,11 @@ export const supportApi = {
       await supabase.from('support_messages').insert(rows);
     }
 
+    fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({ type: 'support_case_admin', caseId: data.id, userId: params.userId, category: params.category, message: params.aiSummary || params.subject }),
+    }).catch(() => {});
+
     return data as SupportCase;
   },
 

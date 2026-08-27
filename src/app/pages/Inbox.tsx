@@ -2207,6 +2207,24 @@ export function Inbox() {
       c.id === activeConv.id ? { ...c, isRequest: false } : c
     ));
     toast.success('Message request accepted!');
+
+    const requesterId = activeConv.requestedBy;
+    if (requesterId && user && requesterId !== user.id) {
+      notifs.push(requesterId, {
+        type: 'message_request_accepted',
+        fromUserId: user.id, fromUserName: user.name, fromUserAvatar: user.avatar,
+        conversationId: activeConv.id,
+      });
+      import('../lib/messageNotification').then(mod => {
+        mod.notifyReceiverForMessage({
+          receiverId: requesterId,
+          sender: { id: user.id, name: user.name },
+          messageText: `${user.name} accepted your message request`,
+          conversationId: activeConv.id,
+          requestType: 'message_request_accepted',
+        });
+      }).catch(() => {});
+    }
   };
 
   const handleDeclineRequest = async () => {

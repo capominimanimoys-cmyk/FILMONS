@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
 import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { supabase } from '../../lib/supabase';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type ListingKind =
@@ -1551,6 +1552,10 @@ export function CreateListing() {
       localStorage.removeItem(DRAFT_KEY);
       invalidateListingsCache();
       toast.success('Listing published!', { description: 'Your listing is now live on the marketplace.' });
+      fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ type: 'followed_creator_posted', creatorId: user.id, creatorName: user.name, listingId: data.id, listingTitle: payload.title }),
+      }).catch(() => {});
       navigate(`/listing/${data.id}`);
     } catch (e) {
       // Fallback to edge function

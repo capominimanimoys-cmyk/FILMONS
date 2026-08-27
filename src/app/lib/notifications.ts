@@ -55,6 +55,9 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'rental_request_declined':   return `${actorName} declined your rental request`;
     case 'purchase_request_accepted': return `${actorName} accepted your purchase request`;
     case 'purchase_request_declined': return `${actorName} declined your purchase request`;
+    case 'listing_liked':             return `${actorName} liked your listing`;
+    case 'followed_creator_posted':   return `${actorName} posted a new listing`;
+    case 'message_request_accepted':  return `${actorName} accepted your message request`;
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';
     case 'payout_requested':    return 'Your payout request was received';

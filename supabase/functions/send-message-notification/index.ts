@@ -28,6 +28,7 @@ import {
   sendNewMessageEmail, sendRentalRequestEmail, sendPurchaseRequestEmail,
   sendRentalAcceptedEmail, sendRentalDeclinedEmail,
   sendPurchaseAcceptedEmail, sendPurchaseDeclinedEmail,
+  sendMessageRequestAcceptedEmail,
   type MessageKind,
 } from '../_shared/notificationEmails.ts';
 
@@ -98,6 +99,11 @@ Deno.serve(async (req) => {
       await sendPurchaseDeclinedEmail({
         toEmail: receiver.email, toName: receiver.name || receiver.username,
         fromName: senderName || 'Someone', listingTitle: listingTitle || 'the listing',
+      });
+    } else if (requestType === 'message_request_accepted') {
+      await sendMessageRequestAcceptedEmail({
+        toEmail: receiver.email, toName: receiver.name || receiver.username,
+        fromName: senderName || 'Someone', conversationId,
       });
     } else {
       await sendNewMessageEmail({
