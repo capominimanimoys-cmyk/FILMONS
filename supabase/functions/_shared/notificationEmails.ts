@@ -52,13 +52,13 @@ const TEMPLATE_RENTAL_ACCEPTED         = 'template_ddbut3l';
 const TEMPLATE_RENTAL_DECLINED         = 'template_ofpg4m7';
 const TEMPLATE_PURCHASE_ACCEPTED       = 'template_cjv2gal';
 const TEMPLATE_PURCHASE_DECLINED       = 'template_z4t6xak';
-// Placeholders until created in the EmailJS dashboard from the matching
+// All five now created in the EmailJS dashboard from the matching
 // *-template.html files in src/app/templates/.
-const TEMPLATE_LISTING_LIKED           = 'template_listing_liked';
-const TEMPLATE_FOLLOWED_CREATOR_POSTED = 'template_followed_creator_posted';
-const TEMPLATE_LISTING_SUGGESTION      = 'template_listing_suggestion';
-const TEMPLATE_SUPPORT_CASE_ADMIN      = 'template_support_case_admin';
-const TEMPLATE_MESSAGE_REQUEST_ACCEPTED = 'template_message_request_accepted';
+const TEMPLATE_LISTING_LIKED           = 'template_4ki361h';
+const TEMPLATE_FOLLOWED_CREATOR_POSTED = 'template_qpz4d6q';
+const TEMPLATE_LISTING_SUGGESTION      = 'template_dx3stud';
+const TEMPLATE_SUPPORT_CASE_ADMIN      = 'template_g2g3fod';
+const TEMPLATE_MESSAGE_REQUEST_ACCEPTED = 'template_nzfmrsm';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
 // template above: build the .html, wire the sender, then ask for the id).
