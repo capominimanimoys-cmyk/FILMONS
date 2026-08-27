@@ -182,6 +182,8 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'declined your purchase request' };
     case 'listing_liked':
       return { icon: Heart,         gradient: 'from-pink-400 to-fuchsia-500',    iconColor: 'text-white', ringColor: 'ring-pink-100',    label: () => 'liked your listing' };
+    case 'creator_liked':
+      return { icon: Heart,         gradient: 'from-pink-400 to-fuchsia-500',    iconColor: 'text-white', ringColor: 'ring-pink-100',    label: () => 'liked your profile' };
     case 'followed_creator_posted':
       return { icon: ShoppingBag,   gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'posted a new listing' };
     case 'message_request_accepted':
@@ -196,8 +198,10 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Check,         gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your cash-out request was approved' };
     case 'payout_processing':
       return { icon: Zap,           gradient: 'from-amber-400 to-orange-500',    iconColor: 'text-white', ringColor: 'ring-amber-100',   label: () => 'Your payout is being processed' };
+    case 'payout_sent':
+      return { icon: Zap,           gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your payout is on the way' };
     case 'payout_paid':
-      return { icon: Check,         gradient: 'from-green-500 to-emerald-600',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your payout has been sent' };
+      return { icon: Check,         gradient: 'from-green-500 to-emerald-600',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your payout has arrived' };
     case 'payout_rejected':
       return { icon: X,             gradient: 'from-red-400 to-rose-500',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Your payout request was rejected' };
     case 'payout_failed':
@@ -227,7 +231,7 @@ const SYSTEM_TYPES: string[] = [
   'account_verified','account_warning','system_announcement','system_notification',
   'profile_completion','trust_level_update','booking_accepted','booking_rejected',
   'payment_released','application_accepted','application_rejected',
-  'payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed',
+  'payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed',
   'support_reply',
 ];
 function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
@@ -243,7 +247,8 @@ function systemIcon(type: string): ElementType {
     case 'booking_rejected':     return X;
     case 'payment_released':     return Zap;
     case 'payout_requested':
-    case 'payout_processing':    return Zap;
+    case 'payout_processing':
+    case 'payout_sent':          return Zap;
     case 'payout_approved':      return Check;
     case 'payout_paid':          return Check;
     case 'payout_rejected':      return X;
@@ -529,8 +534,8 @@ type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payment
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction','message_request_accepted'];
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','listing_liked','followed_creator_posted'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
-const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_paid','payout_rejected','payout_failed'];
-const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned'];
+const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
+const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
 const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [

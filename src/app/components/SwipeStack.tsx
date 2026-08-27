@@ -426,6 +426,15 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
             item_data: { id: item.data.id, name: item.data.name, username: item.data.username, avatar_url: item.data.avatar_url, city: item.data.city, primary_role: item.data.primary_role },
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Liked: ${item.data.name}`);
+          if (item.data.id && item.data.id !== user.id) {
+            notifs.push(item.data.id, {
+              type: 'creator_liked', fromUserId: user.id, fromUserName: user.name, fromUserAvatar: user.avatar,
+            });
+            fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+              body: JSON.stringify({ type: 'creator_liked', ownerId: item.data.id, likerId: user.id, likerName: user.name }),
+            }).catch(() => {});
+          }
         }
       }
       // Record every swipe (both directions) -- left makes the pass

@@ -56,6 +56,7 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'purchase_request_accepted': return `${actorName} accepted your purchase request`;
     case 'purchase_request_declined': return `${actorName} declined your purchase request`;
     case 'listing_liked':             return `${actorName} liked your listing`;
+    case 'creator_liked':             return `${actorName} liked your profile`;
     case 'followed_creator_posted':   return `${actorName} posted a new listing`;
     case 'message_request_accepted':  return `${actorName} accepted your message request`;
     case 'payment_received':    return `Payment received from ${actorName}`;
@@ -63,7 +64,8 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'payout_requested':    return 'Your payout request was received';
     case 'payout_approved':     return 'Your cash-out request was approved';
     case 'payout_processing':   return 'Your payout is being processed';
-    case 'payout_paid':         return 'Your payout has been sent';
+    case 'payout_sent':         return 'Your payout is on the way';
+    case 'payout_paid':         return 'Your payout has arrived';
     case 'payout_rejected':     return 'Your payout request was rejected';
     case 'payout_failed':       return 'Your cash-out could not be completed';
     case 'support_reply':       return 'Filmons Support replied';

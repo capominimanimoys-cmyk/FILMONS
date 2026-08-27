@@ -76,6 +76,10 @@ const TEMPLATE_HIRE_REQUEST_RECEIVED   = 'template_6yqddjn';
 const TEMPLATE_PAYOUT_SENT             = 'template_nmo74ej';
 const TEMPLATE_PAYOUT_FAILED           = 'template_amnhojo';
 const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_bfac8h2';
+// Placeholders until created in the EmailJS dashboard from
+// creator-liked-template.html / payout-method-updated-template.html.
+const TEMPLATE_CREATOR_LIKED           = 'template_creator_liked';
+const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_payout_method_updated';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
@@ -395,6 +399,30 @@ export function sendPayoutBankAttentionEmail(p: {
   return sendEmailJsRaw(p.toEmail, TEMPLATE_PAYOUT_BANK_ATTENTION, {
     to_name: p.toName || 'there',
     payout_method_url: 'https://filmons.app/wallet/payout-method',
+  });
+}
+
+/** Someone swiped right on / liked this creator's profile card. */
+export function sendCreatorLikedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null; fromName: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CREATOR_LIKED, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    profile_url: 'https://filmons.app/profile',
+  });
+}
+
+/** A payout method was added for the first time, or an existing one was changed. */
+export function sendPayoutMethodUpdatedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  isUpdate: boolean; destinationLabel: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PAYOUT_METHOD_UPDATED, {
+    to_name: p.toName || 'there',
+    action_label: p.isUpdate ? 'updated' : 'added',
+    destination_label: p.destinationLabel,
+    wallet_url: 'https://filmons.app/wallet',
   });
 }
 

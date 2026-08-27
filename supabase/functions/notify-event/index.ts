@@ -24,7 +24,7 @@ async function selectMany(table: string, filter: string) {
   return Array.isArray(rows) ? rows : [];
 }
 
-import { sendListingLikedEmail, sendFollowedCreatorPostedEmail, sendSupportCaseAdminEmail } from '../_shared/notificationEmails.ts';
+import { sendListingLikedEmail, sendCreatorLikedEmail, sendFollowedCreatorPostedEmail, sendSupportCaseAdminEmail } from '../_shared/notificationEmails.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -40,6 +40,15 @@ Deno.serve(async (req) => {
       const owner = await selectOne('profiles', `id=eq.${ownerId}`);
       if (!owner?.email) return json({ sent: false, reason: 'no_email' });
       await sendListingLikedEmail({ toEmail: owner.email, toName: owner.name, fromName: likerName || 'Someone', listingId, listingTitle });
+      return json({ sent: true });
+    }
+
+    if (type === 'creator_liked') {
+      const { ownerId, likerId, likerName } = body;
+      if (!ownerId || ownerId === likerId) return json({ sent: false });
+      const owner = await selectOne('profiles', `id=eq.${ownerId}`);
+      if (!owner?.email) return json({ sent: false, reason: 'no_email' });
+      await sendCreatorLikedEmail({ toEmail: owner.email, toName: owner.name, fromName: likerName || 'Someone' });
       return json({ sent: true });
     }
 

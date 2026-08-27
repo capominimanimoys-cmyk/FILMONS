@@ -10,6 +10,7 @@
 // (profiles.stripe_connect_account_id set).
 import { verifyStepUpToken } from '../_shared/stepUpAuth.ts';
 import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
+import { sendPayoutMethodUpdatedEmail } from '../_shared/notificationEmails.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const json = (body: unknown, status = 200) =>
@@ -127,6 +128,15 @@ Deno.serve(async (req) => {
         account_holder_type: profile?.payout_account_type || 'individual',
       }),
     });
+
+    // Security-relevant regardless of which branch this was (first-time
+    // add or a change of destination) -- someone should always know their
+    // payout money is now going somewhere new.
+    sendPayoutMethodUpdatedEmail({
+      toEmail: profile?.email, toName: profile?.name,
+      isUpdate: !!existing?.stripe_external_account_id,
+      destinationLabel: safe ? `${safe.displayName} ••••${safe.last4 || ''}` : `•••• ${accountNumber.slice(-4)}`,
+    }).catch(() => {});
 
     return json({ success: true, payoutMethod: safe });
   } catch (e) {
