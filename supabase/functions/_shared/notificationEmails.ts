@@ -73,9 +73,9 @@ const TEMPLATE_HIRE_REQUEST_RECEIVED   = 'template_6yqddjn';
 // Automated Stripe payout lifecycle -- placeholders until created in the
 // EmailJS dashboard from the payout-*-template.html files and the real ids
 // are swapped in.
-const TEMPLATE_PAYOUT_SENT             = 'template_payout_sent';
-const TEMPLATE_PAYOUT_FAILED           = 'template_payout_failed';
-const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_payout_bank_attention';
+const TEMPLATE_PAYOUT_SENT             = 'template_nmo74ej';
+const TEMPLATE_PAYOUT_FAILED           = 'template_amnhojo';
+const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_bfac8h2';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {

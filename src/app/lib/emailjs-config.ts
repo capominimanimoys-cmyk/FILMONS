@@ -71,7 +71,12 @@ export const sendEmail = async (
 export const sendWelcomeEmail = (email: string, name: string) =>
   sendEmail(EMAILJS_CONFIG.templates.welcome, {
     to_email: email, to_name: name, user_name: name,
-    site_url: window.location.origin,
+    // Always the real production domain, never window.location.origin —
+    // this email must send users to filmons.app even when triggered from
+    // a dev/preview/staging environment, matching every other email in
+    // this app (all hardcode https://filmons.app/... rather than deriving
+    // it from wherever the code happened to run).
+    site_url: 'https://filmons.app',
   });
 
 export const sendPasswordResetEmail = (email: string, name: string, resetLink: string) =>
