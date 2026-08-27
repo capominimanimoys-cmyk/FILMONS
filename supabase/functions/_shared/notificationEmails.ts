@@ -78,8 +78,8 @@ const TEMPLATE_PAYOUT_FAILED           = 'template_amnhojo';
 const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_bfac8h2';
 // Placeholders until created in the EmailJS dashboard from
 // creator-liked-template.html / payout-method-updated-template.html.
-const TEMPLATE_CREATOR_LIKED           = 'template_creator_liked';
-const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_payout_method_updated';
+const TEMPLATE_CREATOR_LIKED           = 'template_9jesf8j';
+const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
