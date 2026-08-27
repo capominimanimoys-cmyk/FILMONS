@@ -174,9 +174,11 @@ function CreatorContent({ profile }: { profile: CreatorProfile }) {
 }
 
 // ── Draggable card shell ──────────────────────────────────────────────────────
-// Tap/drag here only ever Likes or Passes -- viewing the full listing is a
-// dedicated "See Listing" action (the Eye button below), never a gesture,
-// so it can never be mistaken for a swipe and never advances the deck.
+// Drag here only ever Likes or Passes; a plain tap (no drag) acts exactly
+// like the "See Listing" button below -- same onView callback, so it never
+// counts as a swipe and never advances the deck either. Only a vertical
+// drag with no real horizontal movement snaps back with no action (no
+// swipe-up gesture, per spec).
 interface CardProps {
   item: DeckItem;
   stackPos: number;
@@ -184,9 +186,10 @@ interface CardProps {
   exitDir: 'L' | 'R' | null;
   onSwipeLeft:  () => void;
   onSwipeRight: () => void;
+  onView: () => void;
 }
 
-function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight }: CardProps) {
+function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, onView }: CardProps) {
   const [drag, setDrag]     = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
   const startRef = useRef<{ x: number; y: number; t: number } | null>(null);
@@ -206,14 +209,18 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight }
 
   const up = (e: React.PointerEvent) => {
     if (!startRef.current) return;
-    const dx = e.clientX - startRef.current.x;
-    const dy = e.clientY - startRef.current.y;
+    const dx   = e.clientX - startRef.current.x;
+    const dy   = e.clientY - startRef.current.y;
+    const dt   = Date.now() - startRef.current.t;
+    const dist = Math.hypot(dx, dy);
 
-    if (Math.abs(dx) > SWIPE_X && Math.abs(dx) > Math.abs(dy)) {
+    if (dist < 8 && dt < 280) {
+      onView();
+    } else if (Math.abs(dx) > SWIPE_X && Math.abs(dx) > Math.abs(dy)) {
       dx > 0 ? onSwipeRight() : onSwipeLeft();
     }
-    // Anything else (a tap, a short drag, a vertical drag) snaps back --
-    // no swipe-up gesture, per spec; use the See Listing button instead.
+    // Anything else (an indecisive drag, a vertical drag) snaps back -- no
+    // swipe-up gesture, per spec; use the See Listing button instead.
 
     setDrag({ x: 0, y: 0 });
     setActive(false);
@@ -463,6 +470,10 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
 
   const current = items[idx];
   const cards   = items.slice(idx, idx + 3);
+  const viewItem = (target: DeckItem) => {
+    if (target.kind === 'listing') navigate(`/listing/${target.data.id}`);
+    else navigate(`/host/${target.data.id}`);
+  };
 
   // Deck exhausted -- Home.tsx owns the "you're all caught up" screen
   // (Browse All Listings / Change Filters / Refresh) via onDone, so there's
@@ -496,6 +507,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
               exitDir={isTop ? exitDir : null}
               onSwipeLeft={() => fly('L')}
               onSwipeRight={() => fly('R')}
+              onView={() => viewItem(item)}
             />
           );
         })}
@@ -539,7 +551,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         </div>
         <div className="flex flex-col items-center gap-1.5">
           <button
-            onClick={() => current.kind === 'listing' ? navigate(`/listing/${current.data.id}`) : navigate(`/host/${current.data.id}`)}
+            onClick={() => viewItem(current)}
             className="w-12 h-12 lg:w-14 lg:h-14 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center hover:border-blue-400 hover:bg-blue-50 transition-all active:scale-90">
             <Eye className="w-5 h-5 lg:w-6 lg:h-6 text-blue-500"/>
           </button>

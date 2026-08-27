@@ -1382,6 +1382,19 @@ export function Inbox() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesAreaRef = useRef<HTMLDivElement>(null);
 
+  // Auto-grow the composer as the message spans more lines -- rows={1}
+  // alone kept it pinned to one visible line forever (extra lines just
+  // scrolled out of view inside it, invisible while typing). Re-measured
+  // on every change to `message`, not just user keystrokes, so it also
+  // collapses back to min-height after handleSend clears it and expands
+  // correctly when a multi-line draft loads on switching conversations.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [message]);
+
   // Tapping empty space in the message list (not a bubble's interactive
   // bits, not a link/button) focuses the composer, like every native
   // messaging app — mobile only, desktop already has the input in view
@@ -3186,8 +3199,11 @@ export function Inbox() {
                     <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
                   </div>
 
-                                    {/* Text area */}
-                  <div className="flex-1 flex items-end bg-gray-100 rounded-2xl px-3 py-2 min-h-[42px]">
+                                    {/* Text area — auto-grows with the resize effect above;
+                      min-h-[44px] keeps a single line looking normal,
+                      max-h-40 (160px) then scrolls internally rather than
+                      growing the composer forever. */}
+                  <div className="flex-1 flex items-end bg-gray-100 rounded-2xl px-3 py-2 min-h-[44px]">
                     <textarea ref={textareaRef} value={message}
                       onChange={e => {
                         setMessage(e.target.value);
@@ -3197,7 +3213,7 @@ export function Inbox() {
                       }}
                       onKeyDown={handleKeyDown}
                       placeholder="Type a message…" rows={1}
-                      className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none max-h-28 leading-relaxed" />
+                      className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none min-h-[44px] max-h-40 overflow-y-auto overflow-x-hidden leading-relaxed whitespace-pre-wrap [overflow-wrap:break-word] box-border" />
                   </div>
 
                   {/* Right: mic or send */}

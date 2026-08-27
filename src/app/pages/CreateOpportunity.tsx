@@ -10,6 +10,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi, invalidateListingsCache } from '../lib/api';
 import { supabase } from '../../lib/supabase';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { toast } from 'sonner';
 import {
   ArrowLeft, ChevronRight, ChevronLeft, Upload, Trash2, Check, X,
@@ -844,6 +845,10 @@ export function CreateOpportunity() {
       localStorage.removeItem(DRAFT_KEY);
       invalidateListingsCache();
       setPublishedId(newId);
+      fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ type: 'followed_creator_posted', creatorId: user.id, creatorName: user.name, listingId: newId, listingTitle: payload.title }),
+      }).catch(() => {});
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
     } finally {

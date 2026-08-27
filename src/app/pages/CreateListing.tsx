@@ -1588,6 +1588,10 @@ export function CreateListing() {
         } as any);
         localStorage.removeItem(DRAFT_KEY);
         toast.success('Listing published!');
+        fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          body: JSON.stringify({ type: 'followed_creator_posted', creatorId: user.id, creatorName: user.name, listingId: listing.id, listingTitle: payload.title }),
+        }).catch(() => {});
         navigate(`/listing/${listing.id}`);
       } catch (fallback) {
         toast.error(fallback instanceof Error ? fallback.message : 'Failed to publish. Please try again.');

@@ -232,3 +232,30 @@ jobs:
         run: supabase functions deploy send-follow-notification --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # This workflow deploys a fixed, named list of functions rather than
+      # scanning supabase/functions/** -- pushing a brand-new function
+      # directory matches the path trigger above (so the workflow runs)
+      # but silently deploys nothing for it without an explicit step here.
+      # undo-swipe/record-swipe/notify-event/check-mutual-follow were all
+      # added and pushed without one, so every call to them 404'd (fire-
+      # and-forget callers swallow that silently) until this was added.
+      - name: Deploy undo-swipe
+        run: supabase functions deploy undo-swipe --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy record-swipe
+        run: supabase functions deploy record-swipe --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy notify-event
+        run: supabase functions deploy notify-event --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy check-mutual-follow
+        run: supabase functions deploy check-mutual-follow --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
