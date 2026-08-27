@@ -98,6 +98,8 @@ export interface PayoutRequest {
   stripe_transfer_id: string | null;
   stripe_payout_id: string | null;
   arrival_date: string | null;
+  payout_currency: string | null;
+  payout_amount: number | null;
 }
 
 function maskDestination(method: PayoutMethodType, details: PayoutDestination | null, last4?: string | null): string {
@@ -146,6 +148,11 @@ export const walletApi = {
     success: boolean; error?: string; payoutRequestId?: string;
     payoutSpeed?: PayoutSpeed; feeAmount?: number; netAmount?: number; estimatedArrivalAt?: string;
     platformFeeRate?: number; platformFeeAmount?: number;
+    // Only present for a cross-currency automated payout (e.g. a CAD
+    // wallet balance sent to a US bank account) -- the real amount/
+    // currency Stripe's Payout object reported actually sending, never a
+    // pre-conversion estimate.
+    payoutCurrency?: string | null; payoutAmount?: number | null;
   }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/request-payout`, {
@@ -160,9 +167,25 @@ export const walletApi = {
         payoutSpeed: data.payoutSpeed, feeAmount: data.feeAmount, netAmount: data.netAmount,
         estimatedArrivalAt: data.estimatedArrivalAt,
         platformFeeRate: data.platformFeeRate, platformFeeAmount: data.platformFeeAmount,
+        payoutCurrency: data.payoutCurrency, payoutAmount: data.payoutAmount,
       };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
+    }
+  },
+
+  /** Display-only indicative rate for a cross-currency payout preview --
+   *  never the value actually used to move money (the edge function
+   *  fetches its own at execution time and applies a safety margin). */
+  async getIndicativeFxRate(from: string, to: string): Promise<number | null> {
+    if (from === to) return 1;
+    try {
+      const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
+      const data = await res.json();
+      const rate = data?.rates?.[to];
+      return typeof rate === 'number' && rate > 0 ? rate : null;
+    } catch {
+      return null;
     }
   },
 

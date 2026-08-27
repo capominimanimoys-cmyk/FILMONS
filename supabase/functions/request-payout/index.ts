@@ -91,6 +91,29 @@ async function rpc(fn: string, args: Record<string, unknown>) {
   return fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H, body: JSON.stringify(args) });
 }
 
+// Filmons' wallet ledger is entirely CAD, but a Stripe Payout's currency
+// must match what the destination bank account can actually receive -- a
+// USD external_account rejects a CAD-denominated payout outright. Stripe
+// has no side-effect-free "quote" endpoint for what a given CAD amount
+// converts to, so this uses a real daily ECB rate (Frankfurter, no key
+// required) as the actual conversion source for the payout amount --
+// handleAutomatedPayout applies a small safety margin on top so a rate
+// snapshot slightly stale relative to Stripe's own live conversion can
+// only ever request a little less than the transferred CAD balance
+// covers, never more (which would otherwise risk the payout call failing
+// against a balance that doesn't quite stretch that far). Returns null on
+// any failure so the caller fails closed instead of guessing.
+async function fetchIndicativeRate(from: string, to: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
+    const data = await res.json();
+    const rate = data?.rates?.[to];
+    return typeof rate === 'number' && rate > 0 ? rate : null;
+  } catch {
+    return null;
+  }
+}
+
 // Real, automated fulfillment for a Stripe Custom-account payout method --
 // $0 Filmons fee always (no platform_fee_rate/config involved at all, see
 // the migration's fn_request_payout_automated). Money actually moves in
@@ -133,9 +156,24 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
   const transfer = await transferRes.json();
   if (transfer.error) return fail(transfer.error.message);
 
+  // CAD destinations pay out exactly what was transferred, no conversion.
+  // Anything else (today: USD) needs a real exchange rate -- see
+  // fetchIndicativeRate's comment for why this is the actual conversion
+  // source, not just a display estimate, and why it's shaded down slightly.
+  const destCurrency = (method.currency || 'CAD').toUpperCase();
+  let payoutAmountCents = cents;
+  let payoutCurrency = 'cad';
+  if (destCurrency !== 'CAD') {
+    const rate = await fetchIndicativeRate('CAD', destCurrency);
+    if (!rate) return fail('Currency conversion is temporarily unavailable — please try again shortly.');
+    const SAFETY_MARGIN = 0.99;
+    payoutAmountCents = Math.floor(cents * rate * SAFETY_MARGIN);
+    payoutCurrency = destCurrency.toLowerCase();
+  }
+
   const payoutRes = await fetch('https://api.stripe.com/v1/payouts', {
     method: 'POST', headers: { ...stripeHeaders, 'Stripe-Account': method.stripe_connect_account_id },
-    body: new URLSearchParams({ amount: String(cents), currency: 'cad' }),
+    body: new URLSearchParams({ amount: String(payoutAmountCents), currency: payoutCurrency }),
   });
   const payout = await payoutRes.json();
   if (payout.error) return fail(payout.error.message);
@@ -144,26 +182,40 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
   // Payout response includes one, store/show it; otherwise the frontend
   // only ever shows the generic 1-6 business day range.
   const arrivalDate = payout.arrival_date ? new Date(payout.arrival_date * 1000).toISOString() : null;
+  // payout.amount/payout.currency are Stripe's own confirmation of what was
+  // actually sent -- the real post-conversion figure, not our estimate.
+  const sentAmount = typeof payout.amount === 'number' ? payout.amount / 100 : payoutAmountCents / 100;
+  const sentCurrency = (payout.currency || payoutCurrency).toUpperCase();
+  const isCrossCurrency = sentCurrency !== 'CAD';
   await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), {
     method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-    body: JSON.stringify({ status: 'sent', stripe_transfer_id: transfer.id, stripe_payout_id: payout.id, arrival_date: arrivalDate }),
+    body: JSON.stringify({
+      status: 'sent', stripe_transfer_id: transfer.id, stripe_payout_id: payout.id, arrival_date: arrivalDate,
+      payout_currency: isCrossCurrency ? sentCurrency : null,
+      payout_amount: isCrossCurrency ? sentAmount : null,
+    }),
   });
 
   const claimed = await claimEmailEvent(`payout_sent:${payoutRequestId}`);
   if (claimed) {
     const host = await selectOne('profiles', `id=eq.${hostId}`);
     await sendPayoutSentEmail({
-      toEmail: host?.email, toName: host?.name, amount, currency: 'CAD',
+      toEmail: host?.email, toName: host?.name,
+      amount: isCrossCurrency ? sentAmount : amount, currency: sentCurrency,
       destinationLabel: method.display_name ? `${method.display_name} ••••${method.last4 || ''}` : `•••• ${method.last4 || ''}`,
       arrivalDate,
     }).catch(() => {});
   }
   await fetch(rest('/notifications'), {
     method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-    body: JSON.stringify({ user_id: hostId, actor_id: null, actor_name: 'Filmons', type: 'payout_sent', title: `Your $${amount.toFixed(2)} CAD payout is on the way`, is_read: false }),
+    body: JSON.stringify({ user_id: hostId, actor_id: null, actor_name: 'Filmons', type: 'payout_sent', title: `Your ${isCrossCurrency ? `$${sentAmount.toFixed(2)} ${sentCurrency}` : `$${amount.toFixed(2)} CAD`} payout is on the way`, is_read: false }),
   }).catch(() => {});
 
-  return j({ success: true, payoutRequestId, payoutSpeed: 'standard', feeAmount: 0, platformFeeRate: 0, platformFeeAmount: 0, netAmount: amount, estimatedArrivalAt: arrivalDate });
+  return j({
+    success: true, payoutRequestId, payoutSpeed: 'standard', feeAmount: 0, platformFeeRate: 0, platformFeeAmount: 0,
+    netAmount: amount, estimatedArrivalAt: arrivalDate,
+    payoutCurrency: isCrossCurrency ? sentCurrency : null, payoutAmount: isCrossCurrency ? sentAmount : null,
+  });
 }
 
 Deno.serve(async (req) => {

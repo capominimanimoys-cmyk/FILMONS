@@ -113,9 +113,14 @@ Deno.serve(async (req) => {
     let accountId = profile.stripe_connect_account_id as string | null;
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || '0.0.0.0';
 
+    // `country` is a create-only, immutable Account field -- Stripe's
+    // update endpoint (POST /v1/accounts/{id}) doesn't recognize it at all
+    // and returns "Unknown parameter: country" if it's included, so it's
+    // added below only for the create branch, never reused here for the
+    // update call (e.g. the SIN/SSN follow-up step re-submits against an
+    // account that already exists by then).
     const baseParams: Record<string, string> = {
       business_type: accountHolderType,
-      country: resolvedCountry,
       email: profile.email || '',
       'capabilities[transfers][requested]': 'true',
       'capabilities[card_payments][requested]': 'true', // required alongside transfers, see payout-connect-start's old comment for why -- never actually used to charge anything
@@ -134,6 +139,7 @@ Deno.serve(async (req) => {
 
     let account: any;
     if (!accountId) {
+      baseParams.country = resolvedCountry;
       baseParams['tos_acceptance[date]'] = String(Math.floor(Date.now() / 1000));
       baseParams['tos_acceptance[ip]'] = ip;
       const res = await fetch('https://api.stripe.com/v1/accounts', {

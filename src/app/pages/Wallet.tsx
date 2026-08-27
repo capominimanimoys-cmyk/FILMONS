@@ -55,6 +55,7 @@ interface PayoutResult {
   amount: number; payoutSpeed: PayoutSpeed; feeAmount: number; netAmount: number;
   platformFeeAmount: number;
   estimatedArrivalAt: string; method: PayoutMethodType; destination: PayoutDestination;
+  payoutCurrency?: string | null; payoutAmount?: number | null;
 }
 
 function estimatedArrivalLabel(speed: PayoutSpeed, iso: string): string {
@@ -122,6 +123,7 @@ function RequestPayoutModal({
         platformFeeAmount: res.platformFeeAmount || 0,
         estimatedArrivalAt: res.estimatedArrivalAt || new Date().toISOString(),
         method, destination,
+        payoutCurrency: res.payoutCurrency, payoutAmount: res.payoutAmount,
       });
       setStep('success');
     } else {
@@ -171,6 +173,19 @@ function PayoutModalInner(props: {
   // doesn't collect) and are always $0 fee -- skip the speed step entirely
   // for that provider rather than showing a choice that doesn't apply.
   const isStripe = defaultMethod?.provider === 'stripe';
+  const destCurrency = defaultMethod?.currency && defaultMethod.currency !== 'CAD' ? defaultMethod.currency : null;
+
+  // Display-only estimate for a cross-currency payout (e.g. a US bank
+  // account) -- never the value actually used to move money. The edge
+  // function fetches its own rate at execution time and applies a safety
+  // margin, so the real converted amount (shown on the success screen) can
+  // differ slightly from this preview.
+  const [fxRate, setFxRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (!destCurrency) { setFxRate(null); return; }
+    walletApi.getIndicativeFxRate('CAD', destCurrency).then(setFxRate);
+  }, [destCurrency]);
+
   const steps: Step[] = isStripe ? ['amount', 'review'] : ['amount', 'speed', 'review'];
   const stepIdx = steps.indexOf(step);
   const goNext = () => {
@@ -267,6 +282,14 @@ function PayoutModalInner(props: {
                   <span className="text-xs text-gray-400">Payout Amount</span>
                   <span className="text-sm font-black text-gray-900">{fmtCad(amountNum)} {currency}</span>
                 </div>
+                {destCurrency && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">You'll Receive (est.)</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {fxRate ? `≈ ${fmtCad(amountNum * fxRate)} ${destCurrency}` : <Loader2 className="w-3.5 h-3.5 animate-spin inline" />}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400">Estimated Arrival</span>
                   <span className="text-sm font-bold text-gray-900">1–6 business days</span>
@@ -278,6 +301,7 @@ function PayoutModalInner(props: {
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
                 Your payout will be sent to your bank account and should arrive within 1–6 business days.
+                {destCurrency && ' Since your bank account is in a different currency, the exact amount you receive is confirmed by Stripe at the time your payout is sent — the amount above is an estimate.'}
               </p>
             </div>
           )}
@@ -331,11 +355,16 @@ function PayoutModalInner(props: {
               <div>
                 <p className="text-base font-black text-gray-900">Payout Sent ✓</p>
                 <p className="text-sm text-gray-500 mt-1">
-                  {fmtCad(result.amount)} is on the way to {walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}.
+                  {result.payoutCurrency && result.payoutAmount != null
+                    ? `${fmtCad(result.payoutAmount)} ${result.payoutCurrency}`
+                    : fmtCad(result.amount)} is on the way to {walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}.
                 </p>
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2.5 text-left">
-                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Payout Amount</span><span className="text-sm font-black text-gray-900">{fmtCad(result.amount)} CAD</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Withdrawn</span><span className="text-sm font-black text-gray-900">{fmtCad(result.amount)} CAD</span></div>
+                {result.payoutCurrency && result.payoutAmount != null && (
+                  <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Sent To Your Bank</span><span className="text-sm font-black text-gray-900">{fmtCad(result.payoutAmount)} {result.payoutCurrency}</span></div>
+                )}
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Expected arrival</span><span className="text-sm font-bold text-gray-900">1–6 business days</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Destination</span><span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}</span></div>
               </div>
@@ -633,6 +662,9 @@ export function Wallet() {
                         <p className="text-xs text-gray-400">
                           Expected arrival: 1–6 business days{p.arrival_date ? ` (around ${new Date(p.arrival_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })})` : ''}
                         </p>
+                      )}
+                      {p.payout_currency && p.payout_amount != null && (
+                        <p className="text-xs text-gray-400">Sent as {fmtCad(p.payout_amount)} {p.payout_currency} to your bank</p>
                       )}
                       {p.status === 'rejected' && p.rejection_reason && (
                         <p className="text-xs text-red-500 mt-0.5">{p.rejection_reason}</p>
