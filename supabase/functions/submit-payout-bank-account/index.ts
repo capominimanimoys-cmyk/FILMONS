@@ -57,7 +57,8 @@ Deno.serve(async (req) => {
     // attempting a call Stripe will reject anyway.
     const typeCheck = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, { headers: authHeader });
     const existingAccount = await typeCheck.json();
-    if (existingAccount.error || existingAccount.type !== 'custom') {
+    const isPlatformControlled = existingAccount.type === 'custom' || existingAccount.controller?.requirement_collection === 'application';
+    if (existingAccount.error || !isPlatformControlled) {
       await fetch(rest(`/profiles?id=eq.${userId}`), {
         method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
         body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),

@@ -129,7 +129,13 @@ Deno.serve(async (req) => {
         headers: { Authorization: `Bearer ${SK}` },
       });
       const existingAccount = await checkRes.json();
-      if (existingAccount.error || existingAccount.type !== 'custom') accountId = null;
+      // Newer accounts created with explicit `controller[...]` params
+      // (see the create branch below) may not echo back `type: 'custom'`
+      // the same way legacy `type: 'custom'`-created accounts do -- check
+      // either representation of "this platform controls it" rather than
+      // just the legacy field.
+      const isPlatformControlled = existingAccount.type === 'custom' || existingAccount.controller?.requirement_collection === 'application';
+      if (existingAccount.error || !isPlatformControlled) accountId = null;
     }
 
     // `country` is a create-only, immutable Account field -- Stripe's
@@ -159,6 +165,21 @@ Deno.serve(async (req) => {
     let account: any;
     if (!accountId) {
       baseParams.country = resolvedCountry;
+      // Newer Stripe platforms default a new account's `controller` to
+      // requirement_collection: 'stripe' (Stripe manages onboarding/ToS
+      // itself -- the Express/Standard model) regardless of the legacy
+      // `type: 'custom'` param below, which this platform's Connect
+      // settings evidently don't imply on their own. Setting these
+      // explicitly is what actually makes it a platform-controlled
+      // ("Custom"-equivalent) account: the platform collects requirements
+      // and accepts ToS on the account's behalf (what tos_acceptance below
+      // needs), is liable for negative balances, pays Stripe's fees, and
+      // the account gets no Stripe-hosted dashboard of its own.
+      baseParams['controller[type]'] = 'application';
+      baseParams['controller[requirement_collection]'] = 'application';
+      baseParams['controller[losses][payments]'] = 'application';
+      baseParams['controller[fees][payer]'] = 'application';
+      baseParams['controller[stripe_dashboard][type]'] = 'none';
       baseParams['tos_acceptance[date]'] = String(Math.floor(Date.now() / 1000));
       baseParams['tos_acceptance[ip]'] = ip;
       const res = await fetch('https://api.stripe.com/v1/accounts', {
