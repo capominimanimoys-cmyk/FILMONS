@@ -70,6 +70,12 @@ const TEMPLATE_CASHOUT_FAILED          = 'template_o7wwsdk';
 // Placeholder until created in the EmailJS dashboard from
 // hire-request-received-template.html and the real id is swapped in.
 const TEMPLATE_HIRE_REQUEST_RECEIVED   = 'template_hire_request_received';
+// Automated Stripe payout lifecycle -- placeholders until created in the
+// EmailJS dashboard from the payout-*-template.html files and the real ids
+// are swapped in.
+const TEMPLATE_PAYOUT_SENT             = 'template_payout_sent';
+const TEMPLATE_PAYOUT_FAILED           = 'template_payout_failed';
+const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_payout_bank_attention';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
@@ -352,6 +358,43 @@ export function sendHireRequestReceivedEmail(p: {
     project_title: p.projectTitle,
     service_label: p.serviceLabel,
     conversation_link: `https://filmons.app/inbox?conv=${p.conversationId}`,
+  });
+}
+
+export function sendPayoutSentEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  amount: number; currency: string; destinationLabel: string; arrivalDate?: string | null;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PAYOUT_SENT, {
+    to_name: p.toName || 'there',
+    amount: `$${p.amount.toFixed(2)} ${p.currency}`,
+    destination_label: p.destinationLabel,
+    // Never a promised exact date unless Stripe actually returned one --
+    // the template always shows the 1-6 business day range regardless.
+    arrival_date: p.arrivalDate ? new Date(p.arrivalDate).toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' }) : '',
+    wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+export function sendPayoutFailedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  amount: number; currency: string; withdrawalId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PAYOUT_FAILED, {
+    to_name: p.toName || 'there',
+    amount: `$${p.amount.toFixed(2)} ${p.currency}`,
+    withdrawal_id: p.withdrawalId,
+    wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+/** Stripe needs more info to keep paying out this host's connected account. */
+export function sendPayoutBankAttentionEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PAYOUT_BANK_ATTENTION, {
+    to_name: p.toName || 'there',
+    payout_method_url: 'https://filmons.app/wallet/payout-method',
   });
 }
 

@@ -64,8 +64,11 @@ export interface PayoutMethod {
   currency?: string | null;
   standard_payout_eligible?: boolean;
   instant_payout_eligible?: boolean;
-  status?: 'pending' | 'ready' | 'incomplete';
+  status?: 'pending' | 'ready' | 'incomplete' | 'action_required';
   stripe_connect_account_id?: string | null;
+  account_type?: 'chequing' | 'savings' | null; // display-only, Stripe has no equivalent field
+  account_holder_type?: 'individual' | 'company' | null;
+  requirements_due?: string[] | null;
 }
 
 export interface PayoutRequest {
@@ -73,7 +76,7 @@ export interface PayoutRequest {
   host_id: string;
   amount: number;
   currency: string;
-  status: 'requested' | 'under_review' | 'approved' | 'processing' | 'paid' | 'rejected' | 'cancelled' | 'failed';
+  status: 'requested' | 'under_review' | 'approved' | 'processing' | 'sent' | 'paid' | 'rejected' | 'cancelled' | 'failed';
   payout_method: PayoutMethodType | null;
   payout_destination: PayoutDestination | null;
   payment_reference: string | null;
@@ -92,6 +95,9 @@ export interface PayoutRequest {
   processing_at: string | null;
   completed_at: string | null;
   rejected_at: string | null;
+  stripe_transfer_id: string | null;
+  stripe_payout_id: string | null;
+  arrival_date: string | null;
 }
 
 function maskDestination(method: PayoutMethodType, details: PayoutDestination | null, last4?: string | null): string {
@@ -218,7 +224,10 @@ export const walletApi = {
 
   maskDestination,
 
-  // ── "Verify It's You" step-up + Stripe Connect payout method setup ──────
+  // ── "Verify It's You" step-up + in-app Stripe Custom-account setup ──────
+  // (No Stripe-hosted redirect anywhere in this flow — see
+  // setup-payout-account/submit-payout-bank-account, which replaced the
+  // old Express + Account Link onboarding.)
   async verifyIdentity(userId: string, method: 'password' | 'phone' | 'oauth', payload: Record<string, unknown>): Promise<{ success: boolean; stepUpToken?: string; error?: string }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/verify-identity`, {
@@ -234,42 +243,61 @@ export const walletApi = {
     }
   },
 
-  async startPayoutConnect(userId: string, stepUpToken: string, returnUrl: string, refreshUrl: string, country?: 'CA' | 'US'): Promise<{ url?: string; error?: string }> {
+  async setupPayoutAccount(userId: string, stepUpToken: string, params: {
+    accountHolderType: 'individual' | 'company';
+    individual?: PayoutPerson; company?: { name: string; address: PayoutPerson['address']; phone?: string; representative: PayoutPerson };
+  }): Promise<{ success: boolean; requirementsDue?: string[]; error?: string }> {
     try {
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/payout-connect-start`, {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/setup-payout-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
-        body: JSON.stringify({ userId, stepUpToken, country, returnUrl, refreshUrl }),
+        body: JSON.stringify({ userId, stepUpToken, ...params }),
       });
       const data = await res.json();
-      if (!res.ok || data.error) return { error: data.error || 'Could not start payout method setup' };
-      return { url: data.url };
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not set up payout account' };
+      return { success: true, requirementsDue: data.requirementsDue || [] };
     } catch (e: any) {
-      return { error: e?.message || 'Network error' };
+      return { success: false, error: e?.message || 'Network error' };
     }
   },
 
-  async getPayoutConnectStatus(userId: string): Promise<{ success: boolean; payoutMethod: SafePayoutMethodResult | null; error?: string }> {
+  async submitPayoutBankAccount(userId: string, stepUpToken: string, details: {
+    accountHolderName: string; institutionNumber: string; transitNumber: string; accountNumber: string; accountType: 'chequing' | 'savings';
+  }): Promise<{ success: boolean; error?: string }> {
     try {
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/payout-connect-status?userId=${userId}`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/submit-payout-bank-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, stepUpToken, action: 'save', ...details }),
       });
       const data = await res.json();
-      if (!res.ok || data.error) return { success: false, payoutMethod: null, error: data.error || 'Could not check status' };
-      return { success: true, payoutMethod: data.payoutMethod };
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not save bank account' };
+      return { success: true };
     } catch (e: any) {
-      return { success: false, payoutMethod: null, error: e?.message || 'Network error' };
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  },
+
+  async removePayoutBankAccount(userId: string, stepUpToken: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/submit-payout-bank-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, stepUpToken, action: 'remove' }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not remove bank account' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
     }
   },
 };
 
-export interface SafePayoutMethodResult {
-  method: 'card' | 'bank';
-  displayName: string;
-  last4: string | null;
-  country: string | null;
-  currency: string | null;
-  standardPayoutEligible: boolean;
-  instantPayoutEligible: boolean;
-  status: 'pending' | 'ready' | 'incomplete';
+export interface PayoutPerson {
+  firstName: string; lastName: string;
+  dob: { day: number; month: number; year: number };
+  address: { line1: string; city: string; province: string; postalCode: string };
+  phone?: string;
+  idNumber?: string;
 }

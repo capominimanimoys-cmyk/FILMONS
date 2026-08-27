@@ -4,7 +4,7 @@
 // runs the whole check-and-reserve as one atomic DB transaction (SELECT
 // ... FOR UPDATE inside the function), not a client-side check-then-insert.
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
-import { sendWithdrawalReceivedEmail, sendCashOutRequestAdminEmail } from '../_shared/notificationEmails.ts';
+import { sendWithdrawalReceivedEmail, sendCashOutRequestAdminEmail, sendPayoutSentEmail, sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -87,6 +87,85 @@ async function notifyHostRequested(
   }).catch(() => {});
 }
 
+async function rpc(fn: string, args: Record<string, unknown>) {
+  return fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H, body: JSON.stringify(args) });
+}
+
+// Real, automated fulfillment for a Stripe Custom-account payout method --
+// $0 Filmons fee always (no platform_fee_rate/config involved at all, see
+// the migration's fn_request_payout_automated). Money actually moves in
+// two Stripe calls: a Transfer (platform balance -> connected account),
+// then a Payout on the connected account (its balance -> their bank),
+// mirroring the standard "separate charges and transfers" platform
+// pattern -- Filmons collects all charges into its own Stripe account
+// today (see stripe-charge/checkout-quote), so a Transfer is required
+// before Stripe will ever pay the connected account's own bank.
+async function handleAutomatedPayout(hostId: string, amount: number, method: any) {
+  const j = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } });
+
+  const reserveRes = await rpc('fn_request_payout_automated', { p_host_id: hostId, p_amount: amount, p_currency: 'CAD' });
+  const payoutRequestId = await reserveRes.json();
+  if (!reserveRes.ok) {
+    const message = typeof payoutRequestId === 'object' && payoutRequestId?.message ? payoutRequestId.message : 'Could not request payout';
+    return j({ error: message.includes('Insufficient') ? 'Insufficient available balance' : message }, 400);
+  }
+
+  const SK = Deno.env.get('STRIPE_SECRET_KEY');
+  if (!SK) { await rpc('fn_reverse_payout_request', { p_payout_request_id: payoutRequestId }); return j({ error: 'Payouts are temporarily unavailable' }, 500); }
+  const stripeHeaders = { Authorization: `Bearer ${SK}`, 'Content-Type': 'application/x-www-form-urlencoded' };
+  const cents = Math.round(amount * 100);
+
+  const fail = async (reason: string) => {
+    await rpc('fn_reverse_payout_request', { p_payout_request_id: payoutRequestId });
+    await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), {
+      method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'failed', admin_notes: reason, completed_at: new Date().toISOString() }),
+    });
+    const host = await selectOne('profiles', `id=eq.${hostId}`);
+    await sendPayoutFailedEmail({ toEmail: host?.email, toName: host?.name, amount, currency: 'CAD', withdrawalId: payoutRequestId }).catch(() => {});
+    return j({ error: 'Could not complete payout — your funds have been returned to your available balance.' }, 400);
+  };
+
+  const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
+    method: 'POST', headers: stripeHeaders,
+    body: new URLSearchParams({ amount: String(cents), currency: 'cad', destination: method.stripe_connect_account_id, 'metadata[payout_request_id]': payoutRequestId }),
+  });
+  const transfer = await transferRes.json();
+  if (transfer.error) return fail(transfer.error.message);
+
+  const payoutRes = await fetch('https://api.stripe.com/v1/payouts', {
+    method: 'POST', headers: { ...stripeHeaders, 'Stripe-Account': method.stripe_connect_account_id },
+    body: new URLSearchParams({ amount: String(cents), currency: 'cad' }),
+  });
+  const payout = await payoutRes.json();
+  if (payout.error) return fail(payout.error.message);
+
+  // Never promise an exact arrival date beyond Stripe's own -- if the
+  // Payout response includes one, store/show it; otherwise the frontend
+  // only ever shows the generic 1-6 business day range.
+  const arrivalDate = payout.arrival_date ? new Date(payout.arrival_date * 1000).toISOString() : null;
+  await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), {
+    method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+    body: JSON.stringify({ status: 'sent', stripe_transfer_id: transfer.id, stripe_payout_id: payout.id, arrival_date: arrivalDate }),
+  });
+
+  const claimed = await claimEmailEvent(`payout_sent:${payoutRequestId}`);
+  if (claimed) {
+    const host = await selectOne('profiles', `id=eq.${hostId}`);
+    await sendPayoutSentEmail({
+      toEmail: host?.email, toName: host?.name, amount, currency: 'CAD',
+      destinationLabel: method.display_name ? `${method.display_name} ••••${method.last4 || ''}` : `•••• ${method.last4 || ''}`,
+      arrivalDate,
+    }).catch(() => {});
+  }
+  await fetch(rest('/notifications'), {
+    method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+    body: JSON.stringify({ user_id: hostId, actor_id: null, actor_name: 'Filmons', type: 'payout_sent', title: `Your $${amount.toFixed(2)} CAD payout is on the way`, is_read: false }),
+  }).catch(() => {});
+
+  return j({ success: true, payoutRequestId, payoutSpeed: 'standard', feeAmount: 0, platformFeeRate: 0, platformFeeAmount: 0, netAmount: amount, estimatedArrivalAt: arrivalDate });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') {
@@ -123,6 +202,16 @@ Deno.serve(async (req) => {
     if (payoutMethod && !['interac', 'bank_transfer', 'card', 'bank'].includes(payoutMethod)) {
       return new Response(JSON.stringify({ error: 'Invalid payout method' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
+
+    // Which pipeline handles this request is resolved from the host's own
+    // saved default payout method, never trusted from the client -- same
+    // "look up the fact server-side" convention used everywhere else in
+    // this app (e.g. normalizeTier for account tier).
+    const defaultMethod = await selectOne('payout_methods', `host_id=eq.${hostId}&is_default=eq.true`);
+    if (defaultMethod?.provider === 'stripe') {
+      return handleAutomatedPayout(hostId, amount, defaultMethod);
+    }
+
     const speed = payoutSpeed === 'instant' ? 'instant' : 'standard';
 
     // Fees/arrival estimate are computed server-side from the live config —

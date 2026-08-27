@@ -28,7 +28,6 @@ import { Checkout } from './pages/Checkout';
 import { HostDashboard } from './pages/HostDashboard';
 import { Wallet } from './pages/Wallet';
 import { PayoutMethodSetup } from './pages/PayoutMethodSetup';
-import { PayoutMethodReturn } from './pages/PayoutMethodReturn';
 import AudioPage from './pages/AudioPage';
 import { Notifications } from './pages/Notifications';
 import { NotificationSettings }  from './pages/NotificationSettings';
@@ -81,7 +80,6 @@ export const router = createBrowserRouter([
       { path: 'dashboard', Component: HostDashboard },
       { path: 'wallet', Component: Wallet },
       { path: 'wallet/payout-method', Component: PayoutMethodSetup },
-      { path: 'wallet/payout-method/return', Component: PayoutMethodReturn },
       { path: 'notifications', Component: Notifications },
       { path: 'settings/notifications',  Component: NotificationSettings  },
       { path: 'settings/messages',       Component: MessageSettings        },

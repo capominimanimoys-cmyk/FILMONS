@@ -10,6 +10,7 @@
 // endpoint settings) and STRIPE_SECRET_KEY (already configured for
 // stripe-charge) as environment variables.
 import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
+import { sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -167,6 +168,43 @@ Deno.serve(async (req) => {
         catch (e) { console.warn('account.updated sync failed:', e); }
       }
       return new Response(JSON.stringify({ received: true, synced: !!synced }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    // Confirms an automated payout's money actually arrived at the host's
+    // bank — request-payout already flips the row to 'sent' synchronously
+    // right after creating the Payout; this is the later, authoritative
+    // "it landed" signal Stripe pushes async.
+    if (event.type === 'payout.paid') {
+      const payout = event.data?.object;
+      const row = payout?.id ? await selectOne('payout_requests', `stripe_payout_id=eq.${payout.id}`) : null;
+      if (row && row.status !== 'paid') {
+        await fetch(rest(`/payout_requests?id=eq.${row.id}`), {
+          method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'paid', completed_at: new Date().toISOString() }),
+        });
+        await insertNotification({ user_id: row.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_paid', title: `Your $${Number(row.amount).toFixed(2)} CAD payout has arrived`, is_read: false });
+      }
+      return new Response(JSON.stringify({ received: true, updated: !!row }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    // Stripe couldn't complete the payout after request-payout already
+    // reported it as 'sent' (e.g. the bank rejected it after dispatch) --
+    // reverse the reservation the same way a synchronous failure does, so
+    // the host's available balance is never silently short.
+    if (event.type === 'payout.failed') {
+      const payout = event.data?.object;
+      const row = payout?.id ? await selectOne('payout_requests', `stripe_payout_id=eq.${payout.id}`) : null;
+      if (row && row.status !== 'failed') {
+        await rpc('fn_reverse_payout_request', { p_payout_request_id: row.id });
+        await fetch(rest(`/payout_requests?id=eq.${row.id}`), {
+          method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'failed', admin_notes: payout.failure_message || null, completed_at: new Date().toISOString() }),
+        });
+        const host = await selectOne('profiles', `id=eq.${row.host_id}`);
+        await sendPayoutFailedEmail({ toEmail: host?.email, toName: host?.name, amount: Number(row.amount), currency: row.currency || 'CAD', withdrawalId: row.id }).catch(() => {});
+        await insertNotification({ user_id: row.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_failed', title: `Your $${Number(row.amount).toFixed(2)} CAD payout could not be completed`, is_read: false });
+      }
+      return new Response(JSON.stringify({ received: true, updated: !!row }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     if (event.type !== 'checkout.session.completed') {

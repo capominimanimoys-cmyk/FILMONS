@@ -35,7 +35,8 @@ const PAYOUT_STATUS_LABEL: Record<string, { label: string; className: string }> 
   under_review: { label: 'Under review', className: 'bg-blue-100 text-blue-600' },
   approved:     { label: 'Approved',     className: 'bg-indigo-100 text-indigo-600' },
   processing:   { label: 'Processing',   className: 'bg-amber-100 text-amber-600' },
-  paid:         { label: 'Completed',    className: 'bg-green-100 text-green-600' },
+  sent:         { label: 'Payout sent',  className: 'bg-blue-100 text-blue-600' },
+  paid:         { label: 'Paid',         className: 'bg-green-100 text-green-600' },
   rejected:     { label: 'Rejected',     className: 'bg-red-100 text-red-600' },
   cancelled:    { label: 'Cancelled',    className: 'bg-gray-100 text-gray-500' },
   failed:       { label: 'Failed',       className: 'bg-red-100 text-red-600' },
@@ -165,7 +166,12 @@ function PayoutModalInner(props: {
   // FILMONS fee always applies; the instant-speed fee stacks on top only when selected.
   const totalFee = platformFee + (speed === 'instant' ? instantFee : 0);
 
-  const steps: Step[] = ['amount', 'speed', 'review'];
+  // Automated Stripe bank payouts have no "instant" tier (that requires a
+  // debit-card destination, which this app's Stripe Custom-account setup
+  // doesn't collect) and are always $0 fee -- skip the speed step entirely
+  // for that provider rather than showing a choice that doesn't apply.
+  const isStripe = defaultMethod?.provider === 'stripe';
+  const steps: Step[] = isStripe ? ['amount', 'review'] : ['amount', 'speed', 'review'];
   const stepIdx = steps.indexOf(step);
   const goNext = () => {
     const next = steps[stepIdx + 1];
@@ -253,7 +259,30 @@ function PayoutModalInner(props: {
             </div>
           )}
 
-          {step === 'review' && method && destination && (
+          {step === 'review' && isStripe && method && destination && (
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Review payout</p>
+              <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Payout Amount</span>
+                  <span className="text-sm font-black text-gray-900">{fmtCad(amountNum)} {currency}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Estimated Arrival</span>
+                  <span className="text-sm font-bold text-gray-900">1–6 business days</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Destination</span>
+                  <span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(method, destination, defaultMethod?.last4)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Your payout will be sent to your bank account and should arrive within 1–6 business days.
+              </p>
+            </div>
+          )}
+
+          {step === 'review' && !isStripe && method && destination && (
             <div className="space-y-3">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Review payout</p>
               <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
@@ -261,18 +290,20 @@ function PayoutModalInner(props: {
                   <span className="text-xs text-gray-400">Payout Amount</span>
                   <span className="text-sm font-black text-gray-900">{fmtCad(amountNum)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">FILMONS Fee ({(withdrawalFeeRate * 100).toFixed(0)}%)</span>
-                  <span className="text-sm font-bold text-red-500">−{fmtCad(platformFee)}</span>
-                </div>
-                {speed === 'instant' && (
+                {platformFee > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">FILMONS Fee ({(withdrawalFeeRate * 100).toFixed(0)}%)</span>
+                    <span className="text-sm font-bold text-red-500">−{fmtCad(platformFee)}</span>
+                  </div>
+                )}
+                {speed === 'instant' && instantFee > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-400">Instant Payout Fee ({(instantFeeRate * 100).toFixed(0)}%)</span>
                     <span className="text-sm font-bold text-red-500">−{fmtCad(instantFee)}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-                  <span className="text-xs text-gray-400">You'll Receive</span>
+                  <span className="text-xs text-gray-400">Payout Amount</span>
                   <span className="text-sm font-black text-gray-900">{fmtCad(Math.max(amountNum - totalFee, 0))} {currency}</span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -294,7 +325,25 @@ function PayoutModalInner(props: {
             </div>
           )}
 
-          {step === 'success' && result && (
+          {step === 'success' && result && isStripe && (
+            <div className="flex flex-col items-center text-center gap-4 py-4">
+              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"><Check className="w-8 h-8 text-green-600" /></div>
+              <div>
+                <p className="text-base font-black text-gray-900">Payout Sent ✓</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {fmtCad(result.amount)} is on the way to {walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}.
+                </p>
+              </div>
+              <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2.5 text-left">
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Payout Amount</span><span className="text-sm font-black text-gray-900">{fmtCad(result.amount)} CAD</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Expected arrival</span><span className="text-sm font-bold text-gray-900">1–6 business days</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Destination</span><span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}</span></div>
+              </div>
+              <button onClick={onDone} className="w-full py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl">Done</button>
+            </div>
+          )}
+
+          {step === 'success' && result && !isStripe && (
             <div className="flex flex-col items-center text-center gap-4 py-4">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"><Check className="w-8 h-8 text-green-600" /></div>
               <div>
@@ -303,7 +352,9 @@ function PayoutModalInner(props: {
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2.5 text-left">
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Requested Amount</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.amount)}</span></div>
-                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">FILMONS Fee</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.platformFeeAmount + (result.payoutSpeed === 'instant' ? result.feeAmount : 0))}</span></div>
+                {(result.platformFeeAmount + (result.payoutSpeed === 'instant' ? result.feeAmount : 0)) > 0 && (
+                  <div className="flex items-center justify-between"><span className="text-xs text-gray-400">FILMONS Fee</span><span className="text-sm font-bold text-gray-900">{fmtCad(result.platformFeeAmount + (result.payoutSpeed === 'instant' ? result.feeAmount : 0))}</span></div>
+                )}
                 <div className="flex items-center justify-between border-t border-gray-100 pt-2.5"><span className="text-xs text-gray-400">You'll Receive</span><span className="text-sm font-black text-gray-900">{fmtCad(result.netAmount)} CAD</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Estimated arrival</span><span className="text-sm font-bold text-gray-900">{estimatedArrivalLabel(result.payoutSpeed, result.estimatedArrivalAt)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Destination</span><span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}</span></div>
@@ -512,18 +563,34 @@ export function Wallet() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-900">{defaultMethod.provider === 'stripe' ? defaultMethod.display_name : METHOD_LABEL[defaultMethod.method]}</p>
-                <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
                   {walletApi.maskDestination(defaultMethod.method, defaultMethod.details, defaultMethod.last4)}
+                  {defaultMethod.provider === 'stripe' && defaultMethod.account_type && (
+                    <span className="capitalize">· {defaultMethod.account_type}</span>
+                  )}
                   {defaultMethod.provider === 'stripe' && (
                     defaultMethod.status === 'ready'
-                      ? <span className="text-green-600 font-semibold">· Ready ✓</span>
-                      : <span className="text-amber-600 font-semibold">· Setup incomplete</span>
+                      ? <span className="text-green-600 font-semibold">· Ready for payouts</span>
+                      : defaultMethod.status === 'action_required'
+                        ? <span className="text-amber-600 font-semibold">· Bank account requires attention</span>
+                        : <span className="text-amber-600 font-semibold">· Setup incomplete</span>
                   )}
                 </p>
               </div>
-              <button onClick={() => navigate('/wallet/payout-method')} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-                <Pencil className="w-3.5 h-3.5 text-gray-400" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => navigate('/wallet/payout-method')} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+                  <Pencil className="w-3.5 h-3.5 text-gray-400" />
+                </button>
+                {defaultMethod.provider === 'stripe' && (
+                  <button
+                    onClick={() => { if (window.confirm('Remove this bank account? You will need to add a new one before your next payout.')) navigate('/wallet/payout-method?action=remove'); }}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50"
+                    aria-label="Remove bank account"
+                  >
+                    <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <button
@@ -556,10 +623,16 @@ export function Wallet() {
                       </p>
                       <p className="text-xs text-gray-400">
                         {new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        {' · '}FILMONS fee {fmtCad((p.platform_fee_amount ?? 0) + (p.payout_speed === 'instant' ? p.fee_amount : 0))}
+                        {((p.platform_fee_amount ?? 0) + (p.payout_speed === 'instant' ? p.fee_amount : 0)) > 0 &&
+                          ` · FILMONS fee ${fmtCad((p.platform_fee_amount ?? 0) + (p.payout_speed === 'instant' ? p.fee_amount : 0))}`}
                       </p>
                       {p.estimated_arrival_at && ['requested', 'under_review', 'approved', 'processing'].includes(p.status) && (
                         <p className="text-xs text-gray-400">Estimated arrival: {estimatedArrivalLabel(p.payout_speed, p.estimated_arrival_at)}</p>
+                      )}
+                      {p.status === 'sent' && (
+                        <p className="text-xs text-gray-400">
+                          Expected arrival: 1–6 business days{p.arrival_date ? ` (around ${new Date(p.arrival_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })})` : ''}
+                        </p>
                       )}
                       {p.status === 'rejected' && p.rejection_reason && (
                         <p className="text-xs text-red-500 mt-0.5">{p.rejection_reason}</p>
