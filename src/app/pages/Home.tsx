@@ -14,6 +14,7 @@ import { SwipeStack, type DeckItem, type CreatorProfile } from '../components/Sw
 import { ListingCardStack } from '../components/ListingCardStack';
 import { ListingCardProgress } from '../components/ListingCardProgress';
 import { useListingCardNavigation } from '../lib/useListingCardNavigation';
+import { swipeApi } from '../lib/swipeApi';
 
 // ── Filter system ─────────────────────────────────────────────────────────────
 type FilterId = 'all' | 'rentals' | 'sales' | 'services' | 'creators' | 'studios' | 'talent';
@@ -131,8 +132,16 @@ export function Home() {
         .not('primary_role', 'is', null)
         .limit(24)
         .then(r => (r.data ?? []) as CreatorProfile[], () => [] as CreatorProfile[]),
-    ]).then(async ([l, c]) => {
+      user?.id ? swipeApi.getExcludedIds(user.id) : Promise.resolve(new Set<string>()),
+    ]).then(async ([l, c, excluded]) => {
       if (done) return;
+      // Already-left-swiped items are a permanent skip (Tinder-style) --
+      // filtered out here, before buildDeck(), so every filter tab and any
+      // reload excludes them consistently instead of just the current one.
+      if (excluded.size) {
+        l = l.filter(x => !excluded.has(x.id));
+        c = c.filter(x => !excluded.has(x.id));
+      }
       // getAll() already returns a blended order (organic recency + decayed
       // boost weight + jitter) — do NOT re-sort by createdAt here, that
       // would silently undo the blending and put boosted listings back to

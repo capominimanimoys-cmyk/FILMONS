@@ -4,12 +4,14 @@
  * Swipe right → ❤️ Like/Save | Swipe left → ✖ Pass | Tap / swipe up → 👀 View
  */
 import { useState, useRef } from 'react';
-import { Heart, X, Eye, Star, MapPin, ShieldCheck } from 'lucide-react';
+import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { Listing } from '../types';
+import { isProfessional } from '../lib/reliabilityApi';
+import { swipeApi } from '../lib/swipeApi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type EnrichedListing = Listing & { distance?: number };
@@ -264,6 +266,31 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
   );
 }
 
+// ── Upgrade prompt (free-tier Undo attempt) ─────────────────────────────────
+function UndoUpgradePrompt({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center" onClick={e => e.stopPropagation()}>
+        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
+          <RotateCcw className="w-6 h-6 text-blue-600" />
+        </div>
+        <h3 className="text-base font-black text-gray-900 mb-1.5">Want to go back?</h3>
+        <p className="text-sm text-gray-500 mb-5">Upgrade to Professional or Business to unlock Swipe Undo.</p>
+        <div className="flex flex-col gap-2">
+          <button onClick={() => navigate('/account/upgrade')}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm">
+            Upgrade
+          </button>
+          <button onClick={onClose} className="w-full py-3 text-gray-500 font-semibold text-sm">
+            Not now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Stack orchestrator ────────────────────────────────────────────────────────
 interface SwipeStackProps {
   items: DeckItem[];
@@ -275,6 +302,8 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
   const navigate  = useNavigate();
   const [idx,     setIdx]     = useState(0);
   const [exitDir, setExitDir] = useState<'L' | 'R' | 'U' | null>(null);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   const fly = (dir: 'L' | 'R' | 'U') => {
     if (exitDir) return;
@@ -306,6 +335,12 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
         if (item.kind === 'listing') navigate(`/listing/${item.data.id}`);
         else navigate(`/host/${item.data.id}`);
       }
+      // Record every swipe (both directions) -- left makes the pass
+      // permanent (excluded from future deck loads, see Home.tsx); right
+      // is recorded too so Undo can reverse a like, not just a pass.
+      if (user && item && (dir === 'L' || dir === 'R')) {
+        swipeApi.recordSwipe(user.id, item.data.id, item.kind, dir === 'L' ? 'left' : 'right');
+      }
       setIdx(i => {
         const next = i + 1;
         if (next >= items.length) onDone?.();
@@ -313,6 +348,21 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
       });
       setExitDir(null);
     }, 360);
+  };
+
+  // Professional/Business only, enforced server-side in undo-swipe (this
+  // check is just for the prompt vs. actual-call branch, not the real
+  // gate). Only offered when there's a same-session swipe to restore --
+  // `items` is never mutated by a swipe, so idx-1 is always the exact card
+  // just dismissed, regardless of which direction it went.
+  const handleUndo = async () => {
+    if (!user || idx === 0 || undoing) return;
+    if (!isProfessional(user.accountType)) { setShowUpgradePrompt(true); return; }
+    setUndoing(true);
+    const res = await swipeApi.undoLastSwipe(user.id);
+    setUndoing(false);
+    if (res.ok) setIdx(i => Math.max(0, i - 1));
+    else toast.error(res.reason === 'no_previous_swipe' ? 'Nothing to undo' : 'Could not undo');
   };
 
   const current = items[idx];
@@ -366,6 +416,13 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
       {/* Action buttons */}
       <div className="flex items-center gap-6">
         <button
+          onClick={handleUndo}
+          disabled={idx === 0 || undoing}
+          aria-label="Undo last swipe"
+          className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 shadow-sm flex items-center justify-center hover:border-gray-300 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-default">
+          <RotateCcw className="w-4 h-4 text-gray-500"/>
+        </button>
+        <button
           onClick={() => fly('L')}
           className="w-14 h-14 rounded-full bg-white border-2 border-red-200 shadow-md flex items-center justify-center hover:border-red-400 hover:bg-red-50 transition-all active:scale-90">
           <X className="w-6 h-6 text-red-400"/>
@@ -383,6 +440,8 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
       </div>
 
       <p className="text-[11px] text-gray-300 mt-4">← Pass  ·  ↑ View  ·  Save →</p>
+
+      {showUpgradePrompt && <UndoUpgradePrompt onClose={() => setShowUpgradePrompt(false)} />}
     </div>
   );
 }
