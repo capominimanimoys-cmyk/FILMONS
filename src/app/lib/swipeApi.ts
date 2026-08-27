@@ -1,22 +1,60 @@
 // Swipe history for the Home discovery deck (SwipeStack.tsx) -- makes a
 // left swipe ("pass") a durable skip instead of resetting on every reload,
-// and backs the Professional/Business-only Undo feature. See
-// supabase/migrations/20240323000000_swipe_history.sql for the table and
-// supabase/functions/undo-swipe for the server-side tier check (never
-// trust account tier from the client -- same trust model as boostApi's
-// entitlement-gated actions elsewhere).
+// backs the Professional/Business-only Undo feature, and enforces the
+// daily Like+Pass limit (Creator 10, Creator+ 25, Professional/Business
+// unlimited) server-side via record-swipe -- see
+// supabase/migrations/20240323000000_swipe_history.sql,
+// 20240324000000_swipe_daily_limits.sql, and supabase/functions/
+// record-swipe|undo-swipe for the server-side tier checks (never trust
+// account tier or a swipe count from the client).
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import type { AccountTier } from './reliabilityApi';
 
 export type SwipeItemType = 'listing' | 'creator';
 export type SwipeDirection = 'left' | 'right';
 
 export const swipeApi = {
-  /** Fire-and-forget -- called for every swipe, both directions. */
-  recordSwipe(userId: string, itemId: string, itemType: SwipeItemType, direction: SwipeDirection): void {
-    supabase.from('swipes').insert({
-      user_id: userId, item_id: itemId, item_type: itemType, direction,
-    }).then(undefined, () => {});
+  /** Every Like/Pass goes through this -- never a direct client insert, so
+   *  the daily limit can't be bypassed by skipping the edge function. */
+  async recordSwipe(userId: string, itemId: string, itemType: SwipeItemType, direction: SwipeDirection): Promise<
+    | { ok: true }
+    | { ok: false; limitReached: true; tier: AccountTier; limit: number }
+    | { ok: false; limitReached: false; reason: string }
+  > {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/record-swipe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, itemId, itemType, direction }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data?.error === 'limit_reached') return { ok: false, limitReached: true, tier: data.tier, limit: data.limit };
+        return { ok: false, limitReached: false, reason: data?.error || 'record_failed' };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, limitReached: false, reason: 'network_error' };
+    }
+  },
+
+  /** Today's Like+Pass count (UTC day), for the "N / limit swipes used"
+   *  display -- read-only, safe client-side per this app's open-RLS
+   *  convention; the record-swipe edge function is the real gate. */
+  async getTodaySwipeCount(userId: string): Promise<number> {
+    try {
+      const dayStart = new Date();
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const { count } = await supabase
+        .from('swipes')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', dayStart.toISOString());
+      return count || 0;
+    } catch {
+      return 0;
+    }
   },
 
   /** Item ids the user has already left-swiped (and not undone) -- filter

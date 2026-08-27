@@ -141,7 +141,8 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
 
         {limitReached ? (
           <OpportunityLimitUpgrade kind="applications" plan={limitReached.plan} limit={limitReached.limit}
-            onUpgrade={handleUpgrade} onMaybeLater={() => setLimitReached(null)} />
+            onUpgrade={handleUpgrade} onUpgradeToCreatorPlus={() => navigate('/verification')}
+            onMaybeLater={() => setLimitReached(null)} />
         ) : listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed' ? (
           <div className="px-5 pb-8 pt-2 flex flex-col items-center text-center gap-2">
             <p className="text-base font-black text-gray-900">Applications closed</p>

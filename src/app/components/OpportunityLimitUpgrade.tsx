@@ -1,4 +1,4 @@
-import { CircleAlert, BriefcaseBusiness, Building2 } from 'lucide-react';
+import { CircleAlert, BriefcaseBusiness, Building2, Lock } from 'lucide-react';
 import { AccountTier } from '../lib/reliabilityApi';
 import { ENTITLEMENTS, formatPrice } from '../lib/entitlements';
 
@@ -22,15 +22,40 @@ function UsageBar({ used, limit }: { used: number; limit: number }) {
 // since the caller only swaps this view in without touching its own state.
 // The reported usage is always the limit itself (that's why this is
 // showing at all) — no extra fetch needed for the progress bar.
-export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onMaybeLater }: {
+export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgradeToCreatorPlus, onMaybeLater }: {
   kind: 'applications' | 'posts';
   plan: AccountTier;
   limit: number | null;
   onUpgrade: (plan: 'professional' | 'business') => void;
+  /** Creator -> Creator+ is free (ID verification, not a Stripe checkout)
+   *  -- only needed for the applications-blocked-entirely case below. */
+  onUpgradeToCreatorPlus?: () => void;
   onMaybeLater: () => void;
 }) {
   const nounPlural = kind === 'applications' ? 'applications' : 'posts';
   const isPosts = kind === 'posts';
+
+  // Creator can't apply for Opportunities at all (limit is 0) -- a
+  // distinct message from the "you've used your monthly cap" case below,
+  // which still applies to Creator+.
+  if (plan === 'creator' && kind === 'applications') {
+    return (
+      <div className="px-5 py-6 space-y-4">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto"><Lock className="w-6 h-6 text-blue-600" /></div>
+          <p className="text-base font-black text-gray-900">Creator+ Required</p>
+          <p className="text-sm text-gray-500">
+            You need a Creator+ account to apply for Opportunities.
+            Upgrade to Creator+ to unlock Opportunity applications.
+          </p>
+        </div>
+        <button onClick={onUpgradeToCreatorPlus} className="w-full py-3 rounded-2xl bg-blue-600 text-white font-bold text-sm">
+          Upgrade to Creator+
+        </button>
+        <button onClick={onMaybeLater} className="w-full py-2 text-gray-400 font-semibold text-xs">Not now</button>
+      </div>
+    );
+  }
 
   if (plan === 'professional') {
     return (

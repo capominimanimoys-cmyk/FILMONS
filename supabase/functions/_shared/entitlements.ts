@@ -8,13 +8,16 @@ export interface TierEntitlement {
   posts: number | null;        // Opportunity publishes per calendar month; null = unlimited
   applications: number | null; // Opportunity applications per calendar month; null = unlimited
   priceCents: number;          // CAD, per month; 0 = free
+  swipesPerDay: number | null; // Home deck Like+Pass swipes per calendar day; null = unlimited
 }
 
 export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
-  creator:      { posts: 2,    applications: 2,    priceCents: 0 },
-  creator_plus: { posts: 2,    applications: 2,    priceCents: 0 },
-  professional: { posts: 5,    applications: 5,    priceCents: 999 },
-  business:     { posts: null, applications: null, priceCents: 1999 },
+  // applications: 0 -- Creator+ is now mandatory to apply for Opportunities
+  // at all (Creator can still post the 2/month free Opportunity listings).
+  creator:      { posts: 2,    applications: 0,    priceCents: 0,    swipesPerDay: 10   },
+  creator_plus: { posts: 2,    applications: 2,    priceCents: 0,    swipesPerDay: 25   },
+  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null },
+  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null },
 };
 
 // Same legacy-string normalization as src/app/lib/reliabilityApi.ts's

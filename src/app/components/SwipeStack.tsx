@@ -12,20 +12,12 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { Listing } from '../types';
-import { isProfessional } from '../lib/reliabilityApi';
+import { isProfessional, normalizeTier } from '../lib/reliabilityApi';
 import { swipeApi } from '../lib/swipeApi';
+import { ENTITLEMENTS } from '../lib/entitlements';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-// hostName/hostRating/hostReviewsCount are real, pre-fetched data (Home.tsx
-// batches a profiles + reputation_scores lookup for the listings' owners)
-// -- never fabricated placeholders. hostRating is the host's aggregate
-// rating, not a per-listing one; Filmons has no per-listing review table.
-export type EnrichedListing = Listing & {
-  distance?: number;
-  hostName?: string;
-  hostRating?: number;
-  hostReviewsCount?: number;
-};
+export type EnrichedListing = Listing & { distance?: number };
 
 export type CreatorProfile = {
   id: string;
@@ -74,8 +66,6 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
     : (listing as any).listingType === 'studio' ? 'Studio'
     : 'For Sale';
 
-  const hasRating = (listing.hostReviewsCount ?? 0) > 0;
-
   return (
     <>
       <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
@@ -102,19 +92,11 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
             </span>
           )}
         </div>
-        {listing.hostName && (
-          <p className="text-xs lg:text-sm text-gray-500 mb-2">Hosted by <span className="font-semibold text-gray-700">{listing.hostName}</span></p>
-        )}
-        {listing.description && (
-          <p className="text-xs lg:text-sm text-gray-500 line-clamp-2 mb-3 leading-snug">{listing.description}</p>
-        )}
         <div className="flex items-center justify-between">
           <span className="text-xl lg:text-2xl font-black text-blue-600">{fmtPrice(listing)}</span>
           <span className="flex items-center gap-1 text-xs lg:text-sm">
             <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400"/>
-            <span className="font-semibold text-gray-600">
-              {hasRating ? listing.hostRating?.toFixed(1) : 'New'}
-            </span>
+            <span className="font-semibold text-gray-600">New</span>
           </span>
         </div>
       </div>
@@ -298,6 +280,38 @@ function UndoUpgradePrompt({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Daily swipe limit reached (Creator/Creator+ only -- Professional and
+// Business have no limit, so this never shows for them) ────────────────────
+function DailyLimitPrompt({ tier, limit, onClose }: { tier: 'creator' | 'creator_plus'; limit: number; onClose: () => void }) {
+  const navigate = useNavigate();
+  const isCreatorPlus = tier === 'creator_plus';
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center" onClick={e => e.stopPropagation()}>
+        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
+          <Heart className="w-6 h-6 text-blue-600" />
+        </div>
+        <h3 className="text-base font-black text-gray-900 mb-1.5">You've reached your daily limit</h3>
+        <p className="text-sm text-gray-500 mb-5">
+          You've used all {limit} of your daily swipes.{' '}
+          {isCreatorPlus
+            ? 'Upgrade to Professional for unlimited swipes and the ability to undo your passes.'
+            : 'Upgrade to Creator+ for 25 daily swipes or Professional for unlimited swipes.'}
+        </p>
+        <div className="flex flex-col gap-2">
+          <button onClick={() => navigate('/account/upgrade')}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm">
+            {isCreatorPlus ? 'Upgrade to Professional' : 'Upgrade'}
+          </button>
+          <button onClick={onClose} className="w-full py-2 text-gray-400 font-semibold text-xs">
+            Continue Browsing
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Stack orchestrator ────────────────────────────────────────────────────────
 interface SwipeStackProps {
   items: DeckItem[];
@@ -321,6 +335,18 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [undoing, setUndoing] = useState(false);
 
+  const tier = normalizeTier(user?.accountType);
+  const dailyLimit = ENTITLEMENTS[tier].swipesPerDay; // null = unlimited (Professional/Business)
+  const [swipesUsed, setSwipesUsed] = useState(0);
+  const [showDailyLimit, setShowDailyLimit] = useState(false);
+
+  // Initial "N used today" for the display counter -- the record-swipe
+  // edge function is the real gate; this is just what the badge starts at.
+  useEffect(() => {
+    if (!user?.id || dailyLimit === null) return;
+    swipeApi.getTodaySwipeCount(user.id).then(setSwipesUsed);
+  }, [user?.id, dailyLimit]);
+
   // Persist position so tapping "See Listing" and coming back (a real
   // route change, not a modal) lands on the same card instead of
   // restarting the deck -- viewing never advances idx itself, so this is
@@ -331,6 +357,11 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
 
   const fly = (dir: 'L' | 'R') => {
     if (exitDir) return;
+    // Local count is the fast UX gate (blocks before the card even
+    // animates); record-swipe below is the real, server-enforced one --
+    // this can only under-block, never let a swipe through the server
+    // wouldn't also allow.
+    if (dailyLimit !== null && swipesUsed >= dailyLimit) { setShowDailyLimit(true); return; }
     const item = items[idx];
     setExitDir(dir);
 
@@ -357,9 +388,13 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
       }
       // Record every swipe (both directions) -- left makes the pass
       // permanent (excluded from future deck loads, see Home.tsx); right
-      // is recorded too so Undo can reverse a like, not just a pass.
+      // is recorded too so Undo can reverse a like, not just a pass. This
+      // is also the real, server-enforced daily-limit check -- the local
+      // gate above is just the fast path for the common case.
       if (user && item && (dir === 'L' || dir === 'R')) {
-        swipeApi.recordSwipe(user.id, item.data.id, item.kind, dir === 'L' ? 'left' : 'right');
+        const res = await swipeApi.recordSwipe(user.id, item.data.id, item.kind, dir === 'L' ? 'left' : 'right');
+        if (!res.ok && res.limitReached) { setSwipesUsed(res.limit); setShowDailyLimit(true); }
+        else setSwipesUsed(n => n + 1);
       }
       setIdx(i => {
         const next = i + 1;
@@ -396,12 +431,17 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
   const canUndo = isProfessional(user?.accountType);
 
   return (
-    <div className="flex flex-col items-center px-4 lg:px-0 lg:max-w-2xl lg:mx-auto">
+    // isolate confines the card stack's internal z-index scale (up to 30,
+    // for the drag/exit animation) to its own stacking context -- without
+    // it those values compare directly against the page's sticky search
+    // bar (z-20) in the shared root stacking context and win, so the deck
+    // painted in front of the search bar while scrolling past it.
+    <div className="flex flex-col items-center px-4 lg:px-0 lg:max-w-2xl lg:mx-auto isolate">
       {/* Card stack — height must fit the tallest rendered card (image +
           text content), not just the image, or the card visually overflows
           this container and covers the counter/buttons below it (they're
           still there in the DOM, just hidden underneath). */}
-      <div className="relative w-full h-[420px] lg:h-[640px]">
+      <div className="relative w-full h-[420px] lg:h-[580px]">
         {[...cards].reverse().map((item, rIdx) => {
           const stackPos = cards.length - 1 - rIdx;
           const isTop    = stackPos === 0;
@@ -420,10 +460,18 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         })}
       </div>
 
-      {/* Counter */}
-      <p className="text-[11px] text-gray-400 mt-3 mb-5 font-medium">
-        {idx + 1} of {items.length}
-      </p>
+      {/* Counter — daily swipe usage only shows for limited tiers
+          (Creator/Creator+); Professional/Business have no limit. */}
+      <div className="flex items-center gap-3 mt-3 mb-5">
+        <p className="text-[11px] text-gray-400 font-medium">
+          {idx + 1} of {items.length}
+        </p>
+        {dailyLimit !== null && (
+          <p className="text-[11px] text-blue-500 font-semibold">
+            {Math.min(swipesUsed, dailyLimit)} / {dailyLimit} swipes used
+          </p>
+        )}
+      </div>
 
       {/* Action buttons — Creator/Creator+: Pass | See Listing | Like (no
           Undo at all); Professional/Business: Undo | Pass | See Listing | Like */}
@@ -469,6 +517,9 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
       <p className="text-[11px] text-gray-300 mt-4">← Pass  ·  Like →</p>
 
       {showUpgradePrompt && <UndoUpgradePrompt onClose={() => setShowUpgradePrompt(false)} />}
+      {showDailyLimit && dailyLimit !== null && (tier === 'creator' || tier === 'creator_plus') && (
+        <DailyLimitPrompt tier={tier} limit={dailyLimit} onClose={() => setShowDailyLimit(false)} />
+      )}
     </div>
   );
 }

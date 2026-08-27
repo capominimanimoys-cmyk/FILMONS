@@ -167,31 +167,6 @@ export function Home() {
         } catch {}
       }
 
-      // Enrich with real host name + host's aggregate rating (Filmons has
-      // no per-listing review table, so the host's own reputation score is
-      // the honest, real number to show — never a fabricated per-listing
-      // rating). Single batched lookup per unique host id, not N+1.
-      const hostIds = [...new Set(ordered.map(x => x.userId).filter(Boolean))];
-      if (hostIds.length) {
-        try {
-          const [{ data: hostProfiles }, { data: hostScores }] = await Promise.all([
-            supabase.from('profiles').select('id, name').in('id', hostIds),
-            supabase.from('reputation_scores').select('user_id, host_avg_rating, host_reviews_count').in('user_id', hostIds),
-          ]);
-          const nameById  = new Map((hostProfiles ?? []).map((p: any) => [p.id, p.name]));
-          const scoreById = new Map((hostScores ?? []).map((s: any) => [s.user_id, s]));
-          ordered = ordered.map(x => {
-            const score = scoreById.get(x.userId);
-            return {
-              ...x,
-              hostName: nameById.get(x.userId) || undefined,
-              hostRating: score?.host_avg_rating,
-              hostReviewsCount: score?.host_reviews_count,
-            };
-          });
-        } catch {}
-      }
-
       setListings(ordered);
       setCreators(c);
       setLoading(false);
