@@ -3020,8 +3020,31 @@ export const chatApi = {
   },
 
   /** Get or create a conversation via `get_or_create_direct_conversation` RPC.
-   *  Returns the canonical server UUID — prevents duplicate conversations. */
+   *  Returns the canonical server UUID — prevents duplicate conversations.
+   *  Wraps `_getOrCreateDBRaw` with a server-verified mutual-follow check
+   *  (check-mutual-follow) so mutual followers skip the message-request
+   *  step entirely — covers both a brand-new conversation (flips it to
+   *  non-request right after creation) and an existing request-state one
+   *  between two users who've since become mutual (reconciled in place,
+   *  never a duplicate thread). Never trusts local follow state for this —
+   *  see the edge function for why per-message revocation is out of scope. */
   async getOrCreateDB(userId1: string, userId2: string): Promise<Conversation> {
+    const result = await chatApi._getOrCreateDBRaw(userId1, userId2);
+    if (result.isRequest) {
+      try {
+        const res = await fetch(`https://${projectId}.supabase.co/functions/v1/check-mutual-follow`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          body: JSON.stringify({ userA: userId1, userB: userId2, conversationId: result.id }),
+        });
+        const data = await res.json();
+        if (data?.mutual) result.isRequest = false;
+      } catch {}
+    }
+    return result;
+  },
+
+  async _getOrCreateDBRaw(userId1: string, userId2: string): Promise<Conversation> {
     const [p1, p2] = [userId1, userId2].sort();
 
     // Try RPC first (atomic, race-condition safe)

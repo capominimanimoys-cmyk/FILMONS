@@ -2164,7 +2164,11 @@ export function Inbox() {
       if (m.type === 'application') return 'application';
       if (m.type === 'payment_request') return 'sale';
     }
-    return 'general';
+    // A plain conversation (including a mutual-follow direct message with
+    // no booking/application history yet) defaults to Marketplace, per
+    // spec -- 'general' never actually shows under any tab besides
+    // All/Unread, which made ordinary DMs invisible from every category tab.
+    return 'sale';
   };
 
   // Priority sort: unread first, then bookings, then recency
