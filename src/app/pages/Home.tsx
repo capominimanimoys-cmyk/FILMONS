@@ -2,18 +2,15 @@
  * Filmons Home — Tinder-style discovery deck.
  * Users swipe through a mixed feed of listings, services, studios, and creator profiles.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw } from 'lucide-react';
 import { listingsApi } from '../lib/api';
 import { boostApi } from '../lib/boostApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
-import { SwipeStack, type DeckItem, type CreatorProfile } from '../components/SwipeStack';
-import { ListingCardStack } from '../components/ListingCardStack';
-import { ListingCardProgress } from '../components/ListingCardProgress';
-import { useListingCardNavigation } from '../lib/useListingCardNavigation';
+import { SwipeStack, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 
 // ── Filter system ─────────────────────────────────────────────────────────────
@@ -30,7 +27,7 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
   { id: 'talent',   label: 'Opportunity', icon: Briefcase },
 ];
 
-function buildDeck(listings: Listing[], creators: CreatorProfile[], filter: FilterId): DeckItem[] {
+function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId): DeckItem[] {
   if (filter === 'creators') {
     return creators.map(c => ({ kind: 'creator', data: c }));
   }
@@ -114,11 +111,13 @@ export function Home() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [listings,  setListings]  = useState<Listing[]>([]);
+  const [listings,  setListings]  = useState<EnrichedListing[]>([]);
   const [creators,  setCreators]  = useState<CreatorProfile[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [filter,    setFilter]    = useState<FilterId>('all');
   const [deckDone,  setDeckDone]  = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const filterRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let done = false;
@@ -146,7 +145,7 @@ export function Home() {
       // boost weight + jitter) — do NOT re-sort by createdAt here, that
       // would silently undo the blending and put boosted listings back to
       // a blunt recency-only order.
-      let ordered = l;
+      let ordered: EnrichedListing[] = l;
 
       // Frequency control — once a viewer has already seen a boosted
       // listing's boosted-priority placement `frequency_cap_per_user` times
@@ -168,20 +167,40 @@ export function Home() {
         } catch {}
       }
 
+      // Enrich with real host name + host's aggregate rating (Filmons has
+      // no per-listing review table, so the host's own reputation score is
+      // the honest, real number to show — never a fabricated per-listing
+      // rating). Single batched lookup per unique host id, not N+1.
+      const hostIds = [...new Set(ordered.map(x => x.userId).filter(Boolean))];
+      if (hostIds.length) {
+        try {
+          const [{ data: hostProfiles }, { data: hostScores }] = await Promise.all([
+            supabase.from('profiles').select('id, name').in('id', hostIds),
+            supabase.from('reputation_scores').select('user_id, host_avg_rating, host_reviews_count').in('user_id', hostIds),
+          ]);
+          const nameById  = new Map((hostProfiles ?? []).map((p: any) => [p.id, p.name]));
+          const scoreById = new Map((hostScores ?? []).map((s: any) => [s.user_id, s]));
+          ordered = ordered.map(x => {
+            const score = scoreById.get(x.userId);
+            return {
+              ...x,
+              hostName: nameById.get(x.userId) || undefined,
+              hostRating: score?.host_avg_rating,
+              hostReviewsCount: score?.host_reviews_count,
+            };
+          });
+        } catch {}
+      }
+
       setListings(ordered);
       setCreators(c);
       setLoading(false);
     });
     return () => { done = true; };
-  }, [user?.id]);
+  }, [user?.id, refreshKey]);
 
   // Rebuild deck whenever filter or source data changes; reset deck state via key
   const deck = useMemo(() => buildDeck(listings, creators, filter), [listings, creators, filter]);
-
-  // Desktop-only (lg:) stacked-card navigation — independent of SwipeStack's
-  // own idx state, since mobile keeps its swipe-to-like/pass gestures while
-  // desktop is pure prev/next browsing over the same deck.
-  const desktopNav = useListingCardNavigation(deck.length);
 
   // Reset done-state when filter changes
   const [filterKey, setFilterKey] = useState(0);
@@ -189,8 +208,16 @@ export function Home() {
     setFilter(id);
     setDeckDone(false);
     setFilterKey(k => k + 1);
-    desktopNav.goTo(0);
   };
+
+  const handleRefresh = () => {
+    setDeckDone(false);
+    setLoading(true);
+    setFilterKey(k => k + 1);
+    setRefreshKey(k => k + 1);
+  };
+
+  const scrollToFilters = () => filterRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   const emptyState = (
     <div className="flex flex-col items-center py-24 px-6 text-center">
@@ -202,6 +229,32 @@ export function Home() {
         className="mt-5 bg-blue-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl active:opacity-80">
         + List your gear
       </button>
+    </div>
+  );
+
+  // "You're all caught up" — deck exhausted for the current filter.
+  const caughtUpScreen = (
+    <div className="flex flex-col items-center py-16 px-6 text-center gap-1">
+      <span className="text-5xl mb-3">🎉</span>
+      <p className="font-black text-gray-900 text-lg">You're all caught up</p>
+      <p className="text-sm text-gray-400 mb-5">You've seen all available listings for now.</p>
+      <div className="flex flex-col gap-2 w-full max-w-xs">
+        <button
+          onClick={() => handleFilter('all')}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80">
+          <Compass className="w-4 h-4" /> Browse All Listings
+        </button>
+        <button
+          onClick={scrollToFilters}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-2xl hover:bg-gray-50">
+          <SlidersHorizontal className="w-4 h-4" /> Change Filters
+        </button>
+        <button
+          onClick={handleRefresh}
+          className="w-full flex items-center justify-center gap-2 py-3 text-gray-500 text-sm font-semibold hover:text-gray-700">
+          <RefreshCw className="w-4 h-4" /> Refresh
+        </button>
+      </div>
     </div>
   );
 
@@ -223,7 +276,7 @@ export function Home() {
       </div>
 
       {/* ── Filter chips ── */}
-      <div className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
+      <div ref={filterRowRef} className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
         {FILTERS.map(f => (
           <button
             key={f.id}
@@ -239,48 +292,19 @@ export function Home() {
         ))}
       </div>
 
-      {/* ── Deck — mobile/tablet: SwipeStack (swipe-to-like/pass), untouched ── */}
-      <div className="mt-2 lg:hidden">
+      {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop
+           just gets a bigger card via SwipeStack's own lg: classes, plus
+           the sidebar/top bar chrome that renders outside this page. ── */}
+      <div className="mt-2 lg:mt-6 lg:px-8">
         {loading ? (
           <SkeletonDeck/>
-        ) : deck.length === 0 ? emptyState : (
+        ) : deck.length === 0 ? emptyState : deckDone ? caughtUpScreen : (
           <SwipeStack
             key={filterKey}
             items={deck}
+            persistKey={filter}
             onDone={() => setDeckDone(true)}
           />
-        )}
-      </div>
-
-      {/* ── After deck exhausted — restart nudge (mobile/tablet only) ── */}
-      {deckDone && !loading && (
-        <div className="px-4 mt-4 text-center lg:hidden">
-          <button
-            onClick={() => { setDeckDone(false); setFilterKey(k => k + 1); }}
-            className="text-sm text-blue-600 font-semibold underline">
-            See them again
-          </button>
-        </div>
-      )}
-
-      {/* ── Deck — desktop (lg:): stacked-card browsing, no like/pass semantics ── */}
-      <div className="hidden lg:block mt-6 px-8">
-        {loading ? (
-          <div className="flex justify-center"><SkeletonDeck/></div>
-        ) : deck.length === 0 ? emptyState : (
-          <div className="flex flex-col items-center gap-5">
-            <ListingCardStack
-              items={deck}
-              idx={desktopNav.idx}
-              goNext={desktopNav.goNext}
-              goPrev={desktopNav.goPrev}
-              goTo={desktopNav.goTo}
-              isFirst={desktopNav.isFirst}
-              isLast={desktopNav.isLast}
-            />
-            <ListingCardProgress index={desktopNav.idx} total={deck.length} onJump={desktopNav.goTo} />
-            <p className="text-xs text-gray-400">Use ← → or drag to browse · click a card to view details</p>
-          </div>
         )}
       </div>
 

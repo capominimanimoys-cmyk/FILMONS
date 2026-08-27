@@ -1,9 +1,11 @@
 /**
  * SwipeStack — Tinder-style discovery deck for Filmons.
  * Supports listings (rental / sale / service / studio) AND creator profiles.
- * Swipe right → ❤️ Like/Save | Swipe left → ✖ Pass | Tap / swipe up → 👀 View
+ * Swipe right / Like button → ❤️ Like/Save | Swipe left / Pass button → ✖ Pass
+ * | Eye button → 👀 See Listing (dedicated button only, never a gesture —
+ * doesn't advance the deck; the same card is shown again on return).
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
@@ -14,7 +16,16 @@ import { isProfessional } from '../lib/reliabilityApi';
 import { swipeApi } from '../lib/swipeApi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type EnrichedListing = Listing & { distance?: number };
+// hostName/hostRating/hostReviewsCount are real, pre-fetched data (Home.tsx
+// batches a profiles + reputation_scores lookup for the listings' owners)
+// -- never fabricated placeholders. hostRating is the host's aggregate
+// rating, not a per-listing one; Filmons has no per-listing review table.
+export type EnrichedListing = Listing & {
+  distance?: number;
+  hostName?: string;
+  hostRating?: number;
+  hostReviewsCount?: number;
+};
 
 export type CreatorProfile = {
   id: string;
@@ -63,9 +74,11 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
     : (listing as any).listingType === 'studio' ? 'Studio'
     : 'For Sale';
 
+  const hasRating = (listing.hostReviewsCount ?? 0) > 0;
+
   return (
     <>
-      <div className="relative h-72 bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
+      <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
         {listing.images?.[0]
           ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" draggable={false}/>
           : <div className="w-full h-full flex items-center justify-center text-5xl opacity-20">🎬</div>
@@ -78,9 +91,9 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
         </div>
       </div>
 
-      <div className="px-4 py-3.5">
-        <h3 className="text-[15px] font-black text-gray-900 line-clamp-1 mb-1">{listing.title}</h3>
-        <div className="flex items-center gap-1 text-xs text-gray-400 mb-3">
+      <div className="px-4 lg:px-6 py-3.5 lg:py-5">
+        <h3 className="text-[15px] lg:text-xl font-black text-gray-900 line-clamp-1 mb-1">{listing.title}</h3>
+        <div className="flex items-center gap-1 text-xs lg:text-sm text-gray-400 mb-2">
           <MapPin className="w-3 h-3 shrink-0"/>
           <span>{[listing.city, listing.province].filter(Boolean).join(', ')}</span>
           {listing.distance !== undefined && (
@@ -89,11 +102,19 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
             </span>
           )}
         </div>
+        {listing.hostName && (
+          <p className="text-xs lg:text-sm text-gray-500 mb-2">Hosted by <span className="font-semibold text-gray-700">{listing.hostName}</span></p>
+        )}
+        {listing.description && (
+          <p className="text-xs lg:text-sm text-gray-500 line-clamp-2 mb-3 leading-snug">{listing.description}</p>
+        )}
         <div className="flex items-center justify-between">
-          <span className="text-xl font-black text-blue-600">{fmtPrice(listing)}</span>
-          <span className="flex items-center gap-1 text-xs">
+          <span className="text-xl lg:text-2xl font-black text-blue-600">{fmtPrice(listing)}</span>
+          <span className="flex items-center gap-1 text-xs lg:text-sm">
             <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400"/>
-            <span className="font-semibold text-gray-600">New</span>
+            <span className="font-semibold text-gray-600">
+              {hasRating ? listing.hostRating?.toFixed(1) : 'New'}
+            </span>
           </span>
         </div>
       </div>
@@ -154,18 +175,19 @@ function CreatorContent({ profile }: { profile: CreatorProfile }) {
 }
 
 // ── Draggable card shell ──────────────────────────────────────────────────────
+// Tap/drag here only ever Likes or Passes -- viewing the full listing is a
+// dedicated "See Listing" action (the Eye button below), never a gesture,
+// so it can never be mistaken for a swipe and never advances the deck.
 interface CardProps {
   item: DeckItem;
   stackPos: number;
   isTop: boolean;
-  exitDir: 'L' | 'R' | 'U' | null;
+  exitDir: 'L' | 'R' | null;
   onSwipeLeft:  () => void;
   onSwipeRight: () => void;
-  onSwipeUp:    () => void;
 }
 
-function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, onSwipeUp }: CardProps) {
-  const navigate = useNavigate();
+function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight }: CardProps) {
   const [drag, setDrag]     = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
   const startRef = useRef<{ x: number; y: number; t: number } | null>(null);
@@ -185,19 +207,14 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
 
   const up = (e: React.PointerEvent) => {
     if (!startRef.current) return;
-    const dx   = e.clientX - startRef.current.x;
-    const dy   = e.clientY - startRef.current.y;
-    const dt   = Date.now() - startRef.current.t;
-    const dist = Math.hypot(dx, dy);
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
 
-    if (dist < 8 && dt < 280) {
-      if (item.kind === 'listing') navigate(`/listing/${item.data.id}`);
-      else navigate(`/host/${item.data.id}`);
-    } else if (Math.abs(dx) > SWIPE_X && Math.abs(dx) > Math.abs(dy)) {
+    if (Math.abs(dx) > SWIPE_X && Math.abs(dx) > Math.abs(dy)) {
       dx > 0 ? onSwipeRight() : onSwipeLeft();
-    } else if (dy < -SWIPE_Y && Math.abs(dy) > Math.abs(dx)) {
-      onSwipeUp();
     }
+    // Anything else (a tap, a short drag, a vertical drag) snaps back --
+    // no swipe-up gesture, per spec; use the See Listing button instead.
 
     setDrag({ x: 0, y: 0 });
     setActive(false);
@@ -208,23 +225,20 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
 
   const showSave = isTop && drag.x > 35;
   const showSkip = isTop && drag.x < -35;
-  const showView = isTop && drag.y < -35;
   const rot = isTop ? drag.x * 0.055 : 0;
 
   let style: React.CSSProperties;
   if (exitDir) {
-    const tx = exitDir === 'R' ? '160%' : exitDir === 'L' ? '-160%' : '0';
-    const ty = exitDir === 'U' ? '-140%' : '0';
-    const rz = exitDir === 'R' ? '28deg' : exitDir === 'L' ? '-28deg' : '0';
-    style = { transform:`translate(${tx},${ty}) rotate(${rz})`, opacity:0, transition:'transform 0.35s cubic-bezier(.5,0,1,1), opacity 0.3s', zIndex:30, touchAction:'none' };
+    const tx = exitDir === 'R' ? '160%' : '-160%';
+    const rz = exitDir === 'R' ? '28deg' : '-28deg';
+    style = { transform:`translate(${tx},0) rotate(${rz})`, opacity:0, transition:'transform 0.35s cubic-bezier(.5,0,1,1), opacity 0.3s', zIndex:30, touchAction:'none' };
   } else if (active) {
     style = { transform:`translate(${drag.x}px,${drag.y}px) rotate(${rot}deg)`, zIndex:30, cursor:'grabbing', touchAction:'none' };
   } else {
     style = { transition:'transform 0.28s ease', zIndex: 30 - stackPos * 10, touchAction:'none' };
   }
 
-  const saveLabel = item.kind === 'creator' ? 'FOLLOW' : 'SAVE';
-  const viewLabel = item.kind === 'creator' ? 'VIEW PROFILE' : 'VIEW DETAILS';
+  const saveLabel = item.kind === 'creator' ? 'FOLLOW' : 'LIKE';
 
   return (
     <div
@@ -255,13 +269,6 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
           </div>
         </div>
       )}
-      {showView && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ opacity: Math.min(1, (-drag.y - 35) / 55) }}>
-          <div className="flex items-center gap-2 bg-blue-600 text-white font-black text-sm px-5 py-2.5 rounded-full shadow-xl border-2 border-blue-400">
-            <Eye className="w-4 h-4"/> {viewLabel}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -275,14 +282,14 @@ function UndoUpgradePrompt({ onClose }: { onClose: () => void }) {
         <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
           <RotateCcw className="w-6 h-6 text-blue-600" />
         </div>
-        <h3 className="text-base font-black text-gray-900 mb-1.5">Want to go back?</h3>
-        <p className="text-sm text-gray-500 mb-5">Upgrade to Professional or Business to unlock Swipe Undo.</p>
+        <h3 className="text-base font-black text-gray-900 mb-1.5">You passed this listing</h3>
+        <p className="text-sm text-gray-500 mb-5">Upgrade to Professional or Business to go back and review listings you've passed.</p>
         <div className="flex flex-col gap-2">
           <button onClick={() => navigate('/account/upgrade')}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm">
-            Upgrade
+            Upgrade Account
           </button>
-          <button onClick={onClose} className="w-full py-3 text-gray-500 font-semibold text-sm">
+          <button onClick={onClose} className="w-full py-2 text-gray-400 font-semibold text-xs">
             Not now
           </button>
         </div>
@@ -295,17 +302,34 @@ function UndoUpgradePrompt({ onClose }: { onClose: () => void }) {
 interface SwipeStackProps {
   items: DeckItem[];
   onDone?: () => void;
+  /** Scopes the "return to the same card after See Listing" sessionStorage
+   *  key -- pass the active filter id so switching tabs doesn't restore a
+   *  position from a different deck. */
+  persistKey?: string;
 }
 
-export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
+function readPersistedIdx(key: string): number {
+  try { return Math.max(0, parseInt(sessionStorage.getItem(`filmons_swipe_idx_${key}`) || '0', 10) || 0); }
+  catch { return 0; }
+}
+
+export function SwipeStack({ items = [], onDone, persistKey = 'default' }: SwipeStackProps) {
   const { user } = useAuth();
   const navigate  = useNavigate();
-  const [idx,     setIdx]     = useState(0);
-  const [exitDir, setExitDir] = useState<'L' | 'R' | 'U' | null>(null);
+  const [idx,     setIdx]     = useState(() => readPersistedIdx(persistKey));
+  const [exitDir, setExitDir] = useState<'L' | 'R' | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [undoing, setUndoing] = useState(false);
 
-  const fly = (dir: 'L' | 'R' | 'U') => {
+  // Persist position so tapping "See Listing" and coming back (a real
+  // route change, not a modal) lands on the same card instead of
+  // restarting the deck -- viewing never advances idx itself, so this is
+  // the only thing that needs to survive the unmount/remount.
+  useEffect(() => {
+    try { sessionStorage.setItem(`filmons_swipe_idx_${persistKey}`, String(idx)); } catch {}
+  }, [idx, persistKey]);
+
+  const fly = (dir: 'L' | 'R') => {
     if (exitDir) return;
     const item = items[idx];
     setExitDir(dir);
@@ -330,10 +354,6 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Liked: ${item.data.name}`);
         }
-      }
-      if (dir === 'U' && item) {
-        if (item.kind === 'listing') navigate(`/listing/${item.data.id}`);
-        else navigate(`/host/${item.data.id}`);
       }
       // Record every swipe (both directions) -- left makes the pass
       // permanent (excluded from future deck loads, see Home.tsx); right
@@ -368,27 +388,20 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
   const current = items[idx];
   const cards   = items.slice(idx, idx + 3);
 
-  if (!current || idx >= items.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
-        <span className="text-5xl">✨</span>
-        <div>
-          <p className="font-black text-gray-900 text-lg">You've seen them all!</p>
-          <p className="text-sm text-gray-400 mt-1">Try a different filter or check back later.</p>
-        </div>
-        <button
-          onClick={() => { setIdx(0); setExitDir(null); }}
-          className="text-xs text-blue-600 font-bold bg-blue-50 px-4 py-2 rounded-full hover:bg-blue-100 transition-colors">
-          Start over
-        </button>
-      </div>
-    );
-  }
+  // Deck exhausted -- Home.tsx owns the "you're all caught up" screen
+  // (Browse All Listings / Change Filters / Refresh) via onDone, so there's
+  // nothing for this component to render here.
+  if (!current || idx >= items.length) return null;
+
+  const canUndo = isProfessional(user?.accountType);
 
   return (
-    <div className="flex flex-col items-center px-4">
-      {/* Card stack */}
-      <div className="relative w-full" style={{ height: 420 }}>
+    <div className="flex flex-col items-center px-4 lg:px-0 lg:max-w-2xl lg:mx-auto">
+      {/* Card stack — height must fit the tallest rendered card (image +
+          text content), not just the image, or the card visually overflows
+          this container and covers the counter/buttons below it (they're
+          still there in the DOM, just hidden underneath). */}
+      <div className="relative w-full h-[420px] lg:h-[640px]">
         {[...cards].reverse().map((item, rIdx) => {
           const stackPos = cards.length - 1 - rIdx;
           const isTop    = stackPos === 0;
@@ -402,7 +415,6 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
               exitDir={isTop ? exitDir : null}
               onSwipeLeft={() => fly('L')}
               onSwipeRight={() => fly('R')}
-              onSwipeUp={() => fly('U')}
             />
           );
         })}
@@ -413,33 +425,48 @@ export function SwipeStack({ items = [], onDone }: SwipeStackProps) {
         {idx + 1} of {items.length}
       </p>
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-6">
-        <button
-          onClick={handleUndo}
-          disabled={idx === 0 || undoing}
-          aria-label="Undo last swipe"
-          className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 shadow-sm flex items-center justify-center hover:border-gray-300 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-default">
-          <RotateCcw className="w-4 h-4 text-gray-500"/>
-        </button>
-        <button
-          onClick={() => fly('L')}
-          className="w-14 h-14 rounded-full bg-white border-2 border-red-200 shadow-md flex items-center justify-center hover:border-red-400 hover:bg-red-50 transition-all active:scale-90">
-          <X className="w-6 h-6 text-red-400"/>
-        </button>
-        <button
-          onClick={() => current.kind === 'listing' ? navigate(`/listing/${current.data.id}`) : navigate(`/host/${current.data.id}`)}
-          className="w-12 h-12 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center hover:border-blue-400 hover:bg-blue-50 transition-all active:scale-90">
-          <Eye className="w-5 h-5 text-blue-500"/>
-        </button>
-        <button
-          onClick={() => fly('R')}
-          className="w-14 h-14 rounded-full bg-white border-2 border-green-200 shadow-md flex items-center justify-center hover:border-green-400 hover:bg-green-50 transition-all active:scale-90">
-          <Heart className="w-6 h-6 text-green-500"/>
-        </button>
+      {/* Action buttons — Creator/Creator+: Pass | See Listing | Like (no
+          Undo at all); Professional/Business: Undo | Pass | See Listing | Like */}
+      <div className="flex items-center gap-6 lg:gap-8">
+        {canUndo && (
+          <div className="flex flex-col items-center gap-1.5">
+            <button
+              onClick={handleUndo}
+              disabled={idx === 0 || undoing}
+              aria-label="Undo last swipe"
+              className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-white border-2 border-gray-200 shadow-sm flex items-center justify-center hover:border-gray-300 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-default">
+              <RotateCcw className="w-4 h-4 lg:w-5 lg:h-5 text-gray-500"/>
+            </button>
+            <span className="text-[10px] lg:text-xs font-semibold text-gray-400">Undo</span>
+          </div>
+        )}
+        <div className="flex flex-col items-center gap-1.5">
+          <button
+            onClick={() => fly('L')}
+            className="w-14 h-14 lg:w-16 lg:h-16 rounded-full bg-white border-2 border-red-200 shadow-md flex items-center justify-center hover:border-red-400 hover:bg-red-50 transition-all active:scale-90">
+            <X className="w-6 h-6 lg:w-7 lg:h-7 text-red-400"/>
+          </button>
+          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">Pass</span>
+        </div>
+        <div className="flex flex-col items-center gap-1.5">
+          <button
+            onClick={() => current.kind === 'listing' ? navigate(`/listing/${current.data.id}`) : navigate(`/host/${current.data.id}`)}
+            className="w-12 h-12 lg:w-14 lg:h-14 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center hover:border-blue-400 hover:bg-blue-50 transition-all active:scale-90">
+            <Eye className="w-5 h-5 lg:w-6 lg:h-6 text-blue-500"/>
+          </button>
+          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">See Listing</span>
+        </div>
+        <div className="flex flex-col items-center gap-1.5">
+          <button
+            onClick={() => fly('R')}
+            className="w-14 h-14 lg:w-16 lg:h-16 rounded-full bg-white border-2 border-green-200 shadow-md flex items-center justify-center hover:border-green-400 hover:bg-green-50 transition-all active:scale-90">
+            <Heart className="w-6 h-6 lg:w-7 lg:h-7 text-green-500"/>
+          </button>
+          <span className="text-[10px] lg:text-xs font-semibold text-gray-400">Like</span>
+        </div>
       </div>
 
-      <p className="text-[11px] text-gray-300 mt-4">← Pass  ·  ↑ View  ·  Save →</p>
+      <p className="text-[11px] text-gray-300 mt-4">← Pass  ·  Like →</p>
 
       {showUpgradePrompt && <UndoUpgradePrompt onClose={() => setShowUpgradePrompt(false)} />}
     </div>
