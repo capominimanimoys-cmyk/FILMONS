@@ -11,9 +11,20 @@ import {
   Star, BarChart2, Settings, Sparkles, UserPlus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { UserAvatar } from './AccountTypeBadge';
 import { FilmonsLogo } from './FilmonsLogo';
 import { chatApi } from '../lib/api';
+import { normalizeTier } from '../lib/reliabilityApi';
+
+// Same next-tier copy as Settings.tsx's upgrade banner -- kept in sync
+// there since both surfaces show the same upsell for the same tier.
+const NEXT_TIER_LABEL: Record<string, string> = {
+  creator: 'Upgrade to Creator+', creator_plus: 'Upgrade to Professional',
+  professional: 'Upgrade to Business', business: '',
+};
+const NEXT_TIER_SUB: Record<string, string> = {
+  creator: 'Free with ID verification', creator_plus: '$9.99/month · 5 Opportunities/mo',
+  professional: '$19.99/month · unlimited Opportunities', business: '',
+};
 
 type LucideIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
 
@@ -57,7 +68,11 @@ export function DesktopSidebar() {
   const isActive = (to: string) => (to === '/' ? location.pathname === '/' : location.pathname.startsWith(to));
 
   return (
-    <aside className="hidden md:flex md:flex-col fixed left-0 top-0 bottom-0 z-30 w-16 lg:w-64 bg-white border-r border-gray-100">
+    // sticky (not fixed) so it naturally stops at the bottom of the
+    // sidebar+main flex row in Root.tsx instead of staying pinned over the
+    // footer below; top-14 accounts for TopBar's 56px on tablet (TopBar is
+    // lg:hidden, gone entirely once this reaches lg: and needs top-0).
+    <aside className="hidden md:flex md:flex-col sticky top-14 lg:top-0 self-start h-[calc(100vh-3.5rem)] lg:h-screen shrink-0 z-30 w-16 lg:w-64 bg-white border-r border-gray-100">
       <Link to="/" className="flex items-center justify-center lg:justify-start h-14 px-4 border-b border-gray-100 shrink-0">
         <span className="lg:hidden text-lg font-black text-gray-900">F</span>
         <span className="hidden lg:block"><FilmonsLogo iconSize={22} theme="light" /></span>
@@ -80,7 +95,7 @@ export function DesktopSidebar() {
         <>
           <nav className="flex-1 py-3 overflow-y-auto">
             <NavItem icon={Home}          label="Home"                     to="/"                    active={isActive('/')} />
-            <NavItem icon={Layers}        label="Listings & Opportunities" to="/"                    active={false} />
+            <NavItem icon={Layers}        label="Listings & Opportunities" to="/my-listings"         active={isActive('/my-listings')} />
             <NavItem icon={MessageCircle} label="Messages"                 to="/inbox"               active={isActive('/inbox')}      badge={unreadMsgs} />
             <NavItem icon={Heart}         label="Saved"                    to="/profile?tab=liked"   active={location.pathname === '/profile' && location.search.includes('tab=liked')} />
             <NavItem icon={CalendarDays}  label="Bookings"                 to="/my-orders"           active={isActive('/my-orders')} />
@@ -90,24 +105,22 @@ export function DesktopSidebar() {
             <NavItem icon={Settings}      label="Settings"                 to="/settings"            active={isActive('/settings')} />
           </nav>
 
-          <div className="hidden lg:block mx-3 mb-3 p-3.5 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-700">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <p className="text-xs font-black text-white">Upgrade to Pro</p>
-            </div>
-            <p className="text-[11px] text-white/60 mb-2.5 leading-snug">Unlock boosted listings and advanced analytics.</p>
-            <Link to="/account/upgrade" className="block text-center text-[11px] font-bold text-gray-900 bg-white rounded-lg py-1.5">
-              Learn more
-            </Link>
-          </div>
-
-          <Link to="/profile" className="flex items-center gap-2.5 px-3 py-3 border-t border-gray-100 justify-center lg:justify-start">
-            <UserAvatar user={user} size={32} />
-            <div className="hidden lg:block min-w-0 flex-1">
-              <p className="text-sm font-bold text-gray-900 truncate leading-tight">{user.name}</p>
-              <p className="text-[11px] text-gray-400 truncate">@{user.username || user.email?.split('@')[0]}</p>
-            </div>
-          </Link>
+          {(() => {
+            const tier = normalizeTier(user?.accountType);
+            if (tier === 'business') return null; // top tier -- nothing left to upgrade to
+            return (
+              <div className="hidden lg:block mx-3 mb-3 p-3.5 rounded-2xl bg-gradient-to-br from-gray-900 to-gray-700">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <p className="text-xs font-black text-white">{NEXT_TIER_LABEL[tier]}</p>
+                </div>
+                <p className="text-[11px] text-white/60 mb-2.5 leading-snug">{NEXT_TIER_SUB[tier]}</p>
+                <Link to="/account/upgrade" className="block text-center text-[11px] font-bold text-gray-900 bg-white rounded-lg py-1.5">
+                  Learn more
+                </Link>
+              </div>
+            );
+          })()}
         </>
       )}
     </aside>

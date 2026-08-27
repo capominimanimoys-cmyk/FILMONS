@@ -3,6 +3,7 @@ import { SideDrawer } from '../components/SideDrawer';
 import { TopBar } from '../components/TopBar';
 import { MobileBottomNav } from '../components/MobileBottomNav';
 import { DesktopSidebar } from '../components/DesktopSidebar';
+import { DesktopTopBar } from '../components/DesktopTopBar';
 import { Footer } from '../components/Footer';
 import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
@@ -14,7 +15,6 @@ import { useAuth } from '../context/AuthContext';
 import type { User } from '../types';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
-const NO_FOOTER_PAGES = ['/login', '/phone-signup', '/phone-login', '/inbox', '/feed', '/reels'];
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
 // These pages render their own fixed bottom action bar (Back/Next, Save, etc.) —
 // the global MobileBottomNav sits on top of it (higher z-index) and hides it.
@@ -57,7 +57,7 @@ export function Root() {
 
   const hideAll      = NO_NAV_PAGES.includes(location.pathname);
   const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
-  const hideFooter   = NO_FOOTER_PAGES.some(p => location.pathname.startsWith(p));
+  const showFooter   = location.pathname === '/';
   const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || conversationOpen;
 
   // New Browser / First Sign-In Verification — checked before anything
@@ -97,8 +97,6 @@ export function Root() {
 
         {sidebarOpen && <SideDrawer onClose={() => setSidebarOpen(false)} />}
 
-        <DesktopSidebar />
-
         {!hideTopBar && (
           <TopBar
             onMenuClick={() => setSidebarOpen(v => !v)}
@@ -106,12 +104,21 @@ export function Root() {
           />
         )}
 
-        <main className={`flex-1 min-w-0 md:pb-0 md:pl-16 lg:pl-64 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
-          <Outlet />
-        </main>
+        {/* Sidebar + main share a flex row so the sidebar (sticky, not
+            fixed) naturally stops at the bottom of this row instead of
+            staying pinned over the footer below. */}
+        <div className="flex flex-1">
+          <DesktopSidebar />
 
-        {!hideFooter && (
-          <div className="hidden md:block md:pl-16 lg:pl-64">
+          <main className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
+            {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
+            <Outlet />
+          </main>
+        </div>
+
+        {/* Footer — Home only, full width under the sidebar too (see above) */}
+        {showFooter && (
+          <div className="hidden md:block">
             <Footer />
           </div>
         )}

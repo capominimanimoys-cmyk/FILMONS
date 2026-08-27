@@ -199,9 +199,10 @@ export function Home() {
   return (
     <div className="min-h-screen bg-gray-100 pb-24 lg:pb-16">
 
-      {/* ── Search bar ── */}
+      {/* ── Search bar — desktop gets DesktopTopBar's search instead, in the
+           global top bar above every page, not just Home ── */}
       <div
-        className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 lg:px-8"
+        className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 lg:px-8"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '10px' }}
       >
         <button
