@@ -67,6 +67,7 @@ import { BoostListingFlow } from './pages/BoostListingFlow';
 import { BoostInsights } from './pages/BoostInsights';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
+import { LikedItems } from './pages/LikedItems';
 
 export const router = createBrowserRouter([
   {
@@ -79,6 +80,8 @@ export const router = createBrowserRouter([
       { path: 'checkout', Component: Checkout },
       { path: 'dashboard', Component: HostDashboard },
       { path: 'wallet', Component: Wallet },
+      { path: 'liked-listings', element: <LikedItems type="listing" /> },
+      { path: 'liked-creators', element: <LikedItems type="creator" /> },
       { path: 'wallet/payout-method', Component: PayoutMethodSetup },
       { path: 'notifications', Component: Notifications },
       { path: 'settings/notifications',  Component: NotificationSettings  },

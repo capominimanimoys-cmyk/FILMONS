@@ -563,6 +563,7 @@ export function Profile() {
   const [savedListings,   setSavedListings]   = useState<any[]>([]);
   const [likedCreators,   setLikedCreators]   = useState<any[]>([]);
   const [savedLoading,    setSavedLoading]    = useState(false);
+  const [savedFetchedOnce, setSavedFetchedOnce] = useState(false);
   const [reviews,         setReviews]         = useState<Review[]>([]); // Reviews Given (written by me)
   const [receivedReviews, setReceivedReviews] = useState<Review[]>([]); // Reviews Received (about me)
   const [reviewsView,     setReviewsView]     = useState<'received' | 'given'>('received');
@@ -733,9 +734,13 @@ export function Profile() {
     }
 
     setSavedLoading(true);
-    const sp = await savedPostsApi.getSaved(user.id).catch(() => []);
-    setSavedPosts(sp.filter((p: any) => p?.id && p?.userName));
-    const [listingFavs, creatorFavs] = await Promise.all([
+    // Run all three independent fetches together instead of awaiting the
+    // saved-posts call before even starting the two favorites queries —
+    // that sequential await added a full extra round-trip of latency to
+    // the Liked Listings/Creators sections for a fetch this tab doesn't
+    // even display first.
+    const [sp, listingFavs, creatorFavs] = await Promise.all([
+      savedPostsApi.getSaved(user.id).catch(() => []),
       supabase.from('favorites').select('id, item_id, item_data')
         .eq('user_id', user.id).eq('item_type', 'listing').order('created_at', { ascending: false })
         .then(r => r.data || [], () => []),
@@ -743,9 +748,11 @@ export function Profile() {
         .eq('user_id', user.id).eq('item_type', 'creator').order('created_at', { ascending: false })
         .then(r => r.data || [], () => []),
     ]);
+    setSavedPosts(sp.filter((p: any) => p?.id && p?.userName));
     setSavedListings(listingFavs);
     setLikedCreators(creatorFavs);
     setSavedLoading(false);
+    setSavedFetchedOnce(true);
     if (SAVED_CACHE_KEY) {
       try { localStorage.setItem(SAVED_CACHE_KEY, JSON.stringify({ listings: listingFavs, creators: creatorFavs })); } catch {}
     }
@@ -791,7 +798,9 @@ export function Profile() {
   };
 
   useEffect(() => {
-    if (tab === 'liked' && user?.id) loadSaved();
+    // Only fetch once per mount -- switching back to this tab after having
+    // already loaded it shouldn't re-run the full fetch every time.
+    if (tab === 'liked' && user?.id && !savedFetchedOnce) loadSaved();
   }, [tab, user?.id]); // eslint-disable-line
 
   const loadTagged = async () => {
@@ -1929,7 +1938,7 @@ export function Profile() {
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-50">
-                    {savedListings.map((fav: any) => {
+                    {savedListings.slice(0, 3).map((fav: any) => {
                       const item = fav.item_data || {};
                       const price = item.price ? `$${Number(item.price).toLocaleString()}` : '';
                       const suffix = item.listingMode === 'rent' ? '/day' : item.listingType === 'service' ? '/hr' : '';
@@ -1955,6 +1964,14 @@ export function Profile() {
                     })}
                   </div>
                 )}
+                {savedListings.length > 3 && (
+                  <button
+                    onClick={() => navigate('/liked-listings')}
+                    className="w-full py-3 text-center text-sm font-bold text-blue-600 hover:bg-gray-50 border-t border-gray-50"
+                  >
+                    See all liked listings ({savedListings.length})
+                  </button>
+                )}
               </div>
 
               {/* Liked Creators */}
@@ -1979,7 +1996,7 @@ export function Profile() {
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-50">
-                    {likedCreators.map((fav: any) => {
+                    {likedCreators.slice(0, 3).map((fav: any) => {
                       const c = fav.item_data || {};
                       return (
                         <button
@@ -2004,6 +2021,14 @@ export function Profile() {
                       );
                     })}
                   </div>
+                )}
+                {likedCreators.length > 3 && (
+                  <button
+                    onClick={() => navigate('/liked-creators')}
+                    className="w-full py-3 text-center text-sm font-bold text-blue-600 hover:bg-gray-50 border-t border-gray-50"
+                  >
+                    See all liked creators ({likedCreators.length})
+                  </button>
                 )}
               </div>
             </div>

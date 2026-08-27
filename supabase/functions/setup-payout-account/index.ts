@@ -33,12 +33,16 @@ async function selectOne(table: string, filter: string) {
 
 const PURPOSE = 'payout_method';
 
+type PayoutCountry = 'CA' | 'US';
+const SUPPORTED_COUNTRIES: PayoutCountry[] = ['CA', 'US'];
+
 interface PersonInput {
   firstName: string; lastName: string;
   dob: { day: number; month: number; year: number };
   address: { line1: string; city: string; province: string; postalCode: string };
   phone?: string;
-  idNumber?: string; // only ever sent when Stripe actually asked for it (individual.id_number)
+  idNumber?: string;   // individual.id_number (CA SIN / US full SSN) -- only sent when Stripe asked for it
+  ssnLast4?: string;   // individual.ssn_last_4 (US) -- only sent when Stripe asked for it
 }
 
 // Stripe's form-encoded bracket nesting: nest(['individual','dob','day'])
@@ -52,7 +56,7 @@ function nest(path: string[]): string {
 // for a business_type=individual Account). Pass '' for a top-level Person
 // (used for a company's representative, posted to /accounts/{id}/persons,
 // whose fields are NOT nested under anything).
-function personParams(prefix: string, p: PersonInput, email?: string): Record<string, string> {
+function personParams(prefix: string, p: PersonInput, country: PayoutCountry, email?: string): Record<string, string> {
   const path = (...segments: string[]) => nest(prefix ? [prefix, ...segments] : segments);
   const params: Record<string, string> = {
     [path('first_name')]: p.firstName,
@@ -64,10 +68,11 @@ function personParams(prefix: string, p: PersonInput, email?: string): Record<st
     [path('address', 'city')]: p.address.city,
     [path('address', 'state')]: p.address.province,
     [path('address', 'postal_code')]: p.address.postalCode,
-    [path('address', 'country')]: 'CA',
+    [path('address', 'country')]: country,
   };
   if (p.phone) params[path('phone')] = p.phone;
   if (p.idNumber) params[path('id_number')] = p.idNumber;
+  if (p.ssnLast4) params[path('ssn_last_4')] = p.ssnLast4;
   if (email) params[path('email')] = email;
   return params;
 }
@@ -77,8 +82,8 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
-    const { userId, stepUpToken, accountHolderType, individual, company } = await req.json() as {
-      userId?: string; stepUpToken?: string; accountHolderType?: 'individual' | 'company';
+    const { userId, stepUpToken, country, accountHolderType, individual, company } = await req.json() as {
+      userId?: string; stepUpToken?: string; country?: PayoutCountry; accountHolderType?: 'individual' | 'company';
       individual?: PersonInput; company?: { name: string; address: PersonInput['address']; phone?: string; representative: PersonInput };
     };
     if (!userId || !accountHolderType) return json({ error: 'Missing required fields' }, 400);
@@ -91,6 +96,16 @@ Deno.serve(async (req) => {
     const profile = await selectOne('profiles', `id=eq.${userId}`);
     if (!profile) return json({ error: 'Account not found' }, 404);
 
+    // The account's country is fixed at creation and never re-asked after
+    // that -- an existing connected account is authoritative over whatever
+    // the client sends on a later call (e.g. resolving a follow-up
+    // requirement), so payouts can never be silently moved to an
+    // unsupported country by a stale/tampered client request.
+    const resolvedCountry: PayoutCountry | undefined = (profile.stripe_connect_country as PayoutCountry) || country;
+    if (!resolvedCountry || !SUPPORTED_COUNTRIES.includes(resolvedCountry)) {
+      return json({ error: 'Payouts are currently only available for Canadian or U.S. bank accounts' }, 400);
+    }
+
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return json({ error: 'Stripe not configured' }, 500);
     const stripeHeaders = { Authorization: `Bearer ${SK}`, 'Content-Type': 'application/x-www-form-urlencoded' };
@@ -100,20 +115,20 @@ Deno.serve(async (req) => {
 
     const baseParams: Record<string, string> = {
       business_type: accountHolderType,
-      country: 'CA',
+      country: resolvedCountry,
       email: profile.email || '',
       'capabilities[transfers][requested]': 'true',
       'capabilities[card_payments][requested]': 'true', // required alongside transfers, see payout-connect-start's old comment for why -- never actually used to charge anything
     };
     if (accountHolderType === 'individual') {
-      Object.assign(baseParams, personParams('individual', individual!, profile.email));
+      Object.assign(baseParams, personParams('individual', individual!, resolvedCountry, profile.email));
     } else {
       baseParams['company[name]'] = company!.name;
       baseParams['company[address][line1]'] = company!.address.line1;
       baseParams['company[address][city]'] = company!.address.city;
       baseParams['company[address][state]'] = company!.address.province;
       baseParams['company[address][postal_code]'] = company!.address.postalCode;
-      baseParams['company[address][country]'] = 'CA';
+      baseParams['company[address][country]'] = resolvedCountry;
       if (company!.phone) baseParams['company[phone]'] = company!.phone;
     }
 
@@ -129,7 +144,7 @@ Deno.serve(async (req) => {
       accountId = account.id;
       await fetch(rest(`/profiles?id=eq.${userId}`), {
         method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-        body: JSON.stringify({ stripe_connect_account_id: accountId, stripe_connect_country: 'CA', payout_account_type: accountHolderType }),
+        body: JSON.stringify({ stripe_connect_account_id: accountId, stripe_connect_country: resolvedCountry, payout_account_type: accountHolderType }),
       });
     } else {
       const res = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
@@ -143,7 +158,7 @@ Deno.serve(async (req) => {
     // separate call (Stripe has no top-level `individual` object once
     // business_type is 'company').
     if (accountHolderType === 'company') {
-      const repParams = personParams('', company!.representative, profile.email);
+      const repParams = personParams('', company!.representative, resolvedCountry, profile.email);
       repParams['relationship[representative]'] = 'true';
       const personRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/persons`, {
         method: 'POST', headers: stripeHeaders, body: new URLSearchParams(repParams),

@@ -12,6 +12,7 @@ import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { RouteProgressBar } from '../components/RouteProgressBar';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { getPendingReturnUrl } from '../lib/authReturnUrl';
 import type { User } from '../types';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
@@ -64,8 +65,20 @@ export function Root() {
   // else that requires a real session. deviceVerified is null until the
   // check resolves; only an explicit false redirects, so a trusted
   // returning user never sees a flash-redirect while it's in flight.
+  //
+  // This guard can fire while `location.pathname` is still an auth-entry
+  // route itself (e.g. the moment right after PhoneLogin's OTP success
+  // sets isAuthenticated but before its own navigate('/') has committed) —
+  // capturing that as `from` sent VerifyDevice back to /phone-login after
+  // a fully successful login, looping the user. None of these routes are
+  // ever a real destination to return to; fall back to whatever return
+  // destination the login flow itself stashed (see lib/authReturnUrl), or
+  // Home if there isn't one.
   if (isAuthenticated && deviceVerified === false && location.pathname !== '/verify-device') {
-    return <Navigate to="/verify-device" state={{ from: location.pathname + location.search }} replace />;
+    const from = NO_NAV_PAGES.includes(location.pathname)
+      ? (getPendingReturnUrl() || '/')
+      : location.pathname + location.search;
+    return <Navigate to="/verify-device" state={{ from }} replace />;
   }
 
   // Enforce email verification before anything else (skip for guests — they have no user)

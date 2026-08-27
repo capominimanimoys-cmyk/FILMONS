@@ -244,6 +244,7 @@ export const walletApi = {
   },
 
   async setupPayoutAccount(userId: string, stepUpToken: string, params: {
+    country: 'CA' | 'US';
     accountHolderType: 'individual' | 'company';
     individual?: PayoutPerson; company?: { name: string; address: PayoutPerson['address']; phone?: string; representative: PayoutPerson };
   }): Promise<{ success: boolean; requirementsDue?: string[]; error?: string }> {
@@ -262,7 +263,9 @@ export const walletApi = {
   },
 
   async submitPayoutBankAccount(userId: string, stepUpToken: string, details: {
-    accountHolderName: string; institutionNumber: string; transitNumber: string; accountNumber: string; accountType: 'chequing' | 'savings';
+    accountHolderName: string; accountNumber: string; accountType: 'chequing' | 'savings';
+    institutionNumber?: string; transitNumber?: string; // CA only
+    routingNumber?: string; // US only
   }): Promise<{ success: boolean; error?: string }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/submit-payout-bank-account`, {
@@ -300,4 +303,5 @@ export interface PayoutPerson {
   address: { line1: string; city: string; province: string; postalCode: string };
   phone?: string;
   idNumber?: string;
+  ssnLast4?: string;
 }

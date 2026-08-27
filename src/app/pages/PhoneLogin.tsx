@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router';
+import { useNavigate, useSearchParams, Link } from 'react-router';
 import { ArrowLeft, CheckCircle, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
+import { setPendingReturnUrl, getPendingReturnUrl, consumePendingReturnUrl } from '../lib/authReturnUrl';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -123,7 +124,8 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
 
 export function PhoneLogin() {
   const navigate = useNavigate();
-  const { setUserDirectly } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { setUserDirectly, isAuthenticated } = useAuth();
 
   const [step, setStep]                         = useState<1 | 2>(1);
   const [mounted, setMounted]                   = useState(false);
@@ -134,6 +136,11 @@ export function PhoneLogin() {
   const [otpKey, setOtpKey]                     = useState(0);
   const [isLoading, setIsLoading]               = useState(false);
 
+  // Already fully authenticated (e.g. the back button after a completed
+  // login) — bounce away instead of showing the phone form again, same
+  // guard Login.tsx already has for its own page.
+  useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/', { replace: true }); } }, [isAuthenticated]); // eslint-disable-line
+
   useEffect(() => {
     setTimeout(() => setMounted(true), 80);
     // Pre-warm edge function so OTP send is instant when user taps the button
@@ -141,7 +148,14 @@ export function PhoneLogin() {
       `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/health`,
       { headers: { Authorization: `Bearer ${publicAnonKey}` } },
     ).catch(() => {});
-  }, []);
+    // Stash the intended destination (if the caller provided one) in
+    // sessionStorage so it survives the OTP step and any Root-triggered
+    // device/email verification detour — see lib/authReturnUrl. Clear any
+    // leftover value from an earlier, unrelated login attempt otherwise.
+    const returnUrl = searchParams.get('returnUrl');
+    if (returnUrl) setPendingReturnUrl(returnUrl);
+    else consumePendingReturnUrl();
+  }, []); // eslint-disable-line
 
   const fullPhone = `${country.dial}${phone.replace(/\D/g, '')}`;
 
@@ -192,7 +206,12 @@ export function PhoneLogin() {
         .catch(err => console.error('SMS error:', err));
 
       toast.success('Welcome back!', { description: `Signed in as ${user.name}`, icon: <CheckCircle className="w-4 h-4"/> });
-      captureSnapshot(); navigate('/');
+      captureSnapshot();
+      // If device/email verification is also required, Root's own guard
+      // takes over immediately after this and reads the same stashed
+      // return url — don't clear it here, only peek, so it's still there
+      // for that detour if it happens.
+      navigate(getPendingReturnUrl() || '/');
     } catch (error) {
       toast.error('Invalid code', { description: error instanceof Error ? error.message : 'Verification failed' });
     }

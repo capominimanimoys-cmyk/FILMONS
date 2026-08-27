@@ -69,7 +69,7 @@ const TEMPLATE_CASHOUT_REJECTED        = 'template_in4wz0r';
 const TEMPLATE_CASHOUT_FAILED          = 'template_o7wwsdk';
 // Placeholder until created in the EmailJS dashboard from
 // hire-request-received-template.html and the real id is swapped in.
-const TEMPLATE_HIRE_REQUEST_RECEIVED   = 'template_hire_request_received';
+const TEMPLATE_HIRE_REQUEST_RECEIVED   = 'template_6yqddjn';
 // Automated Stripe payout lifecycle -- placeholders until created in the
 // EmailJS dashboard from the payout-*-template.html files and the real ids
 // are swapped in.

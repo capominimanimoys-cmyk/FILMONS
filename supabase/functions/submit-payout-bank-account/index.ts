@@ -63,11 +63,25 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
-    const { accountHolderName, institutionNumber, transitNumber, accountNumber, accountType } = body as {
-      accountHolderName?: string; institutionNumber?: string; transitNumber?: string; accountNumber?: string; accountType?: 'chequing' | 'savings';
+    // The connected account's own country is authoritative -- never trust
+    // a client-sent country for which bank-field shape to build, since
+    // that's what determines the currency/routing format sent to Stripe.
+    const country = profile?.stripe_connect_country as 'CA' | 'US' | undefined;
+    if (!country || !['CA', 'US'].includes(country)) {
+      return json({ error: 'Payouts are currently only available for Canadian or U.S. bank accounts' }, 400);
+    }
+
+    const { accountHolderName, institutionNumber, transitNumber, routingNumber, accountNumber, accountType } = body as {
+      accountHolderName?: string; institutionNumber?: string; transitNumber?: string; routingNumber?: string; accountNumber?: string; accountType?: 'chequing' | 'savings';
     };
-    if (!accountHolderName || !institutionNumber || !transitNumber || !accountNumber) {
+    if (!accountHolderName || !accountNumber) {
       return json({ error: 'Missing bank account details' }, 400);
+    }
+    if (country === 'CA' && (!institutionNumber || !transitNumber)) {
+      return json({ error: 'Missing institution or transit number' }, 400);
+    }
+    if (country === 'US' && !routingNumber) {
+      return json({ error: 'Missing routing number' }, 400);
     }
 
     // Delete any existing external account first -- Custom accounts can
@@ -83,13 +97,14 @@ Deno.serve(async (req) => {
 
     const params = new URLSearchParams({
       'external_account[object]': 'bank_account',
-      'external_account[country]': 'CA',
-      'external_account[currency]': 'cad',
+      'external_account[country]': country,
+      'external_account[currency]': country === 'CA' ? 'cad' : 'usd',
       'external_account[account_holder_name]': accountHolderName,
       'external_account[account_holder_type]': profile?.payout_account_type === 'company' ? 'company' : 'individual',
-      // Stripe's documented CA routing_number format: 5-digit transit -
-      // 3-digit institution, e.g. "12345-001".
-      'external_account[routing_number]': `${transitNumber}-${institutionNumber}`,
+      // CA: Stripe's documented routing_number format is 5-digit transit -
+      // 3-digit institution, e.g. "12345-001". US: the 9-digit ABA routing
+      // number is sent directly.
+      'external_account[routing_number]': country === 'CA' ? `${transitNumber}-${institutionNumber}` : routingNumber!,
       'external_account[account_number]': accountNumber,
     });
     const res = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts`, {

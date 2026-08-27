@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { sendVerificationCode, verifyDeviceCode } from '../lib/deviceVerification';
+import { consumePendingReturnUrl } from '../lib/authReturnUrl';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
@@ -84,6 +85,7 @@ export function VerifyDevice() {
       return;
     }
     setDeviceVerified(true);
+    consumePendingReturnUrl(); // the stashed value, if any, has now served its purpose via `from`
     navigate(safeDestination(location.state?.from), { replace: true });
   };
 
