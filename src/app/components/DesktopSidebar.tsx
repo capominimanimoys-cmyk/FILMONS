@@ -8,7 +8,7 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import { useEffect, useState } from 'react';
 import {
   Home, Layers, MessageCircle, Heart, CalendarDays, CreditCard,
-  Star, BarChart2, Settings, Sparkles, UserPlus,
+  Star, BarChart2, Settings, CircleHelp, Sparkles, UserPlus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { FilmonsLogo } from './FilmonsLogo';
@@ -103,6 +103,7 @@ export function DesktopSidebar() {
             <NavItem icon={Star}          label="Reviews"                  to="/profile?tab=reviews" active={location.pathname === '/profile' && location.search.includes('tab=reviews')} />
             <NavItem icon={BarChart2}     label="Analytics"                to="/dashboard"           active={isActive('/dashboard')} />
             <NavItem icon={Settings}      label="Settings"                 to="/settings"            active={isActive('/settings')} />
+            <NavItem icon={CircleHelp}    label="Support"                  to="/support"             active={isActive('/support')} />
           </nav>
 
           {(() => {

@@ -1,11 +1,9 @@
 import { Link, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { UserAvatar } from './AccountTypeBadge';
 import {
-  X, ShoppingBag, Heart, CalendarDays, CreditCard,
-  Layers, ShieldCheck, BarChart2, HelpCircle, Mail,
-  Settings, Lock, Bell, LogOut, Home, Search, UserPlus,
-  ChevronRight,
+  X, House, Search, MessageCircle, BriefcaseBusiness, FileText,
+  LayoutDashboard, Wallet, Bookmark, Settings, CircleHelp, LogOut,
+  UserPlus,
 } from 'lucide-react';
 
 type LucideIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -28,23 +26,6 @@ function NavRow({ icon: Icon, label, to, active, onClick }: {
   );
 }
 
-function SectionRow({ icon: Icon, label, to, action, danger }: {
-  icon: LucideIcon; label: string; to?: string; action?: () => void; danger?: boolean;
-}) {
-  const navigate = useNavigate();
-  const cls = `w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 ${
-    danger ? 'text-red-500' : 'text-gray-700'
-  }`;
-  const content = (
-    <>
-      <Icon className={`w-[18px] h-[18px] shrink-0 ${danger ? 'text-red-400' : 'text-gray-400'}`} strokeWidth={1.75} />
-      <span className="text-sm font-medium flex-1">{label}</span>
-    </>
-  );
-  if (action) return <button onClick={action} className={cls}>{content}</button>;
-  return <button onClick={() => navigate(to!)} className={cls}>{content}</button>;
-}
-
 export function SideDrawer({ onClose }: Props) {
   const { user, logout } = useAuth();
   const navigate   = useNavigate();
@@ -52,8 +33,6 @@ export function SideDrawer({ onClose }: Props) {
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
-
-  const go = (to: string) => { onClose(); navigate(to); };
 
   const handleLogout = async () => {
     localStorage.removeItem('filmons_current_user');
@@ -64,7 +43,7 @@ export function SideDrawer({ onClose }: Props) {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop -- tapping it closes the drawer */}
       <div
         className="fixed inset-0 z-[70] bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
@@ -89,37 +68,10 @@ export function SideDrawer({ onClose }: Props) {
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-4 pt-12 pb-4 border-b border-gray-100">
-          {user ? (
-            <button
-              onClick={() => go('/profile')}
-              className="flex items-center gap-3 flex-1 min-w-0 text-left group"
-            >
-              <UserAvatar user={user} size={38} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-black text-gray-900 truncate leading-tight">{user.name}</p>
-                <p className="text-[11px] text-gray-400 truncate">@{user.username || user.email?.split('@')[0]}</p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 group-hover:text-gray-400" strokeWidth={1.75} />
-            </button>
-          ) : (
-            <Link
-              to="/login"
-              onClick={onClose}
-              className="flex items-center gap-3 flex-1 min-w-0 px-3 py-2.5 bg-gray-900 rounded-xl group"
-            >
-              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                <UserPlus className="w-4 h-4 text-white" strokeWidth={1.75} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-white truncate leading-tight">Sign In / Create Account</p>
-                <p className="text-[10px] text-white/60 truncate">Join the community</p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-white/40 shrink-0 group-hover:text-white/70" strokeWidth={1.75} />
-            </Link>
-          )}
+          <span className="text-lg font-black text-gray-900 tracking-tight">FILMONS</span>
           <button
             onClick={onClose}
-            className="ml-3 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0"
+            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0"
           >
             <X className="w-4 h-4 text-gray-500" />
           </button>
@@ -128,76 +80,64 @@ export function SideDrawer({ onClose }: Props) {
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* LOGGED OUT: simple nav */}
+          {/* LOGGED OUT: simple nav — the drawer's logged-in items below all
+              require an account (Messages, Opportunities, Applications,
+              Dashboard, Wallet, Saved), so a guest only gets Home/Browse
+              plus Contact Support (which itself never requires signing in
+              -- see ContactSupport.tsx's GuestSupportForm); Sign In lives
+              in the footer below. */}
           {!user && (
             <div className="py-2">
-              <NavRow icon={Home}   label="Home"   to="/"       active={isActive('/')}       onClick={onClose} />
-              <NavRow icon={Search} label="Search" to="/search" active={isActive('/search')} onClick={onClose} />
+              <NavRow icon={House}      label="Home"             to="/"        active={isActive('/')}        onClick={onClose} />
+              <NavRow icon={Search}     label="Browse"           to="/search"  active={isActive('/search')}  onClick={onClose} />
+              <NavRow icon={CircleHelp} label="Contact Support"  to="/support" active={isActive('/support')} onClick={onClose} />
             </div>
           )}
 
-          {/* LOGGED IN: full sections */}
+          {/* LOGGED IN: flat list, exact required order */}
           {user && (
-            <>
-              <div className="mb-1">
-                <p className="px-4 pt-4 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Marketplace</p>
-                <SectionRow icon={ShoppingBag}  label="My Listings"          to="/my-listings"           />
-                <SectionRow icon={Heart}         label="Saved Listings"        to="/profile?tab=saved"     />
-                <SectionRow icon={CalendarDays}  label="Bookings & Requests"  to="/my-orders"             />
-                <SectionRow icon={CreditCard}    label="Payments & Earnings"  to="/wallet"                />
-              </div>
+            <div className="py-2">
+              <NavRow icon={House}             label="Home"          to="/"                          active={isActive('/')}                onClick={onClose} />
+              <NavRow icon={Search}            label="Browse"        to="/search"                    active={isActive('/search')}          onClick={onClose} />
+              <NavRow icon={MessageCircle}     label="Messages"      to="/inbox"                      active={isActive('/inbox')}           onClick={onClose} />
+              <NavRow icon={BriefcaseBusiness} label="Opportunities" to="/dashboard?tab=opportunities" active={location.pathname === '/dashboard' && location.search.includes('tab=opportunities')} onClick={onClose} />
+              <NavRow icon={FileText}          label="Applications"  to="/dashboard?tab=applications"  active={location.pathname === '/dashboard' && location.search.includes('tab=applications')}  onClick={onClose} />
+              <NavRow icon={LayoutDashboard}   label="Dashboard"     to="/dashboard"                  active={isActive('/dashboard')}       onClick={onClose} />
+              <NavRow icon={Wallet}            label="Wallet"        to="/wallet"                     active={isActive('/wallet')}          onClick={onClose} />
+              <NavRow icon={Bookmark}          label="Saved"         to="/profile?tab=saved"          active={location.pathname === '/profile' && location.search.includes('tab=saved')} onClick={onClose} />
 
-              <div className="mb-1">
-                <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Professional</p>
-                <SectionRow icon={Layers}      label="Portfolio"    to="/portfolio" />
-                <SectionRow icon={ShieldCheck} label="Verification" to="/verification"          />
-                <SectionRow icon={BarChart2}   label="Analytics"    to="/dashboard"             />
-              </div>
+              <div className="my-2 border-t border-gray-100" />
 
-              <div className="mb-1">
-                <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Support</p>
-                <SectionRow icon={HelpCircle} label="Help Center"      to="/help"    />
-                <SectionRow icon={Mail}       label="Contact Support"  to="/support" />
-              </div>
+              <NavRow icon={Settings}    label="Settings"         to="/settings" active={isActive('/settings')} onClick={onClose} />
+              <NavRow icon={CircleHelp}  label="Contact Support"  to="/support"  active={isActive('/support')}  onClick={onClose} />
 
-              <div className="mb-1">
-                <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Settings</p>
-                <SectionRow icon={Settings} label="Settings"           to="/settings"               />
-                <SectionRow icon={Lock}     label="Privacy & Security" to="/settings/privacy"       />
-                <SectionRow icon={Bell}     label="Notifications"      to="/settings/notifications" />
-              </div>
-            </>
-          )}
-        </div>
+              <div className="my-2 border-t border-gray-100" />
 
-        {/* ── Footer ── */}
-        <div className="border-t border-gray-100">
-          {/* Logged-out: Login + Sign up row */}
-          {!user && (
-            <div className="flex gap-2 px-4 pb-4">
-              <Link to="/login" onClick={onClose}
-                className="flex-1 flex items-center justify-center py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
-                Log in
-              </Link>
-              <Link to="/create-account" onClick={onClose}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
-                <UserPlus className="w-4 h-4" />
-                Sign up
-              </Link>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 transition-colors text-left"
+              >
+                <LogOut className="w-[18px] h-[18px] shrink-0 text-red-400" strokeWidth={1.75} />
+                <span>Sign Out</span>
+              </button>
             </div>
           )}
-
-          {/* Logged-in: Logout */}
-          {user && (
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <LogOut className="w-[18px] h-[18px] shrink-0 text-red-400" strokeWidth={1.75} />
-              <span>Log out</span>
-            </button>
-          )}
         </div>
+
+        {/* ── Footer — logged-out only ── */}
+        {!user && (
+          <div className="border-t border-gray-100 flex gap-2 px-4 py-4">
+            <Link to="/login" onClick={onClose}
+              className="flex-1 flex items-center justify-center py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
+              Log in
+            </Link>
+            <Link to="/create-account" onClick={onClose}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all">
+              <UserPlus className="w-4 h-4" />
+              Sign up
+            </Link>
+          </div>
+        )}
       </div>
     </>
   );
