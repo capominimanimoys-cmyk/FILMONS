@@ -81,6 +81,10 @@ const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_bfac8h2';
 const TEMPLATE_CREATOR_LIKED           = 'template_9jesf8j';
 const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
 const TEMPLATE_PAYOUT_SETTINGS_ACCESSED = 'template_lwifwd7';
+// Placeholders until created in the EmailJS dashboard from
+// guest-support-request-admin-template.html / guest-support-confirmation-template.html.
+const TEMPLATE_GUEST_SUPPORT_ADMIN     = 'template_guest_support_admin';
+const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_guest_support_confirm';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
@@ -487,6 +491,45 @@ export function sendSupportCaseAdminEmail(p: {
     case_message: p.message,
     submitted_at: p.submittedAt,
     admin_case_url: `https://filmons.app/admin-support`,
+  });
+}
+
+/** Notifies FILMONS support of a new case opened by an unauthenticated
+ *  guest (no profile, no user_id) -- distinct template from
+ *  sendSupportCaseAdminEmail so the "User Type: Guest" framing (no account
+ *  exists to look anything up from) is always visible, not just implied by
+ *  an empty field. Sent to whichever address support_contact currently
+ *  has active, matching the existing "centralized support contact" table
+ *  every other admin-facing support surface already reads from. */
+export function sendGuestSupportRequestAdminEmail(p: {
+  toEmail: string | null | undefined;
+  ticketId: string; guestName: string; guestEmail: string;
+  category: string; subject: string; message: string; submittedAt: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_GUEST_SUPPORT_ADMIN, {
+    ticket_id: p.ticketId,
+    guest_name: p.guestName,
+    guest_email: p.guestEmail,
+    category: p.category,
+    subject: p.subject,
+    message: p.message,
+    submitted_at: p.submittedAt,
+    user_type: 'Guest',
+    admin_case_url: `https://filmons.app/admin-support`,
+  });
+}
+
+/** Confirms receipt directly to the guest -- their only way to know the
+ *  request landed at all, since they have no account and no in-app case
+ *  view (/support/cases/:id) to check back on, unlike an authenticated
+ *  user's case. */
+export function sendGuestSupportConfirmationEmail(p: {
+  toEmail: string; guestName: string; ticketId: string; subject: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_GUEST_SUPPORT_CONFIRM, {
+    to_name: p.guestName,
+    ticket_id: p.ticketId,
+    subject: p.subject,
   });
 }
 

@@ -166,6 +166,34 @@ export const supportApi = {
     return { path, name: file.name };
   },
 
+  // ── Guest (unauthenticated) case creation ────────────────────────────
+  // Reuses the same private support-attachments bucket/path scheme as the
+  // authenticated path (see lib/upload.ts) -- userId there is only ever a
+  // storage folder segment, no FK, so a synthetic "guest-<random>" id
+  // works exactly the same way a real profile id would.
+  async uploadGuestAttachment(file: File): Promise<{ path: string; name: string }> {
+    const guestFolder = `guest-${crypto.randomUUID()}`;
+    const path = await uploadSupportAttachment(guestFolder, file);
+    return { path, name: file.name };
+  },
+
+  async createGuestCase(params: {
+    name: string; email: string; category: string; subject: string; message: string;
+    attachment?: { path: string; name: string } | null;
+    /** Honeypot -- always empty for a real visitor; only ever set if a bot
+     *  filled the hidden field the form leaves for it. */
+    website?: string;
+  }): Promise<{ caseId: string; caseNumber: string }> {
+    const res = await fetch(`${FUNCTIONS_BASE}/create-guest-support-case`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Could not send your message');
+    return { caseId: data.caseId, caseNumber: data.caseNumber };
+  },
+
   async signAttachment(path: string): Promise<string | null> {
     return signSupportAttachment(path);
   },

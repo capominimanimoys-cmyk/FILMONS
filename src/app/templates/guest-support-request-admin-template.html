@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #374151 0%, #1f2937 100%); color: white; padding: 40px 30px; border-radius: 12px 12px 0 0; text-align: center; }
+        .logo { font-size: 32px; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
+        .header-badge { display: inline-block; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-top: 12px; letter-spacing: 0.5px; }
+        .content { background: #ffffff; padding: 40px 30px; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; }
+        .alert-box { background: #fffbeb; border: 2px solid #f59e0b; border-radius: 10px; padding: 20px 24px; margin-bottom: 30px; text-align: center; }
+        .alert-icon { font-size: 36px; margin-bottom: 8px; }
+        .alert-title { font-size: 20px; font-weight: 700; color: #92400e; margin: 0; }
+        .alert-sub { font-size: 14px; color: #b45309; margin-top: 4px; }
+        .guest-badge { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; border-radius: 999px; padding: 4px 14px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 10px; }
+        .section-title { font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin: 28px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+        .info-block { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; }
+        .info-row { display: table; width: 100%; margin-bottom: 12px; }
+        .info-row:last-child { margin-bottom: 0; }
+        .info-label { display: table-cell; font-weight: 600; color: #374151; font-size: 14px; width: 34%; vertical-align: top; padding: 8px 0; }
+        .info-value { display: table-cell; color: #111827; font-size: 14px; vertical-align: top; padding: 8px 0; }
+        .message-box { background: #f9fafb; border-left: 3px solid #6b7280; border-radius: 6px; padding: 14px 18px; margin-top: 8px; font-style: italic; color: #374151; font-size: 14px; white-space: pre-wrap; }
+        .cta-button { display: block; background: linear-gradient(135deg, #374151 0%, #1f2937 100%); color: white !important; padding: 16px 32px; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 16px; text-align: center; margin: 30px 0 10px 0; }
+        .footer { background: #f9fafb; padding: 30px; text-align: center; border-radius: 0 0 12px 12px; border: 1px solid #e5e7eb; border-top: none; }
+        .footer-text { color: #6b7280; font-size: 14px; margin: 8px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">FILMONS 🎬</div>
+        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Support</p>
+        <div class="header-badge">🎫 New Guest Support Request</div>
+    </div>
+    <div class="content">
+        <div class="alert-box">
+            <div class="alert-icon">🎫</div>
+            <p class="alert-title">Guest Support Request</p>
+            <p class="alert-sub">Request #{{ticket_id}}</p>
+            <div class="guest-badge">👤 User Type: Guest — no account</div>
+        </div>
+        <div class="section-title">Contact</div>
+        <div class="info-block">
+            <div class="info-row">
+                <div class="info-label">Name</div>
+                <div class="info-value">{{guest_name}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Email</div>
+                <div class="info-value">{{guest_email}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Category</div>
+                <div class="info-value">{{category}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Subject</div>
+                <div class="info-value">{{subject}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Submitted</div>
+                <div class="info-value">{{submitted_at}}</div>
+            </div>
+        </div>
+        <div class="section-title">Message</div>
+        <div class="message-box">{{message}}</div>
+        <a href="{{admin_case_url}}" class="cta-button">Review in Admin →</a>
+    </div>
+    <div class="footer">
+        <p class="footer-text"><strong>FILMONS</strong> — Support Notifications</p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 16px;">© 2026 Filmons. All rights reserved.</p>
+    </div>
+</body>
+</html>

@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import {
   ArrowLeft, Search, ChevronRight, Package, CreditCard, Wallet as WalletIcon,
   ShieldCheck, Lock, Film, Image as ImageIcon, AlertTriangle, HelpCircle,
-  Sparkles, Send, Loader2, Check, X, Mail, Phone, MessageCircle,
+  Sparkles, Send, Loader2, Check, X, Mail, Phone, MessageCircle, Paperclip,
 } from 'lucide-react';
 import { supportApi, type ChatTurn, type RelatedIds, type SupportCase } from '../lib/supportApi';
 import { AgentContactedCard } from '../components/AgentContactedCard';
@@ -198,7 +198,11 @@ export function ContactSupport() {
     !search.trim() || t.label.toLowerCase().includes(search.toLowerCase()) || t.desc.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (!user) return null;
+  // No account/session at all -- the AI-chat triage flow below assumes a
+  // real user_id at every step (aiChat, createCase, recent orders, saved
+  // contact info), so a guest gets a separate, simple form instead of that
+  // flow rather than being bounced to Sign In first.
+  if (!user) return <GuestSupportForm onBack={() => navigate('/')} />;
 
   // ── Sent / case created ──────────────────────────────────────────────
   if (step === 'sent' && createdCase) {
@@ -420,6 +424,168 @@ function ConnectConfirmModal({ creating, onCancel, onConfirm, title }: { creatin
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect with Agent'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Guest (unauthenticated) support form ─────────────────────────────────
+// Values match create-guest-support-case's ALLOWED_CATEGORIES exactly --
+// the server rejects anything else, so these two lists must stay in sync.
+const GUEST_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'account_signin',    label: 'Account or Sign In' },
+  { value: 'rental',            label: 'Rental' },
+  { value: 'purchase_sale',     label: 'Purchase / Sale' },
+  { value: 'payment',           label: 'Payment' },
+  { value: 'payout',            label: 'Payout' },
+  { value: 'opportunity',       label: 'Opportunity' },
+  { value: 'safety_report',     label: 'Safety or Report' },
+  { value: 'technical_problem', label: 'Technical Problem' },
+  { value: 'other',             label: 'Other' },
+];
+
+function GuestSupportForm({ onBack }: { onBack: () => void }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [category, setCategory] = useState('');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  // Honeypot -- real visitors never see this field (visually hidden,
+  // tabIndex -1, aria-hidden), so anything filling it is treated as a bot;
+  // the server silently no-ops instead of erroring, giving no signal back.
+  const [website, setWebsite] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ caseNumber: string } | null>(null);
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const canSubmit = name.trim() && emailValid && category && subject.trim() && message.trim() && !submitting;
+
+  const reset = () => {
+    setName(''); setEmail(''); setCategory(''); setSubject(''); setMessage(''); setFile(null); setResult(null);
+  };
+
+  const submit = async () => {
+    if (!name.trim()) { toast.error('Enter your name'); return; }
+    if (!emailValid) { toast.error('Enter a valid email address'); return; }
+    if (!category) { toast.error('Choose what you need help with'); return; }
+    if (!subject.trim()) { toast.error('Enter a subject'); return; }
+    if (!message.trim()) { toast.error('Enter a message'); return; }
+    setSubmitting(true);
+    try {
+      let attachment: { path: string; name: string } | null = null;
+      if (file) attachment = await supportApi.uploadGuestAttachment(file);
+      const { caseNumber } = await supportApi.createGuestCase({
+        name: name.trim(), email: email.trim(), category, subject: subject.trim(), message: message.trim(),
+        attachment, website,
+      });
+      setResult({ caseNumber });
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not send your message. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (result) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-10">
+        <Header title="Contact Filmons Support" onBack={onBack} />
+        <div className="max-w-lg mx-auto px-4 pt-8 space-y-5 text-center">
+          <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-1">
+            <Check className="w-7 h-7 text-green-600" />
+          </div>
+          <h1 className="text-xl font-black text-gray-900">Message sent ✓</h1>
+          <p className="text-sm text-gray-500">
+            Thanks for contacting FILMONS. We've received your request and will reply to{' '}
+            <span className="font-bold text-gray-700">{email.trim()}</span>.
+          </p>
+          <p className="text-sm font-bold text-gray-500">Request #{result.caseNumber}</p>
+          <div className="space-y-2 pt-2">
+            <button onClick={onBack} className="w-full py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl">
+              Back to FILMONS
+            </button>
+            <button onClick={reset} className="w-full py-3.5 border border-gray-200 text-gray-700 font-black text-sm rounded-2xl">
+              Send Another Message
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-10">
+      <Header title="Contact Filmons Support" onBack={onBack} />
+      <div className="max-w-lg mx-auto px-4 pt-6 space-y-4">
+        <div>
+          <h1 className="text-xl font-black text-gray-900">Contact FILMONS Support</h1>
+          <p className="text-sm text-gray-500 mt-1">Need help? Send us a message and our support team will get back to you.</p>
+        </div>
+
+        {/* Honeypot -- visually and programmatically hidden from real users */}
+        <input
+          type="text" value={website} onChange={e => setWebsite(e.target.value)}
+          name="website" autoComplete="off" tabIndex={-1} aria-hidden="true"
+          style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+        />
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Name</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
+            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
+          <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@example.com"
+            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">What can we help you with?</label>
+          <select value={category} onChange={e => setCategory(e.target.value)}
+            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400 appearance-none">
+            <option value="" disabled>Select a category</option>
+            {GUEST_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Subject</label>
+          <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Briefly describe your issue"
+            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Message</label>
+          <textarea value={message} onChange={e => setMessage(e.target.value)} rows={5}
+            placeholder="Tell us what happened and how we can help."
+            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400 resize-none" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+            Attachment <span className="font-normal normal-case text-gray-400">(optional)</span>
+          </label>
+          <label className="w-full flex items-center gap-2.5 bg-white border border-gray-200 border-dashed rounded-2xl px-4 py-3 text-sm text-gray-500 cursor-pointer hover:border-blue-300">
+            <Paperclip className="w-4 h-4 text-gray-400 shrink-0" />
+            <span className="flex-1 truncate">{file ? file.name : 'Attach a screenshot or image'}</span>
+            {file && (
+              <button type="button" onClick={e => { e.preventDefault(); setFile(null); }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden"
+              onChange={e => setFile(e.target.files?.[0] || null)} />
+          </label>
+        </div>
+
+        <button onClick={submit} disabled={!canSubmit}
+          className="w-full py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          {submitting ? 'Sending…' : 'Send Message'}
+        </button>
       </div>
     </div>
   );

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); color: white; padding: 40px 30px; border-radius: 12px 12px 0 0; text-align: center; }
+        .logo { font-size: 32px; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
+        .header-badge { display: inline-block; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-top: 12px; letter-spacing: 0.5px; }
+        .content { background: #ffffff; padding: 40px 30px; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; }
+        .alert-box { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border: 2px solid #3b82f6; border-radius: 10px; padding: 20px 24px; margin-bottom: 30px; text-align: center; }
+        .alert-icon { font-size: 36px; margin-bottom: 8px; }
+        .alert-title { font-size: 20px; font-weight: 700; color: #1e40af; margin: 0; }
+        .alert-sub { font-size: 14px; color: #3b82f6; margin-top: 4px; }
+        p.body-copy { font-size: 14px; color: #374151; line-height: 1.7; }
+        .info-block { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+        .info-row { display: table; width: 100%; }
+        .info-label { display: table-cell; font-weight: 600; color: #374151; font-size: 14px; width: 32%; vertical-align: top; padding: 8px 0; }
+        .info-value { display: table-cell; color: #111827; font-size: 14px; vertical-align: top; padding: 8px 0; }
+        .footer { background: #f9fafb; padding: 30px; text-align: center; border-radius: 0 0 12px 12px; border: 1px solid #e5e7eb; border-top: none; }
+        .footer-text { color: #6b7280; font-size: 14px; margin: 8px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">FILMONS 🎬</div>
+        <p style="margin: 0; opacity: 0.9; font-size: 14px;">Support</p>
+        <div class="header-badge">✓ Request Received</div>
+    </div>
+    <div class="content">
+        <div class="alert-box">
+            <div class="alert-icon">✓</div>
+            <p class="alert-title">Hi {{to_name}},</p>
+            <p class="alert-sub">We've received your support request</p>
+        </div>
+        <p class="body-copy">
+            We've received your message and our support team will get back to you at this email address.
+        </p>
+        <div class="info-block">
+            <div class="info-row">
+                <div class="info-label">Request</div>
+                <div class="info-value">{{ticket_id}}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Subject</div>
+                <div class="info-value">{{subject}}</div>
+            </div>
+        </div>
+        <p class="body-copy">
+            Thank you,<br>FILMONS Support
+        </p>
+    </div>
+    <div class="footer">
+        <p class="footer-text"><strong>FILMONS</strong> — Support</p>
+        <p class="footer-text" style="font-size: 12px; color: #9ca3af; margin-top: 16px;">© 2026 Filmons. All rights reserved.</p>
+    </div>
+</body>
+</html>
