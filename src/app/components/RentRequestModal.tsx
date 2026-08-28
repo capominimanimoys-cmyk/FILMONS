@@ -462,11 +462,16 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
 
               {/* Actions */}
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1 rounded-xl" onClick={onClose} disabled={sending}>
+                <Button
+                  variant="outline"
+                  className="flex-1 h-auto py-3.5 rounded-2xl border-gray-200 text-gray-700 font-bold active:opacity-70 transition-opacity"
+                  onClick={onClose}
+                  disabled={sending}
+                >
                   Cancel
                 </Button>
                 <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 gap-2 rounded-xl"
+                  className="flex-1 h-auto py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 font-bold gap-2 shadow-sm active:opacity-80 transition-opacity"
                   onClick={handleSend}
                   disabled={sending}
                 >
@@ -527,10 +532,17 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
               </div>
 
               <div className="flex gap-3 w-full">
-                <Button variant="outline" className="flex-1 rounded-xl" onClick={onClose}>
+                <Button
+                  variant="outline"
+                  className="flex-1 h-auto py-3.5 rounded-2xl border-gray-200 text-gray-700 font-bold active:opacity-70 transition-opacity"
+                  onClick={onClose}
+                >
                   Close
                 </Button>
-                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 rounded-xl" onClick={handleGoToInbox}>
+                <Button
+                  className="flex-1 h-auto py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 font-bold shadow-sm active:opacity-80 transition-opacity"
+                  onClick={handleGoToInbox}
+                >
                   View in Inbox
                 </Button>
               </div>
