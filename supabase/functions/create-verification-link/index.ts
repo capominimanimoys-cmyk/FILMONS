@@ -51,6 +51,23 @@ Deno.serve(async (req) => {
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return json({ error: 'Stripe not configured' }, 500);
 
+    // Same stale-account guard as setup-payout-account/submit-payout-bank-
+    // account -- a leftover/deleted/wrong-mode account id would otherwise
+    // surface Stripe's raw "No such account" error straight to the user
+    // with no way forward. Clear it and ask the frontend to restart.
+    const checkRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
+      headers: { Authorization: `Bearer ${SK}` },
+    });
+    const existingAccount = await checkRes.json();
+    const isPlatformControlled = existingAccount.type === 'custom' || existingAccount.controller?.requirement_collection === 'application';
+    if (existingAccount.error || !isPlatformControlled) {
+      await fetch(rest(`/profiles?id=eq.${userId}`), {
+        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
+      });
+      return json({ error: 'reauth_required' }, 409);
+    }
+
     const linkParams = new URLSearchParams({
       account: accountId, refresh_url: refreshUrl, return_url: returnUrl, type: 'account_onboarding',
     });

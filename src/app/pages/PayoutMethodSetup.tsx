@@ -95,8 +95,18 @@ export function PayoutMethodSetup() {
     const returnUrl = `${window.location.origin}/wallet`;
     const refreshUrl = `${window.location.origin}/wallet/payout-method?action=verify`;
     const res = await walletApi.createVerificationLink(user.id, stepUpToken, returnUrl, refreshUrl);
-    if (res.url) window.location.href = res.url;
-    else setVerifyError(res.error || 'Could not create verification link');
+    if (res.url) { window.location.href = res.url; return; }
+    if (res.error === 'reauth_required') {
+      // The referenced account no longer exists on Stripe's side (deleted,
+      // wrong mode, etc.) -- already cleared server-side, so the only way
+      // forward is a fresh attempt.
+      setCountry(null);
+      setDefaultMethod(null);
+      setStep('country');
+      toast.error('That setup attempt is no longer valid — please start again.');
+      return;
+    }
+    setVerifyError(res.error || 'Could not create verification link');
   };
 
   useEffect(() => {
