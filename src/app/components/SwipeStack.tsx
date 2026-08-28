@@ -357,6 +357,14 @@ function readPersistedIdx(key: string): number {
   catch { return 0; }
 }
 
+// Deliberately does NOT touch anything daily-swipe-limit-related --
+// swipesUsed is independently re-sourced on every mount (getTodaySwipeCount
+// for signed-in users, localStorage for guests, both keyed by calendar
+// date, neither by this idx), so clearing just the position is safe.
+export function clearPersistedSwipeIdx(key: string): void {
+  try { sessionStorage.removeItem(`filmons_swipe_idx_${key}`); } catch {}
+}
+
 export function SwipeStack({ items = [], onDone, persistKey = 'default' }: SwipeStackProps) {
   const { user } = useAuth();
   const navigate  = useNavigate();

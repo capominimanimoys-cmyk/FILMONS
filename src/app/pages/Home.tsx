@@ -10,7 +10,7 @@ import { boostApi } from '../lib/boostApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
-import { SwipeStack, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
+import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 
 // ── Filter system ─────────────────────────────────────────────────────────────
@@ -185,7 +185,23 @@ export function Home() {
     setFilterKey(k => k + 1);
   };
 
+  // Distinct from a plain filter-chip click: this is a deliberate "let me
+  // see them all again" action from the caught-up screen, so unlike
+  // switching tabs (which should preserve each filter's own progress),
+  // this explicitly clears the exhausted deck position. Without this the
+  // remounted SwipeStack would still read its old, fully-advanced idx
+  // from sessionStorage and render nothing at all -- not even the
+  // caught-up screen -- since deckDone gets reset to false but the deck
+  // itself was still sitting past its own end. Only the position resets;
+  // the daily swipe-limit count is untouched (it's re-sourced from the
+  // server/localStorage on every mount, never from this idx).
+  const handleBrowseAll = () => {
+    clearPersistedSwipeIdx('all');
+    handleFilter('all');
+  };
+
   const handleRefresh = () => {
+    clearPersistedSwipeIdx(filter);
     setDeckDone(false);
     setLoading(true);
     setFilterKey(k => k + 1);
@@ -215,7 +231,7 @@ export function Home() {
       <p className="text-sm text-gray-400 mb-5">You've seen all available listings for now.</p>
       <div className="flex flex-col gap-2 w-full max-w-xs">
         <button
-          onClick={() => handleFilter('all')}
+          onClick={handleBrowseAll}
           className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80">
           <Compass className="w-4 h-4" /> Browse All Listings
         </button>
