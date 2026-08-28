@@ -13,6 +13,7 @@
 // Requires a stepUpToken minted by verify-identity, same gate as every
 // other payout-method-touching function.
 import { verifyStepUpToken } from '../_shared/stepUpAuth.ts';
+import { isStaleAccountError } from '../_shared/stripeAccountErrors.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const json = (body: unknown, status = 200) =>
@@ -54,26 +55,27 @@ Deno.serve(async (req) => {
     // Same stale-account guard as setup-payout-account/submit-payout-bank-
     // account -- a leftover/deleted/wrong-mode account id would otherwise
     // surface Stripe's raw "No such account" error straight to the user
-    // with no way forward. Clear it and ask the frontend to restart.
-    //
-    // Only checks whether the account exists at all -- an earlier version
-    // also tried to verify it was "platform-controlled" via type/controller
-    // fields, but that heuristic didn't reliably match what Stripe actually
-    // returns for accounts created via the newer controller[...] params
-    // (see setup-payout-account), so it was false-flagging every freshly
-    // created account as invalid and looping hosts back to "start again."
-    // Account Links work for any existing account regardless of type, so
-    // there's nothing else to gate here.
+    // with no way forward. Clear it and ask the frontend to restart --
+    // but ONLY for a recognized stale-account phrasing (isStaleAccountError,
+    // shared across all three payout functions). An earlier version reset
+    // on ANY error from this check at all, which hid the real Stripe
+    // message behind a generic "reauth_required" whenever something else
+    // was actually wrong -- e.g. a genuinely transient network/API error,
+    // or a real account-state problem unrelated to a bad account
+    // reference, making the true cause impossible to diagnose.
     const checkRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
       headers: { Authorization: `Bearer ${SK}` },
     });
     const existingAccount = await checkRes.json();
     if (existingAccount.error) {
-      await fetch(rest(`/profiles?id=eq.${userId}`), {
-        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-        body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
-      });
-      return json({ error: 'reauth_required' }, 409);
+      if (isStaleAccountError(existingAccount.error.message)) {
+        await fetch(rest(`/profiles?id=eq.${userId}`), {
+          method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+          body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
+        });
+        return json({ error: 'reauth_required' }, 409);
+      }
+      return json({ error: existingAccount.error.message }, 400);
     }
 
     const linkParams = new URLSearchParams({
