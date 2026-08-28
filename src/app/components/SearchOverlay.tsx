@@ -1232,6 +1232,17 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const handleSubmitSearch = () => {
     if (!q.trim()) return;
     setSuggestions([]);
+    // Cancel any live-typing debounce still pending from the keystrokes that
+    // just typed this category keyword -- without this, that stale literal-
+    // text search (e.g. title ILIKE '%opportunity%') can still fire ~400ms
+    // later and stomp the correct category results with an empty state, if
+    // Enter happens to land before the debounce window elapses. The
+    // category+keyword and fallback branches below both call runSearch,
+    // which already clears this same timer itself before setting a new one
+    // -- only the bare-category branch (no runSearch call at all) needed
+    // this explicitly.
+    clearTimeout(suggRef.current);
+    clearTimeout(debounceRef.current);
     const parsed = parseCategoryKeyword(q);
     if (parsed) {
       setActiveTab(parsed.tab);
