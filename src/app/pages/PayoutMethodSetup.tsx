@@ -82,22 +82,29 @@ export function PayoutMethodSetup() {
   const [accountType, setAccountType] = useState<'chequing' | 'savings'>('chequing');
   const [saving, setSaving] = useState(false);
 
+  // Only needs the Stripe account itself (profile.stripe_connect_account_id,
+  // checked server-side) -- NOT a payout_methods row, which doesn't exist
+  // yet if a host hits an unresolvable requirement during identity
+  // submission, before ever attaching a bank account. Reused by the
+  // Wallet page's "Verify with Stripe" button (via ?action=verify) and by
+  // submitIdentity/submitRequirement below hitting the same wall earlier.
+  const goVerifyWithStripe = async () => {
+    if (!user?.id || !stepUpToken) return;
+    setStep('verify');
+    setVerifyError(null);
+    const returnUrl = `${window.location.origin}/wallet`;
+    const refreshUrl = `${window.location.origin}/wallet/payout-method?action=verify`;
+    const res = await walletApi.createVerificationLink(user.id, stepUpToken, returnUrl, refreshUrl);
+    if (res.url) window.location.href = res.url;
+    else setVerifyError(res.error || 'Could not create verification link');
+  };
+
   useEffect(() => {
     if (!user?.id || !stepUpToken) return;
     walletApi.getDefaultPayoutMethod(user.id).then(async m => {
       setDefaultMethod(m);
       setAccountHolder(m?.provider === 'stripe' ? (m.display_name?.split(' ••••')[0] || '') : '');
-      if (verifyMode && m?.provider === 'stripe') {
-        // Not a screen the user lingers on -- generate the one-time Stripe
-        // link and hand off to it immediately.
-        setStep('verify');
-        const returnUrl = `${window.location.origin}/wallet`;
-        const refreshUrl = `${window.location.origin}/wallet/payout-method?action=verify`;
-        const res = await walletApi.createVerificationLink(user.id, stepUpToken, returnUrl, refreshUrl);
-        if (res.url) window.location.href = res.url;
-        else setVerifyError(res.error || 'Could not create verification link');
-        return;
-      }
+      if (verifyMode) { goVerifyWithStripe(); return; }
       // A Stripe Custom account already exists for this host — country and
       // identity are done (country is read from Stripe's own account data,
       // never re-asked), only bank details are re-collected.
@@ -156,10 +163,12 @@ export function PayoutMethodSetup() {
       setActiveRequirement(knownField);
       setStep('requirement');
     } else if (hasUnknown) {
-      // Nothing this form can resolve (e.g. a document upload) — surface it
-      // as "needs attention" rather than guessing a UI for it.
-      toast.error('We need a bit more information to verify your account. Our team will follow up, or contact support.');
-      navigate('/wallet');
+      // Nothing this form can resolve directly (e.g. a document upload) --
+      // hand off to Stripe's own hosted verification immediately rather
+      // than dead-ending with a "contact support" message, since the
+      // Stripe account itself already exists at this point even though no
+      // bank account (and so no payout_methods row) has been attached yet.
+      goVerifyWithStripe();
     } else {
       setAccountHolder(entityType === 'individual' ? `${firstName.trim()} ${lastName.trim()}` : companyName.trim());
       setStep('bank');
@@ -181,8 +190,7 @@ export function PayoutMethodSetup() {
     if (stillDue.length > 0) {
       const nextKnown = stillDue.find(d => d in KNOWN_FOLLOWUP_FIELDS);
       if (nextKnown) { setActiveRequirement(nextKnown); setIdNumber(''); return; }
-      toast.error('We need a bit more information to verify your account. Our team will follow up, or contact support.');
-      navigate('/wallet');
+      goVerifyWithStripe();
       return;
     }
     setAccountHolder(entityType === 'individual' ? `${firstName.trim()} ${lastName.trim()}` : companyName.trim());
