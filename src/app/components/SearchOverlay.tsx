@@ -625,6 +625,31 @@ const TABS: { id: TabId; label: string }[] = [
   { id:'opportunities', label:'Opportunities' },
 ];
 
+// ── Typed category keyword recognition (Enter/Search submit only) ────────────
+// "opportunity", "opportunities", "rental videographer", etc. typed directly
+// into the box and submitted with Enter -- separate from tapping a tab, which
+// already covers the no-keyword case. Singular and plural both recognized,
+// case-insensitively, matched only against the FIRST word so a category name
+// appearing later in an ordinary search phrase is never misread as this.
+const CATEGORY_KEYWORDS: Record<string, TabId> = {
+  rental: 'rental', rentals: 'rental',
+  sale: 'sale', sales: 'sale',
+  service: 'services', services: 'services',
+  creator: 'creators', creators: 'creators',
+  studio: 'studios', studios: 'studios',
+  opportunity: 'opportunities', opportunities: 'opportunities',
+};
+
+function parseCategoryKeyword(raw: string): { tab: TabId; rest: string } | null {
+  const trimmed = raw.trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  const firstWord = (spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx)).toLowerCase();
+  const tab = CATEGORY_KEYWORDS[firstWord];
+  if (!tab) return null;
+  const rest = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1).trim();
+  return { tab, rest };
+}
+
 // ── Motion variants ────────────────────────────────────────────────────────────
 const panelV     = { hidden:{ y:'100%' }, visible:{ y:0 }, exit:{ y:'100%' } };
 const backdropV  = { hidden:{ opacity:0 }, visible:{ opacity:1 }, exit:{ opacity:0 } };
@@ -1195,6 +1220,28 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setQ(s.action); setSuggestions([]); runSearch(s.action);
   };
 
+  // Enter/Search submit -- recognizes a leading category keyword
+  // ("opportunity", "rental canon", ...) and switches the active tab to
+  // match, same as tapping that tab directly. A bare category keyword with
+  // nothing after it clears the box entirely so the existing tab-switch
+  // browse effect above takes over (identical to tapping the tab with an
+  // empty search box); a category + keyword sets the box to just the
+  // remainder and runs a normal search restricted to that tab. An
+  // unrecognized first word falls back to the existing all-category search,
+  // leaving whatever tab is already active untouched.
+  const handleSubmitSearch = () => {
+    if (!q.trim()) return;
+    setSuggestions([]);
+    const parsed = parseCategoryKeyword(q);
+    if (parsed) {
+      setActiveTab(parsed.tab);
+      setQ(parsed.rest);
+      if (parsed.rest) runSearch(parsed.rest);
+      return;
+    }
+    runSearch(q);
+  };
+
   // Apply filters + sort to raw results
   const { listings: filteredListings, users: filteredUsers } = applyFilters(rawListings, rawUsers, filters, sort);
 
@@ -1247,7 +1294,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             <Search className="w-4 h-4 text-blue-500 shrink-0"/>
             <input ref={inputRef} value={q}
               onChange={e => handleQueryChange(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && q.trim()) { setSuggestions([]); runSearch(q); } }}
+              onKeyDown={e => { if (e.key === 'Enter') handleSubmitSearch(); }}
               placeholder="Search creators, gear, studios, services…"
               className="flex-1 text-[15px] text-gray-900 placeholder-gray-400 outline-none bg-transparent"
               autoComplete="off" autoCorrect="off" spellCheck={false}/>
