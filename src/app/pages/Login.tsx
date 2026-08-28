@@ -13,8 +13,23 @@ import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import FilmonsLoader from '../components/FilmonsLoader';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
+import { authApi } from '../lib/api';
 
 type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'oauth_only' | 'security';
+
+// Desktop-only single-field detection: a bare '@' means email, otherwise
+// treated as a phone attempt if what's left after stripping formatting is a
+// plausible CA/US number (10 digits, or 11 starting with '1') -- the same
+// digits authApi.normalizePhone itself expects, so no separate E.164
+// formatting is needed here before handing off to signinWithPhone/
+// completePhoneSignin (both already normalize internally, same as
+// PhoneLogin.tsx's own fullPhone does).
+function isLikelyPhone(v: string): boolean {
+  const trimmed = v.trim();
+  if (!trimmed || trimmed.includes('@')) return false;
+  const digits = trimmed.replace(/\D/g, '');
+  return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+}
 
 // ── Cinematic background ───────────────────────────────────────────────────
 function CinematicBg() {
@@ -71,7 +86,7 @@ function OAuthBtn({ onClick, loading }: { onClick: () => void; loading?: boolean
 export function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isAuthenticated, isGuest, enterGuestMode } = useAuth() as any;
+  const { login, isAuthenticated, isGuest, enterGuestMode, setUserDirectly } = useAuth() as any;
 
   // If a pre-filled email arrives via ?email=..., skip straight to the email screen.
   // If the user was already in guest mode (browsing then tapping Sign In), skip the splash.
@@ -152,6 +167,49 @@ export function Login() {
     // reset the loading state, the component is about to unmount anyway.
   };
 
+  // ── Desktop only: the single "Email or phone number" field has no phone
+  // + password mechanism to call, since this app has never had one -- only
+  // phone + OTP (the same Twilio-backed flow /phone-login already uses via
+  // authApi.signinWithPhone/completePhoneSignin). A detected phone number
+  // swaps the card into that same code-verification step instead of
+  // treating whatever's in the Password field as a phone password.
+  const [desktopPhoneStep, setDesktopPhoneStep] = useState<'idle' | 'code'>('idle');
+  const [desktopPhoneOtp,  setDesktopPhoneOtp]  = useState('');
+
+  const handleDesktopSignIn = async () => {
+    if (!email.trim()) { toast.error('Enter your email or phone number'); return; }
+    if (isLikelyPhone(email)) {
+      setPwError(''); setLoading(true);
+      try {
+        await authApi.signinWithPhone(email);
+        toast.success(`Code sent to ${email}`);
+        setDesktopPhoneOtp('');
+        setDesktopPhoneStep('code');
+      } catch (e: any) {
+        const msg: string = e?.message || 'Failed to send code';
+        toast.error(msg.includes('No account found') ? 'No account found with this number' : msg);
+      }
+      setLoading(false);
+      return;
+    }
+    if (!email.includes('@')) { toast.error('Enter a valid email or phone number'); return; }
+    handleEmailLogin();
+  };
+
+  const handleDesktopVerifyPhone = async () => {
+    if (desktopPhoneOtp.length !== 6) { toast.error('Enter the 6-digit code'); return; }
+    setLoading(true);
+    try {
+      const user = await authApi.completePhoneSignin(email, desktopPhoneOtp);
+      setUserDirectly(user, 'phone');
+      captureSnapshot();
+      navigate('/');
+    } catch (e: any) {
+      toast.error('Invalid code', { description: e instanceof Error ? e.message : 'Verification failed' });
+    }
+    setLoading(false);
+  };
+
   // ── DESKTOP (lg:1024px+) two-column panel — shared by 'method' and
   // 'email' screens, which collapse into one direct email+password form on
   // desktop instead of mobile's multi-step chooser. Mobile markup in those
@@ -167,46 +225,74 @@ export function Login() {
       </div>
       <div className="flex-1 flex items-center justify-center px-16 xl:px-24">
         <div className="w-full max-w-[440px] bg-white rounded-3xl shadow-2xl p-10">
-          <p className="text-2xl font-black text-gray-900">Welcome back</p>
-          <p className="text-sm text-gray-500 mt-1 mb-7">Sign in to your FILMONS account.</p>
-          <div className="space-y-3">
-            <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
-              type="email" placeholder="Email address" autoComplete="email"
-              onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-              className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white transition-all"/>
-            <div className="relative">
-              <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
-                type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
-                onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-                className={`w-full bg-gray-50 border text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'}`}/>
-              <button onClick={() => setShowPw(p => !p)} type="button"
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-                {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+          {desktopPhoneStep === 'code' ? (
+            <>
+              <p className="text-2xl font-black text-gray-900">Enter your code</p>
+              <p className="text-sm text-gray-500 mt-1 mb-7">We sent a 6-digit code to <span className="font-semibold text-gray-700">{email}</span>.</p>
+              <input value={desktopPhoneOtp}
+                onChange={e => setDesktopPhoneOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onKeyDown={e => e.key === 'Enter' && handleDesktopVerifyPhone()}
+                type="tel" inputMode="numeric" placeholder="000000" maxLength={6} autoFocus
+                className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-300 rounded-2xl px-4 py-4 text-2xl font-black text-center tracking-[0.4em] outline-none focus:border-blue-400 focus:bg-white transition-all"/>
+              <button onClick={handleDesktopVerifyPhone} disabled={loading || desktopPhoneOtp.length < 6}
+                className="mt-5 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-blue-900/20">
+                {loading ? 'Verifying…' : 'Verify & Sign In'}
               </button>
-            </div>
-            {pwError && <p className="text-red-500 text-xs font-medium px-1 leading-snug">{pwError}</p>}
-            <div className="flex justify-end">
-              <Link to="/forgot-password" className="text-xs text-blue-600 font-semibold hover:underline">Forgot password?</Link>
-            </div>
-          </div>
-          <button onClick={handleEmailLogin} disabled={loading}
-            className="mt-5 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-blue-900/20">
-            {loading ? 'Signing in…' : 'Sign In'}
-          </button>
-          <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 h-px bg-gray-100"/>
-            <p className="text-gray-400 text-xs font-semibold">OR</p>
-            <div className="flex-1 h-px bg-gray-100"/>
-          </div>
-          <button onClick={() => handleOAuth('google')} disabled={oauthLoading}
-            className="w-full flex items-center gap-3 justify-center border border-gray-200 font-semibold text-sm text-gray-800 rounded-2xl px-4 py-3.5 hover:bg-gray-50 transition-all disabled:opacity-60">
-            {oauthLoading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/> : <GoogleLogo size={18}/>}
-            {oauthLoading ? 'Connecting…' : 'Continue with Google'}
-          </button>
-          <p className="text-center text-xs text-gray-400 mt-6">
-            Don't have an account?{' '}
-            <Link to="/create-account" className="text-blue-600 font-semibold hover:underline">Create one</Link>
-          </p>
+              <button onClick={() => { setDesktopPhoneStep('idle'); setDesktopPhoneOtp(''); }}
+                className="w-full text-center text-gray-400 text-xs font-semibold mt-4 hover:text-gray-600 transition-colors">
+                Use a different email or phone number
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-black text-gray-900">Welcome back</p>
+              <p className="text-sm text-gray-500 mt-1 mb-7">Sign in to your FILMONS account.</p>
+              <div className="space-y-3">
+                <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
+                  type="text" placeholder="Email or phone number" autoComplete="username"
+                  onKeyDown={e => e.key === 'Enter' && handleDesktopSignIn()}
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white transition-all"/>
+                <div className="relative">
+                  <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
+                    type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
+                    onKeyDown={e => e.key === 'Enter' && handleDesktopSignIn()}
+                    className={`w-full bg-gray-50 border text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'}`}/>
+                  <button onClick={() => setShowPw(p => !p)} type="button"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                    {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+                  </button>
+                </div>
+                {pwError && <p className="text-red-500 text-xs font-medium px-1 leading-snug">{pwError}</p>}
+                <div className="flex justify-end">
+                  <Link to="/forgot-password" className="text-xs text-blue-600 font-semibold hover:underline">Forgot password?</Link>
+                </div>
+              </div>
+              <button onClick={handleDesktopSignIn} disabled={loading}
+                className="mt-5 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-blue-900/20">
+                {loading ? 'Signing in…' : 'Sign In'}
+              </button>
+              <div className="flex items-center gap-3 my-5">
+                <div className="flex-1 h-px bg-gray-100"/>
+                <p className="text-gray-400 text-xs font-semibold">OR</p>
+                <div className="flex-1 h-px bg-gray-100"/>
+              </div>
+              <div className="space-y-2.5">
+                <button onClick={() => handleOAuth('google')} disabled={oauthLoading}
+                  className="w-full flex items-center gap-3 justify-center border border-gray-200 font-semibold text-sm text-gray-800 rounded-2xl px-4 py-3.5 hover:bg-gray-50 transition-all disabled:opacity-60">
+                  {oauthLoading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin"/> : <GoogleLogo size={18}/>}
+                  {oauthLoading ? 'Connecting…' : 'Continue with Google'}
+                </button>
+                <button onClick={() => { enterGuestMode(); captureSnapshot(); navigate('/'); }}
+                  className="w-full flex items-center justify-center font-semibold text-sm text-gray-500 rounded-2xl px-4 py-3.5 hover:bg-gray-50 transition-all">
+                  Continue as Guest
+                </button>
+              </div>
+              <p className="text-center text-xs text-gray-400 mt-6">
+                Don't have an account?{' '}
+                <Link to="/create-account" className="text-blue-600 font-semibold hover:underline">Create one</Link>
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>
