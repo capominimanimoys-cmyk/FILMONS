@@ -57,16 +57,20 @@ export const swipeApi = {
     }
   },
 
-  /** Item ids the user has already left-swiped (and not undone) -- filter
-   *  these out of the deck before building it so a refresh/filter switch
-   *  never resurfaces something already passed on. */
+  /** Item ids the user has already swiped on in either direction (and not
+   *  undone) -- filter these out of the deck before building it so a
+   *  refresh/filter switch never resurfaces something already acted on.
+   *  Right-swipes (likes) are excluded too, not just left-swipes (passes):
+   *  once you've made a decision on a card, it shouldn't reappear in the
+   *  discovery queue regardless of which way you decided -- a liked
+   *  listing is still fully visible via the Liked tab, search, or its own
+   *  URL, this only keeps it out of the swipe deck itself. */
   async getExcludedIds(userId: string): Promise<Set<string>> {
     try {
       const { data } = await supabase
         .from('swipes')
         .select('item_id')
         .eq('user_id', userId)
-        .eq('direction', 'left')
         .eq('undone', false);
       return new Set((data ?? []).map(r => r.item_id as string));
     } catch {

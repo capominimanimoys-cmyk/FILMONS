@@ -556,10 +556,16 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
       </div>
 
       {/* Counter — daily swipe usage only shows for limited tiers
-          (Creator/Creator+); Professional/Business have no limit. */}
+          (Creator/Creator+); Professional/Business have no limit. Near the
+          end of the deck (3 or fewer cards including this one), supplement
+          with an explicit "N left" so the approaching end is clear without
+          interrupting with a modal. */}
       <div className="flex items-center gap-3 mt-3 mb-5">
         <p className="text-[11px] text-gray-400 font-medium">
           {idx + 1} of {items.length}
+          {items.length - idx <= 3 && (
+            <span className="text-amber-500 font-semibold"> · {items.length - idx} opportunit{items.length - idx === 1 ? 'y' : 'ies'} left</span>
+          )}
         </p>
         {dailyLimit !== null && (
           <p className={`text-[11px] font-semibold ${atLimit ? 'text-red-500' : 'text-blue-500'}`}>

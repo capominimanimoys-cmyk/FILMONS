@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper } from 'lucide-react';
 import { listingsApi } from '../lib/api';
 import { boostApi } from '../lib/boostApi';
 import { supabase } from '../../lib/supabase';
@@ -106,6 +106,21 @@ function SkeletonDeck() {
   );
 }
 
+// Per-filter "did the user already reach the end of this queue" flag --
+// deliberately sessionStorage, not the source of truth for anything (the
+// actual passed/liked state is fully server-persisted via swipes/
+// favorites regardless of this). This only decides whether a fresh mount
+// jumps straight into the deck or shows a "N new opportunities" interstitial
+// first, so re-opening a filter that was already finished doesn't look
+// like nothing happened when new listings have actually appeared since.
+function completedKey(filter: FilterId): string { return `filmons_deck_completed_${filter}`; }
+function readCompleted(filter: FilterId): boolean {
+  try { return sessionStorage.getItem(completedKey(filter)) === 'true'; } catch { return false; }
+}
+function writeCompleted(filter: FilterId, done: boolean): void {
+  try { done ? sessionStorage.setItem(completedKey(filter), 'true') : sessionStorage.removeItem(completedKey(filter)); } catch {}
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function Home() {
   const navigate = useNavigate();
@@ -117,6 +132,12 @@ export function Home() {
   const [filter,    setFilter]    = useState<FilterId>('all');
   const [deckDone,  setDeckDone]  = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Whether this filter's queue was already finished in an earlier session
+  // (per readCompleted) -- re-checked whenever the filter changes or fresh
+  // data lands, so returning to an exhausted queue that now has new unseen
+  // items shows "N new opportunities" instead of silently resuming (which
+  // would otherwise also hit a stale, past-the-end persisted card index).
+  const [showNewBanner, setShowNewBanner] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -177,6 +198,16 @@ export function Home() {
   // Rebuild deck whenever filter or source data changes; reset deck state via key
   const deck = useMemo(() => buildDeck(listings, creators, filter), [listings, creators, filter]);
 
+  // Re-checked whenever the filter changes or fresh listings land -- if
+  // this filter's queue was already finished in an earlier session and
+  // there's still a non-empty deck (only possible now because new unseen
+  // items appeared, since everything previously seen is excluded before
+  // buildDeck ever runs), show the "N new opportunities" interstitial
+  // instead of silently resuming into a stale, past-the-end card position.
+  useEffect(() => {
+    if (!loading) setShowNewBanner(readCompleted(filter) && deck.length > 0);
+  }, [filter, deck, loading]);
+
   // Reset done-state when filter changes
   const [filterKey, setFilterKey] = useState(0);
   const handleFilter = (id: FilterId) => {
@@ -197,15 +228,28 @@ export function Home() {
   // server/localStorage on every mount, never from this idx).
   const handleBrowseAll = () => {
     clearPersistedSwipeIdx('all');
+    writeCompleted('all', false);
     handleFilter('all');
   };
 
   const handleRefresh = () => {
     clearPersistedSwipeIdx(filter);
+    writeCompleted(filter, false);
     setDeckDone(false);
     setLoading(true);
     setFilterKey(k => k + 1);
     setRefreshKey(k => k + 1);
+  };
+
+  // "Start Swiping" on the new-opportunities interstitial -- explicit
+  // opt-in rather than auto-resuming, since the previous session's
+  // position has no meaning against a deck that, by construction, only
+  // ever contains items not yet acted on.
+  const handleStartSwiping = () => {
+    clearPersistedSwipeIdx(filter);
+    writeCompleted(filter, false);
+    setShowNewBanner(false);
+    setFilterKey(k => k + 1);
   };
 
   const scrollToFilters = () => filterRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -249,6 +293,24 @@ export function Home() {
     </div>
   );
 
+  // Shown instead of caughtUpScreen when returning to a filter that was
+  // already finished in an earlier session and new unseen items have since
+  // appeared -- requires an explicit "Start Swiping" rather than silently
+  // resuming, since there's no previous position that means anything
+  // against a deck built only from items not yet acted on.
+  const newOpportunitiesScreen = (
+    <div className="flex flex-col items-center py-16 px-6 text-center gap-1">
+      <span className="text-5xl mb-3">✨</span>
+      <p className="font-black text-gray-900 text-lg">{deck.length} new opportunit{deck.length === 1 ? 'y' : 'ies'}</p>
+      <p className="text-sm text-gray-400 mb-5">New projects have been added since you last browsed.</p>
+      <button
+        onClick={handleStartSwiping}
+        className="w-full max-w-xs flex items-center justify-center gap-2 py-3 bg-blue-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
+        <PartyPopper className="w-4 h-4" /> Start Swiping
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100 pb-24 lg:pb-16">
 
@@ -289,12 +351,12 @@ export function Home() {
       <div className="mt-2 lg:mt-6 lg:px-8">
         {loading ? (
           <SkeletonDeck/>
-        ) : deck.length === 0 ? emptyState : deckDone ? caughtUpScreen : (
+        ) : deck.length === 0 ? emptyState : deckDone ? caughtUpScreen : showNewBanner ? newOpportunitiesScreen : (
           <SwipeStack
             key={filterKey}
             items={deck}
             persistKey={filter}
-            onDone={() => setDeckDone(true)}
+            onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
           />
         )}
       </div>
