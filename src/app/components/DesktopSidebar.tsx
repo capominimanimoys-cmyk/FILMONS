@@ -80,7 +80,8 @@ export function DesktopSidebar() {
 
       {!isAuthenticated || !user ? (
         <div className="flex-1 flex flex-col py-3">
-          <NavItem icon={Home} label="Home" to="/" active={isActive('/')} />
+          <NavItem icon={Home}       label="Home"    to="/"        active={isActive('/')} />
+          <NavItem icon={CircleHelp} label="Support" to="/support" active={isActive('/support')} />
           <div className="mt-auto px-3 pb-4">
             <button
               onClick={() => navigate('/login')}
