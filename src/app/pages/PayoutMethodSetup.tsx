@@ -29,7 +29,7 @@ import { VerifyItsYouGate } from '../components/VerifyItsYouGate';
 
 type EntityType = 'individual' | 'company';
 type PayoutCountry = 'CA' | 'US';
-type Step = 'loading' | 'country' | 'entity' | 'identity' | 'requirement' | 'bank' | 'remove';
+type Step = 'loading' | 'country' | 'entity' | 'identity' | 'requirement' | 'bank' | 'remove' | 'verify';
 
 const inputCls = 'w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-400';
 const labelCls = 'text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5 block';
@@ -50,10 +50,12 @@ export function PayoutMethodSetup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const removeMode = searchParams.get('action') === 'remove';
+  const verifyMode = searchParams.get('action') === 'verify';
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
   const [step, setStep] = useState<Step>('loading');
   const [defaultMethod, setDefaultMethod] = useState<PayoutMethod | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   const [country, setCountry] = useState<PayoutCountry | null>(null);
   const [entityType, setEntityType] = useState<EntityType>('individual');
@@ -82,9 +84,20 @@ export function PayoutMethodSetup() {
 
   useEffect(() => {
     if (!user?.id || !stepUpToken) return;
-    walletApi.getDefaultPayoutMethod(user.id).then(m => {
+    walletApi.getDefaultPayoutMethod(user.id).then(async m => {
       setDefaultMethod(m);
       setAccountHolder(m?.provider === 'stripe' ? (m.display_name?.split(' ••••')[0] || '') : '');
+      if (verifyMode && m?.provider === 'stripe') {
+        // Not a screen the user lingers on -- generate the one-time Stripe
+        // link and hand off to it immediately.
+        setStep('verify');
+        const returnUrl = `${window.location.origin}/wallet`;
+        const refreshUrl = `${window.location.origin}/wallet/payout-method?action=verify`;
+        const res = await walletApi.createVerificationLink(user.id, stepUpToken, returnUrl, refreshUrl);
+        if (res.url) window.location.href = res.url;
+        else setVerifyError(res.error || 'Could not create verification link');
+        return;
+      }
       // A Stripe Custom account already exists for this host — country and
       // identity are done (country is read from Stripe's own account data,
       // never re-asked), only bank details are re-collected.
@@ -215,12 +228,28 @@ export function PayoutMethodSetup() {
         <ArrowLeft className="w-4 h-4 text-gray-500" />
       </button>
       <h1 className="text-xl font-black text-gray-900">
-        {step === 'remove' ? 'Remove bank account' : step === 'bank' && defaultMethod?.provider === 'stripe' ? 'Change bank account' : 'Set up payouts'}
+        {step === 'remove' ? 'Remove bank account' : step === 'verify' ? 'Verify Your Identity' : step === 'bank' && defaultMethod?.provider === 'stripe' ? 'Change bank account' : 'Set up payouts'}
       </h1>
-      {step !== 'remove' && (
+      {step !== 'remove' && step !== 'verify' && (
         <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
           Payouts typically arrive within <strong>1–6 business days</strong> after being sent.
         </p>
+      )}
+
+      {step === 'verify' && (
+        <div className="mt-10 flex flex-col items-center text-center gap-4">
+          {verifyError ? (
+            <>
+              <p className="text-sm text-red-500">{verifyError}</p>
+              <button onClick={() => navigate('/wallet')} className="text-sm font-bold text-blue-600">Back to Wallet</button>
+            </>
+          ) : (
+            <>
+              <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
+              <p className="text-sm text-gray-400">Taking you to Stripe to verify your identity…</p>
+            </>
+          )}
+        </div>
       )}
 
       {step === 'remove' && defaultMethod && (

@@ -586,40 +586,50 @@ export function Wallet() {
         <div>
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Payout method</p>
           {defaultMethod ? (
-            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3.5 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                {defaultMethod.method === 'card' ? <Zap className="w-4 h-4 text-blue-500" /> : <Landmark className="w-4 h-4 text-blue-500" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900">{defaultMethod.provider === 'stripe' ? defaultMethod.display_name : METHOD_LABEL[defaultMethod.method]}</p>
-                <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
-                  {walletApi.maskDestination(defaultMethod.method, defaultMethod.details, defaultMethod.last4)}
-                  {defaultMethod.provider === 'stripe' && defaultMethod.account_type && (
-                    <span className="capitalize">· {defaultMethod.account_type}</span>
-                  )}
-                  {defaultMethod.provider === 'stripe' && (
-                    defaultMethod.status === 'ready'
-                      ? <span className="text-green-600 font-semibold">· Ready for payouts</span>
-                      : defaultMethod.status === 'action_required'
-                        ? <span className="text-amber-600 font-semibold">· Bank account requires attention</span>
-                        : <span className="text-amber-600 font-semibold">· Setup incomplete</span>
-                  )}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => navigate('/wallet/payout-method')} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-                  <Pencil className="w-3.5 h-3.5 text-gray-400" />
-                </button>
-                {defaultMethod.provider === 'stripe' && (
-                  <button
-                    onClick={() => { if (window.confirm('Remove this bank account? You will need to add a new one before your next payout.')) navigate('/wallet/payout-method?action=remove'); }}
-                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50"
-                    aria-label="Remove bank account"
-                  >
-                    <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-4 py-3.5 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                  {defaultMethod.method === 'card' ? <Zap className="w-4 h-4 text-blue-500" /> : <Landmark className="w-4 h-4 text-blue-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900">{defaultMethod.provider === 'stripe' ? defaultMethod.display_name : METHOD_LABEL[defaultMethod.method]}</p>
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+                    {walletApi.maskDestination(defaultMethod.method, defaultMethod.details, defaultMethod.last4)}
+                    {defaultMethod.provider === 'stripe' && defaultMethod.account_type && (
+                      <span className="capitalize">· {defaultMethod.account_type}</span>
+                    )}
+                    {defaultMethod.provider === 'stripe' && (
+                      defaultMethod.status === 'ready'
+                        ? <span className="text-green-600 font-semibold">· Ready for payouts</span>
+                        : defaultMethod.status === 'action_required'
+                          ? <span className="text-amber-600 font-semibold">· Bank account requires attention</span>
+                          : <span className="text-amber-600 font-semibold">· Setup incomplete</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => navigate('/wallet/payout-method')} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+                    <Pencil className="w-3.5 h-3.5 text-gray-400" />
                   </button>
-                )}
+                  {defaultMethod.provider === 'stripe' && (
+                    <button
+                      onClick={() => { if (window.confirm('Remove this bank account? You will need to add a new one before your next payout.')) navigate('/wallet/payout-method?action=remove'); }}
+                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50"
+                      aria-label="Remove bank account"
+                    >
+                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+                    </button>
+                  )}
+                </div>
               </div>
+              {defaultMethod.provider === 'stripe' && defaultMethod.status === 'action_required' && (
+                <button
+                  onClick={() => navigate('/wallet/payout-method?action=verify')}
+                  className="w-full py-2.5 bg-amber-50 text-amber-700 text-xs font-bold border-t border-amber-100 hover:bg-amber-100 transition-colors"
+                >
+                  Verify with Stripe →
+                </button>
+              )}
             </div>
           ) : (
             <button

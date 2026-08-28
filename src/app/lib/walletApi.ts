@@ -318,6 +318,26 @@ export const walletApi = {
       return { success: false, error: e?.message || 'Network error' };
     }
   },
+
+  /** A single-purpose, short-lived Stripe-hosted link for a host to resolve
+   *  an outstanding identity-verification requirement (e.g. an ID document)
+   *  this app doesn't build a custom upload UI for -- only ever shown when
+   *  a payout method is already status='action_required', never part of
+   *  normal setup. */
+  async createVerificationLink(userId: string, stepUpToken: string, returnUrl: string, refreshUrl: string): Promise<{ url?: string; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/create-verification-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, stepUpToken, returnUrl, refreshUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { error: data.error || 'Could not create verification link' };
+      return { url: data.url };
+    } catch (e: any) {
+      return { error: e?.message || 'Network error' };
+    }
+  },
 };
 
 export interface PayoutPerson {
