@@ -15,6 +15,7 @@
 // verbatim so the frontend can render a follow-up screen only for fields
 // actually required for this account -- never guessed upfront.
 import { verifyStepUpToken } from '../_shared/stepUpAuth.ts';
+import { isStaleAccountError } from '../_shared/stripeAccountErrors.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const json = (body: unknown, status = 200) =>
@@ -217,14 +218,11 @@ Deno.serve(async (req) => {
       // created via the newer controller[...] params, so it false-flagged
       // every freshly created account as invalid on its very next call
       // (e.g. the SIN/SSN follow-up step) and looped hosts back to
-      // "start again" every time. Stripe's own error message is the
-      // authoritative signal: a leftover Express-style account (from
-      // before this session's Custom-account rewrite) or one that's been
-      // deleted/is in the wrong mode surfaces "not authorized to edit" or
-      // "No such account" specifically -- only those get retried as a
-      // fresh account; any other error (e.g. a bad field value) still
-      // surfaces directly so the user can fix it.
-      if (account.error && /not authorized to edit|no such account/i.test(account.error.message)) {
+      // "start again" every time. isStaleAccountError recognizes Stripe's
+      // various real phrasings for "this account reference is bad" --
+      // only those get retried as a fresh account; any other error (e.g.
+      // a bad field value) still surfaces directly so the user can fix it.
+      if (account.error && isStaleAccountError(account.error.message)) {
         account = await createFreshAccount();
         if (account.error) return json({ error: account.error.message }, 400);
         accountId = account.id;

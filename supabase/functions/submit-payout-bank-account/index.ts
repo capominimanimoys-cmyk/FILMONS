@@ -11,6 +11,7 @@
 import { verifyStepUpToken } from '../_shared/stepUpAuth.ts';
 import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
 import { sendPayoutMethodUpdatedEmail } from '../_shared/notificationEmails.ts';
+import { isStaleAccountError } from '../_shared/stripeAccountErrors.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const json = (body: unknown, status = 200) =>
@@ -124,7 +125,7 @@ Deno.serve(async (req) => {
       // but that heuristic didn't reliably match what Stripe returns for
       // accounts created via the newer controller[...] params, and
       // false-flagged perfectly good accounts as stale.
-      if (/not authorized to edit|no such account/i.test(message)) {
+      if (isStaleAccountError(message)) {
         await fetch(rest(`/profiles?id=eq.${userId}`), {
           method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
           body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
