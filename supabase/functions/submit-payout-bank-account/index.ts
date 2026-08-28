@@ -129,7 +129,22 @@ Deno.serve(async (req) => {
       method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, body: params,
     });
     const externalAccount = await res.json();
-    if (externalAccount.error) return json({ error: externalAccount.error.message }, 400);
+    if (externalAccount.error) {
+      // Attaching a bank account is often the specific action that makes
+      // Stripe surface a fuller identity-verification requirement (e.g. a
+      // government ID document) that wasn't listed as due yet during the
+      // earlier identity step -- sync now so the account's real status
+      // (action_required, with whatever it's actually waiting on) is
+      // reflected on the Wallet page instead of silently leaving the
+      // payout_methods row in whatever state it was in before this call.
+      await syncPayoutMethodFromStripeAccount(userId, accountId).catch(() => null);
+      const needsVerification = /verif/i.test(externalAccount.error.message || '');
+      return json({
+        error: needsVerification
+          ? 'Stripe needs additional identity verification before a bank account can be added. Check your payout method status for details.'
+          : externalAccount.error.message,
+      }, 400);
+    }
 
     const safe = await syncPayoutMethodFromStripeAccount(userId, accountId);
 

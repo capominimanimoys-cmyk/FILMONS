@@ -198,6 +198,14 @@ export function PayoutMethodSetup() {
       setDefaultMethod(null);
       setStep('country');
     }
+    else if (res.error?.includes('identity verification')) {
+      // Stripe wants something (often a document) that can't be resolved
+      // by resubmitting this form -- staying here would just fail again.
+      // Wallet.tsx's payout-method card already shows "Bank account
+      // requires attention" once the status sync lands.
+      toast.error(res.error);
+      navigate('/wallet');
+    }
     else toast.error(res.error || 'Could not save payout method');
   };
 
