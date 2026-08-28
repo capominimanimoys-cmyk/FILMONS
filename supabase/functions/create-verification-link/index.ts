@@ -73,7 +73,12 @@ Deno.serve(async (req) => {
           method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
           body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
         });
-        return json({ error: 'reauth_required' }, 409);
+        // Temporary diagnostic: include Stripe's actual message alongside
+        // the reauth_required signal so it's visible in the UI instead of
+        // silently swallowed -- this exact class of bug has needed the raw
+        // wording every time so far to identify which pattern was missing.
+        console.error('create-verification-link: stale account detected:', accountId, existingAccount.error.message);
+        return json({ error: 'reauth_required', debugMessage: existingAccount.error.message }, 409);
       }
       return json({ error: existingAccount.error.message }, 400);
     }

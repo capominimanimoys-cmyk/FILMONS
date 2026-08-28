@@ -104,7 +104,12 @@ export function PayoutMethodSetup() {
       setCountry(null);
       setDefaultMethod(null);
       setStep('country');
-      toast.error('That setup attempt is no longer valid — please start again.');
+      // Temporary: show Stripe's actual underlying message too, so the
+      // real cause is visible instead of just the generic reset prompt.
+      toast.error('That setup attempt is no longer valid — please start again.', {
+        description: res.debugMessage,
+        duration: 15000,
+      });
       return;
     }
     setVerifyError(res.error || 'Could not create verification link');

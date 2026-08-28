@@ -343,7 +343,7 @@ export const walletApi = {
    *  this app doesn't build a custom upload UI for -- only ever shown when
    *  a payout method is already status='action_required', never part of
    *  normal setup. */
-  async createVerificationLink(userId: string, stepUpToken: string, returnUrl: string, refreshUrl: string): Promise<{ url?: string; error?: string }> {
+  async createVerificationLink(userId: string, stepUpToken: string, returnUrl: string, refreshUrl: string): Promise<{ url?: string; error?: string; debugMessage?: string }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/create-verification-link`, {
         method: 'POST',
@@ -351,7 +351,7 @@ export const walletApi = {
         body: JSON.stringify({ userId, stepUpToken, returnUrl, refreshUrl }),
       });
       const data = await res.json();
-      if (!res.ok || data.error) return { error: data.error || 'Could not create verification link' };
+      if (!res.ok || data.error) return { error: data.error || 'Could not create verification link', debugMessage: data.debugMessage };
       return { url: data.url };
     } catch (e: any) {
       return { error: e?.message || 'Network error' };
