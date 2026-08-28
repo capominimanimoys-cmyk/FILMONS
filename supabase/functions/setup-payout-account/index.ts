@@ -145,31 +145,6 @@ Deno.serve(async (req) => {
     let accountId = profile.stripe_connect_account_id as string | null;
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || '0.0.0.0';
 
-    // A stripe_connect_account_id can be left over from the old Express +
-    // Account Link flow this replaced (deleted this session, but nothing
-    // ever cleared accounts it had already created for hosts who tried it
-    // earlier). Stripe only allows a platform to directly write
-    // business_type/email/individual via the API on accounts it created as
-    // type=custom -- doing this against an Express/Standard account
-    // returns "This application is not authorized to edit the following
-    // attributes," pointing you at a Stripe-hosted remediation link
-    // instead. Treat any non-Custom (or no-longer-resolvable) account the
-    // same as having none at all, and create a fresh Custom one rather
-    // than trying to edit it.
-    if (accountId) {
-      const checkRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
-        headers: { Authorization: `Bearer ${SK}` },
-      });
-      const existingAccount = await checkRes.json();
-      // Newer accounts created with explicit `controller[...]` params
-      // (see the create branch below) may not echo back `type: 'custom'`
-      // the same way legacy `type: 'custom'`-created accounts do -- check
-      // either representation of "this platform controls it" rather than
-      // just the legacy field.
-      const isPlatformControlled = existingAccount.type === 'custom' || existingAccount.controller?.requirement_collection === 'application';
-      if (existingAccount.error || !isPlatformControlled) accountId = null;
-    }
-
     // `country` is a create-only, immutable Account field -- Stripe's
     // update endpoint (POST /v1/accounts/{id}) doesn't recognize it at all
     // and returns "Unknown parameter: country" if it's included, so it's
@@ -194,32 +169,36 @@ Deno.serve(async (req) => {
       if (company!.phone) baseParams['company[phone]'] = company!.phone;
     }
 
-    let account: any;
-    if (!accountId) {
-      baseParams.country = resolvedCountry;
+    async function createFreshAccount() {
+      const createParams = { ...baseParams };
+      createParams.country = resolvedCountry!;
       // Newer Stripe platforms default a new account's `controller` to
       // requirement_collection: 'stripe' (Stripe manages onboarding/ToS
       // itself -- the Express/Standard model) regardless of the legacy
-      // `type: 'custom'` param below, which this platform's Connect
-      // settings evidently don't imply on their own. Setting these
-      // explicitly is what actually makes it a platform-controlled
-      // ("Custom"-equivalent) account: the platform collects requirements
-      // and accepts ToS on the account's behalf (what tos_acceptance below
-      // needs), is liable for negative balances, pays Stripe's fees, and
-      // the account gets no Stripe-hosted dashboard of its own.
-      // (controller[type] is NOT a writable param -- Stripe rejects it
-      // with "Unknown parameter" -- it's a computed/response-only field
-      // derived from the sub-fields actually being set below.)
-      baseParams['controller[requirement_collection]'] = 'application';
-      baseParams['controller[losses][payments]'] = 'application';
-      baseParams['controller[fees][payer]'] = 'application';
-      baseParams['controller[stripe_dashboard][type]'] = 'none';
-      baseParams['tos_acceptance[date]'] = String(Math.floor(Date.now() / 1000));
-      baseParams['tos_acceptance[ip]'] = ip;
+      // `type: 'custom'` param, which this platform's Connect settings
+      // evidently don't imply on their own. Setting these explicitly is
+      // what actually makes it a platform-controlled ("Custom"-equivalent)
+      // account: the platform collects requirements and accepts ToS on the
+      // account's behalf (what tos_acceptance below needs), is liable for
+      // negative balances, pays Stripe's fees, and the account gets no
+      // Stripe-hosted dashboard of its own. (controller[type] is NOT a
+      // writable param -- Stripe rejects it with "Unknown parameter" -- it's
+      // a computed/response-only field derived from these sub-fields.)
+      createParams['controller[requirement_collection]'] = 'application';
+      createParams['controller[losses][payments]'] = 'application';
+      createParams['controller[fees][payer]'] = 'application';
+      createParams['controller[stripe_dashboard][type]'] = 'none';
+      createParams['tos_acceptance[date]'] = String(Math.floor(Date.now() / 1000));
+      createParams['tos_acceptance[ip]'] = ip;
       const res = await fetch('https://api.stripe.com/v1/accounts', {
-        method: 'POST', headers: stripeHeaders, body: new URLSearchParams(baseParams),
+        method: 'POST', headers: stripeHeaders, body: new URLSearchParams(createParams),
       });
-      account = await res.json();
+      return res.json();
+    }
+
+    let account: any;
+    if (!accountId) {
+      account = await createFreshAccount();
       if (account.error) return json({ error: account.error.message }, 400);
       accountId = account.id;
       await fetch(rest(`/profiles?id=eq.${userId}`), {
@@ -231,7 +210,31 @@ Deno.serve(async (req) => {
         method: 'POST', headers: stripeHeaders, body: new URLSearchParams(baseParams),
       });
       account = await res.json();
-      if (account.error) return json({ error: account.error.message }, 400);
+      // React to the specific failure rather than predicting it upfront --
+      // an earlier version tried to detect a stale/wrong-type account via
+      // a GET beforehand, but the type/controller heuristic it checked
+      // didn't reliably match what Stripe actually returns for accounts
+      // created via the newer controller[...] params, so it false-flagged
+      // every freshly created account as invalid on its very next call
+      // (e.g. the SIN/SSN follow-up step) and looped hosts back to
+      // "start again" every time. Stripe's own error message is the
+      // authoritative signal: a leftover Express-style account (from
+      // before this session's Custom-account rewrite) or one that's been
+      // deleted/is in the wrong mode surfaces "not authorized to edit" or
+      // "No such account" specifically -- only those get retried as a
+      // fresh account; any other error (e.g. a bad field value) still
+      // surfaces directly so the user can fix it.
+      if (account.error && /not authorized to edit|no such account/i.test(account.error.message)) {
+        account = await createFreshAccount();
+        if (account.error) return json({ error: account.error.message }, 400);
+        accountId = account.id;
+        await fetch(rest(`/profiles?id=eq.${userId}`), {
+          method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+          body: JSON.stringify({ stripe_connect_account_id: accountId, stripe_connect_country: resolvedCountry, payout_account_type: accountHolderType }),
+        });
+      } else if (account.error) {
+        return json({ error: account.error.message }, 400);
+      }
     }
 
     // Company accounts need a representative Person -- posted as a

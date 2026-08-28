@@ -55,12 +55,20 @@ Deno.serve(async (req) => {
     // account -- a leftover/deleted/wrong-mode account id would otherwise
     // surface Stripe's raw "No such account" error straight to the user
     // with no way forward. Clear it and ask the frontend to restart.
+    //
+    // Only checks whether the account exists at all -- an earlier version
+    // also tried to verify it was "platform-controlled" via type/controller
+    // fields, but that heuristic didn't reliably match what Stripe actually
+    // returns for accounts created via the newer controller[...] params
+    // (see setup-payout-account), so it was false-flagging every freshly
+    // created account as invalid and looping hosts back to "start again."
+    // Account Links work for any existing account regardless of type, so
+    // there's nothing else to gate here.
     const checkRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
       headers: { Authorization: `Bearer ${SK}` },
     });
     const existingAccount = await checkRes.json();
-    const isPlatformControlled = existingAccount.type === 'custom' || existingAccount.controller?.requirement_collection === 'application';
-    if (existingAccount.error || !isPlatformControlled) {
+    if (existingAccount.error) {
       await fetch(rest(`/profiles?id=eq.${userId}`), {
         method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
         body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),

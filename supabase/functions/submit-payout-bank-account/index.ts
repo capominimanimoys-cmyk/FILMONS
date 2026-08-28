@@ -49,23 +49,6 @@ Deno.serve(async (req) => {
     if (!SK) return json({ error: 'Stripe not configured' }, 500);
     const authHeader = { Authorization: `Bearer ${SK}` };
 
-    // Same stale-Express-account guard as setup-payout-account: "Change
-    // bank account" mode skips identity entirely (it's assumed already
-    // done), so this is the only place left to catch a leftover Express
-    // account id from before this session's Custom-account rewrite. Clear
-    // it and ask the frontend to restart setup from scratch rather than
-    // attempting a call Stripe will reject anyway.
-    const typeCheck = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, { headers: authHeader });
-    const existingAccount = await typeCheck.json();
-    const isPlatformControlled = existingAccount.type === 'custom' || existingAccount.controller?.requirement_collection === 'application';
-    if (existingAccount.error || !isPlatformControlled) {
-      await fetch(rest(`/profiles?id=eq.${userId}`), {
-        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-        body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
-      });
-      return json({ error: 'reauth_required' }, 409);
-    }
-
     if (action === 'remove') {
       const existing = await selectOne('payout_methods', `host_id=eq.${userId}&stripe_connect_account_id=eq.${accountId}`);
       if (existing?.stripe_external_account_id) {
@@ -130,6 +113,24 @@ Deno.serve(async (req) => {
     });
     const externalAccount = await res.json();
     if (externalAccount.error) {
+      const message = externalAccount.error.message || '';
+      // A leftover Express-style account (from before this session's
+      // Custom-account rewrite) or one that's been deleted/is in the wrong
+      // mode surfaces this specifically -- "Change bank account" mode
+      // skips identity entirely (assumed already done), so this is the
+      // only place left to catch it. Reacting to Stripe's actual error
+      // rather than predicting it upfront: an earlier version checked the
+      // account's type/controller fields before ever attempting this call,
+      // but that heuristic didn't reliably match what Stripe returns for
+      // accounts created via the newer controller[...] params, and
+      // false-flagged perfectly good accounts as stale.
+      if (/not authorized to edit|no such account/i.test(message)) {
+        await fetch(rest(`/profiles?id=eq.${userId}`), {
+          method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+          body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
+        });
+        return json({ error: 'reauth_required' }, 409);
+      }
       // Attaching a bank account is often the specific action that makes
       // Stripe surface a fuller identity-verification requirement (e.g. a
       // government ID document) that wasn't listed as due yet during the
@@ -138,11 +139,11 @@ Deno.serve(async (req) => {
       // reflected on the Wallet page instead of silently leaving the
       // payout_methods row in whatever state it was in before this call.
       await syncPayoutMethodFromStripeAccount(userId, accountId).catch(() => null);
-      const needsVerification = /verif/i.test(externalAccount.error.message || '');
+      const needsVerification = /verif/i.test(message);
       return json({
         error: needsVerification
           ? 'Stripe needs additional identity verification before a bank account can be added. Check your payout method status for details.'
-          : externalAccount.error.message,
+          : message,
       }, 400);
     }
 
