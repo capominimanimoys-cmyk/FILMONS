@@ -357,6 +357,24 @@ export const walletApi = {
       return { error: e?.message || 'Network error' };
     }
   },
+
+  /** Re-syncs payout_methods from the live Stripe account -- fixes drift
+   *  when a host finished identity/bank collection entirely inside
+   *  Stripe's hosted onboarding link (which never calls
+   *  submitPayoutBankAccount) or when a stale account got replaced by a
+   *  fresh one. Fire-and-forget on Wallet mount; failures are non-fatal,
+   *  the page just shows whatever payout_methods already had. */
+  async syncPayoutMethodStatus(userId: string): Promise<void> {
+    try {
+      await fetch(`https://${projectId}.supabase.co/functions/v1/sync-payout-method-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId }),
+      });
+    } catch {
+      // best-effort
+    }
+  },
 };
 
 export interface PayoutPerson {

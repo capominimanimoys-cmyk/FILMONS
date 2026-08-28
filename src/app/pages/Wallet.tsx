@@ -465,7 +465,15 @@ export function Wallet() {
 
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login', { replace: true }); return; }
-    refresh();
+    (async () => {
+      // Re-sync payout_methods from Stripe before the first render -- a
+      // host who finished setup via Stripe's own hosted onboarding link
+      // (rather than the in-app bank form) would otherwise keep seeing
+      // whatever payout_methods last had, which can be a stale/dead
+      // account if setup-payout-account had to retry with a fresh one.
+      if (user?.id) await walletApi.syncPayoutMethodStatus(user.id).catch(() => {});
+      refresh();
+    })();
     const onUpdate = () => refresh();
     window.addEventListener('filmons:wallet:updated', onUpdate);
     return () => window.removeEventListener('filmons:wallet:updated', onUpdate);
