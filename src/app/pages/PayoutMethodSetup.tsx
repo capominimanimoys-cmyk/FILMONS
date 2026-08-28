@@ -26,6 +26,7 @@ import { ArrowLeft, Landmark, Loader2, Check, User, Building2 } from 'lucide-rea
 import { useAuth } from '../context/AuthContext';
 import { walletApi, type PayoutMethod, type PayoutPerson } from '../lib/walletApi';
 import { VerifyItsYouGate } from '../components/VerifyItsYouGate';
+import { SmartAddressInput } from '../components/SmartAddressInput';
 
 type EntityType = 'individual' | 'company';
 type PayoutCountry = 'CA' | 'US';
@@ -378,7 +379,23 @@ export function PayoutMethodSetup() {
               <input value={dobYear} onChange={e => setDobYear(e.target.value)} placeholder="YYYY" inputMode="numeric" className={inputCls} />
             </div>
           </div>
-          <div><label className={labelCls}>Address</label><input value={addrLine1} onChange={e => setAddrLine1(e.target.value)} className={inputCls} /></div>
+          <div>
+            <label className={labelCls}>Address</label>
+            <SmartAddressInput
+              value={addrLine1}
+              onInputChange={setAddrLine1}
+              onAddressSelect={(_display, parts) => {
+                setAddrLine1(parts.streetAddress || addrLine1);
+                if (parts.city) setAddrCity(parts.city);
+                if (parts.province) setAddrProvince(parts.province);
+                if (parts.postalCode) setAddrPostal(parts.postalCode);
+              }}
+              mode="full"
+              countryCode={country ?? undefined}
+              showGPS={false}
+              placeholder="Start typing your address…"
+            />
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <input value={addrCity} onChange={e => setAddrCity(e.target.value)} placeholder="City" className={inputCls} />
             <input value={addrProvince} onChange={e => setAddrProvince(e.target.value)} placeholder={isCA ? 'Province' : 'State'} className={inputCls} />
