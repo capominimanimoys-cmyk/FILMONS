@@ -196,9 +196,9 @@ function CreatorPlusRequired({ feature, color='blue', navigate }: { feature: str
 // Opportunity hire/fund substates) mapped to what an applicant actually
 // wants to see, not the raw DB value.
 const APPLICATION_STATUS_META: Record<string, { label: string; cls: string }> = {
-  pending:          { label: 'Pending',                        cls: 'text-amber-600 bg-amber-50' },
-  viewed:           { label: 'Pending',                        cls: 'text-amber-600 bg-amber-50' },
-  contacted:        { label: 'Pending',                        cls: 'text-amber-600 bg-amber-50' },
+  pending:          { label: 'Applied',                        cls: 'text-amber-600 bg-amber-50' },
+  viewed:           { label: 'Applied',                        cls: 'text-amber-600 bg-amber-50' },
+  contacted:        { label: 'Applied',                        cls: 'text-amber-600 bg-amber-50' },
   shortlisted:      { label: 'Shortlisted',                    cls: 'text-blue-600 bg-blue-50' },
   selected:         { label: 'Shortlisted',                    cls: 'text-blue-600 bg-blue-50' },
   accepted:         { label: 'Accepted 🎉',                    cls: 'text-green-600 bg-green-50' },
@@ -207,17 +207,201 @@ const APPLICATION_STATUS_META: Record<string, { label: string; cls: string }> = 
   payment_pending:  { label: 'Payment Pending',                cls: 'text-indigo-600 bg-indigo-50' },
   hired:            { label: 'Hired',                          cls: 'text-green-600 bg-green-50' },
   completed:        { label: 'Completed',                      cls: 'text-green-600 bg-green-50' },
-  rejected:         { label: 'Not selected',                   cls: 'text-gray-500 bg-gray-100' },
+  rejected:         { label: 'Declined',                       cls: 'text-red-500 bg-red-50' },
   withdrawn:        { label: 'Withdrawn',                      cls: 'text-gray-500 bg-gray-100' },
 };
 
+// Buckets the richer paid-Opportunity lifecycle statuses (offer_sent,
+// hired, completed, etc.) down into the 6 filter chips -- Applied/
+// Shortlisted/Accepted/Declined/Withdrawn cover every real status without
+// inventing new ones, per spec ("do not create new duplicate statuses").
+type AppFilterBucket = 'all' | 'applied' | 'shortlisted' | 'accepted' | 'declined' | 'withdrawn';
+function applicationBucket(status: string): AppFilterBucket {
+  if (['shortlisted', 'selected'].includes(status)) return 'shortlisted';
+  if (['accepted', 'offer_sent', 'offer_accepted', 'payment_pending', 'hired', 'completed'].includes(status)) return 'accepted';
+  if (status === 'rejected') return 'declined';
+  if (status === 'withdrawn') return 'withdrawn';
+  return 'applied';
+}
+const APP_FILTERS: { key: AppFilterBucket; label: string }[] = [
+  { key: 'all', label: 'All' }, { key: 'applied', label: 'Applied' }, { key: 'shortlisted', label: 'Shortlisted' },
+  { key: 'accepted', label: 'Accepted' }, { key: 'declined', label: 'Declined' }, { key: 'withdrawn', label: 'Withdrawn' },
+];
+
+// ── My Applications ── Opportunities I applied to, distinct from
+// "Opportunities" (the ones I posted) -- shared between CreatorDashboard
+// and HostDashboardContent so both dashboards show the exact same fetch/
+// filter/realtime logic instead of two copies drifting apart.
+// showCreatorUpsell only applies to the empty state (CreatorDashboard is
+// exclusively rendered for the 'creator' tier, which can't currently
+// apply at all -- see submit-opportunity-application's applications: 0
+// entitlement -- so an empty list there is worth explaining, not just a
+// generic "nothing yet").
+function MyApplicationsSection({ userId, showCreatorUpsell }: { userId: string; showCreatorUpsell?: boolean }) {
+  const navigate = useNavigate();
+  const [applications, setApplications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<AppFilterBucket>('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: apps } = await supabase.from('opportunity_applications')
+          .select('*').eq('applicant_id', userId).order('created_at', { ascending: false }).limit(100);
+        if (cancelled) return;
+        if (!apps?.length) { setApplications([]); setLoading(false); return; }
+        const listingIds = [...new Set(apps.map(a => a.listing_id).filter(Boolean))];
+        const ownerIds   = [...new Set(apps.map(a => a.owner_id).filter(Boolean))];
+        const [{ data: listings }, { data: owners }] = await Promise.all([
+          listingIds.length ? supabase.from('listings').select('id, title, city, province, price, images, is_active').in('id', listingIds) : Promise.resolve({ data: [] as any[] }),
+          ownerIds.length   ? supabase.from('profiles').select('id, name').in('id', ownerIds)                                              : Promise.resolve({ data: [] as any[] }),
+        ]);
+        if (cancelled) return;
+        const listingById = new Map((listings || []).map((l: any) => [l.id, l]));
+        const ownerById    = new Map((owners   || []).map((o: any) => [o.id, o]));
+        setApplications(apps.map(a => {
+          const l = listingById.get(a.listing_id);
+          return {
+            ...a,
+            listingTitle: l?.title || 'Opportunity',
+            listingLocation: [l?.city, l?.province].filter(Boolean).join(', '),
+            listingImage: l?.images?.[0] || null,
+            listingPrice: l?.price || null,
+            // No separate "closed/expired" status field exists on listings
+            // (see the global-search work earlier) -- is_active is the one
+            // real signal for whether the Opportunity itself is still live.
+            opportunityActive: l ? l.is_active !== false : null,
+            ownerName: ownerById.get(a.owner_id)?.name || 'Filmons host',
+          };
+        }));
+      } catch {
+        if (!cancelled) setApplications([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Real-time status updates -- same postgres_changes pattern
+  // supportApi.subscribeToCase already uses for support cases, filtered to
+  // just this applicant's own rows.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`my-applications-${userId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'opportunity_applications', filter: `applicant_id=eq.${userId}` }, payload => {
+        const updated = payload.new as any;
+        setApplications(prev => prev.map(a => a.id === updated.id ? { ...a, ...updated } : a));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [userId]);
+
+  const filtered = filter === 'all' ? applications : applications.filter(a => applicationBucket(a.status) === filter);
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 flex items-center justify-center">
+        <div className="w-5 h-5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {applications.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          {APP_FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                filter === f.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-blue-500" />
+          <h3 className="text-sm font-bold text-gray-900">My Applications</h3>
+          <span className="text-xs text-gray-400">({filtered.length})</span>
+        </div>
+
+        {applications.length === 0 ? (
+          <div className="p-8 text-center">
+            <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+            <p className="text-sm text-gray-400 font-medium">No applications yet</p>
+            <p className="text-xs text-gray-300 mt-1">
+              {showCreatorUpsell
+                ? 'Upgrade to Creator+ to apply for Opportunities.'
+                : "Opportunities you apply to will appear here."}
+            </p>
+            <button
+              onClick={() => navigate(showCreatorUpsell ? '/verification' : '/search')}
+              className="mt-4 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors">
+              {showCreatorUpsell ? 'Upgrade to Creator+' : 'Browse Opportunities'}
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-sm text-gray-400">No {APP_FILTERS.find(f => f.key === filter)?.label.toLowerCase()} applications.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {filtered.map((app: any) => {
+              const meta = APPLICATION_STATUS_META[app.status] || { label: app.status, cls: 'text-gray-500 bg-gray-100' };
+              return (
+                <div key={app.id} className="px-4 py-3.5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                      {app.listingImage
+                        ? <img src={app.listingImage} alt="" className="w-full h-full object-cover" />
+                        : <Briefcase className="w-5 h-5 text-gray-300" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{app.listingTitle}</p>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap ${meta.cls}`}>{meta.label}</span>
+                      </div>
+                      {app.listingLocation && <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{app.listingLocation}</p>}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {app.listingPrice > 0 && <span className="text-xs font-bold text-blue-600">${Number(app.listingPrice).toLocaleString()}</span>}
+                        {app.opportunityActive === false && (
+                          <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">Opportunity Closed</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">Posted by {app.ownerName} · Applied {new Date(app.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <button onClick={() => navigate(`/listing/${app.listing_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Opportunity</button>
+                        {app.conversation_id && (
+                          <button onClick={() => navigate(`/inbox?conv=${app.conversation_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Application</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CreatorDashboard({ user }: { user: any }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'orders' | 'opportunities' | 'applications' | 'transactions'>('orders');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [tab, setTab] = useState<'orders' | 'opportunities' | 'applications' | 'transactions'>(
+    initialTab === 'opportunities' || initialTab === 'applications' || initialTab === 'transactions' ? initialTab : 'orders',
+  );
   const [orders, setOrders] = useState<any[]>([]);
   const [savedListings, setSavedListings] = useState<any[]>([]);
   const [myOpportunities, setMyOpportunities] = useState<Listing[]>([]);
-  const [myApplications, setMyApplications] = useState<any[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [rep, setRep] = useState<ReputationScore | null>(null);
 
@@ -239,30 +423,6 @@ function CreatorDashboard({ user }: { user: any }) {
     listingsApi.getUserListings(user.id)
       .then(listings => setMyOpportunities(listings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')))
       .catch(() => setMyOpportunities([]));
-    // opportunity_applications.listing_id is a plain text column (listings
-    // ids aren't uuids), so there's no FK for an embedded select -- fetch
-    // applications, then the listings/owners they reference, then merge.
-    (async () => {
-      try {
-        const { data: apps } = await supabase.from('opportunity_applications')
-          .select('*').eq('applicant_id', user.id).order('created_at', { ascending: false }).limit(50);
-        if (!apps?.length) { setMyApplications([]); return; }
-        const listingIds = [...new Set(apps.map(a => a.listing_id).filter(Boolean))];
-        const ownerIds   = [...new Set(apps.map(a => a.owner_id).filter(Boolean))];
-        const [{ data: listings }, { data: owners }] = await Promise.all([
-          listingIds.length ? supabase.from('listings').select('id, title, city, province').in('id', listingIds) : Promise.resolve({ data: [] as any[] }),
-          ownerIds.length   ? supabase.from('profiles').select('id, name').in('id', ownerIds)                   : Promise.resolve({ data: [] as any[] }),
-        ]);
-        const listingById = new Map((listings || []).map((l: any) => [l.id, l]));
-        const ownerById    = new Map((owners   || []).map((o: any) => [o.id, o]));
-        setMyApplications(apps.map(a => ({
-          ...a,
-          listingTitle: listingById.get(a.listing_id)?.title || 'Opportunity',
-          listingLocation: [listingById.get(a.listing_id)?.city, listingById.get(a.listing_id)?.province].filter(Boolean).join(', '),
-          ownerName: ownerById.get(a.owner_id)?.name || 'Filmons host',
-        })));
-      } catch { setMyApplications([]); }
-    })();
   }, [user.id]);
 
   const statusColors: Record<string, string> = {
@@ -426,49 +586,12 @@ function CreatorDashboard({ user }: { user: any }) {
         )}
 
         {/* Applications — Opportunities this user has applied to, tracked
-            separately from "Opportunities" above (the ones they posted). */}
+            separately from "Opportunities" above (the ones they posted).
+            showCreatorUpsell: CreatorDashboard only ever renders for the
+            'creator' tier, which can't apply at all right now (see
+            submit-opportunity-application's applications: 0 entitlement). */}
         {tab === 'applications' && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-500" />
-              <h3 className="text-sm font-bold text-gray-900">My Applications</h3>
-              <span className="text-xs text-gray-400">({myApplications.length})</span>
-            </div>
-            {myApplications.length === 0 ? (
-              <div className="p-8 text-center">
-                <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                <p className="text-sm text-gray-400 font-medium">No applications yet</p>
-                <p className="text-xs text-gray-300 mt-1">Track the opportunities you've applied to and their status here.</p>
-                <button onClick={() => navigate('/')} className="mt-4 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors">
-                  Browse opportunities
-                </button>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {myApplications.map((app: any) => {
-                  const meta = APPLICATION_STATUS_META[app.status] || { label: app.status, cls: 'text-gray-500 bg-gray-100' };
-                  return (
-                    <div key={app.id} className="px-4 py-3.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{app.listingTitle}</p>
-                          {app.listingLocation && <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{app.listingLocation}</p>}
-                          <p className="text-xs text-gray-400 mt-0.5">Posted by {app.ownerName} · Applied {new Date(app.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</p>
-                        </div>
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap ${meta.cls}`}>{meta.label}</span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-2.5">
-                        <button onClick={() => navigate(`/listing/${app.listing_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Opportunity</button>
-                        {app.conversation_id && (
-                          <button onClick={() => navigate(`/inbox?conv=${app.conversation_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Application</button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <MyApplicationsSection userId={user.id} showCreatorUpsell />
         )}
 
         {/* Saved */}
@@ -568,8 +691,8 @@ function HostDashboardContent({ user }: { user: any }) {
   const goCreate = () => navigate(isCreatorPlus ? '/create-listing' : '/creator-plus-required?type=listings');
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'opportunities' | 'orders'>(
-    initialTab === 'opportunities' || initialTab === 'listings' || initialTab === 'orders' ? initialTab : 'overview',
+  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'opportunities' | 'applications' | 'orders'>(
+    initialTab === 'opportunities' || initialTab === 'listings' || initialTab === 'applications' || initialTab === 'orders' ? initialTab : 'overview',
   );
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -699,6 +822,7 @@ function HostDashboardContent({ user }: { user: any }) {
             { key: 'overview', label: 'Overview', icon: LayoutDashboard },
             { key: 'listings', label: 'Listings', icon: Package },
             { key: 'opportunities', label: 'Opportunities', icon: Briefcase },
+            { key: 'applications', label: 'Applications', icon: FileText },
             { key: 'orders',   label: 'My Orders', icon: ShoppingCart },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} ref={el => { tabRefs.current[key] = el; }} onClick={() => setActiveTab(key as any)}
@@ -844,6 +968,14 @@ function HostDashboardContent({ user }: { user: any }) {
 
         {activeTab === 'opportunities' && (
           <MyOpportunitiesOverview opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
+        )}
+
+        {/* Applications — Opportunities this user applied to elsewhere,
+            distinct from "Opportunities" above (the ones they posted). No
+            Creator+ upsell here -- every tier that reaches this dashboard
+            variant (creator_plus/professional/business) can already apply. */}
+        {activeTab === 'applications' && (
+          <MyApplicationsSection userId={user.id} />
         )}
 
         {activeTab === 'orders' && (
