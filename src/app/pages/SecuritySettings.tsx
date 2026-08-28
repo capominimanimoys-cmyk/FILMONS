@@ -19,6 +19,13 @@ function genCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+const PW_RULES = [
+  { label: '8+ characters',    test: (p: string) => p.length >= 8 },
+  { label: 'Uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { label: 'Number',           test: (p: string) => /[0-9]/.test(p) },
+  { label: 'Special char',     test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+];
+
 // ── Change Email ──────────────────────────────────────────────────────────
 // New email → check availability → emailed code → verify → atomic claim →
 // persist. Blocks with "Email already in use" without revealing whose it is.
@@ -198,6 +205,131 @@ function ChangePhoneFlow({ userId, currentPhone, onChanged }: { userId: string; 
   );
 }
 
+// ── Add Password (for a Google-only account) ─────────────────────────────
+// This account already exists (created via Google) and already has a valid
+// Supabase session -- the ONLY thing this does is attach password auth to
+// THAT SAME session via supabase.auth.updateUser(), never signUp(). Same
+// user.id, same profile, same everything, before and after. No "current
+// password" field -- there isn't one yet. Email is shown read-only from the
+// authenticated session, never re-asked.
+function AddPasswordFlow({ userId, email, onDone }: { userId: string; email: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<'create' | 'done'>('create');
+  const [pw, setPw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // Google-verified emails are already confirmed by Supabase, so this flow
+  // never re-runs an OTP identity check of its own -- it only checks the
+  // live session's own confirmation state and blocks submit if somehow
+  // unconfirmed, rather than silently letting updateUser fail.
+  const [emailConfirmed, setEmailConfirmed] = useState<boolean | null>(null);
+
+  const pwValid = PW_RULES.every(r => r.test(pw));
+
+  const reset = () => { setOpen(false); setStep('create'); setPw(''); setConfirm(''); };
+
+  const handleOpen = async () => {
+    setOpen(true);
+    const { data } = await supabase.auth.getUser();
+    setEmailConfirmed(!!data.user?.email_confirmed_at);
+  };
+
+  const submit = async () => {
+    if (!pwValid) { toast.error('Password does not meet requirements.'); return; }
+    if (pw !== confirm) { toast.error('Passwords do not match.'); return; }
+    setLoading(true);
+    try {
+      // Attaches password auth to the CURRENT authenticated user -- same
+      // user.id as the Google session. Never signUp(), which would create
+      // a second, separate account instead of adding to this one.
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) { toast.error(error.message || 'Could not set password.'); return; }
+      // Merge 'email' into profile_meta.providers (never overwrite -- this
+      // is the same field GoogleSignup.tsx seeds with providers: ['google']
+      // and SecuritySettings' own linkedProviders detection reads back).
+      // Without this, a reload would show "Add Password" again even though
+      // it's already done, since local React state alone doesn't survive one.
+      const { data: row } = await supabase.from('profiles').select('profile_meta').eq('id', userId).maybeSingle();
+      const meta = typeof row?.profile_meta === 'string' ? JSON.parse(row.profile_meta || '{}') : (row?.profile_meta || {});
+      const providers = Array.from(new Set([...(meta.providers || []), 'email']));
+      await supabase.from('profiles')
+        .update({ email, email_verified: true, profile_meta: { ...meta, providers } })
+        .eq('id', userId).then(undefined, () => {});
+      setStep('done');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return (
+    <button onClick={handleOpen}
+      className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full shrink-0 hover:bg-blue-100 transition-colors">
+      Set Password
+    </button>
+  );
+
+  return (
+    <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 mt-2 space-y-3">
+      {step === 'create' ? (
+        <>
+          <div>
+            <p className="text-sm font-black text-gray-900">Add a password</p>
+            <p className="text-xs text-gray-500 mt-0.5">Create a Filmons password to sign in with your email as an alternative to Google.</p>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Email</label>
+            <div className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2">{email}</div>
+          </div>
+          {emailConfirmed === false && (
+            <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+              Your email isn't verified yet -- verify it before adding a password.
+            </p>
+          )}
+          <div className="relative">
+            <input type={showPw ? 'text' : 'password'} value={pw} onChange={e => setPw(e.target.value)}
+              placeholder="New password" autoFocus
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-9 text-sm outline-none focus:border-blue-400 bg-white" />
+            <button onClick={() => setShowPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+              {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          {pw.length > 0 && (
+            <div className="grid grid-cols-2 gap-1">
+              {PW_RULES.map(r => (
+                <div key={r.label} className={`flex items-center gap-1 text-[10px] ${r.test(pw) ? 'text-green-600' : 'text-gray-400'}`}>
+                  <CheckCircle className="w-2.5 h-2.5 shrink-0" /> {r.label}
+                </div>
+              ))}
+            </div>
+          )}
+          <input type={showPw ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
+            placeholder="Confirm password"
+            className={`w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white ${confirm && confirm !== pw ? 'border-red-400' : 'border-gray-200 focus:border-blue-400'}`} />
+          {confirm && confirm !== pw && <p className="text-[11px] text-red-500">Passwords don't match</p>}
+          <div className="flex gap-2">
+            <button onClick={reset} className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold">Cancel</button>
+            <button onClick={submit} disabled={loading || !pwValid || pw !== confirm || emailConfirmed === false}
+              className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Set password'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="text-center py-2 space-y-2">
+          <CheckCircle className="w-8 h-8 text-green-500 mx-auto" />
+          <p className="text-sm font-black text-gray-900">Password created ✓</p>
+          <p className="text-xs text-gray-500">You can now sign in to Filmons using Google or your email and password.</p>
+          <button onClick={() => { reset(); onDone(); }}
+            className="w-full mt-1 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold">
+            Continue to Filmons
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GoogleLogo() {
   return (
     <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
@@ -225,11 +357,26 @@ const [showPw,  setShowPw]  = useState(false);
   const [pw,      setPw]      = useState({ current: '', next: '', confirm: '' });
   const [twoFA,   setTwoFA]   = useState(false);
 
+  const [changingPw, setChangingPw] = useState(false);
   const handleChangePw = async () => {
+    if (!pw.current) { toast.error('Enter your current password'); return; }
     if (!pw.next || pw.next !== pw.confirm) { toast.error('Passwords do not match'); return; }
     if (pw.next.length < 8) { toast.error('Password must be at least 8 characters'); return; }
-    toast.success('Password updated successfully');
-    setPw({ current: '', next: '', confirm: '' });
+    if (!user?.email) { toast.error('Could not verify your account'); return; }
+    setChangingPw(true);
+    try {
+      // Current Password is verified for real here (re-signs in against it)
+      // rather than just being a decorative field -- without this, anyone
+      // with an already-open session could change the password blind.
+      const { error: reauthErr } = await supabase.auth.signInWithPassword({ email: user.email, password: pw.current });
+      if (reauthErr) { toast.error('Current password is incorrect'); return; }
+      const { error } = await supabase.auth.updateUser({ password: pw.next });
+      if (error) { toast.error(error.message || 'Could not update password'); return; }
+      toast.success('Password updated successfully');
+      setPw({ current: '', next: '', confirm: '' });
+    } finally {
+      setChangingPw(false);
+    }
   };
 
   // ── Linked providers ─────────────────────────────────────────────────────
@@ -291,14 +438,13 @@ const [showPw,  setShowPw]  = useState(false);
               </div>
               {linkedProviders.includes('email') ? (
                 <CheckCircle className="w-5 h-5 text-green-500 shrink-0"/>
-              ) : (
-                <button
-                  onClick={() => navigate(`/forgot-password?email=${encodeURIComponent(user?.email || '')}`)}
-                  className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full shrink-0 hover:bg-blue-100 transition-colors"
-                >
-                  Set Up Password
-                </button>
-              )}
+              ) : user?.id ? (
+                <AddPasswordFlow
+                  userId={user.id}
+                  email={user?.email || ''}
+                  onDone={() => setLinkedProviders(p => [...p, 'email'])}
+                />
+              ) : null}
               {user?.id && linkedProviders.includes('email') && (
                 <ChangeEmailFlow userId={user.id} currentEmail={user.email || ''} onChanged={email => updateUser?.({ email, emailVerified: true })} />
               )}
@@ -387,9 +533,9 @@ const [showPw,  setShowPw]  = useState(false);
                 </div>
               </div>
             ))}
-            <button onClick={handleChangePw}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors">
-              Update Password
+            <button onClick={handleChangePw} disabled={changingPw}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50">
+              {changingPw ? 'Updating…' : 'Update Password'}
             </button>
           </div>
         </Section>
