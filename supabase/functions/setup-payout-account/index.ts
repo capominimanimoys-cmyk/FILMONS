@@ -175,7 +175,9 @@ Deno.serve(async (req) => {
       // and accepts ToS on the account's behalf (what tos_acceptance below
       // needs), is liable for negative balances, pays Stripe's fees, and
       // the account gets no Stripe-hosted dashboard of its own.
-      baseParams['controller[type]'] = 'application';
+      // (controller[type] is NOT a writable param -- Stripe rejects it
+      // with "Unknown parameter" -- it's a computed/response-only field
+      // derived from the sub-fields actually being set below.)
       baseParams['controller[requirement_collection]'] = 'application';
       baseParams['controller[losses][payments]'] = 'application';
       baseParams['controller[fees][payer]'] = 'application';
