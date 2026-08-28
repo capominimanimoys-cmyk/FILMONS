@@ -70,7 +70,7 @@ export function ListingDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const highlightReviewId = searchParams.get('review');
-  const { user } = useAuth();
+  const { user, showGuestPrompt } = useAuth() as any;
   const [listing, setListing]             = useState<Listing | null>(null);
   const [host, setHost]                   = useState<User | null>(null);
   const [reviews, setReviews]             = useState<Review[]>([]);
@@ -175,7 +175,15 @@ export function ListingDetail() {
     : 'Request to Rent';
 
   const handleRequest = () => {
-    if (!user) { navigate('/login'); return; }
+    if (!user) {
+      // Opportunities get the friendlier in-context prompt (same
+      // showGuestPrompt bottom sheet every other guest-gated action in this
+      // app already uses) rather than silently bouncing to /login and
+      // losing whatever they were looking at -- rental/purchase requests
+      // keep the existing behavior, unchanged.
+      if (isOpportunity) { showGuestPrompt('Sign in or create a FILMONS account to apply for Opportunities.'); return; }
+      navigate('/login'); return;
+    }
     if (isOwnListing) { toast.error("You can't request your own listing"); return; }
     setShowRequestModal(true);
   };

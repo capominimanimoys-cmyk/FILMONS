@@ -44,12 +44,20 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
   const [answers, setAnswers] = useState<string[]>(customQuestions.map(() => ''));
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(null);
+  const tier = normalizeTier(user?.accountType);
+  // Creator can't apply at all (server-side applications entitlement is 0
+  // for this tier -- see _shared/entitlements.ts) -- gated here on open,
+  // synchronously, rather than letting them fill out the whole form and
+  // only discovering this after a failed submit. The server still enforces
+  // the same limit independently on submit either way; this is purely the
+  // UX shortcut straight to the same upgrade view that path would show.
+  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(
+    tier === 'creator' ? { plan: 'creator', limit: 0 } : null,
+  );
   const [usage, setUsage] = useState<{ applications: number } | null>(null);
 
-  const tier = normalizeTier(user?.accountType);
   useEffect(() => {
-    if (!user || tier === 'business') return;
+    if (!user || tier === 'business' || tier === 'creator') return;
     getOpportunityUsage(user.id).then(u => setUsage({ applications: u.applications })).catch(() => {});
   }, [user?.id]);
 
