@@ -80,6 +80,9 @@ const TEMPLATE_PAYOUT_BANK_ATTENTION   = 'template_bfac8h2';
 // creator-liked-template.html / payout-method-updated-template.html.
 const TEMPLATE_CREATOR_LIKED           = 'template_9jesf8j';
 const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
+// Placeholder until created in the EmailJS dashboard from
+// payout-settings-accessed-template.html.
+const TEMPLATE_PAYOUT_SETTINGS_ACCESSED = 'template_payout_settings_accessed';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
@@ -422,6 +425,25 @@ export function sendPayoutMethodUpdatedEmail(p: {
     to_name: p.toName || 'there',
     action_label: p.isUpdate ? 'updated' : 'added',
     destination_label: p.destinationLabel,
+    wallet_url: 'https://filmons.app/wallet',
+  });
+}
+
+/** Someone completed the "Verify It's You" step-up gate to access payout
+ *  settings -- fires regardless of whether they go on to actually change
+ *  anything, as a security alert distinct from sendPayoutMethodUpdatedEmail
+ *  (which only fires on an actual saved change). */
+export function sendPayoutSettingsAccessedEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  verificationMethod: 'password' | 'phone' | 'oauth';
+}) {
+  const methodLabel = p.verificationMethod === 'password' ? 'your account password'
+    : p.verificationMethod === 'phone' ? 'a text code to your phone'
+    : 'your linked account';
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PAYOUT_SETTINGS_ACCESSED, {
+    to_name: p.toName || 'there',
+    verification_method: methodLabel,
+    date: new Date().toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' }),
     wallet_url: 'https://filmons.app/wallet',
   });
 }

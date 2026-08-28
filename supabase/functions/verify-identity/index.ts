@@ -5,6 +5,7 @@
 // short-lived stepUpToken (see _shared/stepUpAuth.ts) the caller must then
 // present to payout-connect-start.
 import { mintStepUpToken } from '../_shared/stepUpAuth.ts';
+import { sendPayoutSettingsAccessedEmail } from '../_shared/notificationEmails.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const json = (body: unknown, status = 200) =>
@@ -22,6 +23,15 @@ async function selectOne(table: string, filter: string) {
 }
 
 const PURPOSE = 'payout_method';
+
+// Fires for every successful step-up regardless of which method was used
+// or whether the caller goes on to actually change anything -- a security
+// alert distinct from sendPayoutMethodUpdatedEmail, which only fires on an
+// actual saved change. Fire-and-forget: never blocks or fails the step-up
+// response itself.
+function notifyPayoutSettingsAccessed(profile: any, method: 'password' | 'phone' | 'oauth') {
+  sendPayoutSettingsAccessedEmail({ toEmail: profile?.email, toName: profile?.name, verificationMethod: method }).catch(() => {});
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -50,6 +60,7 @@ Deno.serve(async (req) => {
       if (!res.ok) return json({ error: 'Incorrect password' }, 401);
 
       const stepUpToken = await mintStepUpToken(userId, PURPOSE);
+      notifyPayoutSettingsAccessed(profile, 'password');
       return json({ success: true, stepUpToken });
     }
 
@@ -71,6 +82,7 @@ Deno.serve(async (req) => {
       if (!res.ok) return json({ error: 'Incorrect or expired code' }, 401);
 
       const stepUpToken = await mintStepUpToken(userId, PURPOSE);
+      notifyPayoutSettingsAccessed(profile, 'phone');
       return json({ success: true, stepUpToken });
     }
 
@@ -88,6 +100,7 @@ Deno.serve(async (req) => {
       }
 
       const stepUpToken = await mintStepUpToken(userId, PURPOSE);
+      notifyPayoutSettingsAccessed(profile, 'oauth');
       return json({ success: true, stepUpToken });
     }
 
