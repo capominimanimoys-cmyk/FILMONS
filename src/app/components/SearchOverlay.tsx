@@ -16,7 +16,12 @@ import {
 } from '../lib/searchUtils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type TabId = 'all' | 'creators' | 'portfolio' | 'marketplace' | 'services' | 'schools';
+// Global-search categories -- deliberately separate from ListingTypeFilter
+// below (the marketplace Filter Sheet's own "Type" facet). These drive
+// which data source(s) the search bar itself fetches from; ListingTypeFilter
+// stays exactly as it was, an orthogonal refinement layered on top of
+// whatever the active category already fetched.
+type TabId = 'all' | 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities';
 type SortBy = 'best_match' | 'newest' | 'price_asc' | 'price_desc';
 
 interface ProfileRow {
@@ -34,11 +39,7 @@ interface ListingRow {
   delivery_options?: string[] | null;
   payment_methods?: string[] | null;
   created_at?: string | null;
-}
-interface PortfolioRow {
-  id: string; user_id: string; title: string; description: string | null;
-  category: string | null; media_type: string; thumbnail_url: string | null;
-  is_featured: boolean;
+  is_active?: boolean | null;
 }
 
 interface Suggestion {
@@ -47,7 +48,7 @@ interface Suggestion {
 }
 
 // ── Filter state ───────────────────────────────────────────────────────────────
-type ListingTypeFilter = 'all' | 'rental' | 'sale' | 'service' | 'talent' | 'studio';
+type ListingTypeFilter = 'all' | 'rental' | 'sale' | 'service' | 'creator' | 'studio' | 'opportunity';
 type PriceRange = 'free' | 'under50' | '50to100' | '100to250' | '250plus';
 
 interface SearchFilters {
@@ -83,7 +84,7 @@ function countActiveFilters(f: SearchFilters): number {
 }
 
 const TYPE_LABELS: Record<ListingTypeFilter, string> = {
-  all: 'All', rental: 'Rental', sale: 'Sale', service: 'Service', talent: 'Talent', studio: 'Studio',
+  all: 'All', rental: 'Rental', sale: 'Sale', service: 'Service', creator: 'Creator', studio: 'Studios', opportunity: 'Opportunity',
 };
 const PRICE_LABELS: Record<PriceRange, string> = {
   free: 'Free', under50: 'Under $50', '50to100': '$50–$100', '100to250': '$100–$250', '250plus': '$250+',
@@ -102,14 +103,21 @@ function applyFilters(
   let listings = [...rawListings];
   let users    = [...rawUsers];
 
-  if (filters.listingType !== 'all') {
+  // 'creator' has no matching listing at all -- it's a profile-type facet,
+  // not a listing one, added here for the first time alongside the
+  // existing listing types. Users stay unaffected by this switch (already
+  // narrowed independently by the Creator Options toggles below), so
+  // selecting Creator here shows every creator and zero listings.
+  if (filters.listingType === 'creator') {
+    listings = [];
+  } else if (filters.listingType !== 'all') {
     listings = listings.filter(l => {
       switch (filters.listingType) {
-        case 'rental':  return l.listing_mode === 'rent' && l.listing_type !== 'service';
-        case 'sale':    return l.listing_mode === 'sale';
-        case 'service': return l.listing_type === 'service';
-        case 'talent':  return /model|actor|actress|talent|ugc/i.test(l.title ?? '');
-        case 'studio':  return /studio/i.test(l.title ?? '');
+        case 'rental':      return isRentalListing(l);
+        case 'sale':        return isSaleListing(l);
+        case 'service':     return isServiceListing(l);
+        case 'opportunity': return isOpportunityListing(l);
+        case 'studio':      return isStudioListing(l);
         default: return true;
       }
     });
@@ -361,15 +369,37 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
 function safe(s: string) { return s.replace(/[%_\\]/g, ''); }
 
 // Columns confirmed to exist in DB (matches api.ts getAll select — no province)
-const LISTING_SELECT  = 'id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at';
+const LISTING_SELECT  = 'id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active';
 const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
-const PORTFOLIO_SELECT = 'id, user_id, title, description, category, media_type, thumbnail_url, is_featured';
+
+// ── Category classification ──────────────────────────────────────────────────
+// Mirrors the exact same rental/sale/service/studio/opportunity logic already
+// used by FilterSheet's TYPE_OPTIONS (marketplace filter) and Home.tsx's
+// buildDeck -- reused here rather than re-invented, since a global-search
+// category and the marketplace filter's "Type" facet should always agree on
+// what counts as a rental vs. a studio. Studios and Opportunities aren't
+// separate tables/listing_types the data model tracks on their own (studios
+// are just listings whose title/category mentions "studio"; opportunities are
+// listing_type = 'opportunity', with the same legacy keyword fallback Home.tsx
+// uses for older rows), so this is the only correct way to classify them.
+const isOpportunityListing = (l: ListingRow) =>
+  l.listing_type === 'opportunity' || /model|actor|actress|talent|ugc/i.test(l.title ?? '');
+const isStudioListing = (l: ListingRow) =>
+  /studio/i.test(l.title ?? '') || /studio/i.test(l.service_category ?? '');
+const isRentalListing = (l: ListingRow) =>
+  l.listing_mode === 'rent' && l.listing_type !== 'service' && !isOpportunityListing(l);
+const isSaleListing = (l: ListingRow) => l.listing_mode === 'sale';
+const isServiceListing = (l: ListingRow) => l.listing_type === 'service';
 
 async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
-  // Search: title, description, service_category, city (text fields)
+  // Search: title, description, service_category, city (text fields).
+  // is_active excludes deleted/inactive listings from every category,
+  // including opportunities (no separate "closed"/"expired" column exists
+  // in this data model -- is_active is the one real signal for that).
   const textRes = await supabase
     .from('listings')
     .select(LISTING_SELECT)
+    .eq('is_active', true)
     .or([
       `title.ilike.%${term}%`,
       `description.ilike.%${term}%`,
@@ -388,6 +418,7 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
   const tagRes = await supabase
     .from('listings')
     .select(LISTING_SELECT)
+    .eq('is_active', true)
     .filter('tags', 'cs', `{"${term}"}`)
     .limit(10);
 
@@ -425,15 +456,38 @@ async function searchProfilesByTerm(term: string): Promise<ProfileRow[]> {
   } else {
     console.log(`[Search] profiles: ${res.data?.length ?? 0} rows (term="${term}")`);
   }
-  return (res.data ?? []) as ProfileRow[];
+
+  // secondary_roles/skills/gear are jsonb string arrays -- `cs` (contains)
+  // only matches a whole element exactly, not a substring, so this is a
+  // best-effort supplement to the ilike fields above, same limitation the
+  // existing `tags` containment search on listings already accepts.
+  const jsonbRes = await supabase
+    .from('profiles')
+    .select(PROFILE_SELECT)
+    .or([
+      `secondary_roles.cs.["${term}"]`,
+      `skills.cs.["${term}"]`,
+      `gear.cs.["${term}"]`,
+    ].join(','))
+    .not('name', 'is', null)
+    .neq('name', '')
+    .limit(10);
+  if (jsonbRes.error) console.warn(`[Search] profiles jsonb error (term="${term}"):`, jsonbRes.error.message);
+
+  const seen = new Set<string>();
+  const combined: ProfileRow[] = [];
+  for (const row of [...(res.data ?? []), ...(jsonbRes.data ?? [])]) {
+    if (row?.id && !seen.has(row.id)) { seen.add(row.id); combined.push(row as ProfileRow); }
+  }
+  return combined;
 }
 
-async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings: ListingRow[]; portfolio: PortfolioRow[] }> {
+async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings: ListingRow[] }> {
   const q = rawQ.trim();
-  if (!q) return { users: [], listings: [], portfolio: [] };
+  if (!q) return { users: [], listings: [] };
 
   const needle = safe(normalize(q));
-  if (!needle) return { users: [], listings: [], portfolio: [] };
+  if (!needle) return { users: [], listings: [] };
 
   // Alias terms — single-word, no special chars
   const aliasTerms = Array.from(new Set(
@@ -450,22 +504,12 @@ async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings:
   console.log(`[Search] needle       : "${needle}"`);
   console.log(`[Search] alias terms  : [${aliasTerms.join(', ')}]`);
   console.log(`[Search] all terms    : [${allTerms.join(', ')}]`);
-  console.log('[Search] tables       : listings, profiles, portfolio_items');
+  console.log('[Search] tables       : listings, profiles');
 
   // Run all term queries in parallel
-  const [listingBatches, profileBatches, portRes] = await Promise.all([
+  const [listingBatches, profileBatches] = await Promise.all([
     Promise.all(allTerms.map(searchListingsByTerm)),
     Promise.all(allTerms.map(searchProfilesByTerm)),
-    supabase
-      .from('portfolio_items')
-      .select(PORTFOLIO_SELECT)
-      .or(`title.ilike.%${needle}%,category.ilike.%${needle}%,description.ilike.%${needle}%`)
-      .limit(10)
-      .then(r => {
-        if (r.error) console.warn('[Search] portfolio error:', r.error.message);
-        else console.log(`[Search] portfolio: ${r.data?.length ?? 0} rows`);
-        return (r.data ?? []) as PortfolioRow[];
-      }, () => [] as PortfolioRow[]),
   ]);
 
   // Deduplicate across term batches
@@ -493,9 +537,55 @@ async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings:
     scoreResult(q, b.name, b.primary_role ?? '', b.bio ?? '') -
     scoreResult(q, a.name, a.primary_role ?? '', a.bio ?? ''));
 
-  console.log(`[Search] TOTAL → ${listings.length} listings | ${users.length} profiles | ${portRes.length} portfolio`);
+  console.log(`[Search] TOTAL → ${listings.length} listings | ${users.length} profiles`);
 
-  return { users, listings, portfolio: portRes };
+  return { users, listings };
+}
+
+// ── Category browse (no query typed yet) ─────────────────────────────────────
+// Tapping a category before typing anything must show that category's
+// results immediately (spec) -- searchAll/runSearch only ever fire on a
+// non-empty query, so this is a separate, simpler DB-level fetch per
+// category: newest-first, is_active only, no text matching at all.
+async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow[]; listings: ListingRow[] }> {
+  if (category === 'all') return { users: [], listings: [] };
+
+  if (category === 'creators') {
+    const res = await supabase
+      .from('profiles')
+      .select(PROFILE_SELECT)
+      .not('name', 'is', null)
+      .neq('name', '')
+      .not('primary_role', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(24);
+    if (res.error) console.error('[Search] browse creators error:', res.error.message);
+    return { users: (res.data ?? []) as ProfileRow[], listings: [] };
+  }
+
+  let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+  switch (category) {
+    case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
+    case 'sale':           query = query.eq('listing_mode', 'sale'); break;
+    case 'services':       query = query.eq('listing_type', 'service'); break;
+    // listing_type = 'opportunity' is authoritative for newer rows, but
+    // Home.tsx's buildDeck keeps the original keyword heuristic as a
+    // fallback so older listings (tagged before that column existed) don't
+    // vanish -- matched here too, or Opportunity browse would silently
+    // return nothing for any legacy-tagged listing.
+    case 'opportunities':  query = query.or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%'); break;
+    case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
+  }
+  const res = await query.order('created_at', { ascending: false }).limit(24);
+  if (res.error) console.error(`[Search] browse ${category} error:`, res.error.message);
+  let listings = (res.data ?? []) as ListingRow[];
+  // The DB-level filter above can't express "listing_mode = rent AND not an
+  // opportunity" in one pass (isOpportunityListing also covers the legacy
+  // keyword fallback, not just listing_type) -- apply the same client-side
+  // classifier used everywhere else so a legacy talent-keyword row can't
+  // leak into Rental here despite being excluded from it everywhere else.
+  if (category === 'rental') listings = listings.filter(l => !isOpportunityListing(l));
+  return { users: [], listings };
 }
 
 // ── Trending + pre-search ──────────────────────────────────────────────────────
@@ -526,12 +616,13 @@ const CATEGORY_CHIPS = [
 ];
 
 const TABS: { id: TabId; label: string }[] = [
-  { id:'all',         label:'All'         },
-  { id:'creators',    label:'Creators'    },
-  { id:'portfolio',   label:'Portfolio'   },
-  { id:'marketplace', label:'Marketplace' },
-  { id:'services',    label:'Services'    },
-  { id:'schools',     label:'Schools'     },
+  { id:'all',           label:'All'           },
+  { id:'rental',        label:'Rental'        },
+  { id:'sale',          label:'Sales'         },
+  { id:'services',      label:'Services'      },
+  { id:'creators',      label:'Creators'      },
+  { id:'studios',       label:'Studios'       },
+  { id:'opportunities', label:'Opportunities' },
 ];
 
 // ── Motion variants ────────────────────────────────────────────────────────────
@@ -585,8 +676,9 @@ const TYPE_OPTIONS: { id: ListingTypeFilter; label: string; emoji: string }[] = 
   { id:'rental', label:'Rental', emoji:'📦' },
   { id:'sale', label:'Sale', emoji:'🏷️' },
   { id:'service', label:'Service', emoji:'🛠️' },
-  { id:'talent', label:'Talent', emoji:'🎭' },
-  { id:'studio', label:'Studio', emoji:'🏢' },
+  { id:'creator', label:'Creator', emoji:'👤' },
+  { id:'studio', label:'Studios', emoji:'🏢' },
+  { id:'opportunity', label:'Opportunity', emoji:'💼' },
 ];
 
 const PRICE_OPTIONS: { id: PriceRange; label: string }[] = [
@@ -828,24 +920,27 @@ function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: strin
   );
 }
 
-function PortfolioCard({ item, onNavigate }: { item: PortfolioRow; onNavigate: (url: string) => void }) {
+function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/host/${item.user_id}?tab=portfolio`)}
-      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
-      <div className="aspect-square bg-gray-100 overflow-hidden">
-        {item.thumbnail_url
-          ? <img src={item.thumbnail_url} className="w-full h-full object-cover" alt=""/>
-          : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">
-              {item.media_type === 'video' ? '🎬' : item.media_type === 'audio' ? '🎵' : '🖼️'}
-            </div>
+      onClick={() => onNavigate(`/listing/${l.id}`)}
+      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
+      <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
+        {l.images?.[0]
+          ? <img src={l.images[0]} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-xl opacity-25">💼</div>
         }
       </div>
-      <div className="p-2.5">
-        <p className="text-xs font-bold text-gray-900 truncate leading-snug">{item.title}</p>
-        {item.category && <p className="text-[10px] text-blue-500 mt-0.5 truncate">{item.category}</p>}
-        {item.is_featured && <p className="text-[9px] text-amber-500 font-black mt-0.5">⭐ Featured</p>}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
+        {l.city && (
+          <p className="text-[11px] text-gray-400 flex items-center gap-0.5">
+            <MapPin className="w-2.5 h-2.5 shrink-0"/>{[l.city,l.province].filter(Boolean).join(', ')}
+          </p>
+        )}
+        {l.price > 0 && <p className="text-sm font-black text-blue-600">${Number(l.price).toLocaleString()}</p>}
       </div>
+      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
     </motion.button>
   );
 }
@@ -870,22 +965,24 @@ function ResultSection({ label, count, grid=false, children }: { label:string; c
   );
 }
 
-function EmptyState({ q }: { q: string }) {
+// Singular, category-specific noun for the empty-state copy -- "rental
+// results", "creators", "opportunities", matching the exact phrasing spec'd
+// (e.g. "No rental results found for 'DJI'.", "No creators found for
+// 'Photographer'.", "No opportunities found for 'Editor'.").
+const CATEGORY_EMPTY_NOUN: Record<TabId, string> = {
+  all: 'results', rental: 'rental results', sale: 'sale results', services: 'service results',
+  creators: 'creators', studios: 'studios', opportunities: 'opportunities',
+};
+
+function EmptyState({ q, tab }: { q: string; tab: TabId }) {
+  const noun = CATEGORY_EMPTY_NOUN[tab];
   return (
     <div className="flex flex-col items-center py-20 text-center px-6">
       <span className="text-5xl mb-4">🔍</span>
-      <p className="font-black text-gray-900 mb-1.5 text-base">No results for "{q}"</p>
+      <p className="font-black text-gray-900 mb-1.5 text-base">
+        {q ? `No ${noun} found for "${q}".` : `No ${noun} available right now.`}
+      </p>
       <p className="text-sm text-gray-400 leading-relaxed">Try different keywords, a location, or browse a category.</p>
-    </div>
-  );
-}
-
-function SchoolsPlaceholder() {
-  return (
-    <div className="flex flex-col items-center py-20 text-center px-6">
-      <span className="text-5xl mb-4">🏫</span>
-      <p className="font-bold text-gray-700 mb-1">Schools coming soon</p>
-      <p className="text-sm text-gray-400 leading-relaxed">Search for film schools, colleges, and training programs across Canada.</p>
     </div>
   );
 }
@@ -988,7 +1085,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
   const [rawListings,    setRawListings]    = useState<ListingRow[]>([]);
-  const [portfolio,      setPortfolio]      = useState<PortfolioRow[]>([]);
   const [suggestions,    setSuggestions]    = useState<Suggestion[]>([]);
   const [loading,        setLoading]        = useState(false);
   const [suggLoading,    setSuggLoading]    = useState(false);
@@ -1029,16 +1125,16 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const runSearch = useCallback((query: string) => {
     if (!query.trim()) {
-      setRawUsers([]); setRawListings([]); setPortfolio([]); setResultsReady(false); return;
+      setRawUsers([]); setRawListings([]); setResultsReady(false); return;
     }
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       searchAll(query)
-        .then(({ users: u, listings: l, portfolio: p }) => {
-          setRawUsers(u); setRawListings(l); setPortfolio(p);
+        .then(({ users: u, listings: l }) => {
+          setRawUsers(u); setRawListings(l);
           setResultsReady(true);
-          if (u.length > 0 || l.length > 0 || p.length > 0) {
+          if (u.length > 0 || l.length > 0) {
             try {
               const prev: string[] = JSON.parse(localStorage.getItem('filmons_recent_searches') ?? '[]');
               const next = [query.trim(), ...prev.filter(s => s !== query.trim())].slice(0, 5);
@@ -1051,11 +1147,37 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     }, 400);
   }, []);
 
+  const hasTyped = q.trim().length > 0;
+
+  // Category browse -- a tapped category must show its own results even
+  // before any text is typed (spec). runSearch above only ever fires on a
+  // non-empty query, so this covers the complementary case: whenever the
+  // active tab isn't 'all' and there's no query text, fetch that category's
+  // newest items directly. Switching tabs while a query IS typed does NOT
+  // refetch here (hasTyped guards it) -- rawListings/rawUsers already hold
+  // every category's matches from runSearch, and the visible* filters below
+  // just change which slice of that same data is shown, keeping the typed
+  // search text exactly as the user left it.
+  useEffect(() => {
+    if (hasTyped) return;
+    if (activeTab === 'all') { setRawUsers([]); setRawListings([]); setResultsReady(false); return; }
+    let cancelled = false;
+    setLoading(true); setResultsReady(false);
+    fetchCategoryBrowse(activeTab).then(({ users, listings }) => {
+      if (cancelled) return;
+      setRawUsers(users); setRawListings(listings); setResultsReady(true); setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, hasTyped]);
+
   const handleQueryChange = (val: string) => {
-    setQ(val); setActiveTab('all'); setResultsReady(false);
+    // activeTab is deliberately left untouched -- switching from typed
+    // search back to an empty box while a category tab is selected should
+    // fall into that category's browse mode above, not reset to 'all'.
+    setQ(val); setResultsReady(false);
     if (!val.trim()) {
       setSuggestions([]); clearTimeout(suggRef.current); clearTimeout(debounceRef.current);
-      setRawUsers([]); setRawListings([]); setPortfolio([]);
+      setRawUsers([]); setRawListings([]);
       setLoading(false); setSuggLoading(false); return;
     }
     setSuggLoading(true);
@@ -1076,18 +1198,28 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // Apply filters + sort to raw results
   const { listings: filteredListings, users: filteredUsers } = applyFilters(rawListings, rawUsers, filters, sort);
 
-  const gearListings    = filteredListings.filter(l => l.listing_type !== 'service');
-  const serviceListings = filteredListings.filter(l => l.listing_type === 'service');
+  // Same classifiers used by fetchCategoryBrowse and the marketplace Filter
+  // Sheet's own Type facet -- a listing lands in a category tab's section
+  // here for exactly the same reason it would if that category were
+  // DB-fetched directly, so switching between typed-search and browse mode
+  // never changes what counts as, say, a Studio.
+  const rentalListings      = filteredListings.filter(l => isRentalListing(l));
+  const saleListings        = filteredListings.filter(l => isSaleListing(l));
+  const serviceListingsOnly = filteredListings.filter(l => isServiceListing(l));
+  const studioListings      = filteredListings.filter(l => isStudioListing(l));
+  const opportunityListings = filteredListings.filter(l => isOpportunityListing(l));
 
-  const visibleUsers     = (activeTab === 'all' || activeTab === 'creators' || activeTab === 'portfolio') ? filteredUsers : [];
-  const visibleGear      = (activeTab === 'all' || activeTab === 'marketplace') ? gearListings : [];
-  const visibleServices  = (activeTab === 'all' || activeTab === 'services') ? serviceListings : [];
-  const visiblePortfolio = (activeTab === 'all' || activeTab === 'portfolio') ? portfolio : [];
+  const visibleUsers        = (activeTab === 'all' || activeTab === 'creators')     ? filteredUsers        : [];
+  const visibleRental       = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
+  const visibleSale         = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
+  const visibleServices     = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
+  const visibleStudios      = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
+  const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings  : [];
 
-  const hasTyped   = q.trim().length > 0;
-  const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0 && portfolio.length === 0;
-  const hasResults = filteredUsers.length > 0 || filteredListings.length > 0 || portfolio.length > 0;
-  const hasVisible = visibleUsers.length > 0 || visibleGear.length > 0 || visibleServices.length > 0 || visiblePortfolio.length > 0;
+  const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
+  const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
+  const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
+    || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0;
   const showSuggestions = hasTyped && !resultsReady && !loading && (suggestions.length > 0 || suggLoading);
 
   const activeFilterCount = countActiveFilters(filters);
@@ -1130,19 +1262,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
           </div>
         </div>
 
-        {/* ── Result tabs ── */}
-        {hasTyped && (
-          <div className="shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
-            {TABS.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
-                  activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* ── Category tabs — always visible, not gated on typing, so tapping
+             one fetches that category immediately with no query typed yet ── */}
+        <div className="shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
+                activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         {/* ── Filter + Sort bar ── */}
         {hasTyped && (
@@ -1201,7 +1332,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
-          {!hasTyped ? (
+          {!hasTyped && activeTab === 'all' ? (
             <PreSearch onSelect={val => { setQ(val); runSearch(val); }}/>
           ) : showSuggestions ? (
             <div>
@@ -1214,22 +1345,22 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               <span className="text-sm">Searching…</span>
             </div>
           ) : noResults ? (
-            <EmptyState q={q}/>
+            <EmptyState q={q} tab={activeTab}/>
           ) : (
             <div className="py-2">
               {visibleUsers.length > 0 && (
-                <ResultSection label={activeTab === 'portfolio' ? '🎨 Portfolio Creators' : '👤 Creators'} count={visibleUsers.length}>
+                <ResultSection label="👤 Creators" count={visibleUsers.length}>
                   {visibleUsers.slice(0, 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {visiblePortfolio.length > 0 && activeTab !== 'creators' && (
-                <ResultSection label="🎨 Portfolio" count={visiblePortfolio.length} grid>
-                  {visiblePortfolio.map(item => <PortfolioCard key={item.id} item={item} onNavigate={handleResultNavigate}/>)}
+              {visibleRental.length > 0 && (
+                <ResultSection label="📦 Rental" count={visibleRental.length} grid>
+                  {visibleRental.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {visibleGear.length > 0 && (
-                <ResultSection label="📦 Marketplace" count={visibleGear.length} grid>
-                  {visibleGear.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+              {visibleSale.length > 0 && (
+                <ResultSection label="🏷️ Sales" count={visibleSale.length} grid>
+                  {visibleSale.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
@@ -1237,22 +1368,30 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleServices.slice(0, 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {activeTab === 'schools' && <SchoolsPlaceholder/>}
-              {hasTyped && resultsReady && !hasVisible && !noResults && activeTab !== 'schools' && (
-                <EmptyState q={q}/>
+              {visibleStudios.length > 0 && (
+                <ResultSection label="🏢 Studios" count={visibleStudios.length} grid>
+                  {visibleStudios.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                </ResultSection>
+              )}
+              {visibleOpportunities.length > 0 && (
+                <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}>
+                  {visibleOpportunities.slice(0, 10).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                </ResultSection>
+              )}
+              {resultsReady && !loading && !hasVisible && (
+                <EmptyState q={q} tab={activeTab}/>
               )}
             </div>
           )}
         </div>
 
         {/* ── Result count bar ── */}
-        {hasTyped && resultsReady && hasResults && (
+        {resultsReady && hasResults && (
           <div className="shrink-0 border-t border-gray-100 px-4 py-2.5">
             <p className="text-xs text-gray-400">
-              <span className="font-semibold text-gray-700">{filteredUsers.length + filteredListings.length + portfolio.length}</span> results
+              <span className="font-semibold text-gray-700">{filteredUsers.length + filteredListings.length}</span> results
               {filteredUsers.length    > 0 && ` · ${filteredUsers.length} creator${filteredUsers.length !== 1 ? 's' : ''}`}
               {filteredListings.length > 0 && ` · ${filteredListings.length} listing${filteredListings.length !== 1 ? 's' : ''}`}
-              {portfolio.length        > 0 && ` · ${portfolio.length} portfolio`}
             </p>
           </div>
         )}
