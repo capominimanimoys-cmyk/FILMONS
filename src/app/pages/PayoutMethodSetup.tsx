@@ -126,6 +126,22 @@ export function PayoutMethodSetup() {
     else toast.error(res.error || 'Could not remove bank account');
   };
 
+  const [startingOver, setStartingOver] = useState(false);
+  const handleStartOver = async () => {
+    if (!user?.id || !stepUpToken) return;
+    setStartingOver(true);
+    const res = await walletApi.resetPayoutAccount(user.id, stepUpToken);
+    setStartingOver(false);
+    if (res.success) {
+      toast.success('Starting over');
+      setCountry(null);
+      setDefaultMethod(null);
+      setStep('country');
+    } else {
+      toast.error(res.error || 'Could not start over');
+    }
+  };
+
   if (!isAuthenticated || !user) return null;
   if (!stepUpToken) return <VerifyItsYouGate onVerified={setStepUpToken} />;
   if (step === 'loading') {
@@ -298,6 +314,10 @@ export function PayoutMethodSetup() {
           <button onClick={() => setStep('entity')} disabled={!country}
             className="w-full mt-6 py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40">
             Continue
+          </button>
+          <button onClick={handleStartOver} disabled={startingOver}
+            className="w-full mt-3 py-2 text-center text-xs font-semibold text-gray-400 hover:text-gray-600 disabled:opacity-50">
+            {startingOver ? 'Starting over…' : 'Start over (abandon any previous payout setup attempt)'}
           </button>
         </div>
       )}

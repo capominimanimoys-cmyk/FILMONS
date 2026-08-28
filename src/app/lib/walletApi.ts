@@ -285,6 +285,25 @@ export const walletApi = {
     }
   },
 
+  /** Abandons the currently-referenced Stripe Connect account (best-effort
+   *  deleted on Stripe's side too) so the next setup attempt starts a
+   *  brand-new one -- e.g. switching entity type after already starting
+   *  one, which can't just be edited into a different business_type. */
+  async resetPayoutAccount(userId: string, stepUpToken: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/setup-payout-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userId, stepUpToken, action: 'reset' }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not reset payout setup' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  },
+
   async submitPayoutBankAccount(userId: string, stepUpToken: string, details: {
     accountHolderName: string; accountNumber: string; accountType: 'chequing' | 'savings';
     institutionNumber?: string; transitNumber?: string; // CA only

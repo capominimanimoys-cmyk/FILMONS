@@ -82,11 +82,43 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
-    const { userId, stepUpToken, country, accountHolderType, individual, company } = await req.json() as {
+    const body = await req.json();
+    const { userId, stepUpToken, country, accountHolderType, individual, company, action } = body as {
       userId?: string; stepUpToken?: string; country?: PayoutCountry; accountHolderType?: 'individual' | 'company';
       individual?: PersonInput; company?: { name: string; address: PersonInput['address']; phone?: string; representative: PersonInput };
+      action?: 'reset';
     };
-    if (!userId || !accountHolderType) return json({ error: 'Missing required fields' }, 400);
+    if (!userId) return json({ error: 'Missing required fields' }, 400);
+
+    // Abandon whatever account is currently referenced and let the next
+    // setup attempt create a brand-new one -- e.g. switching from
+    // Registered Business to Individual after already starting a company
+    // account, which can't just be edited into a different business_type
+    // once it has requirements/capabilities attached. Deletes the Stripe
+    // side too (best-effort) so an incomplete test account doesn't linger
+    // in the Connect accounts list.
+    if (action === 'reset') {
+      const validStepUp = await verifyStepUpToken(stepUpToken || '', userId, PURPOSE);
+      if (!validStepUp) return json({ error: 'Please verify your identity again — this took too long.' }, 401);
+      const profile = await selectOne('profiles', `id=eq.${userId}`);
+      const staleAccountId = profile?.stripe_connect_account_id as string | undefined;
+      const SK = Deno.env.get('STRIPE_SECRET_KEY');
+      if (staleAccountId && SK) {
+        await fetch(`https://api.stripe.com/v1/accounts/${staleAccountId}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${SK}` },
+        }).catch(() => {});
+      }
+      await fetch(rest(`/profiles?id=eq.${userId}`), {
+        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({ stripe_connect_account_id: null, stripe_connect_country: null, payout_account_type: null }),
+      });
+      await fetch(rest(`/payout_methods?host_id=eq.${userId}&stripe_connect_account_id=eq.${staleAccountId}`), {
+        method: 'DELETE', headers: H,
+      }).catch(() => {});
+      return json({ success: true });
+    }
+
+    if (!accountHolderType) return json({ error: 'Missing required fields' }, 400);
     if (accountHolderType === 'individual' && !individual) return json({ error: 'Missing individual details' }, 400);
     if (accountHolderType === 'company' && !company) return json({ error: 'Missing company details' }, 400);
 
