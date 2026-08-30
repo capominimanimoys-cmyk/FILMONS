@@ -24,10 +24,10 @@ function distanceLabel(km: number) {
 }
 
 // ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
-function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, boosted, onBoost, onViewApplicants }: {
+function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, boosted, onBoost, isEmergency, onEmergency, onViewApplicants }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
-  boosted: boolean; onBoost: () => void; onViewApplicants?: () => void;
+  boosted: boolean; onBoost: () => void; isEmergency: boolean; onEmergency: () => void; onViewApplicants?: () => void;
 }) {
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
@@ -94,6 +94,7 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
                 { icon: <Users className="w-5 h-5"/>, label: 'View Applicants', sub: 'See who applied and manage status', color: 'text-gray-900', action: () => { close(); onViewApplicants(); } },
               ] : []),
               { icon: <Zap className={`w-5 h-5 ${boosted ? 'fill-amber-500 text-amber-500' : ''}`}/>, label: boosted ? 'Manage Boost' : 'Boost Listing', sub: boosted ? 'View performance, spend, and stop this boost' : 'Promote this listing to more people', color: boosted ? 'text-amber-600' : 'text-gray-900', action: () => { close(); onBoost(); } },
+              { icon: <AlertTriangle className={`w-5 h-5 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', sub: isEmergency ? 'View status and expiration, or boost again once it ends' : 'Pay for repeated feed exposure — 72 hours or 7 days', color: isEmergency ? 'text-red-600' : 'text-gray-900', action: () => { close(); onEmergency(); } },
               { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
             ] : []),
             { icon: <Bookmark className="w-5 h-5"/>, label: saved ? 'Remove from saved' : 'Save listing', sub: saved ? 'Remove from your saved listings' : 'Add to your saved listings', color: 'text-gray-900', action: () => { onSave(); close(); } },
@@ -209,6 +210,11 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
   const [sheet,   setSheet]   = useState(false);   // three-dot click + long-press both open this
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const boosted = !!listing.boosted;
+  // Same "trust the expiry timestamp, not just the flag" check Home.tsx's
+  // feed-recycling logic uses -- is_emergency isn't cleared until the
+  // emergency-expire cron notices (every 30 min), so the flag alone can
+  // briefly lag past the real expiration.
+  const isEmergency = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
   const isOwn = !!user?.id && user.id === listing.userId;
 
   // Real, honest funnel event — logged once per listing per session, not
@@ -313,6 +319,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           onEdit={() => navigate(`/edit-listing/${listing.id}`)}
           onDeleteRequest={() => setShowDeleteConfirm(true)}
           boosted={boosted} onBoost={() => navigate(boosted ? `/boost/${listing.id}/insights` : `/boost/${listing.id}`)}
+          isEmergency={isEmergency} onEmergency={() => navigate(`/listing/${listing.id}/emergency`)}
           onViewApplicants={isOpportunity ? () => navigate(`/listing/${listing.id}/applicants`) : undefined}
         />
       )}
@@ -350,6 +357,14 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           {boosted && (
             <span className="absolute top-9 left-2.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-white flex items-center gap-0.5">
               <Zap className="w-2.5 h-2.5 fill-white" /> {isOwn ? 'Boosted' : 'Promoted'}
+            </span>
+          )}
+
+          {/* Emergency badge — stacks below Boosted if a listing is somehow
+              both at once (independent systems, not mutually exclusive). */}
+          {isEmergency && (
+            <span className={`absolute ${boosted ? 'top-16' : 'top-9'} left-2.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5`}>
+              <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
             </span>
           )}
 

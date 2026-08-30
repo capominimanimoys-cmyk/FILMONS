@@ -1,0 +1,20 @@
+name: Expire Emergency Listings
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # every 30 minutes
+  workflow_dispatch:
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call emergency-expire
+        # Same public anon key already committed in boost-expire.yml / utils/supabase/info.tsx —
+        # every function here deploys with --no-verify-jwt, so this only needs to be *a* bearer
+        # token, not a privileged one.
+        run: |
+          curl -sf -X POST \
+            "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/emergency-expire" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuYWpyZHZjd3NianFlZmFmdHNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNzE5NTgsImV4cCI6MjA5MDc0Nzk1OH0.n2oLgMfdfzmLw8KvsBrJbsFvgQ7qOgPL7tVlD-lqDiY" \
+            -H "Content-Type: application/json"

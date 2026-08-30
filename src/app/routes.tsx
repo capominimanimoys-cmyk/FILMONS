@@ -65,6 +65,7 @@ import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
 import { ShareCard }          from './pages/ShareCard';
 import { BoostListingFlow } from './pages/BoostListingFlow';
 import { BoostInsights } from './pages/BoostInsights';
+import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
 import { LikedItems } from './pages/LikedItems';
@@ -116,6 +117,7 @@ export const router = createBrowserRouter([
       { path: 'my-orders', Component: MyOrders },
       { path: 'listing/:id', Component: ListingDetail },
       { path: 'listing/:id/applicants', Component: OpportunityApplicants },
+      { path: 'listing/:id/emergency', Component: EmergencyListingFlow },
       { path: 'boost/:listingId', Component: BoostListingFlow },
       { path: 'boost/:listingId/insights', Component: BoostInsights },
       { path: 'search', Component: SearchPage },

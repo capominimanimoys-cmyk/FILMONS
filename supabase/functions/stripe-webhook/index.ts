@@ -262,6 +262,25 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
+    // Emergency Listing upgrades — same "pure platform revenue, no
+    // host-earning leg" shape as boost above, but fixed-tier pricing
+    // (72_hour/7_day) instead of a variable budget, so it gets its own
+    // finalize function rather than being forced through
+    // fn_finalize_boost_payment's budget/duration_days assumptions.
+    if (meta.charge_type === 'emergency') {
+      if (!meta.emergency_id) {
+        return new Response(JSON.stringify({ received: true, skipped: 'no emergency_id' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const amount = parseFloat(meta.amount || '0') || (session.amount_total ? session.amount_total / 100 : 0);
+      const processed = await rpc('fn_finalize_emergency_payment', {
+        p_idempotency_key: event.id,
+        p_emergency_id: meta.emergency_id,
+        p_amount: amount,
+        p_currency: 'CAD',
+      });
+      return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
     // Paid Opportunity hire funding — a separate charge type so it can
     // never fall through into the generic rental path below even though it
     // also carries host-earning-shaped metadata. Worker earnings are only

@@ -721,6 +721,9 @@ export const listingsApi = {
         isSold:          row.is_sold || false,
         soldAt:          row.sold_at || undefined,
         boosted:         row.boosted || false,
+        isEmergency:        row.is_emergency || false,
+        emergencyPlan:      row.emergency_plan || undefined,
+        emergencyExpiresAt: row.emergency_expires_at || undefined,
         insuranceRequired: !!meta.insuranceRequired,
         listingKind:     meta.listingKind || undefined,
         opportunity:     meta.opportunity || undefined,
@@ -735,7 +738,7 @@ export const listingsApi = {
       // fallback below regardless of what was actually in the database.
       const { data, error } = await supabase
         .from('listings')
-        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted')
+        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(80);
@@ -852,6 +855,9 @@ export const listingsApi = {
           isSold:          data.is_sold          || false,
           soldAt:          data.sold_at          || undefined,
           boosted:         data.boosted          || false,
+          isEmergency:        data.is_emergency || false,
+          emergencyPlan:      data.emergency_plan || undefined,
+          emergencyExpiresAt: data.emergency_expires_at || undefined,
         } as Listing;
       }
       if (error) console.warn('getOne Supabase error:', error.message);
@@ -903,6 +909,9 @@ export const listingsApi = {
             pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
             createdAt:       row.created_at,
             boosted:         row.boosted || false,
+            isEmergency:        row.is_emergency || false,
+            emergencyPlan:      row.emergency_plan || undefined,
+            emergencyExpiresAt: row.emergency_expires_at || undefined,
           } as Listing;
         });
         return listings;

@@ -194,6 +194,14 @@ export interface Listing {
   soldAt?: string;
   qualification?: string;
   boosted?: boolean;
+  /** Emergency Listing — paid fixed-tier feed recycling boost, distinct
+   *  from the variable-budget `boosted` system above (see
+   *  20240401000000_emergency_listings.sql). emergencyExpiresAt is what
+   *  Home.tsx checks to decide whether isEmergency is still actually
+   *  live, since the flag itself isn't cleared until expiry is noticed. */
+  isEmergency?: boolean;
+  emergencyPlan?: '72_hour' | '7_day';
+  emergencyExpiresAt?: string;
   insuranceRequired?: boolean;
   /** Raw CreateListing kind ('equipment-rental'|'equipment-sale'|'creative-service'|'studio'|'talent'|'job') from metadata.listingKind. 'talent' is the Opportunity category. */
   listingKind?: string;

@@ -14,6 +14,7 @@ import { SmartAddressInput, AddressComponents } from '../components/SmartAddress
 import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { emergencyApi, EMERGENCY_PLANS, type EmergencyPlan } from '../lib/emergencyApi';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type ListingKind =
@@ -126,6 +127,11 @@ interface FormState {
   shootDates: string;
   experienceRequired: string;
   applicationProcess: string;
+  // Step 10 — Emergency Listing (optional paid feed-recycling boost).
+  // null = no upgrade (free); the actual charge only ever happens after
+  // this listing is created, via emergencyApi.charge -- selecting a plan
+  // here just carries the choice through to that point.
+  emergencyPlan: EmergencyPlan | null;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -203,6 +209,7 @@ function defaultForm(): FormState {
     amenities: '', houseRules: '', height: '', skills: [],
     projectType: '', roleNeeded: '', shootDates: '', experienceRequired: '',
     applicationProcess: '',
+    emergencyPlan: null,
   };
 }
 
@@ -1187,8 +1194,9 @@ function Step9({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
 }
 
 // ── Step 10 — Review & Publish ─────────────────────────────────────────────────
-function Step10({ form, onPublish, onSaveDraft, isSubmitting }: {
+function Step10({ form, set, onPublish, onSaveDraft, isSubmitting }: {
   form: FormState;
+  set: (f: Partial<FormState>) => void;
   onPublish: () => void;
   onSaveDraft: () => void;
   isSubmitting: boolean;
@@ -1283,13 +1291,75 @@ function Step10({ form, onPublish, onSaveDraft, isSubmitting }: {
         )}
       </div>
 
+      {/* Emergency Listing — optional paid feed-recycling boost. The actual
+          Stripe charge only ever happens after this listing is created
+          (emergency-charge requires a real listing id); selecting a plan
+          here just carries the choice through to handlePublish, which
+          redirects to checkout right after the listing is inserted. */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Zap className="w-4 h-4 text-red-500"/>
+          <h3 className="text-sm font-bold text-gray-800">Make this an Emergency Listing</h3>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">Need someone fast? Boost your listing and get repeated exposure across the Filmons feed.</p>
+        <div className="space-y-2.5">
+          <button type="button" onClick={() => set({ emergencyPlan: null })}
+            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border-2 transition-all text-left ${
+              form.emergencyPlan === null ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+            <div>
+              <p className="text-sm font-bold text-gray-900">No Emergency Upgrade</p>
+              <p className="text-xs text-gray-400">Continue with standard listing visibility</p>
+            </div>
+            <span className="text-sm font-black text-gray-700">Free</span>
+          </button>
+          {EMERGENCY_PLANS.map(p => (
+            <button key={p.plan} type="button" onClick={() => set({ emergencyPlan: p.plan })}
+              className={`w-full px-4 py-3.5 rounded-2xl border-2 transition-all text-left ${
+                form.emergencyPlan === p.plan ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-red-200'
+              }`}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-gray-900">{p.label}</p>
+                <span className="text-sm font-black text-red-600">${p.amountCad.toFixed(2)} CAD</span>
+              </div>
+              <ul className="mt-2 space-y-1">
+                {[
+                  `Emergency status for ${p.durationLabel}`,
+                  'Emergency badge',
+                  'Increased feed visibility',
+                  'Listing can reappear after users swipe it',
+                  'Listing can return when users refresh or finish their available listings',
+                  ...(p.plan === '7_day' ? ['Longer Emergency exposure than the 72-hour option'] : []),
+                ].map(line => (
+                  <li key={line} className="flex items-start gap-1.5 text-[11px] text-gray-500">
+                    <Check className="w-3 h-3 text-red-400 shrink-0 mt-0.5"/> {line}
+                  </li>
+                ))}
+              </ul>
+            </button>
+          ))}
+        </div>
+        {form.emergencyPlan && (
+          <div className="mt-3 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+            <span className="text-xs font-bold text-red-700">
+              {EMERGENCY_PLANS.find(p => p.plan === form.emergencyPlan)?.label} selected
+            </span>
+            <span className="text-xs font-black text-red-700">
+              ${EMERGENCY_PLANS.find(p => p.plan === form.emergencyPlan)?.amountCad.toFixed(2)} CAD
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Actions */}
       <div className="space-y-3 pb-6">
         <button type="button" onClick={onPublish} disabled={isSubmitting}
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-4 transition-colors shadow-lg">
           {isSubmitting
             ? <><Loader2 className="w-4 h-4 animate-spin"/> Publishing…</>
-            : <><Zap className="w-4 h-4"/> Publish Listing</>}
+            : form.emergencyPlan
+              ? <><Zap className="w-4 h-4"/> Publish & Continue to Payment</>
+              : <><Zap className="w-4 h-4"/> Publish Listing</>}
         </button>
         <button type="button" onClick={onSaveDraft}
           className="w-full py-3.5 rounded-2xl border-2 border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
@@ -1313,6 +1383,24 @@ export function CreateListing() {
   const set = useCallback((updates: Partial<FormState>) => {
     setFormRaw(prev => ({ ...prev, ...updates }));
   }, []);
+
+  // Step1's Listing Type cards call set({ kind }) then setTimeout(onNext, 120)
+  // to auto-advance once the selection highlight has animated in. That
+  // setTimeout callback is *this render's* goNext/canAdvance closure,
+  // captured the instant the card was clicked -- i.e. still holding
+  // form.kind from *before* the click, since set() 's state update hasn't
+  // propagated to this closure by the time the click handler runs (React
+  // state updates are never synchronous within the same tick, so even
+  // removing the 120ms delay wouldn't fix this). 120ms later that stale
+  // closure fires, canAdvance() reads the old null kind, and the user sees
+  // "Please complete required fields" despite the real form state (and the
+  // card's own highlight) already being correct -- and has to click again
+  // before a *fresh* closure with the updated form finally lets it through.
+  // A ref sidesteps this: it's a stable, mutable box every closure (stale
+  // or not) reads from live, so canAdvance always sees the true latest
+  // form no matter which render's function instance ends up calling it.
+  const formRef = useRef(form);
+  useEffect(() => { formRef.current = form; }, [form]);
 
   // ── Auth guard ──
   useEffect(() => {
@@ -1367,13 +1455,14 @@ export function CreateListing() {
   const progress = Math.round((step / TOTAL_STEPS) * 100);
 
   const canAdvance = (): boolean => {
-    if (step===1) return !!form.kind;
-    if (step===2) return !!form.title.trim() && !!form.category && !!form.description.trim();
+    const f = formRef.current;
+    if (step===1) return !!f.kind;
+    if (step===2) return !!f.title.trim() && !!f.category && !!f.description.trim();
     if (step===4) {
-      const hasPrice=form.dailyRate||form.salePrice||form.hourlyRate||form.startingPrice;
+      const hasPrice=f.dailyRate||f.salePrice||f.hourlyRate||f.startingPrice;
       return !!hasPrice;
     }
-    if (step===8) return !!form.city.trim();
+    if (step===8) return !!f.city.trim();
     return true;
   };
 
@@ -1486,6 +1575,28 @@ export function CreateListing() {
     };
   };
 
+  // Emergency Listing's payment can only start once a real listing id
+  // exists (emergency-charge requires one), so it happens here, right
+  // after either publish path succeeds, instead of anywhere earlier in
+  // the wizard. A checkout failure still leaves the listing published --
+  // it just lands on the listing page instead of Stripe, same as if no
+  // Emergency plan had been chosen at all.
+  const finishPublish = async (listingId: string) => {
+    if (!form.emergencyPlan || !user) { navigate(`/listing/${listingId}`); return; }
+    try {
+      const origin = window.location.origin;
+      const { url } = await emergencyApi.charge({
+        listingId, ownerId: user.id, plan: form.emergencyPlan,
+        successUrl: `${origin}/listing/${listingId}/emergency?emergency_success=1&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}/listing/${listingId}`,
+      });
+      window.location.href = url;
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not start Emergency Listing checkout');
+      navigate(`/listing/${listingId}`);
+    }
+  };
+
   const handlePublish = async () => {
     if (!user) return;
     if (!form.title.trim()||!form.city.trim()) { toast.error('Title and city are required'); return; }
@@ -1556,7 +1667,7 @@ export function CreateListing() {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
         body: JSON.stringify({ type: 'followed_creator_posted', creatorId: user.id, creatorName: user.name, listingId: data.id, listingTitle: payload.title }),
       }).catch(() => {});
-      navigate(`/listing/${data.id}`);
+      await finishPublish(data.id);
     } catch (e) {
       // Fallback to edge function
       try {
@@ -1592,7 +1703,7 @@ export function CreateListing() {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
           body: JSON.stringify({ type: 'followed_creator_posted', creatorId: user.id, creatorName: user.name, listingId: listing.id, listingTitle: payload.title }),
         }).catch(() => {});
-        navigate(`/listing/${listing.id}`);
+        await finishPublish(listing.id);
       } catch (fallback) {
         toast.error(fallback instanceof Error ? fallback.message : 'Failed to publish. Please try again.');
       }
@@ -1624,7 +1735,7 @@ export function CreateListing() {
       case 7:  return <Step7 form={form} set={set}/>;
       case 8:  return <Step8 form={form} set={set}/>;
       case 9:  return <Step9 form={form} set={set}/>;
-      case 10: return <Step10 form={form} onPublish={handlePublish} onSaveDraft={handleSaveDraft} isSubmitting={isSubmitting}/>;
+      case 10: return <Step10 form={form} set={set} onPublish={handlePublish} onSaveDraft={handleSaveDraft} isSubmitting={isSubmitting}/>;
       default: return null;
     }
   };

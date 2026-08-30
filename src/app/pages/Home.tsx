@@ -8,11 +8,18 @@ import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Com
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
 import { boostApi } from '../lib/boostApi';
+import { emergencyApi } from '../lib/emergencyApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
+
+// A recycled (already-swiped) Emergency listing shouldn't reappear too
+// soon for the same viewer -- short enough that an active Emergency
+// listing still cycles back meaningfully within its 72h/7d window, long
+// enough that it never feels like it's just following the user around.
+const EMERGENCY_RECYCLE_COOLDOWN_HOURS = 2;
 
 // ── Filter system ─────────────────────────────────────────────────────────────
 type FilterId = 'all' | 'rentals' | 'sales' | 'services' | 'creators' | 'studios' | 'talent';
@@ -175,9 +182,37 @@ export function Home() {
       // Already-left-swiped items are a permanent skip (Tinder-style) --
       // filtered out here, before buildDeck(), so every filter tab and any
       // reload excludes them consistently instead of just the current one.
+      // Active Emergency listings are the one deliberate exception: they're
+      // exempt from this permanent exclusion (paid feed-recycling is the
+      // whole point), so a previously-swiped one can legitimately come
+      // back as long as its Emergency period hasn't expired yet.
       if (excluded.size) {
-        l = l.filter(x => !excluded.has(x.id));
+        const isActiveEmergency = (x: EnrichedListing) =>
+          !!x.isEmergency && !!x.emergencyExpiresAt && new Date(x.emergencyExpiresAt) > new Date();
+        const recycledIds = l.filter(x => excluded.has(x.id) && isActiveEmergency(x)).map(x => x.id);
+
+        // Spacing: a recycled Emergency listing shouldn't resurface too
+        // soon after this viewer was already shown it this same way --
+        // hold it back for a cooldown window rather than letting it cycle
+        // back on literally every refresh.
+        let onCooldown = new Set<string>();
+        if (user?.id && recycledIds.length) {
+          try {
+            const seen = await emergencyApi.getRecentlySeenEmergency(user.id, recycledIds, EMERGENCY_RECYCLE_COOLDOWN_HOURS);
+            onCooldown = new Set(Object.keys(seen));
+          } catch {}
+        }
+
+        l = l.filter(x => !excluded.has(x.id) || (isActiveEmergency(x) && !onCooldown.has(x.id)));
         c = c.filter(x => !excluded.has(x.id));
+
+        // Log an impression for whichever recycled Emergency listings
+        // actually made it into this deck, so the next fetch's cooldown
+        // check above knows to hold them back for a while.
+        if (user?.id) {
+          l.filter(x => excluded.has(x.id) && isActiveEmergency(x))
+            .forEach(x => emergencyApi.logImpression(x.id, user.id));
+        }
       }
       // getAll() already returns a blended order (organic recency + decayed
       // boost weight + jitter) — do NOT re-sort by createdAt here, that
