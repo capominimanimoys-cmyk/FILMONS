@@ -13,6 +13,7 @@ import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.t
 import { sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
 import { addBusinessDays } from '../_shared/businessDays.ts';
 import { normalizeTier } from '../_shared/entitlements.ts';
+import { coveredDates } from '../_shared/bookingDates.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -525,12 +526,49 @@ Deno.serve(async (req) => {
             });
           }
 
+          // Authoritative double-booking guard — stripe-charge already
+          // rejected checkout up front for a date that was already
+          // confirmed-booked, but payment has now actually happened, so
+          // this is the real, atomic claim (fn_claim_booking_dates locks
+          // per-listing and checks+inserts every date as one all-or-
+          // nothing operation). A conflict here means two checkouts for
+          // the same date both made it past stripe-charge's early check
+          // and both got charged — rare (stripe-charge already closes the
+          // common case), but this app has no refund-on-conflict flow, so
+          // it's flagged for manual review rather than silently claimed
+          // anyway or silently dropped.
+          if (agRow.listing_id) {
+            const bookedDates = coveredDates(details.startDate, details.duration, details.durationType);
+            if (bookedDates.length) {
+              const claimed = await rpc('fn_claim_booking_dates', {
+                p_listing_id: agRow.listing_id, p_order_id: orderId, p_rental_agreement_id: agRow.id,
+                p_renter_id: agRow.renter_id, p_dates: bookedDates,
+              });
+              if (claimed === false) {
+                console.error(`[booking] date conflict at webhook time for order ${orderId}, listing ${agRow.listing_id}, dates ${bookedDates.join(',')} — payment already succeeded, needs manual review`);
+                if (hostId) {
+                  await insertNotification({
+                    user_id: hostId, actor_id: null, actor_name: 'Filmons',
+                    type: 'system_notification', title: `Double-booking detected for ${details.listingTitle || 'a listing'} — contact support`,
+                    conversation_id: meta.conversation_id || null, is_read: false,
+                  });
+                }
+              }
+            }
+          }
+
           const sharedParams = {
             ref_no: agRow.agreement_number, renter_name: renterName, renter_email: agRow.verified_email || '',
             renter_phone: agRow.verified_phone || '', host_name: hostProfile?.name || '—',
             listing_title: details.listingTitle || '—', listing_type: details.listingType || 'Rental',
             start_date: details.startDate || '—', duration: `${details.duration || 1} ${details.durationType || 'day'}(s)`,
-            payment_method: 'Credit/Debit Card', total_amount: `$${total.toFixed(2)}`, agreement_url: '', receipt_url: '',
+            payment_method: 'Credit/Debit Card', total_amount: `$${total.toFixed(2)}`,
+            // Real "view booking" link -- previously always sent as an
+            // empty string, so the confirmation email had no working link
+            // at all despite its own copy telling the recipient to go
+            // check Dashboard -> Orders. Both host and renter can look the
+            // same order up from there regardless of role.
+            agreement_url: 'https://filmons.app/my-orders', receipt_url: 'https://filmons.app/my-orders',
             greeting_message: 'Your payment is confirmed! View your rental agreement and receipt anytime from Dashboard → Orders.',
             year: String(new Date().getFullYear()),
           };

@@ -83,6 +83,11 @@ const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
 const TEMPLATE_PAYOUT_SETTINGS_ACCESSED = 'template_lwifwd7';
 const TEMPLATE_GUEST_SUPPORT_ADMIN     = 'template_ecla4ki';
 const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_qr9tadk';
+// Placeholder until created in the EmailJS dashboard from
+// booking-reminder-template.html and the real id is swapped in. Same
+// template sent to both host and renter -- audience-specific wording is
+// handled by the `recipient_role` param, not a second template.
+const TEMPLATE_BOOKING_REMINDER        = 'template_bkgremind1';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
@@ -180,6 +185,23 @@ export function sendRentalDeclinedEmail(p: {
     from_name: p.fromName,
     listing_title: p.listingTitle,
     browse_url: 'https://filmons.app/',
+  });
+}
+
+export function sendBookingReminderEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  recipientRole: 'host' | 'renter'; listingTitle: string;
+  bookingDate: string; bookingTime?: string | null; timeframe: '3 days' | '24 hours';
+  orderId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_BOOKING_REMINDER, {
+    to_name: p.toName || 'there',
+    recipient_role: p.recipientRole,
+    listing_title: p.listingTitle,
+    booking_date: p.bookingDate,
+    booking_time: p.bookingTime || '',
+    timeframe: p.timeframe,
+    order_url: `https://filmons.app/my-orders`,
   });
 }
 

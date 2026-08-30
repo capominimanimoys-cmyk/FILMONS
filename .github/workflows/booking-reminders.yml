@@ -1,0 +1,20 @@
+name: Send Booking Reminders
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # every 6 hours -- date-based reminders, no need for 30-min granularity
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call booking-reminders
+        # Same public anon key already committed in boost-expire.yml / utils/supabase/info.tsx —
+        # every function here deploys with --no-verify-jwt, so this only needs to be *a* bearer
+        # token, not a privileged one.
+        run: |
+          curl -sf -X POST \
+            "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/booking-reminders" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuYWpyZHZjd3NianFlZmFmdHNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNzE5NTgsImV4cCI6MjA5MDc0Nzk1OH0.n2oLgMfdfzmLw8KvsBrJbsFvgQ7qOgPL7tVlD-lqDiY" \
+            -H "Content-Type: application/json"

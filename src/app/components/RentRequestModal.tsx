@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import {
   X, Clock, Package, Send, CheckCircle,
@@ -65,11 +65,34 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(() => new Date());
 
-  // Unavailable dates from listing metadata
+  // Real, server-confirmed unavailability -- listing_bookings (a
+  // confirmed date from a paid booking, released on cancellation/full
+  // refund) plus the host's manually-blocked_dates column. Neither was
+  // previously read here; only the legacy metadata.unavailableDates
+  // (auto-set client-side on accept, never cleared) was. Both sources are
+  // merged below so an old metadata-only listing doesn't regress.
+  const [serverUnavailable, setServerUnavailable] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [{ data: bookings }, { data: listingRow }] = await Promise.all([
+        supabase.from('listing_bookings').select('booking_date').eq('listing_id', listing.id).eq('status', 'confirmed'),
+        supabase.from('listings').select('blocked_dates').eq('id', listing.id).maybeSingle(),
+      ]);
+      if (cancelled) return;
+      const dates = new Set<string>();
+      (bookings || []).forEach((b: any) => { if (b.booking_date) dates.add(b.booking_date); });
+      const blocked = listingRow?.blocked_dates;
+      if (Array.isArray(blocked)) blocked.forEach((d: string) => dates.add(d));
+      setServerUnavailable(dates);
+    })();
+    return () => { cancelled = true; };
+  }, [listing.id]);
+
   const unavailableDates = useMemo<Set<string>>(() => {
-    const dates = (listing as any).unavailableDates || [];
-    return new Set(Array.isArray(dates) ? dates : []);
-  }, [listing]);
+    const legacy = (listing as any).unavailableDates || [];
+    return new Set([...(Array.isArray(legacy) ? legacy : []), ...serverUnavailable]);
+  }, [listing, serverUnavailable]);
 
   // Compute which dates are selected (startDate + duration)
   const selectedDates = useMemo<Set<string>>(() => {

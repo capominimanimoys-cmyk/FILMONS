@@ -97,6 +97,15 @@ Deno.serve(async (req) => {
       p_reason: reqRow.reason || null,
     });
 
+    // A full refund is this app's only real "cancel a confirmed booking"
+    // signal today (no separate cancel flow exists) -- release the dates
+    // it held so another renter can book them. A partial refund is left
+    // alone since the booking itself isn't necessarily being cancelled.
+    if (Number(reqRow.amount) >= Number(order.total_amount)) {
+      await rpc('fn_release_booking_dates', { p_order_id: reqRow.order_id }).catch(e =>
+        console.error('fn_release_booking_dates failed for', reqRow.order_id, e));
+    }
+
     await fetch(rest(`/refund_requests?id=eq.${refundRequestId}`), {
       method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
       body: JSON.stringify({ status: 'processed', processed_at: new Date().toISOString(), processed_by: adminName || 'Admin', stripe_refund_id: stripeRefundId }),
