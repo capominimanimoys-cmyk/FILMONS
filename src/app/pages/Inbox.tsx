@@ -2073,28 +2073,61 @@ export function Inbox() {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
     if (!isVideo && !isImage) { toast.error('Only images and videos supported'); return; }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      const tempMsg: ChatMessage = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        conversationId: activeConv.id,
-        senderId: user.id,
-        senderName: user.name,
-        senderAvatar: user.avatar,
-        type: 'media',
-        mediaUrl: dataUrl,
-        mediaType: isVideo ? 'video' : 'image',
-        createdAt: new Date().toISOString(),
-        read: false,
-      };
-      appendMsg(activeConv.id, tempMsg);
-      try {
-        chatApi.sendMessageToDB(activeConv.id, tempMsg, activeConv.participantIds, activeConv.isRequest ?? false, activeConv.requestedBy ?? null);
-      } catch (e) { console.error('[Inbox] file send failed:', e); toast.error('Failed to send file'); }
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+
+    const convId = activeConv.id;
+    const participantIds = activeConv.participantIds;
+    const isRequest = activeConv.isRequest ?? false;
+    const requestedBy = activeConv.requestedBy ?? null;
+
+    // A video read as a data: URL is easily 50-100MB+ of base64 text --
+    // that reliably hangs the tab and/or blows past the messages insert's
+    // request size limit, which is exactly why "send video" didn't work
+    // while images (small enough to usually squeak under that limit) did.
+    // Upload to Storage instead, same bucket/pattern listingsApi.uploadVideo
+    // already uses, and use a local blob: URL for the sender's own instant
+    // preview while that upload is in flight.
+    const localUrl = URL.createObjectURL(file);
+    const tempMsg: ChatMessage = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      conversationId: convId,
+      senderId: user.id,
+      senderName: user.name,
+      senderAvatar: user.avatar,
+      type: 'media',
+      mediaUrl: localUrl,
+      mediaType: isVideo ? 'video' : 'image',
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    appendMsg(convId, tempMsg);
+
+    (async () => {
+      try {
+        const ext = file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+        const path = `chat/${convId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { data, error } = await supabase.storage
+          .from('listings')
+          .upload(path, file, { contentType: file.type, upsert: true });
+        if (error || !data) throw new Error(error?.message || 'Upload failed');
+        const { data: pub } = supabase.storage.from('listings').getPublicUrl(data.path);
+        if (!pub?.publicUrl) throw new Error('Uploaded but no public URL was returned');
+
+        const finalMsg: ChatMessage = { ...tempMsg, mediaUrl: pub.publicUrl };
+        setConversations(prev => prev.map(c =>
+          c.id !== convId ? c : { ...c, messages: c.messages.map(m => m.id === tempMsg.id ? finalMsg : m) }
+        ));
+        await chatApi.sendMessageToDB(convId, finalMsg, participantIds, isRequest, requestedBy);
+      } catch (err: any) {
+        console.error('[Inbox] file send failed:', err);
+        toast.error(isVideo ? 'Failed to send video' : 'Failed to send file');
+        setConversations(prev => prev.map(c =>
+          c.id !== convId ? c : { ...c, messages: c.messages.filter(m => m.id !== tempMsg.id) }
+        ));
+      } finally {
+        URL.revokeObjectURL(localUrl);
+      }
+    })();
   };
 
   const startRecording = async () => {
