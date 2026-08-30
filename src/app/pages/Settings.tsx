@@ -147,7 +147,7 @@ export function Settings() {
         };
         const nextSub: Record<string, string> = {
           creator:      'Free with ID verification',
-          creator_plus: '$9.99/month · 5 Opportunities/mo',
+          creator_plus: '$9.99/month · 5 Opportunities/wk',
           professional: '$19.99/month · unlimited Opportunities',
           business:     '',
         };

@@ -646,9 +646,10 @@ export function CreateOpportunity() {
 
   // Unlike gear/studio rental listings (which do require Creator+
   // verification), posting an Opportunity only requires being signed in —
-  // every account tier has a monthly Opportunity posting entitlement
-  // (see src/app/lib/entitlements.ts; plain Creator and Creator+ both get
-  // 2/month for free, Creator+ verification doesn't raise the limit).
+  // every account tier has an Opportunity posting entitlement, weekly for
+  // Creator/Professional and monthly for Creator+/Business (see
+  // src/app/lib/entitlements.ts; plain Creator and Creator+ both get 2 for
+  // free, Creator+ verification doesn't raise the limit).
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
   }, [isAuthenticated]);
@@ -834,9 +835,10 @@ export function CreateOpportunity() {
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-      // Server-verified — enforces the monthly posting entitlement
-      // atomically (fn_publish_opportunity), never a client-side pre-check
-      // followed by a direct insert.
+      // Server-verified — enforces the posting entitlement (weekly for
+      // Creator/Professional, monthly for Creator+) atomically
+      // (fn_publish_opportunity), never a client-side pre-check followed by
+      // a direct insert.
       const result = await entitlementsApi.publishOpportunity(user.id, {
         ...payload, id: newId, user_id: user.id, created_at: new Date().toISOString(), is_active: true,
       });

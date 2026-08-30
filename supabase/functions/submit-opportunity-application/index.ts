@@ -1,11 +1,14 @@
 // Server-verified submission of an Opportunity application — replaces
-// ApplyModal.tsx's old direct client insert. Enforces the monthly
-// application entitlement (2 for Creator/Creator+, 5 for Professional,
-// unlimited for Business) atomically via fn_submit_opportunity_application
-// (pg_advisory_xact_lock keyed on applicant+month), so two simultaneous
-// submissions can't both slip past the same limit. The account tier used
-// to resolve the limit is looked up fresh from `profiles` here, never
-// trusted from the client — same trust model as delete-listing.
+// ApplyModal.tsx's old direct client insert. Enforces the application
+// entitlement (2 for Creator/Creator+, 5 for Professional, unlimited for
+// Business) atomically via fn_submit_opportunity_application
+// (pg_advisory_xact_lock keyed on applicant+window), so two simultaneous
+// submissions can't both slip past the same limit. The reset window is
+// resolved per-tier (weekly for Creator/Professional, monthly for
+// Creator+/Business — see _shared/entitlements.ts's `window` field). The
+// account tier used to resolve the limit is looked up fresh from
+// `profiles` here, never trusted from the client — same trust model as
+// delete-listing.
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -25,6 +28,7 @@ async function selectOne(table: string, filter: string) {
 }
 
 import { ENTITLEMENTS, normalizeTier } from '../_shared/entitlements.ts';
+import { windowStart } from '../_shared/limitWindow.ts';
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
 import { sendNewApplicationEmail } from '../_shared/notificationEmails.ts';
 
@@ -51,6 +55,7 @@ Deno.serve(async (req) => {
         p_message: message || null, p_portfolio_url: portfolioUrl || null, p_resume_url: resumeUrl || null,
         p_demo_reel_url: demoReelUrl || null, p_availability: availability || null,
         p_expected_rate: expectedRate || null, p_custom_answers: customAnswers || {},
+        p_window_start: windowStart(ENTITLEMENTS[tier].window).toISOString(),
       }),
     });
     const data = await res.json();

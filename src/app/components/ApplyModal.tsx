@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { boostApi } from '../lib/boostApi';
-import { entitlementsApi, getOpportunityUsage, getEntitlement, LimitReachedInfo } from '../lib/entitlements';
+import { entitlementsApi, getOpportunityUsage, getEntitlement, resetLabel, LimitReachedInfo } from '../lib/entitlements';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { OpportunityLimitUpgrade } from './OpportunityLimitUpgrade';
 
@@ -58,7 +58,7 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
 
   useEffect(() => {
     if (!user || tier === 'business' || tier === 'creator') return;
-    getOpportunityUsage(user.id).then(u => setUsage({ applications: u.applications })).catch(() => {});
+    getOpportunityUsage(user.id, user.accountType).then(u => setUsage({ applications: u.applications })).catch(() => {});
   }, [user?.id]);
 
   const handleApply = async () => {
@@ -71,9 +71,10 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
     try {
       const customAnswers = Object.fromEntries(customQuestions.map((q, i) => [q, answers[i] || '']).filter(([, a]) => a));
 
-      // Server-verified — enforces the monthly application entitlement
-      // atomically (fn_submit_opportunity_application), never a client-side
-      // pre-check followed by a direct insert.
+      // Server-verified — enforces the application entitlement (weekly for
+      // Creator/Professional, monthly for Creator+) atomically
+      // (fn_submit_opportunity_application), never a client-side pre-check
+      // followed by a direct insert.
       const result = await entitlementsApi.submitOpportunityApplication({
         userId: user.id, listingId: listing.id, ownerId: host.id,
         message: message.trim() || undefined, portfolioUrl: portfolioUrl.trim() || undefined,
@@ -235,7 +236,8 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
 
             {usage && tier !== 'business' && (
               <p className="text-center text-[11px] text-gray-400">
-                Opportunity applications — {usage.applications} of {getEntitlement(user?.accountType).applications} used this month
+                Opportunity applications — {usage.applications} of {getEntitlement(user?.accountType).applications} used this {getEntitlement(user?.accountType).window}
+                {' · '}{resetLabel(getEntitlement(user?.accountType).window)}
               </p>
             )}
 

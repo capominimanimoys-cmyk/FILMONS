@@ -57,8 +57,8 @@ const TIERS: {
     requires: 'Creator+ required',
     requiresTier: 'creator_plus',
     ownFeatures: [
-      `${formatLimit(ENTITLEMENTS.professional.posts)} Opportunity posts / month`,
-      `${formatLimit(ENTITLEMENTS.professional.applications)} Opportunity applications / month`,
+      `${formatLimit(ENTITLEMENTS.professional.posts)} Opportunity posts / ${ENTITLEMENTS.professional.window}`,
+      `${formatLimit(ENTITLEMENTS.professional.applications)} Opportunity applications / ${ENTITLEMENTS.professional.window}`,
       '✓ Verified Professional badge',
       'Professionally verified portfolio',
       'Priority creator & service discovery',
@@ -175,7 +175,7 @@ export function AccountUpgrade() {
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto"><ShieldCheck className="w-8 h-8 text-green-600" /></div>
           <div>
             <h2 className="text-lg font-black text-gray-900">Welcome to Filmons {tier.label} ✓</h2>
-            <p className="text-sm text-gray-500 mt-1">Your {tier.label} account is now active. You can now post and apply to {activatedPlan === 'business' ? 'unlimited' : `up to ${ENTITLEMENTS[activatedPlan].posts}`} Opportunities each month.</p>
+            <p className="text-sm text-gray-500 mt-1">Your {tier.label} account is now active. You can now post and apply to {activatedPlan === 'business' ? 'unlimited' : `up to ${ENTITLEMENTS[activatedPlan].posts}`} Opportunities {activatedPlan === 'business' ? 'each month' : `each ${ENTITLEMENTS[activatedPlan].window}`}.</p>
           </div>
           <div className="flex flex-col gap-2">
             <button onClick={() => navigate('/')} className="w-full py-3.5 rounded-2xl text-white font-bold text-sm" style={{ background: tier.accentColor }}>Explore Opportunities</button>

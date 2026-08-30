@@ -1,9 +1,11 @@
 // Server-verified first-time publish of an Opportunity listing — replaces
 // CreateOpportunity.tsx's direct client insert (only for the initial
 // publish; editing an already-published listing stays a direct client
-// update, since it doesn't consume a new monthly slot). Enforces the
-// monthly posting entitlement atomically via fn_publish_opportunity
-// (pg_advisory_xact_lock keyed on owner+month). Account tier is looked up
+// update, since it doesn't consume a new slot). Enforces the posting
+// entitlement atomically via fn_publish_opportunity (pg_advisory_xact_lock
+// keyed on owner+window), with the reset window itself resolved per-tier
+// (weekly for Creator/Professional, monthly for Creator+/Business — see
+// _shared/entitlements.ts's `window` field). Account tier is looked up
 // fresh from `profiles` here, never trusted from the client.
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +26,7 @@ async function selectOne(table: string, filter: string) {
 }
 
 import { ENTITLEMENTS, normalizeTier } from '../_shared/entitlements.ts';
+import { windowStart } from '../_shared/limitWindow.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -41,7 +44,10 @@ Deno.serve(async (req) => {
 
     const res = await fetch(rest('/rpc/fn_publish_opportunity'), {
       method: 'POST', headers: H,
-      body: JSON.stringify({ p_owner_id: userId, p_limit: limit, p_row: row }),
+      body: JSON.stringify({
+        p_owner_id: userId, p_limit: limit, p_row: row,
+        p_window_start: windowStart(ENTITLEMENTS[tier].window).toISOString(),
+      }),
     });
     const data = await res.json();
     if (!res.ok) {

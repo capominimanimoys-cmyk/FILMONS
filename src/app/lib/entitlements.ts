@@ -7,19 +7,24 @@ import { AccountTier, normalizeTier } from './reliabilityApi';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export interface TierEntitlement {
-  posts: number | null;        // Opportunity publishes per calendar month; null = unlimited
-  applications: number | null; // Opportunity applications per calendar month; null = unlimited
-  priceCents: number;          // CAD, per month; 0 = free
+  posts: number | null;        // Opportunity publishes per `window`; null = unlimited
+  applications: number | null; // Opportunity applications per `window`; null = unlimited
+  priceCents: number;          // CAD, per month (billing cadence -- unrelated to `window`); 0 = free
   swipesPerDay: number | null; // Home deck Like+Pass swipes per calendar day; null = unlimited
+  // Reset cadence for posts/applications specifically -- must match
+  // supabase/functions/_shared/entitlements.ts's `window` field exactly,
+  // or this file's usage/reset display would disagree with what the
+  // server actually enforces.
+  window: 'week' | 'month';
 }
 
 export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
   // applications: 0 -- Creator+ is now mandatory to apply for Opportunities
-  // at all (Creator can still post the 2/month free Opportunity listings).
-  creator:      { posts: 2,    applications: 0,    priceCents: 0,    swipesPerDay: 10   },
-  creator_plus: { posts: 2,    applications: 2,    priceCents: 0,    swipesPerDay: 25   },
-  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null },
-  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null },
+  // at all (Creator can still post the 2/week free Opportunity listings).
+  creator:      { posts: 2,    applications: 0,    priceCents: 0,    swipesPerDay: 10,   window: 'week'  },
+  creator_plus: { posts: 2,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'month' },
+  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
+  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
 };
 
 export function getEntitlement(accountType?: string): TierEntitlement {
@@ -34,13 +39,44 @@ export function formatPrice(cents: number): string {
   return cents === 0 ? 'Free' : `$${(cents / 100).toFixed(2)}`;
 }
 
-// Real COUNT reads (this month, regardless of later status) — display only,
-// never used to enforce anything. Reads are always fine client-side per
-// this app's open-RLS convention; only the write path is server-enforced.
-export async function getOpportunityUsage(userId: string): Promise<{ posts: number; applications: number }> {
-  const monthStart = new Date();
-  monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-  const iso = monthStart.toISOString();
+// Same boundary logic as supabase/functions/_shared/limitWindow.ts's
+// windowStart() -- kept as a separate copy since one runs in Deno and one
+// in the browser, but must compute the identical Monday-00:00-UTC (or
+// month-start) instant or the usage/reset display shown here would
+// disagree with what the server actually enforced.
+export function windowStart(unit: 'week' | 'month', now: Date = new Date()): Date {
+  if (unit === 'month') {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  }
+  const day = now.getUTCDay();
+  const daysSinceMonday = day === 0 ? 6 : day - 1;
+  const monday = new Date(now);
+  monday.setUTCDate(now.getUTCDate() - daysSinceMonday);
+  return new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate(), 0, 0, 0, 0));
+}
+
+// "Resets Monday" for a weekly window; "Resets [Month] 1" for monthly.
+// Display-only, purely derived from `unit` -- never a separate stored date.
+export function resetLabel(unit: 'week' | 'month', now: Date = new Date()): string {
+  if (unit === 'month') {
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return `Resets ${next.toLocaleDateString('en-CA', { month: 'long', day: 'numeric' })}`;
+  }
+  const nextMonday = new Date(windowStart('week', now));
+  nextMonday.setUTCDate(nextMonday.getUTCDate() + 7);
+  const daysLeft = Math.ceil((nextMonday.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+  if (daysLeft <= 1) return 'Weekly limit resets tomorrow';
+  return `Weekly limit resets in ${daysLeft} days`;
+}
+
+// Real COUNT reads (within the current window, regardless of later status)
+// — display only, never used to enforce anything. Reads are always fine
+// client-side per this app's open-RLS convention; only the write path is
+// server-enforced. Window is tier-aware (weekly for Creator/Professional,
+// monthly for Creator+/Business) so this never shows a monthly count
+// against a weekly limit or vice versa.
+export async function getOpportunityUsage(userId: string, accountType?: string): Promise<{ posts: number; applications: number }> {
+  const iso = windowStart(getEntitlement(accountType).window).toISOString();
 
   const [{ count: posts }, { count: applications }] = await Promise.all([
     supabase.from('listings').select('id', { count: 'exact', head: true })

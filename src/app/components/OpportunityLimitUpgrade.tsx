@@ -17,9 +17,11 @@ function UsageBar({ used, limit }: { used: number; limit: number }) {
   );
 }
 
-// Shown inline (never a navigation away) whenever a monthly Opportunity
-// entitlement is hit — preserves whatever draft/form the caller had open,
-// since the caller only swaps this view in without touching its own state.
+// Shown inline (never a navigation away) whenever an Opportunity
+// entitlement is hit (weekly for Creator/Professional, monthly for
+// Creator+ — see entitlements.ts's `window` field) — preserves whatever
+// draft/form the caller had open, since the caller only swaps this view in
+// without touching its own state.
 // The reported usage is always the limit itself (that's why this is
 // showing at all) — no extra fetch needed for the progress bar.
 export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgradeToCreatorPlus, onMaybeLater }: {
@@ -34,6 +36,10 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
 }) {
   const nounPlural = kind === 'applications' ? 'applications' : 'posts';
   const isPosts = kind === 'posts';
+  const windowUnit = ENTITLEMENTS[plan]?.window ?? 'month';
+  const resetsNote = windowUnit === 'week'
+    ? `Your ${limit} ${nounPlural} reset next week.`
+    : `Your ${limit} ${nounPlural} reset next month.`;
 
   // Creator can't apply for Opportunities at all (limit is 0) -- a
   // distinct message from the "you've used your monthly cap" case below,
@@ -75,7 +81,7 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
           <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
           <p className="text-base font-black text-gray-900">Opportunity limit reached</p>
           <p className="text-sm text-gray-500">
-            You've used all {limit} Opportunity {nounPlural} included with Professional this month.
+            You've reached your weekly Opportunity {kind === 'applications' ? 'application' : 'posting'} limit. {resetsNote}
           </p>
         </div>
 
@@ -103,9 +109,10 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
         <p className="text-base font-black text-gray-900">Opportunity limit reached</p>
         <p className="text-sm text-gray-500">
           {kind === 'applications'
-            ? `You've reached your monthly Opportunity application limit.`
-            : `You've reached your monthly Opportunity posting limit.`}
-          {' '}Creator and Creator+ accounts can {kind === 'applications' ? 'submit' : 'publish'} up to {limit} Opportunit{limit === 1 ? 'y' : 'ies'} per month.
+            ? `You've reached your ${windowUnit}ly Opportunity application limit.`
+            : `You've reached your ${windowUnit}ly Opportunity posting limit.`}
+          {' '}{resetsNote}
+          {' '}Your plan can {kind === 'applications' ? 'submit' : 'publish'} up to {limit} Opportunit{limit === 1 ? 'y' : 'ies'} per {windowUnit}.
         </p>
       </div>
 
@@ -117,7 +124,7 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
           <p className="text-sm font-black text-purple-700">PROFESSIONAL</p>
         </div>
         <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.professional.priceCents)} CAD / month</p>
-        <p className="text-xs text-gray-600">{ENTITLEMENTS.professional.posts} Opportunity {nounPlural} / month</p>
+        <p className="text-xs text-gray-600">{ENTITLEMENTS.professional.posts} Opportunity {nounPlural} / {ENTITLEMENTS.professional.window}</p>
         <button onClick={() => onUpgrade('professional')} className="w-full py-2.5 rounded-xl bg-purple-600 text-white font-bold text-sm">Upgrade to Professional</button>
       </div>
 

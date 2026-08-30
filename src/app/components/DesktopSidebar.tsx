@@ -22,7 +22,7 @@ const NEXT_TIER_LABEL: Record<string, string> = {
   professional: 'Upgrade to Business', business: '',
 };
 const NEXT_TIER_SUB: Record<string, string> = {
-  creator: 'Free with ID verification', creator_plus: '$9.99/month · 5 Opportunities/mo',
+  creator: 'Free with ID verification', creator_plus: '$9.99/month · 5 Opportunities/wk',
   professional: '$19.99/month · unlimited Opportunities', business: '',
 };
 

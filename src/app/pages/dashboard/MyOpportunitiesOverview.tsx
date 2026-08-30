@@ -13,7 +13,7 @@ import { Briefcase, Users, Share2, Pencil } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Listing } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { getEntitlement, getOpportunityUsage, formatLimit } from '../../lib/entitlements';
+import { getEntitlement, getOpportunityUsage, formatLimit, resetLabel } from '../../lib/entitlements';
 import { normalizeTier } from '../../lib/reliabilityApi';
 
 interface Counts { all: number; new: number; shortlisted: number; accepted: number; }
@@ -29,7 +29,7 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
 
   useEffect(() => {
     if (!user) return;
-    getOpportunityUsage(user.id).then(setUsage).catch(() => {});
+    getOpportunityUsage(user.id, user.accountType).then(setUsage).catch(() => {});
   }, [user?.id]);
 
   useEffect(() => {
@@ -74,15 +74,18 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
       <div>
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide flex items-center gap-1"><Briefcase className="w-3 h-3" /> Opportunity Posts</p>
         <p className="text-sm font-bold text-gray-900">
-          {tier === 'business' ? 'Unlimited' : `${usage?.posts ?? 0} / ${formatLimit(entitlement.posts)} this month`}
+          {tier === 'business' ? 'Unlimited' : `${usage?.posts ?? 0} / ${formatLimit(entitlement.posts)} this ${entitlement.window}`}
         </p>
       </div>
       <div>
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide flex items-center gap-1"><Users className="w-3 h-3" /> Applications</p>
         <p className="text-sm font-bold text-gray-900">
-          {tier === 'business' ? 'Unlimited' : `${usage?.applications ?? 0} / ${formatLimit(entitlement.applications)} used this month`}
+          {tier === 'business' ? 'Unlimited' : `${usage?.applications ?? 0} / ${formatLimit(entitlement.applications)} used this ${entitlement.window}`}
         </p>
       </div>
+      {tier !== 'business' && (
+        <p className="col-span-2 text-[11px] text-gray-400">{resetLabel(entitlement.window)}</p>
+      )}
     </div>
   );
 
