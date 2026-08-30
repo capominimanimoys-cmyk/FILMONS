@@ -33,7 +33,7 @@ import {
   Play, Pause, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, LayoutList, Monitor,
   FolderOpen, Search, UserCheck, Check, CheckSquare, FolderPlus,
-  Heart, MessageCircle, Download, Eye, Lock, Send,
+  Heart, MessageCircle, Download, Eye, Lock, Send, Trash2,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1351,6 +1351,16 @@ export function Portfolio() {
     setItems(prev => prev.filter(p => p.id !== id));
   };
 
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} project${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    await Promise.all(ids.map(id => deletePortfolioItem(id)));
+    setItems(prev => prev.filter(p => !selectedIds.has(p.id)));
+    exitSelectMode();
+    toast.success(`${ids.length} project${ids.length === 1 ? '' : 's'} deleted`);
+  };
+
   const changeLayout = async (l: PortfolioLayout) => {
     setSettings(prev => ({ ...prev, layout: l }));
     if (me?.id) await upsertPortfolioSettings(me.id, { layout: l });
@@ -1850,21 +1860,37 @@ export function Portfolio() {
         />
       )}
 
-      {/* ── Selection bar (Select mode) ── */}
+      {/* ── Selection bar (Select mode) — replaces normal per-item actions
+           while active; sticky/fixed so it stays reachable while scrolling
+           through selected work. ── */}
       {selectMode && (
         <div
-          className="fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 py-3 flex items-center justify-between"
+          className="fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 py-3 flex items-center justify-between gap-2"
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
         >
-          <p className="text-sm font-bold text-gray-900">{selectedIds.size} item{selectedIds.size === 1 ? '' : 's'} selected</p>
-          <button
-            onClick={() => setShowAlbumFromSelection(true)}
-            disabled={selectedIds.size < 2}
-            className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2.5 rounded-2xl disabled:opacity-40 active:scale-95 transition-all"
-            style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
-          >
-            <FolderPlus className="w-4 h-4" /> Create Album
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={exitSelectMode} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+            <p className="text-sm font-bold text-gray-900 whitespace-nowrap">{selectedIds.size} selected</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkDelete}
+              disabled={selectedIds.size < 1}
+              className="flex items-center gap-1.5 text-red-600 text-sm font-bold px-3.5 py-2.5 rounded-2xl border border-red-200 disabled:opacity-40 active:scale-95 transition-all hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4" /> Delete Work
+            </button>
+            <button
+              onClick={() => setShowAlbumFromSelection(true)}
+              disabled={selectedIds.size < 2}
+              className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2.5 rounded-2xl disabled:opacity-40 active:scale-95 transition-all"
+              style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
+            >
+              <FolderPlus className="w-4 h-4" /> Create Album
+            </button>
+          </div>
         </div>
       )}
 
