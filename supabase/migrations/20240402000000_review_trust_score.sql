@@ -181,8 +181,12 @@ BEGIN
   -- schema to subtract for, so this component is purely additive.
   SELECT created_at, account_type INTO v_account_created, v_account_type FROM public.profiles WHERE id = p_user_id;
   v_age_days := coalesce((EXTRACT(epoch FROM (now() - v_account_created)) / 86400.0)::numeric, 0);
+  -- account_verifications is untracked (no CREATE TABLE anywhere in this
+  -- migrations directory, same situation as orders) -- user_id there turns
+  -- out to be text, not uuid, hence the cast; profiles.id right below is
+  -- confirmed uuid (used bare, no cast, earlier in this same function).
   SELECT
-      (CASE WHEN EXISTS (SELECT 1 FROM public.account_verifications WHERE user_id = p_user_id AND identity_verified = true) THEN 1 ELSE 0 END)
+      (CASE WHEN EXISTS (SELECT 1 FROM public.account_verifications WHERE user_id::text = p_user_id::text AND identity_verified = true) THEN 1 ELSE 0 END)
     + (CASE WHEN EXISTS (SELECT 1 FROM public.profiles WHERE id = p_user_id AND (email_verified = true OR phone_verified = true)) THEN 1 ELSE 0 END)
   INTO v_verified_count;
   v_history_component := LEAST(100, round((LEAST(v_age_days, 365) / 365.0 * 70 + v_verified_count / 2.0 * 30)::numeric, 2));

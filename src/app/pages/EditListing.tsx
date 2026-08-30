@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi } from '../lib/api';
@@ -47,12 +47,19 @@ const PROVINCES = [
   { code: 'YT', name: 'Yukon' },
 ];
 
-function AvailabilityCalendar({ blockedDates, onChange }: { blockedDates: string[]; onChange: (dates: string[]) => void }) {
+// bookedDates (confirmed renter bookings, from the listing_bookings table
+// -- see 20240404000000_booking_date_availability.sql) are a distinct,
+// non-toggleable state from blockedDates (the host's own manual holds):
+// a host can freely block/unblock their own dates, but can't un-block a
+// date someone has actually paid to book -- that's only ever released by
+// a cancellation/refund, never by editing the listing.
+function AvailabilityCalendar({ blockedDates, onChange, bookedDates = [] }: { blockedDates: string[]; onChange: (dates: string[]) => void; bookedDates?: string[] }) {
   const today = new Date(); today.setHours(0,0,0,0);
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const bookedSet = useMemo(() => new Set(bookedDates), [bookedDates]);
   const toISO = (y: number, m: number, d: number) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  const toggleDate = (iso: string) => onChange(blockedDates.includes(iso) ? blockedDates.filter(d => d !== iso) : [...blockedDates, iso]);
+  const toggleDate = (iso: string) => { if (bookedSet.has(iso)) return; onChange(blockedDates.includes(iso) ? blockedDates.filter(d => d !== iso) : [...blockedDates, iso]); };
   const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
   const firstDay    = new Date(viewYear, viewMonth, 1).getDay();
   const monthName   = new Date(viewYear, viewMonth).toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -73,9 +80,18 @@ function AvailabilityCalendar({ blockedDates, onChange }: { blockedDates: string
         {Array.from({length:firstDay}).map((_,i) => <div key={`e${i}`}/>)}
         {Array.from({length:daysInMonth}).map((_,i) => {
           const day=i+1, iso=toISO(viewYear,viewMonth,day), date=new Date(viewYear,viewMonth,day);
-          const isPast=date<today, isBlocked=blockedDates.includes(iso);
-          return <button key={day} type="button" disabled={isPast} onClick={() => toggleDate(iso)} className={['aspect-square rounded-xl text-xs font-semibold transition-all flex items-center justify-center',isPast?'text-gray-200 cursor-not-allowed':isBlocked?'bg-red-500 text-white shadow-sm':'hover:bg-gray-100 text-gray-700'].join(' ')}>{day}</button>;
+          const isPast=date<today, isBooked=bookedSet.has(iso), isBlocked=!isBooked && blockedDates.includes(iso);
+          return <button key={day} type="button" disabled={isPast || isBooked} title={isBooked ? 'Booked by a renter' : undefined}
+            onClick={() => toggleDate(iso)}
+            className={['aspect-square rounded-xl text-xs font-semibold transition-all flex items-center justify-center',
+              isPast?'text-gray-200 cursor-not-allowed':
+              isBooked?'bg-amber-500 text-white shadow-sm cursor-not-allowed':
+              isBlocked?'bg-red-500 text-white shadow-sm':'hover:bg-gray-100 text-gray-700'].join(' ')}>{day}</button>;
         })}
+      </div>
+      <div className="px-4 py-2 flex items-center gap-4 text-[11px] text-gray-400">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"/>Blocked by you</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block"/>Booked</span>
       </div>
       {blockedDates.length > 0 && <div className="px-4 py-2 bg-red-50 border-t border-red-100 flex items-center justify-between"><p className="text-xs text-red-600 font-semibold">{blockedDates.length} date{blockedDates.length!==1?'s':''} marked unavailable</p><button type="button" onClick={() => onChange([])} className="text-xs text-red-400 hover:text-red-600 font-medium">Clear all</button></div>}
       <div className="px-4 py-3 border-t border-gray-100"><button type="button" onClick={() => onChange([])} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-green-300 text-green-700 text-xs font-bold hover:bg-green-50 transition-colors">✅ Item available every day, clear all blocked dates</button></div>
@@ -165,6 +181,9 @@ export function EditListing() {
   const [pricingPackages, setPricingPackages] = useState<PricingPackage[]>([]);
   const [workingHours, setWorkingHours] = useState('');
   const [blockedDates, setBlockedDates] = useState<string[]>([]);
+  // Confirmed renter bookings for this listing (listing_bookings table) --
+  // shown alongside the host's own blockedDates but not editable here.
+  const [bookedDates, setBookedDates] = useState<string[]>([]);
   const [availableDays, setAvailableDays] = useState<string[]>(['Mon','Tue','Wed','Thu','Fri']);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime]     = useState('18:00');
@@ -236,6 +255,9 @@ export function EditListing() {
       setCancellation(listing.cancellation || '');
       if (listing.paymentMethods?.length) setPaymentMethods(listing.paymentMethods.filter((m: string) => m !== 'Cash' && m !== 'FP')); else setPaymentMethods(['Credit/Debit Card']);
       if (listing.blockedDates?.length) setBlockedDates(listing.blockedDates);
+      supabase.from('listing_bookings').select('booking_date').eq('listing_id', listingId).eq('status', 'confirmed')
+        .then(({ data }) => setBookedDates((data || []).map((r: any) => r.booking_date).filter(Boolean)))
+        .catch(() => {});
       if ((listing as any).availableDays?.length) setAvailableDays((listing as any).availableDays);
       if ((listing as any).serviceStartTime) setStartTime((listing as any).serviceStartTime);
       if ((listing as any).serviceEndTime)   setEndTime((listing as any).serviceEndTime);
@@ -1026,7 +1048,7 @@ export function EditListing() {
                   className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-300 outline-none" />
               </div>
               {listingType === 'gear' && listingMode === 'rent' && (
-                <AvailabilityCalendar blockedDates={blockedDates} onChange={setBlockedDates} />
+                <AvailabilityCalendar blockedDates={blockedDates} onChange={setBlockedDates} bookedDates={bookedDates} />
               )}
             </>
           )}

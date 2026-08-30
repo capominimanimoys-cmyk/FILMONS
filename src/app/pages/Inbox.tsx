@@ -1315,6 +1315,14 @@ export function Inbox() {
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [inboxTab, setInboxTab] = useState<'all' | 'unread' | 'bookings' | 'marketplace' | 'applications' | 'archived'>('all');
   const [serverLoaded, setServerLoaded] = useState(false);
+  // Distinct from "loaded fine, zero conversations" -- fetchConversationsDB
+  // used to silently fall back to an empty local cache on a real Supabase
+  // error (see api.ts), which looked identical to "this user has no
+  // conversations" with nothing but a console.warn to tell them apart.
+  // That's fixed at the source now (it throws), but this still needs a
+  // real UI state distinct from the empty-state so a genuine fetch
+  // failure never renders as "No messages yet."
+  const [convLoadError, setConvLoadError] = useState(false);
   const [archivedConvs, setArchivedConvs]   = useState<Conversation[]>([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [deleteConfirm, setDeleteConfirm]     = useState<string | null>(null);
@@ -1446,11 +1454,17 @@ export function Inbox() {
 
   const loadConversations = useCallback(async () => {
     loadedConvIds.current.clear();
-    if (!user) return;
+    if (!user) { console.log('[Inbox] loadConversations skipped — no user yet'); return; }
+
+    // Temporary debug logging (mobile Inbox conversations-not-loading bug)
+    // -- remove once confirmed fixed on real mobile devices.
+    console.log('[Inbox] loadConversations start, userId=', user.id);
 
     try {
+      setConvLoadError(false);
       // Only load from Supabase conversations table — no localStorage fallback
       const fromServer = await chatApi.fetchConversationsDB(user.id, true);
+      console.log('[Inbox] fetchConversationsDB returned', fromServer.length, 'conversations', fromServer);
 
       // Resolve participant names asynchronously
       const cache: Record<string, any> = (() => {
@@ -1520,7 +1534,12 @@ export function Inbox() {
         );
       });
     } catch (e) {
-      console.warn('loadConversations error:', e);
+      console.error('[Inbox] loadConversations error:', e);
+      // Only flip the error state when there's nothing already on screen --
+      // a transient failure on a background refresh (the 3-minute poll,
+      // the visibility-change refetch) shouldn't blank out a working list
+      // the user is currently looking at.
+      setConversations(prev => { if (!prev.length) setConvLoadError(true); return prev; });
     } finally {
       setServerLoaded(true);
     }
@@ -1559,8 +1578,11 @@ export function Inbox() {
   // ── Realtime: detect when WE are added to a brand-new conversation ───────────
   // `conversation_participants` INSERT fires the instant User B's `createConvOnServer`
   // (or the auto-upsert in the message route) adds our user_id as a participant.
+  // Gated on serverLoaded (not just `user`) so this only starts once the
+  // initial fetch has actually landed -- subscribing earlier risked an
+  // incoming realtime event racing loadConversations's own state merge.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !serverLoaded) return;
     const ch = supabase
       .channel(`inbox_msgs_${user.id}`)
       .on(
@@ -1651,7 +1673,7 @@ export function Inbox() {
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [user, loadConversations]);
+  }, [user, serverLoaded, loadConversations]);
 
   // ── Fallback poll: keeps sidebar metadata (unread count, last-msg preview)
   //    fresh for conversations that are NOT currently open. ──────────────────
@@ -2793,8 +2815,36 @@ export function Inbox() {
                   </>
                 )}
 
+                {/* Loading state — distinct from the empty state below, which
+                     previously rendered identically whether the fetch hadn't
+                     finished yet or had genuinely returned zero conversations. */}
+                {!serverLoaded && displayedConvs.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
+                    <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+                    <p className="text-sm text-gray-400">Loading conversations…</p>
+                  </div>
+                )}
+
+                {/* Error state — a real fetch failure, never silently shown
+                     as "No messages yet" (fetchConversationsDB throws on a
+                     genuine Supabase error instead of falling back to an
+                     empty local cache — see api.ts). */}
+                {serverLoaded && convLoadError && displayedConvs.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
+                    <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                      <CancelRounded sx={{fontSize:32,color:"#ef4444"}} />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700 mb-1">Couldn't load conversations</p>
+                    <p className="text-xs text-gray-400 mb-4">Check your connection and try again.</p>
+                    <button onClick={() => loadConversations()}
+                      className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors">
+                      Retry
+                    </button>
+                  </div>
+                )}
+
                 {/* Empty state */}
-                {displayedConvs.length === 0 && (inboxTab !== 'all' || requestConvs.length === 0) && (
+                {serverLoaded && !convLoadError && displayedConvs.length === 0 && (inboxTab !== 'all' || requestConvs.length === 0) && (
                   <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
                     <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-4">
                       <ChatBubbleRounded sx={{fontSize:32,color:"#60a5fa"}} />

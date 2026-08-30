@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi, invalidateListingsCache } from '../lib/api';
@@ -306,12 +306,18 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
 }
 
 // ── Availability Calendar ─────────────────────────────────────────────────────
-function AvailabilityCalendar({ blockedDates, onChange }: { blockedDates: string[]; onChange: (d: string[]) => void }) {
+// bookedDates (confirmed renter bookings, from listing_bookings -- see
+// 20240404000000_booking_date_availability.sql) is always empty here in
+// practice: a brand-new listing being created has no id yet, so it can't
+// have any confirmed bookings. The prop exists so this component stays
+// structurally identical to EditListing.tsx's copy, where it's not empty.
+function AvailabilityCalendar({ blockedDates, onChange, bookedDates = [] }: { blockedDates: string[]; onChange: (d: string[]) => void; bookedDates?: string[] }) {
   const today = new Date(); today.setHours(0,0,0,0);
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
+  const bookedSet = useMemo(() => new Set(bookedDates), [bookedDates]);
   const iso = (y: number, m: number, d: number) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  const toggle = (s: string) => onChange(blockedDates.includes(s) ? blockedDates.filter(x=>x!==s) : [...blockedDates,s]);
+  const toggle = (s: string) => { if (bookedSet.has(s)) return; onChange(blockedDates.includes(s) ? blockedDates.filter(x=>x!==s) : [...blockedDates,s]); };
   const dim = new Date(vy, vm+1, 0).getDate(), fd = new Date(vy,vm,1).getDay();
   const mn = new Date(vy,vm).toLocaleString('default',{month:'long',year:'numeric'});
   const prev = () => vm===0?(setVm(11),setVy(y=>y-1)):setVm(m=>m-1);
@@ -330,9 +336,9 @@ function AvailabilityCalendar({ blockedDates, onChange }: { blockedDates: string
         {Array.from({length:fd}).map((_,i)=><div key={`e${i}`}/>)}
         {Array.from({length:dim}).map((_,i)=>{
           const d=i+1, s=iso(vy,vm,d), dt=new Date(vy,vm,d);
-          const past=dt<today, blocked=blockedDates.includes(s);
-          return <button key={d} type="button" disabled={past} onClick={()=>toggle(s)}
-            className={`aspect-square rounded-xl text-xs font-semibold transition-all flex items-center justify-center ${past?'text-gray-200 cursor-not-allowed':blocked?'bg-red-500 text-white':'hover:bg-gray-100 text-gray-700'}`}>{d}</button>;
+          const past=dt<today, booked=bookedSet.has(s), blocked=!booked && blockedDates.includes(s);
+          return <button key={d} type="button" disabled={past || booked} title={booked ? 'Booked by a renter' : undefined} onClick={()=>toggle(s)}
+            className={`aspect-square rounded-xl text-xs font-semibold transition-all flex items-center justify-center ${past?'text-gray-200 cursor-not-allowed':booked?'bg-amber-500 text-white cursor-not-allowed':blocked?'bg-red-500 text-white':'hover:bg-gray-100 text-gray-700'}`}>{d}</button>;
         })}
       </div>
       {blockedDates.length>0&&<div className="px-4 py-2 bg-red-50 border-t border-red-100 flex items-center justify-between">

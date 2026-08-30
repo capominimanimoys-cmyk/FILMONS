@@ -3258,9 +3258,19 @@ export const chatApi = {
       ]);
 
       if (convErr) {
-        console.warn('fetchConversationsDB error:', convErr.message);
+        // Previously silently fell back to the old localStorage-based
+        // getUserConversations() here -- on a device/session with little
+        // or no local cache (any fresh mobile session, since this app
+        // otherwise only ever reads from Supabase directly, see the "no
+        // localStorage fallback" comment at this function's Inbox.tsx call
+        // site), that fallback itself returns empty, so a real, transient
+        // Supabase error looked exactly like "this user has zero
+        // conversations" with nothing beyond a console.warn to tell them
+        // apart. Throwing here lets the caller show a real error state
+        // instead of a false empty one.
+        console.error('[fetchConversationsDB] Supabase query failed:', convErr);
         inf._convFetchInFlight = false;
-        return chatApi.getUserConversations(userId);
+        throw convErr;
       }
 
       // Merge: add any conv IDs from conversation_participants not already in convRows
