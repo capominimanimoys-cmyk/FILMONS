@@ -97,7 +97,7 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
               // disabled, not deleted — see boostApi.ts/BoostListingFlow.tsx
               // header comments). Emergency Listing is a separate feature
               // and stays.
-              { icon: <AlertTriangle className={`w-5 h-5 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', sub: isEmergency ? 'View status and expiration, or boost again once it ends' : 'Pay for repeated feed exposure — 72 hours or 7 days', color: isEmergency ? 'text-red-600' : 'text-gray-900', action: () => { close(); onEmergency(); } },
+              { icon: <AlertTriangle className={`w-5 h-5 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', sub: isEmergency ? 'View status and expiration, or boost again once it ends' : 'Pay for repeated feed exposure over 72 hours or 7 days', color: isEmergency ? 'text-red-600' : 'text-gray-900', action: () => { close(); onEmergency(); } },
               { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
             ] : []),
             { icon: <Bookmark className="w-5 h-5"/>, label: saved ? 'Remove from saved' : 'Save listing', sub: saved ? 'Remove from your saved listings' : 'Add to your saved listings', color: 'text-gray-900', action: () => { onSave(); close(); } },
