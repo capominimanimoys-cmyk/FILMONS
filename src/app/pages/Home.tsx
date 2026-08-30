@@ -160,12 +160,19 @@ export function Home() {
   // "nothing new, stay on the caught-up screen with the no-new-listings copy".
   const [refreshPending, setRefreshPending] = useState(false);
   const [noNewListings, setNoNewListings] = useState(false);
+  // Distinct from "loaded fine, zero results" -- a genuine fetch failure
+  // must not silently collapse into the same empty/caught-up states. Only
+  // the listings fetch below can trigger this (it no longer swallows its
+  // own error); profiles/excluded-ids stay individually resilient since a
+  // failure there shouldn't block the whole page over a secondary source.
+  const [loadError, setLoadError] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let done = false;
+    setLoadError(false);
     Promise.all([
-      listingsApi.getAll().catch(() => [] as Listing[]),
+      listingsApi.getAll(),
       supabase
         .from('profiles')
         .select('id, name, username, avatar_url, city, primary_role, bio, is_verified')
@@ -243,6 +250,10 @@ export function Home() {
       setListings(ordered);
       setCreators(c);
       setLoading(false);
+    }).catch(() => {
+      if (done) return;
+      setLoadError(true);
+      setLoading(false);
     });
     return () => { done = true; };
   }, [user?.id, refreshKey]);
@@ -295,6 +306,17 @@ export function Home() {
   // it was, so coming back here still shows the caught-up screen unless a
   // genuinely new listing has appeared since.
   const handleBrowseAll = () => navigate('/search');
+
+  // Error-state retry -- just re-runs the fetch effect. Deliberately not
+  // handleRefresh: that also clears the persisted swipe index and flips
+  // deckDone/noNewListings, which is right for "check for new listings"
+  // but wrong here since a fetch failure says nothing about the deck
+  // actually being exhausted.
+  const handleRetry = () => {
+    setLoadError(false);
+    setLoading(true);
+    setRefreshKey(k => k + 1);
+  };
 
   const handleRefresh = () => {
     clearPersistedSwipeIdx(filter);
@@ -356,18 +378,22 @@ export function Home() {
     </div>
   );
 
-  // "You're all caught up!" — deck exhausted for the current filter. When
-  // this follows a Refresh Listings click that came up empty (noNewListings),
-  // the subtitle swaps to that specific message instead of resetting back to
-  // the generic one -- same screen, same three actions, per spec.
+  // "You're all caught up" — deck exhausted for the current filter. Caught
+  // up is tracked per-filter (deckDone/writeCompleted key off `filter`), so
+  // this is naturally calculated separately per category -- exhausting one
+  // never marks another as exhausted. When this follows a Refresh Listings
+  // click that came up empty (noNewListings), the subtitle swaps to that
+  // specific message instead of resetting back to the generic one -- same
+  // screen, same three actions, per spec.
+  const currentFilterLabel = FILTERS.find(f => f.id === filter)?.label ?? 'this category';
   const caughtUpScreen = (
     <div className="flex flex-col items-center py-16 px-6 text-center gap-1">
       <span className="text-5xl mb-3">🎉</span>
-      <p className="font-black text-gray-900 text-lg">You're all caught up!</p>
+      <p className="font-black text-gray-900 text-lg">You're all caught up</p>
       <p className="text-sm text-gray-400 mb-5">
         {noNewListings
           ? 'No new listings available yet. Check back later or adjust your filters.'
-          : "You've seen all available listings that match your current location and filters."}
+          : `You've seen all available listings in ${currentFilterLabel} for now. Check back later for new opportunities.`}
       </p>
       <div className="flex flex-col gap-2 w-full max-w-xs">
         <button
@@ -394,6 +420,19 @@ export function Home() {
   // appeared -- requires an explicit "Start Swiping" rather than silently
   // resuming, since there's no previous position that means anything
   // against a deck built only from items not yet acted on.
+  const errorScreen = (
+    <div className="flex flex-col items-center py-16 px-6 text-center gap-1">
+      <span className="text-5xl mb-3">⚠️</span>
+      <p className="font-black text-gray-900 text-lg">Couldn't load listings</p>
+      <p className="text-sm text-gray-400 mb-5">Something went wrong loading your feed. Check your connection and try again.</p>
+      <button
+        onClick={handleRetry}
+        className="w-full max-w-xs flex items-center justify-center gap-2 py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80">
+        <RefreshCw className="w-4 h-4" /> Retry
+      </button>
+    </div>
+  );
+
   const newOpportunitiesScreen = (
     <div className="flex flex-col items-center py-16 px-6 text-center gap-1">
       <span className="text-5xl mb-3">✨</span>
@@ -447,13 +486,16 @@ export function Home() {
       <div className="mt-2 lg:mt-6 lg:px-8">
         {loading ? (
           <SkeletonDeck/>
-        // deckDone is checked before the plain deck.length === 0 empty
-        // state -- a Refresh Listings click that comes up with nothing new
-        // (noNewListings) sets deckDone with an empty deck, and that must
-        // still render the caught-up screen (with its no-new-listings
-        // copy), not the generic "Nothing here yet" state meant for a
-        // filter that never had any listings at all.
-        ) : deckDone ? caughtUpScreen : deck.length === 0 ? emptyState : showNewBanner ? newOpportunitiesScreen : (
+        // Explicit state ordering, each branch rendering its own UI rather
+        // than falling through to a bare `return null` -- loading, then a
+        // genuine fetch failure, then (deckDone checked before the plain
+        // deck.length === 0 empty state, since a Refresh Listings click
+        // that comes up with nothing new sets deckDone with an empty deck,
+        // and that must still render the caught-up screen with its
+        // no-new-listings copy, not the generic "Nothing here yet" state
+        // meant for a filter that never had any listings at all) the
+        // caught-up/empty/new-opportunities states, then the deck itself.
+        ) : loadError ? errorScreen : deckDone ? caughtUpScreen : deck.length === 0 ? emptyState : showNewBanner ? newOpportunitiesScreen : (
           <SwipeStack
             key={filterKey}
             items={deck}

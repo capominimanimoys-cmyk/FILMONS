@@ -5,7 +5,7 @@
  * | Eye button → 👀 See Listing (dedicated button only, never a gesture —
  * doesn't advance the deck; the same card is shown again on return).
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
@@ -395,6 +395,30 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
     try { sessionStorage.setItem(`filmons_swipe_idx_${persistKey}`, String(idx)); } catch {}
   }, [idx, persistKey]);
 
+  // Fires onDone the moment idx reaches the end of the deck -- a
+  // useLayoutEffect, not useEffect, so it (and whatever state update it
+  // triggers in the parent, e.g. Home.tsx's setDeckDone) is flushed
+  // synchronously before the browser paints. That's what actually
+  // guarantees the parent has already swapped away from rendering this
+  // component by the time anything becomes visible, rather than relying
+  // on React 18 happening to batch a callback fired from inside setIdx's
+  // updater (the previous approach) -- an implicit guarantee, not an
+  // explicit one, and the reason this could render blank for a frame.
+  // doneFiredRef guards against firing twice for the same "reached the
+  // end" transition (effects can re-run) and resets if idx ever moves
+  // back below the end (Undo, a bigger deck arriving via Refresh).
+  const doneFiredRef = useRef(false);
+  useLayoutEffect(() => {
+    if (items.length > 0 && idx >= items.length) {
+      if (!doneFiredRef.current) {
+        doneFiredRef.current = true;
+        onDone?.();
+      }
+    } else {
+      doneFiredRef.current = false;
+    }
+  }, [idx, items.length, onDone]);
+
   const fly = (dir: 'L' | 'R') => {
     if (exitDir) return;
     // Local count is the fast UX gate (blocks before the card even
@@ -481,11 +505,14 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         setSwipesUsed(next);
         if (dailyLimit !== null && next >= dailyLimit) setShowDailyLimit(true);
       }
-      setIdx(i => {
-        const next = i + 1;
-        if (next >= items.length) onDone?.();
-        return next;
-      });
+      // onDone firing lives in the useLayoutEffect below, not here -- a
+      // callback fired from inside a state updater only reliably reaches
+      // the parent before paint because React 18 happens to batch it;
+      // that's an implicit guarantee, not an explicit one, and exactly the
+      // "return null and hope batching saves you" shape that let this
+      // component render blank for a frame between idx passing the end of
+      // items and Home.tsx's deckDone actually flipping.
+      setIdx(i => i + 1);
       setExitDir(null);
     }, 360);
   };
