@@ -112,4 +112,21 @@ export const emergencyApi = {
       listing_id: listingId, event_type: 'impression', source: 'emergency', viewer_id: viewerId || null,
     }).then(undefined, () => {});
   },
+
+  // Server-verified gate for BROWSING the Emergency category (Home.tsx's
+  // "Emergency" filter tab) -- distinct from purchasing/creating one, which
+  // stays open to any listing owner. Never trust the client's own
+  // account_type for this decision; check-emergency-access re-derives tier
+  // from profiles server-side.
+  checkBrowseAccess: async (userId: string): Promise<{ allowed: boolean; message?: string }> => {
+    try {
+      const res = await fetch(FN_URL('check-emergency-access'), {
+        method: 'POST', headers: FN_HEADERS, body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      return { allowed: !!data.allowed, message: data.message };
+    } catch {
+      return { allowed: false, message: 'Could not verify access — please try again.' };
+    }
+  },
 };

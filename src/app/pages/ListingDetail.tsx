@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
-import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign } from 'lucide-react';
+import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -163,6 +163,19 @@ export function ListingDetail() {
 
   const isOwnListing = user?.id === listing.userId;
   const avgRating = reviews.length > 0 ? reviews.reduce((a, r) => a + r.rating, 0) / reviews.length : 0;
+
+  // Emergency indicator/countdown -- only computed off the real
+  // emergencyExpiresAt timestamp (never a made-up duration), and only
+  // while it's still actually in the future, matching ListingCard's own
+  // isEmergency derivation so both never disagree about whether it's live.
+  const isEmergencyActive = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
+  const emergencyRemainingLabel = (() => {
+    if (!isEmergencyActive || !listing.emergencyExpiresAt) return null;
+    const msLeft = new Date(listing.emergencyExpiresAt).getTime() - Date.now();
+    const hoursLeft = Math.max(1, Math.round(msLeft / (60 * 60 * 1000)));
+    if (hoursLeft <= 48) return `${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} remaining`;
+    return `until ${new Date(listing.emergencyExpiresAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}`;
+  })();
   const allMedia = [
     ...(listing.images || []).map(url => ({ url, type: 'image' as const })),
     ...(listing.videos || []).map(url => ({ url, type: 'video' as const })),
@@ -300,6 +313,16 @@ export function ListingDetail() {
                   </span>
                 )}
               </div>
+              {isEmergencyActive && (
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-red-500 text-white">
+                    <AlertTriangle className="w-3 h-3 fill-white" /> Emergency Listing
+                  </span>
+                  {emergencyRemainingLabel && (
+                    <span className="text-xs font-semibold text-red-600">Emergency • {emergencyRemainingLabel}</span>
+                  )}
+                </div>
+              )}
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{listing.title}</h1>
               {listing.city && (
                 <div className="flex items-center gap-1.5 text-sm text-gray-500">

@@ -360,7 +360,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
               logging stay intact underneath (data preserved, not deleted). */}
 
           {isEmergency && (
-            <span className="absolute top-9 left-2.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
+            <span className="absolute top-9 left-2.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
               <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
             </span>
           )}

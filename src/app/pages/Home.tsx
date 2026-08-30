@@ -4,10 +4,11 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
+import { normalizeTier } from '../lib/reliabilityApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
@@ -21,7 +22,7 @@ import { swipeApi } from '../lib/swipeApi';
 const EMERGENCY_RECYCLE_COOLDOWN_HOURS = 2;
 
 // ── Filter system ─────────────────────────────────────────────────────────────
-type FilterId = 'all' | 'rentals' | 'sales' | 'services' | 'creators' | 'studios' | 'talent';
+type FilterId = 'all' | 'rentals' | 'sales' | 'services' | 'creators' | 'studios' | 'talent' | 'emergency';
 
 type LucideIcon = React.ComponentType<{ className?: string }>;
 const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
@@ -32,6 +33,10 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
   { id: 'creators', label: 'Creators', icon: User      },
   { id: 'studios',  label: 'Studios',  icon: Building2 },
   { id: 'talent',   label: 'Opportunity', icon: Briefcase },
+  // Browsing (not creating) this category is gated to Professional/Business
+  // accounts -- see canBrowseEmergency below and check-emergency-access,
+  // which re-verifies server-side rather than trusting the client tier.
+  { id: 'emergency', label: 'Emergency', icon: AlertTriangle },
 ];
 
 function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId): DeckItem[] {
@@ -40,6 +45,16 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
   }
 
   let filtered = [...listings];
+
+  if (filter === 'emergency') {
+    // `listings` here has already been through the fetch effect's swipe-
+    // exclusion + Emergency recycling-exemption/cooldown logic (see the
+    // isActiveEmergency block below) -- filtering it down to just active
+    // Emergency listings reuses that same recycling behavior automatically
+    // instead of re-implementing it for this category.
+    filtered = filtered.filter(l => l.isEmergency && !!l.emergencyExpiresAt && new Date(l.emergencyExpiresAt) > new Date());
+    return filtered.map(l => ({ kind: 'listing' as const, data: l }));
+  }
 
   if (filter === 'rentals') {
     filtered = filtered.filter(l => l.listingMode === 'rent' && l.listingType !== 'service');
@@ -132,6 +147,14 @@ function writeCompleted(filter: FilterId, done: boolean): void {
 export function Home() {
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // Client-side shortcut only (instant tab visibility) -- the real gate is
+  // checkBrowseAccess in handleFilter below, same "shortcut client-side,
+  // enforce server-side" split already used for the Opportunity Creator-tier
+  // restriction (see ApplyModal.tsx).
+  const userTier = normalizeTier(user?.accountType);
+  const canBrowseEmergency = userTier === 'professional' || userTier === 'business';
+  const [showEmergencyUpgrade, setShowEmergencyUpgrade] = useState(false);
 
   const [listings,  setListings]  = useState<EnrichedListing[]>([]);
   const [creators,  setCreators]  = useState<CreatorProfile[]>([]);
@@ -269,7 +292,15 @@ export function Home() {
 
   // Reset done-state when filter changes
   const [filterKey, setFilterKey] = useState(0);
-  const handleFilter = (id: FilterId) => {
+  const handleFilter = async (id: FilterId) => {
+    if (id === 'emergency') {
+      // Never just trust the client's own accountType for this decision --
+      // canBrowseEmergency above is only the instant-UX shortcut (and the
+      // chip is already hidden for ineligible tiers below), the real check
+      // is this server round-trip, same as any other direct-entry attempt.
+      const check = user?.id ? await emergencyApi.checkBrowseAccess(user.id) : { allowed: false };
+      if (!check.allowed) { setShowEmergencyUpgrade(true); return; }
+    }
     setFilter(id);
     setDeckDone(false);
     setNoNewListings(false);
@@ -344,7 +375,13 @@ export function Home() {
 
   const scrollToFilters = () => filterRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  const emptyState = (
+  const emptyState = filter === 'emergency' ? (
+    <div className="flex flex-col items-center py-24 px-6 text-center">
+      <span className="text-5xl mb-4">🚨</span>
+      <p className="font-black text-gray-900 text-lg mb-1">No Emergency Listings right now</p>
+      <p className="text-sm text-gray-400">Urgent opportunities will appear here when they become available.</p>
+    </div>
+  ) : (
     <div className="flex flex-col items-center py-24 px-6 text-center">
       <span className="text-5xl mb-4">🎬</span>
       <p className="font-black text-gray-900 text-lg mb-1">Nothing here yet</p>
@@ -442,15 +479,20 @@ export function Home() {
         </button>
       </div>
 
-      {/* ── Filter chips ── */}
+      {/* ── Filter chips — Emergency tab only shown to Professional/
+           Business (canBrowseEmergency is the client-side shortcut; the
+           real access decision is still re-checked server-side in
+           handleFilter, so a direct entry point can't bypass this by
+           just being invisible here). ── */}
       <div ref={filterRowRef} className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
-        {FILTERS.map(f => (
+        {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
           <button
             key={f.id}
             onClick={() => handleFilter(f.id)}
             className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
               filter === f.id
-                ? 'bg-gray-900 text-white shadow-sm'
+                ? f.id === 'emergency' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-900 text-white shadow-sm'
+                : f.id === 'emergency' ? 'bg-red-50 text-red-600 border border-red-100 hover:border-red-200'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
             }`}>
             <f.icon className="w-3.5 h-3.5"/>
@@ -483,6 +525,32 @@ export function Home() {
           />
         )}
       </div>
+
+      {/* ── Emergency category upgrade prompt — shown whenever a direct
+           entry point (or the tab, before it's hidden) is attempted by an
+           ineligible tier and the server confirms it's not allowed. Does
+           not change the user's subscription; just links to the existing
+           upgrade flow. ── */}
+      {showEmergencyUpgrade && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowEmergencyUpgrade(false)}>
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto">
+              <Zap className="w-7 h-7 text-red-500"/>
+            </div>
+            <p className="text-sm text-gray-700 leading-relaxed">Emergency Listings are available with Professional and Business accounts.</p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setShowEmergencyUpgrade(false); navigate('/account/upgrade'); }}
+                className="w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80">
+                View Upgrade Options
+              </button>
+              <button onClick={() => setShowEmergencyUpgrade(false)} className="w-full py-2.5 text-sm font-semibold text-gray-400">
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
