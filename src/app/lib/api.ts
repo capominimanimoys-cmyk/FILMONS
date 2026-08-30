@@ -747,42 +747,11 @@ export const listingsApi = {
         console.log(`✅ Loaded ${data.length} listings from Supabase`);
         let listings = data.map(mapRow);
 
-        // Blended distribution — boost increases the PROBABILITY of being
-        // shown, it never guarantees position #1 over every organic
-        // listing. Boosted listings get a weighted bonus (their boost's
-        // delivery_weight, decayed as the boost's duration elapses) plus a
-        // small jitter, instead of the old blunt "boosted always sorts
-        // first" behavior.
-        const boostedIds = listings.filter(l => l.boosted).map(l => l.id);
-        const boostMap = new Map<string, { weight: number; startsAt?: string; endsAt?: string }>();
-        if (boostedIds.length) {
-          try {
-            const { data: boosts } = await supabase
-              .from('listing_boosts')
-              .select('listing_id, delivery_weight, starts_at, ends_at')
-              .in('listing_id', boostedIds)
-              .eq('status', 'active');
-            (boosts || []).forEach((b: any) => {
-              boostMap.set(b.listing_id, { weight: b.delivery_weight || 1, startsAt: b.starts_at, endsAt: b.ends_at });
-            });
-          } catch {}
-        }
-        const now = Date.now();
-        const scored = listings.map((l, i) => {
-          const organicScore = listings.length - i; // already recency-sorted
-          const b = boostMap.get(l.id);
-          let boostBonus = 0;
-          if (b) {
-            const start = b.startsAt ? new Date(b.startsAt).getTime() : now;
-            const end = b.endsAt ? new Date(b.endsAt).getTime() : now + 1;
-            const total = Math.max(end - start, 1);
-            const remainingFrac = 1 - Math.min(Math.max((now - start) / total, 0), 1);
-            boostBonus = b.weight * remainingFrac * 20;
-          }
-          return { l, score: organicScore + boostBonus + Math.random() * 2 };
-        });
-        scored.sort((a, b) => b.score - a.score);
-        listings = scored.slice(0, 50).map(s => s.l);
+        // Boost Listing is temporarily disabled — back to plain normal-feed
+        // order (the query above already sorts by created_at descending),
+        // no boost-weighted bonus. listing_boosts/boostApi data is
+        // untouched in the DB, this just stops reading it for placement.
+        listings = listings.slice(0, 50);
 
         _listingsCache = listings;
         _listingsCacheAt = Date.now();
@@ -1170,8 +1139,22 @@ async function fetchReviewRows(applyFilter: (q: any) => any): Promise<Review[]> 
     .from('profiles').select('id, name, username, avatar_url').in('id', reviewerIds);
   const byId = new Map((profiles || []).map((p: any) => [p.id, p]));
 
+  // Same batch-lookup shape as the reviewer-profile join above, so a
+  // review card can link back to (and show the title of) the listing it
+  // was written for. is_active drives whether that listing is still
+  // something a click should be able to open — same signal Home.tsx's
+  // feed already treats as "publicly available" — a review with no
+  // matching row here (deleted listing, or an old review with no
+  // listing_id at all) just gets no title/no link, never a guess.
+  const listingIds = [...new Set(rows.map(r => r.listing_id).filter(Boolean))];
+  const { data: listingRows } = listingIds.length
+    ? await supabase.from('listings').select('id, title, is_active').in('id', listingIds)
+    : { data: [] as any[] };
+  const listingById = new Map((listingRows || []).map((l: any) => [l.id, l]));
+
   return rows.map((r: any) => {
     const p = byId.get(r.user_id);
+    const listing = r.listing_id ? listingById.get(r.listing_id) : null;
     return {
       id: r.id, listingId: r.listing_id, userId: r.user_id,
       userName:   p?.name || p?.username || 'Anonymous',
@@ -1179,6 +1162,8 @@ async function fetchReviewRows(applyFilter: (q: any) => any): Promise<Review[]> 
       reviewedUserId: r.reviewed_user_id || undefined,
       rating: r.rating, comment: r.comment || r.content || '',
       createdAt: r.created_at,
+      listingTitle: listing?.title || undefined,
+      listingAvailable: !!listing && listing.is_active !== false,
     } as Review;
   });
 }

@@ -7,7 +7,6 @@ import { useNavigate } from 'react-router';
 import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
-import { boostApi } from '../lib/boostApi';
 import { emergencyApi } from '../lib/emergencyApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -221,31 +220,11 @@ export function Home() {
             .forEach(x => emergencyApi.logImpression(x.id, user.id));
         }
       }
-      // getAll() already returns a blended order (organic recency + decayed
-      // boost weight + jitter) — do NOT re-sort by createdAt here, that
-      // would silently undo the blending and put boosted listings back to
-      // a blunt recency-only order.
-      let ordered: EnrichedListing[] = l;
-
-      // Frequency control — once a viewer has already seen a boosted
-      // listing's boosted-priority placement `frequency_cap_per_user` times
-      // within the cooldown window, stop giving it a boost bonus for them
-      // (demote to its plain position) rather than showing it every visit.
-      const boostedIds = l.filter(x => x.boosted).map(x => x.id);
-      if (user?.id && boostedIds.length) {
-        try {
-          const config = await boostApi.getConfig();
-          const seen = await boostApi.getRecentlySeenBoosted(user.id, boostedIds, config.frequencyCooldownHours);
-          const capped = new Set(Object.keys(seen).filter(id => seen[id] >= config.frequencyCapPerUser));
-          if (capped.size) {
-            const boosted = ordered.filter(x => capped.has(x.id));
-            const rest = ordered.filter(x => !capped.has(x.id));
-            // Interleave capped-out boosted listings back in as plain
-            // organic entries rather than dropping them entirely.
-            ordered = [...rest.slice(0, Math.ceil(rest.length / 2)), ...boosted, ...rest.slice(Math.ceil(rest.length / 2))];
-          }
-        } catch {}
-      }
+      // Boost Listing is temporarily disabled -- listingsApi.getAll() no
+      // longer gives boosted listings priority placement (see api.ts), so
+      // there's nothing here to frequency-cap or demote anymore. `l` is
+      // already normal-feed order.
+      const ordered: EnrichedListing[] = l;
 
       setListings(ordered);
       setCreators(c);

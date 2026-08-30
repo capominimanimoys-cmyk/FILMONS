@@ -63,8 +63,6 @@ import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
 import { SignupPhone }        from './pages/SignupPhone';
 import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
 import { ShareCard }          from './pages/ShareCard';
-import { BoostListingFlow } from './pages/BoostListingFlow';
-import { BoostInsights } from './pages/BoostInsights';
 import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
@@ -118,8 +116,9 @@ export const router = createBrowserRouter([
       { path: 'listing/:id', Component: ListingDetail },
       { path: 'listing/:id/applicants', Component: OpportunityApplicants },
       { path: 'listing/:id/emergency', Component: EmergencyListingFlow },
-      { path: 'boost/:listingId', Component: BoostListingFlow },
-      { path: 'boost/:listingId/insights', Component: BoostInsights },
+      // Boost Listing routes temporarily removed (feature disabled, not
+      // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
+      // just unreachable from the active app until this is re-enabled).
       { path: 'search', Component: SearchPage },
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },

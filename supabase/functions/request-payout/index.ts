@@ -5,6 +5,7 @@
 // ... FOR UPDATE inside the function), not a client-side check-then-insert.
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
 import { sendWithdrawalReceivedEmail, sendCashOutRequestAdminEmail, sendPayoutSentEmail, sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
+import { addBusinessDays } from '../_shared/businessDays.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -30,19 +31,6 @@ async function selectOne(table: string, filter: string) {
 }
 
 function round2(n: number) { return Math.round((n + Number.EPSILON) * 100) / 100; }
-
-// No existing business-day helper anywhere in this app — this is the
-// first one. Skips Saturday/Sunday only (no statutory-holiday calendar).
-function addBusinessDays(from: Date, days: number): Date {
-  const d = new Date(from);
-  let added = 0;
-  while (added < days) {
-    d.setDate(d.getDate() + 1);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) added++;
-  }
-  return d;
-}
 
 function describePayoutDestination(method: any, destination: any): string {
   if (method?.display_name) return method.last4 ? `${method.display_name} ••••${method.last4}` : method.display_name;

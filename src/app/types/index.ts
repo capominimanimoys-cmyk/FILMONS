@@ -165,6 +165,12 @@ export interface Review {
   rating: number;
   comment: string;
   createdAt: string;
+  // Populated by reviewsApi's fetch, not stored on the row itself — title
+  // of (and whether a click can still open) the listing this review was
+  // written for. Absent listingTitle + listingAvailable === false covers
+  // both "listing deleted" and "review predates listing_id existing".
+  listingTitle?: string;
+  listingAvailable?: boolean;
 }
 
 export interface Listing {

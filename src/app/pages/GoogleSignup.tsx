@@ -242,10 +242,10 @@ export function GoogleSignup() {
       claimIdentity(authId, 'google', authId).catch(() => {});
 
       await Promise.allSettled([
-        supabase.from('reputation_scores').upsert(
-          { user_id: authId, reliability_score: 0, reliability_level: 'new_user' },
-          { onConflict: 'user_id' }
-        ),
+        // reputation_scores is no longer client-writable (score is now
+        // computed server-side only, see fn_recalculate_review_trust) --
+        // the row gets created lazily by that function on the user's first
+        // review, or already exists with sensible defaults either way.
         supabase.from('account_verifications').upsert(
           { user_id: authId, identity_verified: false, payment_verified: false, updated_at: new Date().toISOString() },
           { onConflict: 'user_id' }

@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
+import { UserAvatar } from '../components/AccountTypeBadge';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -483,9 +484,7 @@ export function ListingDetail() {
                       }`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                            <UserIcon className="w-4 h-4 text-gray-400" />
-                          </div>
+                          <UserAvatar user={{ name: review.userName, avatar: review.userAvatar, id: review.userId }} size={36} />
                           <div>
                             <p className="font-semibold text-sm text-gray-900">{review.userName}</p>
                             <p className="text-xs text-gray-400">{new Date(review.createdAt).toLocaleDateString('en-CA', { month: 'short', year: 'numeric' })}</p>

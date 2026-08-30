@@ -566,7 +566,18 @@ export function Profile() {
   const [savedFetchedOnce, setSavedFetchedOnce] = useState(false);
   const [reviews,         setReviews]         = useState<Review[]>([]); // Reviews Given (written by me)
   const [receivedReviews, setReceivedReviews] = useState<Review[]>([]); // Reviews Received (about me)
-  const [reviewsView,     setReviewsView]     = useState<'received' | 'given'>('received');
+  // URL-synced (not just local state) so that navigating to a review's
+  // listing and pressing Back restores this exact sub-tab -- a plain
+  // useState here would reset to 'received' on remount since browser Back
+  // re-mounts this page fresh.
+  const [reviewsView, setReviewsView] = useState<'received' | 'given'>(() => {
+    const v = searchParams.get('rv');
+    return v === 'given' ? 'given' : 'received';
+  });
+  const setReviewsViewSynced = (v: 'received' | 'given') => {
+    setReviewsView(v);
+    setSearchParams({ tab: 'reviews', rv: v }, { replace: true });
+  };
   const [loading,       setLoading]       = useState(true);
   const [showCompose,      setShowCompose]      = useState(false);
   const [showAvatarSheet,  setShowAvatarSheet]  = useState(false);
@@ -1881,7 +1892,7 @@ export function Profile() {
                   not be conflated into one undifferentiated list. */}
               <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
                 {(['received','given'] as const).map(v => (
-                  <button key={v} onClick={() => setReviewsView(v)}
+                  <button key={v} onClick={() => setReviewsViewSynced(v)}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                       reviewsView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
                     }`}>
@@ -1892,23 +1903,37 @@ export function Profile() {
 
               {(reviewsView === 'received' ? receivedReviews : reviews).length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Star className="w-10 h-10 text-gray-200 mx-auto mb-3"/><p className="text-gray-500">No reviews yet</p></div>
-                : (reviewsView === 'received' ? receivedReviews : reviews).map(r=>(
-                    <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                : (reviewsView === 'received' ? receivedReviews : reviews).map(r=>{
+                    // A review can only open its listing when it actually
+                    // has one (older reviews may predate listing_id) and
+                    // that listing is still available -- never guess a
+                    // destination for either case, per spec.
+                    const canOpenListing = !!r.listingId && r.listingAvailable !== false;
+                    return (
+                    <div key={r.id}
+                      onClick={canOpenListing ? () => navigate(`/listing/${r.listingId}`) : undefined}
+                      className={`bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${canOpenListing ? 'cursor-pointer hover:border-gray-200 active:scale-[0.99] transition-all' : ''}`}>
                       <div className="flex items-center justify-between mb-2">
                         {reviewsView === 'received' ? (
                           <div className="flex items-center gap-2.5">
-                            {r.userAvatar
-                              ? <img src={r.userAvatar} alt="" className="w-7 h-7 rounded-full object-cover"/>
-                              : <div className="w-7 h-7 rounded-full bg-gray-100"/>}
+                            <UserAvatar user={{ name: r.userName || 'Anonymous', avatar: r.userAvatar, id: r.userId }} size={28} />
                             <p className="font-semibold text-sm text-gray-900">{r.userName || 'Anonymous'}</p>
                           </div>
                         ) : <span />}
                         <div className="flex gap-0.5">{[...Array(5)].map((_,i)=><Star key={i} className={`w-3.5 h-3.5 ${i<r.rating?'text-yellow-400 fill-yellow-400':'text-gray-200'}`}/>)}</div>
                       </div>
                       <p className="text-sm text-gray-600">{r.comment}</p>
-                      <p className="text-[11px] text-gray-400 mt-2">{new Date(r.createdAt).toLocaleDateString('en-CA',{month:'short',year:'numeric',day:'numeric'})}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-[11px] text-gray-400">{new Date(r.createdAt).toLocaleDateString('en-CA',{month:'short',year:'numeric',day:'numeric'})}</p>
+                        {canOpenListing ? (
+                          <p className="text-[11px] font-semibold text-blue-600">{r.listingTitle ? `From: ${r.listingTitle}` : 'View related listing'}</p>
+                        ) : r.listingId ? (
+                          <p className="text-[11px] text-gray-400">Listing no longer available</p>
+                        ) : null}
+                      </div>
                     </div>
-                  ))
+                    );
+                  })
               }
             </div>
           )}

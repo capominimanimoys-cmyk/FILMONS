@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, ChevronRight, ChevronLeft, Upload, Trash2, Check, X,
   Image as ImageIcon, Video, Camera, Info, Briefcase, MapPin, Calendar,
-  DollarSign, Users, MessageCircle, Loader2, Share2,
+  DollarSign, Users, MessageCircle, Loader2,
 } from 'lucide-react';
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
 import { VideoCoverPicker } from '../components/VideoCoverPicker';
@@ -622,7 +622,6 @@ function SuccessScreen({ listingId, navigate }: { listingId: string; navigate: (
       </div>
       <div className="w-full max-w-xs flex flex-col gap-2 mt-2">
         <button onClick={() => navigate(`/listing/${listingId}`)} className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm">View Opportunity</button>
-        <button onClick={() => navigate(`/boost/${listingId}`)} className="w-full py-3.5 rounded-2xl border border-gray-200 text-gray-700 font-bold text-sm flex items-center justify-center gap-1.5"><Share2 className="w-4 h-4" /> Boost Opportunity</button>
         <button onClick={() => navigate('/profile')} className="w-full py-3 text-sm font-semibold text-gray-400">Done</button>
       </div>
     </div>

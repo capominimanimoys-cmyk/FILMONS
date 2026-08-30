@@ -11,6 +11,8 @@
 // stripe-charge) as environment variables.
 import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
 import { sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
+import { addBusinessDays } from '../_shared/businessDays.ts';
+import { normalizeTier } from '../_shared/entitlements.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -441,9 +443,18 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ received: true, skipped: 'no host_id/subtotal' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    const availableAt = meta.rental_end_date
-      ? new Date(new Date(meta.rental_end_date).getTime() + 48 * 3600 * 1000).toISOString()
-      : new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    // Creator+/Professional/Business earnings clear on a business-day hold
+    // (typically 2-5 business days, communicated to the user as a range —
+    // see Wallet.tsx) instead of the flat 48-calendar-hour hold plain
+    // Creator-tier earnings still use. Same anchor point either way
+    // (rental end date if known, else now) — only the offset changes.
+    const earnerProfile = await selectOne('profiles', `id=eq.${hostId}`);
+    const earnerTier = normalizeTier(earnerProfile?.account_type);
+    const earnerEligibleForHold = earnerTier === 'creator_plus' || earnerTier === 'professional' || earnerTier === 'business';
+    const anchor = meta.rental_end_date ? new Date(meta.rental_end_date) : new Date();
+    const availableAt = earnerEligibleForHold
+      ? addBusinessDays(anchor, 3).toISOString()
+      : new Date(anchor.getTime() + 48 * 3600 * 1000).toISOString();
 
     const processed = await rpc('fn_finalize_payment', {
       p_idempotency_key: event.id,
@@ -465,7 +476,7 @@ Deno.serve(async (req) => {
     if (processed && meta.agreement_id) {
       try {
         const agRow = await selectOne('rental_agreements', `id=eq.${meta.agreement_id}`);
-        const hostProfile = await selectOne('profiles', `id=eq.${hostId}`);
+        const hostProfile = earnerProfile;
         if (agRow) {
           const details = agRow.rental_details_snapshot || {};
           const total = subtotal + buyerFeeAmount;
@@ -525,6 +536,9 @@ Deno.serve(async (req) => {
           };
           if (agRow.verified_email) {
             sendFallbackEmail({ ...sharedParams, to_email: agRow.verified_email, to_name: renterName, reply_to: 'filmons481@gmail.com' });
+          }
+          if (hostProfile?.email && earnerEligibleForHold) {
+            sharedParams.greeting_message = 'Your payment is confirmed! Funds typically become available in your Filmons Wallet within 2–5 business days. View your rental agreement and receipt anytime from Dashboard → Orders.';
           }
           if (hostProfile?.email) {
             sendFallbackEmail({ ...sharedParams, to_email: hostProfile.email, to_name: hostProfile.name || 'Host', reply_to: agRow.verified_email || 'filmons481@gmail.com' });

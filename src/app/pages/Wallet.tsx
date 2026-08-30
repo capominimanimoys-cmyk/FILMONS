@@ -7,10 +7,23 @@ import {
   walletApi, type WalletBalance, type WalletTransaction, type PayoutMethodType,
   type PayoutDestination, type PayoutMethod, type PayoutRequest, type PayoutSpeed,
 } from '../lib/walletApi';
+import { isCreatorPlus } from '../lib/reliabilityApi';
 import {
   Wallet as WalletIcon, ArrowUpRight, RefreshCw, DollarSign, Clock, Loader2,
-  X, ChevronRight, ChevronLeft, Check, Landmark, Pencil, Zap, ShieldCheck,
+  X, ChevronRight, ChevronLeft, Check, Landmark, Pencil, Zap, ShieldCheck, Info,
 } from 'lucide-react';
+
+// Creator+/Professional/Business earnings clear on a business-day hold
+// (server-authoritative, set on wallet_transactions.available_at by
+// stripe-webhook) instead of the flat 48-hour hold plain Creator-tier
+// earnings still use -- this only ever varies the copy shown, never the
+// actual release timing, which is decided server-side either way.
+const PENDING_HOLD_COPY = 'Funds received through Filmons typically become available in your wallet within 2–5 business days.';
+
+function estimatedAvailabilityLabel(availableAt: string | null): string {
+  if (!availableAt) return 'Estimated availability: 2–5 business days';
+  return `Estimated available by ${new Date(availableAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+}
 
 const fmtCad = (cad: number) =>
   `$${cad.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -227,6 +240,12 @@ function PayoutModalInner(props: {
               </div>
               {!amountValid && amount !== '' && (
                 <p className="text-xs text-red-500 mt-2">Enter an amount between $0.01 and {fmtCad(available)}.</p>
+              )}
+              {isCreatorPlus(user?.accountType) && (
+                <p className="text-[11px] text-gray-400 mt-3 flex items-start gap-1.5">
+                  <Info className="w-3 h-3 text-gray-300 shrink-0 mt-0.5" />
+                  Recently received funds may still be pending and aren't included above — new funds typically become available within 2–5 business days.
+                </p>
               )}
             </div>
           )}
@@ -502,6 +521,11 @@ export function Wallet() {
 
   if (!isAuthenticated || !user) return null;
 
+  const holdNoticeEligible = isCreatorPlus(user.accountType);
+  const pendingCaption = holdNoticeEligible
+    ? 'typically available within 2–5 business days'
+    : 'releases ~48h after each rental ends';
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero */}
@@ -530,7 +554,7 @@ export function Wallet() {
             </div>
             <div className="flex items-center gap-1.5 mt-3 text-blue-200 text-sm">
               <Clock className="w-3.5 h-3.5" />
-              <span>{fmtCad(balance.pending)} pending — releases ~48h after each rental ends</span>
+              <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>
             </div>
             <button
               onClick={() => setShowModal(true)}
@@ -559,7 +583,7 @@ export function Wallet() {
               <span className="text-4xl font-black leading-none">{fmtCad(balance.pending)}</span>
               <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
                 <Clock className="w-3.5 h-3.5 shrink-0" />
-                Releases ~48h after each rental ends
+                {holdNoticeEligible ? 'Typically available within 2–5 business days' : 'Releases ~48h after each rental ends'}
               </p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
@@ -572,6 +596,17 @@ export function Wallet() {
       </div>
 
       <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-6 space-y-6">
+        {/* Funds availability notice — Creator+/Professional/Business only */}
+        {holdNoticeEligible && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-900">Funds availability</p>
+              <p className="text-xs text-amber-700 mt-0.5">{PENDING_HOLD_COPY}</p>
+            </div>
+          </div>
+        )}
+
         {/* On Hold — Opportunity/Hire earnings held until work is confirmed complete */}
         {txs.some(t => (t.transaction_type === 'opportunity_earning' || t.transaction_type === 'hire_earning') && t.status === 'pending') && (
           <div>
@@ -742,6 +777,9 @@ export function Wallet() {
                         {tx.status === 'pending' ? 'Pending' : 'Available'}
                       </span>
                     </div>
+                    {tx.status === 'pending' && (
+                      <p className="text-[11px] text-amber-600 mt-0.5">{estimatedAvailabilityLabel(tx.available_at)}</p>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     <span className={`text-sm font-black ${tx.status === 'pending' ? 'text-amber-600' : 'text-green-600'}`}>+{fmtCad(tx.amount)}</span>

@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { Briefcase, Users, Share2, Pencil, Zap } from 'lucide-react';
+import { Briefcase, Users, Share2, Pencil } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Listing } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -136,7 +136,6 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
 
             <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-500">
               <button onClick={() => navigate(`/edit-listing/${o.id}`)} className="flex items-center gap-1 hover:text-gray-800"><Pencil className="w-3 h-3" /> Edit</button>
-              <button onClick={() => navigate(`/boost/${o.id}`)} className="flex items-center gap-1 hover:text-gray-800"><Zap className="w-3 h-3" /> Boost</button>
               <button onClick={() => share(o)} className="flex items-center gap-1 hover:text-gray-800"><Share2 className="w-3 h-3" /> Share</button>
               <button onClick={() => toggleApplications(o)} className="ml-auto hover:text-gray-800">
                 {status === 'applications_closed' ? 'Reopen Applications' : 'Close Applications'}

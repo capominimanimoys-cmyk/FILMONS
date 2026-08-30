@@ -63,6 +63,13 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { ...cors, 'Content-Type': 'application/json' } });
   }
 
+  // Boost Listing is temporarily disabled — new purchases blocked at the
+  // source, not just hidden in the UI. No data is touched; boost-expire and
+  // existing listing_boosts/boost_events rows are untouched, and this can
+  // be removed to re-enable the feature. Emergency Listing (emergency-charge)
+  // is a separate function and is unaffected.
+  return new Response(JSON.stringify({ error: 'Boost Listing is temporarily unavailable' }), { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } });
+
   try {
     const {
       listingId, ownerId, goal, audienceType, audienceConfig,
