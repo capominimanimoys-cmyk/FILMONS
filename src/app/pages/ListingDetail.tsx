@@ -179,6 +179,12 @@ export function ListingDetail() {
     const evaluate = (top: number) => {
       const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
       const realSectionVisible = top < window.innerHeight - barHeight;
+      // Temporary — remove once confirmed fixed on a real device. If this
+      // never logs at all, the effect/listeners aren't running (a hooks/
+      // mount issue); if it logs but realSectionVisible never flips true
+      // while visibly scrolled past the real section, the bug is in this
+      // math, not the CSS.
+      console.log('[ListingDetail] sticky bar check', { top, barHeight, innerHeight: window.innerHeight, realSectionVisible });
       setShowStickyApply(!realSectionVisible);
     };
 
@@ -719,10 +725,24 @@ export function ListingDetail() {
            section is already a sticky sidebar, always in view there. ── */}
       <div
         ref={stickyBarRef}
-        className={`lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-3 transition-all duration-[220ms] ease-out ${
-          showStickyApply ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
-        }`}
-        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+        className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-3"
+        style={{
+          paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+          // Inline, not Tailwind's transition-all/translate-y-*/opacity-*
+          // classes -- this app has a global `*` rule (src/styles/theme.css)
+          // that force-overrides transition-property on every element to a
+          // fixed list that does NOT include `transform` (unlayered CSS
+          // always beats Tailwind's layered utilities, a documented,
+          // established gotcha ShareCard.tsx already had to work around the
+          // same way). That silently drops the slide animation and, more
+          // importantly, is exactly the kind of external-rule interference
+          // that inline styles are immune to -- inline style always wins
+          // over any stylesheet rule, layered or not, no exceptions.
+          transition: 'transform 220ms ease-out, opacity 220ms ease-out',
+          transform: showStickyApply ? 'translateY(0)' : 'translateY(100%)',
+          opacity: showStickyApply ? 1 : 0,
+          pointerEvents: showStickyApply ? 'auto' : 'none',
+        }}
         aria-hidden={!showStickyApply}
       >
         <div className="min-w-0">
