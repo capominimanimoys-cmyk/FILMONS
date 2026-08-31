@@ -161,63 +161,51 @@ export function ListingDetail() {
   // Starts true (not false) -- the real card is always below the fold on
   // first paint (images/description/host card all come first), so the
   // preview must show immediately when the page opens, not wait for the
-  // observer's first callback to confirm what's already obviously true.
+  // first scroll/resize check to confirm what's already obviously true.
   const [showStickyApply, setShowStickyApply] = useState(true);
+  // Temporary on-screen readout (not console-only) so the next report on
+  // this bar can include the actual numbers instead of "still not
+  // working" -- three prior fix rounds each addressed a real, verifiable
+  // issue (rootMargin math, an over-broad observed target, a stale
+  // isIntersecting read) without the person testing being able to see
+  // what the check was actually computing. Remove once confirmed fixed.
+  const [stickyDebug, setStickyDebug] = useState<{ top: number; bottom: number; barHeight: number; vh: number; visible: boolean } | null>(null);
   useEffect(() => {
     const el = priceApplyRef.current;
     if (!el) return;
 
-    // The decision ("is the real section actually visible, accounting for
-    // the sticky bar physically covering the bottom of the screen") is
-    // computed directly from entry.boundingClientRect -- IntersectionObserver
-    // always reports this, for every callback, regardless of whether
-    // isIntersecting is true -- rather than trusting isIntersecting itself,
-    // which depends entirely on getting a rootMargin string exactly right
-    // with no way to verify it outside a real device. Reading the bar's
-    // height fresh on every callback (not once at observer-creation time)
-    // means it can never go stale either.
-    const evaluate = (top: number) => {
+    // A single source of truth: the real section's own
+    // getBoundingClientRect() read fresh on every scroll/resize frame.
+    // (A parallel IntersectionObserver was removed here -- it was
+    // reporting the exact same rect through a second, browser-throttled
+    // code path, which only added a second place for this to go stale or
+    // disagree with the scroll listener; it added no information the
+    // scroll listener didn't already have.) "Visible" means any part of
+    // the element is within the viewport slice the sticky bar doesn't
+    // cover -- both edges checked, not just the top one, so a section
+    // scrolled fully past (top very negative) doesn't read as visible.
+    const evaluate = () => {
       const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
-      const realSectionVisible = top < window.innerHeight - barHeight;
-      // Temporary — remove once confirmed fixed on a real device. If this
-      // never logs at all, the effect/listeners aren't running (a hooks/
-      // mount issue); if it logs but realSectionVisible never flips true
-      // while visibly scrolled past the real section, the bug is in this
-      // math, not the CSS.
-      console.log('[ListingDetail] sticky bar check', { top, barHeight, innerHeight: window.innerHeight, realSectionVisible });
-      setShowStickyApply(!realSectionVisible);
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const visible = rect.top < vh - barHeight && rect.bottom > 0;
+      setStickyDebug({ top: Math.round(rect.top), bottom: Math.round(rect.bottom), barHeight, vh, visible });
+      setShowStickyApply(!visible);
     };
 
-    // threshold as a dense array (not just [0]) makes the callback fire
-    // repeatedly as the target's visible proportion changes while
-    // scrolling, instead of only once at the literal viewport edge --
-    // needed so `evaluate` gets called with fresh, close-to-real-time
-    // boundingClientRect values throughout the scroll, not just at one
-    // single crossing point.
-    const observer = new IntersectionObserver(
-      ([entry]) => evaluate(entry.boundingClientRect.top),
-      { threshold: Array.from({ length: 21 }, (_, i) => i / 20) },
-    );
-    observer.observe(el);
-
-    // Belt-and-suspenders: IntersectionObserver callbacks are throttled by
-    // the browser and can lag a real-time scroll gesture. A rAF-throttled
-    // scroll listener recomputes the exact same geometry check every
-    // frame, so the bar's visibility can never drift out of sync with
-    // where the real section actually is on screen.
     let raf = 0;
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        evaluate(el.getBoundingClientRect().top);
+        evaluate();
       });
     };
+    evaluate();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
 
     return () => {
-      observer.disconnect();
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
       if (raf) cancelAnimationFrame(raf);
@@ -719,10 +707,20 @@ export function ListingDetail() {
         </div>
       </div>
 
+      {/* Temporary debug readout — remove once the sticky bar below is
+          confirmed fixed. Shows exactly what the visibility check above is
+          computing, live, without needing devtools open. */}
+      {stickyDebug && (
+        <div className="lg:hidden fixed top-16 right-2 z-50 bg-black/80 text-white text-[10px] font-mono px-2 py-1.5 rounded-lg leading-tight">
+          top:{stickyDebug.top} bot:{stickyDebug.bottom} bar:{stickyDebug.barHeight} vh:{stickyDebug.vh}<br />
+          visible:{String(stickyDebug.visible)} showBar:{String(showStickyApply)}
+        </div>
+      )}
+
       {/* ── Mobile sticky Price+Apply preview — same price/action as the real
-           card above, IntersectionObserver-driven so it's never shown at the
-           same time as the real one. lg:hidden: desktop's version of this
-           section is already a sticky sidebar, always in view there. ── */}
+           card above, scroll-driven so it's never shown at the same time as
+           the real one. lg:hidden: desktop's version of this section is
+           already a sticky sidebar, always in view there. ── */}
       <div
         ref={stickyBarRef}
         className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-3"
