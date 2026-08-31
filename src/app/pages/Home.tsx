@@ -186,11 +186,16 @@ export function Home() {
   // resolves shows zero Opportunity cards, not a flash of everything.
   const oppUnlimited = userTier === 'professional' || userTier === 'business';
   const [oppSwipesRemaining, setOppSwipesRemaining] = useState(0);
+  // Temporary — remove once confirmed fixed on a real device.
+  const [oppDebug, setOppDebug] = useState('not run yet');
   useEffect(() => {
-    if (oppUnlimited) return;
+    if (oppUnlimited) { setOppDebug('oppUnlimited=true, skipped'); return; }
     let cancelled = false;
+    setOppDebug(`fetching… userTier=${userTier} userId=${user?.id ?? 'none'}`);
     opportunityFeedApi.getSwipeStatus(user?.id, !user).then(({ unlimited, swipeCount, limit }) => {
-      if (cancelled || unlimited) return; // unlimited: server disagreed with the client tier read -- oppUnlimited already covers this path
+      if (cancelled) return;
+      setOppDebug(`resolved: unlimited=${unlimited} swipeCount=${swipeCount} limit=${limit}`);
+      if (unlimited) return; // unlimited: server disagreed with the client tier read -- oppUnlimited already covers this path
       setOppSwipesRemaining(Math.max(0, limit - swipeCount));
     });
     return () => { cancelled = true; };
@@ -564,6 +569,14 @@ export function Home() {
 
   return (
     <div className="min-h-screen bg-gray-100 pb-24 lg:pb-16">
+
+      {/* Temporary debug readout for the Opportunity daily-limit bug —
+          remove once confirmed fixed on a real device. */}
+      {filter === 'talent' && (
+        <div className="bg-yellow-300 text-black text-[10px] font-mono px-2 py-1.5 leading-tight break-words">
+          status:{oppDebug} | oppUnlimited:{String(oppUnlimited)} remaining:{oppSwipesRemaining} talentTotal:{talentTotalCount} listingsLen:{listings.length} deckLen:{deck.length} limitReached:{String(oppLimitReached)} deckDone:{String(deckDone)}
+        </div>
+      )}
 
       {/* ── Search bar — desktop gets DesktopTopBar's search instead, in the
            global top bar above every page, not just Home ── */}
