@@ -263,9 +263,6 @@ export function VerifyEmail() {
             We sent a 6-digit verification code to{' '}
             <span className="text-white/70 font-semibold">{pending.email}</span>
           </p>
-          <p className="text-white/30 text-xs text-center max-w-xs mt-2">
-            Didn't receive the email? Check your <span className="text-white/50">spam or junk folder</span>. It may take a few minutes to arrive.
-          </p>
         </div>
 
         {/* Code input */}
@@ -284,6 +281,12 @@ export function VerifyEmail() {
             />
           ))}
         </div>
+
+        {/* Subtle, non-alert helper text -- placed between the code inputs
+            and Resend Code per spec, not styled as a warning. */}
+        <p className="text-[12px] text-white/35 text-center mb-4">
+          Didn't receive the code? Check your spam or junk folder.
+        </p>
 
         <div className="w-full max-w-sm mx-auto space-y-3">
           <button
@@ -304,10 +307,6 @@ export function VerifyEmail() {
           >
             {resending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Resend Code'}
           </button>
-
-          <p className="text-[11px] text-white/25 text-center -mt-1">
-            Still haven't received it? Try resending or check spam.
-          </p>
 
           {!editEmail ? (
             <button

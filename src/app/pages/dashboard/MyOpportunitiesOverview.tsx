@@ -12,25 +12,13 @@ import { toast } from 'sonner';
 import { Briefcase, Users, Share2, Pencil } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Listing } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { getEntitlement, getOpportunityUsage, formatLimit, resetLabel } from '../../lib/entitlements';
-import { normalizeTier } from '../../lib/reliabilityApi';
 
 interface Counts { all: number; new: number; shortlisted: number; accepted: number; }
 
 export function MyOpportunitiesOverview({ opportunities }: { opportunities: Listing[] }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [counts, setCounts] = useState<Record<string, Counts>>({});
   const [loading, setLoading] = useState(true);
-  const [usage, setUsage] = useState<{ posts: number; applications: number } | null>(null);
-  const tier = normalizeTier(user?.accountType);
-  const entitlement = getEntitlement(user?.accountType);
-
-  useEffect(() => {
-    if (!user) return;
-    getOpportunityUsage(user.id, user.accountType).then(setUsage).catch(() => {});
-  }, [user?.id]);
 
   useEffect(() => {
     if (!opportunities.length) { setLoading(false); return; }
@@ -69,30 +57,9 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
     else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
   };
 
-  const usageHeader = (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 grid grid-cols-2 gap-3">
-      <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide flex items-center gap-1"><Briefcase className="w-3 h-3" /> Opportunity Posts</p>
-        <p className="text-sm font-bold text-gray-900">
-          {tier === 'business' ? 'Unlimited' : `${usage?.posts ?? 0} / ${formatLimit(entitlement.posts)} this ${entitlement.window}`}
-        </p>
-      </div>
-      <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wide flex items-center gap-1"><Users className="w-3 h-3" /> Applications</p>
-        <p className="text-sm font-bold text-gray-900">
-          {tier === 'business' ? 'Unlimited' : `${usage?.applications ?? 0} / ${formatLimit(entitlement.applications)} used this ${entitlement.window}`}
-        </p>
-      </div>
-      {tier !== 'business' && (
-        <p className="col-span-2 text-[11px] text-gray-400">{resetLabel(entitlement.window)}</p>
-      )}
-    </div>
-  );
-
   if (!opportunities.length) {
     return (
       <div className="space-y-3">
-        {usageHeader}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center space-y-2">
           <Briefcase className="w-10 h-10 text-indigo-200 mx-auto" />
           <h3 className="font-bold text-gray-900">No Opportunities posted yet</h3>
@@ -104,7 +71,6 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
 
   return (
     <div className="space-y-3">
-      {usageHeader}
       {opportunities.map(o => {
         const c = counts[o.id] || { all: 0, new: 0, shortlisted: 0, accepted: 0 };
         const status = o.opportunity?.opportunityStatus || 'active';

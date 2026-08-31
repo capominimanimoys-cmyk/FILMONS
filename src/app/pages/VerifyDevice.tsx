@@ -139,6 +139,7 @@ export function VerifyDevice() {
           </div>
 
           <div className="text-center space-y-3">
+            <p className="text-white/30 text-[11px]">Check your spam or junk folder if it hasn't arrived.</p>
             <p className="text-white/40 text-xs">
               Didn't receive the code?{' '}
               <button

@@ -756,6 +756,7 @@ export function AboutEditor(props: Props) {
                 <div className="space-y-2">
                   <p className="text-xs text-gray-500">Enter code sent to <strong>{user.email}</strong></p>
                   <SInput value={props.otpCode} onChange={e=>props.setOtpCode(e.target.value)} maxLength={6} placeholder="000000" className="text-center text-lg font-bold tracking-widest"/>
+                  <p className="text-[11px] text-gray-400 text-center">Didn't receive the code? Check your spam or junk folder.</p>
                   <button onClick={async()=>{props.setOtpVerifying(true);try{await updateUser({email:props.newEmail}as any);props.setEditEmail(false);props.setOtpSent(false);props.setOtpCode('');toast.success('Email updated!');}catch{toast.error('Failed');}props.setOtpVerifying(false);}}
                     className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-xl">{props.otpVerifying?'Verifying…':'Confirm'}</button>
                 </div>

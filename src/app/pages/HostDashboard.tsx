@@ -12,7 +12,7 @@ import {
   MessageCircle, ShieldCheck, Settings, Bookmark, Heart, MapPin,
   ShoppingCart, Zap, X, CalendarDays, Lock, Briefcase, FileText,
 } from 'lucide-react';
-import { savedListingsApi, listingsApi } from '../lib/api';
+import { savedListingsApi, listingsApi, reviewsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
@@ -25,9 +25,6 @@ function getStoredListings(): Listing[] {
 }
 function getStoredConvs(): Conversation[] {
   try { return JSON.parse(localStorage.getItem('filmons_conversations') || '[]'); } catch { return []; }
-}
-function getStoredReviews(): any[] {
-  try { return JSON.parse(localStorage.getItem('filmons_reviews') || '[]'); } catch { return []; }
 }
 function fmt(n: number) {
   return n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -750,6 +747,33 @@ function HostDashboardContent({ user }: { user: any }) {
     reviewCount: 0, avgRating: 0, activeRequests: 0,
   });
 
+  // Reviews Received (reviewed_user_id = this user, via reviewsApi.
+  // getReceivedReviews) -- the same source of truth HostProfile.tsx's
+  // public reputation/star rating already computes from, replacing the
+  // old getStoredReviews() localStorage read (a dead cache nothing writes
+  // real reviews into anymore, which is why this always showed 0). No
+  // separate manually-maintained counter -- count and average are derived
+  // straight from the reviews rows every time this runs.
+  const refreshReviewStats = () => {
+    reviewsApi.getReceivedReviews(user.id).then(reviews => {
+      const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+      setStats(prev => ({ ...prev, reviewCount: reviews.length, avgRating }));
+    }).catch(() => {});
+  };
+
+  // Realtime: a new review landing while this page is open must not wait
+  // for a manual refresh/re-mount to stop showing a stale count -- same
+  // postgres_changes pattern already used for Inbox's live message feed.
+  useEffect(() => {
+    const ch = supabase
+      .channel(`dashboard_reviews_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews', filter: `reviewed_user_id=eq.${user.id}` }, () => {
+        refreshReviewStats();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user.id]);
+
   useEffect(() => {
     // Instant paint from cache, then replaced by a live, is_active-filtered
     // fetch below — the cache alone previously meant a deleted listing kept
@@ -791,9 +815,6 @@ function HostDashboardContent({ user }: { user: any }) {
 
         const totalEarned = orders.reduce((s: number, o: any) => s + Number(o.total_amount || 0), 0);
 
-        const reviews = getStoredReviews().filter(r => cached.some(l => l.id === r.listingId));
-        const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
-
         // Real wallet balance (pending vs available) — replaces the old
         // Math.max(localStorage wallet, order total) approximation.
         walletApi.getBalance(user.id).then(({ pending, available }) => {
@@ -806,11 +827,12 @@ function HostDashboardContent({ user }: { user: any }) {
           listingCount: cached.length,
           followers: user.followers?.length || 0,
           following: user.following?.length || 0,
-          reviewCount: reviews.length, avgRating,
           activeRequests: 0,
         }));
       })
       .catch(() => {});
+
+    refreshReviewStats();
 
     savedListingsApi.getSaved(user.id).then(ls => setSavedListings2(Array.isArray(ls) ? ls : [])).catch(() => setSavedListings2([]));
   }, [user]);

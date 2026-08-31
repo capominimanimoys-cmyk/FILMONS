@@ -244,6 +244,9 @@ export function ForgotPassword() {
               className="w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30">
               {loading ? 'Verifying…' : 'Verify Code'}
             </button>
+            <p className="text-center text-[12px] text-white/35 -mt-2">
+              Didn't receive the code? Check your spam or junk folder.
+            </p>
             <button onClick={resend} disabled={resendIn > 0}
               className="w-full text-center text-xs py-1 font-semibold transition-colors"
               style={{ color: resendIn > 0 ? 'rgba(255,255,255,0.2)' : '#60a5fa' }}>
