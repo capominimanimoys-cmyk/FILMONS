@@ -1433,7 +1433,10 @@ export function Portfolio() {
   const showAlbumDetail = activeTab === 'albums' && activeAlbum;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
+    <div
+      className="min-h-screen bg-gray-50 pb-28 w-full max-w-full overflow-x-hidden overscroll-x-none touch-pan-y"
+      style={{ boxSizing: 'border-box' }}
+    >
 
       {/* ── Cover photo ── */}
       <div className="relative z-0">
@@ -1469,20 +1472,26 @@ export function Portfolio() {
           </div>
         </div>
 
-        {/* Name + role */}
+        {/* Name + role — h1 needs min-w-0 (a flex item's default min-width
+            is its content's natural width, not 0) plus break-words: an
+            unusually long, unbroken display name would otherwise refuse to
+            wrap and push this whole flex row past the viewport edge. Same
+            reasoning for bio below (a long pasted URL/unbroken string
+            wouldn't wrap by default even with line-clamp, which only caps
+            visible lines, not width). */}
         <div className="mb-1">
           <div className="flex items-center gap-1.5">
-            <h1 className="font-black text-gray-900 text-xl leading-tight">{profile.name}</h1>
+            <h1 className="font-black text-gray-900 text-xl leading-tight min-w-0 break-words">{profile.name}</h1>
             {profile.isVerified && (
               <CheckCircle2 className="w-5 h-5 text-blue-500 fill-blue-500 shrink-0" />
             )}
           </div>
-          {profile.username && <p className="text-sm text-gray-400">@{profile.username}</p>}
+          {profile.username && <p className="text-sm text-gray-400 break-words">@{profile.username}</p>}
           {profile.primaryRole && <p className="text-xs font-bold text-blue-600 mt-0.5">{profile.primaryRole}</p>}
         </div>
 
         {profile.bio && (
-          <p className="text-sm text-gray-600 leading-relaxed mb-2 line-clamp-3">{profile.bio}</p>
+          <p className="text-sm text-gray-600 leading-relaxed mb-2 line-clamp-3 break-words">{profile.bio}</p>
         )}
 
         {(profile.location || profile.city) && (
@@ -1559,9 +1568,15 @@ export function Portfolio() {
               )}
           </div>
 
-          {/* Visitor action buttons */}
+          {/* Visitor action buttons — overflow-x-auto: Follow/Share/Message/Hire
+              are all shrink-0 (kept at their natural size, never visually
+              squished), so on a narrow phone their combined width can exceed
+              the viewport. Scrolling *this row* instead of hiding it keeps
+              every button reachable without dragging the whole page
+              sideways -- the actual overflowing element, not just this
+              page's outer container, needed the fix. */}
           {!isOwner && me && (
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full">
               <button
                 onClick={handleFollow}
                 disabled={isPending(profile.id)}
@@ -1598,9 +1613,14 @@ export function Portfolio() {
             </div>
           )}
 
-          {/* Owner action buttons */}
+          {/* Owner action buttons — same overflow-x-auto reasoning as the
+              visitor row above: Select/Add Work/Share/Settings are four
+              non-shrinking buttons whose combined width can exceed a narrow
+              phone's viewport. This was the actual source of the page-wide
+              horizontal scroll -- this row's content, not the page
+              container, was wider than the screen. */}
           {isOwner && (
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full">
               {activeTab !== 'albums' && (
                 <button
                   onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
