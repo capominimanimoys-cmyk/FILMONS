@@ -344,7 +344,14 @@ export function Home() {
   // null (Professional/Business) means "don't truncate" inside buildDeck.
   const oppSwipesRemainingForDeck = oppUnlimited ? null : oppSwipesRemaining;
   const deck = useMemo(() => buildDeck(listings, creators, filter, oppSwipesRemainingForDeck), [listings, creators, filter, oppSwipesRemainingForDeck]);
-  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, oppSwipesRemainingForDeck), [rawListings, rawCreators, filter, oppSwipesRemainingForDeck]);
+  // rawDeck is deliberately NEVER truncated by the swipe-remaining count --
+  // its only job is telling "genuinely nothing exists" apart from "you've
+  // already seen/swiped everything" (see the deckDone-promotion effect
+  // below). Truncating it the same way as `deck` meant once remaining hit
+  // 0, rawDeck also went empty even when real (already-excluded) matching
+  // listings existed, so that effect never fired and the plain "Nothing
+  // here yet" empty state showed instead of the correct caught-up screen.
+  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, null), [rawListings, rawCreators, filter]);
 
   // Reaching the end of the 'talent' deck means "hit the daily swipe cap"
   // only if there were genuinely more real Opportunities than the capped
