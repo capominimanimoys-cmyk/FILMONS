@@ -17,7 +17,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
-import { opportunityFeedApi } from '../lib/opportunityFeedApi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Global-search categories -- deliberately separate from ListingTypeFilter
@@ -995,33 +994,6 @@ function ResultSection({ label, count, grid=false, children }: { label:string; c
   );
 }
 
-// Shown right after a limited tier's (Guest/Creator/Creator+) 5 daily
-// Opportunity listings -- an inline card, not a blocking modal, since
-// these tiers can browse the category now (just capped), not shut out of
-// it entirely. "Not Now" needs no handler at all: staying on the page is
-// simply not tapping "Upgrade Account".
-function UnlockAllOpportunitiesCard({ isAuthenticated, navigate }: { isAuthenticated: boolean; navigate: (path: string) => void }) {
-  return (
-    <div className="mx-4 my-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-center">
-      <div className="w-11 h-11 rounded-2xl bg-indigo-100 flex items-center justify-center mx-auto mb-2.5">
-        <Lock className="w-5 h-5 text-indigo-600"/>
-      </div>
-      <p className="text-sm font-black text-gray-900 mb-1">Unlock All Opportunities</p>
-      <p className="text-xs text-gray-500 mb-3.5 leading-relaxed">Upgrade to a Professional or Business account to access all available Opportunity listings.</p>
-      <div className="flex flex-col gap-1.5">
-        <button
-          onClick={() => {
-            if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade'); navigate('/login'); return; }
-            navigate('/account/upgrade');
-          }}
-          className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs active:opacity-80">
-          Upgrade Account
-        </button>
-        <button className="w-full py-1.5 text-gray-500 font-semibold text-xs">Not Now</button>
-      </div>
-    </div>
-  );
-}
 
 // Singular, category-specific noun for the empty-state copy -- "rental
 // results", "creators", "opportunities", matching the exact phrasing spec'd
@@ -1153,37 +1125,15 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [sort,           setSort]           = useState<SortBy>('best_match');
   const [showFilterSheet,setShowFilterSheet]= useState(false);
   const [showSortSheet,  setShowSortSheet]  = useState(false);
-  // Professional/Business get unlimited Opportunity browsing;
-  // Guest/Creator/Creator+ can still open the category, but see at most 5
-  // per calendar day (server-enforced, see get-opportunity-feed) instead
-  // of being blocked outright -- isProfessional() already covers both
-  // unlimited tiers, and defaults false for a guest (no user) or any
-  // lower tier.
-  const { user, isAuthenticated, isGuest } = useAuth();
+  // Professional/Business get unlimited Opportunity browsing. Everyone
+  // else sees the 5 latest (opportunityListings is already newest-first,
+  // same as every other category) plus a "See More" button instead of the
+  // rest -- tapping it shows the account-tier gate, it doesn't fetch or
+  // reveal anything further. isProfessional() covers both unlimited
+  // tiers, and defaults false for a guest (no user) or any lower tier.
+  const { user, isAuthenticated } = useAuth();
   const canBrowseOpportunities = isProfessional(user?.accountType);
-
-  // Today's capped Opportunity allowance for limited tiers -- fetched once
-  // per SearchOverlay open (not re-fetched on tab switch/search/refresh
-  // within the same open, which is what makes the limit survive those
-  // without a fresh server round-trip resetting anything). Populated with
-  // the matching ListingRow-shaped rows once ids resolve.
-  const [oppAllowanceIds,    setOppAllowanceIds]    = useState<string[] | null>(null);
-  const [oppLimitReached,    setOppLimitReached]    = useState(false);
-  const [oppAllowanceRows,   setOppAllowanceRows]   = useState<ListingRow[]>([]);
-  useEffect(() => {
-    if (canBrowseOpportunities) return;
-    let cancelled = false;
-    opportunityFeedApi.getAllowance(user?.id, isGuest || !user).then(async ({ unlimited, listingIds, limitReached }) => {
-      if (cancelled) return;
-      if (unlimited) return; // server disagreed with the client tier read -- trust it, stay unlimited
-      setOppAllowanceIds(listingIds);
-      setOppLimitReached(limitReached);
-      if (!listingIds.length) { setOppAllowanceRows([]); return; }
-      const { data } = await supabase.from('listings').select(LISTING_SELECT).in('id', listingIds);
-      if (!cancelled) setOppAllowanceRows((data || []) as ListingRow[]);
-    });
-    return () => { cancelled = true; };
-  }, [canBrowseOpportunities, user?.id, isGuest]);
+  const [showOpportunityGate, setShowOpportunityGate] = useState(false);
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
@@ -1338,26 +1288,19 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const saleListings        = filteredListings.filter(l => isSaleListing(l));
   const serviceListingsOnly = filteredListings.filter(l => isServiceListing(l));
   const studioListings      = filteredListings.filter(l => isStudioListing(l));
-  const opportunityListings = filteredListings.filter(l => isOpportunityListing(l));
-
-  // Limited tiers (Guest/Creator/Creator+) never see the unrestricted
-  // opportunityListings above -- their Opportunities section is always
-  // sourced from oppAllowanceRows (today's server-allocated up-to-5),
-  // client-filtered by whatever's typed so a new search term narrows
-  // *within* the allowance instead of fetching a fresh, bigger pool from
-  // the server. Same allowance regardless of tab, so 'all' and
-  // 'opportunities' never show a different set.
-  const q_ = q.trim().toLowerCase();
-  const effectiveOpportunityListings = canBrowseOpportunities
-    ? opportunityListings
-    : (q_ ? oppAllowanceRows.filter(l => l.title?.toLowerCase().includes(q_) || l.description?.toLowerCase().includes(q_)) : oppAllowanceRows);
+  // Newest-first regardless of the active sort mode ("best_match" for a
+  // typed search otherwise ranks by relevance, not recency) -- "the 5
+  // latest" needs a real recency order underneath it, not whatever the
+  // general result ranking happens to produce.
+  const opportunityListings = filteredListings.filter(l => isOpportunityListing(l))
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   const visibleUsers        = (activeTab === 'all' || activeTab === 'creators')     ? filteredUsers        : [];
   const visibleRental       = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
   const visibleSale         = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
   const visibleServices     = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
   const visibleStudios      = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
-  const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? effectiveOpportunityListings : [];
+  const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
@@ -1518,11 +1461,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               )}
               {visibleOpportunities.length > 0 && (
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}>
-                  {visibleOpportunities.slice(0, 10).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : 5).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {!canBrowseOpportunities && visibleOpportunities.length > 5 && (
+                    <button onClick={() => setShowOpportunityGate(true)}
+                      className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+                      See More
+                    </button>
+                  )}
                 </ResultSection>
-              )}
-              {!canBrowseOpportunities && oppLimitReached && (activeTab === 'all' || activeTab === 'opportunities') && (
-                <UnlockAllOpportunitiesCard isAuthenticated={isAuthenticated} navigate={navigate}/>
               )}
               {resultsReady && !loading && !hasVisible && (
                 <EmptyState q={q} tab={activeTab}/>
@@ -1560,6 +1506,47 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             onSelect={setSort}
             onClose={() => setShowSortSheet(false)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── "See More" past the 5 latest Opportunities -- Professional or
+           Business required for the rest. Never fetches or reveals
+           anything further, just explains why. ── */}
+      <AnimatePresence>
+        {showOpportunityGate && (
+          <>
+            <motion.div variants={backdropV} initial="hidden" animate="visible" exit="exit"
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[120] bg-black/50"
+              onClick={() => setShowOpportunityGate(false)}/>
+            <motion.div variants={sheetV} initial="hidden" animate="visible" exit="exit"
+              transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+              className="fixed inset-x-0 bottom-0 z-[125] bg-white rounded-t-3xl shadow-2xl px-5 pt-6"
+              style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
+              <div className="text-center space-y-2 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
+                  <Lock className="w-6 h-6 text-indigo-600"/>
+                </div>
+                <p className="text-base font-black text-gray-900">Unlock All Opportunities</p>
+                <p className="text-sm text-gray-500">Professional or Business account required to access all opportunity listings.</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    setShowOpportunityGate(false);
+                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade'); navigate('/login'); return; }
+                    navigate('/account/upgrade');
+                  }}
+                  className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
+                  Upgrade Account
+                </button>
+                <button onClick={() => setShowOpportunityGate(false)}
+                  className="w-full py-3 text-gray-500 font-semibold text-sm">
+                  Not Now
+                </button>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </>

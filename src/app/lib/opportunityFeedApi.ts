@@ -1,28 +1,31 @@
-// Server-authoritative Opportunity allowance for Home and Browse/Search --
-// Guest/Creator/Creator+ are capped at 5 Opportunity listings per
-// calendar day, enforced by get-opportunity-feed (see that function's own
-// header comment) rather than trusted client-side. Professional/Business
-// call this too but always get { unlimited: true } back, since the tier
-// check happens server-side against the real profiles row.
-//
-// Deliberately returns only listing ids, not full Listing rows -- Home.tsx
-// and SearchOverlay.tsx each already have their own row shape/mapping
-// (Listing vs. SearchOverlay's simpler ListingRow) and their own existing
-// query for it; this just tells each caller *which* (at most 5) ids
-// they're allowed to show today.
+// Server-authoritative Opportunity swipe limit for Home's deck --
+// Guest/Creator/Creator+ can see ALL Opportunity listings, but only 5
+// swipes/day (separate from the general Home swipe limit); Professional/
+// Business are unlimited. Tier is resolved server-side in both endpoints
+// (get-opportunity-feed / record-opportunity-swipe), never trusted from
+// the client.
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { getGuestId } from './guestIdentity';
 
-export interface OpportunityAllowance {
+export interface OpportunitySwipeStatus {
   unlimited: boolean;
-  listingIds: string[];
-  limitReached: boolean;
+  swipeCount: number;
+  limit: number;
+}
+
+export interface RecordSwipeResult {
+  allowed: boolean;
+  swipeCount: number;
+}
+
+function resolveUserKey(userId: string | null | undefined, isGuest: boolean): { userKey: string; guest: boolean } {
+  const guest = isGuest || !userId;
+  return { userKey: guest ? getGuestId() : userId!, guest };
 }
 
 export const opportunityFeedApi = {
-  async getAllowance(userId: string | null | undefined, isGuest: boolean): Promise<OpportunityAllowance> {
-    const guest = isGuest || !userId;
-    const userKey = guest ? getGuestId() : userId;
+  async getSwipeStatus(userId: string | null | undefined, isGuest: boolean): Promise<OpportunitySwipeStatus> {
+    const { userKey, guest } = resolveUserKey(userId, isGuest);
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/get-opportunity-feed`, {
         method: 'POST',
@@ -32,16 +35,32 @@ export const opportunityFeedApi = {
       const data = await res.json();
       if (!res.ok || data.error) {
         console.warn('[opportunityFeedApi] get-opportunity-feed failed:', data.error);
-        return { unlimited: false, listingIds: [], limitReached: false };
+        return { unlimited: false, swipeCount: 5, limit: 5 }; // fail closed, never open
       }
-      if (data.unlimited) return { unlimited: true, listingIds: [], limitReached: false };
-      return { unlimited: false, listingIds: data.listingIds || [], limitReached: !!data.limitReached };
+      return { unlimited: !!data.unlimited, swipeCount: data.swipeCount ?? 0, limit: data.limit ?? 5 };
     } catch (e) {
       console.warn('[opportunityFeedApi] get-opportunity-feed threw:', e);
-      // Network failure: fail closed to an empty limited allowance, never
-      // to "unlimited" -- the whole point is this can't be bypassed by a
-      // flaky connection either.
-      return { unlimited: false, listingIds: [], limitReached: false };
+      return { unlimited: false, swipeCount: 5, limit: 5 };
+    }
+  },
+
+  async recordSwipe(userId: string | null | undefined, isGuest: boolean, listingId: string): Promise<RecordSwipeResult> {
+    const { userKey } = resolveUserKey(userId, isGuest);
+    try {
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/record-opportunity-swipe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ userKey, listingId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        console.warn('[opportunityFeedApi] record-opportunity-swipe failed:', data.error);
+        return { allowed: false, swipeCount: 5 };
+      }
+      return { allowed: !!data.allowed, swipeCount: data.swipeCount ?? 0 };
+    } catch (e) {
+      console.warn('[opportunityFeedApi] record-opportunity-swipe threw:', e);
+      return { allowed: false, swipeCount: 5 };
     }
   },
 };

@@ -42,7 +42,21 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
   { id: 'emergency', label: 'Emergency', icon: AlertTriangle },
 ];
 
-function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId, allowedOpportunityIds?: string[] | null): DeckItem[] {
+// Real Opportunity listings — listing_type === 'opportunity' is the
+// authoritative source of truth now; metadata.listingKind === 'talent'
+// (the earlier repurposed-kind marker) and the original keyword
+// heuristic are kept as fallbacks so older listings don't disappear.
+// Shared between buildDeck's 'talent' branch and Home()'s own count of
+// how many real Opportunities exist (needed to tell "ran out because of
+// the daily swipe cap" apart from "ran out because nothing else exists").
+function isTalentListing(l: EnrichedListing): boolean {
+  return l.listingType === 'opportunity' ||
+    l.listingKind === 'talent' ||
+    /model|actor|actress|talent|ugc/i.test(l.title ?? '') ||
+    /model|actor|actress|talent|ugc/i.test(l.serviceCategory ?? '');
+}
+
+function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId, opportunitySwipesRemaining?: number | null): DeckItem[] {
   if (filter === 'creators') {
     return creators.map(c => ({ kind: 'creator', data: c }));
   }
@@ -71,23 +85,15 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
       (l.serviceCategory?.toLowerCase() ?? '').includes('studio')
     );
   } else if (filter === 'talent') {
-    // Real Opportunity listings — listing_type === 'opportunity' is the
-    // authoritative source of truth now; metadata.listingKind === 'talent'
-    // (the earlier repurposed-kind marker) and the original keyword
-    // heuristic are kept as fallbacks so older listings don't disappear.
-    let talentListings = filtered.filter(l =>
-      l.listingType === 'opportunity' ||
-      l.listingKind === 'talent' ||
-      /model|actor|actress|talent|ugc/i.test(l.title ?? '') ||
-      /model|actor|actress|talent|ugc/i.test(l.serviceCategory ?? '')
-    );
-    // Guest/Creator/Creator+ (allowedOpportunityIds non-null): restrict to
-    // today's server-allocated up-to-5 (see get-opportunity-feed) instead
-    // of every matching listing -- null means Professional/Business
-    // (unlimited), where this filter is a no-op.
-    if (allowedOpportunityIds) {
-      const allowed = new Set(allowedOpportunityIds);
-      talentListings = talentListings.filter(l => allowed.has(l.id));
+    let talentListings = filtered.filter(isTalentListing);
+    // Guest/Creator/Creator+ see every real Opportunity listing (never a
+    // restricted subset) -- opportunitySwipesRemaining just sizes the
+    // deck to however many swipes they have left today (server-enforced
+    // per-swipe via record-opportunity-swipe, see Home()'s handleSwipe),
+    // so they can never swipe past the daily limit. null/undefined means
+    // Professional/Business (unlimited) -- full list, no truncation.
+    if (opportunitySwipesRemaining != null) {
+      talentListings = talentListings.slice(0, Math.max(0, opportunitySwipesRemaining));
     }
     const talentCreators = creators.filter(c =>
       /model|actor|actress|talent|influencer|ugc/i.test(c.primary_role ?? '')
@@ -167,26 +173,39 @@ export function Home() {
   const canBrowseEmergency = userTier === 'professional' || userTier === 'business';
   const [showEmergencyUpgrade, setShowEmergencyUpgrade] = useState(false);
 
-  // Opportunity ("talent" filter) browsing: Professional/Business
-  // unlimited, everyone else capped at 5/day -- server-enforced (see
-  // get-opportunity-feed), fetched once per Home mount so switching tabs,
-  // refreshing within the session, or a Refresh-deck tap never re-rolls a
-  // fresh 5. oppAllowanceIds stays null (meaning "unlimited, don't filter")
-  // for Professional/Business the whole time.
+  // Opportunity ("talent" filter) browsing: Guest/Creator/Creator+ see
+  // every real Opportunity listing (buildDeck's 'talent' branch is never
+  // filtered down by which ones), just capped at 5 SWIPES/day --
+  // server-enforced per swipe (see handleOpportunitySwipe below /
+  // record-opportunity-swipe). oppSwipesRemaining is resolved once per
+  // Home mount (not live-updated as the user swipes through the deck
+  // this session -- the deck is sized once, at load, to whatever was
+  // remaining then) so the deck doesn't shrink out from under an
+  // in-progress swipe-through. Starts at 0 (not the full amount) for a
+  // limited tier so the brief window before the server round-trip
+  // resolves shows zero Opportunity cards, not a flash of everything.
   const oppUnlimited = userTier === 'professional' || userTier === 'business';
-  const [oppAllowanceIds, setOppAllowanceIds] = useState<string[] | null>(null);
-  const [oppLimitReached, setOppLimitReached] = useState(false);
+  const [oppSwipesRemaining, setOppSwipesRemaining] = useState(0);
   useEffect(() => {
     if (oppUnlimited) return;
     let cancelled = false;
-    opportunityFeedApi.getAllowance(user?.id, !user).then(({ unlimited, listingIds, limitReached }) => {
-      if (cancelled) return;
-      if (unlimited) return; // server disagreed with the client tier read -- trust it
-      setOppAllowanceIds(listingIds);
-      setOppLimitReached(limitReached);
+    opportunityFeedApi.getSwipeStatus(user?.id, !user).then(({ unlimited, swipeCount, limit }) => {
+      if (cancelled || unlimited) return; // unlimited: server disagreed with the client tier read -- oppUnlimited already covers this path
+      setOppSwipesRemaining(Math.max(0, limit - swipeCount));
     });
     return () => { cancelled = true; };
   }, [oppUnlimited, user?.id]);
+
+  // Fire-and-forget per swipe (both directions -- Pass also "uses up" a
+  // preview, matching how the general Home swipe limit already treats
+  // left/right the same). Never blocks the UI: the deck was already
+  // sized to oppSwipesRemaining at load, so nothing here needs to gate
+  // the NEXT card in the same session -- this just keeps the server
+  // count correct for tomorrow/a refresh.
+  const handleOpportunitySwipe = (listingId: string) => {
+    if (oppUnlimited) return;
+    opportunityFeedApi.recordSwipe(user?.id, !user, listingId).catch(() => {});
+  };
 
   const [listings,  setListings]  = useState<EnrichedListing[]>([]);
   const [creators,  setCreators]  = useState<CreatorProfile[]>([]);
@@ -304,13 +323,18 @@ export function Home() {
   }, [user?.id, refreshKey]);
 
   // Rebuild deck whenever filter or source data changes; reset deck state via key
-  // null (Professional/Business) means "don't filter" inside buildDeck;
-  // for a limited tier whose allowance hasn't resolved yet, an empty array
-  // correctly shows zero Opportunity cards rather than the full unfiltered
-  // set for a flash before the fetch above completes.
-  const effectiveAllowanceIds = oppUnlimited ? null : (oppAllowanceIds ?? []);
-  const deck = useMemo(() => buildDeck(listings, creators, filter, effectiveAllowanceIds), [listings, creators, filter, effectiveAllowanceIds]);
-  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, effectiveAllowanceIds), [rawListings, rawCreators, filter, effectiveAllowanceIds]);
+  // null (Professional/Business) means "don't truncate" inside buildDeck.
+  const oppSwipesRemainingForDeck = oppUnlimited ? null : oppSwipesRemaining;
+  const deck = useMemo(() => buildDeck(listings, creators, filter, oppSwipesRemainingForDeck), [listings, creators, filter, oppSwipesRemainingForDeck]);
+  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, oppSwipesRemainingForDeck), [rawListings, rawCreators, filter, oppSwipesRemainingForDeck]);
+
+  // Reaching the end of the 'talent' deck means "hit the daily swipe cap"
+  // only if there were genuinely more real Opportunities than the capped
+  // deck showed -- otherwise the user just saw everything that exists,
+  // same as any other caught-up filter, and the upsell would be
+  // misleading ("unlock more" when there is no more).
+  const talentTotalCount = useMemo(() => listings.filter(isTalentListing).length, [listings]);
+  const oppLimitReached = !oppUnlimited && talentTotalCount > oppSwipesRemaining;
 
   // A reload (or first visit this session) after having already swiped
   // through everything for this filter never fires SwipeStack's onDone --
@@ -595,15 +619,16 @@ export function Home() {
         // meant for a filter that never had any listings at all) the
         // caught-up/empty/new-opportunities states, then the deck itself.
         ) : loadError ? errorScreen : deckDone
-            ? ((filter === 'talent' && !oppUnlimited && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
+            ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
             : deck.length === 0
-            ? ((filter === 'talent' && !oppUnlimited && oppLimitReached) ? opportunityLimitScreen : emptyState)
+            ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : emptyState)
             : showNewBanner ? newOpportunitiesScreen : (
           <SwipeStack
             key={filterKey}
             items={deck}
             persistKey={filter}
             onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
+            onSwipeListing={filter === 'talent' ? handleOpportunitySwipe : undefined}
           />
         )}
       </div>

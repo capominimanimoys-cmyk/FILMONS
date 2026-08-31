@@ -1,11 +1,10 @@
-// Server-authoritative Opportunity feed for Home and Browse/Search --
-// Guest/Creator/Creator+ get at most 5 Opportunity listings per calendar
-// day (the same 5 across both surfaces, and across refreshes/new search
-// terms/tab switches within the day); Professional/Business are never
-// gated. Tier is resolved from the profiles row here, never trusted from
-// the client, and the allocation itself lives in
-// fn_get_opportunity_allowance (see 20240406000000_opportunity_daily_
-// allowance.sql) so a user can't bypass this by only hiding cards in React.
+// Today's Opportunity-swipe usage for Home's deck -- Guest/Creator/
+// Creator+ can see ALL Opportunity listings (the deck itself is never
+// filtered down), but the deck is sized to however many swipes they have
+// left today (limit 5), so they can never swipe past it. Professional/
+// Business always get { unlimited: true }. Tier is resolved from the
+// profiles row here, never trusted from the client -- see
+// record-opportunity-swipe for the actual per-swipe enforcement.
 import { normalizeTier } from '../_shared/entitlements.ts';
 
 const cors = {
@@ -23,6 +22,8 @@ async function selectOne(table: string, filter: string) {
   const rows = await res.json().catch(() => []);
   return Array.isArray(rows) ? rows[0] : null;
 }
+
+const DAILY_LIMIT = 5;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -47,25 +48,20 @@ Deno.serve(async (req) => {
     }
 
     if (unlimited) {
-      return new Response(JSON.stringify({ unlimited: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ unlimited: true, swipeCount: 0, limit: DAILY_LIMIT }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    const rpcRes = await fetch(rest('/rpc/fn_get_opportunity_allowance'), {
+    const rpcRes = await fetch(rest('/rpc/fn_get_opportunity_swipe_count'), {
       method: 'POST', headers: H,
-      body: JSON.stringify({ p_user_key: userKey, p_limit: 5 }),
+      body: JSON.stringify({ p_user_key: userKey }),
     });
     if (!rpcRes.ok) {
-      console.error('fn_get_opportunity_allowance failed:', rpcRes.status, await rpcRes.text());
-      return new Response(JSON.stringify({ error: 'Could not resolve allowance' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+      console.error('fn_get_opportunity_swipe_count failed:', rpcRes.status, await rpcRes.text());
+      return new Response(JSON.stringify({ error: 'Could not resolve swipe count' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
-    const rows: Array<{ listing_id: string }> = await rpcRes.json().catch(() => []);
-    const listingIds = rows.map(r => r.listing_id);
+    const swipeCount = await rpcRes.json().catch(() => 0);
 
-    // Just the allocated ids -- the caller already has (or fetches) full
-    // listing rows via its normal listingsApi path and its own existing
-    // row->Listing mapping, so this never needs to duplicate that mapping
-    // or risk drifting out of sync with it.
-    return new Response(JSON.stringify({ unlimited: false, listingIds, limitReached: listingIds.length >= 5 }), {
+    return new Response(JSON.stringify({ unlimited: false, swipeCount: Number(swipeCount) || 0, limit: DAILY_LIMIT }), {
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
   } catch (e) {

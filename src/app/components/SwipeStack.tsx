@@ -350,6 +350,13 @@ interface SwipeStackProps {
    *  key -- pass the active filter id so switching tabs doesn't restore a
    *  position from a different deck. */
   persistKey?: string;
+  /** Fired (fire-and-forget from the caller's side) with a listing's id
+   *  whenever a *listing* card (not a creator card) is swiped left or
+   *  right -- used by Home.tsx's 'talent' filter to record an Opportunity
+   *  swipe against its own separate 5/day server-side limit. Never
+   *  blocks the swipe itself; the deck is already sized to whatever was
+   *  allowed at load time (see Home.tsx). */
+  onSwipeListing?: (listingId: string) => void;
 }
 
 function readPersistedIdx(key: string): number {
@@ -365,7 +372,7 @@ export function clearPersistedSwipeIdx(key: string): void {
   try { sessionStorage.removeItem(`filmons_swipe_idx_${key}`); } catch {}
 }
 
-export function SwipeStack({ items = [], onDone, persistKey = 'default' }: SwipeStackProps) {
+export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipeListing }: SwipeStackProps) {
   const { user } = useAuth();
   const navigate  = useNavigate();
   const [idx,     setIdx]     = useState(() => readPersistedIdx(persistKey));
@@ -468,6 +475,14 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
             }).catch(() => {});
           }
         }
+      }
+      // Opportunity-specific swipe limit (Home.tsx's 'talent' filter only,
+      // via onSwipeListing) -- independent of, and in addition to, the
+      // general daily-limit recording right below. Guests included: the
+      // caller resolves its own guest identity, unlike swipeApi.recordSwipe
+      // below which only ever runs for a signed-in user.
+      if (item?.kind === 'listing' && (dir === 'L' || dir === 'R')) {
+        onSwipeListing?.(item.data.id);
       }
       // Record every swipe (both directions) -- left makes the pass
       // permanent (excluded from future deck loads, see Home.tsx); right
