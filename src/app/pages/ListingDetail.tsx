@@ -170,46 +170,52 @@ export function ListingDetail() {
   // isIntersecting read) without the person testing being able to see
   // what the check was actually computing. Remove once confirmed fixed.
   const [stickyDebug, setStickyDebug] = useState<{ top: number; bottom: number; barHeight: number; vh: number; visible: boolean } | null>(null);
+  // Separate from stickyDebug -- tracks the effect's own lifecycle
+  // (did it run at all, did it find the ref, did it throw) so a failure
+  // in setup itself is visible instead of just leaving the readout blank.
+  const [stickyEffectStatus, setStickyEffectStatus] = useState('not run yet');
   useEffect(() => {
+    setStickyEffectStatus(`ran, listing.id=${listing?.id ?? 'none'}`);
     const el = priceApplyRef.current;
-    if (!el) return;
+    if (!el) { setStickyEffectStatus(prev => prev + ', el=NULL'); return; }
+    setStickyEffectStatus(prev => prev + ', el=found');
 
-    // A single source of truth: the real section's own
-    // getBoundingClientRect() read fresh on every scroll/resize frame.
-    // (A parallel IntersectionObserver was removed here -- it was
-    // reporting the exact same rect through a second, browser-throttled
-    // code path, which only added a second place for this to go stale or
-    // disagree with the scroll listener; it added no information the
-    // scroll listener didn't already have.) "Visible" means any part of
-    // the element is within the viewport slice the sticky bar doesn't
-    // cover -- both edges checked, not just the top one, so a section
-    // scrolled fully past (top very negative) doesn't read as visible.
-    const evaluate = () => {
-      const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
-      const rect = el.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const visible = rect.top < vh - barHeight && rect.bottom > 0;
-      setStickyDebug({ top: Math.round(rect.top), bottom: Math.round(rect.bottom), barHeight, vh, visible });
-      setShowStickyApply(!visible);
-    };
+    try {
+      // A single source of truth: the real section's own
+      // getBoundingClientRect() read fresh on every scroll/resize frame.
+      // "Visible" means any part of the element is within the viewport
+      // slice the sticky bar doesn't cover -- both edges checked, not
+      // just the top one, so a section scrolled fully past (top very
+      // negative) doesn't read as visible.
+      const evaluate = () => {
+        const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
+        const rect = el.getBoundingClientRect();
+        const vh = window.innerHeight;
+        const visible = rect.top < vh - barHeight && rect.bottom > 0;
+        setStickyDebug({ top: Math.round(rect.top), bottom: Math.round(rect.bottom), barHeight, vh, visible });
+        setShowStickyApply(!visible);
+      };
 
-    let raf = 0;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        evaluate();
-      });
-    };
-    evaluate();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
+      let raf = 0;
+      const onScroll = () => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          evaluate();
+        });
+      };
+      evaluate();
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll);
 
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
+      return () => {
+        window.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', onScroll);
+        if (raf) cancelAnimationFrame(raf);
+      };
+    } catch (err) {
+      setStickyEffectStatus(prev => prev + `, THREW: ${String(err)}`);
+    }
   }, [listing?.id]);
 
   if (loading) return (
@@ -720,7 +726,8 @@ export function ListingDetail() {
           set) so its presence/absence alone tells us whether this is a
           "the check never ran" problem or a "fixed elements are being
           hidden/mispositioned" problem. */}
-      <div className="lg:hidden fixed top-16 right-2 z-[9999] bg-black text-white text-[10px] font-mono px-2 py-1.5 rounded-lg leading-tight border-2 border-red-500">
+      <div className="lg:hidden fixed top-16 right-2 z-[9999] bg-black text-white text-[10px] font-mono px-2 py-1.5 rounded-lg leading-tight border-2 border-red-500 max-w-[70vw]">
+        status: {stickyEffectStatus}<br />
         {stickyDebug ? (
           <>top:{stickyDebug.top} bot:{stickyDebug.bottom} bar:{stickyDebug.barHeight} vh:{stickyDebug.vh}<br />
           visible:{String(stickyDebug.visible)} showBar:{String(showStickyApply)}</>
