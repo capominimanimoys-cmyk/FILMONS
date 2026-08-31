@@ -596,7 +596,16 @@ export function ListingDetail() {
           <div className="lg:col-span-1">
             <div className="sticky top-20 space-y-4">
               {/* Pricing / Opportunity summary card */}
-              <div ref={priceApplyRef} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                {/* priceApplyRef wraps only the price display + CTA button --
+                    not the whole card (which also has trust badges and
+                    share/message buttons below). Observing the whole card
+                    let the sticky preview hide as soon as its top edge (the
+                    price line) merely peeked into view, well before the
+                    actual button further down was reachable -- "leaving at
+                    the wrong time." This narrows it to exactly the section
+                    the preview is meant to stand in for. */}
+                <div ref={priceApplyRef}>
                 {isOpportunity && listing.opportunity ? (
                   <div className="mb-4 space-y-2.5 text-sm">
                     {(listing.city || listing.opportunity.workArrangement) && (
@@ -640,6 +649,7 @@ export function ListingDetail() {
                   }`}>
                   {!applicationsClosed && <Send className="w-4 h-4" />} {actionLabel}
                 </button>
+                </div>
 
                 <div className="mt-4 space-y-2 text-xs text-gray-500">
                   {isOpportunity ? (
