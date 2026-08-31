@@ -166,25 +166,56 @@ export function ListingDetail() {
   useEffect(() => {
     const el = priceApplyRef.current;
     if (!el) return;
-    // rootMargin shrinks the bottom of the intersection viewport by the
-    // sticky bar's own height (fixed-position, so it doesn't affect
-    // document flow/layout, but it DOES visually cover that strip of the
-    // screen). Without this, the real card counts as "visible" the moment
-    // its top edge crosses into the viewport's literal bottom edge, even
-    // though that strip is physically hidden behind the bar sitting on
-    // top of it -- exactly "the sticky bar floating over the real
-    // section." Measured from the actual rendered bar (it stays mounted,
-    // just transformed off-screen when hidden, so its height is always
-    // available) rather than a hard-coded guess, per "do not use a
-    // hard-coded scroll distance" -- same principle applies to any other
-    // hard-coded pixel value standing in for real layout.
-    const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
+
+    // The decision ("is the real section actually visible, accounting for
+    // the sticky bar physically covering the bottom of the screen") is
+    // computed directly from entry.boundingClientRect -- IntersectionObserver
+    // always reports this, for every callback, regardless of whether
+    // isIntersecting is true -- rather than trusting isIntersecting itself,
+    // which depends entirely on getting a rootMargin string exactly right
+    // with no way to verify it outside a real device. Reading the bar's
+    // height fresh on every callback (not once at observer-creation time)
+    // means it can never go stale either.
+    const evaluate = (top: number) => {
+      const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
+      const realSectionVisible = top < window.innerHeight - barHeight;
+      setShowStickyApply(!realSectionVisible);
+    };
+
+    // threshold as a dense array (not just [0]) makes the callback fire
+    // repeatedly as the target's visible proportion changes while
+    // scrolling, instead of only once at the literal viewport edge --
+    // needed so `evaluate` gets called with fresh, close-to-real-time
+    // boundingClientRect values throughout the scroll, not just at one
+    // single crossing point.
     const observer = new IntersectionObserver(
-      ([entry]) => setShowStickyApply(!entry.isIntersecting),
-      { threshold: 0, rootMargin: `0px 0px -${barHeight}px 0px` },
+      ([entry]) => evaluate(entry.boundingClientRect.top),
+      { threshold: Array.from({ length: 21 }, (_, i) => i / 20) },
     );
     observer.observe(el);
-    return () => observer.disconnect();
+
+    // Belt-and-suspenders: IntersectionObserver callbacks are throttled by
+    // the browser and can lag a real-time scroll gesture. A rAF-throttled
+    // scroll listener recomputes the exact same geometry check every
+    // frame, so the bar's visibility can never drift out of sync with
+    // where the real section actually is on screen.
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        evaluate(el.getBoundingClientRect().top);
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, [listing?.id]);
 
   if (loading) return (
