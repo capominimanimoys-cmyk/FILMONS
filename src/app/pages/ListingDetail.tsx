@@ -286,6 +286,14 @@ export function ListingDetail() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* Temporary — proves whether this build is actually the one running.
+          In normal document flow (no fixed/z-index/stacking-context tricks
+          that could hide it), so if this line itself is missing, the
+          browser is serving an old bundle, not a CSS/positioning bug.
+          Remove once the sticky bar below is confirmed fixed. */}
+      <div className="lg:hidden bg-yellow-300 text-black text-xs font-mono font-bold px-3 py-2 text-center">
+        BUILD CHECK v3 — sticky bar debug active
+      </div>
       {/* ── Back bar ── */}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-100 px-4 py-3 flex items-center justify-between">
         <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
