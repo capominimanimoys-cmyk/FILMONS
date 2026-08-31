@@ -172,59 +172,39 @@ export function ListingDetail() {
   // preview must show immediately when the page opens, not wait for the
   // first scroll/resize check to confirm what's already obviously true.
   const [showStickyApply, setShowStickyApply] = useState(true);
-  // Temporary on-screen readout (not console-only) so the next report on
-  // this bar can include the actual numbers instead of "still not
-  // working" -- three prior fix rounds each addressed a real, verifiable
-  // issue (rootMargin math, an over-broad observed target, a stale
-  // isIntersecting read) without the person testing being able to see
-  // what the check was actually computing. Remove once confirmed fixed.
-  const [stickyDebug, setStickyDebug] = useState<{ top: number; bottom: number; barHeight: number; vh: number; visible: boolean } | null>(null);
-  // Separate from stickyDebug -- tracks the effect's own lifecycle
-  // (did it run at all, did it find the ref, did it throw) so a failure
-  // in setup itself is visible instead of just leaving the readout blank.
-  const [stickyEffectStatus, setStickyEffectStatus] = useState('not run yet');
   useEffect(() => {
-    setStickyEffectStatus(`ran, listing.id=${listing?.id ?? 'none'}`);
     const el = priceApplyEl;
-    if (!el) { setStickyEffectStatus(prev => prev + ', el=NULL'); return; }
-    setStickyEffectStatus(prev => prev + ', el=found');
+    if (!el) return;
 
-    try {
-      // A single source of truth: the real section's own
-      // getBoundingClientRect() read fresh on every scroll/resize frame.
-      // "Visible" means any part of the element is within the viewport
-      // slice the sticky bar doesn't cover -- both edges checked, not
-      // just the top one, so a section scrolled fully past (top very
-      // negative) doesn't read as visible.
-      const evaluate = () => {
-        const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
-        const rect = el.getBoundingClientRect();
-        const vh = window.innerHeight;
-        const visible = rect.top < vh - barHeight && rect.bottom > 0;
-        setStickyDebug({ top: Math.round(rect.top), bottom: Math.round(rect.bottom), barHeight, vh, visible });
-        setShowStickyApply(!visible);
-      };
+    // The real section's own getBoundingClientRect(), read fresh on every
+    // scroll/resize frame. "Visible" means any part of the element is
+    // within the viewport slice the sticky bar doesn't cover -- both
+    // edges checked, not just the top one, so a section scrolled fully
+    // past (top very negative) doesn't read as visible.
+    const evaluate = () => {
+      const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
+      const rect = el.getBoundingClientRect();
+      const visible = rect.top < window.innerHeight - barHeight && rect.bottom > 0;
+      setShowStickyApply(!visible);
+    };
 
-      let raf = 0;
-      const onScroll = () => {
-        if (raf) return;
-        raf = requestAnimationFrame(() => {
-          raf = 0;
-          evaluate();
-        });
-      };
-      evaluate();
-      window.addEventListener('scroll', onScroll, { passive: true });
-      window.addEventListener('resize', onScroll);
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        evaluate();
+      });
+    };
+    evaluate();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
 
-      return () => {
-        window.removeEventListener('scroll', onScroll);
-        window.removeEventListener('resize', onScroll);
-        if (raf) cancelAnimationFrame(raf);
-      };
-    } catch (err) {
-      setStickyEffectStatus(prev => prev + `, THREW: ${String(err)}`);
-    }
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, [priceApplyEl]);
 
   if (loading) return (
@@ -301,14 +281,6 @@ export function ListingDetail() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Temporary — proves whether this build is actually the one running.
-          In normal document flow (no fixed/z-index/stacking-context tricks
-          that could hide it), so if this line itself is missing, the
-          browser is serving an old bundle, not a CSS/positioning bug.
-          Remove once the sticky bar below is confirmed fixed. */}
-      <div className="lg:hidden bg-yellow-300 text-black text-xs font-mono font-bold px-3 py-2 text-center">
-        BUILD CHECK v3 — sticky bar debug active
-      </div>
       {/* ── Back bar ── */}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-100 px-4 py-3 flex items-center justify-between">
         <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
@@ -645,7 +617,7 @@ export function ListingDetail() {
             <div className="sticky top-20 space-y-4">
               {/* Pricing / Opportunity summary card */}
               <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-                {/* priceApplyRef wraps only the price display + CTA button --
+                {/* setPriceApplyEl wraps only the price display + CTA button --
                     not the whole card (which also has trust badges and
                     share/message buttons below). Observing the whole card
                     let the sticky preview hide as soon as its top edge (the
@@ -728,21 +700,6 @@ export function ListingDetail() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Temporary debug readout — remove once the sticky bar below is
-          confirmed fixed. Always rendered (not gated on stickyDebug being
-          set) so its presence/absence alone tells us whether this is a
-          "the check never ran" problem or a "fixed elements are being
-          hidden/mispositioned" problem. */}
-      <div className="lg:hidden fixed top-16 right-2 z-[9999] bg-black text-white text-[10px] font-mono px-2 py-1.5 rounded-lg leading-tight border-2 border-red-500 max-w-[70vw]">
-        status: {stickyEffectStatus}<br />
-        {stickyDebug ? (
-          <>top:{stickyDebug.top} bot:{stickyDebug.bottom} bar:{stickyDebug.barHeight} vh:{stickyDebug.vh}<br />
-          visible:{String(stickyDebug.visible)} showBar:{String(showStickyApply)}</>
-        ) : (
-          <>not evaluated yet</>
-        )}
       </div>
 
       {/* ── Mobile sticky Price+Apply preview — same price/action as the real
