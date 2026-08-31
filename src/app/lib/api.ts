@@ -664,6 +664,62 @@ export function isOpportunity(listing: Pick<Listing, 'listingType' | 'listingKin
   return listing.listingType === 'opportunity' || listing.listingKind === 'talent';
 }
 
+// Normalise an images/videos column — handles both string[] and {url,type}[] formats.
+// Module scope (not a closure inside getAll) so getOpportunities below can
+// share the exact same row->Listing mapping without duplicating it.
+function extractListingUrls(arr: any): string[] {
+  if (!arr) return [];
+  // Handle PostgreSQL array literal e.g. "{url1,url2}"
+  if (typeof arr === 'string') return toStringArray(arr);
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((item: any) => typeof item === 'string' ? item : item?.url || item?.imageUrl || '')
+    .filter((s: string) => s && s.length > 4);
+}
+
+function mapListingRow(row: any): Listing {
+  // Parse metadata — images may be stored here instead of the images column
+  const meta = (() => {
+    if (!row.metadata) return {};
+    if (typeof row.metadata === 'object') return row.metadata;
+    try { return JSON.parse(row.metadata); } catch { return {}; }
+  })();
+
+  // Images: prefer dedicated column, fall back to metadata
+  const images = firstNonEmpty(extractListingUrls(row.images), extractListingUrls(meta.images).length ? extractListingUrls(meta.images) : extractListingUrls(meta.mediaUrls));
+  const videos = firstNonEmpty(extractListingUrls(row.videos), extractListingUrls(meta.videos));
+
+  return {
+    id:              row.id,
+    userId:          row.user_id,
+    title:           row.title        || '',
+    description:     row.description  || '',
+    price:           row.price        || 0,
+    city:            row.city         || '',
+    listingType:     row.listing_type || 'gear',
+    listingMode:     row.listing_mode || 'rent',
+    serviceCategory: row.service_category,
+    tags:            firstNonEmpty(row.tags, meta.tags),
+    image:           row.image || undefined,
+    images,
+    videos,
+    contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
+    pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
+    createdAt:       row.created_at,
+    isSold:          row.is_sold || false,
+    soldAt:          row.sold_at || undefined,
+    boosted:         row.boosted || false,
+    isEmergency:        row.is_emergency || false,
+    emergencyPlan:      row.emergency_plan || undefined,
+    emergencyExpiresAt: row.emergency_expires_at || undefined,
+    insuranceRequired: !!meta.insuranceRequired,
+    listingKind:     meta.listingKind || undefined,
+    opportunity:     meta.opportunity || undefined,
+  } as Listing;
+}
+
+const LISTING_COLUMNS = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at';
+
 export const listingsApi = {
   getAll: async (): Promise<Listing[]> => {
     // Return in-memory cache if fresh (< 60 seconds) and has data
@@ -678,58 +734,6 @@ export const listingsApi = {
       _listingsCacheAt  = Date.now() - 50_000; // mark as slightly stale so we still refresh
     }
 
-    // Normalise an images/videos column — handles both string[] and {url,type}[] formats
-    const extractUrls = (arr: any): string[] => {
-      if (!arr) return [];
-      // Handle PostgreSQL array literal e.g. "{url1,url2}"
-      if (typeof arr === 'string') return toStringArray(arr);
-      if (!Array.isArray(arr)) return [];
-      return arr
-        .map((item: any) => typeof item === 'string' ? item : item?.url || item?.imageUrl || '')
-        .filter((s: string) => s && s.length > 4);
-    };
-
-    const mapRow = (row: any): Listing => {
-      // Parse metadata — images may be stored here instead of the images column
-      const meta = (() => {
-        if (!row.metadata) return {};
-        if (typeof row.metadata === 'object') return row.metadata;
-        try { return JSON.parse(row.metadata); } catch { return {}; }
-      })();
-
-      // Images: prefer dedicated column, fall back to metadata
-      const images = firstNonEmpty(extractUrls(row.images), extractUrls(meta.images).length ? extractUrls(meta.images) : extractUrls(meta.mediaUrls));
-      const videos = firstNonEmpty(extractUrls(row.videos), extractUrls(meta.videos));
-
-      return {
-        id:              row.id,
-        userId:          row.user_id,
-        title:           row.title        || '',
-        description:     row.description  || '',
-        price:           row.price        || 0,
-        city:            row.city         || '',
-        listingType:     row.listing_type || 'gear',
-        listingMode:     row.listing_mode || 'rent',
-        serviceCategory: row.service_category,
-        tags:            firstNonEmpty(row.tags, meta.tags),
-        image:           row.image || undefined,
-        images,
-        videos,
-        contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
-        pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
-        createdAt:       row.created_at,
-        isSold:          row.is_sold || false,
-        soldAt:          row.sold_at || undefined,
-        boosted:         row.boosted || false,
-        isEmergency:        row.is_emergency || false,
-        emergencyPlan:      row.emergency_plan || undefined,
-        emergencyExpiresAt: row.emergency_expires_at || undefined,
-        insuranceRequired: !!meta.insuranceRequired,
-        listingKind:     meta.listingKind || undefined,
-        opportunity:     meta.opportunity || undefined,
-      } as Listing;
-    };
-
     try {
       // Only select columns that definitely exist — no is_sold/sold_at until SQL migration runs.
       // "image" (singular) isn't a real column either — only "images" (plural
@@ -738,14 +742,14 @@ export const listingsApi = {
       // fallback below regardless of what was actually in the database.
       const { data, error } = await supabase
         .from('listings')
-        .select('id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at')
+        .select(LISTING_COLUMNS)
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(80);
 
       if (!error && data) {
         console.log(`✅ Loaded ${data.length} listings from Supabase`);
-        let listings = data.map(mapRow);
+        let listings = data.map(mapListingRow);
 
         // Boost Listing is temporarily disabled — back to plain normal-feed
         // order (the query above already sorts by created_at descending),
@@ -778,6 +782,31 @@ export const listingsApi = {
     try {
       return JSON.parse(localStorage.getItem('filmons_listings') || '[]');
     } catch { return []; }
+  },
+
+  /** Every active Opportunity listing, newest-first -- NOT scoped to
+   *  getAll()'s 80-most-recently-created-of-any-type window. Home.tsx's
+   *  Opportunity ("talent") filter used to filter getAll()'s result down
+   *  to opportunities, which meant a real Opportunity could be invisible
+   *  there simply because it wasn't among the 80 newest listings overall
+   *  (rentals/sales/services included) -- this queries listing_type
+   *  directly instead, same eligibility (is_active = true) and legacy
+   *  keyword fallback SearchOverlay's fetchCategoryBrowse already uses. */
+  getOpportunities: async (): Promise<Listing[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('listings')
+        .select(LISTING_COLUMNS)
+        .eq('is_active', true)
+        .or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) { console.error('❌ getOpportunities query failed:', error.message); return []; }
+      return (data || []).map(mapListingRow);
+    } catch (e) {
+      console.warn('getOpportunities exception:', e);
+      return [];
+    }
   },
 
   getOne: async (id: string): Promise<Listing> => {

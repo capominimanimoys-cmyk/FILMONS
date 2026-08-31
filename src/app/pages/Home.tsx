@@ -262,6 +262,15 @@ export function Home() {
     setLoadError(false);
     Promise.all([
       listingsApi.getAll(),
+      // getAll() only ever returns the 80 most-recently-created listings
+      // of ANY type -- a real Opportunity could be older than that cutoff
+      // (rentals/sales/services are the higher-volume categories) and
+      // never appear there at all, which is exactly why the Opportunity
+      // filter could show "Nothing here yet" despite Opportunities
+      // genuinely existing. Fetched and merged in unconditionally (not
+      // just when filter === 'talent') so switching to that tab never
+      // needs a second round-trip first.
+      listingsApi.getOpportunities().catch(() => [] as Listing[]),
       supabase
         .from('profiles')
         .select('id, name, username, avatar_url, city, primary_role, bio, is_verified')
@@ -271,8 +280,12 @@ export function Home() {
         .limit(24)
         .then(r => (r.data ?? []) as CreatorProfile[], () => [] as CreatorProfile[]),
       user?.id ? swipeApi.getExcludedIds(user.id) : Promise.resolve(new Set<string>()),
-    ]).then(async ([l, c, excluded]) => {
+    ]).then(async ([l0, opp, c, excluded]) => {
       if (done) return;
+      // Dedupe by id -- an Opportunity that also happened to be within
+      // getAll()'s 80-newest window would otherwise appear twice.
+      const seenIds = new Set(l0.map(x => x.id));
+      let l = [...l0, ...opp.filter(o => !seenIds.has(o.id))];
       setRawListings(l);
       setRawCreators(c);
       // Already-left-swiped items are a permanent skip (Tinder-style) --
