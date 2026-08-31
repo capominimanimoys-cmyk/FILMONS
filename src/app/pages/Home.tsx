@@ -532,7 +532,7 @@ export function Home() {
         <Lock className="w-7 h-7 text-indigo-600" />
       </div>
       <p className="font-black text-gray-900 text-lg mb-1">Unlock All Opportunities</p>
-      <p className="text-sm text-gray-400 mb-5 max-w-xs">Upgrade to a Professional or Business account to access all available Opportunity listings.</p>
+      <p className="text-sm text-gray-400 mb-5 max-w-xs">Unlock a Professional or Business account to see all opportunities available with unlimited swipes.</p>
       <div className="flex flex-col gap-2 w-full max-w-xs">
         <button
           onClick={() => {
