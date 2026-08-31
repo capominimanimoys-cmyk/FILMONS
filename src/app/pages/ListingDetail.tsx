@@ -157,7 +157,11 @@ export function ListingDetail() {
   // during the previous render" (minified error #310) the moment a render
   // takes a different branch than the last one did.
   const priceApplyRef = useRef<HTMLDivElement>(null);
-  const [showStickyApply, setShowStickyApply] = useState(false);
+  // Starts true (not false) -- the real card is always below the fold on
+  // first paint (images/description/host card all come first), so the
+  // preview must show immediately when the page opens, not wait for the
+  // observer's first callback to confirm what's already obviously true.
+  const [showStickyApply, setShowStickyApply] = useState(true);
   useEffect(() => {
     const el = priceApplyRef.current;
     if (!el) return;

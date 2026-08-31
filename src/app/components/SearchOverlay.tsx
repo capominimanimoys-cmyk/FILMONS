@@ -7,13 +7,16 @@ import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
-  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown,
+  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import {
   expandQuery, normalize, scoreResult, extractLocation,
 } from '../lib/searchUtils';
+import { useAuth } from '../context/AuthContext';
+import { isProfessional } from '../lib/reliabilityApi';
+import { setPendingReturnUrl } from '../lib/authReturnUrl';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Global-search categories -- deliberately separate from ListingTypeFilter
@@ -714,12 +717,15 @@ const PRICE_OPTIONS: { id: PriceRange; label: string }[] = [
   { id:'250plus', label:'$250+' },
 ];
 
-function FilterSheet({ filters, onApply, onClose }: {
+function FilterSheet({ filters, onApply, onClose, canBrowseOpportunities, onBlockedOpportunity }: {
   filters: SearchFilters; onApply: (f: SearchFilters) => void; onClose: () => void;
+  canBrowseOpportunities: boolean; onBlockedOpportunity: () => void;
 }) {
   const [local, setLocal] = useState<SearchFilters>(filters);
-  const set = <K extends keyof SearchFilters>(k: K, v: SearchFilters[K]) =>
+  const set = <K extends keyof SearchFilters>(k: K, v: SearchFilters[K]) => {
+    if (k === 'listingType' && v === 'opportunity' && !canBrowseOpportunities) { onBlockedOpportunity(); return; }
     setLocal(prev => ({ ...prev, [k]: v }));
+  };
 
   return (
     <>
@@ -1120,6 +1126,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [sort,           setSort]           = useState<SortBy>('best_match');
   const [showFilterSheet,setShowFilterSheet]= useState(false);
   const [showSortSheet,  setShowSortSheet]  = useState(false);
+  // Opportunity category is Professional/Business only to browse (separate
+  // from the existing Creator-tier restriction on applying/posting) --
+  // isProfessional() already covers both tiers, and defaults false for a
+  // guest (no user) or any lower tier, matching "guest | creator |
+  // creator+ -> gate" exactly.
+  const { user, isAuthenticated } = useAuth();
+  const canBrowseOpportunities = isProfessional(user?.accountType);
+  const [showOpportunityGate, setShowOpportunityGate] = useState(false);
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
@@ -1229,6 +1243,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // remainder and runs a normal search restricted to that tab. An
   // unrecognized first word falls back to the existing all-category search,
   // leaving whatever tab is already active untouched.
+  // Gate for both entry points into the Opportunities tab -- tapping the
+  // chip directly, and typing "opportunity"/"opportunities" as a category
+  // keyword and hitting Enter (parseCategoryKeyword below).
+  const trySetTab = (tab: TabId) => {
+    if (tab === 'opportunities' && !canBrowseOpportunities) { setShowOpportunityGate(true); return; }
+    setActiveTab(tab);
+  };
+
   const handleSubmitSearch = () => {
     if (!q.trim()) return;
     setSuggestions([]);
@@ -1245,7 +1267,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     clearTimeout(debounceRef.current);
     const parsed = parseCategoryKeyword(q);
     if (parsed) {
-      setActiveTab(parsed.tab);
+      trySetTab(parsed.tab);
       setQ(parsed.rest);
       if (parsed.rest) runSearch(parsed.rest);
       return;
@@ -1324,7 +1346,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
              one fetches that category immediately with no query typed yet ── */}
         <div className="shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
           {TABS.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id} onClick={() => trySetTab(tab.id)}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
                 activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}>
@@ -1462,6 +1484,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             filters={filters}
             onApply={setFilters}
             onClose={() => setShowFilterSheet(false)}
+            canBrowseOpportunities={canBrowseOpportunities}
+            onBlockedOpportunity={() => { setShowFilterSheet(false); setShowOpportunityGate(true); }}
           />
         )}
       </AnimatePresence>
@@ -1472,6 +1496,49 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             onSelect={setSort}
             onClose={() => setShowSortSheet(false)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── Opportunity category account-tier gate — Professional/Business
+           only to BROWSE (distinct from the existing Creator-tier
+           restriction on posting/applying). Guests land here too (no
+           account_type at all resolves to the base tier). ── */}
+      <AnimatePresence>
+        {showOpportunityGate && (
+          <>
+            <motion.div variants={backdropV} initial="hidden" animate="visible" exit="exit"
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[120] bg-black/50"
+              onClick={() => setShowOpportunityGate(false)}/>
+            <motion.div variants={sheetV} initial="hidden" animate="visible" exit="exit"
+              transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+              className="fixed inset-x-0 bottom-0 z-[125] bg-white rounded-t-3xl shadow-2xl px-5 pt-6"
+              style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
+              <div className="text-center space-y-2 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
+                  <Lock className="w-6 h-6 text-indigo-600"/>
+                </div>
+                <p className="text-base font-black text-gray-900">Unlock Opportunities</p>
+                <p className="text-sm text-gray-500">Professional or Business account required to access all opportunity listings.</p>
+                <p className="text-sm text-gray-500">Upgrade your account to browse available opportunities, connect with hosts, and apply to projects.</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    setShowOpportunityGate(false);
+                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade'); navigate('/login'); return; }
+                    navigate('/account/upgrade');
+                  }}
+                  className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
+                  Upgrade Account
+                </button>
+                <button onClick={() => setShowOpportunityGate(false)}
+                  className="w-full py-3 text-gray-500 font-semibold text-sm">
+                  Not Now
+                </button>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </>

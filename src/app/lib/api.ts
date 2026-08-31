@@ -3245,19 +3245,48 @@ export const chatApi = {
       //    a) participants array column (fast, covers most cases)
       //    b) conversation_participants join table (catches convs where array column is stale)
       const convSelect = 'id, participants, updated_at, created_at, is_request, requested_by, deleted_for_everyone, opportunity_id, application_id';
-      const [{ data: convRows, error: convErr }, { data: cpRows }] = await Promise.all([
-        supabase.from('conversations')
-          .select(convSelect)
-          .contains('participants', [userId])
-          .order('updated_at', { ascending: false })
-          .limit(50),
-        supabase.from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', userId)
-          .limit(50),
-      ]);
 
-      if (convErr) {
+      // Retried inline (up to 3 attempts, short backoff) before giving up --
+      // confirmed via a real device that this genuinely throws sometimes on
+      // mobile (reported as "couldn't load conversations"), not just
+      // returning an empty result. Nothing about the query itself is
+      // mobile-specific, which points at plain mobile-network flakiness
+      // (a dropped/slow request) rather than a data or RLS problem --
+      // retrying is the standard fix for that class of failure, and this
+      // still ultimately surfaces a real error (never silently empty) if
+      // every attempt fails.
+      let convRows: any[] | null = null;
+      let cpRows: any[] | null = null;
+      let lastErr: any = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          console.warn(`[fetchConversationsDB] retrying after failed attempt ${attempt}:`, lastErr);
+          await new Promise(r => setTimeout(r, 400 * attempt));
+        }
+        const [convRes, cpRes] = await Promise.all([
+          supabase.from('conversations')
+            .select(convSelect)
+            .contains('participants', [userId])
+            .order('updated_at', { ascending: false })
+            .limit(50),
+          supabase.from('conversation_participants')
+            .select('conversation_id')
+            .eq('user_id', userId)
+            .limit(50),
+        ]);
+        if (!convRes.error) {
+          convRows = convRes.data;
+          cpRows = cpRes.data;
+          // conversation_participants failing isn't fatal (convRows alone
+          // covers most cases) -- just log it, same as before.
+          if (cpRes.error) console.warn('[fetchConversationsDB] conversation_participants query failed (non-fatal):', cpRes.error);
+          lastErr = null;
+          break;
+        }
+        lastErr = convRes.error;
+      }
+
+      if (lastErr) {
         // Previously silently fell back to the old localStorage-based
         // getUserConversations() here -- on a device/session with little
         // or no local cache (any fresh mobile session, since this app
@@ -3268,9 +3297,9 @@ export const chatApi = {
         // conversations" with nothing beyond a console.warn to tell them
         // apart. Throwing here lets the caller show a real error state
         // instead of a false empty one.
-        console.error('[fetchConversationsDB] Supabase query failed:', convErr);
+        console.error('[fetchConversationsDB] Supabase query failed after 3 attempts:', lastErr);
         inf._convFetchInFlight = false;
-        throw convErr;
+        throw lastErr;
       }
 
       // Merge: add any conv IDs from conversation_participants not already in convRows
