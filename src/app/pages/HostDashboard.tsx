@@ -403,7 +403,12 @@ function CreatorDashboard({ user }: { user: any }) {
   const [savedListings, setSavedListings] = useState<any[]>([]);
   const [myOpportunities, setMyOpportunities] = useState<Listing[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showOpportunityGate, setShowOpportunityGate] = useState(false);
   const [rep, setRep] = useState<ReputationScore | null>(null);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  useEffect(() => {
+    tabRefs.current[tab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [tab]);
 
   useEffect(() => {
     reliabilityApi.getScore(user.id).then(setRep).catch(() => {});
@@ -432,7 +437,7 @@ function CreatorDashboard({ user }: { user: any }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden w-full max-w-[100vw]">
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -446,22 +451,22 @@ function CreatorDashboard({ user }: { user: any }) {
             <Settings className="w-4 h-4" />
           </Link>
         </div>
-        <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-gray-100">
+        <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-gray-100 overflow-x-auto overflow-y-hidden flex-nowrap no-scrollbar" style={{ scrollBehavior: 'smooth' }}>
           {[
             { key: 'orders',        label: 'My Orders',    icon: ShoppingCart },
             { key: 'opportunities', label: 'Opportunities', icon: Briefcase   },
             { key: 'applications',  label: 'Applications', icon: FileText    },
             { key: 'transactions',  label: 'Transactions', icon: DollarSign   },
           ].map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setTab(key as any)}
-              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <button key={key} ref={el => { tabRefs.current[key] = el; }} onClick={() => setTab(key as any)}
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
               <Icon className="w-3.5 h-3.5" /> {label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4 overflow-x-hidden">
         {/* Reliability score mini-card */}
         {rep && (() => {
           const composite = rep.reliability_score ?? 0;
@@ -577,7 +582,7 @@ function CreatorDashboard({ user }: { user: any }) {
             listings below which stay Creator+-gated. */}
         {tab === 'opportunities' && (
           <div className="space-y-3">
-            <button onClick={() => navigate('/create-opportunity')}
+            <button onClick={() => setShowOpportunityGate(true)}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-2xl transition-colors flex items-center justify-center gap-1.5">
               <Plus className="w-4 h-4" /> Post Opportunity
             </button>
@@ -676,6 +681,32 @@ function CreatorDashboard({ user }: { user: any }) {
                 Start verification →
               </button>
               <button onClick={() => setShowUpgradeModal(false)} className="w-full text-gray-500 text-sm py-2 hover:text-gray-700 transition-colors">Maybe later</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Creator+ Required gate -- Opportunities are viewable at the
+          Creator tier, but posting one requires Creator+ (matches the
+          server-side entitlement: creator.posts === 0, see
+          src/app/lib/entitlements.ts). Shown instead of navigating to
+          /create-opportunity, never as a partial/then-blocked flow. */}
+      {showOpportunityGate && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowOpportunityGate(false)} />
+          <div className="relative bg-white w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl shadow-2xl p-6 space-y-4 text-center">
+            <button onClick={() => setShowOpportunityGate(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200"><X className="w-4 h-4" /></button>
+            <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto"><Lock className="w-7 h-7 text-blue-600" /></div>
+            <div>
+              <h3 className="text-xl font-black text-gray-900">Creator+ Required</h3>
+              <p className="text-sm text-gray-500 mt-1 leading-relaxed">You need a Creator+ account or higher to post an opportunity on FILMONS.</p>
+            </div>
+            <div className="space-y-2">
+              <button onClick={() => { setShowOpportunityGate(false); navigate('/account/upgrade'); }}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold rounded-xl py-3 transition-all shadow-md">
+                Upgrade to Creator+
+              </button>
+              <button onClick={() => setShowOpportunityGate(false)} className="w-full text-gray-500 text-sm py-2 hover:text-gray-700 transition-colors">Not Now</button>
             </div>
           </div>
         </div>

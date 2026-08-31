@@ -1324,6 +1324,12 @@ export function Inbox() {
   // real UI state distinct from the empty-state so a genuine fetch
   // failure never renders as "No messages yet."
   const [convLoadError, setConvLoadError] = useState(false);
+  // The real Postgres/PostgREST error text (code + message), shown as small
+  // subtext under the generic "couldn't load" copy -- a deterministic,
+  // account-specific failure (fails the same way on every retry, not just
+  // flaky mobile networks) needs the actual error visible so it can be
+  // diagnosed from a screenshot instead of another round of guessing.
+  const [convLoadErrorDetail, setConvLoadErrorDetail] = useState('');
   const [archivedConvs, setArchivedConvs]   = useState<Conversation[]>([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [deleteConfirm, setDeleteConfirm]     = useState<string | null>(null);
@@ -1463,6 +1469,7 @@ export function Inbox() {
 
     try {
       setConvLoadError(false);
+      setConvLoadErrorDetail('');
       // Only load from Supabase conversations table — no localStorage fallback
       const fromServer = await chatApi.fetchConversationsDB(user.id, true);
       console.log('[Inbox] fetchConversationsDB returned', fromServer.length, 'conversations', fromServer);
@@ -1534,13 +1541,17 @@ export function Inbox() {
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error('[Inbox] loadConversations error:', e);
       // Only flip the error state when there's nothing already on screen --
       // a transient failure on a background refresh (the 3-minute poll,
       // the visibility-change refetch) shouldn't blank out a working list
       // the user is currently looking at.
-      setConversations(prev => { if (!prev.length) setConvLoadError(true); return prev; });
+      const detail = [e?.code, e?.message || e?.error_description || String(e)].filter(Boolean).join(': ');
+      setConversations(prev => {
+        if (!prev.length) { setConvLoadError(true); setConvLoadErrorDetail(detail); }
+        return prev;
+      });
     } finally {
       setServerLoaded(true);
     }
@@ -2836,7 +2847,10 @@ export function Inbox() {
                       <CancelRounded sx={{fontSize:32,color:"#ef4444"}} />
                     </div>
                     <p className="text-sm font-semibold text-gray-700 mb-1">Couldn't load conversations</p>
-                    <p className="text-xs text-gray-400 mb-4">Check your connection and try again.</p>
+                    <p className={`text-xs text-gray-400 ${convLoadErrorDetail ? 'mb-1' : 'mb-4'}`}>Check your connection and try again.</p>
+                    {convLoadErrorDetail && (
+                      <p className="text-[10px] text-gray-300 font-mono mb-4 max-w-xs break-words">{convLoadErrorDetail}</p>
+                    )}
                     <button onClick={() => loadConversations()}
                       className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors">
                       Retry
