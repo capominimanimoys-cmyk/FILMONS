@@ -156,7 +156,16 @@ export function ListingDetail() {
   // branch it ends up taking, or React throws "rendered more hooks than
   // during the previous render" (minified error #310) the moment a render
   // takes a different branch than the last one did.
-  const priceApplyRef = useRef<HTMLDivElement>(null);
+  // A state-backed callback ref, not useRef -- the effect below was keyed
+  // on [listing?.id], but loading and listing update in two separate
+  // commits (loading flips to false on its own render after listing is
+  // already set), so the effect could run once during the render where
+  // `if (loading) return` was still hiding this element entirely (found
+  // listing.id set, found priceApplyRef.current still null), and then
+  // never run again since listing?.id didn't change a second time. A
+  // callback ref re-fires the moment this exact DOM node actually mounts,
+  // with no dependency-array timing to get wrong.
+  const [priceApplyEl, setPriceApplyEl] = useState<HTMLDivElement | null>(null);
   const stickyBarRef = useRef<HTMLDivElement>(null);
   // Starts true (not false) -- the real card is always below the fold on
   // first paint (images/description/host card all come first), so the
@@ -176,7 +185,7 @@ export function ListingDetail() {
   const [stickyEffectStatus, setStickyEffectStatus] = useState('not run yet');
   useEffect(() => {
     setStickyEffectStatus(`ran, listing.id=${listing?.id ?? 'none'}`);
-    const el = priceApplyRef.current;
+    const el = priceApplyEl;
     if (!el) { setStickyEffectStatus(prev => prev + ', el=NULL'); return; }
     setStickyEffectStatus(prev => prev + ', el=found');
 
@@ -216,7 +225,7 @@ export function ListingDetail() {
     } catch (err) {
       setStickyEffectStatus(prev => prev + `, THREW: ${String(err)}`);
     }
-  }, [listing?.id]);
+  }, [priceApplyEl]);
 
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
@@ -644,7 +653,7 @@ export function ListingDetail() {
                     actual button further down was reachable -- "leaving at
                     the wrong time." This narrows it to exactly the section
                     the preview is meant to stand in for. */}
-                <div ref={priceApplyRef}>
+                <div ref={setPriceApplyEl}>
                 {isOpportunity && listing.opportunity ? (
                   <div className="mb-4 space-y-2.5 text-sm">
                     {(listing.city || listing.opportunity.workArrangement) && (
