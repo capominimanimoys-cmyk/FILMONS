@@ -716,14 +716,18 @@ export function ListingDetail() {
       </div>
 
       {/* Temporary debug readout — remove once the sticky bar below is
-          confirmed fixed. Shows exactly what the visibility check above is
-          computing, live, without needing devtools open. */}
-      {stickyDebug && (
-        <div className="lg:hidden fixed top-16 right-2 z-50 bg-black/80 text-white text-[10px] font-mono px-2 py-1.5 rounded-lg leading-tight">
-          top:{stickyDebug.top} bot:{stickyDebug.bottom} bar:{stickyDebug.barHeight} vh:{stickyDebug.vh}<br />
-          visible:{String(stickyDebug.visible)} showBar:{String(showStickyApply)}
-        </div>
-      )}
+          confirmed fixed. Always rendered (not gated on stickyDebug being
+          set) so its presence/absence alone tells us whether this is a
+          "the check never ran" problem or a "fixed elements are being
+          hidden/mispositioned" problem. */}
+      <div className="lg:hidden fixed top-16 right-2 z-[9999] bg-black text-white text-[10px] font-mono px-2 py-1.5 rounded-lg leading-tight border-2 border-red-500">
+        {stickyDebug ? (
+          <>top:{stickyDebug.top} bot:{stickyDebug.bottom} bar:{stickyDebug.barHeight} vh:{stickyDebug.vh}<br />
+          visible:{String(stickyDebug.visible)} showBar:{String(showStickyApply)}</>
+        ) : (
+          <>not evaluated yet</>
+        )}
+      </div>
 
       {/* ── Mobile sticky Price+Apply preview — same price/action as the real
            card above, scroll-driven so it's never shown at the same time as
