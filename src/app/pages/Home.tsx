@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -168,6 +169,17 @@ export function Home() {
   const [rawListings, setRawListings] = useState<EnrichedListing[]>([]);
   const [rawCreators, setRawCreators] = useState<CreatorProfile[]>([]);
   const [loading,   setLoading]   = useState(true);
+  // Branded loading — the animated Filmons wordmark shows first (a fixed,
+  // brief window, not "until the fetch resolves") since the request often
+  // resolves in well under a second and a full-viewport brand loader
+  // flashing for 50ms would read as a glitch, not a loading state. The
+  // listing-card skeleton (already existed) takes over for however much
+  // longer the fetch actually takes beyond that.
+  const [showBrandLoader, setShowBrandLoader] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowBrandLoader(false), 500);
+    return () => clearTimeout(t);
+  }, []);
   const [filter,    setFilter]    = useState<FilterId>('all');
   const [deckDone,  setDeckDone]  = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -505,7 +517,9 @@ export function Home() {
            just gets a bigger card via SwipeStack's own lg: classes, plus
            the sidebar/top bar chrome that renders outside this page. ── */}
       <div className="mt-2 lg:mt-6 lg:px-8">
-        {loading ? (
+        {loading && showBrandLoader ? (
+          <div className="py-24"><FilmonsBrandLoader size="lg"/></div>
+        ) : loading ? (
           <SkeletonDeck/>
         // Explicit state ordering, each branch rendering its own UI rather
         // than falling through to a bare `return null` -- loading, then a

@@ -19,7 +19,11 @@ const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-dev
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
 // These pages render their own fixed bottom action bar (Back/Next, Save, etc.) —
 // the global MobileBottomNav sits on top of it (higher z-index) and hides it.
-const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio'];
+// '/listing' covers ListingDetail's own sticky mobile Price+Apply preview
+// (fixed bottom:0, same z-40 as MobileBottomNav) as well as
+// EmergencyListingFlow's sticky CTA and OpportunityApplicants -- all under
+// the /listing/:id prefix.
+const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio', '/listing'];
 
 function isOnboardingIncomplete(user: User | null): boolean {
   if (!user) return false;

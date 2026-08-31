@@ -299,6 +299,27 @@ export function ShareCard() {
       // failed to) before capturing — otherwise a click that lands mid-fetch
       // would export against the not-yet-embedded remote URL.
       await avatarReadyRef.current;
+
+      // That only guarantees OUR data-URL fetch is done -- React committing
+      // the new src to the export <img> and the browser actually finishing
+      // decoding/painting that frame are separate steps, and toBlob() reads
+      // whatever's currently painted. A fast desktop CPU usually closes
+      // that gap before this line runs, which is exactly why this bug was
+      // mobile-only: a slower device is much more likely to still be
+      // mid-decode here, so the export blob is captured with a blank
+      // avatar area while the live on-screen preview (which has no such
+      // deadline) looks completely normal. img.decode() is the actual fix.
+      const exportImg = exportRef.current.querySelector('img');
+      if (exportImg) {
+        if (!exportImg.complete) {
+          await new Promise<void>(resolve => {
+            exportImg.addEventListener('load', () => resolve(), { once: true });
+            exportImg.addEventListener('error', () => resolve(), { once: true });
+          });
+        }
+        try { await exportImg.decode(); } catch {}
+      }
+
       // Canvas is pinned to a 9:16 ratio via CSS aspect-ratio, so the actual
       // rendered height already reflects that (EW * 16/9) — measuring rather
       // than hardcoding keeps this correct if the ratio ever changes.

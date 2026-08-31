@@ -8,6 +8,7 @@ import {
   type PayoutDestination, type PayoutMethod, type PayoutRequest, type PayoutSpeed,
 } from '../lib/walletApi';
 import { isCreatorPlus } from '../lib/reliabilityApi';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import {
   Wallet as WalletIcon, ArrowUpRight, RefreshCw, DollarSign, Clock, Loader2,
   X, ChevronRight, ChevronLeft, Check, Landmark, Pencil, Zap, ShieldCheck, Info,
@@ -755,7 +756,7 @@ export function Wallet() {
         <div>
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Transaction history</p>
           {loading ? (
-            <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-blue-400 animate-spin" /></div>
+            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md"/></div>
           ) : txs.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 py-16 px-6 text-center">
               <DollarSign className="w-8 h-8 text-gray-200 mx-auto mb-3" />

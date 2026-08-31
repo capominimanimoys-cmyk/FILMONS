@@ -23,6 +23,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Review, Listing, Post } from '../types';
 import { toast } from 'sonner';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
 import { reliabilityApi, ReputationScore, isCreatorPlus } from '../lib/reliabilityApi';
@@ -1093,7 +1094,7 @@ export function Profile() {
 
   if (!user) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      <FilmonsBrandLoader size="lg"/>
     </div>
   );
 
@@ -1539,7 +1540,7 @@ export function Profile() {
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <button onClick={() => setShowCompose(true)} className="w-full text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-3 text-left hover:bg-gray-100">What's on your mind?</button>
               </div>
-              {loading ? <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+              {loading ? <div className="flex justify-center py-10"><FilmonsBrandLoader size="md"/></div>
                 : posts.length === 0
                   ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No posts yet</p></div>
                   : posts.map(p => <PostCard key={p.id} post={p} onDeleted={(id)=>{ 

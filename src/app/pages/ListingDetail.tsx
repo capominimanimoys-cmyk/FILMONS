@@ -9,6 +9,7 @@ import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -148,7 +149,7 @@ export function ListingDetail() {
 
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+      <FilmonsBrandLoader size="lg"/>
     </div>
   );
 
@@ -180,6 +181,23 @@ export function ListingDetail() {
     ...(listing.images || []).map(url => ({ url, type: 'image' as const })),
     ...(listing.videos || []).map(url => ({ url, type: 'video' as const })),
   ];
+
+  // Mobile sticky Price+Apply preview -- shows the same price/action as the
+  // real card below, only while that real card is out of view. Desktop is
+  // untouched (the bar itself is lg:hidden, and desktop's version of this
+  // section is already a `sticky top-20` sidebar that's always reachable).
+  const priceApplyRef = useRef<HTMLDivElement>(null);
+  const [showStickyApply, setShowStickyApply] = useState(false);
+  useEffect(() => {
+    const el = priceApplyRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowStickyApply(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [listing.id]);
 
   const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const applicationsClosed = isOpportunity && (listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed');
@@ -555,7 +573,7 @@ export function ListingDetail() {
           <div className="lg:col-span-1">
             <div className="sticky top-20 space-y-4">
               {/* Pricing / Opportunity summary card */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+              <div ref={priceApplyRef} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
                 {isOpportunity && listing.opportunity ? (
                   <div className="mb-4 space-y-2.5 text-sm">
                     {(listing.city || listing.opportunity.workArrangement) && (
@@ -629,6 +647,40 @@ export function ListingDetail() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ── Mobile sticky Price+Apply preview — same price/action as the real
+           card above, IntersectionObserver-driven so it's never shown at the
+           same time as the real one. lg:hidden: desktop's version of this
+           section is already a sticky sidebar, always in view there. ── */}
+      <div
+        className={`lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-3 transition-all duration-[220ms] ease-out ${
+          showStickyApply ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
+        }`}
+        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+        aria-hidden={!showStickyApply}
+      >
+        <div className="min-w-0">
+          {isOpportunity && listing.opportunity ? (
+            listing.opportunity.paid ? (
+              <p className="text-lg font-black text-gray-900 truncate">${listing.price} <span className="text-xs font-semibold text-gray-400">{listing.opportunity.currency || 'CAD'}</span></p>
+            ) : (
+              <p className="text-sm font-bold text-gray-700">Unpaid / Collaboration</p>
+            )
+          ) : listing.price > 0 ? (
+            <p className="text-lg font-black text-gray-900 truncate">
+              ${listing.price} <span className="text-xs font-semibold text-gray-400">
+                {listing.listingMode === 'sale' ? 'CAD' : listing.listingType === 'service' ? '/ hr CAD' : '/ day CAD'}
+              </span>
+            </p>
+          ) : null}
+        </div>
+        <button onClick={handleRequest} disabled={applicationsClosed}
+          className={`shrink-0 flex items-center justify-center gap-1.5 text-white font-bold px-6 py-3 rounded-xl transition-colors text-sm ${
+            applicationsClosed ? 'bg-gray-300 cursor-not-allowed' : isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
+          }`}>
+          {actionLabel}
+        </button>
       </div>
 
       {/* Lightbox */}

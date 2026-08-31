@@ -41,22 +41,22 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
     ? `Your ${limit} ${nounPlural} reset next week.`
     : `Your ${limit} ${nounPlural} reset next month.`;
 
-  // Creator can't apply for Opportunities at all (limit is 0) -- a
-  // distinct message from the "you've used your monthly cap" case below,
-  // which still applies to Creator+.
-  if (plan === 'creator' && kind === 'applications') {
+  // Creator can't post OR apply for Opportunities at all (both limits are
+  // 0) -- a distinct message from the "you've used your weekly/monthly
+  // cap" case below, which only applies to tiers that actually get an
+  // allowance (Creator+ and up).
+  if (plan === 'creator' && (kind === 'applications' || kind === 'posts')) {
     const benefits = [
-      'Apply to Opportunities',
+      isPosts ? 'Post Opportunities' : 'Apply to Opportunities',
       'Creator+ verification',
-      '25 Home swipes per day',
       'Increased trust and visibility',
     ];
     return (
       <div className="px-5 py-6 space-y-4">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto"><Lock className="w-6 h-6 text-blue-600" /></div>
-          <p className="text-base font-black text-gray-900">Apply to Opportunities</p>
-          <p className="text-sm text-gray-500">Upgrade to Creator+ to apply for opportunities on FILMONS.</p>
+          <p className="text-base font-black text-gray-900">{isPosts ? 'Post Opportunities' : 'Apply to Opportunities'}</p>
+          <p className="text-sm text-gray-500">Upgrade to Creator+ to {isPosts ? 'post' : 'apply for'} opportunities on FILMONS.</p>
         </div>
         <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 space-y-2.5">
           {benefits.map(b => (

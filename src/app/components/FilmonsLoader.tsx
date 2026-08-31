@@ -106,6 +106,81 @@ export default function FilmonsLoader({
   );
 }
 
+// ── FilmonsBrandLoader ────────────────────────────────────────────────────
+// General-purpose branded loading indicator — the "Filmons logo" pulse
+// requested for page/content loading states throughout the app, as
+// distinct from the one-shot splash reveal above (FilmonsLoader default
+// export, unchanged, still used by Login.tsx/Portfolio.tsx). Renders the
+// same FILMONS wordmark used everywhere else in this app (FilmonsLogo.tsx)
+// -- there's no separate logo image asset in this project, only the text
+// mark, so this animates that rather than recreating a logo that doesn't
+// exist as a file.
+const SIZE_PX: Record<'sm' | 'md' | 'lg', number> = { sm: 15, md: 22, lg: 34 };
+
+export function FilmonsBrandLoader({
+  size = 'md',
+  fullscreen = false,
+  className = '',
+  label = 'Loading',
+}: {
+  size?: 'sm' | 'md' | 'lg';
+  fullscreen?: boolean;
+  className?: string;
+  label?: string;
+}) {
+  const mark = (
+    <span
+      role="status"
+      aria-label={label}
+      className="filmons-brand-loader"
+      style={{
+        fontFamily: "'Neue Montreal', 'SF Pro Display', -apple-system, sans-serif",
+        fontWeight: 800,
+        letterSpacing: '0.06em',
+        fontSize: SIZE_PX[size],
+        color: '#0F172A',
+        display: 'inline-block',
+      }}
+    >
+      FILMONS
+    </span>
+  );
+
+  const content = fullscreen ? (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm ${className}`}>
+      {mark}
+    </div>
+  ) : (
+    <div className={`flex items-center justify-center ${className}`}>
+      {mark}
+    </div>
+  );
+
+  return (
+    <>
+      {content}
+      <style>{`
+        .filmons-brand-loader {
+          animation: filmonsBrandPulse 1.4s ease-in-out infinite;
+        }
+        @keyframes filmonsBrandPulse {
+          0%, 100% { transform: scale(0.96); opacity: 0.65; }
+          50%      { transform: scale(1.04); opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .filmons-brand-loader {
+            animation: filmonsBrandFadeOnly 1.4s ease-in-out infinite;
+          }
+        }
+        @keyframes filmonsBrandFadeOnly {
+          0%, 100% { opacity: 0.65; transform: none; }
+          50%      { opacity: 1;    transform: none; }
+        }
+      `}</style>
+    </>
+  );
+}
+
 /** Minimal dot-pulse loader for smaller in-page sections — not full-screen. */
 export function FilmonsMicroLoader({ label = 'FILMONS', className = '' }: { label?: string; className?: string }) {
   return (

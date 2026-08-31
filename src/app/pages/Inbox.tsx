@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Conversation, ChatMessage, User, Post, Listing, PricingPackage } from '../types';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { ApplicationCardBubble, SystemMessageDivider } from '../components/ApplicationCardBubble';
 import { HireRequestCardBubble } from '../components/HireRequestCardBubble';
 import { applicationApi } from '../lib/applicationApi';
@@ -2820,7 +2821,7 @@ export function Inbox() {
                      finished yet or had genuinely returned zero conversations. */}
                 {!serverLoaded && displayedConvs.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
-                    <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+                    <FilmonsBrandLoader size="md" className="mb-3"/>
                     <p className="text-sm text-gray-400">Loading conversations…</p>
                   </div>
                 )}

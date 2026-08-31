@@ -571,6 +571,7 @@ function Step10({ form, previewListing, onPublish, isSubmitting, onEditStep, lim
   limitReached: LimitReachedInfo | null; onUpgrade: (plan: 'professional' | 'business') => void;
   onDismissLimit: () => void; onManageOpportunities: () => void;
 }) {
+  const navigate = useNavigate();
   const sections: { label: string; step: number }[] = [
     { label: 'Opportunity Type', step: 1 }, { label: 'Details', step: 2 }, { label: 'Media', step: 3 },
     { label: 'Location', step: 4 }, { label: 'Dates', step: 5 }, { label: 'Compensation', step: 6 },
@@ -584,7 +585,7 @@ function Step10({ form, previewListing, onPublish, isSubmitting, onEditStep, lim
       <div className="space-y-4">
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <OpportunityLimitUpgrade kind="posts" plan={limitReached.plan} limit={limitReached.limit}
-            onUpgrade={onUpgrade} onMaybeLater={onDismissLimit} />
+            onUpgrade={onUpgrade} onUpgradeToCreatorPlus={() => navigate('/verification')} onMaybeLater={onDismissLimit} />
         </div>
         <button onClick={onManageOpportunities} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Manage Opportunities</button>
       </div>
