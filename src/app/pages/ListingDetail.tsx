@@ -147,6 +147,28 @@ export function ListingDetail() {
     setLightbox({ items: allItems, index });
   };
 
+  // Mobile sticky Price+Apply preview -- shows the same price/action as the
+  // real card below, only while that real card is out of view. Desktop is
+  // untouched (the bar itself is lg:hidden, and desktop's version of this
+  // section is already a `sticky top-20` sidebar that's always reachable).
+  // Declared before the early returns below (loading/!listing) -- every
+  // hook in a component must run on every render regardless of which
+  // branch it ends up taking, or React throws "rendered more hooks than
+  // during the previous render" (minified error #310) the moment a render
+  // takes a different branch than the last one did.
+  const priceApplyRef = useRef<HTMLDivElement>(null);
+  const [showStickyApply, setShowStickyApply] = useState(false);
+  useEffect(() => {
+    const el = priceApplyRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowStickyApply(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [listing?.id]);
+
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
       <FilmonsBrandLoader size="lg"/>
@@ -181,23 +203,6 @@ export function ListingDetail() {
     ...(listing.images || []).map(url => ({ url, type: 'image' as const })),
     ...(listing.videos || []).map(url => ({ url, type: 'video' as const })),
   ];
-
-  // Mobile sticky Price+Apply preview -- shows the same price/action as the
-  // real card below, only while that real card is out of view. Desktop is
-  // untouched (the bar itself is lg:hidden, and desktop's version of this
-  // section is already a `sticky top-20` sidebar that's always reachable).
-  const priceApplyRef = useRef<HTMLDivElement>(null);
-  const [showStickyApply, setShowStickyApply] = useState(false);
-  useEffect(() => {
-    const el = priceApplyRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setShowStickyApply(!entry.isIntersecting),
-      { threshold: 0 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [listing.id]);
 
   const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const applicationsClosed = isOpportunity && (listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed');
