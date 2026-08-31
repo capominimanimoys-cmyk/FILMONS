@@ -299,3 +299,8 @@ jobs:
         run: supabase functions deploy sync-stripe-balance-availability --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy get-opportunity-feed
+        run: supabase functions deploy get-opportunity-feed --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

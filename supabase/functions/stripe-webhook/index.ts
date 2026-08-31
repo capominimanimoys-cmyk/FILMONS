@@ -602,7 +602,15 @@ Deno.serve(async (req) => {
             sendFallbackEmail({ ...sharedParams, to_email: agRow.verified_email, to_name: renterName, reply_to: 'filmons481@gmail.com' });
           }
           if (hostProfile?.email && earnerEligibleForHold) {
-            sharedParams.greeting_message = 'Your payment is confirmed! Funds typically become available in your Filmons Wallet within 2–5 business days. View your rental agreement and receipt anytime from Dashboard → Orders.';
+            // Same Stripe-sourced date as the Wallet UI (never a vague
+            // estimate once Stripe has actually resolved it) -- stripeAvail
+            // was already fetched above for fn_finalize_payment's
+            // p_stripe_available_on. Falls back to the generic range only
+            // when Stripe hasn't resolved availability yet (rare -- the
+            // hourly reconciliation pass fills it in shortly after).
+            sharedParams.greeting_message = stripeAvail.availableOn
+              ? `Your payment is confirmed! Funds will be available in your Filmons Wallet on ${new Date(stripeAvail.availableOn).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}. View your rental agreement and receipt anytime from Dashboard → Orders.`
+              : 'Your payment is confirmed! Funds typically become available in your Filmons Wallet within 2–5 business days. View your rental agreement and receipt anytime from Dashboard → Orders.';
           }
           if (hostProfile?.email) {
             sendFallbackEmail({ ...sharedParams, to_email: hostProfile.email, to_name: hostProfile.name || 'Host', reply_to: agRow.verified_email || 'filmons481@gmail.com' });

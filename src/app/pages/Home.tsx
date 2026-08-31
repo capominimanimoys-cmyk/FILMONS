@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
@@ -15,6 +15,8 @@ import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { opportunityFeedApi } from '../lib/opportunityFeedApi';
+import { setPendingReturnUrl } from '../lib/authReturnUrl';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -40,7 +42,7 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
   { id: 'emergency', label: 'Emergency', icon: AlertTriangle },
 ];
 
-function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId): DeckItem[] {
+function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId, allowedOpportunityIds?: string[] | null): DeckItem[] {
   if (filter === 'creators') {
     return creators.map(c => ({ kind: 'creator', data: c }));
   }
@@ -73,12 +75,20 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
     // authoritative source of truth now; metadata.listingKind === 'talent'
     // (the earlier repurposed-kind marker) and the original keyword
     // heuristic are kept as fallbacks so older listings don't disappear.
-    const talentListings = filtered.filter(l =>
+    let talentListings = filtered.filter(l =>
       l.listingType === 'opportunity' ||
       l.listingKind === 'talent' ||
       /model|actor|actress|talent|ugc/i.test(l.title ?? '') ||
       /model|actor|actress|talent|ugc/i.test(l.serviceCategory ?? '')
     );
+    // Guest/Creator/Creator+ (allowedOpportunityIds non-null): restrict to
+    // today's server-allocated up-to-5 (see get-opportunity-feed) instead
+    // of every matching listing -- null means Professional/Business
+    // (unlimited), where this filter is a no-op.
+    if (allowedOpportunityIds) {
+      const allowed = new Set(allowedOpportunityIds);
+      talentListings = talentListings.filter(l => allowed.has(l.id));
+    }
     const talentCreators = creators.filter(c =>
       /model|actor|actress|talent|influencer|ugc/i.test(c.primary_role ?? '')
     );
@@ -156,6 +166,27 @@ export function Home() {
   const userTier = normalizeTier(user?.accountType);
   const canBrowseEmergency = userTier === 'professional' || userTier === 'business';
   const [showEmergencyUpgrade, setShowEmergencyUpgrade] = useState(false);
+
+  // Opportunity ("talent" filter) browsing: Professional/Business
+  // unlimited, everyone else capped at 5/day -- server-enforced (see
+  // get-opportunity-feed), fetched once per Home mount so switching tabs,
+  // refreshing within the session, or a Refresh-deck tap never re-rolls a
+  // fresh 5. oppAllowanceIds stays null (meaning "unlimited, don't filter")
+  // for Professional/Business the whole time.
+  const oppUnlimited = userTier === 'professional' || userTier === 'business';
+  const [oppAllowanceIds, setOppAllowanceIds] = useState<string[] | null>(null);
+  const [oppLimitReached, setOppLimitReached] = useState(false);
+  useEffect(() => {
+    if (oppUnlimited) return;
+    let cancelled = false;
+    opportunityFeedApi.getAllowance(user?.id, !user).then(({ unlimited, listingIds, limitReached }) => {
+      if (cancelled) return;
+      if (unlimited) return; // server disagreed with the client tier read -- trust it
+      setOppAllowanceIds(listingIds);
+      setOppLimitReached(limitReached);
+    });
+    return () => { cancelled = true; };
+  }, [oppUnlimited, user?.id]);
 
   const [listings,  setListings]  = useState<EnrichedListing[]>([]);
   const [creators,  setCreators]  = useState<CreatorProfile[]>([]);
@@ -273,8 +304,13 @@ export function Home() {
   }, [user?.id, refreshKey]);
 
   // Rebuild deck whenever filter or source data changes; reset deck state via key
-  const deck = useMemo(() => buildDeck(listings, creators, filter), [listings, creators, filter]);
-  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter), [rawListings, rawCreators, filter]);
+  // null (Professional/Business) means "don't filter" inside buildDeck;
+  // for a limited tier whose allowance hasn't resolved yet, an empty array
+  // correctly shows zero Opportunity cards rather than the full unfiltered
+  // set for a flash before the fetch above completes.
+  const effectiveAllowanceIds = oppUnlimited ? null : (oppAllowanceIds ?? []);
+  const deck = useMemo(() => buildDeck(listings, creators, filter, effectiveAllowanceIds), [listings, creators, filter, effectiveAllowanceIds]);
+  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, effectiveAllowanceIds), [rawListings, rawCreators, filter, effectiveAllowanceIds]);
 
   // A reload (or first visit this session) after having already swiped
   // through everything for this filter never fires SwipeStack's onDone --
@@ -443,6 +479,34 @@ export function Home() {
     </div>
   );
 
+  // Shown instead of caughtUpScreen/emptyState once a limited tier
+  // (Guest/Creator/Creator+) has gone through today's capped Opportunity
+  // allowance -- "After the 5 visible opportunities, show an upgrade
+  // card/message" (spec). "Not Now" needs no handler: staying here is
+  // simply not tapping Upgrade Account.
+  const opportunityLimitScreen = (
+    <div className="flex flex-col items-center py-20 px-6 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+        <Lock className="w-7 h-7 text-indigo-600" />
+      </div>
+      <p className="font-black text-gray-900 text-lg mb-1">Unlock All Opportunities</p>
+      <p className="text-sm text-gray-400 mb-5 max-w-xs">Upgrade to a Professional or Business account to access all available Opportunity listings.</p>
+      <div className="flex flex-col gap-2 w-full max-w-xs">
+        <button
+          onClick={() => {
+            if (!user) { setPendingReturnUrl('/account/upgrade'); navigate('/login'); return; }
+            navigate('/account/upgrade');
+          }}
+          className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
+          Upgrade Account
+        </button>
+        <button onClick={() => setFilter('all')} className="w-full py-2.5 text-gray-500 text-sm font-semibold hover:text-gray-700">
+          Not Now
+        </button>
+      </div>
+    </div>
+  );
+
   // Shown instead of caughtUpScreen when returning to a filter that was
   // already finished in an earlier session and new unseen items have since
   // appeared -- requires an explicit "Start Swiping" rather than silently
@@ -530,7 +594,11 @@ export function Home() {
         // no-new-listings copy, not the generic "Nothing here yet" state
         // meant for a filter that never had any listings at all) the
         // caught-up/empty/new-opportunities states, then the deck itself.
-        ) : loadError ? errorScreen : deckDone ? caughtUpScreen : deck.length === 0 ? emptyState : showNewBanner ? newOpportunitiesScreen : (
+        ) : loadError ? errorScreen : deckDone
+            ? ((filter === 'talent' && !oppUnlimited && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
+            : deck.length === 0
+            ? ((filter === 'talent' && !oppUnlimited && oppLimitReached) ? opportunityLimitScreen : emptyState)
+            : showNewBanner ? newOpportunitiesScreen : (
           <SwipeStack
             key={filterKey}
             items={deck}
