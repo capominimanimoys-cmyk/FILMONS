@@ -157,6 +157,7 @@ export function ListingDetail() {
   // during the previous render" (minified error #310) the moment a render
   // takes a different branch than the last one did.
   const priceApplyRef = useRef<HTMLDivElement>(null);
+  const stickyBarRef = useRef<HTMLDivElement>(null);
   // Starts true (not false) -- the real card is always below the fold on
   // first paint (images/description/host card all come first), so the
   // preview must show immediately when the page opens, not wait for the
@@ -165,9 +166,22 @@ export function ListingDetail() {
   useEffect(() => {
     const el = priceApplyRef.current;
     if (!el) return;
+    // rootMargin shrinks the bottom of the intersection viewport by the
+    // sticky bar's own height (fixed-position, so it doesn't affect
+    // document flow/layout, but it DOES visually cover that strip of the
+    // screen). Without this, the real card counts as "visible" the moment
+    // its top edge crosses into the viewport's literal bottom edge, even
+    // though that strip is physically hidden behind the bar sitting on
+    // top of it -- exactly "the sticky bar floating over the real
+    // section." Measured from the actual rendered bar (it stays mounted,
+    // just transformed off-screen when hidden, so its height is always
+    // available) rather than a hard-coded guess, per "do not use a
+    // hard-coded scroll distance" -- same principle applies to any other
+    // hard-coded pixel value standing in for real layout.
+    const barHeight = stickyBarRef.current?.offsetHeight ?? 0;
     const observer = new IntersectionObserver(
       ([entry]) => setShowStickyApply(!entry.isIntersecting),
-      { threshold: 0 },
+      { threshold: 0, rootMargin: `0px 0px -${barHeight}px 0px` },
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -663,6 +677,7 @@ export function ListingDetail() {
            same time as the real one. lg:hidden: desktop's version of this
            section is already a sticky sidebar, always in view there. ── */}
       <div
+        ref={stickyBarRef}
         className={`lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-3 transition-all duration-[220ms] ease-out ${
           showStickyApply ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
         }`}
