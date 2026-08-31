@@ -21,7 +21,14 @@ import {
 // actual release timing, which is decided server-side either way.
 const PENDING_HOLD_COPY = 'Funds received through Filmons typically become available in your wallet within 2–5 business days.';
 
-function estimatedAvailabilityLabel(availableAt: string | null): string {
+// stripeAvailableOn present means this date came from Stripe's own
+// balance transaction (the real settlement date Stripe's own dashboard
+// shows), not a locally computed hold-period guess -- shown as a
+// definite fact ("Available <date>"), never hedged with "Estimated".
+function estimatedAvailabilityLabel(availableAt: string | null, stripeAvailableOn?: string | null): string {
+  if (stripeAvailableOn) {
+    return `Available ${new Date(stripeAvailableOn).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  }
   if (!availableAt) return 'Estimated availability: 2–5 business days';
   return `Estimated available by ${new Date(availableAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
@@ -779,7 +786,7 @@ export function Wallet() {
                       </span>
                     </div>
                     {tx.status === 'pending' && (
-                      <p className="text-[11px] text-amber-600 mt-0.5">{estimatedAvailabilityLabel(tx.available_at)}</p>
+                      <p className="text-[11px] text-amber-600 mt-0.5">{estimatedAvailabilityLabel(tx.available_at, tx.stripe_available_on)}</p>
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">

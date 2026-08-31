@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { authApi, socialApi } from '../lib/api';
+import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
@@ -1624,7 +1625,7 @@ export function Portfolio() {
                 <Share2 className="w-4 h-4" />
               </button>
               <button
-                onClick={() => navigate('/settings/portfolio')}
+                onClick={() => { setSettingsReturnTo(window.location.pathname); navigate('/settings/portfolio'); }}
                 className="flex items-center text-gray-600 text-sm font-semibold px-4 py-2 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 active:scale-95 transition-all"
               >
                 Settings

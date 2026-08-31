@@ -26,6 +26,15 @@ export interface WalletTransaction {
   description: string | null;
   created_at: string;
   available_at: string | null;
+  // Stripe's own balance-transaction settlement data -- the real source
+  // of truth for when this specific charge's funds are actually usable,
+  // not a locally computed estimate. null until the webhook/reconciliation
+  // pass resolves it (see supabase/functions/_shared/stripeBalanceAvailability.ts).
+  stripe_payment_intent_id?: string | null;
+  stripe_charge_id?: string | null;
+  stripe_balance_transaction_id?: string | null;
+  stripe_available_on?: string | null;
+  payout_availability_status?: 'pending' | 'available' | null;
 }
 
 // 'card'/'bank' are the new Stripe Connect-backed methods; 'interac'/

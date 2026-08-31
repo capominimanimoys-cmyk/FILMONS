@@ -294,3 +294,8 @@ jobs:
         run: supabase functions deploy booking-reminders --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy sync-stripe-balance-availability
+        run: supabase functions deploy sync-stripe-balance-availability --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

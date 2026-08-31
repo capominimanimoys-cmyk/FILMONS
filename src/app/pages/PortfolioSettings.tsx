@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { consumeSettingsReturnTo } from '../lib/settingsReturnTo';
 import {
   getPortfolioSettings, upsertPortfolioSettings, resetPortfolioSettings,
   uploadPortfolioCover, getPortfolioItems, updateItemsOrder, setItemDownloadAllowed,
@@ -120,7 +121,11 @@ export function PortfolioSettings() {
     flashSaved();
   };
 
-  const portfolioUrl = `filmons.com/@${user?.username || 'you'}/portfolio`;
+  // Must match the actual route (portfolio/:userId in routes.tsx, which
+  // resolves strictly by user id -- see Portfolio.tsx's loadPage/getUserById,
+  // no username lookup exists). The old `@username/portfolio` shape wasn't a
+  // real route at all -- copying/sharing it produced a dead link.
+  const portfolioUrl = user?.id ? `${window.location.origin}/portfolio/${user.id}` : '';
 
   const handleCoverFile = async (file: File) => {
     if (!user?.id || !file.type.startsWith('image/')) { toast.error('Images only'); return; }
@@ -235,7 +240,7 @@ export function PortfolioSettings() {
 
       {/* Header */}
       <div className="sticky top-14 lg:top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate('/settings')}
+        <button onClick={() => navigate(consumeSettingsReturnTo() || '/settings')}
           className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors">
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
@@ -301,15 +306,15 @@ export function PortfolioSettings() {
           <div className="grid grid-cols-3 divide-x divide-gray-50">
             <button
               disabled={settings.visibility === 'private'}
-              onClick={() => { navigator.clipboard.writeText(`https://${portfolioUrl}`); toast.success('Link copied!'); }}
+              onClick={() => { navigator.clipboard.writeText(portfolioUrl); toast.success('Link copied!'); }}
               className="flex flex-col items-center gap-1 py-3 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-white transition-colors">
               <Copy className="w-4 h-4" /> Copy
             </button>
             <button
               disabled={settings.visibility === 'private'}
               onClick={() => {
-                if (navigator.share) navigator.share({ url: `https://${portfolioUrl}` }).catch(() => {});
-                else { navigator.clipboard.writeText(`https://${portfolioUrl}`); toast.success('Link copied!'); }
+                if (navigator.share) navigator.share({ url: portfolioUrl }).catch(() => {});
+                else { navigator.clipboard.writeText(portfolioUrl); toast.success('Link copied!'); }
               }}
               className="flex flex-col items-center gap-1 py-3 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-white transition-colors">
               <Share2 className="w-4 h-4" /> Share
@@ -508,7 +513,7 @@ export function PortfolioSettings() {
         <Section title="Sharing">
           <button
             disabled={settings.visibility === 'private'}
-            onClick={() => { navigator.clipboard.writeText(`https://${portfolioUrl}`); toast.success('Link copied!'); }}
+            onClick={() => { navigator.clipboard.writeText(portfolioUrl); toast.success('Link copied!'); }}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 disabled:opacity-40 transition-colors">
             <span className="text-sm font-semibold text-gray-900">Copy portfolio link</span>
             <Copy className="w-4 h-4 text-gray-400" />
@@ -520,7 +525,7 @@ export function PortfolioSettings() {
           </button>
           <button
             disabled={settings.visibility === 'private'}
-            onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`https://${portfolioUrl}`)}`)}
+            onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(portfolioUrl)}`)}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 disabled:opacity-40 transition-colors">
             <span className="text-sm font-semibold text-gray-900">Share to WhatsApp</span>
             <Share2 className="w-4 h-4 text-gray-400" />

@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle, Clock, XCircle, Shield, CreditCard, Briefcase, 
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { supabase } from '../../lib/supabase';
+import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 
 interface VerifData {
   identity_verified:            boolean;
@@ -123,7 +124,7 @@ export function VerificationStatusPage() {
           </div>
         )}
 
-        <button onClick={() => { captureSnapshot(); navigate('/settings/verification'); }}
+        <button onClick={() => { captureSnapshot(); setSettingsReturnTo(window.location.pathname); navigate('/settings/verification'); }}
           className="w-full flex items-center justify-between px-4 py-3.5 bg-white rounded-2xl shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors">
           <p className="text-sm font-semibold text-gray-900">Manage Verifications</p>
           <ChevronRight className="w-4 h-4 text-gray-300"/>

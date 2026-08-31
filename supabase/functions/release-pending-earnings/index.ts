@@ -6,6 +6,16 @@
 // (hourly) — matches this repo's existing pattern of GitHub Actions
 // doing operational work, and needs no pg_cron dependency (which may
 // not be enabled on this Supabase plan).
+//
+// Runs the Stripe-availability reconciliation pass first (see
+// sync-stripe-balance-availability, whose logic is inlined here so this
+// single hourly tick always has fresh payout_availability_status before
+// fn_release_pending_earnings runs — otherwise a row could sit an extra
+// hour "confirmed available" by Stripe but not yet reflected here).
+// fn_release_pending_earnings itself refuses to release anything still
+// flagged payout_availability_status = 'pending', regardless of date.
+import { fetchStripeAvailability, fetchBalanceTransaction } from '../_shared/stripeBalanceAvailability.ts';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
@@ -15,6 +25,48 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY };
 function rest(path: string) { return `${SUPABASE_URL}/rest/v1${path}`; }
+
+const STRIPE_SYNC_BATCH_LIMIT = 200;
+
+async function syncStripeAvailability(): Promise<{ checked: number; updated: number; nowAvailable: number }> {
+  const res = await fetch(
+    rest(
+      `/wallet_transactions?balance_type=eq.pending&status=eq.pending` +
+      `&stripe_payment_intent_id=not.is.null` +
+      `&or=(payout_availability_status.is.null,payout_availability_status.eq.pending)` +
+      `&select=id,stripe_payment_intent_id,stripe_balance_transaction_id&limit=${STRIPE_SYNC_BATCH_LIMIT}`,
+    ),
+    { headers: H },
+  );
+  const rows: Array<{ id: string; stripe_payment_intent_id: string; stripe_balance_transaction_id: string | null }> = await res.json().catch(() => []);
+
+  let checked = 0, updated = 0, nowAvailable = 0;
+  for (const row of rows || []) {
+    checked++;
+    const avail = row.stripe_balance_transaction_id
+      ? await fetchBalanceTransaction(row.stripe_balance_transaction_id)
+      : await fetchStripeAvailability(row.stripe_payment_intent_id);
+    if (!avail.balanceTransactionId || !avail.availableOn) continue;
+
+    // fn_sync_stripe_balance_transaction RETURNS void -- checked via
+    // res.ok directly (not the shared rpc() helper above, which can't
+    // distinguish a void function's empty-body success from a failure;
+    // both parse-fail to the same fallback value).
+    const syncRes = await fetch(rest('/rpc/fn_sync_stripe_balance_transaction'), {
+      method: 'POST', headers: H,
+      body: JSON.stringify({
+        p_wallet_transaction_id: row.id,
+        p_stripe_charge_id: avail.chargeId,
+        p_stripe_balance_transaction_id: avail.balanceTransactionId,
+        p_stripe_available_on: avail.availableOn,
+        p_payout_availability_status: avail.payoutStatus,
+      }),
+    });
+    if (syncRes.ok) { updated++; if (avail.payoutStatus === 'available') nowAvailable++; }
+    else console.error('fn_sync_stripe_balance_transaction failed:', syncRes.status, await syncRes.text());
+  }
+  return { checked, updated, nowAvailable };
+}
 
 async function rpc(fn: string, args: Record<string, unknown> = {}) {
   const res = await fetch(rest(`/rpc/${fn}`), { method: 'POST', headers: H, body: JSON.stringify(args) });
@@ -92,6 +144,11 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
+    const stripeSync = await syncStripeAvailability().catch(e => {
+      console.error('syncStripeAvailability failed (non-fatal, release still runs off whatever status is already stored):', e);
+      return { checked: 0, updated: 0, nowAvailable: 0 };
+    });
+
     const released = await rpc('fn_release_pending_earnings');
 
     const [oppReleased, hireReleased, oppReminders, hireReminders] = await Promise.all([
@@ -109,7 +166,7 @@ Deno.serve(async (req) => {
     ]);
 
     return new Response(JSON.stringify({
-      success: true, released,
+      success: true, released, stripeSync,
       autoReleased: { opportunity: oppReleased.length, hire: hireReleased.length },
       reminders: { opportunity: oppReminders.length, hire: hireReminders.length },
     }), { headers: { ...cors, 'Content-Type': 'application/json' } });

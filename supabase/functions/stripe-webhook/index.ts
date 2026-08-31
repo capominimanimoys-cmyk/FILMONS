@@ -14,6 +14,7 @@ import { sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
 import { addBusinessDays } from '../_shared/businessDays.ts';
 import { normalizeTier } from '../_shared/entitlements.ts';
 import { coveredDates } from '../_shared/bookingDates.ts';
+import { fetchStripeAvailability } from '../_shared/stripeBalanceAvailability.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -302,6 +303,14 @@ Deno.serve(async (req) => {
       // (fn_release_pending_earnings already checks orders.dispute_status)
       // and admin volume/revenue reporting work with zero new code.
       const orderId = `OPP-${meta.transaction_id}`;
+      // Real Stripe settlement info (available_on/status from the charge's
+      // own balance transaction) -- the actual gate on when this earning
+      // can move to Available, not an estimate. Best-effort: if Stripe
+      // doesn't resolve it yet, this stays null and the reconciliation
+      // pass (sync-stripe-balance-availability) fills it in later; the
+      // held amount just stays pending until then, never wrongly shown
+      // available early.
+      const stripeAvail = await fetchStripeAvailability(session.payment_intent);
       await fetch(rest('/orders'), {
         method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal,resolution=ignore-duplicates' },
         body: JSON.stringify({
@@ -330,6 +339,9 @@ Deno.serve(async (req) => {
         p_hold_review_days: holdReviewDays,
         p_stripe_session_id: session.id,
         p_stripe_payment_intent_id: session.payment_intent || null,
+        p_stripe_charge_id: stripeAvail.chargeId,
+        p_stripe_balance_transaction_id: stripeAvail.balanceTransactionId,
+        p_stripe_available_on: stripeAvail.availableOn,
       });
 
       if (processed) {
@@ -375,6 +387,7 @@ Deno.serve(async (req) => {
       const holdReviewDays = parseInt(meta.hold_review_days || '7', 10);
 
       const orderId = `HIRE-${meta.transaction_id}`;
+      const stripeAvail = await fetchStripeAvailability(session.payment_intent);
       await fetch(rest('/orders'), {
         method: 'POST', headers: { ...REST_H, Prefer: 'return=minimal,resolution=ignore-duplicates' },
         body: JSON.stringify({
@@ -403,6 +416,9 @@ Deno.serve(async (req) => {
         p_hold_review_days: holdReviewDays,
         p_stripe_session_id: session.id,
         p_stripe_payment_intent_id: session.payment_intent || null,
+        p_stripe_charge_id: stripeAvail.chargeId,
+        p_stripe_balance_transaction_id: stripeAvail.balanceTransactionId,
+        p_stripe_available_on: stripeAvail.availableOn,
       });
 
       if (processed) {
@@ -457,6 +473,12 @@ Deno.serve(async (req) => {
       ? addBusinessDays(anchor, 3).toISOString()
       : new Date(anchor.getTime() + 48 * 3600 * 1000).toISOString();
 
+    // Real Stripe settlement info -- fn_finalize_payment takes the LATER
+    // of this hold-period date and Stripe's own available_on, so the host
+    // is never shown "available" before Stripe itself considers the
+    // charge's funds settled.
+    const stripeAvail = await fetchStripeAvailability(session.payment_intent);
+
     const processed = await rpc('fn_finalize_payment', {
       p_idempotency_key: event.id,
       p_order_id: session.id,
@@ -466,6 +488,10 @@ Deno.serve(async (req) => {
       p_buyer_fee_amount: buyerFeeAmount,
       p_currency: 'CAD',
       p_available_at: availableAt,
+      p_stripe_payment_intent_id: session.payment_intent || null,
+      p_stripe_charge_id: stripeAvail.chargeId,
+      p_stripe_balance_transaction_id: stripeAvail.balanceTransactionId,
+      p_stripe_available_on: stripeAvail.availableOn,
     });
 
     // Guaranteed-to-run confirmation fallback — only on first processing

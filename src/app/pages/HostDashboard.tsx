@@ -18,6 +18,7 @@ import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
 import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier } from '../lib/reliabilityApi';
 import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
+import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 
 function getStoredListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
@@ -474,7 +475,7 @@ function CreatorDashboard({ user }: { user: any }) {
           const tier = getCompositeTier(rep.reliability_level, isCreatorPlusTier(rep.account_type));
           const tierLabel = tier.label;
           return (
-            <button onClick={() => navigate('/settings/reviews')}
+            <button onClick={() => { setSettingsReturnTo(window.location.pathname); navigate('/settings/reviews'); }}
               className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors">
               <svg width={52} height={52} style={{ flexShrink: 0, overflow: 'visible' }}>
                 <circle cx={26} cy={26} r={20} fill="none" stroke="#e5e7eb" strokeWidth="5"/>
@@ -893,7 +894,7 @@ function HostDashboardContent({ user }: { user: any }) {
               const tier = getCompositeTier(rep.reliability_level, isCreatorPlusTier(rep.account_type));
               const tierLabel = tier.label;
               return (
-                <button onClick={() => navigate('/settings/reviews')}
+                <button onClick={() => { setSettingsReturnTo(window.location.pathname); navigate('/settings/reviews'); }}
                   className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors">
                   <svg width={52} height={52} style={{ flexShrink: 0, overflow: 'visible' }}>
                     <circle cx={26} cy={26} r={20} fill="none" stroke="#e5e7eb" strokeWidth="5"/>
