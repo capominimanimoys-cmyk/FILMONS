@@ -170,6 +170,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Deploy admin-settings-info
+        run: supabase functions deploy admin-settings-info --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Deploy submit-opportunity-application
         run: supabase functions deploy submit-opportunity-application --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:

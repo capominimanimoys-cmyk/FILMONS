@@ -7,6 +7,7 @@ import { AdminTransactions } from './pages/AdminTransactions';
 import { AdminTransactionDetail } from './pages/AdminTransactionDetail';
 import { AdminVerifications } from './pages/AdminVerifications';
 import { AdminWallet } from './pages/AdminWallet';
+import { AdminSettings } from './pages/AdminSettings';
 import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
 import { AdminComingSoon } from './pages/AdminComingSoon';
@@ -40,7 +41,7 @@ const adminRouteTree = [
       { path: 'wallet',        Component: AdminWallet },
       { path: 'boosts',        Component: AdminBoosts },
       { path: 'reports',       element: <AdminComingSoon title="Reports" /> },
-      { path: 'settings',      element: <AdminComingSoon title="Settings" /> },
+      { path: 'settings',      Component: AdminSettings },
     ],
   },
   // Any other path under this bundle (e.g. a stale bookmark) -- back to
