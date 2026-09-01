@@ -4,6 +4,27 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
 import { toast } from 'sonner';
 
+// Runs a listings query that filters out paused/removed listings, but
+// transparently retries WITHOUT that filter if the moderation_status
+// column doesn't exist yet (Postgres error 42703, undefined_column) --
+// migrations here are never auto-applied, so code depending on a new
+// column can deploy before the migration that adds it actually runs.
+// This is exactly what happened once already: every real listing
+// briefly vanished from every discovery surface (Home feed, Search)
+// because the query itself was erroring and the caller's error
+// handling silently returned an empty array instead of surfacing it.
+// Never let a not-yet-applied migration take down live discovery again.
+export async function withModerationFilter<T = any>(
+  build: (filterActive: boolean) => PromiseLike<{ data: T[] | null; error: any }>,
+): Promise<{ data: T[] | null; error: any }> {
+  let res = await build(true);
+  if (res.error?.code === '42703') {
+    console.warn('withModerationFilter: moderation_status column missing (migration not applied yet) -- retrying without it');
+    res = await build(false);
+  }
+  return res;
+}
+
 // filmons_users_cache is a pure lookup-speed optimization (instant
 // name/avatar for getUserByIdSync) that grows with every distinct user
 // this account has ever seen (message senders, conversation partners,
@@ -768,13 +789,11 @@ export const listingsApi = {
       // array) is — this was silently 400'ing the whole query on every call,
       // making getAll() permanently fall through to the stale localStorage
       // fallback below regardless of what was actually in the database.
-      const { data, error } = await supabase
-        .from('listings')
-        .select(LISTING_COLUMNS)
-        .eq('is_active', true)
-        .eq('moderation_status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(80);
+      const { data, error } = await withModerationFilter((filterActive) => {
+        let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+        if (filterActive) q = q.eq('moderation_status', 'active');
+        return q.order('created_at', { ascending: false }).limit(80);
+      });
 
       if (!error && data) {
         console.log(`✅ Loaded ${data.length} listings from Supabase`);
@@ -823,14 +842,14 @@ export const listingsApi = {
    *  keyword fallback SearchOverlay's fetchCategoryBrowse already uses. */
   getOpportunities: async (): Promise<Listing[]> => {
     try {
-      const { data, error } = await supabase
-        .from('listings')
-        .select(LISTING_COLUMNS)
-        .eq('is_active', true)
-        .eq('moderation_status', 'active')
-        .or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      const { data, error } = await withModerationFilter((filterActive) => {
+        let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+        if (filterActive) q = q.eq('moderation_status', 'active');
+        return q
+          .or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%')
+          .order('created_at', { ascending: false })
+          .limit(100);
+      });
       if (error) { console.error('❌ getOpportunities query failed:', error.message); return []; }
       return (data || []).map(mapListingRow);
     } catch (e) {

@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import {
   expandQuery, normalize, scoreResult, extractLocation,
 } from '../lib/searchUtils';
+import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
@@ -399,18 +400,18 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
   // is_active excludes deleted/inactive listings from every category,
   // including opportunities (no separate "closed"/"expired" column exists
   // in this data model -- is_active is the one real signal for that).
-  const textRes = await supabase
-    .from('listings')
-    .select(LISTING_SELECT)
-    .eq('is_active', true)
-    .eq('moderation_status', 'active')
-    .or([
-      `title.ilike.%${term}%`,
-      `description.ilike.%${term}%`,
-      `service_category.ilike.%${term}%`,
-      `city.ilike.%${term}%`,
-    ].join(','))
-    .limit(20);
+  const textRes = await withModerationFilter((filterActive) => {
+    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+    if (filterActive) q = q.eq('moderation_status', 'active');
+    return q
+      .or([
+        `title.ilike.%${term}%`,
+        `description.ilike.%${term}%`,
+        `service_category.ilike.%${term}%`,
+        `city.ilike.%${term}%`,
+      ].join(','))
+      .limit(20);
+  });
 
   if (textRes.error) {
     console.error(`[Search] listings text error (term="${term}"):`, textRes.error.message);
@@ -419,13 +420,11 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
   }
 
   // Tags array: case-insensitive contains via raw filter
-  const tagRes = await supabase
-    .from('listings')
-    .select(LISTING_SELECT)
-    .eq('is_active', true)
-    .eq('moderation_status', 'active')
-    .filter('tags', 'cs', `{"${term}"}`)
-    .limit(10);
+  const tagRes = await withModerationFilter((filterActive) => {
+    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+    if (filterActive) q = q.eq('moderation_status', 'active');
+    return q.filter('tags', 'cs', `{"${term}"}`).limit(10);
+  });
 
   if (tagRes.error) {
     console.warn(`[Search] listings tags error (term="${term}"):`, tagRes.error.message);
@@ -568,20 +567,23 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
     return { users: (res.data ?? []) as ProfileRow[], listings: [] };
   }
 
-  let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true).eq('moderation_status', 'active');
-  switch (category) {
-    case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
-    case 'sale':           query = query.eq('listing_mode', 'sale'); break;
-    case 'services':       query = query.eq('listing_type', 'service'); break;
-    // listing_type = 'opportunity' is authoritative for newer rows, but
-    // Home.tsx's buildDeck keeps the original keyword heuristic as a
-    // fallback so older listings (tagged before that column existed) don't
-    // vanish -- matched here too, or Opportunity browse would silently
-    // return nothing for any legacy-tagged listing.
-    case 'opportunities':  query = query.or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%'); break;
-    case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
-  }
-  const res = await query.order('created_at', { ascending: false }).limit(24);
+  const res = await withModerationFilter((filterActive) => {
+    let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+    if (filterActive) query = query.eq('moderation_status', 'active');
+    switch (category) {
+      case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
+      case 'sale':           query = query.eq('listing_mode', 'sale'); break;
+      case 'services':       query = query.eq('listing_type', 'service'); break;
+      // listing_type = 'opportunity' is authoritative for newer rows, but
+      // Home.tsx's buildDeck keeps the original keyword heuristic as a
+      // fallback so older listings (tagged before that column existed) don't
+      // vanish -- matched here too, or Opportunity browse would silently
+      // return nothing for any legacy-tagged listing.
+      case 'opportunities':  query = query.or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%'); break;
+      case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
+    }
+    return query.order('created_at', { ascending: false }).limit(24);
+  });
   if (res.error) console.error(`[Search] browse ${category} error:`, res.error.message);
   let listings = (res.data ?? []) as ListingRow[];
   // The DB-level filter above can't express "listing_mode = rent AND not an
