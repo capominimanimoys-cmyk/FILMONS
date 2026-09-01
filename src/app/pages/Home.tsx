@@ -124,27 +124,6 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
   return result;
 }
 
-// ── Skeleton card ─────────────────────────────────────────────────────────────
-function SkeletonDeck() {
-  return (
-    <div className="px-4">
-      <div className="w-full rounded-[28px] overflow-hidden shadow-2xl bg-white animate-pulse" style={{ height: 420 }}>
-        <div className="h-72 bg-gray-200"/>
-        <div className="p-4 space-y-2.5">
-          <div className="h-4 bg-gray-200 rounded w-3/4"/>
-          <div className="h-3 bg-gray-200 rounded w-1/2"/>
-          <div className="h-5 bg-gray-200 rounded w-1/3 mt-3"/>
-        </div>
-      </div>
-      <div className="flex items-center justify-center gap-6 mt-8">
-        <div className="w-14 h-14 rounded-full bg-gray-200 animate-pulse"/>
-        <div className="w-12 h-12 rounded-full bg-gray-200 animate-pulse"/>
-        <div className="w-14 h-14 rounded-full bg-gray-200 animate-pulse"/>
-      </div>
-    </div>
-  );
-}
-
 // Per-filter "did the user already reach the end of this queue" flag --
 // deliberately sessionStorage, not the source of truth for anything (the
 // actual passed/liked state is fully server-persisted via swipes/
@@ -220,17 +199,6 @@ export function Home() {
   const [rawListings, setRawListings] = useState<EnrichedListing[]>([]);
   const [rawCreators, setRawCreators] = useState<CreatorProfile[]>([]);
   const [loading,   setLoading]   = useState(true);
-  // Branded loading — the animated Filmons wordmark shows first (a fixed,
-  // brief window, not "until the fetch resolves") since the request often
-  // resolves in well under a second and a full-viewport brand loader
-  // flashing for 50ms would read as a glitch, not a loading state. The
-  // listing-card skeleton (already existed) takes over for however much
-  // longer the fetch actually takes beyond that.
-  const [showBrandLoader, setShowBrandLoader] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setShowBrandLoader(false), 500);
-    return () => clearTimeout(t);
-  }, []);
   const [filter,    setFilter]    = useState<FilterId>('all');
   const [deckDone,  setDeckDone]  = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -600,57 +568,72 @@ export function Home() {
         </button>
       </div>
 
-      {/* ── Filter chips — Emergency tab only shown to Professional/
-           Business (canBrowseEmergency is the client-side shortcut; the
-           real access decision is still re-checked server-side in
-           handleFilter, so a direct entry point can't bypass this by
-           just being invisible here). ── */}
-      <div ref={filterRowRef} className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
-        {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
-          <button
-            key={f.id}
-            onClick={() => handleFilter(f.id)}
-            className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
-              filter === f.id
-                ? f.id === 'emergency' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-900 text-white shadow-sm'
-                : f.id === 'emergency' ? 'bg-red-50 text-red-600 border border-red-100 hover:border-red-200'
-                : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
-            }`}>
-            <f.icon className="w-3.5 h-3.5"/>
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {/* ── Category row + deck — wrapped together so the branded loader
+           covers BOTH for the entire real loading duration, not just a
+           fixed window: while `loading` is true, neither the category
+           chips nor any deck/empty/error state render at all, so there is
+           nothing underneath the loader to flash through. Once loading
+           resolves (success OR error), this swaps once to the real
+           content — no intermediate skeleton, no predefined animation
+           duration. ── */}
+      <div className="relative min-h-[60vh]">
+        {loading ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
+            <FilmonsBrandLoader size="lg"/>
+          </div>
+        ) : (
+          <>
+            {/* ── Filter chips — Emergency tab only shown to Professional/
+                 Business (canBrowseEmergency is the client-side shortcut; the
+                 real access decision is still re-checked server-side in
+                 handleFilter, so a direct entry point can't bypass this by
+                 just being invisible here). ── */}
+            <div ref={filterRowRef} className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
+              {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => handleFilter(f.id)}
+                  className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
+                    filter === f.id
+                      ? f.id === 'emergency' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-900 text-white shadow-sm'
+                      : f.id === 'emergency' ? 'bg-red-50 text-red-600 border border-red-100 hover:border-red-200'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
+                  }`}>
+                  <f.icon className="w-3.5 h-3.5"/>
+                  {f.label}
+                </button>
+              ))}
+            </div>
 
-      {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop
-           just gets a bigger card via SwipeStack's own lg: classes, plus
-           the sidebar/top bar chrome that renders outside this page. ── */}
-      <div className="mt-2 lg:mt-6 lg:px-8">
-        {loading && showBrandLoader ? (
-          <div className="py-24"><FilmonsBrandLoader size="lg"/></div>
-        ) : loading ? (
-          <SkeletonDeck/>
-        // Explicit state ordering, each branch rendering its own UI rather
-        // than falling through to a bare `return null` -- loading, then a
-        // genuine fetch failure, then (deckDone checked before the plain
-        // deck.length === 0 empty state, since a Refresh Listings click
-        // that comes up with nothing new sets deckDone with an empty deck,
-        // and that must still render the caught-up screen with its
-        // no-new-listings copy, not the generic "Nothing here yet" state
-        // meant for a filter that never had any listings at all) the
-        // caught-up/empty/new-opportunities states, then the deck itself.
-        ) : loadError ? errorScreen : deckDone
-            ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
-            : deck.length === 0
-            ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : emptyState)
-            : showNewBanner ? newOpportunitiesScreen : (
-          <SwipeStack
-            key={filterKey}
-            items={deck}
-            persistKey={filter}
-            onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
-            onSwipeListing={filter === 'talent' ? handleOpportunitySwipe : undefined}
-          />
+            {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop
+                 just gets a bigger card via SwipeStack's own lg: classes, plus
+                 the sidebar/top bar chrome that renders outside this page. ── */}
+            <div className="mt-2 lg:mt-6 lg:px-8">
+              {/* Explicit state ordering, each branch rendering its own UI
+                  rather than falling through to a bare `return null` -- a
+                  genuine fetch failure first, then (deckDone checked before
+                  the plain deck.length === 0 empty state, since a Refresh
+                  Listings click that comes up with nothing new sets deckDone
+                  with an empty deck, and that must still render the
+                  caught-up screen with its no-new-listings copy, not the
+                  generic "Nothing here yet" state meant for a filter that
+                  never had any listings at all) the caught-up/empty/new-
+                  opportunities states, then the deck itself. */}
+              {loadError ? errorScreen : deckDone
+                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
+                  : deck.length === 0
+                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : emptyState)
+                  : showNewBanner ? newOpportunitiesScreen : (
+                <SwipeStack
+                  key={filterKey}
+                  items={deck}
+                  persistKey={filter}
+                  onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
+                  onSwipeListing={filter === 'talent' ? handleOpportunitySwipe : undefined}
+                />
+              )}
+            </div>
+          </>
         )}
       </div>
 
