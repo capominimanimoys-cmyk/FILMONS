@@ -446,7 +446,7 @@ function Step5({ form, set }: { form: OppFormState; set: (f: Partial<OppFormStat
       </SectionCard>
       <SectionCard title="Application Deadline" icon={<Calendar className="w-4 h-4" />}>
         <Toggle checked={form.noDeadline} onChange={v => set({ noDeadline: v })} label="No deadline" />
-        {!form.noDeadline && <Field><Input type="date" value={form.applicationDeadline} onChange={e => set({ applicationDeadline: e.target.value })} /></Field>}
+        {!form.noDeadline && <Field><Input type="date" value={form.applicationDeadline} onChange={e => set({ applicationDeadline: e.target.value })} className="px-3 text-sm" /></Field>}
       </SectionCard>
     </div>
   );
