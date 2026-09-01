@@ -83,11 +83,9 @@ const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
 const TEMPLATE_PAYOUT_SETTINGS_ACCESSED = 'template_lwifwd7';
 const TEMPLATE_GUEST_SUPPORT_ADMIN     = 'template_ecla4ki';
 const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_qr9tadk';
-// Placeholder until created in the EmailJS dashboard from
-// booking-reminder-template.html and the real id is swapped in. Same
-// template sent to both host and renter -- audience-specific wording is
-// handled by the `recipient_role` param, not a second template.
-const TEMPLATE_BOOKING_REMINDER        = 'template_bkgremind1';
+// Same template sent to both host and renter -- audience-specific
+// wording is handled by the `recipient_role` param, not a second template.
+const TEMPLATE_BOOKING_REMINDER        = 'template_9ah6jeq';
 const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
 
 export function sendOpportunityDeclinedEmail(p: {
