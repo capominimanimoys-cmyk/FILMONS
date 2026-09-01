@@ -1,6 +1,8 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AdminLayout } from './components/AdminLayout';
 import { AdminDashboardHome } from './pages/AdminDashboardHome';
+import { AdminUsers } from './pages/AdminUsers';
+import { AdminUserDetail } from './pages/AdminUserDetail';
 import { AdminVerifications } from './pages/AdminVerifications';
 import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
@@ -28,7 +30,8 @@ const adminRouteTree = [
       { path: 'support/cases/:caseNumber', Component: AdminSupportChats },
       { path: 'boosts',        Component: AdminBoosts },
       { path: 'transactions',  element: <AdminComingSoon title="Transactions" /> },
-      { path: 'users',         element: <AdminComingSoon title="Users" /> },
+      { path: 'users',         Component: AdminUsers },
+      { path: 'users/:userId', Component: AdminUserDetail },
       { path: 'listings',      element: <AdminComingSoon title="Listings" /> },
       { path: 'opportunities', element: <AdminComingSoon title="Opportunities" /> },
       { path: 'reports',       element: <AdminComingSoon title="Reports" /> },
