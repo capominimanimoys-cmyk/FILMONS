@@ -772,6 +772,7 @@ export const listingsApi = {
         .from('listings')
         .select(LISTING_COLUMNS)
         .eq('is_active', true)
+        .eq('moderation_status', 'active')
         .order('created_at', { ascending: false })
         .limit(80);
 
@@ -826,6 +827,7 @@ export const listingsApi = {
         .from('listings')
         .select(LISTING_COLUMNS)
         .eq('is_active', true)
+        .eq('moderation_status', 'active')
         .or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%')
         .order('created_at', { ascending: false })
         .limit(100);

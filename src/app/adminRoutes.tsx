@@ -8,6 +8,10 @@ import { AdminTransactionDetail } from './pages/AdminTransactionDetail';
 import { AdminVerifications } from './pages/AdminVerifications';
 import { AdminWallet } from './pages/AdminWallet';
 import { AdminSettings } from './pages/AdminSettings';
+import { AdminListings } from './pages/AdminListings';
+import { AdminListingDetail } from './pages/AdminListingDetail';
+import { AdminOpportunities } from './pages/AdminOpportunities';
+import { AdminOpportunityDetail } from './pages/AdminOpportunityDetail';
 import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
 import { AdminComingSoon } from './pages/AdminComingSoon';
@@ -34,8 +38,10 @@ const adminRouteTree = [
       { path: 'support/cases/:caseNumber', Component: AdminSupportChats },
       { path: 'users',         Component: AdminUsers },
       { path: 'users/:userId', Component: AdminUserDetail },
-      { path: 'listings',      element: <AdminComingSoon title="Listings" /> },
-      { path: 'opportunities', element: <AdminComingSoon title="Opportunities" /> },
+      { path: 'listings',      Component: AdminListings },
+      { path: 'listings/:listingId', Component: AdminListingDetail },
+      { path: 'opportunities', Component: AdminOpportunities },
+      { path: 'opportunities/:opportunityId', Component: AdminOpportunityDetail },
       { path: 'transactions',  Component: AdminTransactions },
       { path: 'transactions/:orderId', Component: AdminTransactionDetail },
       { path: 'wallet',        Component: AdminWallet },

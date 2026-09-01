@@ -403,6 +403,7 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
     .from('listings')
     .select(LISTING_SELECT)
     .eq('is_active', true)
+    .eq('moderation_status', 'active')
     .or([
       `title.ilike.%${term}%`,
       `description.ilike.%${term}%`,
@@ -422,6 +423,7 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
     .from('listings')
     .select(LISTING_SELECT)
     .eq('is_active', true)
+    .eq('moderation_status', 'active')
     .filter('tags', 'cs', `{"${term}"}`)
     .limit(10);
 
@@ -566,7 +568,7 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
     return { users: (res.data ?? []) as ProfileRow[], listings: [] };
   }
 
-  let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+  let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true).eq('moderation_status', 'active');
   switch (category) {
     case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
     case 'sale':           query = query.eq('listing_mode', 'sale'); break;
