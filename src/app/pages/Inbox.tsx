@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { AddPhotoAlternateRounded, AddRounded, ArrowBackIosNewRounded, AttachFileRounded, AttachMoneyRounded, CalendarMonthRounded, CameraAltRounded, CancelRounded, ChatBubbleRounded, CheckCircleRounded, CheckRounded, CloseRounded, ConstructionRounded, CreditCardRounded, DeleteRounded, DoneAllRounded, EditRounded, FavoriteRounded, GppBadRounded, GroupRounded, HourglassEmptyRounded, HowToRegRounded, ImageRounded, Inventory2Rounded, KeyboardArrowDownRounded, LocalOfferRounded, LocationOnRounded, MicOffRounded, MicRounded, MoreHorizRounded, MoreVertRounded, MusicNoteRounded, OpenInNewRounded, PaymentRounded, PersonAddRounded, PersonRemoveRounded, PhoneDisabledRounded, PhoneRounded, PhotoCameraRounded, PhotoLibraryRounded, PlayArrowRounded, PushPinRounded, ReplyRounded, ScheduleRounded, SearchRounded, SendRounded, SentimentSatisfiedRounded, StopRounded, VerifiedRounded, VideoLibraryRounded, VideocamOffRounded, VideocamRounded, VolumeUpRounded } from '../components/Icons';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord, persistConversationsCache } from '../lib/api';
+import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord, persistConversationsCache, writeUsersCache } from '../lib/api';
 import * as notifs from '../lib/notifications';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -1485,7 +1485,7 @@ export function Inbox() {
           .then(results => {
             const updated = { ...cache };
             results.forEach(r => { if (r.status === 'fulfilled' && r.value) updated[r.value.id] = r.value; });
-            localStorage.setItem('filmons_users_cache', JSON.stringify(updated));
+            writeUsersCache(updated);
             setConversations(p => [...p]);
           }).catch(() => {});
       }
@@ -1635,7 +1635,7 @@ export function Inbox() {
                       const c = JSON.parse(localStorage.getItem('filmons_users_cache') || '{}');
                       if (!c[newMsg.senderId]) {
                         c[newMsg.senderId] = { id: newMsg.senderId, name: newMsg.senderName, avatar: newMsg.senderAvatar };
-                        localStorage.setItem('filmons_users_cache', JSON.stringify(c));
+                        writeUsersCache(c);
                       }
                     } catch {}
                   }
@@ -1648,7 +1648,7 @@ export function Inbox() {
                         .select('id, name, username, avatar_url').in('id', toFetch).catch(() => ({ data: null })) as any;
                       if (profs) {
                         profs.forEach((p: any) => { cNow[p.id] = { id: p.id, name: p.name || p.username || 'User', avatar: p.avatar_url }; });
-                        localStorage.setItem('filmons_users_cache', JSON.stringify(cNow));
+                        writeUsersCache(cNow);
                       }
                     }
                   } catch {}
@@ -3355,7 +3355,7 @@ export function Inbox() {
               try {
                 const c = JSON.parse(localStorage.getItem('filmons_users_cache') || '{}');
                 c[targetUser.id] = targetUser;
-                localStorage.setItem('filmons_users_cache', JSON.stringify(c));
+                writeUsersCache(c);
               } catch {}
             } catch (e) {
               toast.error('Could not open conversation');

@@ -4,6 +4,34 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
 import { toast } from 'sonner';
 
+// filmons_users_cache is a pure lookup-speed optimization (instant
+// name/avatar for getUserByIdSync) that grows with every distinct user
+// this account has ever seen (message senders, conversation partners,
+// profile lookups), with no eviction -- across enough activity it can
+// cross a mobile browser's much smaller localStorage quota (Safari iOS
+// in particular). This helper caps it and, critically, never lets a
+// write failure here escape as an uncaught exception: it used to be a
+// bare localStorage.setItem inside fetchConversationsDB, so a
+// QuotaExceededError there aborted the whole conversation load AFTER
+// the real data had already been fetched successfully -- surfacing as
+// "couldn't load conversation... quota exceeded" on mobile even though
+// nothing about the actual conversations/messages query had failed.
+const USERS_CACHE_KEY = 'filmons_users_cache';
+const USERS_CACHE_MAX_ENTRIES = 400;
+export function writeUsersCache(cache: Record<string, any>) {
+  try {
+    const entries = Object.entries(cache);
+    const bounded = entries.length > USERS_CACHE_MAX_ENTRIES
+      ? Object.fromEntries(entries.slice(entries.length - USERS_CACHE_MAX_ENTRIES))
+      : cache;
+    localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(bounded));
+  } catch {
+    // Quota exceeded (or storage unavailable) -- this cache is disposable,
+    // never a source of truth, so losing a write here must never break
+    // the caller's actual data.
+  }
+}
+
 // Normalize any value to a string array (handles string, null, undefined, pg array string, JS array)
 function toStringArray(val: any): string[] {
   if (!val) return [];
@@ -526,7 +554,7 @@ export const authApi = {
     // Cache for sync lookups
     const cache: Record<string, User> = {};
     (users || []).forEach((u: User) => { cache[u.id] = u; });
-    localStorage.setItem('filmons_users_cache', JSON.stringify(cache));
+    writeUsersCache(cache);
     return users || [];
   },
 
@@ -2904,7 +2932,7 @@ export const chatApi = {
                 accountType: p.account_type,
               };
             });
-            localStorage.setItem('filmons_users_cache', JSON.stringify(cache));
+            writeUsersCache(cache);
           }).catch(() => {});
       }
 
@@ -2927,7 +2955,7 @@ export const chatApi = {
               });
             }
           });
-          localStorage.setItem('filmons_users_cache', JSON.stringify(profileCache));
+          writeUsersCache(profileCache);
         } catch {}
 
         // Merge: server wins for metadata; preserve local-only pending messages
@@ -3474,7 +3502,7 @@ export const chatApi = {
           }
         } catch {}
       }
-      if (cacheUpdated) localStorage.setItem('filmons_users_cache', JSON.stringify(cache));
+      if (cacheUpdated) writeUsersCache(cache);
 
       // 4. Merge: server is authoritative. Only preserve optimistic (unsent) messages
       //    from localStorage — never include stale local-only conversations.
