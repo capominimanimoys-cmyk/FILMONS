@@ -86,7 +86,7 @@ const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_qr9tadk';
 // Same template sent to both host and renter -- audience-specific
 // wording is handled by the `recipient_role` param, not a second template.
 const TEMPLATE_BOOKING_REMINDER        = 'template_9ah6jeq';
-const FILMONS_ADMIN_EMAIL              = 'support@filmons.com';
+const FILMONS_ADMIN_EMAIL              = 'gabriel@filmons.app';
 
 export function sendOpportunityDeclinedEmail(p: {
   toEmail: string | null | undefined; toName?: string | null; opportunityTitle: string;
