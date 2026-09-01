@@ -778,7 +778,7 @@ export function Wallet() {
                     <ArrowUpRight className={`w-4 h-4 -rotate-45 ${tx.status === 'pending' ? 'text-amber-500' : 'text-green-500'}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{tx.description || TX_LABELS[tx.transaction_type] || tx.transaction_type}</p>
+                    <p className="text-sm font-semibold text-gray-900 truncate">{tx.description || TX_LABELS[tx.transaction_type] || tx.transaction_type.replace(/_/g, ' ')}</p>
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs text-gray-400">{new Date(tx.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                       <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${tx.status === 'pending' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'}`}>
