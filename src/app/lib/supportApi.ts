@@ -197,6 +197,15 @@ export const supportApi = {
     });
     if (error) throw new Error(error.message);
     await supabase.from('support_cases').update({ updated_at: new Date().toISOString(), status: 'in_review' }).eq('id', caseId);
+
+    // Unlike createCase (fires once, on the very first message), every
+    // follow-up on an already-open case reaches here -- without this,
+    // an admin had no way to know a customer replied unless Support
+    // Chats happened to already be open in front of them.
+    fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({ type: 'support_case_user_reply', caseId, userId, message: content }),
+    }).catch(() => {});
   },
 
   async uploadAttachment(userId: string, file: File): Promise<{ path: string; name: string }> {

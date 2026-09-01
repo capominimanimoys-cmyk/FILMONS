@@ -58,6 +58,9 @@ const TEMPLATE_LISTING_LIKED           = 'template_4ki361h';
 const TEMPLATE_FOLLOWED_CREATOR_POSTED = 'template_qpz4d6q';
 const TEMPLATE_LISTING_SUGGESTION      = 'template_dx3stud';
 const TEMPLATE_SUPPORT_CASE_ADMIN      = 'template_g2g3fod';
+// Placeholder until created in the EmailJS dashboard from
+// support-case-user-reply-admin-email.html and the real id is swapped in.
+const TEMPLATE_SUPPORT_CASE_USER_REPLY_ADMIN = 'template_TODO_support_user_reply';
 const TEMPLATE_MESSAGE_REQUEST_ACCEPTED = 'template_nzfmrsm';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
@@ -516,6 +519,25 @@ export function sendSupportCaseAdminEmail(p: {
     // basename-aware -- see src/app/adminRoutes.tsx); until that domain's
     // DNS record is added in Vercel this link 404s, but the equivalent
     // https://filmons.app/admin/support/cases/... path keeps working too.
+    admin_case_url: `https://admin.filmons.app/support/cases/${p.caseNumber}`,
+  });
+}
+
+/** Notifies FILMONS support of a follow-up message on an EXISTING case --
+ *  distinct from sendSupportCaseAdminEmail, which only fires once, when
+ *  the case is first opened. Without this, an admin had no way to know a
+ *  customer replied unless they happened to have Support Chats open. */
+export function sendSupportCaseReplyAdminEmail(p: {
+  caseNumber: string; userName: string; userEmail: string | null | undefined;
+  category: string; message: string; submittedAt: string;
+}) {
+  return sendEmailJsRaw(FILMONS_ADMIN_EMAIL, TEMPLATE_SUPPORT_CASE_USER_REPLY_ADMIN, {
+    user_name: p.userName,
+    user_email: p.userEmail || 'unknown',
+    case_number: p.caseNumber,
+    case_category: p.category,
+    case_message: p.message,
+    submitted_at: p.submittedAt,
     admin_case_url: `https://admin.filmons.app/support/cases/${p.caseNumber}`,
   });
 }

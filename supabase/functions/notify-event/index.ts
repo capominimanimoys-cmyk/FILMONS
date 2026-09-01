@@ -24,7 +24,7 @@ async function selectMany(table: string, filter: string) {
   return Array.isArray(rows) ? rows : [];
 }
 
-import { sendListingLikedEmail, sendCreatorLikedEmail, sendFollowedCreatorPostedEmail, sendSupportCaseAdminEmail } from '../_shared/notificationEmails.ts';
+import { sendListingLikedEmail, sendCreatorLikedEmail, sendFollowedCreatorPostedEmail, sendSupportCaseAdminEmail, sendSupportCaseReplyAdminEmail } from '../_shared/notificationEmails.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -81,6 +81,22 @@ Deno.serve(async (req) => {
         caseId, caseNumber: supportCase?.case_number || caseId,
         userName: user?.name || 'Unknown user', userEmail: user?.email,
         category: category || 'general', message: message || '(no message)',
+        submittedAt: new Date().toISOString(),
+      });
+      return json({ sent: true });
+    }
+
+    if (type === 'support_case_user_reply') {
+      const { caseId, userId, message } = body;
+      if (!caseId || !userId) return json({ error: 'Missing fields' }, 400);
+      const [user, supportCase] = await Promise.all([
+        selectOne('profiles', `id=eq.${userId}`),
+        selectOne('support_cases', `id=eq.${caseId}`),
+      ]);
+      await sendSupportCaseReplyAdminEmail({
+        caseNumber: supportCase?.case_number || caseId,
+        userName: user?.name || 'Unknown user', userEmail: user?.email,
+        category: supportCase?.category || 'general', message: message || '(no message)',
         submittedAt: new Date().toISOString(),
       });
       return json({ sent: true });
