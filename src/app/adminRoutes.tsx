@@ -5,18 +5,19 @@ import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
 import { AdminComingSoon } from './pages/AdminComingSoon';
 
-// The entire FILMONS Admin route tree, built and shipped as its OWN
-// bundle (see admin.html / src/admin-main.tsx) -- not a JS-level import
-// boundary inside the normal app's router, an actual separate Rollup
-// entry point. Normal FILMONS users loading index.html never fetch any
-// module reachable only from here; nothing in this file is imported by
-// src/app/routes.tsx.
-export const adminRouter = createBrowserRouter([
+// Every path below is written RELATIVE TO THE BASENAME -- never hardcode
+// '/admin' anywhere in this tree, in AdminLayout's nav, or in any Admin
+// page's internal links. React Router prepends/strips the basename for
+// you, so the exact same tree serves two different real URL shapes:
+//   filmons.app/admin/...        (basename '/admin', today's setup)
+//   admin.filmons.app/...        (basename '', once that subdomain/DNS
+//                                  record exists -- see createAdminRouter)
+const adminRouteTree = [
   {
-    path: '/admin',
+    path: '/',
     Component: AdminLayout,
     children: [
-      { index: true, element: <Navigate to="/admin/support-chats" replace /> },
+      { index: true, element: <Navigate to="/support-chats" replace /> },
       { path: 'dashboard',     element: <AdminComingSoon title="Dashboard" /> },
       { path: 'verifications', Component: AdminVerifications },
       { path: 'support-chats', Component: AdminSupportChats },
@@ -35,5 +36,19 @@ export const adminRouter = createBrowserRouter([
   },
   // Any other path under this bundle (e.g. a stale bookmark) -- back to
   // the admin login gate rather than a bare 404.
-  { path: '*', element: <Navigate to="/admin" replace /> },
-]);
+  { path: '*', element: <Navigate to="/" replace /> },
+];
+
+// admin.html (this bundle's entry) is reachable two ways -- see
+// vercel.json: filmons.app/admin/* (path-based rewrite, works today) and
+// admin.filmons.app/* (host-based rewrite, works once that domain +
+// DNS record are added in Vercel). Same JS, same route tree, only the
+// basename differs, decided once at router-creation time from the
+// hostname actually serving the page.
+export function createAdminRouter() {
+  const onDedicatedSubdomain = typeof window !== 'undefined'
+    && window.location.hostname === 'admin.filmons.app';
+  return createBrowserRouter(adminRouteTree, {
+    basename: onDedicatedSubdomain ? '/' : '/admin',
+  });
+}

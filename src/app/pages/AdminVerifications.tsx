@@ -833,7 +833,7 @@ export function AdminVerifications() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => { window.location.href = "/"; }}
+              onClick={() => { window.location.href = "https://filmons.app/"; }}
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
             >
               <ArrowLeft className="w-4 h-4" />

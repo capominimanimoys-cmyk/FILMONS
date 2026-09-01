@@ -511,8 +511,12 @@ export function sendSupportCaseAdminEmail(p: {
     // Deep link straight into this specific case -- AdminLayout's login
     // gate preserves whatever URL the admin landed on (no redirect-to-
     // dashboard-first), so an unauthenticated admin tapping this still
-    // ends up here immediately after Generate Code -> Verify.
-    admin_case_url: `https://filmons.app/admin/support/cases/${p.caseNumber}`,
+    // ends up here immediately after Generate Code -> Verify. Points at
+    // the dedicated admin.filmons.app subdomain (its own build bundle,
+    // basename-aware -- see src/app/adminRoutes.tsx); until that domain's
+    // DNS record is added in Vercel this link 404s, but the equivalent
+    // https://filmons.app/admin/support/cases/... path keeps working too.
+    admin_case_url: `https://admin.filmons.app/support/cases/${p.caseNumber}`,
   });
 }
 
@@ -537,7 +541,7 @@ export function sendGuestSupportRequestAdminEmail(p: {
     message: p.message,
     submitted_at: p.submittedAt,
     user_type: 'Guest',
-    admin_case_url: `https://filmons.app/admin/support/cases/${p.ticketId}`,
+    admin_case_url: `https://admin.filmons.app/support/cases/${p.ticketId}`,
   });
 }
 

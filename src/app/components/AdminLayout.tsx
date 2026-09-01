@@ -23,17 +23,27 @@ import {
   Briefcase, Flag, Settings as SettingsIcon, ArrowLeft, Menu, X, Loader2,
 } from 'lucide-react';
 
+// Basename-relative -- never '/admin/...' here. The router's basename
+// (see adminRoutes.tsx) resolves these to the right real URL whether
+// this bundle is being served from filmons.app/admin/* or from
+// admin.filmons.app/* directly.
 const NAV_ITEMS = [
-  { path: '/admin/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
-  { path: '/admin/verifications',  label: 'Verifications',  icon: ShieldCheck },
-  { path: '/admin/support-chats',  label: 'Support Chats',  icon: LifeBuoy },
-  { path: '/admin/transactions',   label: 'Transactions',   icon: Receipt },
-  { path: '/admin/users',          label: 'Users',          icon: Users },
-  { path: '/admin/listings',       label: 'Listings',       icon: Package },
-  { path: '/admin/opportunities',  label: 'Opportunities',  icon: Briefcase },
-  { path: '/admin/reports',        label: 'Reports',        icon: Flag },
-  { path: '/admin/settings',       label: 'Settings',       icon: SettingsIcon },
+  { path: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
+  { path: '/verifications',  label: 'Verifications',  icon: ShieldCheck },
+  { path: '/support-chats',  label: 'Support Chats',  icon: LifeBuoy },
+  { path: '/transactions',   label: 'Transactions',   icon: Receipt },
+  { path: '/users',          label: 'Users',          icon: Users },
+  { path: '/listings',       label: 'Listings',       icon: Package },
+  { path: '/opportunities',  label: 'Opportunities',  icon: Briefcase },
+  { path: '/reports',        label: 'Reports',        icon: Flag },
+  { path: '/settings',       label: 'Settings',       icon: SettingsIcon },
 ];
+
+// Always the real main-site origin, absolute -- deliberately NOT a
+// relative '/' navigate(), because on admin.filmons.app a relative '/'
+// would just re-resolve to this same Admin bundle (see vercel.json's
+// host-matched rewrite), not actually leave the Admin app.
+const MAIN_SITE_URL = 'https://filmons.app/';
 
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_S = 45;
@@ -212,7 +222,7 @@ export function AdminLayout() {
         </div>
         {sidebar}
         <div className="p-3 border-t border-white/10 space-y-1">
-          <button onClick={() => { window.location.href = '/'; }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
+          <button onClick={() => { window.location.href = MAIN_SITE_URL; }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back to FILMONS
           </button>
           <button onClick={doLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
@@ -237,7 +247,7 @@ export function AdminLayout() {
             </div>
             {sidebar}
             <div className="p-3 border-t border-white/10 space-y-1">
-              <button onClick={() => { window.location.href = '/'; }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
+              <button onClick={() => { window.location.href = MAIN_SITE_URL; }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Back to FILMONS
               </button>
               <button onClick={doLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
