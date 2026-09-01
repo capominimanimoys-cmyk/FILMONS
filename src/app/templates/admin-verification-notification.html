@@ -220,11 +220,7 @@
         <!-- User Summary Card -->
         <div class="user-card">
             <div class="user-card-name">{{user_name}}</div>
-            <div class="user-card-id">Request ID: {{request_id}}</div>
-            <div>
-                <span class="tag phone">📱 Phone Verified</span>
-                <span class="tag email">✉️ Email Verified</span>
-            </div>
+            <div class="user-card-id">User ID: {{user_id}}</div>
         </div>
 
         <!-- Account Details -->
@@ -239,10 +235,6 @@
                 <div class="info-value">{{user_email}}</div>
             </div>
             <div class="info-row">
-                <div class="info-label">📱 Phone</div>
-                <div class="info-value">{{user_phone}}</div>
-            </div>
-            <div class="info-row">
                 <div class="info-label">🕐 Submitted At</div>
                 <div class="info-value">{{submitted_at}}</div>
             </div>
@@ -252,16 +244,16 @@
         <div class="section-title">Verification Information Provided</div>
         <div class="info-block">
             <div class="info-row">
-                <div class="info-label">📝 Full Legal Name</div>
-                <div class="info-value">{{full_name}}</div>
+                <div class="info-label">🪪 ID Type</div>
+                <div class="info-value">{{id_type}}</div>
             </div>
             <div class="info-row">
-                <div class="info-label">🪪 ID Number</div>
-                <div class="info-value">{{id_number}}</div>
+                <div class="info-label">📍 City / Province</div>
+                <div class="info-value">{{city}}, {{province}}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">📸 ID Document</div>
-                <div class="info-value">Uploaded (view in admin panel)</div>
+                <div class="info-value">Uploaded — view and reveal the ID number in the admin panel (never sent by email)</div>
             </div>
         </div>
 
@@ -272,7 +264,7 @@
             🔍 Review &amp; Approve / Deny Request →
         </a>
         <p class="cta-sub">
-            Password: <strong>filmons2024</strong> &nbsp;|&nbsp; Direct link to Admin Verifications panel
+            Direct link to the Admin Verifications panel — you'll be asked for a one-time sign-in code, not a password.
         </p>
 
         <div class="divider"></div>
@@ -281,10 +273,10 @@
             Once approved, the user's profile will automatically update with a <strong>✓ Verified Seller</strong> badge.
         </p>
 
-        <!-- Request ID -->
+        <!-- User ID -->
         <div class="request-id-box">
-            <div class="request-id-label">Verification Request ID</div>
-            <div class="request-id-value">{{request_id}}</div>
+            <div class="request-id-label">User ID</div>
+            <div class="request-id-value">{{user_id}}</div>
         </div>
 
     </div>

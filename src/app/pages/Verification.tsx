@@ -782,14 +782,17 @@ export function Verification() {
       ));
     } catch {}
 
-    // 4. Email admin
+    // 4. Email admin -- dedicated branded template (see
+    // src/app/templates/admin-verification-notification.html), not the
+    // generic reused one. Points at the real admin.filmons.app subdomain
+    // now, not the old flat /admin-verifications redirect.
     const fullLegalName = [legalFirstName, legalLastName].filter(Boolean).join(' ');
-    sendEmail('template_rd3nhik', {
-      to_email: 'filmons481@gmail.com', to_name: 'Admin',
+    sendEmail('template_TODO_verification_request', {
+      to_email: 'gabriel@filmons.app', to_name: 'Admin',
       user_name: fullLegalName || user.name, user_email: user.email || '',
       user_id: user.id, id_type: idType, city, province,
       submitted_at: new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }),
-      admin_url: `${window.location.origin}/admin-verifications`,
+      admin_link: 'https://admin.filmons.app/verifications',
     }).catch(e => console.warn('Admin email failed:', e));
 
     setLoading(false);

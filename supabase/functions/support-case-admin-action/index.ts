@@ -33,17 +33,41 @@ async function selectOne(table: string, filter: string) {
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
 const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
-const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
+const EMAILJS_TEMPLATE_CASE_OPENED = 'template_g16trrb';
+const EMAILJS_TEMPLATE_SUPPORT_REPLY = 'template_j3qh0mb';
 
-async function notifyCustomer(supportCase: Record<string, any>, caseNumber: string, caseId: string) {
-  // Guest cases (user_id null, guest_name/guest_email set instead) have no
-  // profiles row and no in-app notification target -- email is their only
-  // channel. Previously this always looked up `profiles` by userId, which
-  // for a guest case queried literally `id=eq.null` and matched nothing,
-  // so guests never got an email when an admin replied at all.
+// Guest cases (user_id null, guest_name/guest_email set instead) have no
+// profiles row and no in-app notification target -- email is their only
+// channel. Shared by both notifyCustomer and notifyCustomerCaseOpened so
+// neither has to re-derive who "the customer" actually is.
+async function resolveCustomer(supportCase: Record<string, any>) {
   const isGuest = !supportCase.user_id;
-  let toEmail: string | undefined;
-  let toName: string | undefined;
+  if (isGuest) {
+    return { isGuest, toEmail: supportCase.guest_email as string | undefined, toName: supportCase.guest_name || 'there' };
+  }
+  const user = await selectOne('profiles', `id=eq.${supportCase.user_id}`);
+  return { isGuest, toEmail: user?.email as string | undefined, toName: user?.name || 'there' };
+}
+
+async function sendEmailJs(templateId: string, params: Record<string, unknown>) {
+  try {
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID, template_id: templateId,
+        user_id: EMAILJS_PUBLIC_KEY, accessToken: EMAILJS_PRIVATE_KEY,
+        template_params: params,
+      }),
+    });
+    if (!res.ok) console.warn(`EmailJS ${templateId} send failed:`, res.status, await res.text());
+  } catch (e) {
+    console.warn(`EmailJS ${templateId} send threw:`, e);
+  }
+}
+
+async function notifyCustomer(supportCase: Record<string, any>, caseNumber: string, caseId: string, agentName: string, replyContent: string) {
+  const { isGuest, toEmail, toName } = await resolveCustomer(supportCase);
 
   if (!isGuest) {
     await fetch(rest('/notifications'), {
@@ -54,38 +78,24 @@ async function notifyCustomer(supportCase: Record<string, any>, caseNumber: stri
         conversation_id: caseId,
       }),
     }).catch(() => {});
-
-    const user = await selectOne('profiles', `id=eq.${supportCase.user_id}`);
-    toEmail = user?.email;
-    toName = user?.name || 'there';
-  } else {
-    toEmail = supportCase.guest_email;
-    toName = supportCase.guest_name || 'there';
   }
 
   if (!toEmail) return;
-  try {
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
-        user_id: EMAILJS_PUBLIC_KEY,
-        accessToken: EMAILJS_PRIVATE_KEY,
-        template_params: {
-          to_email: toEmail, to_name: toName,
-          subject: `Filmons Support replied — case ${caseNumber}`,
-          message: isGuest
-            ? `There's an update on your support case ${caseNumber}. Reply to this email or contact us again with your case number to continue.`
-            : `There's an update on your support case ${caseNumber}. Open the Filmons app to view the response.`,
-        },
-      }),
-    });
-    if (!res.ok) console.warn('EmailJS support-reply email failed:', res.status, await res.text());
-  } catch (e) {
-    console.warn('EmailJS support-reply email threw:', e);
-  }
+  const preview = replyContent.length > 240 ? replyContent.slice(0, 237) + '...' : replyContent;
+  await sendEmailJs(EMAILJS_TEMPLATE_SUPPORT_REPLY, {
+    to_email: toEmail, to_name: toName, case_number: caseNumber, agent_name: agentName,
+    message_preview: preview,
+  });
+}
+
+// Fires once, the first time a case is assigned (see the assign_to_me
+// branch below) -- not on every "reply", and never on reassignment.
+async function notifyCustomerCaseOpened(supportCase: Record<string, any>, caseNumber: string, agentName: string) {
+  const { toEmail, toName } = await resolveCustomer(supportCase);
+  if (!toEmail) return;
+  await sendEmailJs(EMAILJS_TEMPLATE_CASE_OPENED, {
+    to_email: toEmail, to_name: toName, case_number: caseNumber, agent_name: agentName,
+  });
 }
 
 const VALID_ACTIONS = ['reply', 'internal_note', 'assign_to_me', 'set_priority', 'set_status'] as const;
@@ -162,7 +172,12 @@ Deno.serve(async (req) => {
     });
 
     if (action === 'reply') {
-      await notifyCustomer(supportCase, supportCase.case_number, caseId);
+      await notifyCustomer(supportCase, supportCase.case_number, caseId, admin.name, content!.trim());
+    } else if (action === 'assign_to_me' && !supportCase.assigned_admin_id) {
+      // Only the first time a case is picked up -- not on every
+      // reassignment -- so this reads as "we've started reviewing your
+      // case", not a notification the customer gets repeatedly.
+      await notifyCustomerCaseOpened(supportCase, supportCase.case_number, admin.name);
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });
