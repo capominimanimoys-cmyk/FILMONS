@@ -2497,7 +2497,24 @@ function loadConvs(): Conversation[] {
   try { return JSON.parse(localStorage.getItem('filmons_conversations') || '[]'); } catch { return []; }
 }
 function saveConvs(convs: Conversation[]) {
-  localStorage.setItem('filmons_conversations', JSON.stringify(convs));
+  try {
+    localStorage.setItem('filmons_conversations', JSON.stringify(convs));
+  } catch {
+    // Quota exceeded -- this is a local read-speed/optimistic-message
+    // cache, never the source of truth (fetchConversationsDB always
+    // treats the server as authoritative on the next load), so a failed
+    // write here must never propagate as an uncaught exception -- this
+    // was the actual cause of "couldn't load conversation... quota
+    // exceeded" on mobile: full message history is what blows a small
+    // storage quota, not the conversation list shape itself. Retry once
+    // with only the last 20 messages per conversation kept before
+    // giving up entirely, so optimistic-message tracking degrades
+    // instead of just silently stopping.
+    try {
+      const light = convs.map(c => ({ ...c, messages: (c.messages || []).slice(-20) }));
+      localStorage.setItem('filmons_conversations', JSON.stringify(light));
+    } catch {}
+  }
 }
 
 // Inbox.tsx's realtime handlers mutate `conversations` React state directly
