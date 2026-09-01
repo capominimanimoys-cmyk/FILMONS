@@ -39,6 +39,20 @@ const NAV_ITEMS = [
   { path: '/settings',       label: 'Settings',       icon: SettingsIcon },
 ];
 
+// Shown on the "check your email" step -- masked so the exact admin
+// inbox address isn't sitting in plaintext in the DOM/screenshots/screen
+// shares. The code itself is never sent to the browser at all (see
+// adminAuth.ts), so there is nothing to mask there; this is the one
+// piece of contact info this screen does display in full otherwise.
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  if (!domain || user.length <= 2) return email;
+  const visible = user.length <= 4 ? 1 : 2;
+  const masked = user.slice(0, visible) + '*'.repeat(Math.max(3, user.length - visible * 2)) + user.slice(-visible);
+  return `${masked}@${domain}`;
+}
+const ADMIN_RECIPIENT_EMAIL_MASKED = maskEmail('gabriel@filmons.app');
+
 // Always the real main-site origin, absolute -- deliberately NOT a
 // relative '/' navigate(), because on admin.filmons.app a relative '/'
 // would just re-resolve to this same Admin bundle (see vercel.json's
@@ -132,7 +146,7 @@ function AdminLoginGate({ onSignedIn }: { onSignedIn: (s: AdminSession) => void 
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-gray-500 text-center">
-              A secure admin verification code was sent to<br /><span className="font-bold text-gray-800">gabriel@filmons.app</span>
+              A secure admin verification code was sent to<br /><span className="font-bold text-gray-800">{ADMIN_RECIPIENT_EMAIL_MASKED}</span>
             </p>
             <div className="flex gap-2 justify-center" onPaste={handlePaste}>
               {digits.map((d, i) => (
