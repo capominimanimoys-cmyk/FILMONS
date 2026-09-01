@@ -3,8 +3,18 @@
 // and verifies a compact signed token — HMAC-SHA256 via crypto.subtle,
 // the same primitive stripe-webhook already uses to verify Stripe's own
 // signatures. Requires the ADMIN_SESSION_SECRET function secret.
+//
+// Transport: an HttpOnly, Secure session cookie -- never a header the
+// frontend's own JS reads or stores (no sessionStorage/localStorage
+// token, unlike the old X-Admin-Token model this replaced). A session
+// cookie (no Max-Age) so it's cleared when the browser closes, plus a
+// bounded absolute TTL as a backstop. Requests must reach this function
+// same-origin (via the /api/fn/* Vercel rewrite -- see vercel.json) for
+// the browser to attach it at all; this deliberately avoids needing
+// cross-site SameSite=None cookies or Access-Control-Allow-Credentials.
 const ADMIN_SESSION_SECRET = Deno.env.get('ADMIN_SESSION_SECRET') || '';
-const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12h
+const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8h absolute cap
+export const ADMIN_SESSION_COOKIE = 'filmons_admin_session';
 
 export interface AdminIdentity {
   adminId: string;
@@ -40,12 +50,8 @@ export async function mintAdminToken(identity: AdminIdentity): Promise<string> {
   return `${payloadB64}.${sig}`;
 }
 
-export async function verifyAdminToken(req: Request): Promise<AdminIdentity | null> {
-  // Uses its own header (not Authorization) so it never collides with the
-  // Supabase Functions gateway's own bearer-token handling on that header.
-  const token = req.headers.get('X-Admin-Token') || '';
+async function verifyTokenString(token: string): Promise<AdminIdentity | null> {
   if (!token || !ADMIN_SESSION_SECRET) return null;
-
   const [payloadB64, sig] = token.split('.');
   if (!payloadB64 || !sig) return null;
 
@@ -63,4 +69,34 @@ export async function verifyAdminToken(req: Request): Promise<AdminIdentity | nu
   } catch {
     return null;
   }
+}
+
+function readCookie(req: Request, name: string): string | null {
+  const header = req.headers.get('cookie') || '';
+  for (const part of header.split(';')) {
+    const [k, ...rest] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(rest.join('='));
+  }
+  return null;
+}
+
+// The only entry point every admin-action edge function calls -- reads
+// the session cookie (not a header) and verifies it.
+export async function verifyAdminToken(req: Request): Promise<AdminIdentity | null> {
+  const token = readCookie(req, ADMIN_SESSION_COOKIE) || '';
+  return verifyTokenString(token);
+}
+
+// Set-Cookie value for a freshly verified login -- HttpOnly (invisible to
+// JS entirely), Secure (HTTPS only), SameSite=Lax (same-origin via the
+// rewrite proxy anyway, Lax still allows top-level navigations like the
+// support deep-link email), no Max-Age (browser-session cookie).
+export function buildSessionCookieHeader(token: string): string {
+  return `${ADMIN_SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+}
+
+// Immediately expires the cookie -- used by logout and by a failed/burned
+// verification, so a stale cookie can't linger client-side.
+export function buildClearCookieHeader(): string {
+  return `${ADMIN_SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }

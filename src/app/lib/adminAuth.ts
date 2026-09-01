@@ -1,63 +1,68 @@
-// Client side of the admin identity system — see supabase/functions/
-// admin-login and _shared/adminAuth.ts. Replaces AdminVerifications.tsx's
-// old sessionStorage.adminAuthenticated/adminName flags (a shared password
-// with no server-side check) with a real per-admin login that returns a
-// signed, expiring token every sensitive admin edge function now verifies.
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-
-const TOKEN_KEY = 'filmons_admin_token';
-const NAME_KEY = 'filmons_admin_name';
-const ROLE_KEY = 'filmons_admin_role';
+// Client side of the FILMONS Admin passwordless login. No token is ever
+// stored here (no sessionStorage, no localStorage) -- the session lives
+// entirely in an HttpOnly cookie set by admin-verify-code, invisible to
+// this file's own JS. Every call goes through /api/fn/* (see
+// vercel.json), a same-origin rewrite proxy to the Supabase edge
+// functions -- what makes the browser attach that cookie automatically,
+// with no cross-site SameSite=None/credentialed-CORS complexity.
+const API_BASE = '/api/fn';
 
 export interface AdminSession {
-  token: string;
   name: string;
   role: 'super_admin' | 'support_agent';
 }
 
 export const adminAuth = {
-  async login(name: string, password: string): Promise<{ success: boolean; error?: string }> {
+  async generateCode(): Promise<{ success: boolean; error?: string }> {
     try {
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
-        body: JSON.stringify({ name, password }),
-      });
+      const res = await fetch(`${API_BASE}/admin-generate-code`, { method: 'POST', credentials: 'same-origin' });
       const data = await res.json();
-      if (!res.ok || data.error) return { success: false, error: data.error || 'Login failed' };
-      sessionStorage.setItem(TOKEN_KEY, data.token);
-      sessionStorage.setItem(NAME_KEY, data.name);
-      sessionStorage.setItem(ROLE_KEY, data.role);
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Could not send code' };
       return { success: true };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
   },
 
-  logout() {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(NAME_KEY);
-    sessionStorage.removeItem(ROLE_KEY);
+  async verifyCode(code: string): Promise<{ success: boolean; error?: string; session?: AdminSession }> {
+    try {
+      const res = await fetch(`${API_BASE}/admin-verify-code`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, error: data.error || 'Incorrect code' };
+      return { success: true, session: { name: data.name, role: data.role } };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
   },
 
-  getToken(): string | null {
-    return sessionStorage.getItem(TOKEN_KEY);
+  // Confirms the HttpOnly cookie (if any) is still a valid session --
+  // this is the only way this app ever knows "am I logged in", never a
+  // locally-stored flag.
+  async checkSession(): Promise<AdminSession | null> {
+    try {
+      const res = await fetch(`${API_BASE}/admin-session-check`, { credentials: 'same-origin' });
+      const data = await res.json();
+      return data?.authenticated ? { name: data.name, role: data.role } : null;
+    } catch {
+      return null;
+    }
   },
 
-  getAdmin(): AdminSession | null {
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    const name = sessionStorage.getItem(NAME_KEY);
-    const role = sessionStorage.getItem(ROLE_KEY) as AdminSession['role'] | null;
-    if (!token || !name || !role) return null;
-    return { token, name, role };
-  },
-
-  isAuthenticated(): boolean {
-    return !!sessionStorage.getItem(TOKEN_KEY);
-  },
-
-  authHeader(): Record<string, string> {
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    return token ? { 'X-Admin-Token': token } : {};
+  async logout(): Promise<void> {
+    try {
+      await fetch(`${API_BASE}/admin-logout`, { method: 'POST', credentials: 'same-origin' });
+    } catch {}
   },
 };
+
+// Every other admin API call (support-case-admin-action, verification
+// actions, etc.) should build its URL from this so the session cookie is
+// always sent -- a direct https://<project>.supabase.co/... call is
+// cross-origin and won't carry an HttpOnly cookie scoped to this site.
+export function adminFn(name: string): string {
+  return `${API_BASE}/${name}`;
+}

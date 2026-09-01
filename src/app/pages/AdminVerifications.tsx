@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useOutletContext } from "react-router";
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
-import { adminAuth as adminAuthClient } from '../lib/adminAuth';
+import { adminAuth, adminFn, type AdminSession } from '../lib/adminAuth';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -302,10 +302,13 @@ function MaskedIdNumber({ last4, canReveal, onReveal }: {
 // ── Main component ────────────────────────────────────────────────
 export function AdminVerifications() {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [adminName, setAdminName] = useState("");
+  // AdminLayout already gates every /admin/* route behind its own
+  // passwordless login -- by the time this component mounts, the admin
+  // session is already confirmed, so this never shows its own (removed)
+  // login screen. adminName/role come from that same session via Outlet
+  // context instead of a separate client-side session read.
+  const session = useOutletContext<AdminSession | null>();
+  const adminName = session?.name || 'Admin';
   const [activeTab, setActiveTab] = useState<
     "verifications" | "wallet"
   >("verifications");
@@ -342,7 +345,7 @@ export function AdminVerifications() {
   ];
 
   // Review-flow additions: role gate, secure document viewer, history, notes.
-  const adminRole = adminAuthClient.getAdmin()?.role;
+  const adminRole = session?.role;
   const canDecide = adminRole === 'super_admin';
   const canViewSensitive = adminRole === 'super_admin'; // raw ID docs + full ID number
 
@@ -352,13 +355,19 @@ export function AdminVerifications() {
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
+  // adminFn() (not supabase.functions.invoke, which always calls
+  // *.supabase.co directly) routes through the same-origin /api/fn/*
+  // proxy so the browser attaches the HttpOnly admin session cookie --
+  // see src/app/lib/adminAuth.ts.
   const viewDocument = async (verificationId: string, docType: 'id_front' | 'id_back' | 'selfie' | 'proof_of_address', label: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('verification-view-document', {
-        body: { verificationId, docType },
-        headers: adminAuthClient.authHeader(),
+      const res = await fetch(adminFn('verification-view-document'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verificationId, docType }),
       });
-      if (error || data?.error || !data?.url) throw error || new Error(data?.error || 'Could not load document');
+      const data = await res.json();
+      if (!res.ok || data?.error || !data?.url) throw new Error(data?.error || 'Could not load document');
       setViewerDoc({ label, url: data.url });
     } catch (e: any) {
       toast.error(e?.message || 'Could not load document');
@@ -367,11 +376,13 @@ export function AdminVerifications() {
 
   const revealIdNumber = async (verificationId: string): Promise<string | null> => {
     try {
-      const { data, error } = await supabase.functions.invoke('verification-reveal-id', {
-        body: { verificationId },
-        headers: adminAuthClient.authHeader(),
+      const res = await fetch(adminFn('verification-reveal-id'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verificationId }),
       });
-      if (error || data?.error) throw error || new Error(data?.error || 'Could not reveal ID number');
+      const data = await res.json();
+      if (!res.ok || data?.error) throw new Error(data?.error || 'Could not reveal ID number');
       return data?.idNumber || null;
     } catch (e: any) {
       toast.error(e?.message || 'Could not reveal ID number');
@@ -434,14 +445,7 @@ export function AdminVerifications() {
   // real orders row.
   const [hirePayments, setHirePayments] = useState<any[]>([]);
 
-  useEffect(() => {
-    const session = adminAuthClient.getAdmin();
-    if (session) {
-      setIsAuthenticated(true);
-      setAdminName(session.name);
-      loadAll().catch(console.error);
-    }
-  }, []);
+  useEffect(() => { loadAll().catch(console.error); }, []);
 
   const loadAll = async () => {
     // ── VERIFICATIONS ─────────────────────────────────────────────
@@ -589,9 +593,9 @@ export function AdminVerifications() {
   const processPayoutSimple = async (payoutRequestId: string, action: 'approve' | 'mark_processing') => {
     setProcessingPayoutId(payoutRequestId);
     try {
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}`, ...adminAuthClient.authHeader() },
+      const res = await fetch(adminFn('admin-process-payout'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payoutRequestId, action, adminName }),
       });
       const result = await res.json();
@@ -619,9 +623,9 @@ export function AdminVerifications() {
       else if (action === 'mark_failed') { body.action = 'mark_failed'; body.notes = payoutActionInput.trim() || undefined; }
       else { body.action = 'paid'; body.paymentReference = payoutActionInput.trim(); body.notes = payoutActionNotes.trim() || undefined; }
 
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-process-payout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}`, ...adminAuthClient.authHeader() },
+      const res = await fetch(adminFn('admin-process-payout'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const result = await res.json();
@@ -648,9 +652,9 @@ export function AdminVerifications() {
         if (error) throw new Error(error.message);
         toast.success('Refund request denied');
       } else {
-        const res = await fetch(`https://${projectId}.supabase.co/functions/v1/process-refund`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}`, ...adminAuthClient.authHeader() },
+        const res = await fetch(adminFn('process-refund'), {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refundRequestId, adminName }),
         });
         const result = await res.json();
@@ -683,27 +687,12 @@ export function AdminVerifications() {
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = adminName.trim();
-    if (!name || !password) { toast.error('Enter your name and password.'); return; }
-    const { success, error } = await adminAuthClient.login(name, password);
-    if (success) {
-      const session = adminAuthClient.getAdmin();
-      setIsAuthenticated(true);
-      setAdminName(session?.name || name);
-      loadAll().catch(console.error);
-      toast.success("Admin access granted");
-    } else {
-      toast.error(error || "Incorrect name or password");
-    }
-  };
-
-  const handleLogout = () => {
-    adminAuthClient.logout();
-    setIsAuthenticated(false);
-    setPassword("");
-    toast.info("Logged out");
+  // Full reload back to /admin: AdminLayout's own login gate (the only
+  // one that exists now) re-checks the session immediately and shows
+  // Generate Code once the cookie is cleared.
+  const handleLogout = async () => {
+    await adminAuth.logout();
+    window.location.href = '/admin';
   };
 
   const sendUserEmail = async (request: VerificationRequest, status: VerificationStatus, reason?: string) => {
@@ -767,11 +756,13 @@ export function AdminVerifications() {
     reason?: string,
   ) => {
     try {
-      const { data, error } = await supabase.functions.invoke('verification-decision', {
-        body: { verificationId: request.id, action, reason, adminIdentifier: adminName || 'Admin' },
-        headers: adminAuthClient.authHeader(),
+      const decisionRes = await fetch(adminFn('verification-decision'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verificationId: request.id, action, reason, adminIdentifier: adminName || 'Admin' }),
       });
-      if (error || !data?.success) throw error || new Error(data?.error || 'Decision failed');
+      const data = await decisionRes.json();
+      if (!decisionRes.ok || !data?.success) throw new Error(data?.error || 'Decision failed');
 
       const status: VerificationStatus = action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'changes_requested';
       await sendUserEmail(request, status, reason);
@@ -832,68 +823,8 @@ export function AdminVerifications() {
       ? walletTxs
       : walletTxs.filter((t) => t.status === walletFilter);
 
-  // ── Login screen ───────────────────────────────────────────────
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-blue-950 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-2xl font-black text-gray-900">
-              Admin Panel
-            </h1>
-            <p className="text-gray-400 text-sm mt-1">
-              Filmons back office
-            </p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="text"
-              value={adminName}
-              onChange={(e) => setAdminName(e.target.value)}
-              placeholder="Admin name"
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Admin password"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? (
-                  <EyeOff className="w-4 h-4" />
-                ) : (
-                  <Eye className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl py-3 transition-colors"
-            >
-              Access Admin Panel
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="w-full text-gray-500 hover:text-gray-700 text-sm flex items-center justify-center gap-2 py-2"
-            >
-              <ArrowLeft className="w-4 h-4" /> Back to Home
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+  // No separate login screen here anymore -- AdminLayout's own gate is
+  // the only one, and this component never mounts until that's satisfied.
 
   // ── Admin Dashboard ────────────────────────────────────────────
   return (

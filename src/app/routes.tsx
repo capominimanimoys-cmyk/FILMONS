@@ -139,10 +139,10 @@ export const router = createBrowserRouter([
       // never nested inside Root/its user-facing nav chrome.
       { path: 'admin-verifications', element: <Navigate to="/admin/verifications" replace /> },
       { path: 'admin-support', element: <Navigate to="/admin/support-chats" replace /> },
+      { path: 'admin-boosts', element: <Navigate to="/admin/boosts" replace /> },
       { path: 'support', Component: ContactSupport },
       { path: 'support/cases', Component: MySupportCases },
       { path: 'support/cases/:id', Component: SupportCaseDetail },
-      { path: 'admin-boosts', Component: AdminBoosts },
       // Canonical public-profile URL (filmons.app/username). Kept last —
       // React Router v6 ranks static segments (marketplace, wallet, etc.)
       // above a dynamic one regardless of declaration order, so this can
@@ -164,6 +164,11 @@ export const router = createBrowserRouter([
       { path: 'dashboard',     element: <AdminComingSoon title="Dashboard" /> },
       { path: 'verifications', Component: AdminVerifications },
       { path: 'support-chats', Component: AdminSupportChats },
+      // Deep link from the "new case" admin-notification email --
+      // AdminSupportChats reads :caseNumber and auto-opens that
+      // conversation once its case list has loaded.
+      { path: 'support/cases/:caseNumber', Component: AdminSupportChats },
+      { path: 'boosts',        Component: AdminBoosts },
       { path: 'transactions',  element: <AdminComingSoon title="Transactions" /> },
       { path: 'users',         element: <AdminComingSoon title="Users" /> },
       { path: 'listings',      element: <AdminComingSoon title="Listings" /> },

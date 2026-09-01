@@ -73,9 +73,13 @@ Deno.serve(async (req) => {
     if (type === 'support_case_admin') {
       const { caseId, userId, category, message } = body;
       if (!caseId || !userId) return json({ error: 'Missing fields' }, 400);
-      const user = await selectOne('profiles', `id=eq.${userId}`);
+      const [user, supportCase] = await Promise.all([
+        selectOne('profiles', `id=eq.${userId}`),
+        selectOne('support_cases', `id=eq.${caseId}`),
+      ]);
       await sendSupportCaseAdminEmail({
-        caseId, userName: user?.name || 'Unknown user', userEmail: user?.email,
+        caseId, caseNumber: supportCase?.case_number || caseId,
+        userName: user?.name || 'Unknown user', userEmail: user?.email,
         category: category || 'general', message: message || '(no message)',
         submittedAt: new Date().toISOString(),
       });

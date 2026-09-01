@@ -7,10 +7,10 @@
 // AdminLayout (routes.tsx) -- no login form or header of its own anymore,
 // that's the layout's job.
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
-import { projectId } from '/utils/supabase/info';
-import { adminAuth } from '../lib/adminAuth';
+import { adminFn } from '../lib/adminAuth';
 import { STATUS_LABEL, supportApi, type SupportCase, type SupportMessage } from '../lib/supportApi';
 import {
   ArrowLeft, Send, Loader2, Search, Paperclip,
@@ -59,10 +59,15 @@ interface CaseRow extends SupportCase {
   unread_count: number; assigned_admin_name: string | null;
 }
 
+// adminFn() routes through the same-origin /api/fn/* proxy (see
+// vercel.json + src/app/lib/adminAuth.ts) so the browser attaches the
+// HttpOnly admin session cookie automatically -- a direct
+// https://<project>.supabase.co/... call would be cross-origin and
+// wouldn't carry it.
 async function callAdminAction(body: Record<string, unknown>) {
-  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/support-case-admin-action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...adminAuth.authHeader() },
+  const res = await fetch(adminFn('support-case-admin-action'), {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   const data = await res.json();
@@ -189,6 +194,7 @@ function ContextPanel({ c }: { c: CaseRow }) {
 }
 
 export function AdminSupportChats() {
+  const { caseNumber } = useParams<{ caseNumber?: string }>();
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [filter, setFilter] = useState<FilterId>('all');
   const [search, setSearch] = useState('');
@@ -221,6 +227,17 @@ export function AdminSupportChats() {
     setCases(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c));
     supabase.rpc('fn_mark_case_read_by_admin', { p_case_id: id }).then(() => loadCases()).catch(() => {});
   };
+
+  // Deep link (/admin/support/cases/:caseNumber, from the "new case"
+  // admin-notification email) -- once the case list has loaded, find and
+  // open the matching conversation automatically. Never overrides a case
+  // the admin has already navigated to/away from within this session.
+  useEffect(() => {
+    if (!caseNumber || selectedId || !cases.length) return;
+    const match = cases.find(c => c.case_number === caseNumber);
+    if (match) openCase(match.id);
+    else toast.error(`Case ${caseNumber} not found`);
+  }, [caseNumber, cases, selectedId]);
 
   // Realtime: any new message anywhere refreshes the queue (unread badge/
   // bold + reordering to top); if it lands in the case currently open,

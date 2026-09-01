@@ -498,7 +498,7 @@ export function sendListingSuggestionEmail(p: {
 
 /** Notifies FILMONS support (not the user) that a new case was opened. */
 export function sendSupportCaseAdminEmail(p: {
-  caseId: string; userName: string; userEmail: string | null | undefined;
+  caseId: string; caseNumber: string; userName: string; userEmail: string | null | undefined;
   category: string; message: string; submittedAt: string;
 }) {
   return sendEmailJsRaw(FILMONS_ADMIN_EMAIL, TEMPLATE_SUPPORT_CASE_ADMIN, {
@@ -508,7 +508,11 @@ export function sendSupportCaseAdminEmail(p: {
     case_category: p.category,
     case_message: p.message,
     submitted_at: p.submittedAt,
-    admin_case_url: `https://filmons.app/admin/support-chats`,
+    // Deep link straight into this specific case -- AdminLayout's login
+    // gate preserves whatever URL the admin landed on (no redirect-to-
+    // dashboard-first), so an unauthenticated admin tapping this still
+    // ends up here immediately after Generate Code -> Verify.
+    admin_case_url: `https://filmons.app/admin/support/cases/${p.caseNumber}`,
   });
 }
 
@@ -533,7 +537,7 @@ export function sendGuestSupportRequestAdminEmail(p: {
     message: p.message,
     submitted_at: p.submittedAt,
     user_type: 'Guest',
-    admin_case_url: `https://filmons.app/admin/support-chats`,
+    admin_case_url: `https://filmons.app/admin/support/cases/${p.ticketId}`,
   });
 }
 

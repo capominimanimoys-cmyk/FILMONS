@@ -96,8 +96,25 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Deploy admin-login
-        run: supabase functions deploy admin-login --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+      # admin-login (name+password) retired -- replaced by the passwordless
+      # emailed-code flow below.
+      - name: Deploy admin-generate-code
+        run: supabase functions deploy admin-generate-code --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy admin-verify-code
+        run: supabase functions deploy admin-verify-code --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy admin-session-check
+        run: supabase functions deploy admin-session-check --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy admin-logout
+        run: supabase functions deploy admin-logout --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 

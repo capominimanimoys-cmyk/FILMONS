@@ -1,21 +1,26 @@
 // Shared FILMONS Admin shell — a real /admin/* route tree, sibling to
 // Root (never nested inside it), so the normal user TopBar/DesktopSidebar/
-// MobileBottomNav chrome can never leak into the admin area (previously
-// admin-support/admin-verifications/admin-boosts were nested as Root
-// children, which meant Root's own chrome and auth-redirect guards
-// technically wrapped around them too). One shared login gate here
-// replaces each admin page's own copy-pasted login form -- every admin
-// page already reads the same sessionStorage-backed adminAuth session, so
-// nesting them under this layout's gate is enough; their own internal
-// checks (if any) just see a session already present and skip straight
-// to their content.
-import { useEffect, useState } from 'react';
+// MobileBottomNav chrome can never leak into the admin area. Owns the
+// ONE login gate every admin page sits behind: a passwordless, emailed
+// one-time-code flow (see src/app/lib/adminAuth.ts), never the normal
+// FILMONS email/password/Google/phone/guest flow, and never a
+// sessionStorage/localStorage-held token -- the session lives entirely
+// in an HttpOnly cookie this component never touches directly, only
+// asks about via checkSession().
+//
+// Deep links (e.g. a support-case email link to /admin/support/cases/:id)
+// work with zero extra redirect logic: this component conditionally
+// swaps the LOGIN FORM in for <Outlet/> without ever navigating away
+// from the URL the admin actually landed on, so the moment checkSession()
+// resolves true, whatever nested route matches that URL renders
+// immediately -- no "redirect to dashboard first."
+import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useLocation, NavLink } from 'react-router';
 import { toast } from 'sonner';
 import { adminAuth, type AdminSession } from '../lib/adminAuth';
 import {
   LayoutDashboard, ShieldCheck, LifeBuoy, Receipt, Users, Package,
-  Briefcase, Flag, Settings as SettingsIcon, ArrowLeft, Eye, EyeOff, Menu, X,
+  Briefcase, Flag, Settings as SettingsIcon, ArrowLeft, Menu, X, Loader2,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -30,68 +35,146 @@ const NAV_ITEMS = [
   { path: '/admin/settings',       label: 'Settings',       icon: SettingsIcon },
 ];
 
+const CODE_LENGTH = 6;
+const RESEND_COOLDOWN_S = 45;
+
+function AdminLoginGate({ onSignedIn }: { onSignedIn: (s: AdminSession) => void }) {
+  const [step, setStep] = useState<'start' | 'code'>('start');
+  const [sending, setSending] = useState(false);
+  const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''));
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const generateCode = async () => {
+    setSending(true);
+    setError('');
+    const { success, error: err } = await adminAuth.generateCode();
+    setSending(false);
+    if (!success) { setError(err || 'Could not send code'); return; }
+    setStep('code');
+    setDigits(Array(CODE_LENGTH).fill(''));
+    setCooldown(RESEND_COOLDOWN_S);
+    setTimeout(() => inputRefs.current[0]?.focus(), 80);
+  };
+
+  const setDigit = (i: number, val: string) => {
+    const v = val.replace(/\D/g, '').slice(-1);
+    setDigits(prev => { const next = [...prev]; next[i] = v; return next; });
+    if (v && i < CODE_LENGTH - 1) inputRefs.current[i + 1]?.focus();
+  };
+  const handleKeyDown = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[i] && i > 0) inputRefs.current[i - 1]?.focus();
+  };
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, CODE_LENGTH);
+    if (!text) return;
+    e.preventDefault();
+    setDigits(Array.from({ length: CODE_LENGTH }, (_, i) => text[i] || ''));
+    inputRefs.current[Math.min(text.length, CODE_LENGTH - 1)]?.focus();
+  };
+
+  const code = digits.join('');
+  const verify = async () => {
+    if (code.length !== CODE_LENGTH || verifying) return;
+    setVerifying(true);
+    setError('');
+    const { success, error: err, session } = await adminAuth.verifyCode(code);
+    setVerifying(false);
+    if (!success || !session) {
+      setError(err || 'Incorrect code');
+      setDigits(Array(CODE_LENGTH).fill(''));
+      inputRefs.current[0]?.focus();
+      return;
+    }
+    onSignedIn(session);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-blue-950 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ShieldCheck className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight">FILMONS ADMIN</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            {step === 'start' ? 'Secure Admin Access' : 'Check your email'}
+          </p>
+        </div>
+
+        {step === 'start' ? (
+          <div className="space-y-4">
+            <button onClick={generateCode} disabled={sending}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl py-3.5 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {sending ? 'Sending…' : 'Generate Code'}
+            </button>
+            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 text-center">
+              A secure admin verification code was sent to<br /><span className="font-bold text-gray-800">gabriel@filmons.app</span>
+            </p>
+            <div className="flex gap-2 justify-center" onPaste={handlePaste}>
+              {digits.map((d, i) => (
+                <input
+                  key={i}
+                  ref={el => { inputRefs.current[i] = el; }}
+                  type="text" inputMode="numeric" maxLength={1} value={d}
+                  onChange={e => setDigit(i, e.target.value)}
+                  onKeyDown={e => handleKeyDown(i, e)}
+                  className="w-10 h-12 text-center text-lg font-black text-gray-900 bg-gray-50 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:bg-white transition-all"
+                />
+              ))}
+            </div>
+            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+            <button onClick={verify} disabled={verifying || code.length !== CODE_LENGTH}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl py-3.5 transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+              {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {verifying ? 'Verifying…' : 'Verify & Sign In'}
+            </button>
+            {/* Subtle, non-alert helper text -- matches the same wording/
+                placement pattern used on FILMONS' own email-OTP screens. */}
+            <p className="text-[12px] text-gray-400 text-center">
+              Didn't receive the code? Check your spam or junk folder.
+            </p>
+            <button onClick={generateCode} disabled={sending || cooldown > 0}
+              className="w-full text-gray-500 hover:text-gray-700 text-sm font-semibold py-1 disabled:opacity-40 transition-colors">
+              {cooldown > 0 ? `Generate New Code (${cooldown}s)` : sending ? 'Sending…' : 'Generate New Code'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [session, setSession] = useState<AdminSession | null>(null);
   const [checked, setChecked] = useState(false);
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loggingIn, setLoggingIn] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    setSession(adminAuth.getAdmin());
-    setChecked(true);
+    adminAuth.checkSession().then(s => { setSession(s); setChecked(true); });
   }, []);
 
   useEffect(() => { setMobileNavOpen(false); }, [location.pathname]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !password) return;
-    setLoggingIn(true);
-    const { success, error } = await adminAuth.login(name.trim(), password);
-    if (success) {
-      setSession(adminAuth.getAdmin());
-    } else {
-      toast.error(error || 'Incorrect name or password');
-    }
-    setLoggingIn(false);
-  };
-
   if (!checked) return null;
 
   if (!session) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-blue-950 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <ShieldCheck className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-2xl font-black text-gray-900">FILMONS Admin</h1>
-            <p className="text-gray-400 text-sm mt-1">Sign in to continue</p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Admin name" className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-            <div className="relative">
-              <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 pr-10" />
-              <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <button type="submit" disabled={loggingIn} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl py-3 transition-colors disabled:opacity-60">
-              {loggingIn ? 'Signing in…' : 'Sign In'}
-            </button>
-            <button type="button" onClick={() => navigate('/')} className="w-full text-gray-500 hover:text-gray-700 text-sm flex items-center justify-center gap-2 py-2">
-              <ArrowLeft className="w-4 h-4" /> Back to Home
-            </button>
-          </form>
-        </div>
-      </div>
-    );
+    return <AdminLoginGate onSignedIn={s => { setSession(s); toast.success(`Signed in as ${s.name}`); }} />;
   }
 
   const sidebar = (
@@ -112,6 +195,11 @@ export function AdminLayout() {
     </nav>
   );
 
+  const doLogout = async () => {
+    await adminAuth.logout();
+    setSession(null);
+  };
+
   return (
     <div className="h-screen flex bg-gray-50">
       {/* ── Desktop sidebar ── */}
@@ -128,7 +216,7 @@ export function AdminLayout() {
           <button onClick={() => navigate('/')} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back to FILMONS
           </button>
-          <button onClick={() => { adminAuth.logout(); setSession(null); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
+          <button onClick={doLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
             Log out
           </button>
         </div>
@@ -153,7 +241,7 @@ export function AdminLayout() {
               <button onClick={() => navigate('/')} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Back to FILMONS
               </button>
-              <button onClick={() => { adminAuth.logout(); setSession(null); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
+              <button onClick={doLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
                 Log out
               </button>
             </div>
@@ -162,15 +250,11 @@ export function AdminLayout() {
       )}
 
       {/* ── Content ── */}
-      {/* overflow-y-auto (not overflow-hidden) -- a normal page-scroll
-          container so any nested admin page (e.g. AdminVerifications,
-          which expects to own its own vertical scrolling like any other
-          full page) behaves exactly as it did as a standalone route.
-          Support Chats specifically manages its own fixed-height 3-pane
-          scroll regions (see its own h-[calc(100vh-3rem)] root) rather
-          than relying on this container to bound its height. */}
       <main className="flex-1 min-w-0 overflow-y-auto pt-12 lg:pt-0">
-        <Outlet />
+        {/* Outlet context: lets any nested admin page read the current
+            AdminSession (name/role) via useOutletContext<AdminSession>()
+            instead of re-deriving/re-checking it itself. */}
+        <Outlet context={session} />
       </main>
     </div>
   );
