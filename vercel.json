@@ -4,6 +4,8 @@
     { "source": "/api/device-send-code",   "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/device-send-code" },
     { "source": "/api/device-verify-code", "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/device-verify-code" },
     { "source": "/api/fn/:name*", "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/:name*" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/(.*)", "destination": "/admin.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -15,7 +15,7 @@
 // resolves true, whatever nested route matches that URL renders
 // immediately -- no "redirect to dashboard first."
 import { useEffect, useRef, useState } from 'react';
-import { Outlet, useNavigate, useLocation, NavLink } from 'react-router';
+import { Outlet, useLocation, NavLink } from 'react-router';
 import { toast } from 'sonner';
 import { adminAuth, type AdminSession } from '../lib/adminAuth';
 import {
@@ -159,7 +159,6 @@ function AdminLoginGate({ onSignedIn }: { onSignedIn: (s: AdminSession) => void 
 }
 
 export function AdminLayout() {
-  const navigate = useNavigate();
   const location = useLocation();
   const [session, setSession] = useState<AdminSession | null>(null);
   const [checked, setChecked] = useState(false);
@@ -213,7 +212,7 @@ export function AdminLayout() {
         </div>
         {sidebar}
         <div className="p-3 border-t border-white/10 space-y-1">
-          <button onClick={() => navigate('/')} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
+          <button onClick={() => { window.location.href = '/'; }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back to FILMONS
           </button>
           <button onClick={doLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">
@@ -238,7 +237,7 @@ export function AdminLayout() {
             </div>
             {sidebar}
             <div className="p-3 border-t border-white/10 space-y-1">
-              <button onClick={() => navigate('/')} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
+              <button onClick={() => { window.location.href = '/'; }} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Back to FILMONS
               </button>
               <button onClick={doLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:bg-white/10 hover:text-red-200 transition-colors">

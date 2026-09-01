@@ -1,8 +1,6 @@
-import { createBrowserRouter, Navigate } from 'react-router';
+import { createBrowserRouter } from 'react-router';
 import { Root } from './pages/Root';
-import { AdminLayout } from './components/AdminLayout';
-import { AdminSupportChats } from './pages/AdminSupportChats';
-import { AdminComingSoon } from './pages/AdminComingSoon';
+import { HardRedirect } from './components/HardRedirect';
 import { Home } from './pages/Home';
 import { Login }         from './pages/Login';
 import { CreateAccount }  from './pages/CreateAccount';
@@ -19,11 +17,9 @@ import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsConditions } from './pages/TermsConditions';
 import { HostProfile } from './pages/HostProfile';
 import { Verification } from './pages/Verification';
-import { AdminVerifications } from './pages/AdminVerifications';
 import { ContactSupport } from './pages/ContactSupport';
 import { MySupportCases } from './pages/MySupportCases';
 import { SupportCaseDetail } from './pages/SupportCaseDetail';
-import { AdminBoosts } from './pages/AdminBoosts';
 import { Feed } from './pages/Feed';
 import { Inbox } from './pages/Inbox';
 import { Checkout } from './pages/Checkout';
@@ -133,13 +129,15 @@ export const router = createBrowserRouter([
       { path: 'host/:userId', Component: HostProfile },
       // Old flat admin URLs -- kept as redirects (not removed) for any
       // existing bookmark or already-sent email link (the support-case
-      // admin-notification email template links to /admin-support) --
-      // the real admin area now lives under /admin/* with its own
-      // dedicated AdminLayout (see the top-level 'admin' route below),
-      // never nested inside Root/its user-facing nav chrome.
-      { path: 'admin-verifications', element: <Navigate to="/admin/verifications" replace /> },
-      { path: 'admin-support', element: <Navigate to="/admin/support-chats" replace /> },
-      { path: 'admin-boosts', element: <Navigate to="/admin/boosts" replace /> },
+      // admin-notification email template links to /admin-support). The
+      // real admin area is a genuinely separate bundle now (admin.html /
+      // src/app/adminRoutes.tsx, served by Vercel for any /admin/* path —
+      // see vercel.json), not a route inside this router, so these must
+      // be full page-loads (HardRedirect), not a client-side <Navigate>
+      // which would just fail to match anything in this router.
+      { path: 'admin-verifications', element: <HardRedirect to="/admin/verifications" /> },
+      { path: 'admin-support', element: <HardRedirect to="/admin/support-chats" /> },
+      { path: 'admin-boosts', element: <HardRedirect to="/admin/boosts" /> },
       { path: 'support', Component: ContactSupport },
       { path: 'support/cases', Component: MySupportCases },
       { path: 'support/cases/:id', Component: SupportCaseDetail },
@@ -152,31 +150,12 @@ export const router = createBrowserRouter([
       { path: ':username', Component: HostProfile },
     ],
   },
-  // ── FILMONS Admin — its own dedicated layout (AdminLayout: login gate +
-  // sidebar nav), never nested inside Root, so none of Root's user-facing
-  // TopBar/DesktopSidebar/MobileBottomNav chrome or auth-redirect guards
-  // apply here. ──────────────────────────────────────────────────────────
-  {
-    path: '/admin',
-    Component: AdminLayout,
-    children: [
-      { index: true, element: <Navigate to="/admin/support-chats" replace /> },
-      { path: 'dashboard',     element: <AdminComingSoon title="Dashboard" /> },
-      { path: 'verifications', Component: AdminVerifications },
-      { path: 'support-chats', Component: AdminSupportChats },
-      // Deep link from the "new case" admin-notification email --
-      // AdminSupportChats reads :caseNumber and auto-opens that
-      // conversation once its case list has loaded.
-      { path: 'support/cases/:caseNumber', Component: AdminSupportChats },
-      { path: 'boosts',        Component: AdminBoosts },
-      { path: 'transactions',  element: <AdminComingSoon title="Transactions" /> },
-      { path: 'users',         element: <AdminComingSoon title="Users" /> },
-      { path: 'listings',      element: <AdminComingSoon title="Listings" /> },
-      { path: 'opportunities', element: <AdminComingSoon title="Opportunities" /> },
-      { path: 'reports',       element: <AdminComingSoon title="Reports" /> },
-      { path: 'settings',      element: <AdminComingSoon title="Settings" /> },
-    ],
-  },
+  // NOTE: FILMONS Admin (/admin/*) is NOT a route in this router — it is
+  // an entirely separate Vite/Rollup bundle (admin.html, built from
+  // src/app/adminRoutes.tsx + AdminApp.tsx). This app's JS never imports
+  // any Admin* page/component, so a normal user's browser never fetches
+  // Admin code at all. Vercel rewrites any /admin/* request straight to
+  // admin.html instead of this app's index.html — see vercel.json.
   // ── Auth routes — outside Root layout (no navbar/shell) ──────────────────
   { path: '/login',          Component: Login          },
   { path: '/signin',         Component: Login          }, // alias

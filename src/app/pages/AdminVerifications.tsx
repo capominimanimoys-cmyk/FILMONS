@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useOutletContext } from "react-router";
+import { useOutletContext } from "react-router";
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
 import { supabase } from '../../lib/supabase';
@@ -301,7 +301,6 @@ function MaskedIdNumber({ last4, canReveal, onReveal }: {
 
 // ── Main component ────────────────────────────────────────────────
 export function AdminVerifications() {
-  const navigate = useNavigate();
   // AdminLayout already gates every /admin/* route behind its own
   // passwordless login -- by the time this component mounts, the admin
   // session is already confirmed, so this never shows its own (removed)
@@ -834,7 +833,7 @@ export function AdminVerifications() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/")}
+              onClick={() => { window.location.href = "/"; }}
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
             >
               <ArrowLeft className="w-4 h-4" />

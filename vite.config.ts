@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { defineConfig, loadEnv } from 'vite'
+import { resolve } from 'path';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -60,6 +61,19 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       'import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY': JSON.stringify('pk_live_51TXNn7FjNX0bk5AePD99ngwf7MXcb2bbVMBwojgHVhE1yXqqhE94Vcv2EB0uo6P4jQwd7vB9cqRB1qMJAwYIJNtA00JMD9tyuv'),
+    },
+    build: {
+      rollupOptions: {
+        // Two real, separate Rollup entry points -- admin.html pulls in
+        // AdminApp/adminRoutes only, so the FILMONS Admin pages/components
+        // never end up in the chunk a normal user's browser downloads
+        // from index.html, and vice versa (see vercel.json: /admin/* is
+        // rewritten to admin.html, everything else to index.html).
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          admin: resolve(__dirname, 'admin.html'),
+        },
+      },
     },
     test: {
       globals: true,
