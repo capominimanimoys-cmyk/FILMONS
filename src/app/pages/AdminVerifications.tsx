@@ -3,11 +3,8 @@ import { useOutletContext } from "react-router";
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
 import { supabase } from '../../lib/supabase';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-import { adminAuth, adminFn, type AdminSession } from '../lib/adminAuth';
+import { adminFn, type AdminSession } from '../lib/adminAuth';
 import {
-  ShieldCheck,
-  ArrowLeft,
   CheckCircle,
   XCircle,
   Clock,
@@ -17,12 +14,6 @@ import {
   FileText,
   Lock,
   Eye,
-  EyeOff,
-  LogOut,
-  Wallet,
-  DollarSign,
-  TrendingUp,
-  ArrowDownLeft,
   MapPin,
   Calendar,
   CreditCard,
@@ -31,6 +22,7 @@ import {
   Globe,
   ArrowRight,
   Trash2,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -101,43 +93,6 @@ interface AdminNote {
   createdAt: string;
 }
 
-interface WalletTx {
-  id: string;
-  amount: number;      // total charged to the renter (subtotal + buyer fee) — Stripe handles tax separately, outside this figure
-  subtotal: number;
-  buyerFee: number;
-  sellerFee: number;
-  platformFee: number; // buyerFee + sellerFee — total Filmons fee revenue for this order
-  creatorPayout: number; // subtotal - sellerFee — what the host actually earns
-  feeConfigVersion?: string;
-  title: string;
-  status: "paid" | "pending";
-  date: string;
-  hostName?: string;
-  renterName?: string;
-  method?: string;
-  refundStatus: string;
-  disputeStatus: string;
-}
-
-interface RefundRequest {
-  id: string;
-  order_id: string;
-  requester_id: string;
-  reason: string | null;
-  amount: number;
-  status: 'requested' | 'approved' | 'denied' | 'processed';
-  requested_at: string;
-  processed_at: string | null;
-  processed_by: string | null;
-}
-
-const fmt = (n: number) =>
-  n.toLocaleString("en-CA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
 // 'service' is the legacy stored value for what's shown as Creator+
 // everywhere else in this app (see normalizeTier/getTierLabel in
 // src/app/lib/reliabilityApi.ts) -- matched here too so an older
@@ -147,47 +102,6 @@ const TIER_LABEL: Record<string, string> = {
   creator: 'Creator', creator_plus: 'Creator+', service: 'Creator+',
   professional: 'Professional', business: 'Business',
 };
-
-// ── Helpers ────────────────────────────────────────────────────────
-// Real completed orders from Supabase — every `orders` row is only ever
-// created after payment succeeds (see Checkout.tsx's finalizeOrder), so
-// there's no "pending" order concept here; this previously reconstructed
-// numbers from localStorage chat history with a hardcoded 15% fee, which
-// only ever reflected the current browser and never matched what was
-// actually charged.
-async function loadWalletTxs(): Promise<WalletTx[]> {
-  try {
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .order('paid_at', { ascending: false })
-      .limit(200);
-    if (error || !data) return [];
-    return data.map((r: any) => {
-      const subtotal = Number(r.subtotal ?? r.total_amount ?? 0);
-      const buyerFee = Number(r.buyer_fee_amount ?? 0);
-      const sellerFee = Number(r.seller_fee_amount ?? 0);
-      return {
-        id: r.id,
-        amount: Number(r.total_amount ?? 0),
-        subtotal, buyerFee, sellerFee,
-        platformFee: buyerFee + sellerFee,
-        creatorPayout: subtotal - sellerFee,
-        feeConfigVersion: r.fee_config_version || undefined,
-        title: r.listing_title || 'Payment',
-        status: 'paid',
-        date: r.paid_at || new Date().toISOString(),
-        hostName: r.host_name,
-        renterName: r.renter_name,
-        method: r.payment_method,
-        refundStatus: r.refund_status || 'none',
-        disputeStatus: r.dispute_status || 'none',
-      };
-    });
-  } catch {
-    return [];
-  }
-}
 
 // ── Sub-components ────────────────────────────────────────────────
 
@@ -325,9 +239,6 @@ export function AdminVerifications() {
   // context instead of a separate client-side session read.
   const session = useOutletContext<AdminSession | null>();
   const adminName = session?.name || 'Admin';
-  const [activeTab, setActiveTab] = useState<
-    "verifications" | "wallet"
-  >("verifications");
 
   // Verifications state
   const [requests, setRequests] = useState<
@@ -338,6 +249,7 @@ export function AdminVerifications() {
   const [filter, setFilter] = useState<
     "all" | VerificationStatus
   >("pending");
+  const [search, setSearch] = useState('');
 
   // Deny / request-changes modal
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -435,32 +347,6 @@ export function AdminVerifications() {
     }
   };
 
-  // Wallet state
-  const [walletTxs, setWalletTxs] = useState<WalletTx[]>([]);
-  const [walletFilter, setWalletFilter] = useState<
-    "all" | "paid" | "pending"
-  >("all");
-  const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
-  const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
-  const [payoutAction, setPayoutAction] = useState<{ payout: any; action: 'reject' | 'paid' | 'mark_failed' } | null>(null);
-  const [payoutActionInput, setPayoutActionInput] = useState('');
-  const [payoutActionNotes, setPayoutActionNotes] = useState('');
-
-  // Refund requests + disputes
-  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
-  const [processingRefundId, setProcessingRefundId] = useState<string | null>(null);
-  const [disputeUpdatingOrderId, setDisputeUpdatingOrderId] = useState<string | null>(null);
-
-  // Opportunity payments (read-only reporting for V1 — disputes/refunds
-  // reuse the existing Marketplace Transactions dispute toggle below,
-  // since every Opportunity payment also creates a real orders row)
-  const [opportunityPayments, setOpportunityPayments] = useState<any[]>([]);
-  // Hire From Portfolio payments — same read-only reporting shape as
-  // Opportunity Payments; disputes/refunds reuse the same Marketplace
-  // Transactions dispute toggle since every Hire payment also creates a
-  // real orders row.
-  const [hirePayments, setHirePayments] = useState<any[]>([]);
-
   useEffect(() => { loadAll().catch(console.error); }, []);
 
   const loadAll = async () => {
@@ -530,188 +416,8 @@ export function AdminVerifications() {
     }
 
     setRequests(serverReqs);
-
-    // ── WALLET ─────────────────────────────────────────────────────
-    loadWalletTxs().then(setWalletTxs);
-
-    // ── PAYOUT REQUESTS ───────────────────────────────────────────
-    try {
-      const { data } = await supabase
-        .from('payout_requests')
-        .select('*, profiles(name, email)')
-        .order('requested_at', { ascending: false })
-        .limit(100);
-      // Instant requests surface first regardless of request time — this
-      // is the entire mechanism behind "Instant" meaning something real,
-      // since every payout is still a human admin sending it manually.
-      const sorted = [...(data || [])].sort((a: any, b: any) => {
-        const ai = a.payout_speed === 'instant' ? 1 : 0;
-        const bi = b.payout_speed === 'instant' ? 1 : 0;
-        if (ai !== bi) return bi - ai;
-        return 0;
-      });
-      setPayoutRequests(sorted);
-    } catch (e) {
-      console.warn('payout_requests query failed:', e);
-    }
-
-    // ── REFUND REQUESTS ───────────────────────────────────────────
-    try {
-      const { data } = await supabase
-        .from('refund_requests')
-        .select('*')
-        .order('requested_at', { ascending: false })
-        .limit(100);
-      setRefundRequests(data || []);
-    } catch (e) {
-      console.warn('refund_requests query failed:', e);
-    }
-
-    // ── OPPORTUNITY PAYMENTS ───────────────────────────────────────
-    try {
-      const { data: txns } = await supabase
-        .from('opportunity_transactions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      const rows = txns || [];
-      const listingIds = [...new Set(rows.map((r: any) => r.listing_id))];
-      const userIds = [...new Set(rows.flatMap((r: any) => [r.owner_id, r.worker_id]))];
-      const [{ data: listingRows }, { data: profileRows }] = await Promise.all([
-        listingIds.length ? supabase.from('listings').select('id, title').in('id', listingIds) : Promise.resolve({ data: [] as any[] }),
-        userIds.length ? supabase.from('profiles').select('id, name').in('id', userIds) : Promise.resolve({ data: [] as any[] }),
-      ]);
-      const listingMap = Object.fromEntries((listingRows || []).map((l: any) => [l.id, l.title]));
-      const nameMap = Object.fromEntries((profileRows || []).map((p: any) => [p.id, p.name]));
-      setOpportunityPayments(rows.map((r: any) => ({ ...r, listing_title: listingMap[r.listing_id], owner_name: nameMap[r.owner_id], worker_name: nameMap[r.worker_id] })));
-    } catch (e) {
-      console.warn('opportunity_transactions query failed:', e);
-    }
-
-    // ── HIRE FROM PORTFOLIO PAYMENTS ────────────────────────────────
-    try {
-      const { data: hireTxns } = await supabase
-        .from('hire_transactions')
-        .select('*, hire_requests(project_title)')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      const rows = hireTxns || [];
-      const userIds = [...new Set(rows.flatMap((r: any) => [r.requester_id, r.host_id]))];
-      const { data: profileRows } = userIds.length
-        ? await supabase.from('profiles').select('id, name').in('id', userIds)
-        : { data: [] as any[] };
-      const nameMap = Object.fromEntries((profileRows || []).map((p: any) => [p.id, p.name]));
-      setHirePayments(rows.map((r: any) => ({ ...r, project_title: r.hire_requests?.project_title, requester_name: nameMap[r.requester_id], host_name: nameMap[r.host_id] })));
-    } catch (e) {
-      console.warn('hire_transactions query failed:', e);
-    }
   };
 
-  // Simple actions (approve, mark_processing) need no extra input.
-  const processPayoutSimple = async (payoutRequestId: string, action: 'approve' | 'mark_processing') => {
-    setProcessingPayoutId(payoutRequestId);
-    try {
-      const res = await fetch(adminFn('admin-process-payout'), {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payoutRequestId, action, adminName }),
-      });
-      const result = await res.json();
-      if (!res.ok || result.error) throw new Error(result.error || 'Failed');
-      toast.success(action === 'approve' ? 'Payout approved' : 'Payout marked as processing');
-      loadAll().catch(console.error);
-    } catch (e: any) {
-      toast.error(e?.message || 'Could not update payout');
-    } finally {
-      setProcessingPayoutId(null);
-    }
-  };
-
-  // Reject (needs a reason) and Mark Paid (needs a payment reference) go
-  // through the small confirm modal below instead of firing immediately.
-  const submitPayoutAction = async () => {
-    if (!payoutAction) return;
-    const { payout, action } = payoutAction;
-    if (action === 'reject' && !payoutActionInput.trim()) { toast.error('A rejection reason is required.'); return; }
-    if (action === 'paid' && !payoutActionInput.trim()) { toast.error('A payment reference is required.'); return; }
-    setProcessingPayoutId(payout.id);
-    try {
-      const body: Record<string, unknown> = { payoutRequestId: payout.id, adminName };
-      if (action === 'reject') { body.action = 'reject'; body.reason = payoutActionInput.trim(); }
-      else if (action === 'mark_failed') { body.action = 'mark_failed'; body.notes = payoutActionInput.trim() || undefined; }
-      else { body.action = 'paid'; body.paymentReference = payoutActionInput.trim(); body.notes = payoutActionNotes.trim() || undefined; }
-
-      const res = await fetch(adminFn('admin-process-payout'), {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const result = await res.json();
-      if (!res.ok || result.error) throw new Error(result.error || 'Failed');
-      toast.success(action === 'reject' ? 'Payout rejected' : action === 'mark_failed' ? 'Payout marked as failed' : 'Payout marked as paid');
-      setPayoutAction(null);
-      setPayoutActionInput('');
-      setPayoutActionNotes('');
-      loadAll().catch(console.error);
-    } catch (e: any) {
-      toast.error(e?.message || 'Could not process payout');
-    } finally {
-      setProcessingPayoutId(null);
-    }
-  };
-
-  const processRefund = async (refundRequestId: string, action: 'approve' | 'deny') => {
-    setProcessingRefundId(refundRequestId);
-    try {
-      if (action === 'deny') {
-        const { error } = await supabase.from('refund_requests').update({
-          status: 'denied', processed_at: new Date().toISOString(), processed_by: adminName,
-        }).eq('id', refundRequestId);
-        if (error) throw new Error(error.message);
-        toast.success('Refund request denied');
-      } else {
-        const res = await fetch(adminFn('process-refund'), {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refundRequestId, adminName }),
-        });
-        const result = await res.json();
-        if (!res.ok || result.error) throw new Error(result.error || 'Failed');
-        toast.success('Refund processed');
-      }
-      loadAll().catch(console.error);
-    } catch (e: any) {
-      toast.error(e?.message || 'Could not process refund');
-    } finally {
-      setProcessingRefundId(null);
-    }
-  };
-
-  const toggleDispute = async (orderId: string, currentStatus: string) => {
-    setDisputeUpdatingOrderId(orderId);
-    try {
-      const next = currentStatus === 'disputed' ? 'resolved' : 'disputed';
-      const { error } = await supabase.from('orders').update({
-        dispute_status: next,
-        disputed_at: next === 'disputed' ? new Date().toISOString() : undefined,
-      }).eq('id', orderId);
-      if (error) throw new Error(error.message);
-      toast.success(next === 'disputed' ? 'Order marked disputed — pending earnings held' : 'Dispute resolved');
-      loadAll().catch(console.error);
-    } catch (e: any) {
-      toast.error(e?.message || 'Could not update dispute status');
-    } finally {
-      setDisputeUpdatingOrderId(null);
-    }
-  };
-
-  // Full reload back to /admin: AdminLayout's own login gate (the only
-  // one that exists now) re-checks the session immediately and shows
-  // Generate Code once the cookie is cleared.
-  const handleLogout = async () => {
-    await adminAuth.logout();
-    window.location.href = '/admin';
-  };
 
   const sendUserEmail = async (request: VerificationRequest, status: VerificationStatus, reason?: string) => {
     if (!request.userEmail) return;
@@ -810,36 +516,21 @@ export function AdminVerifications() {
     setShowRejectModal(true);
   };
   // ── Derived stats ──────────────────────────────────────────────
-  const filteredRequests = requests.filter(
-    (r) => filter === "all" || r.status === filter,
-  );
+  const searchQuery = search.trim().toLowerCase();
+  const filteredRequests = requests.filter((r) => {
+    if (filter !== "all" && r.status !== filter) return false;
+    if (!searchQuery) return true;
+    return (
+      r.userName?.toLowerCase().includes(searchQuery) ||
+      r.username?.toLowerCase().includes(searchQuery) ||
+      r.userEmail?.toLowerCase().includes(searchQuery)
+    );
+  });
   const pendingCount = requests.filter(r => r.status === "pending").length;
   const underReviewCount = requests.filter(r => r.status === "under_review").length;
   const changesRequestedCount = requests.filter(r => r.status === "changes_requested").length;
   const approvedCount = requests.filter(r => r.status === "approved").length;
   const deniedCount = requests.filter(r => r.status === "denied").length;
-
-  const paidTxs = walletTxs.filter((t) => t.status === "paid");
-  const pendingTxs = walletTxs.filter(
-    (t) => t.status === "pending",
-  );
-  const totalVolume = paidTxs.reduce((s, t) => s + t.amount, 0);
-  const totalFees = paidTxs.reduce(
-    (s, t) => s + t.platformFee,
-    0,
-  );
-  const totalPayouts = paidTxs.reduce(
-    (s, t) => s + t.creatorPayout,
-    0,
-  );
-  const pendingVol = pendingTxs.reduce(
-    (s, t) => s + t.amount,
-    0,
-  );
-  const filteredWallet =
-    walletFilter === "all"
-      ? walletTxs
-      : walletTxs.filter((t) => t.status === walletFilter);
 
   // No separate login screen here anymore -- AdminLayout's own gate is
   // the only one, and this component never mounts until that's satisfied.
@@ -847,151 +538,69 @@ export function AdminVerifications() {
   // ── Admin Dashboard ────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => { window.location.href = "https://filmons.app/"; }}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h1 className="text-base font-black text-gray-900">
-                Filmons Admin
-              </h1>
-              <p className="text-xs text-gray-400">
-                Back office panel
-              </p>
-            </div>
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex items-center justify-between mb-1">
+          <div>
+            <h1 className="text-xl font-black text-gray-900">Verifications</h1>
+            <p className="text-sm text-gray-400">Review and manage verification requests</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => loadAll().catch(console.error)}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
-              title="Refresh"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-xl hover:bg-gray-100 transition-colors"
-            >
-              <LogOut className="w-4 h-4" /> Logout
-            </button>
-          </div>
+          <button
+            onClick={() => loadAll().catch(console.error)}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
+        {/* Identity is the only verification type that actually exists
+            today -- there's no admin-reviewed "Payment"/"Professional"/
+            "Business" application anywhere in this app (Professional and
+            Business are granted purely by a Stripe subscription checkout
+            with zero review step). A type-filter row for those would just
+            be permanently empty, so it isn't shown. */}
+        <p className="text-xs text-gray-400 mb-5">Identity Verification (Creator+)</p>
 
-        {/* Tab bar */}
-        <div className="max-w-7xl mx-auto px-4 flex gap-1 border-t border-gray-100">
-          {(["verifications", "wallet"] as const).map((tab) => (
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          {[
+            { label: "Pending", value: pendingCount, icon: <Clock className="w-5 h-5 text-amber-500" />, bg: "bg-amber-50", action: () => setFilter("pending") },
+            { label: "In Review", value: underReviewCount, icon: <RefreshCw className="w-5 h-5 text-blue-500" />, bg: "bg-blue-50", action: () => setFilter("under_review") },
+            { label: "Approved", value: approvedCount, icon: <CheckCircle className="w-5 h-5 text-green-500" />, bg: "bg-green-50", action: () => setFilter("approved") },
+            { label: "Rejected", value: deniedCount, icon: <XCircle className="w-5 h-5 text-red-500" />, bg: "bg-red-50", action: () => setFilter("denied") },
+          ].map((s) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors capitalize ${
-                activeTab === tab
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
+              key={s.label}
+              onClick={s.action}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3 hover:shadow-md transition-shadow text-left"
             >
-              {tab === "verifications" ? (
-                <ShieldCheck className="w-4 h-4" />
-              ) : (
-                <Wallet className="w-4 h-4" />
-              )}
-              {tab === "verifications"
-                ? `Verifications`
-                : "Filmons Wallet"}
-              {tab === "verifications" && pendingCount > 0 && (
-                <span className="w-5 h-5 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">
-                  {pendingCount}
-                </span>
-              )}
+              <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center shrink-0`}>
+                {s.icon}
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 font-medium">{s.label}</p>
+                <p className="text-2xl font-black text-gray-900">{s.value}</p>
+              </div>
             </button>
           ))}
         </div>
-      </div>
+        {changesRequestedCount > 0 && (
+          <button onClick={() => setFilter('changes_requested')} className="text-xs font-semibold text-orange-600 bg-orange-50 rounded-xl px-3 py-2 mb-5 inline-block hover:bg-orange-100">
+            {changesRequestedCount} awaiting changes from the user →
+          </button>
+        )}
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* ══ VERIFICATIONS TAB ══════════════════════════════════════ */}
-        {activeTab === "verifications" && (
-          <>
-            {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-              {[
-                {
-                  label: "Total",
-                  value: requests.length,
-                  icon: (
-                    <ShieldCheck className="w-5 h-5 text-blue-500" />
-                  ),
-                  bg: "bg-blue-50",
-                  action: () => setFilter("all"),
-                },
-                {
-                  label: "Pending",
-                  value: pendingCount + underReviewCount,
-                  icon: (
-                    <Clock className="w-5 h-5 text-amber-500" />
-                  ),
-                  bg: "bg-amber-50",
-                  action: () => setFilter("pending"),
-                },
-                {
-                  label: "Changes Requested",
-                  value: changesRequestedCount,
-                  icon: (
-                    <RefreshCw className="w-5 h-5 text-orange-500" />
-                  ),
-                  bg: "bg-orange-50",
-                  action: () => setFilter("changes_requested"),
-                },
-                {
-                  label: "Approved",
-                  value: approvedCount,
-                  icon: (
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                  ),
-                  bg: "bg-green-50",
-                  action: () => setFilter("approved"),
-                },
-                {
-                  label: "Denied",
-                  value: deniedCount,
-                  icon: (
-                    <XCircle className="w-5 h-5 text-red-500" />
-                  ),
-                  bg: "bg-red-50",
-                  action: () => setFilter("denied"),
-                },
-              ].map((s) => (
-                <button
-                  key={s.label}
-                  onClick={s.action}
-                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3 hover:shadow-md transition-shadow text-left"
-                >
-                  <div
-                    className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center shrink-0`}
-                  >
-                    {s.icon}
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 font-medium">
-                      {s.label}
-                    </p>
-                    <p className="text-2xl font-black text-gray-900">
-                      {s.value}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
+        {/* Search */}
+        <div className="relative mb-4">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search user, email, username..."
+            className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl outline-none focus:border-blue-300"
+          />
+        </div>
 
-            {/* Filter tabs */}
+        {/* Filter tabs */}
             <div className="flex gap-2 mb-4 flex-wrap">
               {(
                 [
@@ -1022,6 +631,8 @@ export function AdminVerifications() {
                 >
                   {f === "all"
                     ? `All (${requests.length})`
+                    : f === "denied"
+                    ? `Rejected (${requests.filter((r) => r.status === f).length})`
                     : `${f.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} (${requests.filter((r) => r.status === f).length})`}
                 </button>
               ))}
@@ -1075,7 +686,7 @@ export function AdminVerifications() {
                                   : "bg-red-100 text-red-700"
                           }`}
                         >
-                          {req.status.replace('_', ' ')}
+                          {req.status === 'denied' ? 'rejected' : req.status.replace('_', ' ')}
                         </span>
                       </div>
 
@@ -1121,536 +732,6 @@ export function AdminVerifications() {
                 ))}
               </div>
             )}
-          </>
-        )}
-
-        {/* ══ WALLET TAB ════════════════════════════════════════════ */}
-        {activeTab === "wallet" && (
-          <>
-            {/* Marketplace Wallet stats */}
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white mb-6 shadow-xl">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
-                  <Wallet className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-black">
-                    Filmons Platform Wallet
-                  </h2>
-                  <p className="text-blue-200 text-xs">
-                    8% Filmons Fee on all completed marketplace
-                    transactions
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-blue-200 text-xs font-semibold mb-1">
-                    Platform Revenue
-                  </p>
-                  <p className="text-2xl font-black">
-                    ${fmt(totalFees)}
-                  </p>
-                  <p className="text-blue-300 text-[11px] mt-0.5">
-                    CAD earned (marketplace)
-                  </p>
-                </div>
-                <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-blue-200 text-xs font-semibold mb-1">
-                    Total Volume
-                  </p>
-                  <p className="text-2xl font-black">
-                    ${fmt(totalVolume)}
-                  </p>
-                  <p className="text-blue-300 text-[11px] mt-0.5">
-                    {paidTxs.length} paid orders
-                  </p>
-                </div>
-                <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-blue-200 text-xs font-semibold mb-1">
-                    Paid to Creators
-                  </p>
-                  <p className="text-2xl font-black">
-                    ${fmt(totalPayouts)}
-                  </p>
-                  <p className="text-blue-300 text-[11px] mt-0.5">
-                    Net of Filmons Fee
-                  </p>
-                </div>
-                <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-blue-200 text-xs font-semibold mb-1">
-                    Pending Volume
-                  </p>
-                  <p className="text-2xl font-black">
-                    ${fmt(pendingVol)}
-                  </p>
-                  <p className="text-blue-300 text-[11px] mt-0.5">
-                    {pendingTxs.length} pending
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Revenue breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 font-medium">
-                      Completed
-                    </p>
-                    <p className="text-xl font-black text-gray-900">
-                      {paidTxs.length}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Revenue</span>
-                  <span className="font-bold text-green-600">
-                    +${fmt(totalFees)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 font-medium">
-                      Pending
-                    </p>
-                    <p className="text-xl font-black text-gray-900">
-                      {pendingTxs.length}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">
-                    Expected
-                  </span>
-                  <span className="font-bold text-amber-600">
-                    $
-                    {fmt(
-                      pendingTxs.reduce(
-                        (s, t) => s + t.platformFee,
-                        0,
-                      ),
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <ArrowDownLeft className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 font-medium">
-                      Total Payouts
-                    </p>
-                    <p className="text-xl font-black text-gray-900">
-                      ${fmt(totalPayouts)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">
-                    Sent to sellers
-                  </span>
-                  <span className="font-bold text-purple-600">
-                    {paidTxs.length > 0
-                      ? Math.round(
-                          (totalPayouts / totalVolume) * 100,
-                        )
-                      : 0}
-                    % of vol.
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Payout requests queue */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-gray-50">
-                <h3 className="text-sm font-bold text-gray-900">Payout Requests</h3>
-                <p className="text-xs text-gray-400 mt-0.5">No automated payout provider is configured yet — send funds manually (e-transfer, bank transfer) using the destination shown, then mark paid here.</p>
-              </div>
-              {payoutRequests.length === 0 ? (
-                <div className="p-8 text-center text-sm text-gray-400">No payout requests yet.</div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {payoutRequests.map((p) => {
-                    const dest = p.payout_destination || {};
-                    const destText = p.payout_method === 'interac'
-                      ? dest.email
-                      : p.payout_method === 'bank_transfer'
-                        ? `${dest.accountHolder || ''} · inst ${dest.institutionNumber || '—'} · transit ${dest.transitNumber || '—'} · acct ${dest.accountNumber || '—'}`
-                        : p.payout_method === 'card' || p.payout_method === 'bank'
-                          // Stripe Connect-backed — Filmons never has raw numbers for these;
-                          // the connect account id is what lets the admin look this up in
-                          // the Stripe Dashboard to actually send the funds.
-                          ? `${dest.displayName || 'Stripe payout method'} •••• ${dest.last4 || '----'} (Stripe acct ${dest.stripeConnectAccountId || '—'})`
-                          : null;
-                    const busy = processingPayoutId === p.id;
-                    return (
-                      <div key={p.id} className="px-5 py-3.5">
-                        <div className="flex items-center gap-4">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800 truncate flex items-center gap-1.5">
-                              {p.profiles?.name || p.host_id}
-                              <span className="text-[10px] font-mono text-gray-400">WD-{String(p.id).replace(/-/g, '').slice(0, 6).toUpperCase()}</span>
-                              {p.payout_speed === 'instant' && (
-                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-0.5">⚡ Instant</span>
-                              )}
-                            </p>
-                            <p className="text-xs text-gray-400">{new Date(p.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })} · {p.profiles?.email || ''}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              FILMONS fee {fmt((Number(p.platform_fee_amount) || 0) + (p.payout_speed === 'instant' ? Number(p.fee_amount || 0) : 0))}
-                              {' · '}Net payout ${fmt(Number(p.net_amount ?? p.amount))}
-                            </p>
-                            {p.payout_method && (
-                              <p className="text-xs text-gray-500 mt-1 font-mono">
-                                {p.payout_method === 'interac' ? 'Interac' : p.payout_method === 'card' ? 'Card (Stripe)' : p.payout_method === 'bank' ? 'Bank (Stripe)' : 'Bank Transfer'}: {destText || '—'}
-                              </p>
-                            )}
-                            {p.status === 'rejected' && p.rejection_reason && (
-                              <p className="text-xs text-red-500 mt-1">Rejected: {p.rejection_reason}</p>
-                            )}
-                            {p.status === 'paid' && p.payment_reference && (
-                              <p className="text-xs text-green-600 mt-1">Ref: {p.payment_reference}</p>
-                            )}
-                          </div>
-                          <span className="text-sm font-black text-gray-900 shrink-0">${fmt(Number(p.amount))}</span>
-                          {['requested', 'under_review', 'approved', 'processing'].includes(p.status) ? (
-                            <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
-                              {(p.status === 'requested' || p.status === 'under_review') && (
-                                <button onClick={() => processPayoutSimple(p.id, 'approve')} disabled={busy}
-                                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-50">
-                                  Approve
-                                </button>
-                              )}
-                              {p.status === 'approved' && (
-                                <button onClick={() => processPayoutSimple(p.id, 'mark_processing')} disabled={busy}
-                                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50">
-                                  Mark Processing
-                                </button>
-                              )}
-                              {(p.status === 'approved' || p.status === 'processing') && (
-                                <button onClick={() => setPayoutAction({ payout: p, action: 'paid' })} disabled={busy}
-                                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
-                                  Mark as Completed
-                                </button>
-                              )}
-                              {p.status === 'processing' && (
-                                <button onClick={() => setPayoutAction({ payout: p, action: 'mark_failed' })} disabled={busy}
-                                  className="px-3 py-1.5 rounded-lg border border-red-200 text-red-500 text-xs font-bold disabled:opacity-50">
-                                  Mark Failed
-                                </button>
-                              )}
-                              <button onClick={() => setPayoutAction({ payout: p, action: 'reject' })} disabled={busy}
-                                className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold disabled:opacity-50">
-                                Reject
-                              </button>
-                            </div>
-                          ) : (
-                            <span className={`text-xs font-bold uppercase shrink-0 ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
-                              {p.status === 'paid' ? 'Completed' : p.status}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Refund requests queue */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-gray-50">
-                <h3 className="text-sm font-bold text-gray-900">Refund Requests</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Approve calls Stripe's Refund API when the order has a captured payment (card), then reverses the ledger either way.</p>
-              </div>
-              {refundRequests.length === 0 ? (
-                <div className="p-8 text-center text-sm text-gray-400">No refund requests yet.</div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {refundRequests.map((r) => (
-                    <div key={r.id} className="flex items-center gap-4 px-5 py-3.5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">Order {r.order_id}</p>
-                        <p className="text-xs text-gray-400">{new Date(r.requested_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}{r.reason ? ` · ${r.reason}` : ''}</p>
-                      </div>
-                      <span className="text-sm font-black text-gray-900 shrink-0">${fmt(Number(r.amount))}</span>
-                      {r.status === 'requested' || r.status === 'approved' ? (
-                        <div className="flex gap-1.5 shrink-0">
-                          <button onClick={() => processRefund(r.id, 'approve')} disabled={processingRefundId === r.id}
-                            className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
-                            Approve &amp; Refund
-                          </button>
-                          <button onClick={() => processRefund(r.id, 'deny')} disabled={processingRefundId === r.id}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold disabled:opacity-50">
-                            Deny
-                          </button>
-                        </div>
-                      ) : (
-                        <span className={`text-xs font-bold uppercase shrink-0 ${r.status === 'processed' ? 'text-green-600' : 'text-red-500'}`}>{r.status}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Opportunity payments — read-only reporting; disputes/refunds
-                reuse the Marketplace Transactions dispute toggle below since
-                every Opportunity payment also creates a real orders row. */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-gray-50">
-                <h3 className="text-sm font-bold text-gray-900">Opportunity Payments</h3>
-                <p className="text-xs text-gray-400 mt-0.5">50% releases immediately on funding, 50% holds until work is confirmed complete.</p>
-              </div>
-              {opportunityPayments.length === 0 ? (
-                <div className="p-8 text-center text-sm text-gray-400">No Opportunity payments yet.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-gray-400 border-b border-gray-100">
-                        <th className="px-4 py-2.5 font-bold">Opportunity</th>
-                        <th className="px-4 py-2.5 font-bold">Owner</th>
-                        <th className="px-4 py-2.5 font-bold">Worker</th>
-                        <th className="px-4 py-2.5 font-bold">Gross</th>
-                        <th className="px-4 py-2.5 font-bold">Fee</th>
-                        <th className="px-4 py-2.5 font-bold">Net</th>
-                        <th className="px-4 py-2.5 font-bold">Available</th>
-                        <th className="px-4 py-2.5 font-bold">Held</th>
-                        <th className="px-4 py-2.5 font-bold">Payment</th>
-                        <th className="px-4 py-2.5 font-bold">Work</th>
-                        <th className="px-4 py-2.5 font-bold">Funded</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {opportunityPayments.map((p: any) => (
-                        <tr key={p.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                          <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap max-w-[160px] truncate">{p.listing_title || p.listing_id}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.owner_name || p.owner_id?.slice(0, 8)}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.worker_name || p.worker_id?.slice(0, 8)}</td>
-                          <td className="px-4 py-2.5 text-gray-900 font-bold whitespace-nowrap">${fmt(Number(p.gross_amount))}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.fee_amount))}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.net_amount))}</td>
-                          <td className="px-4 py-2.5 text-green-600 whitespace-nowrap">${fmt(Number(p.initial_release_amount || 0))}</td>
-                          <td className="px-4 py-2.5 text-amber-600 whitespace-nowrap">${fmt(Number(p.held_amount || 0))}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">{p.payment_status}</span></td>
-                          <td className="px-4 py-2.5 whitespace-nowrap"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">{p.work_status.replace(/_/g, ' ')}</span></td>
-                          <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{p.funded_at ? new Date(p.funded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Hire From Portfolio payments — read-only reporting; same
-                pattern as Opportunity Payments above. */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-gray-50">
-                <h3 className="text-sm font-bold text-gray-900">Hire Payments</h3>
-                <p className="text-xs text-gray-400 mt-0.5">50% releases immediately on funding, 50% holds until work is confirmed complete.</p>
-              </div>
-              {hirePayments.length === 0 ? (
-                <div className="p-8 text-center text-sm text-gray-400">No Hire payments yet.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-gray-400 border-b border-gray-100">
-                        <th className="px-4 py-2.5 font-bold">Project</th>
-                        <th className="px-4 py-2.5 font-bold">Requester</th>
-                        <th className="px-4 py-2.5 font-bold">Creator</th>
-                        <th className="px-4 py-2.5 font-bold">Gross</th>
-                        <th className="px-4 py-2.5 font-bold">Fee</th>
-                        <th className="px-4 py-2.5 font-bold">Net</th>
-                        <th className="px-4 py-2.5 font-bold">Available</th>
-                        <th className="px-4 py-2.5 font-bold">Held</th>
-                        <th className="px-4 py-2.5 font-bold">Payment</th>
-                        <th className="px-4 py-2.5 font-bold">Work</th>
-                        <th className="px-4 py-2.5 font-bold">Funded</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hirePayments.map((p: any) => (
-                        <tr key={p.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                          <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap max-w-[160px] truncate">{p.project_title || p.hire_request_id}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.requester_name || p.requester_id?.slice(0, 8)}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.host_name || p.host_id?.slice(0, 8)}</td>
-                          <td className="px-4 py-2.5 text-gray-900 font-bold whitespace-nowrap">${fmt(Number(p.gross_amount))}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.fee_amount))}</td>
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">${fmt(Number(p.net_amount))}</td>
-                          <td className="px-4 py-2.5 text-green-600 whitespace-nowrap">${fmt(Number(p.initial_release_amount || 0))}</td>
-                          <td className="px-4 py-2.5 text-amber-600 whitespace-nowrap">${fmt(Number(p.held_amount || 0))}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">{p.payment_status}</span></td>
-                          <td className="px-4 py-2.5 whitespace-nowrap"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 uppercase">{p.work_status.replace(/_/g, ' ')}</span></td>
-                          <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{p.funded_at ? new Date(p.funded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Transaction list */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-50 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-900">
-                  Marketplace Transactions
-                </h3>
-                <div className="flex gap-1.5">
-                  {(["all", "paid", "pending"] as const).map(
-                    (f) => (
-                      <button
-                        key={f}
-                        onClick={() => setWalletFilter(f)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
-                          walletFilter === f
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                        }`}
-                      >
-                        {f.charAt(0).toUpperCase() + f.slice(1)}{" "}
-                        {f === "all"
-                          ? `(${walletTxs.length})`
-                          : f === "paid"
-                            ? `(${paidTxs.length})`
-                            : `(${pendingTxs.length})`}
-                      </button>
-                    ),
-                  )}
-                </div>
-              </div>
-
-              {filteredWallet.length === 0 ? (
-                <div className="p-12 text-center">
-                  <DollarSign className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm font-medium">
-                    No transactions yet
-                  </p>
-                  <p className="text-gray-300 text-xs mt-1">
-                    Completed payments will appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {filteredWallet.map((tx) => (
-                    <div
-                      key={tx.id}
-                      className="flex items-center gap-4 px-5 py-4"
-                    >
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tx.status === "paid" ? "bg-green-100" : "bg-amber-100"}`}
-                      >
-                        {tx.status === "paid" ? (
-                          <CheckCircle className="w-5 h-5 text-green-600" />
-                        ) : (
-                          <Clock className="w-5 h-5 text-amber-600" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">
-                          {tx.title}
-                        </p>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <p className="text-xs text-gray-400">
-                            {new Date(
-                              tx.date,
-                            ).toLocaleDateString("en-CA", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
-                          </p>
-                          {tx.hostName && (
-                            <p className="text-xs text-gray-400">
-                              from {tx.hostName}
-                            </p>
-                          )}
-                          {tx.renterName && (
-                            <p className="text-xs text-gray-400">
-                              to {tx.renterName}
-                            </p>
-                          )}
-                          {tx.method && (
-                            <p className="text-xs text-gray-400">
-                              · {tx.method}
-                            </p>
-                          )}
-                          {tx.disputeStatus === 'disputed' && (
-                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Disputed</span>
-                          )}
-                          {tx.refundStatus !== 'none' && (
-                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600">{tx.refundStatus.replace('_', ' ')}</span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => toggleDispute(tx.id, tx.disputeStatus)}
-                          disabled={disputeUpdatingOrderId === tx.id}
-                          className="text-[10px] font-bold text-gray-400 hover:text-red-500 mt-1 disabled:opacity-50"
-                        >
-                          {tx.disputeStatus === 'disputed' ? 'Resolve dispute' : 'Mark disputed'}
-                        </button>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="flex items-center gap-2 justify-end">
-                          <div className="text-right">
-                            <p className="text-[10px] text-gray-400 font-semibold">
-                              Total
-                            </p>
-                            <p className="text-sm font-black text-gray-900">
-                              ${fmt(tx.amount)}
-                            </p>
-                          </div>
-                          <div className="w-px h-8 bg-gray-100" />
-                          <div className="text-right">
-                            <p className="text-[10px] text-gray-400 font-semibold">
-                              Filmons
-                            </p>
-                            <p
-                              className={`text-sm font-black ${tx.status === "paid" ? "text-green-600" : "text-amber-500"}`}
-                            >
-                              +${fmt(tx.platformFee)}
-                            </p>
-                          </div>
-                          <div className="w-px h-8 bg-gray-100" />
-                          <div className="text-right">
-                            <p className="text-[10px] text-gray-400 font-semibold">
-                              Creator
-                            </p>
-                            <p className="text-sm font-black text-blue-600">
-                              ${fmt(tx.creatorPayout)}
-                            </p>
-                          </div>
-                        </div>
-                        <span
-                          className={`text-[10px] font-bold uppercase mt-1 inline-block ${tx.status === "paid" ? "text-green-500" : "text-amber-500"}`}
-                        >
-                          {tx.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
       </div>
 
       {/* ── Review Verification Modal ─────────────────────────────── */}
@@ -1698,7 +779,7 @@ export function AdminVerifications() {
                               : "bg-red-200 text-red-800"
                       }`}
                     >
-                      {selectedRequest.status.replace('_', ' ')}
+                      {selectedRequest.status === 'denied' ? 'rejected' : selectedRequest.status.replace('_', ' ')}
                     </span>
                     <span className="text-[11px] text-gray-400">Submitted {new Date(selectedRequest.submittedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" })}</span>
                   </div>
@@ -2069,63 +1150,6 @@ export function AdminVerifications() {
         </div>
       )}
 
-      {payoutAction && (
-        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-1">
-              {payoutAction.action === 'reject' ? 'Reject payout request'
-                : payoutAction.action === 'mark_failed' ? 'Mark payout as failed'
-                : 'Confirm payout'}
-            </h3>
-            <p className="text-xs text-gray-400 mb-4">${fmt(Number(payoutAction.payout.amount))} — {payoutAction.payout.profiles?.name || payoutAction.payout.host_id}</p>
-
-            {payoutAction.action === 'paid' && (
-              <div className="bg-green-50 border border-green-100 rounded-xl px-3 py-3 mb-3 space-y-1">
-                <p className="text-xs text-green-800">
-                  User will receive <span className="font-bold">${fmt(Number(payoutAction.payout.net_amount ?? payoutAction.payout.amount))} {payoutAction.payout.currency || 'CAD'}</span>
-                </p>
-                <p className="text-[11px] text-green-700">Estimated delivery: 1–2 business days</p>
-              </div>
-            )}
-
-            <input
-              type="text"
-              value={payoutActionInput}
-              onChange={(e) => setPayoutActionInput(e.target.value)}
-              placeholder={
-                payoutAction.action === 'reject' ? 'Rejection reason (required)'
-                : payoutAction.action === 'mark_failed' ? 'Reason (optional)'
-                : 'Payment reference (required)'
-              }
-              className="w-full border-2 border-gray-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2"
-            />
-            {payoutAction.action === 'paid' && (
-              <textarea
-                value={payoutActionNotes}
-                onChange={(e) => setPayoutActionNotes(e.target.value)}
-                placeholder="Notes (optional)"
-                rows={2}
-                className="w-full border-2 border-gray-100 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2"
-              />
-            )}
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => { setPayoutAction(null); setPayoutActionInput(''); setPayoutActionNotes(''); }}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitPayoutAction}
-                disabled={processingPayoutId === payoutAction.payout.id}
-                className={`flex-1 py-2.5 rounded-xl text-white text-xs font-bold disabled:opacity-50 ${payoutAction.action === 'reject' || payoutAction.action === 'mark_failed' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
-              >
-                {payoutAction.action === 'reject' ? 'Reject' : payoutAction.action === 'mark_failed' ? 'Mark Failed' : 'Mark as Completed'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

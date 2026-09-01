@@ -6,6 +6,7 @@ import { AdminUserDetail } from './pages/AdminUserDetail';
 import { AdminTransactions } from './pages/AdminTransactions';
 import { AdminTransactionDetail } from './pages/AdminTransactionDetail';
 import { AdminVerifications } from './pages/AdminVerifications';
+import { AdminWallet } from './pages/AdminWallet';
 import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
 import { AdminComingSoon } from './pages/AdminComingSoon';
@@ -30,13 +31,14 @@ const adminRouteTree = [
       // AdminSupportChats reads :caseNumber and auto-opens that
       // conversation once its case list has loaded.
       { path: 'support/cases/:caseNumber', Component: AdminSupportChats },
-      { path: 'boosts',        Component: AdminBoosts },
-      { path: 'transactions',  Component: AdminTransactions },
-      { path: 'transactions/:orderId', Component: AdminTransactionDetail },
       { path: 'users',         Component: AdminUsers },
       { path: 'users/:userId', Component: AdminUserDetail },
       { path: 'listings',      element: <AdminComingSoon title="Listings" /> },
       { path: 'opportunities', element: <AdminComingSoon title="Opportunities" /> },
+      { path: 'transactions',  Component: AdminTransactions },
+      { path: 'transactions/:orderId', Component: AdminTransactionDetail },
+      { path: 'wallet',        Component: AdminWallet },
+      { path: 'boosts',        Component: AdminBoosts },
       { path: 'reports',       element: <AdminComingSoon title="Reports" /> },
       { path: 'settings',      element: <AdminComingSoon title="Settings" /> },
     ],

@@ -21,6 +21,7 @@ import { adminAuth, type AdminSession } from '../lib/adminAuth';
 import {
   LayoutDashboard, ShieldCheck, LifeBuoy, Receipt, Users, Package,
   Briefcase, Flag, Settings as SettingsIcon, ArrowLeft, Menu, X, Loader2,
+  Wallet,
 } from 'lucide-react';
 
 // Basename-relative -- never '/admin/...' here. The router's basename
@@ -31,10 +32,11 @@ const NAV_ITEMS = [
   { path: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
   { path: '/verifications',  label: 'Verifications',  icon: ShieldCheck },
   { path: '/support-chats',  label: 'Support Chats',  icon: LifeBuoy },
-  { path: '/transactions',   label: 'Transactions',   icon: Receipt },
   { path: '/users',          label: 'Users',          icon: Users },
   { path: '/listings',       label: 'Listings',       icon: Package },
   { path: '/opportunities',  label: 'Opportunities',  icon: Briefcase },
+  { path: '/transactions',   label: 'Transactions',   icon: Receipt },
+  { path: '/wallet',         label: 'FILMONS Wallet', icon: Wallet },
   { path: '/reports',        label: 'Reports',        icon: Flag },
   { path: '/settings',       label: 'Settings',       icon: SettingsIcon },
 ];
