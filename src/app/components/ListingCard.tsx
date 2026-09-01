@@ -343,14 +343,19 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         />
       )}
 
-      <motion.div
+      {/* Plain div, deliberately NOT a motion component -- a whileTap scale
+          on an ANCESTOR of the layoutId'd image below fights with Framer
+          Motion's own FLIP measurement for the shared transition (the
+          parent's transform changes what the child measures as its
+          layout box right as the route change kicks off), which is what
+          made the shared-element animation look wrong. Tap feedback is
+          plain CSS instead, fully decoupled from the layout system. */}
+      <div
         onClick={handleClick}
         onTouchStart={startPress}
         onTouchEnd={endPress}
         onTouchMove={endPress}
-        whileTap={{ scale: 0.98 }}
-        transition={{ duration: 0.1 }}
-        className={`cursor-pointer group select-none film-card ${className}`}
+        className={`cursor-pointer group select-none film-card active:scale-[0.98] transition-transform duration-100 ${className}`}
       >
         {/* Image container — shares a layoutId with ListingDetail's hero
             image so tapping into a listing animates as the card expanding
@@ -360,6 +365,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
             never collides with a real listing's transition. */}
         <motion.div
           layoutId={listing.id ? `listing-image-${listing.id}` : undefined}
+          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
           className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 mb-3"
         >
           {cover ? (
@@ -459,7 +465,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
             </p>
           )}
         </div>
-      </motion.div>
+      </div>
     </>
   );
 }

@@ -1467,11 +1467,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}>
                   {!user ? (
                     // Opportunities are a signed-in feature -- a guest never
-                    // gets a preview slice here, just a login prompt.
-                    <button onClick={() => { setPendingReturnUrl('/search'); navigate('/login'); }}
-                      className="w-full py-4 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors rounded-xl">
-                      Login to see Opportunities
-                    </button>
+                    // gets a preview slice here, just a login/sign-up prompt.
+                    <div className="flex flex-col items-center text-center py-6 px-4">
+                      <p className="text-sm font-bold text-gray-900 mb-1">Login or sign up to see Opportunities</p>
+                      <p className="text-xs text-gray-400 mb-4">Create a free account to browse and apply.</p>
+                      <div className="flex gap-2 w-full max-w-xs">
+                        <button onClick={() => { setPendingReturnUrl('/search'); navigate('/login'); }}
+                          className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors">
+                          Log In
+                        </button>
+                        <button onClick={() => { setPendingReturnUrl('/search'); navigate('/create-account'); }}
+                          className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-colors">
+                          Sign Up
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <>
                       {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : 5).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}

@@ -530,13 +530,20 @@ export function Home() {
       <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
         <Lock className="w-7 h-7 text-indigo-600" />
       </div>
-      <p className="font-black text-gray-900 text-lg mb-1">Login to see Opportunities</p>
+      <p className="font-black text-gray-900 text-lg mb-1">Login or sign up to see Opportunities</p>
       <p className="text-sm text-gray-400 mb-5 max-w-xs">Create a free account to browse and apply to Opportunities on Filmons.</p>
-      <button
-        onClick={() => { setPendingReturnUrl('/'); navigate('/login'); }}
-        className="w-full max-w-xs py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
-        Log In
-      </button>
+      <div className="flex gap-2 w-full max-w-xs">
+        <button
+          onClick={() => { setPendingReturnUrl('/'); navigate('/login'); }}
+          className="flex-1 py-3 border border-gray-200 text-gray-700 text-sm font-bold rounded-2xl active:opacity-80">
+          Log In
+        </button>
+        <button
+          onClick={() => { setPendingReturnUrl('/'); navigate('/create-account'); }}
+          className="flex-1 py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
+          Sign Up
+        </button>
+      </div>
     </div>
   );
 
