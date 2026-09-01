@@ -665,7 +665,10 @@ const sheetBgV   = { hidden:{ opacity:0 }, visible:{ opacity:1 }, exit:{ opacity
 const chipContainerV = { hidden:{}, visible:{ transition:{ staggerChildren:0.03, delayChildren:0.08 } } };
 const chipV  = { hidden:{ opacity:0, y:10 }, visible:{ opacity:1, y:0, transition:{ duration:0.2, ease:'easeOut' as const } } };
 const listV  = { hidden:{}, visible:{ transition:{ staggerChildren:0.04 } } };
-const itemV  = { hidden:{ opacity:0, y:8 }, visible:{ opacity:1, y:0, transition:{ duration:0.15, ease:'easeOut' as const } } };
+// FILMONS pop-up appearance -- scale only, opacity stays at 1 throughout
+// (no fade, no slide, no translateY per spec). staggerChildren above
+// (40ms) already matches the card-to-card stagger this calls for.
+const itemV  = { hidden:{ scale:0.85 }, visible:{ scale:[0.85, 1.03, 1], transition:{ duration:0.3, times:[0, 0.75, 1], ease:[0.22, 1, 0.36, 1] as const } } };
 const suggV  = { hidden:{ opacity:0, y:-4 }, visible:{ opacity:1, y:0, transition:{ duration:0.12, ease:'easeOut' as const } } };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -1354,7 +1357,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
         {/* ── Category tabs — always visible, not gated on typing, so tapping
              one fetches that category immediately with no query typed yet ── */}
-        <div className="shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
+        <div className="pop-in shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => trySetTab(tab.id)}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${

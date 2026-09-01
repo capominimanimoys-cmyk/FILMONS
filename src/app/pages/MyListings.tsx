@@ -142,7 +142,7 @@ export function MyListings() {
                   <button onClick={() => setSearch('')} className="text-xs text-blue-600 mt-2 font-semibold">Clear search</button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 gap-4">
                   {filtered.map(listing => (
                     <ListingCard
                       key={listing.id}

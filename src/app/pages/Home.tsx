@@ -615,7 +615,7 @@ export function Home() {
                  real access decision is still re-checked server-side in
                  handleFilter, so a direct entry point can't bypass this by
                  just being invisible here). ── */}
-            <div ref={filterRowRef} className="flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
+            <div ref={filterRowRef} className="pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
               {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
                 <button
                   key={f.id}

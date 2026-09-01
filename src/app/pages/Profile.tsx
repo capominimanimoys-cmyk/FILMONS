@@ -1513,7 +1513,7 @@ export function Profile() {
                 {listings.length > 0 ? (
                   <>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Listings</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="pop-stagger grid grid-cols-2 gap-2">
                       {listings.slice(0, 4).map(l => <ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}
                     </div>
                     {listings.length > 4 && (
@@ -1671,7 +1671,7 @@ export function Profile() {
               </div>
               {listings.length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
-                : <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>
+                : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>
               }
             </div>
           )}

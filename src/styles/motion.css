@@ -160,6 +160,36 @@ html[data-theme="dark"] .skeleton {
 .stagger > *:nth-child(6) { animation-delay:200ms; }
 .stagger > *:nth-child(n+7) { animation-delay:240ms; }
 
+/* ── 8b. Pop-up appearance — category sections + listing cards ────────────
+   Pure scale, no opacity/translate (explicitly not the fade-up stagger
+   above) -- transform-only so it plays even on an element that's already
+   opaque, and never fights a parent's own opacity transition. A CSS
+   `animation` naturally plays exactly once per DOM node on mount and
+   never replays on re-render, which is what "don't replay on cards
+   already displayed" needs -- no JS state required, just don't force a
+   `key` change on cards that are still the same card. ────────────────── */
+@keyframes filmons-pop {
+  0%   { transform: scale(0.85); }
+  75%  { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+.pop-in {
+  transform-origin: center;
+  animation: filmons-pop 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pop-stagger > * {
+  transform-origin: center;
+  animation: filmons-pop 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pop-stagger > *:nth-child(1) { animation-delay:   0ms; }
+.pop-stagger > *:nth-child(2) { animation-delay:  40ms; }
+.pop-stagger > *:nth-child(3) { animation-delay:  80ms; }
+.pop-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.pop-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.pop-stagger > *:nth-child(6) { animation-delay: 200ms; }
+.pop-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.pop-stagger > *:nth-child(n+8) { animation-delay: 280ms; }
+
 /* ── 9. Shared element transition helper ─────────────────────────────────── */
 [data-animate-id] {
   will-change: transform;
