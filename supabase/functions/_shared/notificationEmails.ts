@@ -60,7 +60,7 @@ const TEMPLATE_LISTING_SUGGESTION      = 'template_dx3stud';
 const TEMPLATE_SUPPORT_CASE_ADMIN      = 'template_g2g3fod';
 // Placeholder until created in the EmailJS dashboard from
 // support-case-user-reply-admin-email.html and the real id is swapped in.
-const TEMPLATE_SUPPORT_CASE_USER_REPLY_ADMIN = 'template_TODO_support_user_reply';
+const TEMPLATE_SUPPORT_CASE_USER_REPLY_ADMIN = 'template_5a554xr';
 const TEMPLATE_MESSAGE_REQUEST_ACCEPTED = 'template_nzfmrsm';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
 // and the real template ids are swapped in (same process as every other
