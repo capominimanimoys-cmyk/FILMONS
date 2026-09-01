@@ -520,6 +520,26 @@ export function Home() {
     </div>
   );
 
+  // Guests never see Opportunity content at all now -- previously they
+  // browsed the same capped (5/day) deck as Creator/Creator+, but
+  // Opportunities are meant to be a signed-in feature; prompt login
+  // instead of building a deck (or spending a guest's swipe budget) for
+  // someone who was never going to be able to apply anyway.
+  const loginToSeeOpportunitiesScreen = (
+    <div className="flex flex-col items-center py-20 px-6 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+        <Lock className="w-7 h-7 text-indigo-600" />
+      </div>
+      <p className="font-black text-gray-900 text-lg mb-1">Login to see Opportunities</p>
+      <p className="text-sm text-gray-400 mb-5 max-w-xs">Create a free account to browse and apply to Opportunities on Filmons.</p>
+      <button
+        onClick={() => { setPendingReturnUrl('/'); navigate('/login'); }}
+        className="w-full max-w-xs py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
+        Log In
+      </button>
+    </div>
+  );
+
   // Shown instead of caughtUpScreen when returning to a filter that was
   // already finished in an earlier session and new unseen items have since
   // appeared -- requires an explicit "Start Swiping" rather than silently
@@ -619,7 +639,8 @@ export function Home() {
                   generic "Nothing here yet" state meant for a filter that
                   never had any listings at all) the caught-up/empty/new-
                   opportunities states, then the deck itself. */}
-              {loadError ? errorScreen : deckDone
+              {(filter === 'talent' && !user) ? loginToSeeOpportunitiesScreen
+                  : loadError ? errorScreen : deckDone
                   ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
                   : deck.length === 0
                   ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : emptyState)

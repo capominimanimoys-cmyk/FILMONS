@@ -50,14 +50,16 @@ export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
             )}
           </Link>
 
-          {/* Avatar */}
-          <Link to={user ? '/profile' : '/login'}
-            className="w-8 h-8 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center ml-1 border border-gray-200">
-            {user?.avatar
-              ? <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-              : <span className="text-xs font-bold text-gray-500">{user?.name?.[0]?.toUpperCase() || '?'}</span>
-            }
-          </Link>
+          {/* Avatar — guests have no profile to link to, so nothing to show here */}
+          {user && (
+            <Link to="/profile"
+              className="w-8 h-8 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center ml-1 border border-gray-200">
+              {user.avatar
+                ? <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                : <span className="text-xs font-bold text-gray-500">{user.name?.[0]?.toUpperCase() || '?'}</span>
+              }
+            </Link>
+          )}
         </div>
       </div>
     </header>

@@ -1465,12 +1465,23 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               )}
               {visibleOpportunities.length > 0 && (
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}>
-                  {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : 5).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                  {!canBrowseOpportunities && visibleOpportunities.length > 5 && (
-                    <button onClick={() => setShowOpportunityGate(true)}
-                      className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-                      See More
+                  {!user ? (
+                    // Opportunities are a signed-in feature -- a guest never
+                    // gets a preview slice here, just a login prompt.
+                    <button onClick={() => { setPendingReturnUrl('/search'); navigate('/login'); }}
+                      className="w-full py-4 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors rounded-xl">
+                      Login to see Opportunities
                     </button>
+                  ) : (
+                    <>
+                      {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : 5).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                      {!canBrowseOpportunities && visibleOpportunities.length > 5 && (
+                        <button onClick={() => setShowOpportunityGate(true)}
+                          className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+                          See More
+                        </button>
+                      )}
+                    </>
                   )}
                 </ResultSection>
               )}
