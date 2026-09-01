@@ -446,11 +446,15 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           </div>
           {isOpportunity && listing.opportunity ? (
             <>
-              <p className="text-sm font-bold text-gray-900 mt-1.5">
-                {listing.opportunity.paid
-                  ? `$${listing.price} ${listing.opportunity.currency || 'CAD'}${listing.opportunity.compensationType === 'hourly' ? '/hr' : listing.opportunity.compensationType === 'daily' ? '/day' : ''}`
-                  : <span className="text-gray-500">Unpaid / Collaboration</span>}
-              </p>
+              {listing.opportunity.paid && listing.opportunity.compensationType === 'negotiable' ? (
+                <p className="text-sm font-bold text-indigo-700 mt-1.5">Negotiate your rate</p>
+              ) : (
+                <p className="text-sm font-bold text-gray-900 mt-1.5">
+                  {listing.opportunity.paid
+                    ? `$${listing.price} ${listing.opportunity.currency || 'CAD'}${listing.opportunity.compensationType === 'hourly' ? '/hr' : listing.opportunity.compensationType === 'daily' ? '/day' : ''}`
+                    : <span className="text-gray-500">Unpaid / Collaboration</span>}
+                </p>
+              )}
               <div className="flex flex-wrap gap-1 mt-1.5">
                 {listing.opportunity.workArrangement && (
                   <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize">{listing.opportunity.workArrangement}</span>

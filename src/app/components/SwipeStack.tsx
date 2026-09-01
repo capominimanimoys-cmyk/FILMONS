@@ -256,10 +256,18 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
       onPointerUp={up}
       onPointerCancel={cancel}
     >
-      {item.kind === 'listing'
-        ? <ListingContent listing={item.data}/>
-        : <CreatorContent profile={item.data}/>
-      }
+      {/* pop-in on an INNER wrapper, not this outer div -- the outer div
+          already carries its own transform (drag position + STACK[stackPos]
+          stack offset), and a CSS animation fighting an ancestor's own
+          transform is the exact bug that broke ListingCard's shared-element
+          tap feedback earlier (see its active:scale comment). Decoupling
+          here the same way. */}
+      <div className="pop-in">
+        {item.kind === 'listing'
+          ? <ListingContent listing={item.data}/>
+          : <CreatorContent profile={item.data}/>
+        }
+      </div>
 
       {showSave && (
         <div className="absolute top-3 right-3 pointer-events-none" style={{ opacity: Math.min(1, (drag.x - 35) / 55) }}>

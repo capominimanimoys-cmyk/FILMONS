@@ -469,12 +469,7 @@ function Step6({ form, set }: { form: OppFormState; set: (f: Partial<OppFormStat
             { value: 'fixed', label: 'Fixed project rate' }, { value: 'salary', label: 'Salary' },
             { value: 'negotiable', label: 'Negotiable' },
           ]} />
-          {form.compensationType === 'negotiable' ? (
-            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center gap-2.5">
-              <DollarSign className="w-4 h-4 text-indigo-600 shrink-0" />
-              <p className="text-sm font-bold text-indigo-700">Negotiate your compensation</p>
-            </div>
-          ) : (
+          {form.compensationType !== 'negotiable' && (
             <div className="grid grid-cols-2 gap-3">
               <Field><Label>Minimum</Label><Input type="number" min="0" value={form.compensationMin} onChange={e => set({ compensationMin: e.target.value, compensationAmount: e.target.value })} placeholder="$300" /></Field>
               <Field><Label>Maximum</Label><Input type="number" min="0" value={form.compensationMax} onChange={e => set({ compensationMax: e.target.value })} placeholder="$400" /></Field>
