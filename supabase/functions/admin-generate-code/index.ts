@@ -23,7 +23,7 @@ const RESEND_COOLDOWN_MS = 45 * 1000;
 const EMAILJS_SERVICE_ID = 'service_s6wwjtj';
 const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
 const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
-const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
+const EMAILJS_TEMPLATE_ADMIN_CODE = 'template_qrp0tnc';
 
 async function sha256Hex(input: string): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -86,13 +86,12 @@ Deno.serve(async (req) => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           service_id: EMAILJS_SERVICE_ID,
-          template_id: EMAILJS_TEMPLATE_ADMIN_NOTIFICATION,
+          template_id: EMAILJS_TEMPLATE_ADMIN_CODE,
           user_id: EMAILJS_PUBLIC_KEY,
           accessToken: EMAILJS_PRIVATE_KEY,
           template_params: {
             to_email: ADMIN_RECIPIENT_EMAIL, to_name: admin.name,
-            subject: 'FILMONS Admin — your sign-in code',
-            message: `Your FILMONS Admin verification code is: ${codeStr}\n\nThis code expires in 10 minutes and can only be used once. If you didn't request this, you can ignore this email.`,
+            code: codeStr, expires_minutes: String(CODE_TTL_MS / 60_000),
           },
         }),
       });
