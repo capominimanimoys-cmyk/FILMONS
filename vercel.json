@@ -6,6 +6,11 @@
     { "source": "/api/fn/:name*", "destination": "https://snajrdvcwsbjqefaftsj.supabase.co/functions/v1/:name*" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/admin/(.*)", "destination": "/admin.html" },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "admin.filmons.app" }],
+      "destination": "/admin.html"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
