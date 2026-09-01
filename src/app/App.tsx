@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { RouterProvider } from 'react-router';
+import { LayoutGroup } from 'motion/react';
 import { router } from './routes';
 import { AuthProvider } from './context/AuthContext';
 import { FollowProvider } from './context/FollowContext';
@@ -39,7 +40,14 @@ export default function App() {
         <PostProvider>
           <NotificationsProvider>
             <NotificationBannerProvider>
-              <RouterProvider router={router} />
+              {/* Persists across every route change so the Home listing
+                  card -> Listing Details hero shared-image transition
+                  (matching layoutId in ListingCard.tsx / ListingDetail.tsx)
+                  can animate across the navigation instead of just
+                  hard-cutting between the two pages. */}
+              <LayoutGroup>
+                <RouterProvider router={router} />
+              </LayoutGroup>
               <Toaster richColors position="top-center" />
             </NotificationBannerProvider>
           </NotificationsProvider>

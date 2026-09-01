@@ -1,5 +1,6 @@
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router';
+import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion } from 'motion/react';
 import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
 import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,7 +10,6 @@ import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
-import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -70,9 +70,16 @@ function Lightbox({ items, startIndex, onClose }: {
 export function ListingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const highlightReviewId = searchParams.get('review');
   const { user, showGuestPrompt } = useAuth() as any;
+  // Passed by ListingCard's handleClick (see navigate(..., { state })) so
+  // the hero image/title/price can render the instant this page mounts,
+  // before the real fetch below resolves -- no global full-screen loader,
+  // no blank flash of nothing. Only ever a hint for the loading state;
+  // `listing` (once fetched) is always the real, authoritative data.
+  const preview = (location.state as { preview?: { title: string; price: number; cover: string | null; city?: string } } | null)?.preview;
   const [listing, setListing]             = useState<Listing | null>(null);
   const [host, setHost]                   = useState<User | null>(null);
   const [reviews, setReviews]             = useState<Review[]>([]);
@@ -207,9 +214,66 @@ export function ListingDetail() {
     };
   }, [priceApplyEl]);
 
+  // No full-screen brand loader here on purpose -- the whole point of
+  // passing `preview` through navigation state is that the image the
+  // user just tapped (and its title/price, if we have them) can render
+  // immediately, in the real page layout, with skeletons standing in for
+  // whatever the fetch below hasn't returned yet. A direct link/refresh
+  // (no `preview`) still gets this same structure, just starting from
+  // an empty gray hero instead of the real photo.
   if (loading) return (
-    <div className="min-h-screen bg-white flex items-center justify-center">
-      <FilmonsBrandLoader size="lg"/>
+    <div className="min-h-screen bg-white">
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </button>
+      </div>
+      <div className="max-w-5xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <motion.div
+              layoutId={id ? `listing-image-${id}` : undefined}
+              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100"
+            >
+              {preview?.cover
+                ? <img src={preview.cover} alt={preview.title} className="w-full h-full object-cover" />
+                : <div className="w-full h-full animate-pulse bg-gray-100" />}
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, delay: 0.08 }}>
+              {preview ? (
+                <>
+                  <h1 className="text-xl font-black text-gray-900">{preview.title}</h1>
+                  {preview.city && <p className="text-sm text-gray-400 mt-1">{preview.city}</p>}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <div className="h-6 w-2/3 rounded-lg bg-gray-100 animate-pulse" />
+                  <div className="h-4 w-1/3 rounded-lg bg-gray-100 animate-pulse" />
+                </div>
+              )}
+            </motion.div>
+            <div className="space-y-2">
+              <div className="h-4 w-full rounded-lg bg-gray-100 animate-pulse" />
+              <div className="h-4 w-full rounded-lg bg-gray-100 animate-pulse" />
+              <div className="h-4 w-2/3 rounded-lg bg-gray-100 animate-pulse" />
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-gray-100 p-4 space-y-3">
+              {preview && <p className="text-lg font-black text-gray-900">${preview.price} <span className="text-xs font-normal text-gray-400">CAD</span></p>}
+              <div className="h-11 rounded-xl bg-gray-100 animate-pulse" />
+            </div>
+            <div className="rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-gray-100 animate-pulse shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3.5 w-1/2 rounded bg-gray-100 animate-pulse" />
+                <div className="h-3 w-1/3 rounded bg-gray-100 animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -307,8 +371,14 @@ export function ListingDetail() {
             {/* ── Media Gallery ── */}
             {allMedia.length > 0 && (
               <div className="space-y-2">
-                {/* Main image */}
-                <div
+                {/* Main image — same layoutId as the loading-state hero
+                    above and ListingCard's image, so a card tap, the
+                    skeleton, and the real gallery are all one continuous
+                    shared-element transition rather than three separate
+                    swaps. */}
+                <motion.div
+                  layoutId={id ? `listing-image-${id}` : undefined}
+                  transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
                   className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group"
                   onClick={() => openLightbox(allMedia, activeImg)}
                 >
@@ -334,7 +404,7 @@ export function ListingDetail() {
                       <ChevronRight className="w-4 h-4" />
                     </div>
                   </div>
-                </div>
+                </motion.div>
                 {/* Thumbnails */}
                 {allMedia.length > 1 && (
                   <div className="flex gap-2 overflow-x-auto pb-1">
@@ -353,7 +423,7 @@ export function ListingDetail() {
             )}
 
             {/* ── Title + meta ── */}
-            <div>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, delay: 0.08 }}>
               <div className="flex items-center gap-2 flex-wrap mb-2">
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${
                   isOpportunity ? 'bg-indigo-600 text-white'
@@ -398,7 +468,7 @@ export function ListingDetail() {
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
 
             {/* ── Host ── */}
             {host && (

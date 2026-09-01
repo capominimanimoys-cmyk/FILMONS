@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router';
+import { motion } from 'motion/react';
 import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users } from 'lucide-react';
 import { Listing } from '../types';
 import { savedListingsApi, invalidateListingsCache } from '../lib/api';
@@ -252,8 +253,17 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
 
   const handleClick = () => {
     if (didLongPress.current) return; // don't navigate after long press
-    if (onClick) onClick();
-    else navigate(`/listing/${listing.id}`);
+    if (onClick) { onClick(); return; }
+    // Seeds ListingDetail's hero/title/price the instant it mounts (see
+    // its `preview` read of location.state) so the shared-image
+    // transition has real content to show immediately instead of a
+    // blank loading state -- this is a hint only, never trusted as the
+    // real data (ListingDetail always fetches fresh regardless).
+    const previewCover = listing.image ||
+      (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string') : null);
+    navigate(`/listing/${listing.id}`, {
+      state: { preview: { title: listing.title, price: listing.price, cover: previewCover, city: listing.city } },
+    });
   };
 
   const handleSave = useCallback(async (e?: React.MouseEvent) => {
@@ -333,15 +343,25 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         />
       )}
 
-      <div
+      <motion.div
         onClick={handleClick}
         onTouchStart={startPress}
         onTouchEnd={endPress}
         onTouchMove={endPress}
+        whileTap={{ scale: 0.98 }}
+        transition={{ duration: 0.1 }}
         className={`cursor-pointer group select-none film-card ${className}`}
       >
-        {/* Image container */}
-        <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 mb-3">
+        {/* Image container — shares a layoutId with ListingDetail's hero
+            image so tapping into a listing animates as the card expanding
+            into place instead of a hard page cut (see App.tsx's
+            LayoutGroup). Only meaningful for real listings (a stable id);
+            skip it for anything without one so an ad-hoc/preview card
+            never collides with a real listing's transition. */}
+        <motion.div
+          layoutId={listing.id ? `listing-image-${listing.id}` : undefined}
+          className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 mb-3"
+        >
           {cover ? (
             <img src={cover} alt={listing.title}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
@@ -400,7 +420,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
               <MapPin className="w-2.5 h-2.5"/> {distanceLabel(listing.distance)}
             </span>
           )}
-        </div>
+        </motion.div>
 
         {/* Info */}
         <div className="px-0.5">
@@ -439,7 +459,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
             </p>
           )}
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }
