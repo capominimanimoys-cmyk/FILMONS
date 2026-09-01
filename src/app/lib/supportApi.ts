@@ -94,6 +94,13 @@ export const supportApi = {
   },
 
   // ── Case creation (escalation) ───────────────────────────────────────
+  // Reuses an existing case for this user if one is still open (any status
+  // other than resolved/closed) instead of always creating a new one --
+  // "Contact Agent" a second time while a case is already active continues
+  // that same case (and the same conversation the admin's already seeing
+  // in Support Chats), rather than splitting into parallel cases. Only a
+  // genuinely new request, after the previous case was closed, starts a
+  // fresh one.
   async createCase(params: {
     userId: string; category: string; subcategory?: string; subject: string;
     relatedIds: RelatedIds; aiSummary: string | null; priorTurns: ChatTurn[];
@@ -103,27 +110,58 @@ export const supportApi = {
         ? 'urgent'
         : ['payments_refunds', 'wallet_payouts'].includes(params.category) ? 'high' : 'normal';
 
-    const { data, error } = await supabase.from('support_cases').insert({
-      user_id: params.userId,
-      category: params.category,
-      subcategory: params.subcategory || null,
-      subject: params.subject,
-      status: 'waiting_for_agent',
-      priority,
-      related_order_id: params.relatedIds.orderId || null,
-      related_listing_id: params.relatedIds.listingId || null,
-      related_wallet_transaction_id: params.relatedIds.walletTransactionId || null,
-      related_payout_request_id: params.relatedIds.payoutRequestId || null,
-      related_verification_id: params.relatedIds.verificationId || null,
-      ai_summary: params.aiSummary,
-    }).select('*').single();
-    if (error || !data) throw new Error(error?.message || 'Could not create case');
+    const { data: existing } = await supabase
+      .from('support_cases')
+      .select('*')
+      .eq('user_id', params.userId)
+      .not('status', 'in', '(resolved,closed)')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let data: SupportCase;
+    if (existing) {
+      const { data: updated, error: updateError } = await supabase
+        .from('support_cases')
+        .update({
+          status: 'waiting_for_agent',
+          // A later message can carry a fuller AI summary than the one the
+          // case was originally opened with -- keep the newest.
+          ai_summary: params.aiSummary || existing.ai_summary,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+      if (updateError || !updated) throw new Error(updateError?.message || 'Could not continue existing case');
+      data = updated;
+    } else {
+      const { data: created, error } = await supabase.from('support_cases').insert({
+        user_id: params.userId,
+        category: params.category,
+        subcategory: params.subcategory || null,
+        subject: params.subject,
+        status: 'waiting_for_agent',
+        priority,
+        related_order_id: params.relatedIds.orderId || null,
+        related_listing_id: params.relatedIds.listingId || null,
+        related_wallet_transaction_id: params.relatedIds.walletTransactionId || null,
+        related_payout_request_id: params.relatedIds.payoutRequestId || null,
+        related_verification_id: params.relatedIds.verificationId || null,
+        ai_summary: params.aiSummary,
+      }).select('*').single();
+      if (error || !created) throw new Error(error?.message || 'Could not create case');
+      data = created;
+    }
 
     if (params.priorTurns.length) {
       const rows = params.priorTurns.map(t => ({
         case_id: data.id,
         sender_type: t.role === 'user' ? 'user' : 'ai',
         content: t.content,
+        // Only a real customer-authored turn needs the admin's attention;
+        // the AI's own replies don't count toward the unread badge.
+        is_read_by_admin: t.role !== 'user',
       }));
       await supabase.from('support_messages').insert(rows);
     }
@@ -155,7 +193,7 @@ export const supportApi = {
   async sendUserMessage(caseId: string, userId: string, userName: string, content: string, attachments: { path: string; name: string }[] = []) {
     const { error } = await supabase.from('support_messages').insert({
       case_id: caseId, sender_type: 'user', sender_id: userId, sender_name: userName,
-      content, attachments,
+      content, attachments, is_read_by_admin: false,
     });
     if (error) throw new Error(error.message);
     await supabase.from('support_cases').update({ updated_at: new Date().toISOString(), status: 'in_review' }).eq('id', caseId);

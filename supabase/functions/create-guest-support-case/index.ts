@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
       method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
       body: JSON.stringify({
         case_id: row.id, sender_type: 'user', sender_name: cleanName,
-        content: cleanMessage, attachments,
+        content: cleanMessage, attachments, is_read_by_admin: false,
       }),
     });
 

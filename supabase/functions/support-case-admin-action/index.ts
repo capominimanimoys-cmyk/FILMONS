@@ -35,18 +35,35 @@ const EMAILJS_PUBLIC_KEY = 'iSSpIM-AeV9uUQ7Jt';
 const EMAILJS_PRIVATE_KEY = Deno.env.get('EMAILJS_PRIVATE_KEY') || '';
 const EMAILJS_TEMPLATE_ADMIN_NOTIFICATION = 'template_rd3nhik';
 
-async function notifyCustomer(userId: string, caseNumber: string, caseId: string) {
-  await fetch(rest('/notifications'), {
-    method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-    body: JSON.stringify({
-      user_id: userId, actor_id: null, actor_name: 'Filmons Support',
-      type: 'support_reply', title: 'Filmons Support replied', is_read: false,
-      conversation_id: caseId,
-    }),
-  }).catch(() => {});
+async function notifyCustomer(supportCase: Record<string, any>, caseNumber: string, caseId: string) {
+  // Guest cases (user_id null, guest_name/guest_email set instead) have no
+  // profiles row and no in-app notification target -- email is their only
+  // channel. Previously this always looked up `profiles` by userId, which
+  // for a guest case queried literally `id=eq.null` and matched nothing,
+  // so guests never got an email when an admin replied at all.
+  const isGuest = !supportCase.user_id;
+  let toEmail: string | undefined;
+  let toName: string | undefined;
 
-  const user = await selectOne('profiles', `id=eq.${userId}`);
-  if (!user?.email) return;
+  if (!isGuest) {
+    await fetch(rest('/notifications'), {
+      method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        user_id: supportCase.user_id, actor_id: null, actor_name: 'Filmons Support',
+        type: 'support_reply', title: 'Filmons Support replied', is_read: false,
+        conversation_id: caseId,
+      }),
+    }).catch(() => {});
+
+    const user = await selectOne('profiles', `id=eq.${supportCase.user_id}`);
+    toEmail = user?.email;
+    toName = user?.name || 'there';
+  } else {
+    toEmail = supportCase.guest_email;
+    toName = supportCase.guest_name || 'there';
+  }
+
+  if (!toEmail) return;
   try {
     const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -57,9 +74,11 @@ async function notifyCustomer(userId: string, caseNumber: string, caseId: string
         user_id: EMAILJS_PUBLIC_KEY,
         accessToken: EMAILJS_PRIVATE_KEY,
         template_params: {
-          to_email: user.email, to_name: user.name || 'there',
+          to_email: toEmail, to_name: toName,
           subject: `Filmons Support replied — case ${caseNumber}`,
-          message: `There's an update on your support case ${caseNumber}. Open the Filmons app to view the response.`,
+          message: isGuest
+            ? `There's an update on your support case ${caseNumber}. Reply to this email or contact us again with your case number to continue.`
+            : `There's an update on your support case ${caseNumber}. Open the Filmons app to view the response.`,
         },
       }),
     });
@@ -143,7 +162,7 @@ Deno.serve(async (req) => {
     });
 
     if (action === 'reply') {
-      await notifyCustomer(supportCase.user_id, supportCase.case_number, caseId);
+      await notifyCustomer(supportCase, supportCase.case_number, caseId);
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });

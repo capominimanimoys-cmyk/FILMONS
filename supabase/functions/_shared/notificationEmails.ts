@@ -508,7 +508,7 @@ export function sendSupportCaseAdminEmail(p: {
     case_category: p.category,
     case_message: p.message,
     submitted_at: p.submittedAt,
-    admin_case_url: `https://filmons.app/admin-support`,
+    admin_case_url: `https://filmons.app/admin/support-chats`,
   });
 }
 
@@ -533,7 +533,7 @@ export function sendGuestSupportRequestAdminEmail(p: {
     message: p.message,
     submitted_at: p.submittedAt,
     user_type: 'Guest',
-    admin_case_url: `https://filmons.app/admin-support`,
+    admin_case_url: `https://filmons.app/admin/support-chats`,
   });
 }
 
