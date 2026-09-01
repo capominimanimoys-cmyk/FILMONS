@@ -17,8 +17,17 @@ export const config = {
 
 export default function middleware(request) {
   const url = new URL(request.url);
-  if (url.hostname === 'admin.filmons.app') {
-    url.pathname = '/admin.html';
-    return rewrite(url);
-  }
+  if (url.hostname !== 'admin.filmons.app') return;
+
+  // Only rewrite page navigations (clean, extension-less paths like "/"
+  // or "/verifications") to admin.html -- a real static asset request
+  // (/assets/admin-*.js, *.css, fonts, images...) must pass through
+  // untouched. Without this check the matcher below catches EVERY
+  // request on this host, including the admin bundle's own JS file,
+  // which then gets rewritten to admin.html's markup instead of served
+  // as JS -- the browser fails to execute it and the page stays blank.
+  if (/\.[a-zA-Z0-9]+$/.test(url.pathname)) return;
+
+  url.pathname = '/admin.html';
+  return rewrite(url);
 }
