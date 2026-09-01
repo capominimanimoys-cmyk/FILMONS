@@ -427,11 +427,19 @@ function Step5({ form, set }: { form: OppFormState; set: (f: Partial<OppFormStat
           { value: 'ongoing', label: 'Ongoing / recurring' }, { value: 'flexible', label: 'Flexible' },
         ]} />
         {form.timingType !== 'flexible' && (
+          // min-w-0 on each cell -- CSS Grid items default to
+          // min-width:auto, meaning they never shrink below their
+          // content's intrinsic width, and a native date/time picker's
+          // intrinsic width is wide enough that it was forcing each grid
+          // cell (and the input inside it) wider than the 2-column
+          // layout actually had room for. Also tightened padding/font on
+          // just these inputs so the native widget itself renders
+          // narrower instead of overflowing its cell.
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <Field><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => set({ startDate: e.target.value })} /></Field>
-            <Field><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => set({ endDate: e.target.value })} /></Field>
-            <Field><Label>Start Time</Label><Input type="time" value={form.startTime} onChange={e => set({ startTime: e.target.value })} /></Field>
-            <Field><Label>End Time</Label><Input type="time" value={form.endTime} onChange={e => set({ endTime: e.target.value })} /></Field>
+            <Field className="min-w-0"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => set({ startDate: e.target.value })} className="px-3 text-sm" /></Field>
+            <Field className="min-w-0"><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => set({ endDate: e.target.value })} className="px-3 text-sm" /></Field>
+            <Field className="min-w-0"><Label>Start Time</Label><Input type="time" value={form.startTime} onChange={e => set({ startTime: e.target.value })} className="px-3 text-sm" /></Field>
+            <Field className="min-w-0"><Label>End Time</Label><Input type="time" value={form.endTime} onChange={e => set({ endTime: e.target.value })} className="px-3 text-sm" /></Field>
           </div>
         )}
         <Field><Label>Estimated number of work/shoot days</Label><Input type="number" min="1" value={form.estimatedWorkDays} onChange={e => set({ estimatedWorkDays: e.target.value })} placeholder="e.g. 3" /></Field>
