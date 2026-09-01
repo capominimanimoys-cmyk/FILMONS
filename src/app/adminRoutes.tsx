@@ -3,6 +3,8 @@ import { AdminLayout } from './components/AdminLayout';
 import { AdminDashboardHome } from './pages/AdminDashboardHome';
 import { AdminUsers } from './pages/AdminUsers';
 import { AdminUserDetail } from './pages/AdminUserDetail';
+import { AdminTransactions } from './pages/AdminTransactions';
+import { AdminTransactionDetail } from './pages/AdminTransactionDetail';
 import { AdminVerifications } from './pages/AdminVerifications';
 import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
@@ -29,7 +31,8 @@ const adminRouteTree = [
       // conversation once its case list has loaded.
       { path: 'support/cases/:caseNumber', Component: AdminSupportChats },
       { path: 'boosts',        Component: AdminBoosts },
-      { path: 'transactions',  element: <AdminComingSoon title="Transactions" /> },
+      { path: 'transactions',  Component: AdminTransactions },
+      { path: 'transactions/:orderId', Component: AdminTransactionDetail },
       { path: 'users',         Component: AdminUsers },
       { path: 'users/:userId', Component: AdminUserDetail },
       { path: 'listings',      element: <AdminComingSoon title="Listings" /> },
