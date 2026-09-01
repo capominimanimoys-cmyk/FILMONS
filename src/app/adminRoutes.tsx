@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AdminLayout } from './components/AdminLayout';
+import { AdminDashboardHome } from './pages/AdminDashboardHome';
 import { AdminVerifications } from './pages/AdminVerifications';
 import { AdminSupportChats } from './pages/AdminSupportChats';
 import { AdminBoosts } from './pages/AdminBoosts';
@@ -17,8 +18,8 @@ const adminRouteTree = [
     path: '/',
     Component: AdminLayout,
     children: [
-      { index: true, element: <Navigate to="/support-chats" replace /> },
-      { path: 'dashboard',     element: <AdminComingSoon title="Dashboard" /> },
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { path: 'dashboard',     Component: AdminDashboardHome },
       { path: 'verifications', Component: AdminVerifications },
       { path: 'support-chats', Component: AdminSupportChats },
       // Deep link from the "new case" admin-notification email --
