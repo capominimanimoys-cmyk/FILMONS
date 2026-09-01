@@ -19,6 +19,14 @@ export default function middleware(request) {
   const url = new URL(request.url);
   if (url.hostname !== 'admin.filmons.app') return;
 
+  // /api/fn/* is the same-origin proxy to Supabase edge functions
+  // (see vercel.json) -- adminAuth.ts's generateCode/verifyCode/etc all
+  // POST there. Must pass straight through so vercel.json's rewrite can
+  // still reach it; rewriting a POST to admin.html's static markup
+  // returns an empty body (405/empty response), which is why
+  // "Generate Code" failed with "Unexpected end of JSON input".
+  if (url.pathname.startsWith('/api/')) return;
+
   // Only rewrite page navigations (clean, extension-less paths like "/"
   // or "/verifications") to admin.html -- a real static asset request
   // (/assets/admin-*.js, *.css, fonts, images...) must pass through
