@@ -94,15 +94,6 @@ const GUIDES = [
   { icon: '💰', title: 'Getting Paid: Payouts Guide',          sub: '5 min read', cat: 'payments'     },
 ];
 
-const SYSTEM_STATUS = [
-  { name: 'API',           ok: true  },
-  { name: 'Messaging',     ok: true  },
-  { name: 'Uploads',       ok: true  },
-  { name: 'Payments',      ok: true  },
-  { name: 'Rentals',       ok: true  },
-  { name: 'Notifications', ok: true  },
-];
-
 // ─────────────────────────────────────────────────────────────────────────────
 // TICKET FORM
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,27 +264,6 @@ export function HelpCenter() {
                     <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
                   </button>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* System status */}
-          {!query && (
-            <div className="px-4 pt-5">
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 px-1">SYSTEM STATUS</p>
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-50">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"/>
-                  <p className="text-sm font-bold text-green-700">All Systems Operational</p>
-                </div>
-                <div className="grid grid-cols-3 gap-0 divide-x divide-gray-50">
-                  {SYSTEM_STATUS.map(s => (
-                    <div key={s.name} className="flex flex-col items-center py-3 gap-1">
-                      <div className={`w-2 h-2 rounded-full ${s.ok ? 'bg-green-400' : 'bg-red-400'}`}/>
-                      <p className="text-[10px] text-gray-500 font-medium">{s.name}</p>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           )}
