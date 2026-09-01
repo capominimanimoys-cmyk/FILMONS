@@ -51,6 +51,13 @@ interface VerificationRequest {
   avatarUrl?: string;
   primaryRole?: string;
   publicCity?: string;
+  // Read-only billing context -- Stripe-webhook-driven, never something
+  // this page approves/rejects (see accountType below: for Creator+
+  // specifically, approving THIS verification is what sets it, but for
+  // Professional/Business it's set purely by a separate paid checkout
+  // with no review step at all, so this is display-only here).
+  accountType?: string;
+  subscriptionStatus?: string;
   fullName: string;
   legalFirstName?: string;
   legalLastName?: string;
@@ -130,6 +137,16 @@ const fmt = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+// 'service' is the legacy stored value for what's shown as Creator+
+// everywhere else in this app (see normalizeTier/getTierLabel in
+// src/app/lib/reliabilityApi.ts) -- matched here too so an older
+// account doesn't misleadingly show "Creator → Creator+" when it's
+// already Creator+.
+const TIER_LABEL: Record<string, string> = {
+  creator: 'Creator', creator_plus: 'Creator+', service: 'Creator+',
+  professional: 'Professional', business: 'Business',
+};
 
 // ── Helpers ────────────────────────────────────────────────────────
 // Real completed orders from Supabase — every `orders` row is only ever
@@ -457,7 +474,7 @@ export function AdminVerifications() {
       // only ever read server-side by verification-reveal-id).
       const { data, error } = await supabase
         .from('identity_verifications_admin_view')
-        .select('*, profiles(name, username, email, phone, avatar_url, primary_role, city, email_verified, phone_verified)')
+        .select('*, profiles(name, username, email, phone, avatar_url, primary_role, city, email_verified, phone_verified, account_type, subscription_status)')
         .order('submitted_at', { ascending: false });
 
       if (!error && data) {
@@ -475,6 +492,8 @@ export function AdminVerifications() {
             avatarUrl:          profile.avatar_url || undefined,
             primaryRole:        profile.primary_role || undefined,
             publicCity:         profile.city || undefined,
+            accountType:        profile.account_type || undefined,
+            subscriptionStatus: profile.subscription_status || undefined,
             fullName:           [row.legal_first_name, row.legal_last_name].filter(Boolean).join(' '),
             legalFirstName:     row.legal_first_name || undefined,
             legalLastName:      row.legal_last_name || undefined,
@@ -1683,6 +1702,10 @@ export function AdminVerifications() {
                     </span>
                     <span className="text-[11px] text-gray-400">Submitted {new Date(selectedRequest.submittedAt).toLocaleDateString("en-CA", { year: 'numeric', month: "short", day: "numeric" })}</span>
                   </div>
+                  <p className="text-[11px] font-semibold text-gray-500 mt-1">
+                    {TIER_LABEL[selectedRequest.accountType || ''] || 'Creator'}
+                    {selectedRequest.accountType !== 'creator_plus' && selectedRequest.accountType !== 'service' && <> → <span className="text-blue-600">Creator+</span></>}
+                  </p>
                 </div>
               </div>
               <button
@@ -1695,6 +1718,39 @@ export function AdminVerifications() {
 
             <div className="p-5 space-y-5">
               <p className="text-[11px] text-gray-300 font-mono">Verification ID: {selectedRequest.id}</p>
+
+              {/* Verification checks — an at-a-glance summary of exactly
+                  what's real and checkable for THIS verification (Creator+
+                  identity only). Deliberately does not include a
+                  "Professional"/"Business" review item: no such review
+                  step exists anywhere in this app today (see
+                  ProfessionalAccountSteps.tsx/BusinessAccountSteps.tsx --
+                  neither persists a submission an admin could review), so
+                  showing one here would imply a feature that isn't real. */}
+              <section>
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2.5">Verification Checks</h3>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: 'Email verified', ok: selectedRequest.emailVerified },
+                    { label: 'Phone verified', ok: selectedRequest.phoneVerified },
+                    { label: 'ID submitted', ok: !!selectedRequest.idFrontPath || !!selectedRequest.documentsDeletedAt },
+                    { label: 'Selfie submitted', ok: !!selectedRequest.selfiePath || !!selectedRequest.documentsDeletedAt },
+                    { label: 'Proof of address submitted', ok: !!selectedRequest.proofOfAddressPath || !!selectedRequest.documentsDeletedAt },
+                  ].map(c => (
+                    <span key={c.label} className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full ${c.ok ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                      {c.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 inline-block" />}
+                      {c.label}
+                    </span>
+                  ))}
+                </div>
+                {/* Plan & billing -- display-only. Stripe-webhook-driven,
+                    never something this page approves or rejects; shown
+                    here purely for context while reviewing identity. */}
+                <p className="text-[11px] text-gray-400 mt-2.5">
+                  Plan: <span className="font-semibold text-gray-600">{TIER_LABEL[selectedRequest.accountType || ''] || 'Creator'}</span>
+                  {selectedRequest.subscriptionStatus && <> · Billing: <span className="font-semibold text-gray-600 capitalize">{selectedRequest.subscriptionStatus}</span></>}
+                </p>
+              </section>
 
               <div className="lg:grid lg:grid-cols-2 lg:gap-6 space-y-5 lg:space-y-0">
                 {/* ── LEFT: Public preview + Personal + Address ── */}
