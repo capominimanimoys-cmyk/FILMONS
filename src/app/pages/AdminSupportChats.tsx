@@ -376,23 +376,34 @@ export function AdminSupportChats() {
           <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Select a conversation</div>
         ) : (
           <>
-            <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-              <button onClick={() => setSelectedId(null)} className="md:hidden w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100">
-                <ArrowLeft className="w-4 h-4 text-gray-500" />
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-gray-900 truncate">{selected.subject}</p>
-                <p className="text-[11px] text-gray-400">#{selected.case_number} · {TOPIC_LABEL[selected.category] || selected.category}</p>
+            <div className="bg-white border-b border-gray-100 px-4 py-3 space-y-2.5">
+              <div className="flex items-start gap-3">
+                <button onClick={() => setSelectedId(null)} className="md:hidden w-7 h-7 mt-0.5 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
+                  <ArrowLeft className="w-4 h-4 text-gray-500" />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-black text-gray-900 leading-snug break-words">{selected.subject}</p>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11px] font-bold font-mono">
+                      #{selected.case_number}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[11px] font-semibold">
+                      {TOPIC_LABEL[selected.category] || selected.category}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <select value={selected.priority} onChange={e => doPriority(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
-                {['low', 'normal', 'high', 'urgent'].map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <select value={selected.status} onChange={e => doStatus(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
-                {Object.keys(STATUS_LABEL).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-              </select>
-              {!selected.assigned_admin_id && (
-                <button onClick={doAssign} className="text-xs font-bold text-blue-600 whitespace-nowrap">Assign to me</button>
-              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select value={selected.priority} onChange={e => doPriority(e.target.value)} className="text-xs font-semibold border border-gray-200 rounded-lg px-2 py-1.5">
+                  {['low', 'normal', 'high', 'urgent'].map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <select value={selected.status} onChange={e => doStatus(e.target.value)} className="text-xs font-semibold border border-gray-200 rounded-lg px-2 py-1.5">
+                  {Object.keys(STATUS_LABEL).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                </select>
+                {!selected.assigned_admin_id && (
+                  <button onClick={doAssign} className="text-xs font-bold text-blue-600 whitespace-nowrap px-2 py-1.5 rounded-lg hover:bg-blue-50">Assign to me</button>
+                )}
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
