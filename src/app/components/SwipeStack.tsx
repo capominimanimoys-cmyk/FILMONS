@@ -470,7 +470,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
           const cover = item.data.image || item.data.images?.find(i => typeof i === 'string');
           await supabase.from('favorites').upsert({
             user_id: user.id, item_id: item.data.id, item_type: 'listing',
-            item_data: { title: item.data.title, image: cover, price: item.data.price, city: item.data.city },
+            item_data: { title: item.data.title, image: cover, price: item.data.price, city: item.data.city, isEmergency: item.data.isEmergency, emergencyExpiresAt: item.data.emergencyExpiresAt },
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Saved: ${item.data.title}`);
           if (item.data.userId && item.data.userId !== user.id) {

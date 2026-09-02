@@ -153,7 +153,14 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
           {cover ? <img src={cover} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-lg">🎬</div>}
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-bold text-gray-900 truncate">{listing.title}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold text-gray-900 truncate">{listing.title}</p>
+            {!!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date() && (
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
+                <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
+              </span>
+            )}
+          </div>
           <p className="text-xs text-gray-400 flex items-center gap-1"><MapPin className="w-3 h-3" />{listing.city} · {comp}</p>
         </div>
       </button>

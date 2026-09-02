@@ -15,7 +15,7 @@ import {
   FileText, ThumbsUp, Package, Info, Grid3X3,
   Plus, Trash2, ChevronDown, ChevronUp, Check,
   Instagram, Youtube, Edit3, Share2, Repeat2,
-  Film, Music2, User, ExternalLink, MoreVertical,
+  Film, Music2, User, ExternalLink, MoreVertical, AlertTriangle,
 } from 'lucide-react';
 import { reviewsApi, listingsApi, postsApi, savedPostsApi } from '../lib/api';
 import { authApi } from '../lib/api';
@@ -1981,6 +1981,7 @@ export function Profile() {
                       const item = fav.item_data || {};
                       const price = item.price ? `$${Number(item.price).toLocaleString()}` : '';
                       const suffix = item.listingMode === 'rent' ? '/day' : item.listingType === 'service' ? '/hr' : '';
+                      const isEmergency = !!item.isEmergency && !!item.emergencyExpiresAt && new Date(item.emergencyExpiresAt) > new Date();
                       return (
                         <button
                           key={fav.item_id || fav.id}
@@ -1994,7 +1995,14 @@ export function Profile() {
                             }
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{item.title || 'Listing'}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{item.title || 'Listing'}</p>
+                              {isEmergency && (
+                                <span className="shrink-0 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
+                                  <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
+                                </span>
+                              )}
+                            </div>
                             {item.city && <p className="text-xs text-gray-400 truncate flex items-center gap-0.5"><MapPin className="w-3 h-3 shrink-0"/> {item.city}</p>}
                           </div>
                           {price && <p className="text-sm font-black text-blue-600 shrink-0">{price}{suffix}</p>}

@@ -4,7 +4,7 @@
 // previews — just the full collection with no cap.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Film, MapPin, Package, User, Loader2 } from 'lucide-react';
+import { ArrowLeft, Film, MapPin, Package, User, Loader2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -53,19 +53,27 @@ export function LikedItems({ type }: { type: 'listing' | 'creator' }) {
               const item = fav.item_data || {};
               const price = item.price ? `$${Number(item.price).toLocaleString()}` : '';
               const suffix = item.listingMode === 'rent' ? '/day' : item.listingType === 'service' ? '/hr' : '';
+              const isEmergency = !!item.isEmergency && !!item.emergencyExpiresAt && new Date(item.emergencyExpiresAt) > new Date();
               return (
                 <button
                   key={fav.item_id || fav.id}
                   onClick={() => navigate(`/listing/${fav.item_id || item.id}`)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
                 >
-                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
                     {item.images?.[0]
                       ? <img src={item.images[0]} className="w-full h-full object-cover" alt="" />
                       : <div className="w-full h-full flex items-center justify-center"><Film className="w-6 h-6 text-gray-300" /></div>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{item.title || 'Listing'}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{item.title || 'Listing'}</p>
+                      {isEmergency && (
+                        <span className="shrink-0 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
+                          <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
+                        </span>
+                      )}
+                    </div>
                     {item.city && <p className="text-xs text-gray-400 truncate flex items-center gap-0.5"><MapPin className="w-3 h-3 shrink-0" /> {item.city}</p>}
                   </div>
                   {price && <p className="text-sm font-black text-blue-600 shrink-0">{price}{suffix}</p>}

@@ -284,7 +284,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         const cover = listing.image || (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string') : null);
         await supabase.from('favorites').upsert({
           user_id: user.id, item_id: listing.id, item_type: 'listing',
-          item_data: { title: listing.title, image: cover, price: listing.price, city: listing.city },
+          item_data: { title: listing.title, image: cover, price: listing.price, city: listing.city, isEmergency: listing.isEmergency, emergencyExpiresAt: listing.emergencyExpiresAt },
         }, { onConflict: 'user_id,item_id' });
         const key = `saved_listings_cache_${user.id}`;
         const ids: string[] = JSON.parse(localStorage.getItem(key) || '[]');
