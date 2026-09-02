@@ -215,9 +215,17 @@ BEGIN
   END;
 
   INSERT INTO public.reputation_scores (user_id, account_type)
-    VALUES (p_user_id, coalesce(v_account_type, 'creator'))
+    VALUES (p_user_id::text, coalesce(v_account_type, 'creator'))
     ON CONFLICT (user_id) DO NOTHING;
 
+  -- reputation_scores.user_id is text on the live table (same untracked-
+  -- live-schema situation as account_verifications/orders noted above,
+  -- despite the CREATE TABLE at the top of this file declaring it uuid --
+  -- that CREATE TABLE is a no-op since the table already existed live).
+  -- Bare `user_id = p_user_id` has no uuid = text operator, which is
+  -- exactly the "operator does not exist: text = uuid" error this line
+  -- was throwing and rolling back the whole migration (including the
+  -- one-time backfill loop below) on.
   UPDATE public.reputation_scores SET
     review_pts        = v_review_pts,
     review_count       = v_review_count,
@@ -226,7 +234,7 @@ BEGIN
     reliability_level  = v_new_level,
     account_type       = coalesce(v_account_type, account_type),
     updated_at         = now()
-  WHERE user_id = p_user_id;
+  WHERE user_id::text = p_user_id::text;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
