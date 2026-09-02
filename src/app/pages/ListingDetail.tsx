@@ -706,9 +706,18 @@ export function ListingDetail() {
                         {[listing.city && [listing.city, listing.province].filter(Boolean).join(', '), workArrangementLabel(listing.opportunity.workArrangement)].filter(Boolean).join(' · ')}
                       </div>
                     )}
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <DollarSign className="w-3.5 h-3.5 text-gray-400" />
-                      {listing.opportunity.paid ? <span className="font-bold text-gray-900">${listing.price} {listing.opportunity.currency || 'CAD'}</span> : <span className="font-semibold">Unpaid / Collaboration</span>}
+                    <div>
+                      <div className="flex items-center gap-2 text-gray-700">
+                        <DollarSign className="w-3.5 h-3.5 text-gray-400" />
+                        {!listing.opportunity.paid
+                          ? <span className="font-semibold">Unpaid / Collaboration</span>
+                          : listing.opportunity.compensationType === 'negotiable'
+                            ? <span className="font-bold text-indigo-700">Negotiate your rate</span>
+                            : <span className="font-bold text-gray-900">${listing.price} {listing.opportunity.currency || 'CAD'}</span>}
+                      </div>
+                      {listing.opportunity.paid && listing.opportunity.compensationType === 'negotiable' && (
+                        <p className="text-xs text-gray-400 mt-1 ml-[22px]">Submit the rate you'd like to earn when applying.</p>
+                      )}
                     </div>
                     {dateRangeLabel(listing.opportunity) && (
                       <div className="flex items-center gap-2 text-gray-700"><Clock className="w-3.5 h-3.5 text-gray-400" /> {dateRangeLabel(listing.opportunity)}</div>
@@ -803,10 +812,12 @@ export function ListingDetail() {
       >
         <div className="min-w-0">
           {isOpportunity && listing.opportunity ? (
-            listing.opportunity.paid ? (
-              <p className="text-lg font-black text-gray-900 truncate">${listing.price} <span className="text-xs font-semibold text-gray-400">{listing.opportunity.currency || 'CAD'}</span></p>
-            ) : (
+            !listing.opportunity.paid ? (
               <p className="text-sm font-bold text-gray-700">Unpaid / Collaboration</p>
+            ) : listing.opportunity.compensationType === 'negotiable' ? (
+              <p className="text-sm font-black text-indigo-700 truncate">Negotiate your rate</p>
+            ) : (
+              <p className="text-lg font-black text-gray-900 truncate">${listing.price} <span className="text-xs font-semibold text-gray-400">{listing.opportunity.currency || 'CAD'}</span></p>
             )
           ) : listing.price > 0 ? (
             <p className="text-lg font-black text-gray-900 truncate">
