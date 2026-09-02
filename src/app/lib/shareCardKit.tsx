@@ -183,10 +183,22 @@ export async function captureAndShareCard(opts: {
   const { exportRef, filename, shareUrl, backgroundColor = '#F5F5F3' } = opts;
   if (!exportRef.current) return;
   const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
-  const blob = await toBlob(exportRef.current, {
+  const toBlobOpts = {
     width: EW, height, pixelRatio: 1, quality: 0.98, skipFonts: false, cacheBust: true,
     backgroundColor, fetchRequestInit: { cache: 'no-cache' as RequestCache }, style: { transform: 'none' },
-  });
+  };
+  // Known html-to-image/dom-to-image bug on Safari/iOS: the FIRST toBlob/
+  // toPng/toCanvas call in a session renders every <img> blank (background,
+  // layout and text all come through fine -- only images are affected),
+  // and a second call succeeds. This is exactly the "card saves but
+  // avatar/cover photo is missing on mobile" symptom -- every earlier fix
+  // this session (CORS proxy, DOM-commit race, decode() waits) addressed
+  // real, separate problems, but this is what was still causing it after
+  // all of those were already correct. Discard a throwaway first capture
+  // so the REAL one is never the affected "first call".
+  // https://github.com/bubkoo/html-to-image/issues/361 and similar.
+  await toBlob(exportRef.current, toBlobOpts).catch(() => null);
+  const blob = await toBlob(exportRef.current, toBlobOpts);
   if (!blob) throw new Error('toBlob returned null');
   const file = new File([blob], filename, { type: 'image/png' });
 
