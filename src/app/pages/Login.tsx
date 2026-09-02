@@ -449,7 +449,7 @@ export function Login() {
     return (
       <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
+        <div className="auth-pop-main relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           {/* Back */}
           <button
             onClick={() => setScreen('email')}
@@ -495,7 +495,7 @@ export function Login() {
           {/* Primary CTA */}
           <button
             onClick={() => { captureSnapshot(); navigate(`/create-account?email=${encodeURIComponent(email)}`); }}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30 mb-3"
+            className="auth-btn-fx w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all shadow-lg shadow-blue-900/30 mb-3"
           >
             Create account with this email
           </button>
@@ -538,7 +538,7 @@ export function Login() {
     return (
       <AuthScreenLayout>
         <CinematicBg/>
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
+        <div className="auth-pop-main relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           <button
             onClick={() => setScreen('email')}
             className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors"
@@ -559,7 +559,7 @@ export function Login() {
 
           <button
             onClick={() => handleOAuth(provider, email)}
-            className="w-full py-4 bg-white hover:bg-gray-100 text-gray-900 font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg mb-4 flex items-center justify-center gap-2.5"
+            className="auth-btn-fx w-full py-4 bg-white hover:bg-gray-100 text-gray-900 font-black text-sm rounded-2xl transition-all shadow-lg mb-4 flex items-center justify-center gap-2.5"
           >
             <GoogleLogo size={18}/> Continue with {providerLabel}
           </button>
@@ -586,7 +586,7 @@ export function Login() {
   return (
     <AuthScreenLayout>
       <CinematicBg/>
-      <div className="relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <div className="auth-pop-main relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
           <ArrowLeft className="w-4 h-4"/> Back
         </button>
@@ -596,9 +596,9 @@ export function Login() {
         </div>
         <input value={otp} onChange={e => setOtp(e.target.value.slice(0,6))}
           type="tel" placeholder="000000" maxLength={6}
-          className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-4 text-2xl font-black text-center tracking-[0.4em] outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
+          className="auth-input-fx w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-4 text-2xl font-black text-center tracking-[0.4em] outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
         <button onClick={() => { if (otp.length === 6) { captureSnapshot(); navigate('/'); } else { toast.error('Enter the 6-digit code'); } }}
-          className="mt-4 w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl hover:bg-blue-700 transition-all active:scale-[0.98]">
+          className="auth-btn-fx mt-4 w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl hover:bg-blue-700 transition-all">
           Verify &amp; Sign In
         </button>
         <button className="text-white/40 text-xs text-center mt-4 hover:text-white/70 transition-colors">
