@@ -17,7 +17,8 @@ import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { opportunityFeedApi } from '../lib/opportunityFeedApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
-import { EmergencyLockedState } from '../components/EmergencyLockedState';
+import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
+import { ListingCard } from '../components/ListingCard';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -358,7 +359,8 @@ export function Home() {
     // The category is always enterable now (guests included -- "do not
     // hide categories", see the guest-mode-limit/emergency-listing specs)
     // so the filter switches immediately regardless of tier; the render
-    // below shows EmergencyLockedState instead of the deck for anyone who
+    // below shows EmergencyPreviewGate (a 3-random-item preview + upgrade
+    // gate, never the full deck) instead of the deck for anyone who
     // isn't Professional/Business. canBrowseEmergency is only the instant-
     // UX shortcut for THAT decision -- if the client thinks the account IS
     // eligible, still re-verify server-side (a stale cached account type
@@ -619,7 +621,7 @@ export function Home() {
             {/* ── Filter chips — Emergency is visible to every account type
                  (guests included) so everyone understands the feature
                  exists; only the actual listings are gated by tier
-                 (EmergencyLockedState below, canBrowseEmergency re-checked
+                 (EmergencyPreviewGate below, canBrowseEmergency re-checked
                  server-side in handleFilter). ── */}
             <div ref={filterRowRef} className="pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
               {FILTERS.map(f => (
@@ -652,7 +654,12 @@ export function Home() {
                   generic "Nothing here yet" state meant for a filter that
                   never had any listings at all) the caught-up/empty/new-
                   opportunities states, then the deck itself. */}
-              {(filter === 'emergency' && !canBrowseEmergency) ? <EmergencyLockedState />
+              {(filter === 'emergency' && !canBrowseEmergency && deck.length > 0) ? (
+                <EmergencyPreviewGate
+                  items={deck.filter(d => d.kind === 'listing').map(d => d.data)}
+                  renderCard={listing => <ListingCard key={listing.id} listing={listing} />}
+                />
+              )
                   : (filter === 'talent' && !user) ? loginToSeeOpportunitiesScreen
                   : loadError ? errorScreen : deckDone
                   ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)

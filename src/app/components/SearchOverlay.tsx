@@ -18,7 +18,7 @@ import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
-import { EmergencyLockedState } from './EmergencyLockedState';
+import { EmergencyPreviewGate } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -586,7 +586,7 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
       case 'opportunities':  query = query.or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%'); break;
       case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
       // Fetched for everyone regardless of tier (the gate is who's allowed
-      // to SEE the results, handled at render time by EmergencyLockedState
+      // to SEE the results, handled at render time by EmergencyPreviewGate
       // -- same "data isn't the security boundary, the UI decision is"
       // pattern already used for negotiable/boosted elsewhere) -- only
       // real, still-active Emergency listings, never an expired one.
@@ -1593,16 +1593,20 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </ResultSection>
               )}
               {visibleEmergency.length > 0 && (
-                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
-                  {/* Binary tier gate, not a guest-preview cap like every
-                      other section above -- Professional/Business (any
-                      account, including a guest who's neither) get the
-                      full locked state instead of a partial list, per the
-                      emergency-listing spec ("do not show an empty-results
-                      state when access is actually locked"). */}
+                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid={canBrowseEmergency}>
+                  {/* Professional/Business get the real, full list.
+                      Everyone else (guest, Creator, Creator+) gets a
+                      3-random-item preview + a "See More" upgrade gate --
+                      never zero preview, never the unrestricted list. */}
                   {canBrowseEmergency
                     ? visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)
-                    : <div className="col-span-2"><EmergencyLockedState/></div>}
+                    // Wrapped in one plain div so ResultSection's divide-y
+                    // list mode (grid={false} above) sees a single child --
+                    // the gate itself renders multiple top-level pieces
+                    // (message, its own grid of cards, the button), which
+                    // would otherwise each get an unwanted divider line as
+                    // if they were separate list rows.
+                    : <div><EmergencyPreviewGate items={visibleEmergency} renderCard={l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>}/></div>}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (
