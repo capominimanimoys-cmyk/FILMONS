@@ -6,7 +6,7 @@ export function SearchPage() {
   return (
     <SearchOverlay
       onClose={() => navigate(-1)}
-      onResultNavigate={(url) => navigate(url, { replace: true })}
+      onResultNavigate={(url, state) => navigate(url, { replace: true, state })}
     />
   );
 }

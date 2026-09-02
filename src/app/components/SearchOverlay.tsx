@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyLockedState } from './EmergencyLockedState';
+import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Global-search categories -- deliberately separate from ListingTypeFilter
@@ -917,12 +918,19 @@ function CreatorCard({ u, onNavigate }: { u: ProfileRow; onNavigate: (url: strin
   );
 }
 
-function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
+// Seeds ListingDetail's skeleton immediately (same hint-only pattern
+// ListingCard.tsx/SwipeStack.tsx already use) and flags the Browse/Search
+// pop-up transition, per the Browse/Search -> Listing Details pop-up spec.
+function previewStateFor(l: ListingRow) {
+  return { preview: { title: l.title, price: l.price, cover: l.images?.[0] || null, city: l.city } };
+}
+
+function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
   const price = `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
   const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`)}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
       className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
@@ -948,10 +956,10 @@ function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
   );
 }
 
-function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
+function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`)}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
@@ -973,10 +981,10 @@ function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: strin
   );
 }
 
-function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
+function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`)}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
@@ -1147,7 +1155,7 @@ interface Props {
   /** If provided, called with the target URL when a result card is clicked.
    *  Use this in route-based contexts (SearchPage) to avoid the 280ms delayed
    *  navigate(-1) from firing after the user has already navigated to a result. */
-  onResultNavigate?: (url: string) => void;
+  onResultNavigate?: (url: string, state?: Record<string, unknown>) => void;
 }
 
 // Guests get a 5-item preview of every category (never zero -- "Do not
@@ -1197,6 +1205,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
+  const resultsRef  = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const suggRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -1205,15 +1214,24 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // For result card clicks: if caller provides onResultNavigate, use it directly
   // (avoids the delayed navigate(-1) firing AFTER we've already navigated to the result).
   // For modal usage (Root.tsx), fall back to navigate(url) + delayed onClose.
-  const handleResultNavigate = useCallback((url: string) => {
+  // `previewState`, when given, seeds ListingDetail's skeleton immediately
+  // and flags it to use the Browse/Search pop-up transition (see the
+  // Browse/Search -> Listing Details pop-up spec) instead of no transition
+  // at all -- Home's own swipe-card transition is separate and untouched.
+  const handleResultNavigate = useCallback((url: string, previewState?: Record<string, unknown>) => {
     setClosing(true);
+    // Snapshot this session's search state so a "Back" from the listing
+    // (ListingDetail's own exit animation calls navigate(-1)) restores
+    // exactly where the user left off instead of a blank fresh search.
+    saveSearchState({ q, activeTab, filters, sort, scrollY: resultsRef.current?.scrollTop ?? 0 });
+    const state = previewState ? { fromSearch: true, ...previewState } : undefined;
     if (onResultNavigate) {
-      onResultNavigate(url);
+      onResultNavigate(url, state);
     } else {
-      navigate(url);
+      navigate(url, state ? { state } : undefined);
       setTimeout(onClose, 280);
     }
-  }, [navigate, onClose, onResultNavigate]);
+  }, [navigate, onClose, onResultNavigate, q, activeTab, filters, sort]);
 
   // Guest "See more" on a category section — never loads more results for
   // a guest, always sends them to Login instead. Remembers the category
@@ -1255,6 +1273,23 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         .finally(() => setLoading(false));
     }, 400);
   }, []);
+
+  // Restores search state (query, category, filters, sort, scroll
+  // position) after coming back from a listing opened from here -- see
+  // handleResultNavigate's saveSearchState() and the Browse/Search ->
+  // Listing Details pop-up spec's "restore the user's previous search...
+  // do not reload Browse/Search from the top". One-shot (consumeSearchState
+  // clears it immediately), so this never fires on a fresh /search visit
+  // that didn't come from a listing's back button.
+  useEffect(() => {
+    const saved = consumeSearchState();
+    if (!saved) return;
+    setActiveTab(saved.activeTab as TabId);
+    setFilters(saved.filters as SearchFilters);
+    setSort(saved.sort as SortBy);
+    if (saved.q) { setQ(saved.q); runSearch(saved.q); }
+    requestAnimationFrame(() => { resultsRef.current?.scrollTo({ top: saved.scrollY }); });
+  }, []); // eslint-disable-line
 
   const hasTyped = q.trim().length > 0;
 
@@ -1493,7 +1528,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         )}
 
         {/* ── Scrollable body ── */}
-        <div className="flex-1 overflow-y-auto overscroll-contain">
+        <div ref={resultsRef} className="flex-1 overflow-y-auto overscroll-contain">
           {!hasTyped && activeTab === 'all' ? (
             <PreSearch onSelect={val => { setQ(val); runSearch(val); }}/>
           ) : showSuggestions ? (

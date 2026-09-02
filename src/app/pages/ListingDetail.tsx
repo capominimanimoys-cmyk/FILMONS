@@ -81,6 +81,19 @@ export function ListingDetail() {
   // no blank flash of nothing. Only ever a hint for the loading state;
   // `listing` (once fetched) is always the real, authoritative data.
   const preview = (location.state as { preview?: { title: string; price: number; cover: string | null; city?: string } } | null)?.preview;
+  // Set by SearchOverlay's handleResultNavigate when this page was reached
+  // from Browse/Search (never from Home's swipe deck, which uses its own
+  // FLIP shared-element transition -- see smartAnimate.ts -- and is left
+  // untouched) -- see the Browse/Search -> Listing Details pop-up spec.
+  // `leaving` drives the reverse animation before navigate(-1) actually
+  // fires, same deferred-unmount pattern RentRequestModal/ApplyModal use.
+  const fromSearch = !!(location.state as { fromSearch?: boolean } | null)?.fromSearch;
+  const [leaving, setLeaving] = useState(false);
+  const handleBack = useCallback(() => {
+    if (!fromSearch) { navigate(-1); return; }
+    setLeaving(true);
+    setTimeout(() => navigate(-1), 260);
+  }, [fromSearch, navigate]);
   const [listing, setListing]             = useState<Listing | null>(null);
   const [host, setHost]                   = useState<User | null>(null);
   const [reviews, setReviews]             = useState<Review[]>([]);
@@ -232,9 +245,9 @@ export function ListingDetail() {
   // (no `preview`) still gets this same structure, just starting from
   // an empty gray hero instead of the real photo.
   if (loading) return (
-    <div className="min-h-screen bg-white">
+    <div className={`min-h-screen bg-white ${fromSearch ? (leaving ? 'listing-pop-out' : 'listing-pop-in') : ''}`}>
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-100 px-4 py-3 flex items-center justify-between">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
+        <button onClick={handleBack} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
       </div>
@@ -353,10 +366,10 @@ export function ListingDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className={`min-h-screen bg-white ${fromSearch ? (leaving ? 'listing-pop-out' : 'listing-pop-in') : ''}`}>
       {/* ── Back bar ── */}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-100 px-4 py-3 flex items-center justify-between">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
+        <button onClick={handleBack} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900">
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
         <div className="flex items-center gap-2">
