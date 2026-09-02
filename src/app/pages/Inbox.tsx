@@ -2974,7 +2974,13 @@ export function Inbox() {
         </div>
 
         {/* Thread */}
-        <div className={`inbox-panel-thread flex flex-col flex-1 min-w-0 overflow-hidden flex ${showSidebar ? 'inbox-thread-back' : ''}`}>
+        {/* bg-white here (not just on its children) is load-bearing on
+            mobile now -- the thread panel is `position:absolute; inset:0`
+            over the list panel underneath, and any part of it not covered
+            by an opaque child (the empty-state placeholder when no
+            conversation is selected has none) let the white list panel
+            show through as an incorrect "background" behind the chat. */}
+        <div className={`inbox-panel-thread flex flex-col flex-1 min-w-0 overflow-hidden flex bg-white ${showSidebar ? 'inbox-thread-back' : ''}`}>
           {!activeConv ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
               <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4"><ChatBubbleRounded sx={{fontSize:40,color:"#60a5fa"}} /></div>
