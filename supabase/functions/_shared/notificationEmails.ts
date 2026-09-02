@@ -58,8 +58,6 @@ const TEMPLATE_LISTING_LIKED           = 'template_4ki361h';
 const TEMPLATE_FOLLOWED_CREATOR_POSTED = 'template_qpz4d6q';
 const TEMPLATE_LISTING_SUGGESTION      = 'template_dx3stud';
 const TEMPLATE_SUPPORT_CASE_ADMIN      = 'template_g2g3fod';
-// Placeholder until created in the EmailJS dashboard from
-// support-case-user-reply-admin-email.html and the real id is swapped in.
 const TEMPLATE_SUPPORT_CASE_USER_REPLY_ADMIN = 'template_5a554xr';
 const TEMPLATE_MESSAGE_REQUEST_ACCEPTED = 'template_nzfmrsm';
 // Cash-out lifecycle -- placeholders until created in the EmailJS dashboard
