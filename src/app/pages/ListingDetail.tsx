@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
-import { UserAvatar } from '../components/AccountTypeBadge';
+import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -482,7 +482,10 @@ export function ListingDetail() {
                 </div>
                 <div className="flex-1">
                   <p className="text-xs text-gray-500 mb-0.5">Listed by</p>
-                  <p className="font-bold text-gray-900">{host.name}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="font-bold text-gray-900">{host.name}</p>
+                    <AccountTypeBadge type={(host as any).accountType} size="sm" />
+                  </div>
                   {host.isVerified && <p className="text-xs text-green-600 font-medium flex items-center gap-1"><Shield className="w-3 h-3" /> Verified</p>}
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />

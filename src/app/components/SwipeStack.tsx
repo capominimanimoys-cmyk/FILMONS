@@ -62,6 +62,11 @@ const STACK: Record<number, string> = {
   2: 'scale-[0.92] translate-y-6',
 };
 
+function isNegotiableOpportunity(l: Listing) {
+  return (l.listingType === 'opportunity' || l.listingKind === 'talent') &&
+    !!l.opportunity?.paid && l.opportunity.compensationType === 'negotiable';
+}
+
 function fmtPrice(l: Listing) {
   const p = `$${Number(l.price).toLocaleString()}`;
   if (l.listingType === 'opportunity' || l.listingKind === 'talent') {
@@ -110,7 +115,11 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
           )}
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-xl lg:text-2xl font-black text-blue-600">{fmtPrice(listing)}</span>
+          {isNegotiableOpportunity(listing) ? (
+            <span className="text-base lg:text-lg font-black text-indigo-700">Negotiate your rate</span>
+          ) : (
+            <span className="text-xl lg:text-2xl font-black text-blue-600">{fmtPrice(listing)}</span>
+          )}
           <span className="flex items-center gap-1 text-xs lg:text-sm">
             <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400"/>
             <span className="font-semibold text-gray-600">New</span>

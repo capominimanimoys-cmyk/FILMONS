@@ -10,6 +10,7 @@ import { captureSnapshot } from '../lib/smartAnimate';
 import { getPortfolioItems } from '../lib/portfolioApi';
 import { authApi } from '../lib/api';
 import { supabase } from '../../lib/supabase';
+import { normalizeTier } from '../lib/reliabilityApi';
 
 // ── Export width — height is content-driven (measured at export time) so the
 //    card never carries unnecessary empty space. ─────────────────────────────
@@ -30,6 +31,7 @@ interface CardUser {
   projects: number;
   isVerified: boolean;
   location: string;
+  accountType?: string;
 }
 
 interface CP { user: CardUser; isExport?: boolean; }
@@ -87,6 +89,14 @@ function Stat({ label, value, X }: { label: string; value: string | number; X?: 
 //    stays content-sized (shorter) and is centered vertically within it. ─────
 function ProfileCard({ user, isExport: X }: CP) {
   const role = user.primaryRole || 'Creator';
+  // Highest account tier wins -- a Business account is also Creator+-
+  // eligible underneath, but the card badge shows the highest tier, same
+  // priority as AccountTypeBadge.tsx everywhere else in the app.
+  const tier = normalizeTier(user.accountType);
+  const tierBadge = tier === 'business' ? { label: 'Business', bg: '#059669' }
+    : tier === 'professional' ? { label: 'Professional', bg: '#4f46e5' }
+    : tier === 'creator_plus' ? { label: 'Creator+', bg: '#7c3aed' }
+    : null;
 
   return (
     <div style={{
@@ -126,6 +136,15 @@ function ProfileCard({ user, isExport: X }: CP) {
                 size={X ? 30 : 24} style={{ flexShrink: 0 }}
                 color="#22c55e" fill="#22c55e" strokeWidth={2} stroke="#ffffff"
               />
+            )}
+            {tierBadge && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                padding: X ? '5px 14px' : '0.5% 1.3%',
+                borderRadius: 999, color: '#ffffff', fontWeight: 700,
+                fontSize: X ? 18 : 'clamp(7px, 1.7%, 18px)',
+                background: tierBadge.bg,
+              }}>{tierBadge.label}</span>
             )}
           </div>
 
@@ -252,6 +271,7 @@ export function ShareCard() {
     projects,
     isVerified:  !!user?.isVerified,
     location:    user?.location || user?.city || '',
+    accountType: user?.accountType,
   };
 
   // html-to-image re-fetches every <img> src itself to embed it in the

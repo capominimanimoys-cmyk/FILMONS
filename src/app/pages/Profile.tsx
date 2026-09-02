@@ -1098,7 +1098,14 @@ export function Profile() {
     </div>
   );
 
-  const isCreatorPlus = user.accountType === 'business';
+  // isCreatorPlus is imported above (reliabilityApi.ts) -- true for
+  // creator_plus/professional/business, used below to gate the avatar
+  // "C+" corner overlay (any Creator+-eligible tier). The name badge just
+  // below always shows the account's specific highest tier instead, via
+  // AccountTypeBadge -- a local `accountType === 'business'` shadow used
+  // to live here and force every eligible tier's badge to read "Creator+"
+  // via a hardcoded type="business", which is what caused Business
+  // accounts to show a Creator+ badge instead of a Business one.
   // Your rating badge is your reputation as rated by others — Reviews
   // Received, not the reviews you've written about other people/listings.
   const avgRating = receivedReviews.length > 0
@@ -1152,7 +1159,7 @@ export function Profile() {
                   : <Camera className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                 }
               </div>
-              {isCreatorPlus && (
+              {isCreatorPlus(user.accountType) && (
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-full flex items-center justify-center border-2 border-white">
                   <span className="text-[8px] text-white font-black">C+</span>
                 </div>
@@ -1186,7 +1193,7 @@ export function Profile() {
           <div className="mt-12 px-4">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 data-animate-id="profile-name" className="text-xl font-black text-gray-900">{user.name}</h1>
-              {isCreatorPlus && <AccountTypeBadge type="business" size="sm" />}
+              <AccountTypeBadge type={user.accountType} size="sm" />
               {user.isVerified && (
                 <span className="flex items-center gap-1 text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
                   <ShieldCheck className="w-3 h-3" /> Verified

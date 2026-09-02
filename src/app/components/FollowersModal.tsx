@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router';
 import { X, Search, UserCheck, UserPlus } from 'lucide-react';
-import { UserAvatar } from './AccountTypeBadge';
+import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
 import { useFollow } from '../context/FollowContext';
 import { useState, useEffect } from 'react';
 
@@ -114,7 +114,10 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
                     </button>
                     <button onClick={() => { navigate(`/host/${u.id}`); handleClose(); }}
                       className="flex-1 text-left min-w-0">
-                      <p className="font-semibold text-sm text-gray-900 truncate">{u.name}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-semibold text-sm text-gray-900 truncate">{u.name}</p>
+                        <AccountTypeBadge type={u.accountType} size="sm" />
+                      </div>
                       {u.username && <p className="text-xs text-gray-400">@{u.username}</p>}
                       {u.bio && <p className="text-xs text-gray-500 truncate mt-0.5">{u.bio}</p>}
                     </button>

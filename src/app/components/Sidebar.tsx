@@ -6,7 +6,7 @@ import {
   User, Settings, LogOut, X, UserPlus,
   ChevronRight,
 } from 'lucide-react';
-import { UserAvatar } from './AccountTypeBadge';
+import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
 import { chatApi } from '../lib/api';
 import * as notifStore from '../lib/notifications';
 import { useState, useEffect, useRef } from 'react';
@@ -133,7 +133,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-all group">
                 <UserAvatar user={user} size={36} className="flex-shrink-0"/>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{user.name}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{user.name}</p>
+                    <AccountTypeBadge type={user.accountType} size="sm" />
+                  </div>
                   <p className="text-xs text-gray-400 truncate">
                     {user.username ? `@${user.username}` : user.email}
                   </p>

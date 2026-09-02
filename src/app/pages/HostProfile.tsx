@@ -542,7 +542,7 @@ export function HostProfile() {
           <div className="mt-12 px-4">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-black text-gray-900">{host.name}</h1>
-              {(host as any).accountType === 'business' && <AccountTypeBadge type="business" size="sm"/>}
+              <AccountTypeBadge type={(host as any).accountType} size="sm"/>
               {isVerified && (
                 <span className="flex items-center gap-1 text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
                   <ShieldCheck className="w-3 h-3"/> Verified

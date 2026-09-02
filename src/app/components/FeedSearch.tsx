@@ -404,15 +404,7 @@ function ProfileRow({ user, query, onClick }: { user: any; query: string; onClic
         )}
       </div>
       <div className="shrink-0 text-right">
-        {user.accountType && (
-          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-            user.accountType === 'service'  ? 'bg-purple-100 text-purple-700' :
-            user.accountType === 'business' ? 'bg-emerald-100 text-emerald-700' :
-            'bg-blue-100 text-blue-700'
-          }`}>
-            {user.accountType === 'renter' ? 'Creator' : user.accountType}
-          </span>
-        )}
+        <AccountTypeBadge type={user.accountType} size="sm" />
         <p className="text-[10px] text-gray-400 mt-1">{(user.followers || []).length} followers</p>
       </div>
     </button>

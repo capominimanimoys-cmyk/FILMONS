@@ -1,22 +1,34 @@
-import { Zap } from 'lucide-react';
-
-type AccountType = 'creator' | 'creator_plus' | 'professional' | 'business' | undefined;
+import { Zap, Building2, Briefcase } from 'lucide-react';
+import { normalizeTier } from '../lib/reliabilityApi';
 
 interface AccountTypeBadgeProps {
-  type?: AccountType;
+  /** Raw account_type string (or any legacy alias normalizeTier handles) --
+   *  pass it through as-is, this component resolves the tier itself. */
+  type?: string;
   size?: 'sm' | 'md';
 }
 
+// Highest tier always wins -- a Business account is also Creator+-eligible
+// underneath (see reliabilityApi.ts's tier hierarchy), but the visible
+// badge must show the account's highest tier, never the underlying
+// qualification. 'creator' never gets a badge here.
+const BADGE_CONFIG = {
+  business:     { label: 'Business',     icon: Building2, gradient: 'from-emerald-600 to-teal-600' },
+  professional: { label: 'Professional', icon: Briefcase,  gradient: 'from-blue-600 to-indigo-600' },
+  creator_plus: { label: 'Creator+',     icon: Zap,        gradient: 'from-purple-600 to-indigo-600' },
+} as const;
+
 export function AccountTypeBadge({ type, size = 'md' }: AccountTypeBadgeProps) {
-  // Only show for creator+ (business) — no generic "Business" label
-  if (type !== 'business') return null;
+  const tier = normalizeTier(type);
+  if (tier === 'creator') return null;
+  const { label, icon: Icon, gradient } = BADGE_CONFIG[tier];
   const isSmall = size === 'sm';
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-0 shadow-sm ${
+    <span className={`inline-flex items-center gap-1 rounded-full font-semibold bg-gradient-to-r ${gradient} text-white border-0 shadow-sm ${
       isSmall ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm'
     }`}>
-      <Zap className={isSmall ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
-      Creator+
+      <Icon className={isSmall ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+      {label}
     </span>
   );
 }
@@ -69,7 +81,9 @@ export function UserAvatar({
   const colorClass = getAvatarColor(user.id || user.name || '');
   const style = { width: size, height: size, fontSize: size * 0.36 };
 
-  const isCreatorPlus = user.accountType === 'business';
+  const overlayTier = normalizeTier(user.accountType);
+  const showOverlay = overlayTier !== 'creator';
+  const overlayLabel = overlayTier === 'business' ? 'B' : overlayTier === 'professional' ? 'P' : 'C+';
   const badgeSize = Math.max(14, Math.round(size * 0.32));
 
   const avatar = user.avatar ? (
@@ -88,20 +102,21 @@ export function UserAvatar({
     </div>
   );
 
-  if (!isCreatorPlus || !showAccountBadge) {
+  if (!showOverlay || !showAccountBadge) {
     return avatar;
   }
 
-  // Creator+ overlay badge
+  // Account tier overlay badge -- shows the highest tier (Business >
+  // Professional > Creator+), same priority as AccountTypeBadge above.
   return (
     <div className="relative inline-flex flex-shrink-0">
       {avatar}
       <div
         style={{ width: badgeSize, height: badgeSize, bottom: -2, right: -2 }}
         className="absolute bg-gradient-to-br from-purple-600 to-indigo-700 rounded-full flex items-center justify-center border-2 border-white shadow-sm z-10"
-        title="Creator+"
+        title={overlayTier === 'business' ? 'Business' : overlayTier === 'professional' ? 'Professional' : 'Creator+'}
       >
-        <span style={{ fontSize: badgeSize * 0.45 }} className="text-white font-black leading-none">C+</span>
+        <span style={{ fontSize: badgeSize * 0.42 }} className="text-white font-black leading-none">{overlayLabel}</span>
       </div>
     </div>
   );
