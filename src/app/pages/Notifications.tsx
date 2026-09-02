@@ -1,4 +1,4 @@
-import { useState, useEffect, ElementType, MouseEvent } from 'react';
+import { useState, useEffect, useRef, ElementType, MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Bell, Heart, MessageCircle, UserPlus, DollarSign,
@@ -293,12 +293,21 @@ function FollowBackBtn({ targetUserId }: { targetUserId: string }) {
 // ── Single grouped notification row ──────────────────────────────────────────
 const MESSAGE_TYPES_ROW = ['message','new_message','message_received','message_reply','message_reaction'];
 
-function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate }: {
+function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate, popIndex, isNewArrival }: {
   group: GroupedNotif;
   currentUser: User;
   onRead:     (id: string) => void;
   onRemove:   (id: string) => void;
   onNavigate: (n: Notification) => void;
+  /** Position within the initial-load list (staggered pop, 35ms per row,
+   *  capped at the first 8) -- omit for a row that isn't part of an
+   *  initial-load pass at all. */
+  popIndex?: number;
+  /** True only for a notification that arrived via realtime into an
+   *  already-loaded list -- gets the distinct, unstaggered "just arrived"
+   *  pop instead of the list-load one, and only ever applies to that one
+   *  row (see Notifications()'s seenKeysRef). */
+  isNewArrival?: boolean;
 }) {
   const primary  = group.items[0];
   const second   = group.items[1];
@@ -330,13 +339,19 @@ function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate }: {
     group.items.forEach(n => onRead(n.id));
   };
 
+  const popClass = isNewArrival ? 'pop-in-new' : popIndex !== undefined ? 'pop-in-row' : '';
+  const popStyle = !isNewArrival && popIndex !== undefined
+    ? { animationDelay: `${Math.min(popIndex, 7) * 35}ms` }
+    : undefined;
+
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={e => e.key === 'Enter' && handleClick()}
-      className={`group/row relative flex items-start gap-3.5 px-4 py-3.5 cursor-pointer transition-all duration-150 border-b border-gray-50 last:border-0 ${
+      style={popStyle}
+      className={`${popClass} group/row relative flex items-start gap-3.5 px-4 py-3.5 cursor-pointer transition-all duration-150 border-b border-gray-50 last:border-0 ${
         !group.read
           ? 'bg-gradient-to-r from-blue-50/60 to-transparent hover:from-blue-50/90'
           : 'hover:bg-gray-50/70'
@@ -650,6 +665,26 @@ export function Notifications() {
   const sections = groupByDate(visible);
   const empty    = EMPTY_STATE[activeTab];
 
+  // Pop-in bookkeeping: the FIRST time this list has content, every row is
+  // part of the initial load (gets the staggered list-pop). After that,
+  // seenKeysRef remembers every group.key already shown -- a key that
+  // shows up later and isn't in there is a genuine realtime arrival (gets
+  // the distinct, unstaggered "just arrived" pop instead), and a key
+  // that's already been seen gets no pop classes at all so it never
+  // replays on a re-render, re-sort, or a read/delete elsewhere in the
+  // list (a CSS `animation` only plays on mount, but this still needs to
+  // not even apply the class, since re-mounting via a changed `key` --
+  // which this app doesn't do here, but is worth being explicit about --
+  // would otherwise replay it).
+  const seenKeysRef  = useRef<Set<string>>(new Set());
+  const hasLoadedRef = useRef(false);
+  const isInitialLoad = !hasLoadedRef.current && sections.length > 0;
+  useEffect(() => {
+    if (sections.length === 0) return;
+    sections.forEach(s => s.groups.forEach(g => seenKeysRef.current.add(g.key)));
+    hasLoadedRef.current = true;
+  });
+
   // Tab unread counts
   const tabCount = (tab: Tab): number => {
     if (tab === 'all' || tab === 'unread') return 0;
@@ -774,25 +809,33 @@ export function Notifications() {
             </div>
           ) : (
             /* Grouped date sections */
-            sections.map((section, si) => (
-              <div key={section.label}>
-                <div className={`px-4 py-2 ${si === 0 ? '' : 'border-t border-gray-50'}`}>
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
-                    {section.label}
-                  </p>
+            (() => {
+              let loadIdx = 0;
+              return sections.map((section, si) => (
+                <div key={section.label}>
+                  <div className={`px-4 py-2 ${si === 0 ? '' : 'border-t border-gray-50'}`}>
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
+                      {section.label}
+                    </p>
+                  </div>
+                  {section.groups.map(g => {
+                    const alreadySeen = seenKeysRef.current.has(g.key);
+                    return (
+                      <GroupedNotifRow
+                        key={g.key}
+                        group={g}
+                        currentUser={user}
+                        onRead={markRead}
+                        onRemove={remove}
+                        onNavigate={handleNavigate}
+                        popIndex={isInitialLoad ? loadIdx++ : undefined}
+                        isNewArrival={!isInitialLoad && !alreadySeen}
+                      />
+                    );
+                  })}
                 </div>
-                {section.groups.map(g => (
-                  <GroupedNotifRow
-                    key={g.key}
-                    group={g}
-                    currentUser={user}
-                    onRead={markRead}
-                    onRemove={remove}
-                    onNavigate={handleNavigate}
-                  />
-                ))}
-              </div>
-            ))
+              ));
+            })()
           )}
         </div>
 

@@ -1115,11 +1115,19 @@ function MsgActionSheet({ msg, currentUserId, onClose, onReply, onEdit, onPin, o
 // ── Conversation Row ───────────────────────────────────────────────────────────
 function ConvRow({
   conv, currentUserId, isActive, onClick, isRequest, convType, onLongPress,
-  onArchive, onMute, onPin, onDelete,
+  onArchive, onMute, onPin, onDelete, popIndex,
 }: {
   conv: Conversation; currentUserId: string; isActive: boolean; onClick: () => void;
   isRequest?: boolean; convType?: 'booking' | 'sale' | 'collab' | 'general' | 'application'; onLongPress?: () => void;
   onArchive?: () => void; onMute?: () => void; onPin?: () => void; onDelete?: () => void;
+  /** Position within its own list, for the pop-in stagger (35ms per row,
+   *  capped at the first 8) -- see .pop-in-row in motion.css for why this
+   *  is an inline delay rather than a CSS nth-child rule. A plain CSS
+   *  `animation` only plays once per DOM node on mount, so an existing
+   *  row (matched by key={conv.id}) never replays this just because the
+   *  list re-sorts or a prop like popIndex changes on re-render -- only a
+   *  conversation that's genuinely new to the DOM ever pops. */
+  popIndex?: number;
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef   = useRef<HTMLDivElement>(null);
@@ -1170,7 +1178,8 @@ function ConvRow({
 
   return (
     <div
-      className={`relative flex items-center gap-3 px-4 py-3 group/row cursor-pointer select-none ${isActive ? 'bg-blue-50 border-r-2 border-blue-500' : 'bg-white hover:bg-gray-50 active:bg-gray-100'}`}
+      className={`pop-in-row relative flex items-center gap-3 px-4 py-3 group/row cursor-pointer select-none ${isActive ? 'bg-blue-50 border-r-2 border-blue-500' : 'bg-white hover:bg-gray-50 active:bg-gray-100'}`}
+      style={{ animationDelay: `${Math.min(popIndex ?? 0, 7) * 35}ms` }}
       onTouchStart={startHold}
       onTouchMove={markMoved}
       onTouchEnd={cancelHold}
@@ -2780,8 +2789,8 @@ export function Inbox() {
                   <p className="text-xs text-gray-400">Archived chats will appear here.</p>
                 </div>
               ) : (
-                archivedConvs.map(conv => (
-                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id}
+                archivedConvs.map((conv, i) => (
+                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id} popIndex={i}
                     isActive={conv.id === activeId}
                     convType={getConvType(conv)}
                     onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}
@@ -2811,8 +2820,8 @@ export function Inbox() {
                       </span>
                       <span className="text-[10px] text-amber-600">Accept to reply</span>
                     </div>
-                    {requestConvs.map(conv => (
-                      <ConvRow key={conv.id} conv={conv} currentUserId={user.id}
+                    {requestConvs.map((conv, i) => (
+                      <ConvRow key={conv.id} conv={conv} currentUserId={user.id} popIndex={i}
                         isActive={conv.id === activeId} isRequest convType="general"
                         onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}
                         onLongPress={() => setConvActionSheet(conv)}
@@ -2880,8 +2889,8 @@ export function Inbox() {
                 )}
 
                 {/* Conversation list */}
-                {displayedConvs.map(conv => (
-                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id}
+                {displayedConvs.map((conv, i) => (
+                  <ConvRow key={conv.id} conv={conv} currentUserId={user.id} popIndex={i}
                     isActive={conv.id === activeId}
                     convType={getConvType(conv)}
                     onClick={() => { setActiveId(conv.id); setShowSidebar(false); }}

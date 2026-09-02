@@ -169,7 +169,7 @@ html[data-theme="dark"] .skeleton {
    already displayed" needs -- no JS state required, just don't force a
    `key` change on cards that are still the same card. ────────────────── */
 @keyframes filmons-pop {
-  0%   { transform: scale(0.85); }
+  0%   { transform: scale(0.90); }
   75%  { transform: scale(1.03); }
   100% { transform: scale(1); }
 }
@@ -189,6 +189,31 @@ html[data-theme="dark"] .skeleton {
 .pop-stagger > *:nth-child(6) { animation-delay: 200ms; }
 .pop-stagger > *:nth-child(7) { animation-delay: 240ms; }
 .pop-stagger > *:nth-child(n+8) { animation-delay: 280ms; }
+
+/* Row-list variant (Inbox conversations, Notifications) -- 35ms stagger,
+   capped at the first 8 items. Delay is set per-row via an inline
+   animationDelay style (index-based, computed in JS) rather than
+   nth-child, because these lists interleave rows with non-row siblings
+   (section headers, dividers) so a sibling-position-based nth-child
+   selector would miscount and desync the stagger from each row's actual
+   position in its own list. */
+.pop-in-row {
+  transform-origin: center;
+  animation: filmons-pop 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Genuine real-time arrival (a new notification inserted into an already-
+   loaded list) -- a slightly bigger, snappier pop than the list-load
+   variant above, and never staggered since it's always exactly one item. */
+@keyframes filmons-pop-new {
+  0%   { transform: scale(0.90); }
+  70%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+.pop-in-new {
+  transform-origin: center;
+  animation: filmons-pop-new 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 
 /* ── 9. Shared element transition helper ─────────────────────────────────── */
 [data-animate-id] {
