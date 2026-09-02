@@ -331,6 +331,27 @@ export function ShareCard() {
       // deadline) looks completely normal. img.decode() is the actual fix.
       const exportImg = exportRef.current.querySelector('img');
       if (exportImg) {
+        // avatarReadyRef only guarantees our data-URL fetch settled and
+        // setAvatarDataUrl() was CALLED -- not that React has actually
+        // committed that new src to this <img> element yet (state updates
+        // outside a direct event handler aren't guaranteed to flush
+        // synchronously). A click racing ahead of that commit -- more
+        // likely on a slower mobile device, same class of timing gap as
+        // the decode() issue below -- would decode/capture whatever src
+        // is CURRENTLY on the node (stale remote URL, or nothing), right
+        // back to the original "blank avatar" failure this whole prefetch
+        // exists to avoid. Poll for the DOM to actually catch up before
+        // moving on to the load/decode wait.
+        if (avatarDataUrl && exportImg.src !== avatarDataUrl) {
+          await new Promise<void>(resolve => {
+            let tries = 0;
+            const check = () => {
+              if (exportImg.src === avatarDataUrl || ++tries > 60) return resolve();
+              requestAnimationFrame(check);
+            };
+            check();
+          });
+        }
         if (!exportImg.complete) {
           await new Promise<void>(resolve => {
             exportImg.addEventListener('load', () => resolve(), { once: true });
