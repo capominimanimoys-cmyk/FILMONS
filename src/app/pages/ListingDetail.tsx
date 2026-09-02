@@ -780,9 +780,9 @@ export function ListingDetail() {
                       <MessageCircle className="w-4 h-4" /> Message
                     </button>
                   )}
-                  <button onClick={handleCopyLink}
+                  <button onClick={() => navigate(`/listing/${listing.id}/share-card`, { state: { listing, host } })}
                     className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 border border-gray-200 rounded-xl py-2.5 hover:bg-gray-50 transition-colors font-medium">
-                    <Link2 className="w-4 h-4" /> {isOpportunity ? 'Share' : 'Copy link'}
+                    <Share2 className="w-4 h-4" /> Share
                   </button>
                 </div>
               </div>
