@@ -10,6 +10,7 @@ import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
+import { playTransition } from '../lib/smartAnimate';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -93,6 +94,15 @@ export function ListingDetail() {
   const [activeImg, setActiveImg]         = useState(0);
 
   useEffect(() => { if (id) loadListing(id); }, [id]);
+
+  // Plays the FLIP transition (smartAnimate.ts) captured by ListingCard's
+  // handleClick just before it navigated here -- a no-op if the page was
+  // reached any other way (direct link, refresh, back button) since
+  // captureSnapshot() will never have run in that case. Fires once on
+  // mount, before the skeleton hero (data-animate-id'd the same as the
+  // real gallery hero below) has had a chance to paint in its final
+  // position/size.
+  useEffect(() => { playTransition(); }, []);
 
   // Notification click-through (?review=<id>) — scroll to the specific
   // review once it's loaded. Guarded so it only fires the first time
@@ -232,8 +242,7 @@ export function ListingDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <motion.div
-              layoutId={id ? `listing-image-${id}` : undefined}
-              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              data-animate-id={id ? `listing-image-${id}` : undefined}
               className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100"
             >
               {preview?.cover
@@ -379,14 +388,13 @@ export function ListingDetail() {
             {/* ── Media Gallery ── */}
             {allMedia.length > 0 && (
               <div className="space-y-2">
-                {/* Main image — same layoutId as the loading-state hero
-                    above and ListingCard's image, so a card tap, the
+                {/* Main image — same data-animate-id as the loading-state
+                    hero above and ListingCard's image, so a card tap, the
                     skeleton, and the real gallery are all one continuous
-                    shared-element transition rather than three separate
-                    swaps. */}
+                    FLIP transition (smartAnimate.ts) rather than three
+                    separate swaps. */}
                 <motion.div
-                  layoutId={id ? `listing-image-${id}` : undefined}
-                  transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                  data-animate-id={id ? `listing-image-${id}` : undefined}
                   className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group"
                   onClick={() => openLightbox(allMedia, activeImg)}
                 >

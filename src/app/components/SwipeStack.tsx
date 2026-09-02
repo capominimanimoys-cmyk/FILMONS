@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -90,7 +91,8 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
 
   return (
     <>
-      <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
+      <div data-animate-id={listing.id ? `listing-image-${listing.id}` : undefined}
+        className="relative h-72 lg:h-[420px] bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden">
         {listing.images?.[0]
           ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" draggable={false}/>
           : <div className="w-full h-full flex items-center justify-center text-5xl opacity-20">🎬</div>
@@ -572,8 +574,23 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
   const current = items[idx];
   const cards   = items.slice(idx, idx + 3);
   const viewItem = (target: DeckItem) => {
-    if (target.kind === 'listing') navigate(`/listing/${target.data.id}`);
-    else navigate(`/host/${target.data.id}`);
+    if (target.kind === 'listing') {
+      const listing = target.data;
+      // Snapshots the deck card's [data-animate-id] image (see
+      // ListingContent below) so ListingDetail's playTransition() can FLIP
+      // it into the hero position -- same manual-FLIP pattern
+      // ListingCard.tsx uses for every other listing grid in the app; the
+      // swipe deck just never had it wired up. preview seeds the detail
+      // page's skeleton hero/title/price the instant it mounts, same as
+      // ListingCard's handleClick.
+      captureSnapshot();
+      const previewCover = listing.images?.find((i: any) => typeof i === 'string') || null;
+      navigate(`/listing/${listing.id}`, {
+        state: { preview: { title: listing.title, price: listing.price, cover: previewCover, city: listing.city } },
+      });
+    } else {
+      navigate(`/host/${target.data.id}`);
+    }
   };
 
   // Deck exhausted -- Home.tsx owns the "you're all caught up" screen

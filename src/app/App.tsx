@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { RouterProvider } from 'react-router';
-import { LayoutGroup } from 'motion/react';
 import { router } from './routes';
 import { AuthProvider } from './context/AuthContext';
 import { FollowProvider } from './context/FollowContext';
@@ -40,14 +39,14 @@ export default function App() {
         <PostProvider>
           <NotificationsProvider>
             <NotificationBannerProvider>
-              {/* Persists across every route change so the Home listing
-                  card -> Listing Details hero shared-image transition
-                  (matching layoutId in ListingCard.tsx / ListingDetail.tsx)
-                  can animate across the navigation instead of just
-                  hard-cutting between the two pages. */}
-              <LayoutGroup>
-                <RouterProvider router={router} />
-              </LayoutGroup>
+              {/* The card -> Listing Details shared-image transition uses
+                  smartAnimate.ts's manual FLIP (data-animate-id +
+                  captureSnapshot/playTransition, see ListingCard.tsx /
+                  ListingDetail.tsx) -- Framer Motion's layoutId + this
+                  LayoutGroup wrapper was tried first and never actually
+                  animated across a route change (confirmed by direct user
+                  testing), so it's not needed here. */}
+              <RouterProvider router={router} />
               <Toaster richColors position="top-center" />
             </NotificationBannerProvider>
           </NotificationsProvider>

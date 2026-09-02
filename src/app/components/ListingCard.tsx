@@ -10,6 +10,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { boostApi } from '../lib/boostApi';
 import * as notifs from '../lib/notifications';
+import { captureSnapshot } from '../lib/smartAnimate';
 
 interface ListingCardProps {
   listing: Listing & { distance?: number };
@@ -261,6 +262,11 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
     // real data (ListingDetail always fetches fresh regardless).
     const previewCover = listing.image ||
       (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string') : null);
+    // Snapshots every [data-animate-id] element currently on screen (the
+    // image container below) so ListingDetail's playTransition() can FLIP
+    // it from this card's exact position/size into the detail page's hero
+    // once the new route paints -- see smartAnimate.ts.
+    captureSnapshot();
     navigate(`/listing/${listing.id}`, {
       state: { preview: { title: listing.title, price: listing.price, cover: previewCover, city: listing.city } },
     });
@@ -357,15 +363,15 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         onTouchMove={endPress}
         className={`cursor-pointer group select-none film-card active:scale-[0.98] transition-transform duration-100 ${className}`}
       >
-        {/* Image container — shares a layoutId with ListingDetail's hero
-            image so tapping into a listing animates as the card expanding
-            into place instead of a hard page cut (see App.tsx's
-            LayoutGroup). Only meaningful for real listings (a stable id);
-            skip it for anything without one so an ad-hoc/preview card
+        {/* Image container — shares a data-animate-id with ListingDetail's
+            hero image so tapping into a listing FLIPs the card into place
+            (smartAnimate.ts's manual FLIP, see captureSnapshot() in
+            handleClick above and playTransition() in ListingDetail) instead
+            of a hard page cut. Only meaningful for real listings (a stable
+            id); skip it for anything without one so an ad-hoc/preview card
             never collides with a real listing's transition. */}
         <motion.div
-          layoutId={listing.id ? `listing-image-${listing.id}` : undefined}
-          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+          data-animate-id={listing.id ? `listing-image-${listing.id}` : undefined}
           className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 mb-3"
         >
           {cover ? (
