@@ -6,7 +6,7 @@
  * doesn't advance the deck; the same card is shown again on return).
  */
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock } from 'lucide-react';
+import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -96,10 +96,15 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
           : <div className="w-full h-full flex items-center justify-center text-5xl opacity-20">🎬</div>
         }
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/60 to-transparent"/>
-        <div className="absolute top-3 left-3">
+        <div className="absolute top-3 left-3 flex flex-col items-start gap-1.5">
           <span className={`text-[10px] font-black text-white backdrop-blur-sm px-2.5 py-1 rounded-full uppercase tracking-wide ${isOpportunity ? 'bg-indigo-600' : 'bg-black/55'}`}>
             {typeLabel}
           </span>
+          {!!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date() && (
+            <span className="text-[10px] font-black uppercase tracking-wide px-2.5 py-1 rounded-full bg-red-500 text-white flex items-center gap-1 shadow-sm">
+              <AlertTriangle className="w-3 h-3 fill-white" /> Emergency
+            </span>
+          )}
         </div>
       </div>
 

@@ -17,6 +17,7 @@ import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { opportunityFeedApi } from '../lib/opportunityFeedApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
+import { EmergencyLockedState } from '../components/EmergencyLockedState';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -354,15 +355,20 @@ export function Home() {
   // Reset done-state when filter changes
   const [filterKey, setFilterKey] = useState(0);
   const handleFilter = async (id: FilterId) => {
-    if (id === 'emergency') {
-      // Never just trust the client's own accountType for this decision --
-      // canBrowseEmergency above is only the instant-UX shortcut (and the
-      // chip is already hidden for ineligible tiers below), the real check
-      // is this server round-trip, same as any other direct-entry attempt.
-      const check = user?.id ? await emergencyApi.checkBrowseAccess(user.id) : { allowed: false };
-      if (!check.allowed) { setShowEmergencyUpgrade(true); return; }
-    }
+    // The category is always enterable now (guests included -- "do not
+    // hide categories", see the guest-mode-limit/emergency-listing specs)
+    // so the filter switches immediately regardless of tier; the render
+    // below shows EmergencyLockedState instead of the deck for anyone who
+    // isn't Professional/Business. canBrowseEmergency is only the instant-
+    // UX shortcut for THAT decision -- if the client thinks the account IS
+    // eligible, still re-verify server-side (a stale cached account type
+    // shouldn't silently grant access the server would refuse) and fall
+    // back to the upgrade prompt if it disagrees.
     setFilter(id);
+    if (id === 'emergency' && canBrowseEmergency) {
+      const check = user?.id ? await emergencyApi.checkBrowseAccess(user.id) : { allowed: false };
+      if (!check.allowed) setShowEmergencyUpgrade(true);
+    }
     setDeckDone(false);
     setNoNewListings(false);
     setFilterKey(k => k + 1);
@@ -610,13 +616,13 @@ export function Home() {
           </div>
         ) : (
           <>
-            {/* ── Filter chips — Emergency tab only shown to Professional/
-                 Business (canBrowseEmergency is the client-side shortcut; the
-                 real access decision is still re-checked server-side in
-                 handleFilter, so a direct entry point can't bypass this by
-                 just being invisible here). ── */}
+            {/* ── Filter chips — Emergency is visible to every account type
+                 (guests included) so everyone understands the feature
+                 exists; only the actual listings are gated by tier
+                 (EmergencyLockedState below, canBrowseEmergency re-checked
+                 server-side in handleFilter). ── */}
             <div ref={filterRowRef} className="pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
-              {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
+              {FILTERS.map(f => (
                 <button
                   key={f.id}
                   onClick={() => handleFilter(f.id)}
@@ -646,7 +652,8 @@ export function Home() {
                   generic "Nothing here yet" state meant for a filter that
                   never had any listings at all) the caught-up/empty/new-
                   opportunities states, then the deck itself. */}
-              {(filter === 'talent' && !user) ? loginToSeeOpportunitiesScreen
+              {(filter === 'emergency' && !canBrowseEmergency) ? <EmergencyLockedState />
+                  : (filter === 'talent' && !user) ? loginToSeeOpportunitiesScreen
                   : loadError ? errorScreen : deckDone
                   ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
                   : deck.length === 0

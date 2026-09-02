@@ -52,6 +52,7 @@ function ListingCardArt({ listing, host, isExport: X, hostAvatarOverride }: LP) 
   const location = [listing.city, listing.province].filter(Boolean).join(', ');
   const hostTierBadge = tierBadgeFor(normalizeTier(host?.accountType));
   const ctaLabel = isOpportunity ? 'View opportunity on FILMONS' : 'View on FILMONS';
+  const isEmergency = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
 
   return (
     <div style={{
@@ -89,6 +90,14 @@ function ListingCardArt({ listing, host, isExport: X, hostAvatarOverride }: LP) 
             letterSpacing: '0.05em', padding: X ? '7px 16px' : '0.7% 1.5%', borderRadius: 999,
             fontSize: X ? 17 : 'clamp(6px, 1.6%, 17px)', background: category.bg,
           }}>{category.label}</span>
+          {isEmergency && (
+            <span style={{
+              position: 'absolute', top: X ? 20 : '3.2%', right: X ? 20 : '3.2%',
+              display: 'inline-flex', alignItems: 'center', color: '#ffffff', fontWeight: 800,
+              letterSpacing: '0.05em', padding: X ? '7px 16px' : '0.7% 1.5%', borderRadius: 999,
+              fontSize: X ? 17 : 'clamp(6px, 1.6%, 17px)', background: '#ef4444',
+            }}>EMERGENCY</span>
+          )}
         </div>
 
         {/* Info — title / location / price / host row / CTA, same rhythm

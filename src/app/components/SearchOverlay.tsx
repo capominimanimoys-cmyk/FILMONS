@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
-  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock,
+  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock, AlertTriangle,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
@@ -18,6 +18,7 @@ import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
+import { EmergencyLockedState } from './EmergencyLockedState';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Global-search categories -- deliberately separate from ListingTypeFilter
@@ -25,7 +26,7 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 // which data source(s) the search bar itself fetches from; ListingTypeFilter
 // stays exactly as it was, an orthogonal refinement layered on top of
 // whatever the active category already fetched.
-type TabId = 'all' | 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities';
+type TabId = 'all' | 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 type SortBy = 'best_match' | 'newest' | 'price_asc' | 'price_desc';
 
 interface ProfileRow {
@@ -44,6 +45,8 @@ interface ListingRow {
   payment_methods?: string[] | null;
   created_at?: string | null;
   is_active?: boolean | null;
+  is_emergency?: boolean | null;
+  emergency_expires_at?: string | null;
 }
 
 interface Suggestion {
@@ -373,7 +376,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
 function safe(s: string) { return s.replace(/[%_\\]/g, ''); }
 
 // Columns confirmed to exist in DB (matches api.ts getAll select — no province)
-const LISTING_SELECT  = 'id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active';
+const LISTING_SELECT  = 'id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at';
 const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
 
 // ── Category classification ──────────────────────────────────────────────────
@@ -581,6 +584,12 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
       // return nothing for any legacy-tagged listing.
       case 'opportunities':  query = query.or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%'); break;
       case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
+      // Fetched for everyone regardless of tier (the gate is who's allowed
+      // to SEE the results, handled at render time by EmergencyLockedState
+      // -- same "data isn't the security boundary, the UI decision is"
+      // pattern already used for negotiable/boosted elsewhere) -- only
+      // real, still-active Emergency listings, never an expired one.
+      case 'emergency':      query = query.eq('is_emergency', true).gt('emergency_expires_at', new Date().toISOString()); break;
     }
     return query.order('created_at', { ascending: false }).limit(24);
   });
@@ -630,6 +639,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id:'creators',      label:'Creators'      },
   { id:'studios',       label:'Studios'       },
   { id:'opportunities', label:'Opportunities' },
+  { id:'emergency',     label:'Emergency'     },
 ];
 
 // ── Typed category keyword recognition (Enter/Search submit only) ────────────
@@ -645,6 +655,7 @@ const CATEGORY_KEYWORDS: Record<string, TabId> = {
   creator: 'creators', creators: 'creators',
   studio: 'studios', studios: 'studios',
   opportunity: 'opportunities', opportunities: 'opportunities',
+  emergency: 'emergency',
 };
 
 function parseCategoryKeyword(raw: string): { tab: TabId; rest: string } | null {
@@ -908,15 +919,21 @@ function CreatorCard({ u, onNavigate }: { u: ProfileRow; onNavigate: (url: strin
 
 function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string) => void }) {
   const price = `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
+  const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
       onClick={() => onNavigate(`/listing/${l.id}`)}
       className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
-      <div className="aspect-[4/3] bg-gray-100 overflow-hidden">
+      <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
           ? <img src={l.images[0]} className="w-full h-full object-cover" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>
         }
+        {isEmergency && (
+          <span className="absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
+            <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
+          </span>
+        )}
       </div>
       <div className="p-2.5">
         <p className="text-xs font-bold text-gray-900 truncate leading-snug">{l.title}</p>
@@ -1023,7 +1040,7 @@ function GuestSeeMoreButton({ onClick }: { onClick: () => void }) {
 // 'Photographer'.", "No opportunities found for 'Editor'.").
 const CATEGORY_EMPTY_NOUN: Record<TabId, string> = {
   all: 'results', rental: 'rental results', sale: 'sale results', services: 'service results',
-  creators: 'creators', studios: 'studios', opportunities: 'opportunities',
+  creators: 'creators', studios: 'studios', opportunities: 'opportunities', emergency: 'emergency listings',
 };
 
 function EmptyState({ q, tab }: { q: string; tab: TabId }) {
@@ -1140,7 +1157,7 @@ interface Props {
 // Professional-tier cap below is unrelated and still applies to them).
 const GUEST_CATEGORY_LIMIT = 5;
 
-const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities'];
+const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
 
 export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [searchParams] = useSearchParams();
@@ -1172,6 +1189,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const { user, isAuthenticated } = useAuth();
   const canBrowseOpportunities = isProfessional(user?.accountType);
   const [showOpportunityGate, setShowOpportunityGate] = useState(false);
+  // Same Professional-or-Business rule as Home.tsx's canBrowseEmergency --
+  // isProfessional() already covers both, deliberately never Creator+ alone
+  // (see the emergency-listing spec's explicit "Creator+ status alone does
+  // NOT unlock Emergency Listings").
+  const canBrowseEmergency = isProfessional(user?.accountType);
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
@@ -1342,6 +1364,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // general result ranking happens to produce.
   const opportunityListings = filteredListings.filter(l => isOpportunityListing(l))
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  // Cross-cutting flag, not a mutually-exclusive category like the others
+  // above (an Emergency listing is still also a Rental/Sale/Service) --
+  // its own tab/section regardless of what underlying type it is.
+  const emergencyListings = filteredListings.filter(l => !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date())
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   const visibleUsers        = (activeTab === 'all' || activeTab === 'creators')     ? filteredUsers        : [];
   const visibleRental       = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
@@ -1349,11 +1376,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const visibleServices     = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
   const visibleStudios      = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
   const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
+  const visibleEmergency    = (activeTab === 'all' || activeTab === 'emergency')    ? emergencyListings     : [];
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
-    || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0;
+    || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0;
   const showSuggestions = hasTyped && !resultsReady && !loading && (suggestions.length > 0 || suggLoading);
 
   const activeFilterCount = countActiveFilters(filters);
@@ -1527,6 +1555,19 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                       account-tier cap (canBrowseOpportunities), unrelated to
                       guest mode. */}
                   {visibleOpportunities.slice(0, !user ? GUEST_CATEGORY_LIMIT : (canBrowseOpportunities ? 10 : 5)).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                </ResultSection>
+              )}
+              {visibleEmergency.length > 0 && (
+                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
+                  {/* Binary tier gate, not a guest-preview cap like every
+                      other section above -- Professional/Business (any
+                      account, including a guest who's neither) get the
+                      full locked state instead of a partial list, per the
+                      emergency-listing spec ("do not show an empty-results
+                      state when access is actually locked"). */}
+                  {canBrowseEmergency
+                    ? visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)
+                    : <div className="col-span-2"><EmergencyLockedState/></div>}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (
