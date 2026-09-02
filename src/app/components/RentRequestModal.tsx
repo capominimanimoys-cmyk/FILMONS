@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import {
   X, Clock, Package, Send, CheckCircle,
@@ -61,6 +61,19 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
   const [duration, setDuration] = useState(1);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Slide-in/slide-out -- same deferred-unmount pattern ListingCard's
+  // BottomMenuSheet uses: `show` drives the transform, and `close()` waits
+  // for the slide-out transition to finish before actually telling the
+  // parent to unmount this modal, instead of cutting it instantly.
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
+  }, []);
+  const close = useCallback(() => {
+    setShow(false);
+    setTimeout(onClose, 280);
+  }, [onClose]);
 
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(() => new Date());
@@ -200,13 +213,19 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
 
   /* ── Render ─────────────────────────────────────────────── */
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full sm:max-w-lg bg-white sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92dvh] flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm"
+      style={{ opacity: show ? 1 : 0, transition: 'opacity 240ms ease' }}
+    >
+      <div
+        className="relative w-full sm:max-w-lg bg-white sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92dvh] flex flex-col"
+        style={{ transform: show ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 280ms cubic-bezier(0.32,0.72,0,1)' }}
+      >
 
         {/* ── Header ── */}
         <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 pt-6 pb-6 shrink-0">
           <button
-            onClick={onClose}
+            onClick={close}
             className="absolute top-4 right-4 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
           >
             <X className="w-4 h-4" />
@@ -488,7 +507,7 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
                 <Button
                   variant="outline"
                   className="flex-1 h-auto py-3.5 rounded-2xl border-gray-200 text-gray-700 font-bold active:opacity-70 transition-opacity"
-                  onClick={onClose}
+                  onClick={close}
                   disabled={sending}
                 >
                   Cancel
@@ -558,7 +577,7 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
                 <Button
                   variant="outline"
                   className="flex-1 h-auto py-3.5 rounded-2xl border-gray-200 text-gray-700 font-bold active:opacity-70 transition-opacity"
-                  onClick={onClose}
+                  onClick={close}
                 >
                   Close
                 </Button>

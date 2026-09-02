@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { X, Send, CheckCircle, Briefcase, User as UserIcon } from 'lucide-react';
 import { Listing, User } from '../types';
@@ -56,6 +56,19 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
   const RATE_TYPE_LABEL: Record<string, string> = { hourly: 'Per hour', daily: 'Per day', flat: 'Flat rate', per_project: 'Per project' };
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+
+  // Slide-in/slide-out -- same deferred-unmount pattern ListingCard's
+  // BottomMenuSheet uses: `show` drives the transform, and `close()` waits
+  // for the slide-out transition to finish before actually telling the
+  // parent to unmount this modal, instead of cutting it instantly.
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
+  }, []);
+  const close = useCallback(() => {
+    setShow(false);
+    setTimeout(onClose, 280);
+  }, [onClose]);
   const tier = normalizeTier(user?.accountType);
   // Creator can't apply at all (server-side applications entitlement is 0
   // for this tier -- see _shared/entitlements.ts) -- gated here on open,
@@ -158,11 +171,19 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center" onClick={onClose}>
-      <div className="bg-white w-full md:max-w-md max-h-[90vh] overflow-y-auto rounded-t-3xl md:rounded-[22px] shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center"
+      style={{ opacity: show ? 1 : 0, transition: 'opacity 240ms ease' }}
+      onClick={close}
+    >
+      <div
+        className="bg-white w-full md:max-w-md max-h-[90vh] overflow-y-auto rounded-t-3xl md:rounded-[22px] shadow-2xl"
+        style={{ transform: show ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 280ms cubic-bezier(0.32,0.72,0,1)' }}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-5 pt-4 pb-2 sticky top-0 bg-white">
           <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5"><Briefcase className="w-4 h-4 text-indigo-600" /> Apply</p>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+          <button onClick={close} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
             <X className="w-4 h-4 text-gray-600" />
           </button>
         </div>
@@ -175,7 +196,7 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
           <div className="px-5 pb-8 pt-2 flex flex-col items-center text-center gap-2">
             <p className="text-base font-black text-gray-900">Applications closed</p>
             <p className="text-sm text-gray-500">{host.name} is no longer accepting applications for this opportunity.</p>
-            <button onClick={onClose} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm mt-2">Close</button>
+            <button onClick={close} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm mt-2">Close</button>
           </div>
         ) : sent ? (
           <div className="px-5 pb-8 pt-4 flex flex-col items-center text-center gap-3">
@@ -186,7 +207,7 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
               <p className="text-base font-black text-gray-900">Application sent</p>
               <p className="text-sm text-gray-500 mt-1">{host.name} will follow up with you directly in Inbox.</p>
             </div>
-            <button onClick={onClose} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm mt-2">Done</button>
+            <button onClick={close} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm mt-2">Done</button>
           </div>
         ) : (
           <div className="px-5 pb-5 space-y-3">
