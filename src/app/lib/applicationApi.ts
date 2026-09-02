@@ -19,6 +19,10 @@ export interface OpportunityApplicationRow {
   demo_reel_url: string | null;
   availability: string | null;
   expected_rate: string | null;
+  proposed_rate_amount: number | null;
+  proposed_rate_currency: string | null;
+  proposed_rate_type: 'hourly' | 'daily' | 'flat' | 'per_project' | null;
+  proposed_rate_note: string | null;
   custom_answers: Record<string, string>;
   viewed_at?: string | null;
   shortlisted_at?: string | null;

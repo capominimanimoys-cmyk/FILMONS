@@ -42,6 +42,18 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
   const [availability, setAvailability] = useState('');
   const [expectedRate, setExpectedRate] = useState('');
   const [answers, setAnswers] = useState<string[]>(customQuestions.map(() => ''));
+
+  // Structured proposed-rate -- separate from `expectedRate` above (a
+  // poster-configured optional free-text field). This one is required
+  // whenever the LISTING's own compensation is negotiable, so the host has
+  // a concrete number to evaluate instead of just "negotiable".
+  const isNegotiable = !!listing.opportunity?.paid && listing.opportunity?.compensationType === 'negotiable';
+  const [proposedRateAmount, setProposedRateAmount] = useState('');
+  const [proposedRateCurrency, setProposedRateCurrency] = useState(listing.opportunity?.currency || 'CAD');
+  const [proposedRateType, setProposedRateType] = useState<'hourly' | 'daily' | 'flat' | 'per_project'>('daily');
+  const [proposedRateNote, setProposedRateNote] = useState('');
+  const proposedRateNum = parseFloat(proposedRateAmount);
+  const RATE_TYPE_LABEL: Record<string, string> = { hourly: 'Per hour', daily: 'Per day', flat: 'Flat rate', per_project: 'Per project' };
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const tier = normalizeTier(user?.accountType);
@@ -66,6 +78,9 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
     if (user.id === host.id) { toast.error("You can't apply to your own listing"); return; }
     if (requirePortfolio && !portfolioUrl.trim()) { toast.error('A portfolio link is required'); return; }
     if (requireMessage && !message.trim()) { toast.error('A short message is required'); return; }
+    if (isNegotiable && (!proposedRateAmount.trim() || !(proposedRateNum > 0))) {
+      toast.error('Enter your proposed rate'); return;
+    }
 
     setSending(true);
     try {
@@ -81,6 +96,10 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
         resumeUrl: resumeUrl.trim() || undefined, demoReelUrl: demoReelUrl.trim() || undefined,
         availability: availability.trim() || undefined, expectedRate: expectedRate.trim() || undefined,
         customAnswers,
+        ...(isNegotiable ? {
+          proposedRateAmount: proposedRateNum, proposedRateCurrency,
+          proposedRateType, proposedRateNote: proposedRateNote.trim() || undefined,
+        } : {}),
       });
       if ('limitReached' in result) { setLimitReached(result.limitReached); setSending(false); return; }
       const applicationId = result.applicationId;
@@ -176,6 +195,47 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 bg-gray-50 rounded-xl px-3 py-2.5">
               <UserIcon className="w-3.5 h-3.5" /> Your Filmons Profile will be shared with your application
             </div>
+
+            {isNegotiable && (
+              <div className="space-y-2 border border-indigo-100 bg-indigo-50/50 rounded-2xl p-3.5">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wide block">
+                  Your proposed rate <span className="text-red-400">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number" min="0" inputMode="decimal" value={proposedRateAmount}
+                    onChange={e => setProposedRateAmount(e.target.value)}
+                    placeholder="250"
+                    className="w-24 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 border border-gray-200"
+                  />
+                  <select value={proposedRateCurrency} onChange={e => setProposedRateCurrency(e.target.value)}
+                    className="bg-white rounded-xl px-2.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 border border-gray-200">
+                    <option value="CAD">CAD</option>
+                    <option value="USD">USD</option>
+                  </select>
+                  <select value={proposedRateType} onChange={e => setProposedRateType(e.target.value as typeof proposedRateType)}
+                    className="flex-1 bg-white rounded-xl px-2.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 border border-gray-200">
+                    {Object.entries(RATE_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <p className="text-[11px] text-indigo-700">
+                  The host listed this opportunity as negotiable. Enter the rate you would like to be paid.
+                </p>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Rate note</label>
+                  <textarea
+                    value={proposedRateNote} onChange={e => setProposedRateNote(e.target.value)}
+                    placeholder="Explain your rate or what it includes…" rows={2}
+                    className="w-full bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 border border-gray-200 resize-none"
+                  />
+                </div>
+                {proposedRateAmount.trim() && proposedRateNum > 0 && (
+                  <p className="text-xs font-bold text-gray-900">
+                    Your proposed rate: ${proposedRateAmount} {proposedRateCurrency} · {RATE_TYPE_LABEL[proposedRateType]}
+                  </p>
+                )}
+              </div>
+            )}
 
             {requirePortfolio && (
               <div>

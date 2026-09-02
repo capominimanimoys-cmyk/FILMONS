@@ -107,6 +107,8 @@ export const entitlementsApi = {
     userId: string; listingId: string; ownerId: string; message?: string;
     portfolioUrl?: string; resumeUrl?: string; demoReelUrl?: string;
     availability?: string; expectedRate?: string; customAnswers?: Record<string, string>;
+    proposedRateAmount?: number; proposedRateCurrency?: string;
+    proposedRateType?: 'hourly' | 'daily' | 'flat' | 'per_project'; proposedRateNote?: string;
   }): Promise<{ applicationId: string } | { limitReached: LimitReachedInfo }> => {
     const { ok, status, data } = await callFn('submit-opportunity-application', params);
     if (!ok) {

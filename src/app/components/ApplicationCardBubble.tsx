@@ -105,9 +105,11 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
 
   const cfg = listing.opportunity?.applicationConfig;
   const cover = listing.image || listing.images?.[0];
-  const comp = listing.opportunity?.paid
-    ? `$${listing.opportunity.compensationAmount ?? listing.opportunity.compensationMin ?? listing.price}/${listing.opportunity.compensationType === 'daily' ? 'day' : listing.opportunity.compensationType === 'hourly' ? 'hr' : ''}`.trim()
-    : 'Unpaid / Collaboration';
+  const comp = !listing.opportunity?.paid
+    ? 'Unpaid / Collaboration'
+    : listing.opportunity.compensationType === 'negotiable'
+      ? 'Negotiate your rate'
+      : `$${listing.opportunity.compensationAmount ?? listing.opportunity.compensationMin ?? listing.price}/${listing.opportunity.compensationType === 'daily' ? 'day' : listing.opportunity.compensationType === 'hourly' ? 'hr' : ''}`.trim();
   const statusInfo = (isOwnerView ? OWNER_STATUS_LABEL : APPLICANT_STATUS_LABEL)[app.status] || OWNER_STATUS_LABEL.pending;
   const nonTerminal = !TERMINAL.has(app.status);
 
@@ -312,6 +314,15 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
               </div>
             </div>
 
+            {!!app.proposed_rate_amount && (
+              <Section label="Proposed Rate">
+                <p className="text-base font-black text-indigo-700">
+                  ${app.proposed_rate_amount} {app.proposed_rate_currency || 'CAD'}
+                  {app.proposed_rate_type === 'hourly' ? '/hr' : app.proposed_rate_type === 'daily' ? '/day' : app.proposed_rate_type === 'per_project' ? '/project' : app.proposed_rate_type === 'flat' ? ' flat' : ''}
+                </p>
+                {app.proposed_rate_note && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{app.proposed_rate_note}</p>}
+              </Section>
+            )}
             {app.message && (
               <Section label="Message"><p className="text-sm text-gray-700 whitespace-pre-wrap">{app.message}</p></Section>
             )}

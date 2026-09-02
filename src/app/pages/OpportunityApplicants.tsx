@@ -37,6 +37,11 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   withdrawn:   { label: 'Withdrawn',   color: 'bg-gray-100 text-gray-500' },
 };
 const TERMINAL = new Set(['accepted', 'rejected', 'withdrawn', 'offer_sent', 'offer_accepted', 'payment_pending', 'hired', 'completed']);
+const RATE_TYPE_SUFFIX: Record<string, string> = { hourly: '/hr', daily: '/day', flat: ' flat', per_project: '/project' };
+function proposedRateLabel(a: { proposed_rate_amount: number | null; proposed_rate_currency: string | null; proposed_rate_type: string | null }): string | null {
+  if (!a.proposed_rate_amount) return null;
+  return `$${a.proposed_rate_amount} ${a.proposed_rate_currency || 'CAD'}${a.proposed_rate_type ? RATE_TYPE_SUFFIX[a.proposed_rate_type] || '' : ''}`;
+}
 const tabOf = (status: string): TabKey =>
   status === 'pending' || status === 'viewed' ? 'new' :
   status === 'shortlisted' || status === 'contacted' ? 'shortlisted' :
@@ -381,6 +386,10 @@ function ApplicantRow({ a, active, bulkMode, checked, onToggleBulk, onOpen, onMe
           )}
         </div>
       </div>
+      {proposedRateLabel(a) && (
+        <p className="text-sm font-black text-indigo-700">Proposed rate: {proposedRateLabel(a)}</p>
+      )}
+      {a.proposed_rate_note && <p className="text-xs text-gray-500 line-clamp-2">{a.proposed_rate_note}</p>}
       {a.message && <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-2 line-clamp-2">{a.message}</p>}
       <div className="flex flex-wrap gap-1.5">
         {a.portfolio_url && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Portfolio ✓</span>}
@@ -439,6 +448,12 @@ function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist,
 
         {a.portfolio_url && <a href={a.portfolio_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600"><ExternalLink className="w-3 h-3" /> View Portfolio</a>}
 
+        {proposedRateLabel(a) && (
+          <Section label="Proposed Rate">
+            <p className="text-base font-black text-indigo-700">{proposedRateLabel(a)}</p>
+            {a.proposed_rate_note && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.proposed_rate_note}</p>}
+          </Section>
+        )}
         {a.message && <Section label="Application Message"><p className="text-sm text-gray-700 whitespace-pre-wrap">{a.message}</p></Section>}
         {a.availability && <Section label="Availability"><p className="text-sm text-gray-700">{a.availability}</p></Section>}
         {a.expected_rate && <Section label="Expected Rate"><p className="text-sm text-gray-700">{a.expected_rate}</p></Section>}

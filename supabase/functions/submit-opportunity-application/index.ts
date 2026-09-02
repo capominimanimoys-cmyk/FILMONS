@@ -40,6 +40,7 @@ Deno.serve(async (req) => {
     const {
       userId, listingId, ownerId, message, portfolioUrl, resumeUrl,
       demoReelUrl, availability, expectedRate, customAnswers,
+      proposedRateAmount, proposedRateCurrency, proposedRateType, proposedRateNote,
     } = await req.json();
     if (!userId || !listingId || !ownerId) return json({ error: 'Missing required fields' }, 400);
 
@@ -55,6 +56,8 @@ Deno.serve(async (req) => {
         p_message: message || null, p_portfolio_url: portfolioUrl || null, p_resume_url: resumeUrl || null,
         p_demo_reel_url: demoReelUrl || null, p_availability: availability || null,
         p_expected_rate: expectedRate || null, p_custom_answers: customAnswers || {},
+        p_proposed_rate_amount: proposedRateAmount ?? null, p_proposed_rate_currency: proposedRateCurrency || null,
+        p_proposed_rate_type: proposedRateType || null, p_proposed_rate_note: proposedRateNote || null,
         p_window_start: windowStart(ENTITLEMENTS[tier].window).toISOString(),
       }),
     });
