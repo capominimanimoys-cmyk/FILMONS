@@ -38,8 +38,20 @@ Deno.serve(async (req) => {
       return new Response('Host not allowed', { status: 400, headers: cors });
     }
 
-    const res = await fetch(target);
-    if (!res.ok || !res.body) return new Response('Fetch failed', { status: 502, headers: cors });
+    // Some image CDNs (googleusercontent.com included) quietly reject or
+    // degrade requests that don't look like they came from a real browser
+    // -- Deno's default fetch sends a bare "Deno/x.x" User-Agent with no
+    // Accept header, which is exactly that. Spoofing realistic browser
+    // headers here is what makes this proxy actually work for the case it
+    // exists for, not just for URLs that would've succeeded anyway.
+    const res = await fetch(target, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Referer': 'https://filmons.app/',
+      },
+    });
+    if (!res.ok || !res.body) return new Response(`Fetch failed (${res.status})`, { status: 502, headers: cors });
 
     return new Response(res.body, {
       headers: { ...cors, 'Content-Type': res.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'public, max-age=3600' },
