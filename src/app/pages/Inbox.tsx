@@ -2689,6 +2689,35 @@ export function Inbox() {
     // handle 100% of the scrolling on their own -- which is what already
     // kept this header in place, once given the correct height budget.
     <div className="h-[calc(100dvh-56px)] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
+      {/* Mobile conversation-list -> chat slide (left-to-right on open,
+          reversed on back). Raw CSS, not Tailwind transition/translate
+          utilities -- this app's global `*` rule in theme.css always beats
+          a Tailwind transition utility for the same element (unlayered
+          CSS outranks Tailwind's @layer utilities regardless of
+          specificity), so a transition-transform class here would
+          silently never animate. Scoped to below the lg breakpoint only
+          (1024px, matching Tailwind's `lg:`) -- desktop's existing side-
+          by-side flex layout is completely untouched. */}
+      <style>{`
+        @media (max-width: 1023px) {
+          .inbox-panels { position: relative; }
+          .inbox-panel-list, .inbox-panel-thread {
+            position: absolute; inset: 0; width: 100%; z-index: 1;
+          }
+          .inbox-panel-thread {
+            z-index: 2;
+            transform: translateX(0);
+            transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+            will-change: transform;
+          }
+          .inbox-panel-thread.inbox-thread-back {
+            transform: translateX(-100%);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .inbox-panel-thread { transition: none !important; }
+        }
+      `}</style>
       {/* Top bar */}
       <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden lg:flex'}`}>
         <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
@@ -2711,9 +2740,17 @@ export function Inbox() {
         )}
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      {/* Mobile: conversation list -> chat is a left-to-right slide, not an
+          instant display swap -- both panels stay mounted the whole time
+          (they always were; this used to be a plain hidden/flex toggle on
+          always-rendered divs) so scroll position, fetched messages and
+          realtime subscriptions are never disturbed by opening/closing a
+          conversation. See the <style> block below for the actual
+          transform/position rules (mobile-only via media query, desktop's
+          existing side-by-side flex layout is untouched). */}
+      <div className="inbox-panels flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className={`relative flex flex-col border-r border-gray-200 bg-white ${showSidebar ? 'flex w-full lg:w-80 shrink-0' : 'hidden lg:flex lg:w-80 shrink-0'}`}>
+        <div className={`inbox-panel-list relative flex flex-col border-r border-gray-200 bg-white flex w-full lg:w-80 shrink-0`}>
           <div className="px-3 py-3 border-b border-gray-100 space-y-2">
             <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
               <SearchRounded sx={{fontSize:18,color:"#9ca3af",flexShrink:0}} />
@@ -2937,7 +2974,7 @@ export function Inbox() {
         </div>
 
         {/* Thread */}
-        <div className={`flex flex-col flex-1 min-w-0 overflow-hidden ${showSidebar ? 'hidden lg:flex' : 'flex'}`}>
+        <div className={`inbox-panel-thread flex flex-col flex-1 min-w-0 overflow-hidden flex ${showSidebar ? 'inbox-thread-back' : ''}`}>
           {!activeConv ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
               <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4"><ChatBubbleRounded sx={{fontSize:40,color:"#60a5fa"}} /></div>
