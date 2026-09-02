@@ -244,7 +244,7 @@ export function Login() {
         </p>
       </div>
       <div className="flex-1 flex items-center justify-center px-16 xl:px-24">
-        <div className="w-full max-w-[440px] bg-white rounded-3xl shadow-2xl p-10">
+        <div className="auth-pop-main w-full max-w-[440px] bg-white rounded-3xl shadow-2xl p-10">
           {desktopPhoneStep === 'code' ? (
             <>
               <p className="text-2xl font-black text-gray-900">Enter your code</p>
@@ -271,24 +271,24 @@ export function Login() {
                 <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
                   type="text" placeholder="Email or phone number" autoComplete="username"
                   onKeyDown={e => e.key === 'Enter' && handleDesktopSignIn()}
-                  className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white transition-all"/>
+                  className="auth-input-fx w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white transition-all"/>
                 <div className="relative">
                   <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
                     type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
                     onKeyDown={e => e.key === 'Enter' && handleDesktopSignIn()}
-                    className={`w-full bg-gray-50 border text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'}`}/>
+                    className={`auth-input-fx w-full bg-gray-50 border text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'}`}/>
                   <button onClick={() => setShowPw(p => !p)} type="button"
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
                     {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
                   </button>
                 </div>
-                {pwError && <p className="text-red-500 text-xs font-medium px-1 leading-snug">{pwError}</p>}
+                {pwError && <p className="auth-pop-error text-red-500 text-xs font-medium px-1 leading-snug">{pwError}</p>}
                 <div className="flex justify-end">
                   <Link to="/forgot-password" className="text-xs text-blue-600 font-semibold hover:underline">Forgot password?</Link>
                 </div>
               </div>
               <button onClick={handleDesktopSignIn} disabled={loading}
-                className="mt-5 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-blue-900/20">
+                className="auth-btn-fx mt-5 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all disabled:opacity-60 shadow-lg shadow-blue-900/20">
                 {loading ? 'Signing in…' : 'Sign In'}
               </button>
               <div className="flex items-center gap-3 my-5">
@@ -329,7 +329,7 @@ export function Login() {
       <AuthScreenLayout>
         <CinematicBg/>
         {desktopPanel}
-        <div className="lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+        <div className="auth-pop-main lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
           {/* Logo top */}
           <div className="flex justify-center pt-16 pb-10">
             <FilmonsLogo iconSize={32} theme="dark"/>
@@ -378,7 +378,7 @@ export function Login() {
       <AuthScreenLayout>
         <CinematicBg/>
         {desktopPanel}
-        <div className="lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
+        <div className="auth-pop-main lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4"/> Back
           </button>
@@ -392,14 +392,14 @@ export function Login() {
               <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
                 type="email" placeholder="Email address" autoComplete="email"
                 onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-                className="w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
+                className="auth-input-fx w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
             </div>
             {/* Password */}
             <div className="relative">
               <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
                 type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
                 onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-                className={`w-full bg-white/10 border text-white placeholder-white/40 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white/15 transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-white/20 focus:border-blue-400'}`}/>
+                className={`auth-input-fx w-full bg-white/10 border text-white placeholder-white/40 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white/15 transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-white/20 focus:border-blue-400'}`}/>
               <button onClick={() => setShowPw(p => !p)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors">
                 {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
@@ -407,7 +407,7 @@ export function Login() {
             </div>
             {/* Inline password error */}
             {pwError && (
-              <p className="text-red-400 text-xs font-medium px-1 leading-snug">
+              <p className="auth-pop-error text-red-400 text-xs font-medium px-1 leading-snug">
                 {pwError}
               </p>
             )}
@@ -424,7 +424,7 @@ export function Login() {
             </div>
           </div>
           <button onClick={handleEmailLogin} disabled={loading}
-            className="mt-5 w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60 shadow-lg shadow-blue-900/30">
+            className="auth-btn-fx mt-5 w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all disabled:opacity-60 shadow-lg shadow-blue-900/30">
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
           <div className="flex items-center gap-3 my-5">
