@@ -2674,7 +2674,21 @@ export function Inbox() {
   const showTopBar = !(activeConv && !showSidebar);
 
   return (
-    <div className="h-[100dvh] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
+    // h-[calc(100dvh-56px)], not h-[100dvh] -- this page already sits below
+    // the global sticky top nav (DesktopTopBar / mobile TopBar, both h-14 =
+    // 56px) in normal document flow, so claiming the FULL viewport height
+    // on top of that made the whole page exactly 56px taller than the
+    // viewport, forcing the page itself to scroll. Since the top nav is
+    // `sticky top-0`, it stayed pinned through that scroll while this
+    // page's own (correctly `shrink-0`, non-sticky-by-design) header
+    // scrolled up underneath it -- exactly "chat header hidden behind the
+    // main nav until you scroll back up". Subtracting the nav's height
+    // here means this page's bottom edge lands exactly at the viewport's
+    // bottom edge, the page itself never scrolls, and the existing
+    // internal overflow-y-auto regions (conversation list, message thread)
+    // handle 100% of the scrolling on their own -- which is what already
+    // kept this header in place, once given the correct height budget.
+    <div className="h-[calc(100dvh-56px)] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
       {/* Top bar */}
       <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden lg:flex'}`}>
         <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
