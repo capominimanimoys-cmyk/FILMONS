@@ -26,7 +26,7 @@ import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
-import { reliabilityApi, ReputationScore, isCreatorPlus } from '../lib/reliabilityApi';
+import { reliabilityApi, ReputationScore, isCreatorPlus, normalizeTier } from '../lib/reliabilityApi';
 import { AvatarActionSheet, AvatarFullScreen } from '../components/AvatarActionSheet';
 import { PostComposer } from '../components/PostComposer';
 import { ListingCard } from '../components/ListingCard';
@@ -1161,7 +1161,13 @@ export function Profile() {
               </div>
               {isCreatorPlus(user.accountType) && (
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-full flex items-center justify-center border-2 border-white">
-                  <span className="text-[8px] text-white font-black">C+</span>
+                  {/* Highest tier wins here too -- this used to hardcode
+                      "C+" for every Creator+-eligible tier, so a Business
+                      account's avatar showed a C+ corner badge instead of
+                      a Business one. */}
+                  <span className="text-[8px] text-white font-black">
+                    {(() => { const t = normalizeTier(user.accountType); return t === 'business' ? 'B' : t === 'professional' ? 'P' : 'C+'; })()}
+                  </span>
                 </div>
               )}
             </div>
