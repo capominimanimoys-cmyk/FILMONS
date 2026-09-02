@@ -2,7 +2,7 @@ import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'reac
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'motion/react';
 import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
-import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign, AlertTriangle } from 'lucide-react';
+import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, Share2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -358,6 +358,14 @@ export function ListingDetail() {
           <button onClick={handleCopyLink}
             className="w-9 h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:border-gray-300 transition-colors">
             <Link2 className="w-4 h-4" />
+          </button>
+          {/* ShareCard — reuses whatever's already loaded here (listing +
+              host) as navigation state so the card page never has to
+              re-fetch either. */}
+          <button onClick={() => navigate(`/listing/${listing.id}/share-card`, { state: { listing, host } })}
+            title="Share Card"
+            className="w-9 h-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:border-gray-300 transition-colors">
+            <Share2 className="w-4 h-4" />
           </button>
         </div>
       </div>

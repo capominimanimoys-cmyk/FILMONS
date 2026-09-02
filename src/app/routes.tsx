@@ -61,6 +61,7 @@ import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
 import { SignupPhone }        from './pages/SignupPhone';
 import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
 import { ShareCard }          from './pages/ShareCard';
+import { ListingShareCard }   from './pages/ListingShareCard';
 import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
@@ -112,6 +113,7 @@ export const router = createBrowserRouter([
       { path: 'my-listings', Component: MyListings },
       { path: 'my-orders', Component: MyOrders },
       { path: 'listing/:id', Component: ListingDetail },
+      { path: 'listing/:id/share-card', Component: ListingShareCard },
       { path: 'listing/:id/applicants', Component: OpportunityApplicants },
       { path: 'listing/:id/emergency', Component: EmergencyListingFlow },
       // Boost Listing routes temporarily removed (feature disabled, not

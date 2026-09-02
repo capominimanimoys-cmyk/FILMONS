@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router';
 import {
   ArrowLeft, Download, Copy, Share2, Check, BadgeCheck, Link as LinkIcon, Loader2,
 } from 'lucide-react';
-import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
@@ -11,15 +10,11 @@ import { getPortfolioItems } from '../lib/portfolioApi';
 import { authApi } from '../lib/api';
 import { supabase } from '../../lib/supabase';
 import { normalizeTier } from '../lib/reliabilityApi';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-
-// ── Export width — height is content-driven (measured at export time) so the
-//    card never carries unnecessary empty space. ─────────────────────────────
-const EW = 1080;
-
-// ── Font stacks ───────────────────────────────────────────────────────────────
-const SF   = "-apple-system,'SF Pro Text','SF Pro Display',BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
-const NEUE = "'Neue Montreal','SF Pro Display',-apple-system,sans-serif";
+import {
+  EW, SF, NEUE, Photo, VBar, Stat, tierBadgeFor, shareCardNavBtn,
+  shareCardTransitionCss, shareCardTransitionStyle,
+  useExportImageDataUrl, waitForImgReady, captureAndShareCard,
+} from '../lib/shareCardKit';
 
 // ── Shared card props ─────────────────────────────────────────────────────────
 interface CardUser {
@@ -37,54 +32,6 @@ interface CardUser {
 
 interface CP { user: CardUser; isExport?: boolean; }
 
-// ── Photo element — handles missing avatar. object-position biases toward the
-//    upper-third (38%) rather than pure top or pure center: most portraits
-//    have headroom above the subject, so 'top' clips the face and plain
-//    'center' still crops close on tall photos. There's no real face
-//    detection here — this is a heuristic, not a guarantee for every photo. ───
-function Photo({ src, alt, style, exportMode }: { src: string; alt: string; style: React.CSSProperties; exportMode?: boolean }) {
-  if (src) {
-    // crossOrigin is only needed on the hidden export copy, as a last-resort
-    // fallback for html-to-image's own re-fetch (see the avatar prefetch
-    // effect below) — the visible on-screen copy never captures to canvas,
-    // so it's left off there to avoid it ever failing to load a photo whose
-    // host doesn't answer CORS preflights.
-    const cors = exportMode && !src.startsWith('data:') ? { crossOrigin: 'anonymous' as const } : {};
-    return (
-      <img
-        src={src} alt={alt} {...cors}
-        style={{ ...style, objectFit: 'cover', objectPosition: 'center 38%', display: 'block' }}
-      />
-    );
-  }
-  return (
-    <div style={{ ...style, background: '#eef1f4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width="26%" height="26%" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="8" r="4" stroke="#c7ccd3" strokeWidth="1.5"/>
-        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#c7ccd3" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    </div>
-  );
-}
-
-// ── Vertical divider — sits inline within the stats row ────────────────────────
-function VBar({ X }: { X?: boolean }) {
-  return <span style={{ width: '1px', alignSelf: 'stretch', background: '#e5e7eb', margin: X ? '2px 0' : '0.2% 0' }} />;
-}
-
-// ── A stat: small uppercase label over a big value — no icon ──────────────────
-function Stat({ label, value, X }: { label: string; value: string | number; X?: boolean }) {
-  return (
-    <span style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-      <span style={{ color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase' as const,
-        letterSpacing: '0.04em', whiteSpace: 'nowrap',
-        fontSize: X ? 13 : 'clamp(6px, 1.2%, 13px)' }}>{label}</span>
-      <span style={{ color: '#0f1115', fontWeight: 800, whiteSpace: 'nowrap',
-        fontSize: X ? 34 : 'clamp(12px, 3.1%, 34px)' }}>{value}</span>
-    </span>
-  );
-}
-
 // ── Profile card — a white card floating on a soft gray canvas. Only the
 //    canvas (background) is pinned to a 9:16 ratio; the white card itself
 //    stays content-sized (shorter) and is centered vertically within it. ─────
@@ -93,11 +40,7 @@ function ProfileCard({ user, isExport: X }: CP) {
   // Highest account tier wins -- a Business account is also Creator+-
   // eligible underneath, but the card badge shows the highest tier, same
   // priority as AccountTypeBadge.tsx everywhere else in the app.
-  const tier = normalizeTier(user.accountType);
-  const tierBadge = tier === 'business' ? { label: 'Business', bg: '#059669' }
-    : tier === 'professional' ? { label: 'Professional', bg: '#4f46e5' }
-    : tier === 'creator_plus' ? { label: 'Creator+', bg: '#7c3aed' }
-    : null;
+  const tierBadge = tierBadgeFor(normalizeTier(user.accountType));
 
   return (
     <div style={{
@@ -275,59 +218,10 @@ export function ShareCard() {
     accountType: user?.accountType,
   };
 
-  // html-to-image re-fetches every <img> src itself to embed it in the
-  // export (a plain <img> display doesn't need CORS, but that internal
-  // fetch() does) — per its own docs, a failed fetch just renders that area
-  // blank rather than erroring, which is exactly "photo missing from the
-  // downloaded image" while the live preview looks fine. Pre-fetch the
-  // avatar into a data URL ourselves so the export node never depends on
-  // html-to-image being able to re-fetch it at all.
-  const [avatarDataUrl, setAvatarDataUrl] = useState('');
-  // exportCard awaits this before capturing, so a click that lands before the
-  // prefetch below has settled still waits for it instead of racing off the
-  // stale (pre-fetch) avatar URL.
-  const avatarReadyRef = useRef<Promise<void>>(Promise.resolve());
-  useEffect(() => {
-    const src = userData.avatar;
-    if (!src) { setAvatarDataUrl(''); return; }
-    let cancelled = false;
-    let markReady: () => void = () => {};
-    avatarReadyRef.current = new Promise(resolve => { markReady = resolve; });
-
-    const fetchAsDataUrl = (url: string, init?: RequestInit) =>
-      fetch(url, init)
-        .then(res => { if (!res.ok) throw new Error(`avatar fetch ${res.status}`); return res.blob(); })
-        .then(blob => new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload  = () => resolve(reader.result as string);
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        }));
-
-    fetchAsDataUrl(src)
-      .catch(err => {
-        // A direct browser fetch() is subject to CORS -- fine for our own
-        // Supabase storage avatars (permissive by default), but a Google-
-        // signup account's avatar is the raw OAuth photo URL
-        // (lh3.googleusercontent.com/..., see GoogleSignup.tsx), never
-        // re-uploaded to our storage, and that CDN doesn't send CORS
-        // headers permitting a cross-origin fetch() read (only plain <img>
-        // display, which doesn't need them). Retry through proxy-avatar,
-        // which does the same fetch server-side -- CORS is a browser-only
-        // restriction, so a server-to-server request isn't subject to it.
-        console.warn('[ShareCard] direct avatar fetch failed, retrying via proxy-avatar:', err);
-        const proxied = `https://${projectId}.supabase.co/functions/v1/proxy-avatar?url=${encodeURIComponent(src)}`;
-        return fetchAsDataUrl(proxied, { headers: { Authorization: `Bearer ${publicAnonKey}`, apikey: publicAnonKey } });
-      })
-      .then(dataUrl => { if (!cancelled) setAvatarDataUrl(dataUrl); })
-      .catch(err => {
-        console.error('[ShareCard] avatar prefetch for export failed (direct and proxied):', err);
-        if (!cancelled) setAvatarDataUrl('');
-      })
-      .finally(() => markReady());
-    return () => { cancelled = true; };
-  }, [userData.avatar]);
-
+  // See shareCardKit.tsx's useExportImageDataUrl for why this exists (the
+  // CORS/timing fixes for a downloaded card missing its avatar) -- shared
+  // with ListingShareCard so those fixes only ever live in one place.
+  const { dataUrl: avatarDataUrl, readyRef: avatarReadyRef } = useExportImageDataUrl(userData.avatar);
   const exportUserData: CardUser = { ...userData, avatar: avatarDataUrl || userData.avatar };
 
   const exportCard = useCallback(async () => {
@@ -338,96 +232,14 @@ export function ShareCard() {
       // failed to) before capturing — otherwise a click that lands mid-fetch
       // would export against the not-yet-embedded remote URL.
       await avatarReadyRef.current;
-
-      // That only guarantees OUR data-URL fetch is done -- React committing
-      // the new src to the export <img> and the browser actually finishing
-      // decoding/painting that frame are separate steps, and toBlob() reads
-      // whatever's currently painted. A fast desktop CPU usually closes
-      // that gap before this line runs, which is exactly why this bug was
-      // mobile-only: a slower device is much more likely to still be
-      // mid-decode here, so the export blob is captured with a blank
-      // avatar area while the live on-screen preview (which has no such
-      // deadline) looks completely normal. img.decode() is the actual fix.
-      const exportImg = exportRef.current.querySelector('img');
-      if (exportImg) {
-        // avatarReadyRef only guarantees our data-URL fetch settled and
-        // setAvatarDataUrl() was CALLED -- not that React has actually
-        // committed that new src to this <img> element yet (state updates
-        // outside a direct event handler aren't guaranteed to flush
-        // synchronously). A click racing ahead of that commit -- more
-        // likely on a slower mobile device, same class of timing gap as
-        // the decode() issue below -- would decode/capture whatever src
-        // is CURRENTLY on the node (stale remote URL, or nothing), right
-        // back to the original "blank avatar" failure this whole prefetch
-        // exists to avoid. Poll for the DOM to actually catch up before
-        // moving on to the load/decode wait.
-        if (avatarDataUrl && exportImg.src !== avatarDataUrl) {
-          await new Promise<void>(resolve => {
-            let tries = 0;
-            const check = () => {
-              if (exportImg.src === avatarDataUrl || ++tries > 60) return resolve();
-              requestAnimationFrame(check);
-            };
-            check();
-          });
-        }
-        if (!exportImg.complete) {
-          await new Promise<void>(resolve => {
-            exportImg.addEventListener('load', () => resolve(), { once: true });
-            exportImg.addEventListener('error', () => resolve(), { once: true });
-          });
-        }
-        try { await exportImg.decode(); } catch {}
-      }
-
-      // Canvas is pinned to a 9:16 ratio via CSS aspect-ratio, so the actual
-      // rendered height already reflects that (EW * 16/9) — measuring rather
-      // than hardcoding keeps this correct if the ratio ever changes.
-      const height = Math.ceil(exportRef.current.getBoundingClientRect().height);
-      const blob = await toBlob(exportRef.current, {
-        width:    EW,
-        height,
-        pixelRatio: 1,
-        quality:  0.98,
-        skipFonts: false,
-        cacheBust: true,
-        backgroundColor: '#F5F5F3',
-        fetchRequestInit: { cache: 'no-cache' as RequestCache },
-        style: { transform: 'none' },
-      });
-      if (!blob) throw new Error('toBlob returned null');
-
-      const filename = `filmons-${userData.username}.png`;
-      const file = new File([blob], filename, { type: 'image/png' });
-
-      // Mobile Safari (and several Android browsers) ignore the <a download>
-      // attribute for blob/data URLs — tapping the link just opens/navigates
-      // to the image instead of saving it. The native share sheet (which
-      // includes "Save Image" / "Save to Photos") is the reliable path on
-      // mobile, so prefer it whenever the browser can share a file.
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: filename });
-        } catch (e) {
-          if ((e as Error)?.name !== 'AbortError') throw e; // user cancelled — not an error
-        }
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a   = document.createElement('a');
-        a.href     = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+      await waitForImgReady(exportRef.current.querySelector('img'), avatarDataUrl);
+      await captureAndShareCard({ exportRef, filename: `filmons-${userData.username}.png` });
     } catch (e) {
       console.error('Export failed:', e);
       toast.error('Could not save image');
     }
     setExporting(false);
-  }, [exporting, userData.username]);
-
-  const navBtn = 'w-8 h-8 flex items-center justify-center rounded-full text-gray-900/60 ' +
-    'hover:text-gray-900 hover:bg-black/[0.05] transition-colors active:scale-95 disabled:opacity-40';
+  }, [exporting, userData.username, avatarDataUrl]);
 
   if (otherLoading) {
     return (
@@ -440,7 +252,7 @@ export function ShareCard() {
   return (
     <div
       className="min-h-screen flex flex-col bg-[#F5F5F3] pb-24"
-      style={{ animation: `${leaving ? 'shareCardExit' : 'shareCardEnter'} var(--dur-page, 320ms) var(--ease-sheet, cubic-bezier(0.32,0.72,0,1)) both` }}
+      style={shareCardTransitionStyle(leaving)}
     >
       {/* CSS transitions on this element are silently neutralized by the
           global `*` rule in theme.css (its transition-property/-duration
@@ -451,10 +263,7 @@ export function ShareCard() {
           sidesteps that by using a keyframe `animation` instead of a
           `transition` — animations aren't touched by that rule — so this
           does the same. */}
-      <style>{`
-        @keyframes shareCardEnter { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        @keyframes shareCardExit  { from { transform: translateX(0); } to { transform: translateX(100%); } }
-      `}</style>
+      <style>{shareCardTransitionCss}</style>
 
       {/* Header — transparent, sits directly on the page's light background */}
       <div className="sticky top-0 z-30 bg-transparent px-4 py-3 flex items-center gap-3 shrink-0">
@@ -468,13 +277,13 @@ export function ShareCard() {
 
         {/* Actions — right side of the same nav bar */}
         <div className="flex items-center gap-1">
-          <button onClick={copyLink} title="Copy Link" className={navBtn}>
+          <button onClick={copyLink} title="Copy Link" className={shareCardNavBtn}>
             {copied ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
           </button>
-          <button onClick={shareLink} title="Share Link" className={navBtn}>
+          <button onClick={shareLink} title="Share Link" className={shareCardNavBtn}>
             <Share2 className="w-4 h-4"/>
           </button>
-          <button onClick={exportCard} disabled={exporting} title="Save Image" className={navBtn}>
+          <button onClick={exportCard} disabled={exporting} title="Save Image" className={shareCardNavBtn}>
             {exporting
               ? <div className="w-3.5 h-3.5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"/>
               : <Download className="w-4 h-4"/>}
