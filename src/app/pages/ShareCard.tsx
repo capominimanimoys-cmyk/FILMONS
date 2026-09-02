@@ -11,6 +11,7 @@ import { getPortfolioItems } from '../lib/portfolioApi';
 import { authApi } from '../lib/api';
 import { supabase } from '../../lib/supabase';
 import { normalizeTier } from '../lib/reliabilityApi';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // ── Export width — height is content-driven (measured at export time) so the
 //    card never carries unnecessary empty space. ─────────────────────────────
@@ -292,17 +293,35 @@ export function ShareCard() {
     let cancelled = false;
     let markReady: () => void = () => {};
     avatarReadyRef.current = new Promise(resolve => { markReady = resolve; });
-    fetch(src)
-      .then(res => { if (!res.ok) throw new Error(`avatar fetch ${res.status}`); return res.blob(); })
-      .then(blob => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      }))
+
+    const fetchAsDataUrl = (url: string, init?: RequestInit) =>
+      fetch(url, init)
+        .then(res => { if (!res.ok) throw new Error(`avatar fetch ${res.status}`); return res.blob(); })
+        .then(blob => new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload  = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        }));
+
+    fetchAsDataUrl(src)
+      .catch(err => {
+        // A direct browser fetch() is subject to CORS -- fine for our own
+        // Supabase storage avatars (permissive by default), but a Google-
+        // signup account's avatar is the raw OAuth photo URL
+        // (lh3.googleusercontent.com/..., see GoogleSignup.tsx), never
+        // re-uploaded to our storage, and that CDN doesn't send CORS
+        // headers permitting a cross-origin fetch() read (only plain <img>
+        // display, which doesn't need them). Retry through proxy-avatar,
+        // which does the same fetch server-side -- CORS is a browser-only
+        // restriction, so a server-to-server request isn't subject to it.
+        console.warn('[ShareCard] direct avatar fetch failed, retrying via proxy-avatar:', err);
+        const proxied = `https://${projectId}.supabase.co/functions/v1/proxy-avatar?url=${encodeURIComponent(src)}`;
+        return fetchAsDataUrl(proxied, { headers: { Authorization: `Bearer ${publicAnonKey}`, apikey: publicAnonKey } });
+      })
       .then(dataUrl => { if (!cancelled) setAvatarDataUrl(dataUrl); })
       .catch(err => {
-        console.error('[ShareCard] avatar prefetch for export failed:', err);
+        console.error('[ShareCard] avatar prefetch for export failed (direct and proxied):', err);
         if (!cancelled) setAvatarDataUrl('');
       })
       .finally(() => markReady());

@@ -185,6 +185,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Deploy proxy-avatar
+        run: supabase functions deploy proxy-avatar --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Deploy publish-opportunity
         run: supabase functions deploy publish-opportunity --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:
