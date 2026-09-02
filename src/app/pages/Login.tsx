@@ -14,6 +14,7 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import FilmonsLoader from '../components/FilmonsLoader';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { authApi } from '../lib/api';
+import { consumePendingReturnUrl } from '../lib/authReturnUrl';
 
 type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'oauth_only' | 'security';
 
@@ -92,6 +93,13 @@ export function Login() {
   // If the user was already in guest mode (browsing then tapping Sign In), skip the splash.
   const prefillEmail = searchParams.get('email') ?? '';
 
+  // A guest-gated action (see SearchOverlay's handleGuestSeeMore) can send
+  // a custom heading/subtitle instead of the default "Welcome back" copy,
+  // e.g. "Sign up to see more listings" -- purely cosmetic, every existing
+  // auth method below stays exactly as-is.
+  const customHeading = searchParams.get('heading');
+  const customSub      = searchParams.get('sub');
+
   const [screen, setScreen] = useState<Screen>(
     prefillEmail ? 'email' : (isGuest ? 'method' : 'splash')
   );
@@ -105,7 +113,14 @@ export function Login() {
   const [oauthOnlyProviders, setOauthOnlyProviders] = useState<string[]>([]);
   const [oauthLoading, setOauthLoading] = useState(false);
 
-  useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate('/', { replace: true }); } }, [isAuthenticated]);
+  // Single source of truth for where a successful sign-in lands -- every
+  // auth path below (email/password, phone OTP, OAuth) sets isAuthenticated
+  // via context rather than navigating directly, so a guest-gated "See
+  // more" (SearchOverlay) that stashed a pending return URL always gets
+  // honored regardless of which method the user actually signed in with,
+  // and there's no risk of two navigate() calls racing and one clobbering
+  // the other's destination.
+  useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate(consumePendingReturnUrl(), { replace: true }); } }, [isAuthenticated]);
 
   // Splash auto-advances via FilmonsLoader's onComplete (skipped when email is pre-filled)
 
@@ -121,7 +136,11 @@ export function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      captureSnapshot(); navigate('/');
+      // Navigation itself happens in the isAuthenticated effect above (the
+      // single source of truth for post-auth destination) once login()'s
+      // context update lands -- calling captureSnapshot() here still
+      // matters, it has to run before that navigation fires.
+      captureSnapshot();
     } catch (e: any) {
       const msg: string = e?.message || '';
       if (e?.code === 'OAUTH_ONLY') {
@@ -202,8 +221,9 @@ export function Login() {
     try {
       const user = await authApi.completePhoneSignin(email, desktopPhoneOtp);
       setUserDirectly(user, 'phone');
+      // Navigation happens in the isAuthenticated effect above, same as
+      // handleEmailLogin -- see its comment.
       captureSnapshot();
-      navigate('/');
     } catch (e: any) {
       toast.error('Invalid code', { description: e instanceof Error ? e.message : 'Verification failed' });
     }
@@ -245,8 +265,8 @@ export function Login() {
             </>
           ) : (
             <>
-              <p className="text-2xl font-black text-gray-900">Welcome back</p>
-              <p className="text-sm text-gray-500 mt-1 mb-7">Sign in to your FILMONS account.</p>
+              <p className="text-2xl font-black text-gray-900">{customHeading || 'Welcome back'}</p>
+              <p className="text-sm text-gray-500 mt-1 mb-7">{customSub || 'Sign in to your FILMONS account.'}</p>
               <div className="space-y-3">
                 <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
                   type="text" placeholder="Email or phone number" autoComplete="username"
@@ -316,8 +336,8 @@ export function Login() {
           </div>
           {/* Headline */}
           <div className="text-center mb-8">
-            <p className="text-2xl font-black text-white">Welcome back</p>
-            <p className="text-white/50 text-sm mt-1">Sign in to your Filmons account</p>
+            <p className="text-2xl font-black text-white">{customHeading || 'Welcome back'}</p>
+            <p className="text-white/50 text-sm mt-1">{customSub || 'Sign in to your Filmons account'}</p>
           </div>
           {/* Methods */}
           <div className="space-y-3">

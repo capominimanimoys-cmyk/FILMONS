@@ -17,6 +17,7 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import { SmartAddressInput } from '../components/SmartAddressInput';
 import { ProfessionPicker, ALL_PROFESSIONS } from '../components/ProfessionPicker';
 import { fetchTagSuggestions, saveTagSuggestion } from '../lib/tagSuggestions';
+import { consumePendingReturnUrl } from '../lib/authReturnUrl';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type AccType = 'creator' | 'professional' | 'creator_plus';
@@ -320,13 +321,18 @@ export function CompleteProfile() {
         location:              locationStr || undefined,
       } as any);
 
+      // Honors a pending return URL from a guest-gated action that started
+      // this whole signup (see SearchOverlay's handleGuestSeeMore + Login/
+      // OAuthCallback's own use of the same mechanism) -- a brand-new
+      // account finishing onboarding is "successful signup" the same way
+      // an existing user's login is, per the guest-mode-limit spec.
       if (saved?.onboarding_completed) {
-        navigate('/', { replace: true });
+        navigate(consumePendingReturnUrl(), { replace: true });
       } else {
         // Flag didn't persist — likely missing RLS UPDATE policy
         // Navigate anyway so the user isn't stuck; log for debugging
         console.warn('[onboarding] onboarding_completed not confirmed in DB — check RLS UPDATE policy on profiles');
-        navigate('/', { replace: true });
+        navigate(consumePendingReturnUrl(), { replace: true });
       }
     } catch (e: any) {
       toast.error(e?.message || 'Could not save profile');

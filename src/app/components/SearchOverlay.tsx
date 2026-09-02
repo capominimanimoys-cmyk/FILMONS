@@ -9,7 +9,7 @@ import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
   TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock,
 } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import {
   expandQuery, normalize, scoreResult, extractLocation,
@@ -981,7 +981,7 @@ function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
   );
 }
 
-function ResultSection({ label, count, grid=false, children }: { label:string; count:number; grid?:boolean; children:ReactNode }) {
+function ResultSection({ label, count, grid=false, children, footer }: { label:string; count:number; grid?:boolean; children:ReactNode; footer?:ReactNode }) {
   return (
     <section className="mb-1">
       <div className="flex items-center justify-between px-4 py-2 mt-1">
@@ -997,7 +997,22 @@ function ResultSection({ label, count, grid=false, children }: { label:string; c
           {children}
         </motion.div>
       )}
+      {/* Rendered outside the grid/list container so it's always a
+          full-width row belonging to this section, not a grid cell. */}
+      {footer}
     </section>
+  );
+}
+
+// "See more" footer for a guest-capped category -- visually belongs to the
+// section it's passed into (ResultSection's `footer` prop), matching the
+// spec's "the button should visually belong to that category section".
+function GuestSeeMoreButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+      See more
+    </button>
   );
 }
 
@@ -1118,7 +1133,17 @@ interface Props {
   onResultNavigate?: (url: string) => void;
 }
 
+// Guests get a 5-item preview of every category (never zero -- "Do not
+// hide categories from guests", per the guest-mode-limit spec) with a "See
+// more" that sends them to Login/Sign Up instead of loading more. Signed-in
+// users of any tier are never capped here (Opportunities' separate
+// Professional-tier cap below is unrelated and still applies to them).
+const GUEST_CATEGORY_LIMIT = 5;
+
+const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities'];
+
 export function SearchOverlay({ onClose, onResultNavigate }: Props) {
+  const [searchParams] = useSearchParams();
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
   const [rawListings,    setRawListings]    = useState<ListingRow[]>([]);
@@ -1126,7 +1151,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [loading,        setLoading]        = useState(false);
   const [suggLoading,    setSuggLoading]    = useState(false);
   const [resultsReady,   setResultsReady]   = useState(false);
-  const [activeTab,      setActiveTab]      = useState<TabId>('all');
+  // Initialized from ?tab= so a guest returning from Login after tapping
+  // "See more" on a specific category (see handleGuestSeeMore) lands back
+  // directly on that category instead of the generic 'all' view.
+  const [activeTab,      setActiveTab]      = useState<TabId>(() => {
+    const t = searchParams.get('tab');
+    return t && (TAB_IDS as string[]).includes(t) ? (t as TabId) : 'all';
+  });
   const [closing,        setClosing]        = useState(false);
   const [filters,        setFilters]        = useState<SearchFilters>(DEFAULT_FILTERS);
   const [sort,           setSort]           = useState<SortBy>('best_match');
@@ -1161,6 +1192,16 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
       setTimeout(onClose, 280);
     }
   }, [navigate, onClose, onResultNavigate]);
+
+  // Guest "See more" on a category section — never loads more results for
+  // a guest, always sends them to Login instead. Remembers the category
+  // (via ?tab= on the return URL, read by activeTab's initializer above)
+  // so a successful login/signup lands back on that same filtered category
+  // view rather than the top of Home or a generic search page.
+  const handleGuestSeeMore = useCallback((tab: TabId) => {
+    setPendingReturnUrl(`/search?tab=${tab}`);
+    navigate(`/login?heading=${encodeURIComponent('Sign up to see more listings')}&sub=${encodeURIComponent("Create your FILMONS account to explore all listings.")}`);
+  }, [navigate]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
   useEffect(() => {
@@ -1442,60 +1483,50 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
           ) : (
             <div className="py-2">
               {visibleUsers.length > 0 && (
-                <ResultSection label="👤 Creators" count={visibleUsers.length}>
-                  {visibleUsers.slice(0, 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
+                <ResultSection label="👤 Creators" count={visibleUsers.length}
+                  footer={!user && visibleUsers.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('creators')}/> : undefined}>
+                  {visibleUsers.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleRental.length > 0 && (
-                <ResultSection label="📦 Rental" count={visibleRental.length} grid>
-                  {visibleRental.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                <ResultSection label="📦 Rental" count={visibleRental.length} grid
+                  footer={!user && visibleRental.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('rental')}/> : undefined}>
+                  {visibleRental.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleSale.length > 0 && (
-                <ResultSection label="🏷️ Sales" count={visibleSale.length} grid>
-                  {visibleSale.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                <ResultSection label="🏷️ Sales" count={visibleSale.length} grid
+                  footer={!user && visibleSale.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('sale')}/> : undefined}>
+                  {visibleSale.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
-                <ResultSection label="🛠️ Services" count={visibleServices.length}>
-                  {visibleServices.slice(0, 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                <ResultSection label="🛠️ Services" count={visibleServices.length}
+                  footer={!user && visibleServices.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('services')}/> : undefined}>
+                  {visibleServices.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleStudios.length > 0 && (
-                <ResultSection label="🏢 Studios" count={visibleStudios.length} grid>
-                  {visibleStudios.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                <ResultSection label="🏢 Studios" count={visibleStudios.length} grid
+                  footer={!user && visibleStudios.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('studios')}/> : undefined}>
+                  {visibleStudios.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleOpportunities.length > 0 && (
-                <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}>
-                  {!user ? (
-                    // Opportunities are a signed-in feature -- a guest never
-                    // gets a preview slice here, just a login/sign-up prompt.
-                    <div className="flex flex-col items-center text-center py-6 px-4">
-                      <p className="text-sm font-bold text-gray-900 mb-1">Login or sign up to see Opportunities</p>
-                      <p className="text-xs text-gray-400 mb-4">Create a free account to browse and apply.</p>
-                      <div className="flex gap-2 w-full max-w-xs">
-                        <button onClick={() => { setPendingReturnUrl('/search'); navigate('/login'); }}
-                          className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors">
-                          Log In
-                        </button>
-                        <button onClick={() => { setPendingReturnUrl('/search'); navigate('/create-account'); }}
-                          className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-colors">
-                          Sign Up
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : 5).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                      {!canBrowseOpportunities && visibleOpportunities.length > 5 && (
-                        <button onClick={() => setShowOpportunityGate(true)}
-                          className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-                          See More
-                        </button>
-                      )}
-                    </>
-                  )}
+                <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}
+                  footer={!user && visibleOpportunities.length > GUEST_CATEGORY_LIMIT
+                    ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('opportunities')}/>
+                    : (user && !canBrowseOpportunities && visibleOpportunities.length > 5
+                      ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See More</button>
+                      : undefined)}>
+                  {/* Guests get the same 5-item preview as every other
+                      category (see the guest-mode-limit spec's "Do not hide
+                      categories from guests" -- this used to show zero
+                      preview and a login prompt instead). Signed-in
+                      non-Professional accounts keep their own separate
+                      account-tier cap (canBrowseOpportunities), unrelated to
+                      guest mode. */}
+                  {visibleOpportunities.slice(0, !user ? GUEST_CATEGORY_LIMIT : (canBrowseOpportunities ? 10 : 5)).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (

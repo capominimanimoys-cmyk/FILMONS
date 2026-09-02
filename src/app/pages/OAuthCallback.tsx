@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
+import { consumePendingReturnUrl } from '../lib/authReturnUrl';
 
 const EXPECTED_EMAIL_KEY = 'fm_expected_login_email';
 
@@ -141,7 +142,13 @@ export function OAuthCallback() {
         const u = rowToUser(byId);
         await completeLogin(undefined, undefined, undefined, u, provider);
         toast.success('Welcome back.');
-        navigate(isComplete(u) ? '/' : '/onboarding', { replace: true });
+        // For an existing, complete profile this is a real sign-in, not a
+        // fresh signup -- honor a pending return URL from a guest-gated
+        // action (see SearchOverlay's handleGuestSeeMore) the same way
+        // Login.tsx does. A profile still going through /onboarding isn't
+        // done signing up yet, so the pending URL stays put in
+        // sessionStorage until Onboarding's own completion navigates.
+        navigate(isComplete(u) ? consumePendingReturnUrl() : '/onboarding', { replace: true });
         return;
       }
 
@@ -178,7 +185,13 @@ export function OAuthCallback() {
             duration: alreadyLinked ? 3000 : 5000,
           });
 
-          navigate(isComplete(u) ? '/' : '/onboarding', { replace: true });
+          // For an existing, complete profile this is a real sign-in, not a
+        // fresh signup -- honor a pending return URL from a guest-gated
+        // action (see SearchOverlay's handleGuestSeeMore) the same way
+        // Login.tsx does. A profile still going through /onboarding isn't
+        // done signing up yet, so the pending URL stays put in
+        // sessionStorage until Onboarding's own completion navigates.
+        navigate(isComplete(u) ? consumePendingReturnUrl() : '/onboarding', { replace: true });
           return;
         }
       }
