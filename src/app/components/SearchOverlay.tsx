@@ -1587,20 +1587,17 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               )}
               {visibleOpportunities.length > 0 && (
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}
-                  footer={!user && visibleOpportunities.length > GUEST_CATEGORY_LIMIT
-                    ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('opportunities')}/>
-                    : (user && !canBrowseOpportunities && visibleOpportunities.length > CREATOR_OPPORTUNITY_LIMIT
-                      ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See more opportunities</button>
-                      : undefined)}>
-                  {/* Guests get the same 5-item preview as every other
-                      category (see the guest-mode-limit spec's "Do not hide
-                      categories from guests" -- this used to show zero
-                      preview and a login prompt instead). Signed-in
-                      Creator/Creator+ never see more than
-                      CREATOR_OPPORTUNITY_LIMIT (2), even if more are
-                      available -- a separate, own cap (canBrowseOpportunities),
-                      unrelated to guest mode. */}
-                  {visibleOpportunities.slice(0, !user ? GUEST_CATEGORY_LIMIT : (canBrowseOpportunities ? 10 : CREATOR_OPPORTUNITY_LIMIT)).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  footer={!canBrowseOpportunities && visibleOpportunities.length > CREATOR_OPPORTUNITY_LIMIT
+                    ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See more opportunities</button>
+                    : undefined}>
+                  {/* Opportunities has its OWN cap, separate from every
+                      other category's generic GUEST_CATEGORY_LIMIT (5) --
+                      Guest/Creator/Creator+ (!canBrowseOpportunities, which
+                      covers a guest too since isProfessional(undefined) is
+                      false) never see more than CREATOR_OPPORTUNITY_LIMIT
+                      (2), even if more are available. Professional/Business
+                      get the real, full list. */}
+                  {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : CREATOR_OPPORTUNITY_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleEmergency.length > 0 && (
@@ -1661,8 +1658,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
       {/* ── "See more opportunities" past the CREATOR_OPPORTUNITY_LIMIT (2)
            latest Opportunities -- Professional or Business required for the
-           rest. Never fetches or reveals anything further, just explains
-           why and offers both real upgrade paths directly. ── */}
+           rest, for Guest/Creator/Creator+ alike. Never fetches or reveals
+           anything further, just explains why and offers real next steps
+           directly. A guest gets an extra "Sign up" button and "Explore"
+           (not "Upgrade") wording on the plan buttons -- both plan buttons
+           still route through the same login-first flow either way
+           (setPendingReturnUrl to the auto-checkout URL, then /login,
+           which itself bridges to signup for someone with no account). ── */}
       <AnimatePresence>
         {showOpportunityGate && (
           <>
@@ -1679,17 +1681,27 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   <Lock className="w-6 h-6 text-indigo-600"/>
                 </div>
                 <p className="text-base font-black text-gray-900">See more opportunities</p>
-                <p className="text-sm text-gray-500">Upgrade to Professional or Business to access all opportunity listings.</p>
+                <p className="text-sm text-gray-500">
+                  {isAuthenticated ? 'Upgrade to Professional or Business to access all opportunity listings.'
+                                    : 'Sign up or upgrade to Professional or Business to access all opportunity listings.'}
+                </p>
               </div>
               <div className="flex flex-col gap-2">
+                {!isAuthenticated && (
+                  <button
+                    onClick={() => { setShowOpportunityGate(false); navigate('/create-account'); }}
+                    className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
+                    Sign up
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setShowOpportunityGate(false);
                     if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
                     navigate('/account/upgrade?auto=professional');
                   }}
-                  className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
-                  Upgrade to Professional
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm active:opacity-80 ${isAuthenticated ? 'bg-indigo-600 text-white' : 'border border-gray-200 text-gray-700'}`}>
+                  {isAuthenticated ? 'Upgrade to Professional' : 'Explore Professional'}
                 </button>
                 <button
                   onClick={() => {
@@ -1697,8 +1709,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
                     navigate('/account/upgrade?auto=business');
                   }}
-                  className="w-full py-3.5 rounded-2xl bg-gray-900 text-white font-bold text-sm active:opacity-80">
-                  Upgrade to Business
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
+                  {isAuthenticated ? 'Upgrade to Business' : 'Explore Business'}
                 </button>
                 <button onClick={() => setShowOpportunityGate(false)}
                   className="w-full py-3 text-gray-500 font-semibold text-sm">

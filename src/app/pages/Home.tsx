@@ -17,6 +17,7 @@ import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { opportunityFeedApi } from '../lib/opportunityFeedApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
+import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
 
@@ -311,15 +312,19 @@ export function Home() {
     return () => { done = true; };
   }, [user?.id, refreshKey]);
 
-  // Creator/Creator+ never see more than 2 real Opportunity listings, full
-  // stop -- not a daily-reset swipe budget past that point (oppSwipesRemaining
-  // is that separate, still-real thing: today's swipe allowance, server-
-  // enforced per swipe via record-opportunity-swipe). The smaller of the
-  // two is what actually gets shown, so a Creator+ with swipes left today
-  // still never sees more than 2, and reaching the end of those 2 always
-  // reads as "upgrade for more" (oppLimitReached below), never as "you're
-  // out of swipes for today".
-  const oppDisplayLimit = (userTier === 'creator' || userTier === 'creator_plus')
+  // Guest/Creator/Creator+ never see more than 2 real Opportunity listings,
+  // full stop -- not a daily-reset swipe budget past that point
+  // (oppSwipesRemaining is that separate, still-real thing: today's swipe
+  // allowance, server-enforced per swipe via record-opportunity-swipe).
+  // The smaller of the two is what actually gets shown, so a Creator+ with
+  // swipes left today still never sees more than 2, and reaching the end
+  // of those 2 always reads as "upgrade for more" (oppLimitReached below),
+  // never as "you're out of swipes for today". Written as `!user || ...`
+  // rather than relying on normalizeTier's undefined-accountType fallback
+  // also landing on 'creator' for a guest -- correct today, but that's an
+  // implicit coincidence this shouldn't quietly depend on.
+  const isLimitedOpportunityTier = !user || userTier === 'creator' || userTier === 'creator_plus';
+  const oppDisplayLimit = isLimitedOpportunityTier
     ? Math.min(2, oppSwipesRemaining)
     : oppSwipesRemaining;
 
@@ -517,34 +522,50 @@ export function Home() {
     </div>
   );
 
-  // Shown instead of caughtUpScreen/emptyState once Creator/Creator+ has
-  // gone through their 2-listing display cap (oppDisplayLimit above) --
-  // never loads more, just explains why and offers both real upgrade
-  // paths directly. "Not Now" needs no handler beyond leaving the filter:
-  // staying here is simply not tapping either Upgrade button.
+  // Shown instead of caughtUpScreen/emptyState once a limited tier (Guest/
+  // Creator/Creator+) has gone through the 2-listing display cap
+  // (oppDisplayLimit above) -- never loads more, just explains why and
+  // offers real next steps directly. A guest gets an extra "Sign up"
+  // button and "Explore" (not "Upgrade") wording on the plan buttons,
+  // since they have no account to upgrade yet; both plan buttons still
+  // route through the same login-first flow signed-in users' "Upgrade"
+  // buttons use (setPendingReturnUrl to the auto-checkout URL, then
+  // /login, which itself bridges to signup for someone with no account).
+  // "Not Now" needs no handler beyond leaving the filter: staying here is
+  // simply not tapping any of the other buttons.
   const opportunityLimitScreen = (
     <div className="flex flex-col items-center py-20 px-6 text-center">
       <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
         <Lock className="w-7 h-7 text-indigo-600" />
       </div>
       <p className="font-black text-gray-900 text-lg mb-1">See more opportunities</p>
-      <p className="text-sm text-gray-400 mb-5 max-w-xs">Upgrade to Professional or Business to access all opportunity listings.</p>
+      <p className="text-sm text-gray-400 mb-5 max-w-xs">
+        {user ? 'Upgrade to Professional or Business to access all opportunity listings.'
+              : 'Sign up or upgrade to Professional or Business to access all opportunity listings.'}
+      </p>
       <div className="flex flex-col gap-2 w-full max-w-xs">
+        {!user && (
+          <button
+            onClick={() => { captureSnapshot(); navigate('/create-account'); }}
+            className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
+            Sign up
+          </button>
+        )}
         <button
           onClick={() => {
             if (!user) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
             navigate('/account/upgrade?auto=professional');
           }}
-          className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
-          Upgrade to Professional
+          className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${user ? 'bg-indigo-600 text-white' : 'border border-gray-200 text-gray-700'}`}>
+          {user ? 'Upgrade to Professional' : 'Explore Professional'}
         </button>
         <button
           onClick={() => {
             if (!user) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
             navigate('/account/upgrade?auto=business');
           }}
-          className="w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80">
-          Upgrade to Business
+          className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${user ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
+          {user ? 'Upgrade to Business' : 'Explore Business'}
         </button>
         <button onClick={() => setFilter('all')} className="w-full py-2.5 text-gray-500 text-sm font-semibold hover:text-gray-700">
           Not Now
@@ -553,32 +574,6 @@ export function Home() {
     </div>
   );
 
-  // Guests never see Opportunity content at all now -- previously they
-  // browsed the same capped (5/day) deck as Creator/Creator+, but
-  // Opportunities are meant to be a signed-in feature; prompt login
-  // instead of building a deck (or spending a guest's swipe budget) for
-  // someone who was never going to be able to apply anyway.
-  const loginToSeeOpportunitiesScreen = (
-    <div className="flex flex-col items-center py-20 px-6 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
-        <Lock className="w-7 h-7 text-indigo-600" />
-      </div>
-      <p className="font-black text-gray-900 text-lg mb-1">Login or sign up to see Opportunities</p>
-      <p className="text-sm text-gray-400 mb-5 max-w-xs">Create a free account to browse and apply to Opportunities on Filmons.</p>
-      <div className="flex gap-2 w-full max-w-xs">
-        <button
-          onClick={() => { setPendingReturnUrl('/'); navigate('/login'); }}
-          className="flex-1 py-3 border border-gray-200 text-gray-700 text-sm font-bold rounded-2xl active:opacity-80">
-          Log In
-        </button>
-        <button
-          onClick={() => { setPendingReturnUrl('/'); navigate('/create-account'); }}
-          className="flex-1 py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
-          Sign Up
-        </button>
-      </div>
-    </div>
-  );
 
   // Shown instead of caughtUpScreen when returning to a filter that was
   // already finished in an earlier session and new unseen items have since
@@ -685,7 +680,6 @@ export function Home() {
                   renderCard={listing => <ListingCard key={listing.id} listing={listing} />}
                 />
               )
-                  : (filter === 'talent' && !user) ? loginToSeeOpportunitiesScreen
                   : loadError ? errorScreen : deckDone
                   ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
                   : deck.length === 0
