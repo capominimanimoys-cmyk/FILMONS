@@ -385,19 +385,24 @@ const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary
 // used by FilterSheet's TYPE_OPTIONS (marketplace filter) and Home.tsx's
 // buildDeck -- reused here rather than re-invented, since a global-search
 // category and the marketplace filter's "Type" facet should always agree on
-// what counts as a rental vs. a studio. Studios and Opportunities aren't
-// separate tables/listing_types the data model tracks on their own (studios
-// are just listings whose title/category mentions "studio"; opportunities are
-// listing_type = 'opportunity', with the same legacy keyword fallback Home.tsx
-// uses for older rows), so this is the only correct way to classify them.
-const isOpportunityListing = (l: ListingRow) =>
-  l.listing_type === 'opportunity' || /model|actor|actress|talent|ugc/i.test(l.title ?? '');
+// what counts as a rental vs. a studio. Studios aren't a separate listing_type
+// the data model tracks on their own (a studio is just a listing whose title/
+// category mentions "studio", the only real signal available for it), but
+// Opportunities are: listing_type = 'opportunity'. This used to also fall
+// back to a keyword match (title containing "model"/"actor"/"talent"/"ugc")
+// for older rows, which pulled ordinary gear listings into Opportunities any
+// time their title happened to mention a camera "model" -- and, worse,
+// isRentalListing's own exclusion of isOpportunityListing matches meant that
+// same gear listing got stripped back OUT of Rental too. Category
+// contamination in both directions from one bad heuristic; gone now, strict
+// listing_type only.
+const isOpportunityListing = (l: ListingRow) => l.listing_type === 'opportunity';
 const isStudioListing = (l: ListingRow) =>
   /studio/i.test(l.title ?? '') || /studio/i.test(l.service_category ?? '');
 const isRentalListing = (l: ListingRow) =>
   l.listing_mode === 'rent' && l.listing_type !== 'service' && !isOpportunityListing(l);
-const isSaleListing = (l: ListingRow) => l.listing_mode === 'sale';
-const isServiceListing = (l: ListingRow) => l.listing_type === 'service';
+const isSaleListing = (l: ListingRow) => l.listing_mode === 'sale' && !isOpportunityListing(l);
+const isServiceListing = (l: ListingRow) => l.listing_type === 'service' && !isOpportunityListing(l);
 
 async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
   // Search: title, description, service_category, city (text fields).
@@ -578,12 +583,13 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
       case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
       case 'sale':           query = query.eq('listing_mode', 'sale'); break;
       case 'services':       query = query.eq('listing_type', 'service'); break;
-      // listing_type = 'opportunity' is authoritative for newer rows, but
-      // Home.tsx's buildDeck keeps the original keyword heuristic as a
-      // fallback so older listings (tagged before that column existed) don't
-      // vanish -- matched here too, or Opportunity browse would silently
-      // return nothing for any legacy-tagged listing.
-      case 'opportunities':  query = query.or('listing_type.eq.opportunity,title.ilike.%model%,title.ilike.%actor%,title.ilike.%actress%,title.ilike.%talent%,title.ilike.%ugc%'); break;
+      // Strict listing_type only -- see isOpportunityListing's comment above
+      // for why the keyword fallback this used to also match on (title
+      // ilike '%model%'/'%actor%'/etc) is gone: it pulled ordinary gear
+      // listings into Opportunities and simultaneously stripped them out of
+      // Rental via isRentalListing's exclusion, the exact category-
+      // contamination bug this whole block was fixed for.
+      case 'opportunities':  query = query.eq('listing_type', 'opportunity'); break;
       case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
       // Fetched for everyone regardless of tier (the gate is who's allowed
       // to SEE the results, handled at render time by EmergencyPreviewGate
@@ -1164,6 +1170,10 @@ interface Props {
 // users of any tier are never capped here (Opportunities' separate
 // Professional-tier cap below is unrelated and still applies to them).
 const GUEST_CATEGORY_LIMIT = 5;
+// Creator/Creator+ never see more than this many real Opportunity listings
+// -- a permanent display cap, not a resettable daily allowance. Professional/
+// Business (canBrowseOpportunities) are exempt entirely.
+const CREATOR_OPPORTUNITY_LIMIT = 2;
 
 const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
 
@@ -1579,17 +1589,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}
                   footer={!user && visibleOpportunities.length > GUEST_CATEGORY_LIMIT
                     ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('opportunities')}/>
-                    : (user && !canBrowseOpportunities && visibleOpportunities.length > 5
-                      ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See More</button>
+                    : (user && !canBrowseOpportunities && visibleOpportunities.length > CREATOR_OPPORTUNITY_LIMIT
+                      ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See more opportunities</button>
                       : undefined)}>
                   {/* Guests get the same 5-item preview as every other
                       category (see the guest-mode-limit spec's "Do not hide
                       categories from guests" -- this used to show zero
                       preview and a login prompt instead). Signed-in
-                      non-Professional accounts keep their own separate
-                      account-tier cap (canBrowseOpportunities), unrelated to
-                      guest mode. */}
-                  {visibleOpportunities.slice(0, !user ? GUEST_CATEGORY_LIMIT : (canBrowseOpportunities ? 10 : 5)).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                      Creator/Creator+ never see more than
+                      CREATOR_OPPORTUNITY_LIMIT (2), even if more are
+                      available -- a separate, own cap (canBrowseOpportunities),
+                      unrelated to guest mode. */}
+                  {visibleOpportunities.slice(0, !user ? GUEST_CATEGORY_LIMIT : (canBrowseOpportunities ? 10 : CREATOR_OPPORTUNITY_LIMIT)).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleEmergency.length > 0 && (
@@ -1648,9 +1659,10 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── "See More" past the 5 latest Opportunities -- Professional or
-           Business required for the rest. Never fetches or reveals
-           anything further, just explains why. ── */}
+      {/* ── "See more opportunities" past the CREATOR_OPPORTUNITY_LIMIT (2)
+           latest Opportunities -- Professional or Business required for the
+           rest. Never fetches or reveals anything further, just explains
+           why and offers both real upgrade paths directly. ── */}
       <AnimatePresence>
         {showOpportunityGate && (
           <>
@@ -1666,18 +1678,27 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
                   <Lock className="w-6 h-6 text-indigo-600"/>
                 </div>
-                <p className="text-base font-black text-gray-900">Unlock All Opportunities</p>
-                <p className="text-sm text-gray-500">Professional or Business account required to access all opportunity listings.</p>
+                <p className="text-base font-black text-gray-900">See more opportunities</p>
+                <p className="text-sm text-gray-500">Upgrade to Professional or Business to access all opportunity listings.</p>
               </div>
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => {
                     setShowOpportunityGate(false);
-                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade'); navigate('/login'); return; }
-                    navigate('/account/upgrade');
+                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
+                    navigate('/account/upgrade?auto=professional');
                   }}
                   className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
-                  Upgrade Account
+                  Upgrade to Professional
+                </button>
+                <button
+                  onClick={() => {
+                    setShowOpportunityGate(false);
+                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
+                    navigate('/account/upgrade?auto=business');
+                  }}
+                  className="w-full py-3.5 rounded-2xl bg-gray-900 text-white font-bold text-sm active:opacity-80">
+                  Upgrade to Business
                 </button>
                 <button onClick={() => setShowOpportunityGate(false)}
                   className="w-full py-3 text-gray-500 font-semibold text-sm">

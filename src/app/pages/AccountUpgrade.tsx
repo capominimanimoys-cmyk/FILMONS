@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { ArrowLeft, Check, ChevronRight, Lock, ShieldCheck } from 'lucide-react';
@@ -162,6 +162,23 @@ export function AccountUpgrade() {
     }
     toast.info(`${TIERS.find(t=>t.id===id)?.label} upgrade — payment flow coming soon`);
   };
+
+  // Deep-link straight into a specific plan's checkout (?auto=professional
+  // or ?auto=business) -- used by the Opportunity display-limit upgrade
+  // gates (Home.tsx / SearchOverlay.tsx), whose two separate "Upgrade to
+  // Professional" / "Upgrade to Business" buttons would otherwise just
+  // land here and make the user find and tap the right plan card again.
+  // Guarded with a ref (not just consuming the param) so this can never
+  // re-fire and re-open Stripe checkout a second time, e.g. if `user`
+  // resolves a moment after mount and this effect re-runs.
+  const autoTriggeredRef = useRef(false);
+  useEffect(() => {
+    const auto = params.get('auto');
+    if (!auto || autoTriggeredRef.current) return;
+    if (auto !== 'professional' && auto !== 'business') return;
+    autoTriggeredRef.current = true;
+    upgrade(auto);
+  }, [params, user?.id]);
 
   if (activating) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin" /></div>;

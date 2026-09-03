@@ -45,17 +45,20 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
 ];
 
 // Real Opportunity listings — listing_type === 'opportunity' is the
-// authoritative source of truth now; metadata.listingKind === 'talent'
-// (the earlier repurposed-kind marker) and the original keyword
-// heuristic are kept as fallbacks so older listings don't disappear.
-// Shared between buildDeck's 'talent' branch and Home()'s own count of
-// how many real Opportunities exist (needed to tell "ran out because of
-// the daily swipe cap" apart from "ran out because nothing else exists").
+// authoritative source of truth; metadata.listingKind === 'talent' (the
+// earlier repurposed-kind marker) is kept as a fallback so older rows that
+// predate listing_type don't disappear. The keyword heuristic that used to
+// live here (title/serviceCategory containing "model"/"actor"/"talent"/
+// "ugc") is deliberately gone -- it pulled ordinary gear listings into
+// Opportunities any time their title happened to mention a camera "model"
+// or similar, and simultaneously stripped them back out of Rental (see
+// the exclusion below), which is exactly the category-contamination bug
+// this was fixed for. Shared between buildDeck's 'talent' branch and
+// Home()'s own count of how many real Opportunities exist (needed to tell
+// "ran out because of the display cap" apart from "ran out because
+// nothing else exists").
 function isTalentListing(l: EnrichedListing): boolean {
-  return l.listingType === 'opportunity' ||
-    l.listingKind === 'talent' ||
-    /model|actor|actress|talent|ugc/i.test(l.title ?? '') ||
-    /model|actor|actress|talent|ugc/i.test(l.serviceCategory ?? '');
+  return l.listingType === 'opportunity' || l.listingKind === 'talent';
 }
 
 function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId, opportunitySwipesRemaining?: number | null): DeckItem[] {
@@ -76,15 +79,17 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
   }
 
   if (filter === 'rentals') {
-    filtered = filtered.filter(l => l.listingMode === 'rent' && l.listingType !== 'service');
+    filtered = filtered.filter(l => l.listingMode === 'rent' && l.listingType !== 'service' && !isTalentListing(l));
   } else if (filter === 'sales') {
-    filtered = filtered.filter(l => l.listingMode === 'sale');
+    filtered = filtered.filter(l => l.listingMode === 'sale' && !isTalentListing(l));
   } else if (filter === 'services') {
-    filtered = filtered.filter(l => l.listingType === 'service');
+    filtered = filtered.filter(l => l.listingType === 'service' && !isTalentListing(l));
   } else if (filter === 'studios') {
     filtered = filtered.filter(l =>
-      (l.title?.toLowerCase() ?? '').includes('studio') ||
-      (l.serviceCategory?.toLowerCase() ?? '').includes('studio')
+      !isTalentListing(l) && (
+        (l.title?.toLowerCase() ?? '').includes('studio') ||
+        (l.serviceCategory?.toLowerCase() ?? '').includes('studio')
+      )
     );
   } else if (filter === 'talent') {
     let talentListings = filtered.filter(isTalentListing);
@@ -306,9 +311,21 @@ export function Home() {
     return () => { done = true; };
   }, [user?.id, refreshKey]);
 
+  // Creator/Creator+ never see more than 2 real Opportunity listings, full
+  // stop -- not a daily-reset swipe budget past that point (oppSwipesRemaining
+  // is that separate, still-real thing: today's swipe allowance, server-
+  // enforced per swipe via record-opportunity-swipe). The smaller of the
+  // two is what actually gets shown, so a Creator+ with swipes left today
+  // still never sees more than 2, and reaching the end of those 2 always
+  // reads as "upgrade for more" (oppLimitReached below), never as "you're
+  // out of swipes for today".
+  const oppDisplayLimit = (userTier === 'creator' || userTier === 'creator_plus')
+    ? Math.min(2, oppSwipesRemaining)
+    : oppSwipesRemaining;
+
   // Rebuild deck whenever filter or source data changes; reset deck state via key
   // null (Professional/Business) means "don't truncate" inside buildDeck.
-  const oppSwipesRemainingForDeck = oppUnlimited ? null : oppSwipesRemaining;
+  const oppSwipesRemainingForDeck = oppUnlimited ? null : oppDisplayLimit;
   const deck = useMemo(() => buildDeck(listings, creators, filter, oppSwipesRemainingForDeck), [listings, creators, filter, oppSwipesRemainingForDeck]);
   // rawDeck is deliberately NEVER truncated by the swipe-remaining count --
   // its only job is telling "genuinely nothing exists" apart from "you've
@@ -325,7 +342,7 @@ export function Home() {
   // same as any other caught-up filter, and the upsell would be
   // misleading ("unlock more" when there is no more).
   const talentTotalCount = useMemo(() => listings.filter(isTalentListing).length, [listings]);
-  const oppLimitReached = !oppUnlimited && talentTotalCount > oppSwipesRemaining;
+  const oppLimitReached = !oppUnlimited && talentTotalCount > oppDisplayLimit;
 
   // A reload (or first visit this session) after having already swiped
   // through everything for this filter never fires SwipeStack's onDone --
@@ -500,26 +517,34 @@ export function Home() {
     </div>
   );
 
-  // Shown instead of caughtUpScreen/emptyState once a limited tier
-  // (Guest/Creator/Creator+) has gone through today's capped Opportunity
-  // allowance -- "After the 5 visible opportunities, show an upgrade
-  // card/message" (spec). "Not Now" needs no handler: staying here is
-  // simply not tapping Upgrade Account.
+  // Shown instead of caughtUpScreen/emptyState once Creator/Creator+ has
+  // gone through their 2-listing display cap (oppDisplayLimit above) --
+  // never loads more, just explains why and offers both real upgrade
+  // paths directly. "Not Now" needs no handler beyond leaving the filter:
+  // staying here is simply not tapping either Upgrade button.
   const opportunityLimitScreen = (
     <div className="flex flex-col items-center py-20 px-6 text-center">
       <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
         <Lock className="w-7 h-7 text-indigo-600" />
       </div>
-      <p className="font-black text-gray-900 text-lg mb-1">Unlock All Opportunities</p>
-      <p className="text-sm text-gray-400 mb-5 max-w-xs">Unlock a Professional or Business account to see all opportunities available with unlimited swipes.</p>
+      <p className="font-black text-gray-900 text-lg mb-1">See more opportunities</p>
+      <p className="text-sm text-gray-400 mb-5 max-w-xs">Upgrade to Professional or Business to access all opportunity listings.</p>
       <div className="flex flex-col gap-2 w-full max-w-xs">
         <button
           onClick={() => {
-            if (!user) { setPendingReturnUrl('/account/upgrade'); navigate('/login'); return; }
-            navigate('/account/upgrade');
+            if (!user) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
+            navigate('/account/upgrade?auto=professional');
           }}
           className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
-          Upgrade Account
+          Upgrade to Professional
+        </button>
+        <button
+          onClick={() => {
+            if (!user) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
+            navigate('/account/upgrade?auto=business');
+          }}
+          className="w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80">
+          Upgrade to Business
         </button>
         <button onClick={() => setFilter('all')} className="w-full py-2.5 text-gray-500 text-sm font-semibold hover:text-gray-700">
           Not Now
