@@ -22,7 +22,7 @@ export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
   // posts: 0, applications: 0 -- Creator+ is now mandatory for Opportunities
   // entirely, both posting and applying.
   creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
-  creator_plus: { posts: 2,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'month' },
+  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
   professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
   business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
 };

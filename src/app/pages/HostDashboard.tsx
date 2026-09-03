@@ -16,7 +16,8 @@ import { savedListingsApi, listingsApi, reviewsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
-import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier } from '../lib/reliabilityApi';
+import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier, normalizeTier } from '../lib/reliabilityApi';
+import { getOpportunityUsage, getEntitlement, resetLabel } from '../lib/entitlements';
 import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
 import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 
@@ -739,6 +740,17 @@ function HostDashboardContent({ user }: { user: any }) {
     reliabilityApi.getScore(user.id).then(setRep).catch(() => {});
   }, [user.id]);
 
+  // Weekly Opportunity posts/applications usage -- shown on this
+  // dashboard's Opportunities/Applications tabs. Business is exempt (its
+  // entitlement is unlimited/null), so nothing is fetched or shown for it
+  // -- "Do not show weekly counters as restrictions for Business users".
+  const dashboardTier = normalizeTier(user.accountType);
+  const [oppUsage, setOppUsage] = useState<{ posts: number; applications: number } | null>(null);
+  useEffect(() => {
+    if (dashboardTier === 'business') return;
+    getOpportunityUsage(user.id, user.accountType).then(setOppUsage).catch(() => {});
+  }, [user.id, dashboardTier]);
+
   const [savedListings2, setSavedListings2] = useState<any[]>([]);
   const [stats, setStats] = useState({
     balance: 0, totalEarned: 0, pending: 0,
@@ -1021,7 +1033,17 @@ function HostDashboardContent({ user }: { user: any }) {
         )}
 
         {activeTab === 'opportunities' && (
-          <MyOpportunitiesOverview opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
+          <>
+            {oppUsage && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-700">
+                  Opportunity posts this week: <span className="font-black text-gray-900">{oppUsage.posts} of {getEntitlement(user.accountType).posts}</span>
+                </p>
+                <p className="text-[11px] text-gray-400">{resetLabel(getEntitlement(user.accountType).window)}</p>
+              </div>
+            )}
+            <MyOpportunitiesOverview opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
+          </>
         )}
 
         {/* Applications — Opportunities this user applied to elsewhere,
@@ -1029,7 +1051,17 @@ function HostDashboardContent({ user }: { user: any }) {
             Creator+ upsell here -- every tier that reaches this dashboard
             variant (creator_plus/professional/business) can already apply. */}
         {activeTab === 'applications' && (
-          <MyApplicationsSection userId={user.id} />
+          <>
+            {oppUsage && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-700">
+                  Applications this week: <span className="font-black text-gray-900">{oppUsage.applications} of {getEntitlement(user.accountType).applications}</span>
+                </p>
+                <p className="text-[11px] text-gray-400">{resetLabel(getEntitlement(user.accountType).window)}</p>
+              </div>
+            )}
+            <MyApplicationsSection userId={user.id} />
+          </>
         )}
 
         {activeTab === 'orders' && (

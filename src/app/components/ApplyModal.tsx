@@ -316,10 +316,10 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
             ))}
 
             {usage && tier !== 'business' && (
-              <p className="text-center text-[11px] text-gray-400">
-                Opportunity applications — {usage.applications} of {getEntitlement(user?.accountType).applications} used this {getEntitlement(user?.accountType).window}
-                {' · '}{resetLabel(getEntitlement(user?.accountType).window)}
-              </p>
+              <div className="text-center text-[11px] text-gray-400 space-y-0.5">
+                <p className="font-semibold text-gray-500">Applications this week: {usage.applications} of {getEntitlement(user?.accountType).applications}</p>
+                <p>{resetLabel(getEntitlement(user?.accountType).window)}</p>
+              </div>
             )}
 
             <button

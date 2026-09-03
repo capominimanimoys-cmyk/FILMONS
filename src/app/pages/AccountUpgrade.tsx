@@ -38,6 +38,8 @@ const TIERS: {
     tagline: 'Verified marketplace foundation.',
     requires: 'ID + selfie + payout verification required',
     ownFeatures: [
+      `${formatLimit(ENTITLEMENTS.creator_plus.posts)} Opportunity post / ${ENTITLEMENTS.creator_plus.window}`,
+      `${formatLimit(ENTITLEMENTS.creator_plus.applications)} Opportunity applications / ${ENTITLEMENTS.creator_plus.window}`,
       '✓ Verified Creator+ badge',
       'Host gear & studio rentals',
       'List creative services',

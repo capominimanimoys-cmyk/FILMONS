@@ -9,10 +9,11 @@ export interface TierEntitlement {
   applications: number | null; // Opportunity applications per `window`; null = unlimited
   priceCents: number;          // CAD, per month (billing cadence -- unrelated to `window`); 0 = free
   swipesPerDay: number | null; // Home deck Like+Pass swipes per calendar day; null = unlimited
-  // Reset cadence for posts/applications specifically. Creator and
-  // Professional reset weekly (Monday 00:00 through Sunday 23:59, server/
-  // UTC time -- this app has no per-user timezone to key off yet);
-  // Creator+ and Business stay on a calendar-month window.
+  // Reset cadence for posts/applications specifically. Creator, Creator+
+  // and Professional all reset weekly (Monday 00:00 through Sunday 23:59,
+  // server/UTC time -- this app has no per-user timezone to key off yet);
+  // Business stays on a calendar-month window (moot in practice since its
+  // posts/applications are both unlimited, but kept for type completeness).
   window: 'week' | 'month';
 }
 
@@ -21,7 +22,7 @@ export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
   // entirely, both posting and applying (limit 0 blocks on the very first
   // attempt, same as ENTITLEMENTS.creator.applications already did).
   creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
-  creator_plus: { posts: 2,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'month' },
+  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
   professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
   business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
 };

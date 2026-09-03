@@ -21,7 +21,8 @@ import { SmartAddressInput, AddressComponents } from '../components/SmartAddress
 import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { ListingCard } from '../components/ListingCard';
 import { OpportunityLimitUpgrade } from '../components/OpportunityLimitUpgrade';
-import { entitlementsApi, LimitReachedInfo } from '../lib/entitlements';
+import { entitlementsApi, LimitReachedInfo, getOpportunityUsage, getEntitlement, resetLabel } from '../lib/entitlements';
+import { normalizeTier } from '../lib/reliabilityApi';
 import { Listing, OpportunityDetails } from '../types';
 
 // ── Shared UI primitives (duplicated from CreateListing.tsx's pattern —
@@ -586,6 +587,19 @@ function Step10({ form, previewListing, onPublish, isSubmitting, onEditStep, lim
     { label: 'Requirements', step: 7 }, { label: 'Application', step: 8 },
   ];
 
+  // Proactive usage counter, shown even before the limit is actually hit
+  // (limitReached above only ever appears reactively, after the server
+  // already refused a publish attempt) -- same "show usage clearly on the
+  // Opportunity action screens" requirement ApplyModal's own counter
+  // satisfies for applications.
+  const { user } = useAuth();
+  const tier = normalizeTier(user?.accountType);
+  const [usage, setUsage] = useState<{ posts: number; applications: number } | null>(null);
+  useEffect(() => {
+    if (!user?.id || tier === 'business') return;
+    getOpportunityUsage(user.id, user.accountType).then(setUsage).catch(() => {});
+  }, [user?.id, tier]);
+
   if (limitReached) {
     // Draft/wizard state is completely untouched — this replaces only what
     // renders, so dismissing returns straight back to this same review step.
@@ -616,6 +630,12 @@ function Step10({ form, previewListing, onPublish, isSubmitting, onEditStep, lim
         className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60">
         {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Publishing…</> : 'Publish Opportunity'}
       </button>
+      {usage && (
+        <div className="text-center text-[11px] text-gray-400 space-y-0.5">
+          <p className="font-semibold text-gray-500">Opportunity posts this week: {usage.posts} of {getEntitlement(user?.accountType).posts}</p>
+          <p>{resetLabel(getEntitlement(user?.accountType).window)}</p>
+        </div>
+      )}
     </div>
   );
 }

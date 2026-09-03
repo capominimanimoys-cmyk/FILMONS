@@ -79,10 +79,11 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
       <div className="px-5 py-6 space-y-4">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
-          <p className="text-base font-black text-gray-900">Opportunity limit reached</p>
+          <p className="text-base font-black text-gray-900">Weekly limit reached</p>
           <p className="text-sm text-gray-500">
-            You've reached your weekly Opportunity {kind === 'applications' ? 'application' : 'posting'} limit. {resetsNote}
+            You have reached your weekly Opportunity limit. Upgrade to Business for unlimited access.
           </p>
+          <p className="text-xs text-gray-400">{resetsNote}</p>
         </div>
 
         {isPosts && limit !== null && <UsageBar used={limit} limit={limit} />}
@@ -106,14 +107,15 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
     <div className="px-5 py-6 space-y-4">
       <div className="text-center space-y-2">
         <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
-        <p className="text-base font-black text-gray-900">Opportunity limit reached</p>
+        <p className="text-base font-black text-gray-900">
+          {kind === 'applications' ? 'Weekly application limit reached' : 'Weekly posting limit reached'}
+        </p>
         <p className="text-sm text-gray-500">
           {kind === 'applications'
-            ? `You've reached your ${windowUnit}ly Opportunity application limit.`
-            : `You've reached your ${windowUnit}ly Opportunity posting limit.`}
-          {' '}{resetsNote}
-          {' '}Your plan can {kind === 'applications' ? 'submit' : 'publish'} up to {limit} Opportunit{limit === 1 ? 'y' : 'ies'} per {windowUnit}.
+            ? `You have used your ${limit} Opportunity application${limit === 1 ? '' : 's'} for this week. Upgrade to Professional or Business to apply to more Opportunities.`
+            : `You have used your ${limit} Opportunity post${limit === 1 ? '' : 's'} for this week. Upgrade to Professional or Business to post more Opportunities.`}
         </p>
+        <p className="text-xs text-gray-400">{resetsNote}</p>
       </div>
 
       {isPosts && limit !== null && <UsageBar used={limit} limit={limit} />}
