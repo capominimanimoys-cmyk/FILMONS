@@ -1,23 +1,34 @@
 /**
- * Guest/Creator/Creator+ access to Emergency Listings -- a 3-random-item
- * preview + "See More" upgrade gate, never a full lock-out and never the
- * complete unrestricted list. Professional/Business never render this at
- * all (they get the real, full list directly). Shared by Home.tsx and
- * SearchOverlay.tsx, each supplying its own item list + card renderer
- * (Home has real Listing objects and uses ListingCard; SearchOverlay has
- * its own slim ListingRow shape and MarketplaceCard) via a render prop, so
- * this component stays free of either page's specific data types.
+ * Guest/Creator/Creator+ access to Emergency Listings. Emergency is a
+ * status/flag on a listing, not its own category -- an emergency rental
+ * stays in Rental, an emergency service stays in Services, etc, each with
+ * a visible EMERGENCY badge (see ListingCard.tsx / SwipeStack.tsx /
+ * SearchOverlay.tsx's per-card badges). Two different restrictions build
+ * on that:
+ *  - EmergencyPreviewGate: the dedicated "Emergency" tab/filter -- a
+ *    3-random-item preview + gate, never a full lock-out and never the
+ *    complete unrestricted list.
+ *  - EmergencyUpgradeModal (exported on its own): the gate shown when a
+ *    normal category queue (Rental, Services, ...) hits its own 2-item
+ *    emergency-listing cap for a restricted tier -- everything else in
+ *    that queue is untouched, only the emergency-flagged items beyond 2
+ *    are held back.
+ * Professional/Business are exempt from both entirely.
  */
 import { ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AlertTriangle } from 'lucide-react';
+import { setPendingReturnUrl } from '../lib/authReturnUrl';
 
-export function EmergencyPreviewGate<T>({ items, renderCard, grid = true }: {
+export function EmergencyPreviewGate<T>({ items, renderCard, grid = true, isAuthenticated }: {
   items: T[];
   renderCard: (item: T, index: number) => ReactNode;
   /** Preview cards render in a 2-col grid (Home, Search's marketplace-style
    *  sections) by default; pass false for a single-column list layout. */
   grid?: boolean;
+  /** Guest vs signed-in Creator/Creator+ -- decides the upgrade modal's
+   *  copy/buttons (see EmergencyUpgradeModal). */
+  isAuthenticated?: boolean;
 }) {
   const [showModal, setShowModal] = useState(false);
   // Picked once on mount and never reshuffled on re-render (a parent
@@ -48,12 +59,18 @@ export function EmergencyPreviewGate<T>({ items, renderCard, grid = true }: {
           See More
         </button>
       </div>
-      {showModal && <EmergencyUpgradeModal onClose={() => setShowModal(false)} />}
+      {showModal && <EmergencyUpgradeModal onClose={() => setShowModal(false)} isAuthenticated={isAuthenticated} />}
     </>
   );
 }
 
-function EmergencyUpgradeModal({ onClose }: { onClose: () => void }) {
+// Same copy/button pattern as the Opportunity display-limit gates
+// (Home.tsx / SearchOverlay.tsx): a guest gets an extra "Sign up" button
+// and "Explore" (not "Upgrade") wording, since they have no account yet;
+// the plan buttons still route through the same login-first flow either
+// way (setPendingReturnUrl to the auto-checkout URL, then /login, which
+// itself bridges to signup for someone with no account).
+export function EmergencyUpgradeModal({ onClose, isAuthenticated }: { onClose: () => void; isAuthenticated?: boolean }) {
   const navigate = useNavigate();
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
@@ -62,17 +79,41 @@ function EmergencyUpgradeModal({ onClose }: { onClose: () => void }) {
           <AlertTriangle className="w-7 h-7 text-red-500" />
         </div>
         <div>
-          <p className="text-lg font-black text-gray-900">Unlock Emergency Listings</p>
+          <p className="text-lg font-black text-gray-900">See more emergency listings</p>
           <p className="text-sm text-gray-500 mt-1 leading-relaxed">
-            Upgrade to a Professional or Business account to see all Emergency Listings on FILMONS.
+            {isAuthenticated
+              ? 'Upgrade to Professional or Business to access all emergency listings.'
+              : 'Sign up or choose Professional or Business to access all emergency listings.'}
           </p>
         </div>
         <div className="flex flex-col gap-2">
+          {!isAuthenticated && (
+            <button
+              onClick={() => { onClose(); navigate('/create-account'); }}
+              className="w-full py-3 bg-red-600 text-white text-sm font-bold rounded-2xl active:opacity-80"
+            >
+              Sign up
+            </button>
+          )}
           <button
-            onClick={() => navigate('/account/upgrade')}
-            className="w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80"
+            onClick={() => {
+              onClose();
+              if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
+              navigate('/account/upgrade?auto=professional');
+            }}
+            className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}
           >
-            Upgrade Account
+            {isAuthenticated ? 'Upgrade to Professional' : 'Explore Professional'}
+          </button>
+          <button
+            onClick={() => {
+              onClose();
+              if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
+              navigate('/account/upgrade?auto=business');
+            }}
+            className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}
+          >
+            {isAuthenticated ? 'Upgrade to Business' : 'Explore Business'}
           </button>
           <button onClick={onClose} className="w-full py-2.5 text-sm font-semibold text-gray-400">
             Not Now

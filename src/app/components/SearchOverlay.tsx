@@ -18,7 +18,7 @@ import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
-import { EmergencyPreviewGate } from './EmergencyLockedState';
+import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -592,10 +592,10 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
       case 'opportunities':  query = query.eq('listing_type', 'opportunity'); break;
       case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
       // Fetched for everyone regardless of tier (the gate is who's allowed
-      // to SEE the results, handled at render time by EmergencyPreviewGate
-      // -- same "data isn't the security boundary, the UI decision is"
-      // pattern already used for negotiable/boosted elsewhere) -- only
-      // real, still-active Emergency listings, never an expired one.
+      // to SEE the results, handled at render time -- same "data isn't the
+      // security boundary, the UI decision is" pattern already used for
+      // negotiable/boosted elsewhere) -- only real, still-active Emergency
+      // listings, never an expired one.
       case 'emergency':      query = query.eq('is_emergency', true).gt('emergency_expires_at', new Date().toISOString()); break;
     }
     return query.order('created_at', { ascending: false }).limit(24);
@@ -963,6 +963,7 @@ function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
 }
 
 function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
+  const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
       onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
@@ -974,7 +975,14 @@ function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: strin
         }
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
+          {isEmergency && (
+            <span className="shrink-0 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
+              <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
+            </span>
+          )}
+        </div>
         {l.city && (
           <p className="text-[11px] text-gray-400 flex items-center gap-0.5">
             <MapPin className="w-2.5 h-2.5 shrink-0"/>{[l.city,l.province].filter(Boolean).join(', ')}
@@ -988,6 +996,7 @@ function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: strin
 }
 
 function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
+  const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
       onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
@@ -999,7 +1008,14 @@ function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
         }
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
+          {isEmergency && (
+            <span className="shrink-0 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
+              <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
+            </span>
+          )}
+        </div>
         {l.city && (
           <p className="text-[11px] text-gray-400 flex items-center gap-0.5">
             <MapPin className="w-2.5 h-2.5 shrink-0"/>{[l.city,l.province].filter(Boolean).join(', ')}
@@ -1043,6 +1059,15 @@ function GuestSeeMoreButton({ onClick }: { onClick: () => void }) {
     <button onClick={onClick}
       className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
       See more
+    </button>
+  );
+}
+
+function EmergencyCategoryGateButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className="w-full py-3 text-center text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
+      See more emergency listings
     </button>
   );
 }
@@ -1174,6 +1199,31 @@ const GUEST_CATEGORY_LIMIT = 5;
 // -- a permanent display cap, not a resettable daily allowance. Professional/
 // Business (canBrowseOpportunities) are exempt entirely.
 const CREATOR_OPPORTUNITY_LIMIT = 2;
+// Guest/Creator/Creator+ never see more than this many EMERGENCY-flagged
+// items within any one category's list (Rental, Sales, Services, Studios)
+// -- non-emergency items in the same list are completely untouched.
+// Professional/Business pass Infinity. Opportunities isn't listed here
+// because its own CREATOR_OPPORTUNITY_LIMIT (2 total) already implies at
+// most 2 emergency ones too.
+const EMERGENCY_LIMIT_RESTRICTED = 2;
+
+// Caps how many emergency-flagged items appear within one category's list
+// for a restricted tier -- order otherwise preserved, non-emergency items
+// untouched. Emergency is a status on a listing, not its own category (see
+// isOpportunityListing's comment above for the earlier fix to a related
+// category-contamination bug).
+function capEmergencyInCategory(items: ListingRow[], limit: number): { visible: ListingRow[]; hiddenCount: number } {
+  if (limit === Infinity) return { visible: items, hiddenCount: 0 };
+  let seen = 0, hiddenCount = 0;
+  const visible = items.filter(l => {
+    const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
+    if (!isEmergency) return true;
+    if (seen < limit) { seen++; return true; }
+    hiddenCount++;
+    return false;
+  });
+  return { visible, hiddenCount };
+}
 
 const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
 
@@ -1212,6 +1262,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // (see the emergency-listing spec's explicit "Creator+ status alone does
   // NOT unlock Emergency Listings").
   const canBrowseEmergency = isProfessional(user?.accountType);
+  // Shared across every category section (Rental/Sales/Services/Studios) --
+  // whichever one's "See more emergency listings" button was tapped opens
+  // the same modal, same as showOpportunityGate above.
+  const [showEmergencyCategoryGate, setShowEmergencyCategoryGate] = useState(false);
+  const emergencyLimit = canBrowseEmergency ? Infinity : EMERGENCY_LIMIT_RESTRICTED;
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
@@ -1416,12 +1471,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   const visibleUsers        = (activeTab === 'all' || activeTab === 'creators')     ? filteredUsers        : [];
-  const visibleRental       = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
-  const visibleSale         = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
-  const visibleServices     = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
-  const visibleStudios      = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
+  const rawVisibleRental    = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
+  const rawVisibleSale      = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
+  const rawVisibleServices  = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
+  const rawVisibleStudios   = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
   const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
   const visibleEmergency    = (activeTab === 'all' || activeTab === 'emergency')    ? emergencyListings     : [];
+
+  // Emergency-flagged items within each of these four categories are
+  // separately capped at emergencyLimit for a restricted tier -- non-
+  // emergency items in the same list are untouched (see
+  // capEmergencyInCategory above).
+  const { visible: visibleRental,   hiddenCount: hiddenEmergencyRental }   = capEmergencyInCategory(rawVisibleRental, emergencyLimit);
+  const { visible: visibleSale,     hiddenCount: hiddenEmergencySale }     = capEmergencyInCategory(rawVisibleSale, emergencyLimit);
+  const { visible: visibleServices, hiddenCount: hiddenEmergencyServices } = capEmergencyInCategory(rawVisibleServices, emergencyLimit);
+  const { visible: visibleStudios,  hiddenCount: hiddenEmergencyStudios }  = capEmergencyInCategory(rawVisibleStudios, emergencyLimit);
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
@@ -1470,9 +1534,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         </div>
 
         {/* ── Category tabs — always visible, not gated on typing, so tapping
-             one fetches that category immediately with no query typed yet ── */}
+             one fetches that category immediately with no query typed yet.
+             The Emergency tab itself is Professional/Business only --
+             Guest/Creator/Creator+ still see emergency-flagged listings,
+             just inside each one's real category (Rental, Services, ...)
+             with an EMERGENCY badge, capped per category. ── */}
         <div className="pop-in shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
-          {TABS.map(tab => (
+          {TABS.filter(tab => tab.id !== 'emergency' || canBrowseEmergency).map(tab => (
             <button key={tab.id} onClick={() => trySetTab(tab.id)}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
                 activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -1561,27 +1629,39 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleUsers.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
+              {/* Each of these four: the generic per-category guest cap
+                  (GUEST_CATEGORY_LIMIT) takes priority when it applies --
+                  it affects the whole category, not just emergency items.
+                  Otherwise, if emergency items were held back within this
+                  category specifically (hiddenEmergencyX, computed on the
+                  already-capped list above), show that gate instead. Both
+                  guest and signed-in Creator/Creator+ can hit the emergency
+                  gate; only guests can hit the generic one. */}
               {visibleRental.length > 0 && (
                 <ResultSection label="📦 Rental" count={visibleRental.length} grid
-                  footer={!user && visibleRental.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('rental')}/> : undefined}>
+                  footer={!user && visibleRental.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('rental')}/>
+                    : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                   {visibleRental.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleSale.length > 0 && (
                 <ResultSection label="🏷️ Sales" count={visibleSale.length} grid
-                  footer={!user && visibleSale.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('sale')}/> : undefined}>
+                  footer={!user && visibleSale.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('sale')}/>
+                    : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                   {visibleSale.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
                 <ResultSection label="🛠️ Services" count={visibleServices.length}
-                  footer={!user && visibleServices.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('services')}/> : undefined}>
+                  footer={!user && visibleServices.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('services')}/>
+                    : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                   {visibleServices.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleStudios.length > 0 && (
                 <ResultSection label="🏢 Studios" count={visibleStudios.length} grid
-                  footer={!user && visibleStudios.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('studios')}/> : undefined}>
+                  footer={!user && visibleStudios.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('studios')}/>
+                    : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                   {visibleStudios.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
@@ -1600,21 +1680,16 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : CREATOR_OPPORTUNITY_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {visibleEmergency.length > 0 && (
-                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid={canBrowseEmergency}>
-                  {/* Professional/Business get the real, full list.
-                      Everyone else (guest, Creator, Creator+) gets a
-                      3-random-item preview + a "See More" upgrade gate --
-                      never zero preview, never the unrestricted list. */}
-                  {canBrowseEmergency
-                    ? visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)
-                    // Wrapped in one plain div so ResultSection's divide-y
-                    // list mode (grid={false} above) sees a single child --
-                    // the gate itself renders multiple top-level pieces
-                    // (message, its own grid of cards, the button), which
-                    // would otherwise each get an unwanted divider line as
-                    // if they were separate list rows.
-                    : <div><EmergencyPreviewGate items={visibleEmergency} renderCard={l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>}/></div>}
+              {/* Dedicated Emergency section is Professional/Business only
+                  now -- Guest/Creator/Creator+ never see it at all (not
+                  even a preview), since Emergency isn't a browsable
+                  category for them anymore. They still see emergency-
+                  flagged listings inside Rental/Sales/Services/Studios/
+                  Opportunities below, each capped at
+                  EMERGENCY_LIMIT_RESTRICTED (2) with its own badge. */}
+              {canBrowseEmergency && visibleEmergency.length > 0 && (
+                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
+                  {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (
@@ -1721,6 +1796,15 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
           </>
         )}
       </AnimatePresence>
+
+      {/* "See more emergency listings" -- shared by every category section
+          (Rental/Sales/Services/Studios) whose emergency items were capped
+          at EMERGENCY_LIMIT_RESTRICTED (2). Reuses the same modal Home.tsx's
+          dedicated Emergency tab (Professional/Business only now) and its
+          own per-category gate both use. */}
+      {showEmergencyCategoryGate && (
+        <EmergencyUpgradeModal onClose={() => setShowEmergencyCategoryGate(false)} isAuthenticated={isAuthenticated}/>
+      )}
     </>
   );
 }

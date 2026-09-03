@@ -62,7 +62,34 @@ function isTalentListing(l: EnrichedListing): boolean {
   return l.listingType === 'opportunity' || l.listingKind === 'talent';
 }
 
-function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId, opportunitySwipesRemaining?: number | null): DeckItem[] {
+function isActiveEmergencyListing(l: EnrichedListing): boolean {
+  return !!l.isEmergency && !!l.emergencyExpiresAt && new Date(l.emergencyExpiresAt) > new Date();
+}
+
+// Caps how many EMERGENCY-flagged items appear within one category's deck
+// for a restricted tier (Guest/Creator/Creator+) -- non-emergency items in
+// the same deck are completely untouched, and order is otherwise
+// preserved. Emergency is a status on a listing, not its own category (see
+// isTalentListing's comment for the earlier fix to a related category-
+// contamination bug): an emergency rental stays in Rental, it just can't
+// push more than `limit` emergency items into that one deck for a
+// restricted tier. Professional/Business pass limit=Infinity.
+function capEmergencyItems(listings: EnrichedListing[], limit: number): { visible: EnrichedListing[]; hiddenCount: number } {
+  if (limit === Infinity) return { visible: listings, hiddenCount: 0 };
+  let seen = 0, hiddenCount = 0;
+  const visible = listings.filter(l => {
+    if (!isActiveEmergencyListing(l)) return true;
+    if (seen < limit) { seen++; return true; }
+    hiddenCount++;
+    return false;
+  });
+  return { visible, hiddenCount };
+}
+
+function buildDeck(
+  listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId,
+  opportunitySwipesRemaining?: number | null, emergencyLimit: number = Infinity,
+): DeckItem[] {
   if (filter === 'creators') {
     return creators.map(c => ({ kind: 'creator', data: c }));
   }
@@ -74,17 +101,24 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
     // exclusion + Emergency recycling-exemption/cooldown logic (see the
     // isActiveEmergency block below) -- filtering it down to just active
     // Emergency listings reuses that same recycling behavior automatically
-    // instead of re-implementing it for this category.
-    filtered = filtered.filter(l => l.isEmergency && !!l.emergencyExpiresAt && new Date(l.emergencyExpiresAt) > new Date());
+    // instead of re-implementing it for this category. This filter chip is
+    // hidden entirely from Guest/Creator/Creator+ now (Emergency isn't its
+    // own browsable category for them -- see the FILTERS render below), so
+    // no emergencyLimit capping applies here; only Professional/Business
+    // can ever reach this branch.
+    filtered = filtered.filter(isActiveEmergencyListing);
     return filtered.map(l => ({ kind: 'listing' as const, data: l }));
   }
 
   if (filter === 'rentals') {
     filtered = filtered.filter(l => l.listingMode === 'rent' && l.listingType !== 'service' && !isTalentListing(l));
+    filtered = capEmergencyItems(filtered, emergencyLimit).visible;
   } else if (filter === 'sales') {
     filtered = filtered.filter(l => l.listingMode === 'sale' && !isTalentListing(l));
+    filtered = capEmergencyItems(filtered, emergencyLimit).visible;
   } else if (filter === 'services') {
     filtered = filtered.filter(l => l.listingType === 'service' && !isTalentListing(l));
+    filtered = capEmergencyItems(filtered, emergencyLimit).visible;
   } else if (filter === 'studios') {
     filtered = filtered.filter(l =>
       !isTalentListing(l) && (
@@ -92,6 +126,7 @@ function buildDeck(listings: EnrichedListing[], creators: CreatorProfile[], filt
         (l.serviceCategory?.toLowerCase() ?? '').includes('studio')
       )
     );
+    filtered = capEmergencyItems(filtered, emergencyLimit).visible;
   } else if (filter === 'talent') {
     let talentListings = filtered.filter(isTalentListing);
     // Guest/Creator/Creator+ see every real Opportunity listing (never a
@@ -328,10 +363,19 @@ export function Home() {
     ? Math.min(2, oppSwipesRemaining)
     : oppSwipesRemaining;
 
+  // Guest/Creator/Creator+ never see more than 2 emergency-flagged items
+  // within any one category deck (Rental, Sales, Services, Studios) --
+  // non-emergency items in that same deck are untouched. Professional/
+  // Business are exempt (Infinity).
+  const emergencyDisplayLimit = canBrowseEmergency ? Infinity : 2;
+
   // Rebuild deck whenever filter or source data changes; reset deck state via key
   // null (Professional/Business) means "don't truncate" inside buildDeck.
   const oppSwipesRemainingForDeck = oppUnlimited ? null : oppDisplayLimit;
-  const deck = useMemo(() => buildDeck(listings, creators, filter, oppSwipesRemainingForDeck), [listings, creators, filter, oppSwipesRemainingForDeck]);
+  const deck = useMemo(
+    () => buildDeck(listings, creators, filter, oppSwipesRemainingForDeck, emergencyDisplayLimit),
+    [listings, creators, filter, oppSwipesRemainingForDeck, emergencyDisplayLimit],
+  );
   // rawDeck is deliberately NEVER truncated by the swipe-remaining count --
   // its only job is telling "genuinely nothing exists" apart from "you've
   // already seen/swiped everything" (see the deckDone-promotion effect
@@ -339,7 +383,27 @@ export function Home() {
   // 0, rawDeck also went empty even when real (already-excluded) matching
   // listings existed, so that effect never fired and the plain "Nothing
   // here yet" empty state showed instead of the correct caught-up screen.
+  // Emergency capping is skipped here for the same reason.
   const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, null), [rawListings, rawCreators, filter]);
+
+  // How many emergency items got held back from the CURRENT filter's deck
+  // -- computed independently of buildDeck (which only returns the deck
+  // array, not a count) using the exact same category classification, so
+  // the "see more emergency listings" screen only shows when there
+  // genuinely were more. Categories/talent/creators/emergency itself
+  // either don't apply emergency capping or already have their own
+  // separate limit (Opportunities' 2-total cap already implies at most 2
+  // emergency ones too), so this only matters for rentals/sales/services/
+  // studios.
+  const currentCategoryEmergencyHidden = useMemo(() => {
+    if (canBrowseEmergency || !['rentals', 'sales', 'services', 'studios'].includes(filter)) return 0;
+    let categoryFiltered: EnrichedListing[];
+    if (filter === 'rentals') categoryFiltered = listings.filter(l => l.listingMode === 'rent' && l.listingType !== 'service' && !isTalentListing(l));
+    else if (filter === 'sales') categoryFiltered = listings.filter(l => l.listingMode === 'sale' && !isTalentListing(l));
+    else if (filter === 'services') categoryFiltered = listings.filter(l => l.listingType === 'service' && !isTalentListing(l));
+    else categoryFiltered = listings.filter(l => !isTalentListing(l) && ((l.title?.toLowerCase() ?? '').includes('studio') || (l.serviceCategory?.toLowerCase() ?? '').includes('studio')));
+    return capEmergencyItems(categoryFiltered, emergencyDisplayLimit).hiddenCount;
+  }, [listings, filter, canBrowseEmergency, emergencyDisplayLimit]);
 
   // Reaching the end of the 'talent' deck means "hit the daily swipe cap"
   // only if there were genuinely more real Opportunities than the capped
@@ -574,6 +638,53 @@ export function Home() {
     </div>
   );
 
+  // Shown instead of caughtUpScreen/emptyState once a restricted tier
+  // (Guest/Creator/Creator+) reaches the end of a category deck
+  // (Rental/Sales/Services/Studios) that held back emergency-flagged
+  // items past emergencyDisplayLimit (2) -- everything else in that
+  // category was already shown normally, only the excess emergency ones
+  // were capped. Same guest-aware copy/button pattern as
+  // opportunityLimitScreen just above.
+  const categoryEmergencyLimitScreen = (
+    <div className="flex flex-col items-center py-20 px-6 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-4">
+        <AlertTriangle className="w-7 h-7 text-red-500" />
+      </div>
+      <p className="font-black text-gray-900 text-lg mb-1">See more emergency listings</p>
+      <p className="text-sm text-gray-400 mb-5 max-w-xs">
+        {user ? 'Upgrade to Professional or Business to access all emergency listings.'
+              : 'Sign up or choose Professional or Business to access all emergency listings.'}
+      </p>
+      <div className="flex flex-col gap-2 w-full max-w-xs">
+        {!user && (
+          <button
+            onClick={() => { captureSnapshot(); navigate('/create-account'); }}
+            className="w-full py-3 bg-red-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
+            Sign up
+          </button>
+        )}
+        <button
+          onClick={() => {
+            if (!user) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
+            navigate('/account/upgrade?auto=professional');
+          }}
+          className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${user ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
+          {user ? 'Upgrade to Professional' : 'Explore Professional'}
+        </button>
+        <button
+          onClick={() => {
+            if (!user) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
+            navigate('/account/upgrade?auto=business');
+          }}
+          className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${user ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
+          {user ? 'Upgrade to Business' : 'Explore Business'}
+        </button>
+        <button onClick={() => setFilter('all')} className="w-full py-2.5 text-gray-500 text-sm font-semibold hover:text-gray-700">
+          Not Now
+        </button>
+      </div>
+    </div>
+  );
 
   // Shown instead of caughtUpScreen when returning to a filter that was
   // already finished in an earlier session and new unseen items have since
@@ -638,13 +749,15 @@ export function Home() {
           </div>
         ) : (
           <>
-            {/* ── Filter chips — Emergency is visible to every account type
-                 (guests included) so everyone understands the feature
-                 exists; only the actual listings are gated by tier
-                 (EmergencyPreviewGate below, canBrowseEmergency re-checked
-                 server-side in handleFilter). ── */}
+            {/* ── Filter chips — the Emergency chip itself is now
+                 Professional/Business only. Emergency isn't a separate
+                 browsable category for Guest/Creator/Creator+ at all
+                 (removed per spec) -- they still see emergency-flagged
+                 listings, just inside each one's real category (Rental,
+                 Services, ...) with an EMERGENCY badge on the card, capped
+                 at emergencyDisplayLimit (2) per category. ── */}
             <div ref={filterRowRef} className="pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
-              {FILTERS.map(f => (
+              {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
                 <button
                   key={f.id}
                   onClick={() => handleFilter(f.id)}
@@ -678,12 +791,15 @@ export function Home() {
                 <EmergencyPreviewGate
                   items={deck.filter(d => d.kind === 'listing').map(d => d.data)}
                   renderCard={listing => <ListingCard key={listing.id} listing={listing} />}
+                  isAuthenticated={!!user}
                 />
               )
                   : loadError ? errorScreen : deckDone
-                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : caughtUpScreen)
+                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen
+                     : currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : caughtUpScreen)
                   : deck.length === 0
-                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen : emptyState)
+                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen
+                     : currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : emptyState)
                   : showNewBanner ? newOpportunitiesScreen : (
                 <SwipeStack
                   key={filterKey}
