@@ -168,7 +168,9 @@ export function MessageSettings() {
       {/* Header */}
       <div className="sticky top-14 lg:top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors">
+          {/* Explicit route, not navigate(-1) -- see Settings.tsx's own
+              back button comment for why. */}
+          <button onClick={() => navigate('/settings')} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors">
             <ArrowLeft className="w-4 h-4 text-gray-700"/>
           </button>
           <h1 className="text-base font-black text-gray-900">Message Settings</h1>
