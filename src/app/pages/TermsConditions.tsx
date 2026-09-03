@@ -93,6 +93,16 @@ export function TermsConditions() {
         </section>
 
         <section className="mb-8">
+          <h2 className="text-2xl font-bold mb-4">Emergency Listing Notice</h2>
+          <p className="text-gray-700 mb-4">
+            The "Emergency" label indicates that a user has marked a listing as time-sensitive. It does not mean that FILMONS has verified an emergency or guarantees availability, safety, payment, or performance.
+          </p>
+          <p className="text-gray-700 mb-4">
+            Access to Emergency Listings varies by account type. Professional and Business accounts can access all Emergency Listings. Guest, Creator and Creator+ accounts have restricted access, as described in the FILMONS product experience.
+          </p>
+        </section>
+
+        <section className="mb-8">
           <h2 className="text-2xl font-bold mb-4">Limitation of Liability</h2>
           <p className="text-gray-700 mb-4">
             Filmons shall not be liable for:

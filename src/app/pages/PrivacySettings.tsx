@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Bell, Mail, Users, ShoppingBag, BarChart2, Briefcase, Volume2, Moon, ChevronRight, Lock, Eye, Shield, UserX } from 'lucide-react';
+import { ArrowLeft, Bell, Mail, Users, ShoppingBag, BarChart2, Briefcase, Volume2, Moon, ChevronRight, Lock, Eye, Shield, UserX, Cookie } from 'lucide-react';
+import { openCookiePreferences } from '../components/CookieConsent';
 import { useT } from '../lib/i18n';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -405,6 +406,17 @@ export function PrivacySettings() {
           <Toggle on={dataAnalytics}     onChange={() => setDataAnalytics(!dataAnalytics)}         label="Usage Analytics"        sub="Help improve Filmons with anonymous data"/>
           <Toggle on={personalizedAds}   onChange={() => setPersonalizedAds(!personalizedAds)}     label="Personalized Ads"       sub="Show ads based on your activity"/>
           <Toggle on={shareWithPartners} onChange={() => setShareWithPartners(!shareWithPartners)}  label="Share with Partners"    sub="Share data with trusted Filmons partners"/>
+        </Section>
+
+        <Section title="Cookies" icon={<Cookie className="w-4 h-4"/>}>
+          <button onClick={openCookiePreferences}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Cookie Preferences</p>
+              <p className="text-xs text-gray-400 mt-0.5">Choose which optional cookies FILMONS can use</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+          </button>
         </Section>
 
         <Section title="Account Security" icon={<Shield className="w-4 h-4"/>}>

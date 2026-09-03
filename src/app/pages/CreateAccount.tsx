@@ -50,17 +50,23 @@ export function CreateAccount() {
   const [showCf,          setShowCf]          = useState(false);
   const [loading,         setLoading]         = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  // Separate from cookie consent (see CookieConsent.tsx) -- this is the
+  // legal Terms of Service and Privacy Policy agreement, required before
+  // any signup path (email, Google, or phone) can proceed. Never pre-
+  // checked.
+  const [agreedToTerms,   setAgreedToTerms]   = useState(false);
 
   const rules      = PW_RULES.map(r => ({ ...r, met: r.test(password) }));
   const allRulesMet = rules.every(r => r.met);
   const emailValid  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const pwMatch     = password === confirm && confirm.length > 0;
-  const canSubmit   = name.trim().length >= 2 && emailValid && allRulesMet && pwMatch;
+  const canSubmit   = name.trim().length >= 2 && emailValid && allRulesMet && pwMatch && agreedToTerms;
   const strength    = pwStrength(password);
 
   const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     setSubmitAttempted(true);
+    if (!agreedToTerms) { toast.error('Please agree to the Terms of Service and Privacy Policy to continue.'); return; }
     if (!canSubmit || loading) return;
     setLoading(true);
     try {
@@ -116,6 +122,7 @@ export function CreateAccount() {
   };
 
   const handleOAuth = async (provider: 'google' | 'apple') => {
+    if (!agreedToTerms) { toast.error('Please agree to the Terms of Service and Privacy Policy to continue.'); return; }
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       // Forces Google's account chooser instead of silently reusing
@@ -269,6 +276,39 @@ export function CreateAccount() {
             )}
           </div>
 
+          {/* Terms of Service / Privacy Policy agreement -- separate from
+              cookie consent (CookieConsent.tsx), and never pre-checked.
+              Gates every signup path on this page (email, Google, phone),
+              not just this form's own submit button. Deliberately not a
+              single <label> wrapping the links too -- clicking a nested
+              <a> inside a <label> associated with a checkbox toggles the
+              checkbox as a side effect of the browser's own native
+              label behavior in most browsers, on top of navigating, which
+              would let the box get checked without the user ever
+              deliberately clicking it themselves. The checkbox and its
+              own label text are associated via id/htmlFor; the Terms of
+              Service and Privacy Policy links sit outside that
+              association as plain siblings. */}
+          <div className="flex items-start gap-2.5 pt-1">
+            <input
+              id="agree-terms"
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={e => setAgreedToTerms(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 shrink-0 accent-blue-500 cursor-pointer"
+            />
+            <span className="text-xs text-white/50 leading-relaxed">
+              <label htmlFor="agree-terms" className="cursor-pointer select-none">I agree to the FILMONS</label>
+              {' '}
+              <Link to="/terms-conditions" className="text-blue-400 hover:text-blue-300 underline">Terms of Service</Link>
+              {' '}
+              <label htmlFor="agree-terms" className="cursor-pointer select-none">and acknowledge the</label>
+              {' '}
+              <Link to="/privacy-policy" className="text-blue-400 hover:text-blue-300 underline">Privacy Policy</Link>
+              <label htmlFor="agree-terms" className="cursor-pointer select-none">.</label>
+            </span>
+          </div>
+
           {/* Submit */}
           <button
             type="submit"
@@ -307,20 +347,16 @@ export function CreateAccount() {
 
           {/* Phone */}
           <button
-            onClick={() => navigate('/signup/phone')}
+            onClick={() => {
+              if (!agreedToTerms) { toast.error('Please agree to the Terms of Service and Privacy Policy to continue.'); return; }
+              navigate('/signup/phone');
+            }}
             className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl bg-white/10 border border-white/15 text-white text-sm font-bold hover:bg-white/15 active:scale-[0.98] transition-all min-h-[44px]"
           >
             <Phone className="w-4 h-4 shrink-0" />
             Continue with Phone Number
           </button>
         </div>
-
-        <p className="text-center text-white/30 text-xs mt-7 max-w-xs mx-auto">
-          By creating an account you agree to our{' '}
-          <Link to="/terms-conditions" className="text-blue-400 hover:text-blue-300">Terms</Link>
-          {' & '}
-          <Link to="/privacy-policy" className="text-blue-400 hover:text-blue-300">Privacy Policy</Link>.
-        </p>
 
         <p className="text-center text-white/35 text-sm mt-4">
           Already have an account?{' '}

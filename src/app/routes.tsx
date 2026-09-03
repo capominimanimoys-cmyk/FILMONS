@@ -15,6 +15,7 @@ import { Profile } from './pages/Profile';
 import { RefundPolicy } from './pages/RefundPolicy';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsConditions } from './pages/TermsConditions';
+import { CookiePolicy } from './pages/CookiePolicy';
 import { HostProfile } from './pages/HostProfile';
 import { Verification } from './pages/Verification';
 import { ContactSupport } from './pages/ContactSupport';
@@ -128,6 +129,7 @@ export const router = createBrowserRouter([
       { path: 'refund-policy', Component: RefundPolicy },
       { path: 'privacy-policy', Component: PrivacyPolicy },
       { path: 'terms-conditions', Component: TermsConditions },
+      { path: 'cookie-policy', Component: CookiePolicy },
       { path: 'host/:userId', Component: HostProfile },
       // Old flat admin URLs -- kept as redirects (not removed) for any
       // existing bookmark or already-sent email link (the support-case

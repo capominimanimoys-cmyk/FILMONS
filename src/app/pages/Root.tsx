@@ -9,6 +9,7 @@ import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { GuestBanner } from '../components/GuestBanner';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
+import { CookieConsent } from '../components/CookieConsent';
 import { RouteProgressBar } from '../components/RouteProgressBar';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -101,6 +102,7 @@ export function Root() {
         <div className="min-h-screen flex flex-col">
           <Outlet />
         </div>
+        <CookieConsent />
       </NotificationBannerProvider>
     );
   }
@@ -147,6 +149,8 @@ export function Root() {
 
         {/* Guest auth prompt — rendered globally, triggered via showGuestPrompt() */}
         <GuestAuthPrompt />
+
+        <CookieConsent />
       </div>
     </NotificationBannerProvider>
   );
