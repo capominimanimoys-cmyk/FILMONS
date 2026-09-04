@@ -9,6 +9,13 @@ export interface TierEntitlement {
   applications: number | null; // Opportunity applications per `window`; null = unlimited
   priceCents: number;          // CAD, per month (billing cadence -- unrelated to `window`); 0 = free
   swipesPerDay: number | null; // Home deck Like+Pass swipes per calendar day; null = unlimited
+  // How many Opportunity listings can appear in Home's swipe queue per
+  // calendar day -- distinct from swipesPerDay (the general deck Like/Pass
+  // budget across every listing type) and from posts/applications (posting
+  // and applying). null = unlimited (Professional/Business). Enforced
+  // server-side by get-opportunity-feed / record-opportunity-swipe via
+  // fn_get/record_opportunity_swipe -- see 20240406000000_opportunity_daily_allowance.sql.
+  opportunityQueueDaily: number | null;
   // Reset cadence for posts/applications specifically. Creator, Creator+
   // and Professional all reset weekly (Monday 00:00 through Sunday 23:59,
   // server/UTC time -- this app has no per-user timezone to key off yet);
@@ -21,11 +28,17 @@ export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
   // posts: 0, applications: 0 -- Creator+ is now mandatory for Opportunities
   // entirely, both posting and applying (limit 0 blocks on the very first
   // attempt, same as ENTITLEMENTS.creator.applications already did).
-  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
-  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
-  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
-  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
+  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 2,    window: 'week'  },
+  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 5,    window: 'week'  },
+  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, opportunityQueueDaily: null, window: 'week'  },
+  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, opportunityQueueDaily: null, window: 'month' },
 };
+
+// Guest (no account at all) isn't part of AccountTier -- same daily cap as
+// Creator today, kept as its own named constant rather than folded into
+// the map so it's clear this is a deliberate, separate policy decision,
+// not an accident of some "guest === creator" fallback.
+export const GUEST_OPPORTUNITY_QUEUE_DAILY = 2;
 
 // Same legacy-string normalization as src/app/lib/reliabilityApi.ts's
 // normalizeTier() -- never trust a raw account_type string without this.

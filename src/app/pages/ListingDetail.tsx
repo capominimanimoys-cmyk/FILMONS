@@ -11,6 +11,9 @@ import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { playTransition } from '../lib/smartAnimate';
+import { normalizeTier } from '../lib/reliabilityApi';
+import { opportunityFeedApi } from '../lib/opportunityFeedApi';
+import { OpportunityQueueLimitBanner } from '../components/OpportunityQueueLimitBanner';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -105,6 +108,27 @@ export function ListingDetail() {
   const [saved, setSaved]                 = useState(false);
   const [lightbox, setLightbox]           = useState<{ items: { url: string; type: 'image'|'video' }[]; index: number } | null>(null);
   const [activeImg, setActiveImg]         = useState(0);
+  // Blocks direct access (an old link, a share, a bookmark) to an
+  // Opportunity listing once the viewer has exhausted today's Home
+  // swipe-queue Opportunity budget -- the queue itself already never shows
+  // one beyond that budget, this closes the same gate for anyone who
+  // reaches it by URL instead. `restricted` starts false so it never
+  // flashes true before this resolves; Professional/Business never call
+  // getSwipeStatus at all (unlimited), so they're never restricted.
+  const [restricted, setRestricted] = useState(false);
+  useEffect(() => {
+    if (!listing) return;
+    const isOpp = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
+    if (!isOpp) { setRestricted(false); return; }
+    const tier = normalizeTier(user?.accountType);
+    if (tier === 'professional' || tier === 'business') { setRestricted(false); return; }
+    let cancelled = false;
+    opportunityFeedApi.getSwipeStatus(user?.id, !user).then(({ unlimited, swipeCount, limit }) => {
+      if (cancelled) return;
+      setRestricted(!unlimited && swipeCount >= limit);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [listing, user?.id, user?.accountType]);
 
   useEffect(() => { if (id) loadListing(id); }, [id]);
 
@@ -307,6 +331,26 @@ export function ListingDetail() {
       </div>
     </div>
   );
+
+  // Replaces the entire listing content -- never a blurred/partial card --
+  // for an Opportunity the viewer has no budget left to see today. The
+  // owner viewing their own listing is exempt (this is a viewing budget on
+  // OTHER people's Opportunities, not a lock on managing your own).
+  if (restricted && user?.id !== listing.userId) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+          <button onClick={handleBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+            <ArrowLeft className="w-4 h-4 text-gray-700"/>
+          </button>
+          <h1 className="text-base font-black text-gray-900">Opportunity</h1>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <OpportunityQueueLimitBanner tier={normalizeTier(user?.accountType)} isAuthenticated={!!user} />
+        </div>
+      </div>
+    );
+  }
 
   const isOwnListing = user?.id === listing.userId;
   const avgRating = reviews.length > 0 ? reviews.reduce((a, r) => a + r.rating, 0) / reviews.length : 0;

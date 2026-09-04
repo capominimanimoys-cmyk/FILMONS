@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap, Lock } from 'lucide-react';
+import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
@@ -19,6 +19,7 @@ import { opportunityFeedApi } from '../lib/opportunityFeedApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
+import { OpportunityQueueLimitBanner } from '../components/OpportunityQueueLimitBanner';
 import { ListingCard } from '../components/ListingCard';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
@@ -348,21 +349,16 @@ export function Home() {
     return () => { done = true; };
   }, [user?.id, refreshKey]);
 
-  // Guest/Creator/Creator+ never see more than 2 real Opportunity listings,
-  // full stop -- not a daily-reset swipe budget past that point
-  // (oppSwipesRemaining is that separate, still-real thing: today's swipe
-  // allowance, server-enforced per swipe via record-opportunity-swipe).
-  // The smaller of the two is what actually gets shown, so a Creator+ with
-  // swipes left today still never sees more than 2, and reaching the end
-  // of those 2 always reads as "upgrade for more" (oppLimitReached below),
-  // never as "you're out of swipes for today". Written as `!user || ...`
-  // rather than relying on normalizeTier's undefined-accountType fallback
-  // also landing on 'creator' for a guest -- correct today, but that's an
-  // implicit coincidence this shouldn't quietly depend on.
-  const isLimitedOpportunityTier = !user || userTier === 'creator' || userTier === 'creator_plus';
-  const oppDisplayLimit = isLimitedOpportunityTier
-    ? Math.min(2, oppSwipesRemaining)
-    : oppSwipesRemaining;
+  // Guest/Creator: 2 Opportunity listings/day in the Home queue. Creator+:
+  // 5/day. Professional/Business: unlimited (handled separately below via
+  // oppUnlimited). This is a genuine per-day budget (persisted in
+  // opportunity_swipe_log, resets at UTC midnight, never on refresh/sign-
+  // out) -- oppSwipesRemaining already reflects the correct per-tier limit
+  // minus today's usage, resolved server-side in get-opportunity-feed
+  // (ENTITLEMENTS.opportunityQueueDaily / GUEST_OPPORTUNITY_QUEUE_DAILY),
+  // so it's used directly here rather than re-clamped to a flat number on
+  // the client.
+  const oppDisplayLimit = oppSwipesRemaining;
 
   // Guest/Creator/Creator+ never see more than 2 emergency-flagged items
   // within any one category deck (Rental, Sales, Services, Studios) --
@@ -588,55 +584,12 @@ export function Home() {
   );
 
   // Shown instead of caughtUpScreen/emptyState once a limited tier (Guest/
-  // Creator/Creator+) has gone through the 2-listing display cap
-  // (oppDisplayLimit above) -- never loads more, just explains why and
-  // offers real next steps directly. A guest gets an extra "Sign up"
-  // button and "Explore" (not "Upgrade") wording on the plan buttons,
-  // since they have no account to upgrade yet; both plan buttons still
-  // route through the same login-first flow signed-in users' "Upgrade"
-  // buttons use (setPendingReturnUrl to the auto-checkout URL, then
-  // /login, which itself bridges to signup for someone with no account).
-  // "Not Now" needs no handler beyond leaving the filter: staying here is
-  // simply not tapping any of the other buttons.
+  // Creator/Creator+) has gone through today's per-tier Opportunity queue
+  // budget (oppDisplayLimit above -- Guest/Creator: 2, Creator+: 5) --
+  // never loads more, just explains why and offers real next steps
+  // directly, with tier-specific copy (see OpportunityQueueLimitBanner).
   const opportunityLimitScreen = (
-    <div className="flex flex-col items-center py-20 px-6 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
-        <Lock className="w-7 h-7 text-indigo-600" />
-      </div>
-      <p className="font-black text-gray-900 text-lg mb-1">See more opportunities</p>
-      <p className="text-sm text-gray-400 mb-5 max-w-xs">
-        {user ? 'Upgrade to Professional or Business to access all opportunity listings.'
-              : 'Sign up or upgrade to Professional or Business to access all opportunity listings.'}
-      </p>
-      <div className="flex flex-col gap-2 w-full max-w-xs">
-        {!user && (
-          <button
-            onClick={() => { captureSnapshot(); navigate('/create-account'); }}
-            className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-2xl active:opacity-80">
-            Sign up
-          </button>
-        )}
-        <button
-          onClick={() => {
-            if (!user) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
-            navigate('/account/upgrade?auto=professional');
-          }}
-          className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${user ? 'bg-indigo-600 text-white' : 'border border-gray-200 text-gray-700'}`}>
-          {user ? 'Upgrade to Professional' : 'Explore Professional'}
-        </button>
-        <button
-          onClick={() => {
-            if (!user) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
-            navigate('/account/upgrade?auto=business');
-          }}
-          className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${user ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
-          {user ? 'Upgrade to Business' : 'Explore Business'}
-        </button>
-        <button onClick={() => setFilter('all')} className="w-full py-2.5 text-gray-500 text-sm font-semibold hover:text-gray-700">
-          Not Now
-        </button>
-      </div>
-    </div>
+    <OpportunityQueueLimitBanner tier={userTier} isAuthenticated={!!user} />
   );
 
   // Shown instead of caughtUpScreen/emptyState once a restricted tier

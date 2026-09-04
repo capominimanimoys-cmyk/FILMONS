@@ -1,11 +1,12 @@
 // Today's Opportunity-swipe usage for Home's deck -- Guest/Creator/
 // Creator+ can see ALL Opportunity listings (the deck itself is never
 // filtered down), but the deck is sized to however many swipes they have
-// left today (limit 5), so they can never swipe past it. Professional/
-// Business always get { unlimited: true }. Tier is resolved from the
-// profiles row here, never trusted from the client -- see
+// left today (a per-tier daily limit -- see ENTITLEMENTS.opportunityQueueDaily/
+// GUEST_OPPORTUNITY_QUEUE_DAILY), so they can never swipe past it.
+// Professional/Business always get { unlimited: true }. Tier is resolved
+// from the profiles row here, never trusted from the client -- see
 // record-opportunity-swipe for the actual per-swipe enforcement.
-import { normalizeTier } from '../_shared/entitlements.ts';
+import { normalizeTier, ENTITLEMENTS, GUEST_OPPORTUNITY_QUEUE_DAILY } from '../_shared/entitlements.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -23,8 +24,6 @@ async function selectOne(table: string, filter: string) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 
-const DAILY_LIMIT = 5;
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') {
@@ -41,14 +40,16 @@ Deno.serve(async (req) => {
     }
 
     let unlimited = false;
+    let dailyLimit = GUEST_OPPORTUNITY_QUEUE_DAILY;
     if (!isGuest) {
       const profile = await selectOne('profiles', `id=eq.${userKey}`);
       const tier = normalizeTier(profile?.account_type);
       unlimited = tier === 'professional' || tier === 'business';
+      dailyLimit = ENTITLEMENTS[tier].opportunityQueueDaily ?? dailyLimit;
     }
 
     if (unlimited) {
-      return new Response(JSON.stringify({ unlimited: true, swipeCount: 0, limit: DAILY_LIMIT }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ unlimited: true, swipeCount: 0, limit: dailyLimit }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const rpcRes = await fetch(rest('/rpc/fn_get_opportunity_swipe_count'), {
@@ -61,7 +62,7 @@ Deno.serve(async (req) => {
     }
     const swipeCount = await rpcRes.json().catch(() => 0);
 
-    return new Response(JSON.stringify({ unlimited: false, swipeCount: Number(swipeCount) || 0, limit: DAILY_LIMIT }), {
+    return new Response(JSON.stringify({ unlimited: false, swipeCount: Number(swipeCount) || 0, limit: dailyLimit }), {
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
   } catch (e) {
