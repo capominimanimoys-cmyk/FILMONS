@@ -95,46 +95,14 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
   }, []);
 
-  // Lock body scroll while open. The real cause of "the listing card shifts
-  // right on tap" turned out to be simpler than the touch/long-press
-  // theories this comment used to describe: taking body out of flow
-  // (whether via overflow:hidden or position:fixed) removes the page's own
-  // vertical scrollbar, which WIDENS the available layout width by the
-  // scrollbar's own width -- any centered content (a grid, a max-w-*
-  // mx-auto container) re-centers into that extra space and visibly jumps
-  // sideways the instant the sheet opens, then jumps back on close. Fixed
-  // by measuring the scrollbar's width up front and reserving that exact
-  // amount as padding-right while locked, so the available content width
-  // never actually changes. Still uses position:fixed (not overflow:hidden)
-  // to pin the exact scroll offset too, avoiding the separate iOS
-  // scroll-snap issue this was originally written for.
-  useEffect(() => {
-    const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const scrollY = window.scrollY;
-    const body = document.body;
-    const prev = {
-      position: body.style.position, top: body.style.top, left: body.style.left,
-      right: body.style.right, width: body.style.width, paddingRight: body.style.paddingRight,
-    };
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-    if (scrollBarWidth > 0) {
-      const currentPaddingRight = parseFloat(getComputedStyle(body).paddingRight) || 0;
-      body.style.paddingRight = `${currentPaddingRight + scrollBarWidth}px`;
-    }
-    return () => {
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.left = prev.left;
-      body.style.right = prev.right;
-      body.style.width = prev.width;
-      body.style.paddingRight = prev.paddingRight;
-      window.scrollTo(0, scrollY);
-    };
-  }, []);
+  // NOTE: this used to lock body scroll here (three different techniques,
+  // in order: overflow:hidden, position:fixed, position:fixed + scrollbar-
+  // width compensation). None of them fixed the reported shift, and the
+  // premise didn't hold up under scrutiny either -- the shift was reported
+  // from a single TAP on the three-dot button, not a long-press/drag, so
+  // there was never any real scroll momentum for a lock to guard against.
+  // Removed entirely; the actual cause is very likely CSS (see film-card's
+  // :hover/:active rules in motion.css), not scroll locking.
 
   const close = useCallback(() => {
     setShow(false);
@@ -576,13 +544,17 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
           parent's transform changes what the child measures as its
           layout box right as the route change kicks off), which is what
           made the shared-element animation look wrong. Tap feedback is
-          plain CSS instead, fully decoupled from the layout system. */}
+          plain CSS instead (.film-card:active in motion.css), fully
+          decoupled from the layout system -- no separate active:scale-*
+          Tailwind class here anymore, since the two were fighting over the
+          same :active moment with equal specificity and an unpredictable
+          winner depending on cascade order. */}
       <div
         onClick={handleClick}
         onTouchStart={startPress}
         onTouchEnd={endPress}
         onTouchMove={endPress}
-        className={`relative cursor-pointer group select-none film-card active:scale-[0.98] transition-transform duration-100 ${className}`}
+        className={`relative cursor-pointer group select-none film-card ${className}`}
       >
         {/* Desktop popover menu anchor -- rendered here, outside the image
             container's overflow-hidden, so it isn't clipped. Positioned to

@@ -55,9 +55,17 @@ nav a:active { transform: none; }
     transform  var(--dur-normal) var(--ease-out-quart),
     box-shadow var(--dur-normal) var(--ease-out-quart);
 }
-.film-card:hover {
-  transform:  translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
+/* (hover: hover) only -- a real mouse. Touch browsers can apply :hover
+   "stuck" after a tap (no real unhover event on touch), which combined
+   with this rule's own translateY(-2px) lift/shadow growth is a plausible
+   source of a listing card looking like it visibly moves right after
+   tapping something on it (the shadow spread alone reads as a shift) --
+   scoping this to real hover capability removes that possibility outright. */
+@media (hover: hover) {
+  .film-card:hover {
+    transform:  translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
+  }
 }
 .film-card:active {
   transform:  translateY(0) scale(0.985);
