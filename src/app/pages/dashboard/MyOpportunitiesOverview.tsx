@@ -15,7 +15,7 @@ import { Listing } from '../../types';
 
 interface Counts { all: number; new: number; shortlisted: number; accepted: number; }
 
-export function MyOpportunitiesOverview({ opportunities }: { opportunities: Listing[] }) {
+export function MyOpportunitiesOverview({ opportunities, loading: parentLoading }: { opportunities: Listing[]; loading?: boolean }) {
   const navigate = useNavigate();
   const [counts, setCounts] = useState<Record<string, Counts>>({});
   const [loading, setLoading] = useState(true);
@@ -56,6 +56,20 @@ export function MyOpportunitiesOverview({ opportunities }: { opportunities: List
     if (navigator.share) { try { await navigator.share({ title: o.title, url }); } catch {} }
     else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
   };
+
+  if (parentLoading) {
+    return (
+      <div className="space-y-3">
+        {[0, 1].map(i => (
+          <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+            <div className="h-3 bg-gray-100 rounded-full animate-pulse w-2/3" />
+            <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-1/3" />
+            <div className="h-8 bg-gray-100 rounded-xl animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (!opportunities.length) {
     return (

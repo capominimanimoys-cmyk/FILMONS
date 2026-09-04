@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import {
   X, Clock, Package, Send, CheckCircle,
-  ArrowLeft, BadgeCheck, ChevronRight, ChevronLeft, MapPin, CalendarDays,
+  ArrowLeft, BadgeCheck, ChevronRight, ChevronLeft, MapPin, CalendarDays, Loader2,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -517,7 +517,7 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
                   onClick={handleSend}
                   disabled={sending}
                 >
-                  <Send className="w-4 h-4" />
+                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   {sending ? 'Sending…' : actionLabel}
                 </Button>
               </div>

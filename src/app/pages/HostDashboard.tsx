@@ -730,7 +730,9 @@ function HostDashboardContent({ user }: { user: any }) {
     tabRefs.current[activeTab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
   }, [activeTab]);
   const [myListings, setMyListings] = useState<Listing[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(true);
   const [myOrders, setMyOrders] = useState<any[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [dbTransactions, setDbTransactions] = useState<any[]>([]);
   const [dbTxLoading, setDbTxLoading] = useState(false);
@@ -795,7 +797,7 @@ function HostDashboardContent({ user }: { user: any }) {
 
     listingsApi.getUserListings(user.id).then(listings => {
       setMyListings(listings);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setListingsLoading(false));
 
     // Load orders from DB (as host)
     supabase.from('orders').select('*')
@@ -804,6 +806,7 @@ function HostDashboardContent({ user }: { user: any }) {
       .then(({ data }) => {
         const orders = data || [];
         setMyOrders(orders);
+        setOrdersLoading(false);
 
         // Build transactions from orders (for overview section)
         const txs = orders.map((o: any) => ({
@@ -842,7 +845,7 @@ function HostDashboardContent({ user }: { user: any }) {
           activeRequests: 0,
         }));
       })
-      .catch(() => {});
+      .catch(() => { setOrdersLoading(false); });
 
     refreshReviewStats();
 
@@ -1012,7 +1015,19 @@ function HostDashboardContent({ user }: { user: any }) {
               <p className="text-sm font-semibold text-gray-600">{myListings.length} listing{myListings.length !== 1 ? 's' : ''}</p>
               <button onClick={goCreate} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
             </div>
-            {myListings.length === 0 ? (
+            {listingsLoading ? (
+              <div className="grid grid-cols-2 gap-3">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="rounded-2xl border border-gray-100 overflow-hidden">
+                    <div className="aspect-square bg-gray-100 animate-pulse" />
+                    <div className="p-2.5 space-y-1.5">
+                      <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-4/5" />
+                      <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-2/5" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : myListings.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center space-y-3">
                 <Package className="w-12 h-12 text-blue-200 mx-auto" />
                 <h3 className="font-bold text-gray-900">No listings yet</h3>
@@ -1042,7 +1057,7 @@ function HostDashboardContent({ user }: { user: any }) {
                 <p className="text-[11px] text-gray-400">{resetLabel(getEntitlement(user.accountType).window)}</p>
               </div>
             )}
-            <MyOpportunitiesOverview opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
+            <MyOpportunitiesOverview loading={listingsLoading} opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
           </>
         )}
 
@@ -1074,7 +1089,19 @@ function HostDashboardContent({ user }: { user: any }) {
               </div>
               <button onClick={() => navigate('/my-orders')} className="text-xs text-blue-600 font-semibold flex items-center gap-0.5">All <ArrowUpRight className="w-3 h-3" /></button>
             </div>
-            {myOrders.length === 0 ? (
+            {ordersLoading ? (
+              <div className="divide-y divide-gray-50">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="px-4 py-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gray-100 animate-pulse shrink-0" />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-2/3" />
+                      <div className="h-2 bg-gray-100 rounded-full animate-pulse w-1/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : myOrders.length === 0 ? (
               <div className="p-8 text-center">
                 <ShoppingCart className="w-10 h-10 text-gray-200 mx-auto mb-3" />
                 <p className="text-sm text-gray-400">No orders yet as host</p>

@@ -558,11 +558,15 @@ export function Wallet() {
               <span className="text-[10px] text-blue-300 bg-white/10 px-2 py-0.5 rounded-full font-semibold">{balance.currency}</span>
             </div>
             <div className="flex items-end gap-3">
-              <span className="text-5xl font-black leading-none">{fmtCad(balance.available)}</span>
+              {loading
+                ? <span className="h-11 w-32 bg-white/15 rounded-xl animate-pulse" />
+                : <span className="text-5xl font-black leading-none">{fmtCad(balance.available)}</span>}
             </div>
             <div className="flex items-center gap-1.5 mt-3 text-blue-200 text-sm">
               <Clock className="w-3.5 h-3.5" />
-              <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>
+              {loading
+                ? <span className="h-3 w-40 bg-white/15 rounded-full animate-pulse" />
+                : <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>}
             </div>
             <button
               onClick={() => setShowModal(true)}
@@ -577,7 +581,9 @@ export function Wallet() {
           <div className="hidden lg:grid grid-cols-3 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Available</p>
-              <span className="text-4xl font-black leading-none">{fmtCad(balance.available)}</span>
+              {loading
+                ? <span className="block h-9 w-28 bg-white/15 rounded-xl animate-pulse" />
+                : <span className="text-4xl font-black leading-none">{fmtCad(balance.available)}</span>}
               <button
                 onClick={() => setShowModal(true)}
                 disabled={balance.available <= 0}
@@ -588,7 +594,9 @@ export function Wallet() {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Pending</p>
-              <span className="text-4xl font-black leading-none">{fmtCad(balance.pending)}</span>
+              {loading
+                ? <span className="block h-9 w-28 bg-white/15 rounded-xl animate-pulse" />
+                : <span className="text-4xl font-black leading-none">{fmtCad(balance.pending)}</span>}
               <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
                 <Clock className="w-3.5 h-3.5 shrink-0" />
                 {holdNoticeEligible ? 'Typically available within 2–5 business days' : 'Releases ~48h after each rental ends'}
@@ -596,7 +604,9 @@ export function Wallet() {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Total Earned</p>
-              <span className="text-4xl font-black leading-none">{fmtCad(balance.available + balance.pending)}</span>
+              {loading
+                ? <span className="block h-9 w-28 bg-white/15 rounded-xl animate-pulse" />
+                : <span className="text-4xl font-black leading-none">{fmtCad(balance.available + balance.pending)}</span>}
               <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>
             </div>
           </div>

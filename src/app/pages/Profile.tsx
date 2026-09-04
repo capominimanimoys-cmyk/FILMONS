@@ -1298,8 +1298,17 @@ export function Profile() {
                 </button>
               </div>
 
+              {/* Loading skeleton */}
+              {loading && (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[0, 1, 2, 3].map(i => (
+                    <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />
+                  ))}
+                </div>
+              )}
+
               {/* Empty state */}
-              {portfolioItems.length === 0 && (
+              {!loading && portfolioItems.length === 0 && (
                 <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-14 px-6">
                   <Film className="w-12 h-12 text-gray-300 mx-auto mb-4"/>
                   <p className="font-black text-gray-900 mb-1">Showcase your work</p>
@@ -1523,7 +1532,11 @@ export function Profile() {
                   </button>
                 </div>
                 {/* Listings highlight grid */}
-                {listings.length > 0 ? (
+                {loading ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {[0, 1].map(i => <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />)}
+                  </div>
+                ) : listings.length > 0 ? (
                   <>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Listings</p>
                     <div className="pop-stagger grid grid-cols-2 gap-2">
@@ -1682,7 +1695,9 @@ export function Profile() {
                 <p className="font-bold text-gray-900">{listings.length} listing{listings.length!==1?'s':''}</p>
                 <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
               </div>
-              {listings.length === 0
+              {loading
+                ? <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{[0,1,2,3].map(i => <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />)}</div>
+                : listings.length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
                 : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>
               }
