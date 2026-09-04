@@ -436,17 +436,22 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [undoing, setUndoing] = useState(false);
 
-  // Mobile pull-to-reveal (see SwipeCard's onPull) -- pullY tracks the
-  // finger 1:1 while a downward drag is in progress (isPulling true, no
-  // transition), then springs back to 0 on release (isPulling false,
-  // transition enabled). Only meaningful below lg; desktop's viewport
-  // isn't height-clipped so this transform is a visual no-op there.
+  // Mobile pull-to-reveal (see SwipeCard's onPull) -- pullY is the raw,
+  // live drag distance (used only to derive `revealed`, a small threshold
+  // past which the actions row pops into view). The row itself doesn't
+  // scrub with the drag pixel-by-pixel -- it's a discrete shown/hidden
+  // state with its own pop in/out transition, matching the FILMONS pop-up
+  // spec exactly, and it snaps back to hidden the instant the finger lifts
+  // regardless of how far pullY had gotten. Only meaningful below lg;
+  // desktop shows the full labeled row/counter in normal flow instead.
   const [pullY, setPullY] = useState(0);
   const isPullingRef = useRef(false);
   const handlePull = (dy: number) => {
     isPullingRef.current = dy > 0;
     setPullY(dy);
   };
+  const PULL_REVEAL_THRESHOLD = 6;
+  const actionsRevealed = pullY > PULL_REVEAL_THRESHOLD;
 
   const tier = normalizeTier(user?.accountType);
   const dailyLimit = user ? ENTITLEMENTS[tier].swipesPerDay : GUEST_DAILY_LIMIT; // null = unlimited (Professional/Business)
@@ -696,42 +701,68 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
         })}
       </div>
 
-      {/* Compact mobile-only reveal row — Heart / Eye / X only, no labels,
-          no counter, nothing else. This is the ONLY element that clips:
-          its own height animates from 0 up to the live pull distance, so
-          the row grows into view from underneath the (always fully
-          visible, never-clipped) card above it. The full labeled row +
-          counter below is desktop-only. */}
+      {/* Compact mobile-only reveal row — Like / See listing / Pass, each
+          with its Lucide icon and a label underneath. Sits directly below
+          the card in normal document flow (z-index 1, the card stack
+          above is explicitly z-index 2) so it can never repaint over the
+          card -- the earlier "overlay" bug came from clipping the CARD's
+          own box, not from this row, and this row has no overflow/clip
+          effect on the card since they don't spatially overlap.
+          `actionsRevealed` is a small threshold past pullY, not a 1:1 drag
+          scrub -- the row pops fully in/out with its own transition
+          (opacity + scale + Y) the instant that threshold is crossed or
+          the finger lifts, per the FILMONS pop-up spec. Height still
+          transitions between 0 and its content height so the row takes no
+          layout space at all while hidden. */}
       <div
-        className="lg:hidden w-full overflow-hidden"
+        className="lg:hidden w-full overflow-hidden relative"
         style={{
-          height: pullY,
-          transition: isPullingRef.current ? 'none' : 'height 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+          zIndex: 1,
+          height: actionsRevealed ? 84 : 0,
+          transition: isPullingRef.current ? 'none' : 'height 200ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
-        <div className="flex items-center justify-center gap-10 pt-4" style={{ opacity: Math.min(pullY / 30, 1) }}>
-          <button
-            onClick={() => atLimit ? setShowDailyLimit(true) : fly('L')}
-            aria-label={atLimit ? 'Daily swipe limit reached' : 'Pass'}
-            className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
-              atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-red-200 hover:border-red-400 hover:bg-red-50'
-            }`}>
-            {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <X className="w-5 h-5 text-red-400"/>}
-          </button>
-          <button
-            onClick={() => viewItem(current)}
-            aria-label="See listing"
-            className="w-11 h-11 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center transition-all active:scale-90 hover:border-blue-400 hover:bg-blue-50">
-            <Eye className="w-4 h-4 text-blue-500"/>
-          </button>
-          <button
-            onClick={() => atLimit ? setShowDailyLimit(true) : fly('R')}
-            aria-label={atLimit ? 'Daily swipe limit reached' : 'Like'}
-            className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
-              atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-green-200 hover:border-green-400 hover:bg-green-50'
-            }`}>
-            {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <Heart className="w-5 h-5 text-green-500"/>}
-          </button>
+        <div
+          className="flex items-center justify-center gap-10 pt-4"
+          style={{
+            opacity: actionsRevealed ? 1 : 0,
+            transform: actionsRevealed ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(8px)',
+            transition: actionsRevealed
+              ? 'opacity 180ms ease-out, transform 180ms ease-out'
+              : 'opacity 160ms ease-out, transform 160ms ease-out',
+          }}
+        >
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => atLimit ? setShowDailyLimit(true) : fly('R')}
+              aria-label={atLimit ? 'Daily swipe limit reached' : 'Like'}
+              className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+                atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-green-200 hover:border-green-400 hover:bg-green-50'
+              }`}>
+              {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <Heart className="w-5 h-5 text-green-500"/>}
+            </button>
+            <span className="text-[10px] font-semibold text-gray-400">{atLimit ? 'Locked' : 'Like'}</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => viewItem(current)}
+              aria-label="See listing"
+              className="w-11 h-11 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center transition-all active:scale-90 hover:border-blue-400 hover:bg-blue-50">
+              <Eye className="w-4 h-4 text-blue-500"/>
+            </button>
+            <span className="text-[10px] font-semibold text-gray-400">See listing</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => atLimit ? setShowDailyLimit(true) : fly('L')}
+              aria-label={atLimit ? 'Daily swipe limit reached' : 'Pass'}
+              className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+                atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-red-200 hover:border-red-400 hover:bg-red-50'
+              }`}>
+              {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <X className="w-5 h-5 text-red-400"/>}
+            </button>
+            <span className="text-[10px] font-semibold text-gray-400">{atLimit ? 'Locked' : 'Pass'}</span>
+          </div>
         </div>
       </div>
 
