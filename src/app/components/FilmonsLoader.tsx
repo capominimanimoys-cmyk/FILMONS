@@ -107,42 +107,36 @@ export default function FilmonsLoader({
 }
 
 // ── FilmonsBrandLoader ────────────────────────────────────────────────────
-// General-purpose branded loading indicator — the "Filmons logo" pulse
-// requested for page/content loading states throughout the app, as
-// distinct from the one-shot splash reveal above (FilmonsLoader default
-// export, unchanged, still used by Login.tsx/Portfolio.tsx). Renders the
-// same FILMONS wordmark used everywhere else in this app (FilmonsLogo.tsx)
-// -- there's no separate logo image asset in this project, only the text
-// mark, so this animates that rather than recreating a logo that doesn't
-// exist as a file.
-const SIZE_PX: Record<'sm' | 'md' | 'lg', number> = { sm: 15, md: 22, lg: 34 };
+// General-purpose branded loading indicator — a continuously rotating ring
+// in the FILMONS brand blue, with an optional visible label ("Loading",
+// "Saving", "Publishing"...). Used for full-page and section-level loading
+// gaps throughout the app, as distinct from the one-shot splash reveal
+// above (FilmonsLoader default export, unchanged, still used by
+// Login.tsx/Portfolio.tsx for the initial branded intro).
+const SIZE_PX: Record<'xs' | 'sm' | 'md' | 'lg', number> = { xs: 14, sm: 18, md: 26, lg: 40 };
 
 export function FilmonsBrandLoader({
   size = 'md',
   fullscreen = false,
   className = '',
-  label = 'Loading',
+  label,
+  tone = 'brand',
 }: {
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   fullscreen?: boolean;
   className?: string;
   label?: string;
+  /** 'brand' (blue ring, for light backgrounds) or 'light' (white ring, for dark/tinted backgrounds). */
+  tone?: 'brand' | 'light';
 }) {
+  const px = SIZE_PX[size];
   const mark = (
-    <span
-      role="status"
-      aria-label={label}
-      className="filmons-brand-loader"
-      style={{
-        fontFamily: "'Neue Montreal', 'SF Pro Display', -apple-system, sans-serif",
-        fontWeight: 800,
-        letterSpacing: '0.06em',
-        fontSize: SIZE_PX[size],
-        color: '#0F172A',
-        display: 'inline-block',
-      }}
-    >
-      FILMONS
+    <span role="status" aria-label={label || 'Loading'} className={`filmons-spin-wrap filmons-spin-tone-${tone}`}>
+      <svg width={px} height={px} viewBox="0 0 24 24" fill="none" className="filmons-spin-ring" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeOpacity="0.18" strokeWidth="3" />
+        <path d="M21.5 12c0-5.25-4.25-9.5-9.5-9.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      {label && <span className="filmons-spin-label">{label}</span>}
     </span>
   );
 
@@ -160,22 +154,23 @@ export function FilmonsBrandLoader({
     <>
       {content}
       <style>{`
-        .filmons-brand-loader {
-          animation: filmonsBrandPulse 1.4s ease-in-out infinite;
+        .filmons-spin-wrap { display: inline-flex; align-items: center; gap: 9px; }
+        .filmons-spin-tone-brand { color: #2563EB; }
+        .filmons-spin-tone-light { color: #FFFFFF; }
+        .filmons-spin-ring { animation: filmonsSpin 0.8s linear infinite; transform-origin: 50% 50%; }
+        .filmons-spin-label {
+          font-family: 'Neue Montreal', 'SF Pro Display', -apple-system, sans-serif;
+          font-weight: 700;
+          font-size: 12.5px;
+          letter-spacing: 0.02em;
+          color: #64748B;
         }
-        @keyframes filmonsBrandPulse {
-          0%, 100% { transform: scale(0.96); opacity: 0.65; }
-          50%      { transform: scale(1.04); opacity: 1; }
-        }
+        .filmons-spin-tone-light .filmons-spin-label { color: rgba(255,255,255,0.75); }
+        @keyframes filmonsSpin { to { transform: rotate(360deg); } }
         @media (prefers-reduced-motion: reduce) {
-          .filmons-brand-loader {
-            animation: filmonsBrandFadeOnly 1.4s ease-in-out infinite;
-          }
+          .filmons-spin-ring { animation: filmonsSpinPulse 1.3s ease-in-out infinite; }
         }
-        @keyframes filmonsBrandFadeOnly {
-          0%, 100% { opacity: 0.65; transform: none; }
-          50%      { opacity: 1;    transform: none; }
-        }
+        @keyframes filmonsSpinPulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
       `}</style>
     </>
   );

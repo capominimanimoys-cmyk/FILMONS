@@ -1298,12 +1298,10 @@ export function Profile() {
                 </button>
               </div>
 
-              {/* Loading skeleton */}
+              {/* Loading state */}
               {loading && (
-                <div className="grid grid-cols-2 gap-2.5">
-                  {[0, 1, 2, 3].map(i => (
-                    <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />
-                  ))}
+                <div className="flex items-center justify-center py-16">
+                  <FilmonsBrandLoader size="md" label="Loading portfolio"/>
                 </div>
               )}
 
@@ -1533,8 +1531,8 @@ export function Profile() {
                 </div>
                 {/* Listings highlight grid */}
                 {loading ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {[0, 1].map(i => <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />)}
+                  <div className="flex items-center justify-center py-10">
+                    <FilmonsBrandLoader size="sm" label="Loading listings"/>
                   </div>
                 ) : listings.length > 0 ? (
                   <>
@@ -1696,7 +1694,7 @@ export function Profile() {
                 <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
               </div>
               {loading
-                ? <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{[0,1,2,3].map(i => <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />)}</div>
+                ? <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md" label="Loading listings"/></div>
                 : listings.length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
                 : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>

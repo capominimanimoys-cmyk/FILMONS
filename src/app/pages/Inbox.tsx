@@ -2889,25 +2889,10 @@ export function Inbox() {
 
                 {/* Loading state — distinct from the empty state below, which
                      previously rendered identically whether the fetch hadn't
-                     finished yet or had genuinely returned zero conversations.
-                     Skeleton rows in ConvRow's own shape/size, not a generic
-                     spinner -- so the list's layout is already stable and
-                     familiar the instant real rows replace them, no jump. */}
+                     finished yet or had genuinely returned zero conversations. */}
                 {!serverLoaded && displayedConvs.length === 0 && (
-                  <div>
-                    {[0, 1, 2, 3, 4, 5].map(i => (
-                      <div key={i} className="flex items-center gap-3 px-4 py-3">
-                        <div className="shrink-0 w-2" />
-                        <div className="w-11 h-11 rounded-full bg-gray-100 shrink-0 animate-pulse" />
-                        <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="h-3 bg-gray-100 rounded-full animate-pulse" style={{ width: `${40 + (i % 3) * 10}%` }} />
-                            <div className="h-2.5 w-8 bg-gray-100 rounded-full animate-pulse shrink-0" />
-                          </div>
-                          <div className="h-2.5 bg-gray-100 rounded-full animate-pulse" style={{ width: `${55 + (i % 4) * 8}%` }} />
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
+                    <FilmonsBrandLoader size="md" label="Loading conversations"/>
                   </div>
                 )}
 

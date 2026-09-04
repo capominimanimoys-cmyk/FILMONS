@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Listing, Conversation } from '../types';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { ListingCard } from '../components/ListingCard';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import {
   LayoutDashboard, Package, DollarSign, Users, Star,
   Plus, ChevronRight, Eye, CheckCircle,
@@ -1016,16 +1017,8 @@ function HostDashboardContent({ user }: { user: any }) {
               <button onClick={goCreate} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
             </div>
             {listingsLoading ? (
-              <div className="grid grid-cols-2 gap-3">
-                {[0, 1, 2, 3].map(i => (
-                  <div key={i} className="rounded-2xl border border-gray-100 overflow-hidden">
-                    <div className="aspect-square bg-gray-100 animate-pulse" />
-                    <div className="p-2.5 space-y-1.5">
-                      <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-4/5" />
-                      <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-2/5" />
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-center py-16">
+                <FilmonsBrandLoader size="md" label="Loading listings"/>
               </div>
             ) : myListings.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center space-y-3">
@@ -1090,16 +1083,8 @@ function HostDashboardContent({ user }: { user: any }) {
               <button onClick={() => navigate('/my-orders')} className="text-xs text-blue-600 font-semibold flex items-center gap-0.5">All <ArrowUpRight className="w-3 h-3" /></button>
             </div>
             {ordersLoading ? (
-              <div className="divide-y divide-gray-50">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="px-4 py-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gray-100 animate-pulse shrink-0" />
-                    <div className="flex-1 min-w-0 space-y-1.5">
-                      <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-2/3" />
-                      <div className="h-2 bg-gray-100 rounded-full animate-pulse w-1/3" />
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-center py-16">
+                <FilmonsBrandLoader size="md" label="Loading orders"/>
               </div>
             ) : myOrders.length === 0 ? (
               <div className="p-8 text-center">

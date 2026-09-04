@@ -462,6 +462,7 @@ export function Wallet() {
   const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
   const [defaultMethod, setDefaultMethod] = useState<PayoutMethod | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
@@ -477,17 +478,23 @@ export function Wallet() {
   const refresh = async () => {
     if (!user?.id) return;
     setLoading(true);
-    const [b, t, p, m] = await Promise.all([
-      walletApi.getBalance(user.id),
-      walletApi.getTransactions(user.id),
-      walletApi.getPayoutRequests(user.id),
-      walletApi.getDefaultPayoutMethod(user.id),
-    ]);
-    setBalance(b);
-    setTxs(t);
-    setPayouts(p);
-    setDefaultMethod(m);
-    setLoading(false);
+    setLoadError(false);
+    try {
+      const [b, t, p, m] = await Promise.all([
+        walletApi.getBalance(user.id),
+        walletApi.getTransactions(user.id),
+        walletApi.getPayoutRequests(user.id),
+        walletApi.getDefaultPayoutMethod(user.id),
+      ]);
+      setBalance(b);
+      setTxs(t);
+      setPayouts(p);
+      setDefaultMethod(m);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -551,22 +558,31 @@ export function Wallet() {
             </button>
           </div>
 
+          {/* Error state — replaces both balance layouts below on a failed fetch */}
+          {loadError && (
+            <div className="bg-white/10 backdrop-blur rounded-3xl p-8 text-center">
+              <p className="text-sm font-semibold text-white mb-1">Couldn't load your balance</p>
+              <p className="text-xs text-blue-200 mb-4">Check your connection and try again.</p>
+              <button onClick={refresh} className="px-4 py-2 rounded-xl bg-white text-blue-700 text-xs font-bold hover:bg-blue-50 transition-colors">
+                Try again
+              </button>
+            </div>
+          )}
+
           {/* Balance — mobile/tablet: single Available-focused card */}
-          <div className="bg-white/10 backdrop-blur rounded-3xl p-6 lg:hidden">
+          {!loadError && <div className="bg-white/10 backdrop-blur rounded-3xl p-6 lg:hidden">
             <div className="flex items-center justify-between mb-1">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">Available</p>
               <span className="text-[10px] text-blue-300 bg-white/10 px-2 py-0.5 rounded-full font-semibold">{balance.currency}</span>
             </div>
             <div className="flex items-end gap-3">
               {loading
-                ? <span className="h-11 w-32 bg-white/15 rounded-xl animate-pulse" />
+                ? <FilmonsBrandLoader size="sm" tone="light" label="Loading balance"/>
                 : <span className="text-5xl font-black leading-none">{fmtCad(balance.available)}</span>}
             </div>
             <div className="flex items-center gap-1.5 mt-3 text-blue-200 text-sm">
-              <Clock className="w-3.5 h-3.5" />
-              {loading
-                ? <span className="h-3 w-40 bg-white/15 rounded-full animate-pulse" />
-                : <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>}
+              {!loading && <Clock className="w-3.5 h-3.5" />}
+              {!loading && <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>}
             </div>
             <button
               onClick={() => setShowModal(true)}
@@ -575,14 +591,14 @@ export function Wallet() {
             >
               Request Payout
             </button>
-          </div>
+          </div>}
 
           {/* Balance — desktop: 3-tile row (Available / Pending / Total earned) */}
-          <div className="hidden lg:grid grid-cols-3 gap-4">
+          {!loadError && <div className="hidden lg:grid grid-cols-3 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Available</p>
               {loading
-                ? <span className="block h-9 w-28 bg-white/15 rounded-xl animate-pulse" />
+                ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.available)}</span>}
               <button
                 onClick={() => setShowModal(true)}
@@ -595,21 +611,23 @@ export function Wallet() {
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Pending</p>
               {loading
-                ? <span className="block h-9 w-28 bg-white/15 rounded-xl animate-pulse" />
+                ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.pending)}</span>}
-              <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
-                <Clock className="w-3.5 h-3.5 shrink-0" />
-                {holdNoticeEligible ? 'Typically available within 2–5 business days' : 'Releases ~48h after each rental ends'}
-              </p>
+              {!loading && (
+                <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  {holdNoticeEligible ? 'Typically available within 2–5 business days' : 'Releases ~48h after each rental ends'}
+                </p>
+              )}
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Total Earned</p>
               {loading
-                ? <span className="block h-9 w-28 bg-white/15 rounded-xl animate-pulse" />
+                ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.available + balance.pending)}</span>}
-              <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>
+              {!loading && <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>}
             </div>
-          </div>
+          </div>}
         </div>
       </div>
 

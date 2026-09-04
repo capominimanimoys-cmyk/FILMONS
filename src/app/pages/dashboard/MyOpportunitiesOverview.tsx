@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { Briefcase, Users, Share2, Pencil } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Listing } from '../../types';
+import { FilmonsBrandLoader } from '../../components/FilmonsLoader';
 
 interface Counts { all: number; new: number; shortlisted: number; accepted: number; }
 
@@ -59,14 +60,8 @@ export function MyOpportunitiesOverview({ opportunities, loading: parentLoading 
 
   if (parentLoading) {
     return (
-      <div className="space-y-3">
-        {[0, 1].map(i => (
-          <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-            <div className="h-3 bg-gray-100 rounded-full animate-pulse w-2/3" />
-            <div className="h-2.5 bg-gray-100 rounded-full animate-pulse w-1/3" />
-            <div className="h-8 bg-gray-100 rounded-xl animate-pulse" />
-          </div>
-        ))}
+      <div className="flex items-center justify-center py-16">
+        <FilmonsBrandLoader size="md" label="Loading opportunities"/>
       </div>
     );
   }
@@ -127,7 +122,7 @@ export function MyOpportunitiesOverview({ opportunities, loading: parentLoading 
           </div>
         );
       })}
-      {loading && <p className="text-xs text-gray-300 text-center">Loading application counts…</p>}
+      {loading && <div className="flex justify-center py-1"><FilmonsBrandLoader size="xs" label="Loading application counts"/></div>}
     </div>
   );
 }
