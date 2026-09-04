@@ -6,6 +6,7 @@ import { Listing, Conversation } from '../types';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { ListingCard } from '../components/ListingCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useMinVisibleLoading } from '../lib/useMinVisibleLoading';
 import {
   LayoutDashboard, Package, DollarSign, Users, Star,
   Plus, ChevronRight, Eye, CheckCircle,
@@ -732,8 +733,10 @@ function HostDashboardContent({ user }: { user: any }) {
   }, [activeTab]);
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(true);
+  const showListingsLoader = useMinVisibleLoading(listingsLoading);
   const [myOrders, setMyOrders] = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
+  const showOrdersLoader = useMinVisibleLoading(ordersLoading);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [dbTransactions, setDbTransactions] = useState<any[]>([]);
   const [dbTxLoading, setDbTxLoading] = useState(false);
@@ -1016,7 +1019,7 @@ function HostDashboardContent({ user }: { user: any }) {
               <p className="text-sm font-semibold text-gray-600">{myListings.length} listing{myListings.length !== 1 ? 's' : ''}</p>
               <button onClick={goCreate} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
             </div>
-            {listingsLoading ? (
+            {showListingsLoader ? (
               <div className="flex items-center justify-center py-16">
                 <FilmonsBrandLoader size="md" label="Loading listings"/>
               </div>
@@ -1050,7 +1053,7 @@ function HostDashboardContent({ user }: { user: any }) {
                 <p className="text-[11px] text-gray-400">{resetLabel(getEntitlement(user.accountType).window)}</p>
               </div>
             )}
-            <MyOpportunitiesOverview loading={listingsLoading} opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
+            <MyOpportunitiesOverview loading={showListingsLoader} opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
           </>
         )}
 
@@ -1082,7 +1085,7 @@ function HostDashboardContent({ user }: { user: any }) {
               </div>
               <button onClick={() => navigate('/my-orders')} className="text-xs text-blue-600 font-semibold flex items-center gap-0.5">All <ArrowUpRight className="w-3 h-3" /></button>
             </div>
-            {ordersLoading ? (
+            {showOrdersLoader ? (
               <div className="flex items-center justify-center py-16">
                 <FilmonsBrandLoader size="md" label="Loading orders"/>
               </div>

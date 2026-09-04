@@ -13,6 +13,7 @@ import { Briefcase, Users, Share2, Pencil } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Listing } from '../../types';
 import { FilmonsBrandLoader } from '../../components/FilmonsLoader';
+import { useMinVisibleLoading } from '../../lib/useMinVisibleLoading';
 
 interface Counts { all: number; new: number; shortlisted: number; accepted: number; }
 
@@ -20,6 +21,7 @@ export function MyOpportunitiesOverview({ opportunities, loading: parentLoading 
   const navigate = useNavigate();
   const [counts, setCounts] = useState<Record<string, Counts>>({});
   const [loading, setLoading] = useState(true);
+  const showCountsLoader = useMinVisibleLoading(loading);
 
   useEffect(() => {
     if (!opportunities.length) { setLoading(false); return; }
@@ -122,7 +124,7 @@ export function MyOpportunitiesOverview({ opportunities, loading: parentLoading 
           </div>
         );
       })}
-      {loading && <div className="flex justify-center py-1"><FilmonsBrandLoader size="xs" label="Loading application counts"/></div>}
+      {showCountsLoader && <div className="flex justify-center py-1"><FilmonsBrandLoader size="xs" label="Loading application counts"/></div>}
     </div>
   );
 }

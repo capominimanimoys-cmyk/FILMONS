@@ -9,6 +9,7 @@ import {
 } from '../lib/walletApi';
 import { isCreatorPlus } from '../lib/reliabilityApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useMinVisibleLoading } from '../lib/useMinVisibleLoading';
 import {
   Wallet as WalletIcon, ArrowUpRight, RefreshCw, DollarSign, Clock, Loader2,
   X, ChevronRight, ChevronLeft, Check, Landmark, Pencil, Zap, ShieldCheck, Info,
@@ -462,6 +463,7 @@ export function Wallet() {
   const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
   const [defaultMethod, setDefaultMethod] = useState<PayoutMethod | null>(null);
   const [loading, setLoading] = useState(true);
+  const showWalletLoader = useMinVisibleLoading(loading);
   const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -576,13 +578,13 @@ export function Wallet() {
               <span className="text-[10px] text-blue-300 bg-white/10 px-2 py-0.5 rounded-full font-semibold">{balance.currency}</span>
             </div>
             <div className="flex items-end gap-3">
-              {loading
+              {showWalletLoader
                 ? <FilmonsBrandLoader size="sm" tone="light" label="Loading balance"/>
                 : <span className="text-5xl font-black leading-none">{fmtCad(balance.available)}</span>}
             </div>
             <div className="flex items-center gap-1.5 mt-3 text-blue-200 text-sm">
-              {!loading && <Clock className="w-3.5 h-3.5" />}
-              {!loading && <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>}
+              {!showWalletLoader && <Clock className="w-3.5 h-3.5" />}
+              {!showWalletLoader && <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>}
             </div>
             <button
               onClick={() => setShowModal(true)}
@@ -597,7 +599,7 @@ export function Wallet() {
           {!loadError && <div className="hidden lg:grid grid-cols-3 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Available</p>
-              {loading
+              {showWalletLoader
                 ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.available)}</span>}
               <button
@@ -610,10 +612,10 @@ export function Wallet() {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Pending</p>
-              {loading
+              {showWalletLoader
                 ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.pending)}</span>}
-              {!loading && (
+              {!showWalletLoader && (
                 <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
                   <Clock className="w-3.5 h-3.5 shrink-0" />
                   {holdNoticeEligible ? 'Typically available within 2–5 business days' : 'Releases ~48h after each rental ends'}
@@ -622,10 +624,10 @@ export function Wallet() {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Total Earned</p>
-              {loading
+              {showWalletLoader
                 ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.available + balance.pending)}</span>}
-              {!loading && <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>}
+              {!showWalletLoader && <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>}
             </div>
           </div>}
         </div>
@@ -790,8 +792,8 @@ export function Wallet() {
         {/* Transaction history */}
         <div>
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Transaction history</p>
-          {loading ? (
-            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md"/></div>
+          {showWalletLoader ? (
+            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Loading transactions"/></div>
           ) : txs.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 py-16 px-6 text-center">
               <DollarSign className="w-8 h-8 text-gray-200 mx-auto mb-3" />

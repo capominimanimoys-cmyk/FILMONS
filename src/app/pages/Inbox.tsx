@@ -9,6 +9,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Conversation, ChatMessage, User, Post, Listing, PricingPackage } from '../types';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useMinVisibleLoading } from '../lib/useMinVisibleLoading';
 import { ApplicationCardBubble, SystemMessageDivider } from '../components/ApplicationCardBubble';
 import { HireRequestCardBubble } from '../components/HireRequestCardBubble';
 import { applicationApi } from '../lib/applicationApi';
@@ -1325,6 +1326,10 @@ export function Inbox() {
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [inboxTab, setInboxTab] = useState<'all' | 'unread' | 'bookings' | 'marketplace' | 'applications' | 'archived'>('all');
   const [serverLoaded, setServerLoaded] = useState(false);
+  // Floors how long the loading UI stays up so a fast fetch doesn't flash
+  // the rotation loader for an imperceptible instant -- only affects the
+  // loading-state render below, never the effects gated on serverLoaded.
+  const showConvLoadingUI = useMinVisibleLoading(!serverLoaded);
   // Distinct from "loaded fine, zero conversations" -- fetchConversationsDB
   // used to silently fall back to an empty local cache on a real Supabase
   // error (see api.ts), which looked identical to "this user has no
@@ -2890,7 +2895,7 @@ export function Inbox() {
                 {/* Loading state — distinct from the empty state below, which
                      previously rendered identically whether the fetch hadn't
                      finished yet or had genuinely returned zero conversations. */}
-                {!serverLoaded && displayedConvs.length === 0 && (
+                {showConvLoadingUI && displayedConvs.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
                     <FilmonsBrandLoader size="md" label="Loading conversations"/>
                   </div>
@@ -2900,7 +2905,7 @@ export function Inbox() {
                      as "No messages yet" (fetchConversationsDB throws on a
                      genuine Supabase error instead of falling back to an
                      empty local cache — see api.ts). */}
-                {serverLoaded && convLoadError && displayedConvs.length === 0 && (
+                {!showConvLoadingUI && serverLoaded && convLoadError && displayedConvs.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
                     <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mb-4">
                       <CancelRounded sx={{fontSize:32,color:"#ef4444"}} />
@@ -2918,7 +2923,7 @@ export function Inbox() {
                 )}
 
                 {/* Empty state */}
-                {serverLoaded && !convLoadError && displayedConvs.length === 0 && (inboxTab !== 'all' || requestConvs.length === 0) && (
+                {!showConvLoadingUI && serverLoaded && !convLoadError && displayedConvs.length === 0 && (inboxTab !== 'all' || requestConvs.length === 0) && (
                   <div className="flex flex-col items-center justify-center h-full py-16 px-6 text-center">
                     <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-4">
                       <ChatBubbleRounded sx={{fontSize:32,color:"#60a5fa"}} />

@@ -24,6 +24,7 @@ import { Review, Listing, Post } from '../types';
 import { toast } from 'sonner';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useMinVisibleLoading } from '../lib/useMinVisibleLoading';
 import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
 import { reliabilityApi, ReputationScore, isCreatorPlus, normalizeTier } from '../lib/reliabilityApi';
@@ -580,6 +581,7 @@ export function Profile() {
     setSearchParams({ tab: 'reviews', rv: v }, { replace: true });
   };
   const [loading,       setLoading]       = useState(true);
+  const showProfileLoader = useMinVisibleLoading(loading);
   const [showCompose,      setShowCompose]      = useState(false);
   const [showAvatarSheet,  setShowAvatarSheet]  = useState(false);
   const [rep,              setRep]              = useState<ReputationScore | null>(null);
@@ -1299,14 +1301,14 @@ export function Profile() {
               </div>
 
               {/* Loading state */}
-              {loading && (
+              {showProfileLoader && (
                 <div className="flex items-center justify-center py-16">
                   <FilmonsBrandLoader size="md" label="Loading portfolio"/>
                 </div>
               )}
 
               {/* Empty state */}
-              {!loading && portfolioItems.length === 0 && (
+              {!showProfileLoader && portfolioItems.length === 0 && (
                 <div className="bg-white rounded-3xl border border-gray-100 shadow-sm text-center py-14 px-6">
                   <Film className="w-12 h-12 text-gray-300 mx-auto mb-4"/>
                   <p className="font-black text-gray-900 mb-1">Showcase your work</p>
@@ -1530,7 +1532,7 @@ export function Profile() {
                   </button>
                 </div>
                 {/* Listings highlight grid */}
-                {loading ? (
+                {showProfileLoader ? (
                   <div className="flex items-center justify-center py-10">
                     <FilmonsBrandLoader size="sm" label="Loading listings"/>
                   </div>
@@ -1564,7 +1566,7 @@ export function Profile() {
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <button onClick={() => setShowCompose(true)} className="w-full text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-3 text-left hover:bg-gray-100">What's on your mind?</button>
               </div>
-              {loading ? <div className="flex justify-center py-10"><FilmonsBrandLoader size="md"/></div>
+              {showProfileLoader ? <div className="flex justify-center py-10"><FilmonsBrandLoader size="md" label="Loading posts"/></div>
                 : posts.length === 0
                   ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No posts yet</p></div>
                   : posts.map(p => <PostCard key={p.id} post={p} onDeleted={(id)=>{ 
@@ -1693,7 +1695,7 @@ export function Profile() {
                 <p className="font-bold text-gray-900">{listings.length} listing{listings.length!==1?'s':''}</p>
                 <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
               </div>
-              {loading
+              {showProfileLoader
                 ? <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md" label="Loading listings"/></div>
                 : listings.length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
