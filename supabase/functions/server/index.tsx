@@ -18,6 +18,7 @@ import * as notifsDb from "./notifications.tsx";
 import * as convsDb from "./conversations.tsx";
 import verificationsDb from "./verifications.tsx";
 import { registerAiEditorRoutes } from "./aiEditor.tsx";
+import { ENTITLEMENTS, normalizeTier } from "../_shared/entitlements.ts";
 
 const app = new Hono();
 
@@ -677,6 +678,45 @@ app.put("/make-server-ec8fe879/listings/:id", async (c) => {
     const id = c.req.param("id");
     const updates = await c.req.json();
     const userId  = updates.userId ?? updates.user_id;
+
+    // ── Excess-Opportunity lock — a Creator+ owner whose active Opportunity
+    // listings exceed the plan's concurrent-post entitlement (1) can't edit
+    // any but their most recent eligible one. Locked listings stay visible
+    // and untouched (never deleted), just frozen here at the one real
+    // mutation path (see publish-opportunity's own header comment: editing
+    // an existing listing goes through this endpoint directly, not through
+    // fn_publish_opportunity's posting-rate check). Re-evaluated on every
+    // edit attempt from the live listings/profile rows, not a stored flag
+    // -- an upgrade to Professional/Business raises the entitlement and
+    // this check simply stops firing, no separate "unlock" step needed.
+    if (userId) {
+      try {
+        const [profileRow] = await sql().unsafe(
+          `SELECT account_type FROM profiles WHERE id = $1`, [userId]
+        );
+        const tier = normalizeTier(profileRow?.account_type);
+        const limit = ENTITLEMENTS[tier].posts;
+        if (limit !== null) {
+          const [current] = await sql().unsafe(
+            `SELECT listing_type FROM listings WHERE id = $1`, [id]
+          );
+          if (current?.listing_type === "opportunity") {
+            const active = await sql().unsafe(
+              `SELECT id FROM listings
+               WHERE user_id = $1 AND listing_type = 'opportunity' AND is_active = true
+               ORDER BY created_at DESC`,
+              [userId]
+            );
+            const unlockedIds = new Set(active.slice(0, limit).map((r: any) => r.id));
+            if (!unlockedIds.has(id)) {
+              return c.json({ error: "locked_excess_opportunity", plan: tier, limit }, 403);
+            }
+          }
+        }
+      } catch (lockErr: any) {
+        console.warn("[listings PUT] excess-opportunity lock check failed, allowing edit:", lockErr?.message);
+      }
+    }
 
     // ── 1. Write to Supabase listings table (primary store) ──
     const supabaseUrl  = Deno.env.get("SUPABASE_URL");

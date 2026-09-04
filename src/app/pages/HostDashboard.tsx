@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +19,7 @@ import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
 import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier, normalizeTier } from '../lib/reliabilityApi';
-import { getOpportunityUsage, getEntitlement, resetLabel } from '../lib/entitlements';
+import { getOpportunityUsage, getEntitlement, resetLabel, getLockedOpportunityIds } from '../lib/entitlements';
 import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
 import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 
@@ -403,6 +403,10 @@ function CreatorDashboard({ user }: { user: any }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [savedListings, setSavedListings] = useState<any[]>([]);
   const [myOpportunities, setMyOpportunities] = useState<Listing[]>([]);
+  const lockedOpportunityIds = useMemo(
+    () => getLockedOpportunityIds(user.accountType, myOpportunities),
+    [user.accountType, myOpportunities],
+  );
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showOpportunityGate, setShowOpportunityGate] = useState(false);
   const [rep, setRep] = useState<ReputationScore | null>(null);
@@ -587,7 +591,7 @@ function CreatorDashboard({ user }: { user: any }) {
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-2xl transition-colors flex items-center justify-center gap-1.5">
               <Plus className="w-4 h-4" /> Post Opportunity
             </button>
-            <MyOpportunitiesOverview opportunities={myOpportunities} />
+            <MyOpportunitiesOverview opportunities={myOpportunities} lockedIds={lockedOpportunityIds} />
           </div>
         )}
 
@@ -734,6 +738,10 @@ function HostDashboardContent({ user }: { user: any }) {
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(true);
   const showListingsLoader = useMinVisibleLoading(listingsLoading);
+  const lockedOpportunityIds = useMemo(
+    () => getLockedOpportunityIds(user.accountType, myListings),
+    [user.accountType, myListings],
+  );
   const [myOrders, setMyOrders] = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const showOrdersLoader = useMinVisibleLoading(ordersLoading);
@@ -1036,6 +1044,7 @@ function HostDashboardContent({ user }: { user: any }) {
                     key={listing.id}
                     listing={listing}
                     onDeleted={() => setMyListings(prev => prev.filter(l => l.id !== listing.id))}
+                    locked={lockedOpportunityIds.has(listing.id)}
                   />
                 ))}
               </div>
@@ -1053,7 +1062,7 @@ function HostDashboardContent({ user }: { user: any }) {
                 <p className="text-[11px] text-gray-400">{resetLabel(getEntitlement(user.accountType).window)}</p>
               </div>
             )}
-            <MyOpportunitiesOverview loading={showListingsLoader} opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} />
+            <MyOpportunitiesOverview loading={showListingsLoader} opportunities={myListings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')} lockedIds={lockedOpportunityIds} />
           </>
         )}
 

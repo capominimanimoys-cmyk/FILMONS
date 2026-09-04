@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router';
 import { motion } from 'motion/react';
-import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users } from 'lucide-react';
+import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users, Lock } from 'lucide-react';
 import { Listing } from '../types';
 import { savedListingsApi, invalidateListingsCache } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,50 @@ interface ListingCardProps {
   /** Called after the owner successfully deletes this listing, so the
    * parent list can remove it without waiting for a full reload. */
   onDeleted?: () => void;
+  /** True when this is the owner's own Opportunity listing and it's beyond
+   * their plan's concurrent-post entitlement (see
+   * lib/entitlements.ts's getLockedOpportunityIds). Shows the upgrade
+   * banner and disables edit/emergency actions; the listing itself stays
+   * visible and viewable. */
+  locked?: boolean;
+}
+
+// ── Excess-Opportunity lock modal — shown from the card banner and from
+// the locked "Upgrade to unlock" menu action. ──
+function OpportunityLockModal({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl sm:max-w-sm w-full p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto">
+          <Lock className="w-7 h-7 text-amber-500" />
+        </div>
+        <div>
+          <p className="text-lg font-black text-gray-900">Upgrade to unlock</p>
+          <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+            This Opportunity exceeds your Creator+ plan limit. Upgrade to Professional or Business to manage, edit, renew, repost, or reactivate it.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => { onClose(); navigate('/account/upgrade?auto=professional'); }}
+            className="w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80"
+          >
+            Upgrade to Professional
+          </button>
+          <button
+            onClick={() => { onClose(); navigate('/account/upgrade?auto=business'); }}
+            className="w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-2xl active:opacity-80"
+          >
+            Upgrade to Business
+          </button>
+          <button onClick={onClose} className="w-full py-2.5 text-sm font-semibold text-gray-400">
+            Not Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function distanceLabel(km: number) {
@@ -26,10 +70,11 @@ function distanceLabel(km: number) {
 }
 
 // ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
-function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants }: {
+function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants, locked, onShowLock }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
   isEmergency: boolean; onEmergency: () => void; onViewApplicants?: () => void;
+  locked?: boolean; onShowLock?: () => void;
 }) {
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
@@ -118,15 +163,24 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
         <div className="px-4 py-2 space-y-1">
           {[
             ...(isOwn ? [
-              { icon: <Pencil className="w-5 h-5"/>, label: 'Edit Listing', sub: 'Update photos, pricing, details, and more', color: 'text-gray-900', action: () => { close(); onEdit(); } },
-              ...(onViewApplicants ? [
-                { icon: <Users className="w-5 h-5"/>, label: 'View Applicants', sub: 'See who applied and manage status', color: 'text-gray-900', action: () => { close(); onViewApplicants(); } },
-              ] : []),
-              // Boost Listing menu item temporarily removed (feature
-              // disabled, not deleted — see boostApi.ts/BoostListingFlow.tsx
-              // header comments). Emergency Listing is a separate feature
-              // and stays.
-              { icon: <AlertTriangle className={`w-5 h-5 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', sub: isEmergency ? 'View status and expiration, or boost again once it ends' : 'Pay for repeated feed exposure over 72 hours or 7 days', color: isEmergency ? 'text-red-600' : 'text-gray-900', action: () => { close(); onEmergency(); } },
+              // Locked (excess Opportunity beyond the plan's concurrent-post
+              // entitlement): edit/emergency actions are replaced with a
+              // single upgrade prompt -- deleting stays available, since
+              // that's not one of the "manage/edit/renew/repost/reactivate"
+              // actions the lock is meant to block.
+              ...(locked ? [
+                { icon: <Lock className="w-5 h-5"/>, label: 'Upgrade to unlock', sub: 'This Opportunity exceeds your Creator+ plan limit', color: 'text-amber-600', action: () => { close(); onShowLock?.(); } },
+              ] : [
+                { icon: <Pencil className="w-5 h-5"/>, label: 'Edit Listing', sub: 'Update photos, pricing, details, and more', color: 'text-gray-900', action: () => { close(); onEdit(); } },
+                ...(onViewApplicants ? [
+                  { icon: <Users className="w-5 h-5"/>, label: 'View Applicants', sub: 'See who applied and manage status', color: 'text-gray-900', action: () => { close(); onViewApplicants(); } },
+                ] : []),
+                // Boost Listing menu item temporarily removed (feature
+                // disabled, not deleted — see boostApi.ts/BoostListingFlow.tsx
+                // header comments). Emergency Listing is a separate feature
+                // and stays.
+                { icon: <AlertTriangle className={`w-5 h-5 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', sub: isEmergency ? 'View status and expiration, or boost again once it ends' : 'Pay for repeated feed exposure over 72 hours or 7 days', color: isEmergency ? 'text-red-600' : 'text-gray-900', action: () => { close(); onEmergency(); } },
+              ]),
               { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
             ] : []),
             { icon: <Bookmark className="w-5 h-5"/>, label: saved ? 'Remove from saved' : 'Save listing', sub: saved ? 'Remove from your saved listings' : 'Add to your saved listings', color: 'text-gray-900', action: () => { onSave(); close(); } },
@@ -164,10 +218,11 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
 // desktop dropdown. Fade + slight downward move + scale, per the FILMONS
 // desktop menu motion spec (opacity 0->1, scale 0.96->1, y -4px->0,
 // 160-200ms in; closing reverses slightly faster). ──
-function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants }: {
+function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants, locked, onShowLock }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
   isEmergency: boolean; onEmergency: () => void; onViewApplicants?: () => void;
+  locked?: boolean; onShowLock?: () => void;
 }) {
   const [show, setShow] = useState(false);
 
@@ -189,11 +244,15 @@ function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, on
 
   const actions = [
     ...(isOwn ? [
-      { icon: <Pencil className="w-4 h-4"/>, label: 'Edit Listing', color: 'text-gray-700', action: () => { close(); onEdit(); } },
-      ...(onViewApplicants ? [
-        { icon: <Users className="w-4 h-4"/>, label: 'View Applicants', color: 'text-gray-700', action: () => { close(); onViewApplicants(); } },
-      ] : []),
-      { icon: <AlertTriangle className={`w-4 h-4 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', color: isEmergency ? 'text-red-600' : 'text-gray-700', action: () => { close(); onEmergency(); } },
+      ...(locked ? [
+        { icon: <Lock className="w-4 h-4"/>, label: 'Upgrade to unlock', color: 'text-amber-600', action: () => { close(); onShowLock?.(); } },
+      ] : [
+        { icon: <Pencil className="w-4 h-4"/>, label: 'Edit Listing', color: 'text-gray-700', action: () => { close(); onEdit(); } },
+        ...(onViewApplicants ? [
+          { icon: <Users className="w-4 h-4"/>, label: 'View Applicants', color: 'text-gray-700', action: () => { close(); onViewApplicants(); } },
+        ] : []),
+        { icon: <AlertTriangle className={`w-4 h-4 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', color: isEmergency ? 'text-red-600' : 'text-gray-700', action: () => { close(); onEmergency(); } },
+      ]),
       { icon: <Trash2 className="w-4 h-4"/>, label: 'Delete Listing', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
     ] : []),
     { icon: <Bookmark className="w-4 h-4"/>, label: saved ? 'Remove from saved' : 'Save listing', color: 'text-gray-700', action: () => { onSave(); close(); } },
@@ -301,7 +360,7 @@ function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
 }
 
 // ── Main ListingCard ──────────────────────────────────────────────────────────
-export function ListingCard({ listing, onClick, className = '', onDeleted }: ListingCardProps) {
+export function ListingCard({ listing, onClick, className = '', onDeleted, locked = false }: ListingCardProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -312,6 +371,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
   const [saving,  setSaving]  = useState(false);
   const [sheet,   setSheet]   = useState(false);   // three-dot click + long-press both open this
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLockModal, setShowLockModal] = useState(false);
   const boosted = !!listing.boosted;
   // Same "trust the expiry timestamp, not just the flag" check Home.tsx's
   // feed-recycling logic uses -- is_emergency isn't cleared until the
@@ -433,6 +493,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
     onDeleteRequest: () => setShowDeleteConfirm(true),
     isEmergency, onEmergency: () => navigate(`/listing/${listing.id}/emergency`),
     onViewApplicants: isOpportunity ? () => navigate(`/listing/${listing.id}/applicants`) : undefined,
+    locked: isOwn && locked, onShowLock: () => setShowLockModal(true),
   };
 
   return (
@@ -451,6 +512,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
           onDeleted={() => { setShowDeleteConfirm(false); onDeleted?.(); }}
         />
       )}
+      {showLockModal && <OpportunityLockModal onClose={() => setShowLockModal(false)} />}
 
       {/* Plain div, deliberately NOT a motion component -- a whileTap scale
           on an ANCESTOR of the layoutId'd image below fights with Framer
@@ -506,6 +568,17 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
             <span className="absolute top-9 left-2.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
               <AlertTriangle className="w-2.5 h-2.5 fill-white" /> Emergency
             </span>
+          )}
+
+          {/* Excess-Opportunity lock banner — visible/viewable, just not
+              editable; tapping opens the upgrade explanation. */}
+          {isOwn && locked && (
+            <button
+              onClick={e => { e.stopPropagation(); setShowLockModal(true); }}
+              className="absolute inset-x-0 bottom-0 bg-black/70 backdrop-blur-sm text-white text-[11px] font-bold px-2.5 py-1.5 flex items-center justify-center gap-1.5"
+            >
+              <Lock className="w-3 h-3" /> Upgrade to unlock
+            </button>
           )}
 
           {/* ── Heart button — always visible on mobile, hover on desktop ── */}

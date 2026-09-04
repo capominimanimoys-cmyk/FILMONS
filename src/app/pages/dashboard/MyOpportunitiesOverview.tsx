@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { Briefcase, Users, Share2, Pencil } from 'lucide-react';
+import { Briefcase, Users, Share2, Pencil, Lock } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Listing } from '../../types';
 import { FilmonsBrandLoader } from '../../components/FilmonsLoader';
@@ -17,7 +17,7 @@ import { useMinVisibleLoading } from '../../lib/useMinVisibleLoading';
 
 interface Counts { all: number; new: number; shortlisted: number; accepted: number; }
 
-export function MyOpportunitiesOverview({ opportunities, loading: parentLoading }: { opportunities: Listing[]; loading?: boolean }) {
+export function MyOpportunitiesOverview({ opportunities, loading: parentLoading, lockedIds }: { opportunities: Listing[]; loading?: boolean; lockedIds?: Set<string> }) {
   const navigate = useNavigate();
   const [counts, setCounts] = useState<Record<string, Counts>>({});
   const [loading, setLoading] = useState(true);
@@ -86,8 +86,15 @@ export function MyOpportunitiesOverview({ opportunities, loading: parentLoading 
         const c = counts[o.id] || { all: 0, new: 0, shortlisted: 0, accepted: 0 };
         const status = o.opportunity?.opportunityStatus || 'active';
         const numPeopleNeeded = o.opportunity?.numPeopleNeeded;
+        const locked = !!lockedIds?.has(o.id);
         return (
           <div key={o.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+            {locked && (
+              <button onClick={() => navigate('/account/upgrade?auto=professional')}
+                className="w-full flex items-center gap-1.5 bg-amber-50 text-amber-700 text-[11px] font-bold px-3 py-2 rounded-xl text-left">
+                <Lock className="w-3.5 h-3.5 shrink-0" /> Upgrade to unlock — this Opportunity exceeds your Creator+ plan limit
+              </button>
+            )}
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm font-bold text-gray-900 truncate">{o.title}</p>
@@ -115,9 +122,12 @@ export function MyOpportunitiesOverview({ opportunities, loading: parentLoading 
             </button>
 
             <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-500">
-              <button onClick={() => navigate(`/edit-listing/${o.id}`)} className="flex items-center gap-1 hover:text-gray-800"><Pencil className="w-3 h-3" /> Edit</button>
+              {locked
+                ? <span className="flex items-center gap-1 text-gray-300 cursor-not-allowed"><Pencil className="w-3 h-3" /> Edit</span>
+                : <button onClick={() => navigate(`/edit-listing/${o.id}`)} className="flex items-center gap-1 hover:text-gray-800"><Pencil className="w-3 h-3" /> Edit</button>
+              }
               <button onClick={() => share(o)} className="flex items-center gap-1 hover:text-gray-800"><Share2 className="w-3 h-3" /> Share</button>
-              <button onClick={() => toggleApplications(o)} className="ml-auto hover:text-gray-800">
+              <button onClick={() => toggleApplications(o)} disabled={locked} className="ml-auto hover:text-gray-800 disabled:text-gray-300 disabled:cursor-not-allowed">
                 {status === 'applications_closed' ? 'Reopen Applications' : 'Close Applications'}
               </button>
             </div>

@@ -31,6 +31,24 @@ export function getEntitlement(accountType?: string): TierEntitlement {
   return ENTITLEMENTS[normalizeTier(accountType)];
 }
 
+// Mirrors the server's excess-Opportunity lock (supabase/functions/server/
+// index.tsx's PUT /listings/:id handler) for display purposes -- given a
+// user's own listings, returns the ids of active Opportunity listings that
+// exceed their tier's concurrent-post entitlement and should show the
+// locked/upgrade banner. Unlimited tiers (posts === null) never lock
+// anything. Re-derived from live data every render, never a stored flag,
+// so an upgrade unlocks the eligible ones immediately with no extra step.
+export function getLockedOpportunityIds(accountType: string | undefined, listings: Array<{
+  id: string; listingType?: string; listingKind?: string; isActive?: boolean; createdAt?: string;
+}>): Set<string> {
+  const limit = getEntitlement(accountType).posts;
+  if (limit === null) return new Set();
+  const activeOpportunities = listings
+    .filter(l => (l.listingType === 'opportunity' || l.listingKind === 'talent') && l.isActive !== false)
+    .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  return new Set(activeOpportunities.slice(limit).map(l => l.id));
+}
+
 export function formatLimit(n: number | null): string {
   return n === null ? 'Unlimited' : String(n);
 }

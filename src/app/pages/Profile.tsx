@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useT } from '../lib/i18n';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { useMinVisibleLoading } from '../lib/useMinVisibleLoading';
+import { getLockedOpportunityIds } from '../lib/entitlements';
 import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
 import { reliabilityApi, ReputationScore, isCreatorPlus, normalizeTier } from '../lib/reliabilityApi';
@@ -554,6 +555,10 @@ export function Profile() {
   const [loadingTagged, setLoadingTagged] = useState(false);
   const [loadingReposts,setLoadingReposts]= useState(false);
   const [listings,      setListings]      = useState<Listing[]>([]);
+  const lockedOpportunityIds = useMemo(
+    () => getLockedOpportunityIds(user?.accountType, listings),
+    [user?.accountType, listings],
+  );
   const [likedPosts,    setLikedPosts]    = useState<Post[]>([]);
   const [savedPosts,    setSavedPosts]    = useState<Post[]>([]);
   const [userSounds,    setUserSounds]    = useState<any[]>([]);
@@ -1540,7 +1545,7 @@ export function Profile() {
                   <>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Listings</p>
                     <div className="pop-stagger grid grid-cols-2 gap-2">
-                      {listings.slice(0, 4).map(l => <ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}
+                      {listings.slice(0, 4).map(l => <ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} locked={lockedOpportunityIds.has(l.id)} />)}
                     </div>
                     {listings.length > 4 && (
                       <button onClick={() => switchTab('listings')} className="w-full mt-2 bg-white border border-gray-200 rounded-2xl py-3 text-sm font-semibold text-blue-600 hover:bg-gray-50">
@@ -1699,7 +1704,7 @@ export function Profile() {
                 ? <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md" label="Loading listings"/></div>
                 : listings.length === 0
                 ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
-                : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />)}</div>
+                : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} locked={lockedOpportunityIds.has(l.id)} />)}</div>
               }
             </div>
           )}
