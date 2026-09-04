@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users, Lock } from 'lucide-react';
 import { Listing } from '../types';
@@ -31,7 +32,13 @@ interface ListingCardProps {
 // the locked "Upgrade to unlock" menu action. ──
 function OpportunityLockModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
-  return (
+  // Portaled to document.body -- ListingCard renders inside Framer Motion
+  // grid/list wrappers on several pages (e.g. SearchOverlay's results
+  // grid), and a `motion.div` ancestor with an active transform becomes
+  // the containing block for any `position: fixed` descendant instead of
+  // the viewport, which made every fixed modal here render positioned/
+  // sized against that ancestor's box instead of the real screen.
+  return createPortal(
     <div className="fixed inset-0 z-[70] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl sm:max-w-sm w-full p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
         <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto">
@@ -61,7 +68,8 @@ function OpportunityLockModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -120,7 +128,11 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
   const cover = listing.image ||
     (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string') : null);
 
-  return (
+  // Portaled to document.body -- see OpportunityLockModal's comment above:
+  // a Framer Motion ancestor's transform (e.g. SearchOverlay's results
+  // grid) otherwise becomes this sheet's containing block instead of the
+  // real viewport.
+  return createPortal(
     <>
       {/* Backdrop */}
       <div
@@ -208,7 +220,8 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
           Cancel
         </button>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 
@@ -321,7 +334,8 @@ function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
     }
   };
 
-  return (
+  // Portaled to document.body -- see OpportunityLockModal's comment above.
+  return createPortal(
     <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={onCancel}>
       <div className="bg-white rounded-3xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
         {blocked ? (
@@ -355,7 +369,8 @@ function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

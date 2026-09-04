@@ -655,69 +655,83 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
     // it those values compare directly against the page's sticky search
     // bar (z-20) in the shared root stacking context and win, so the deck
     // painted in front of the search bar while scrolling past it.
-    <div className="flex flex-col items-center px-1 lg:px-0 lg:max-w-2xl lg:mx-auto isolate">
-      {/* Card stack viewport — height must fit the tallest rendered card
-          (image + text content), not just the image, or the card visually
-          overflows this container and covers the counter/buttons below it
-          (they're still there in the DOM, just hidden underneath).
-          Below lg, this is also the pull-to-reveal viewport: clipped
-          (overflow-hidden) so the compact action row sitting just under
-          the card stays hidden until pulled into view; at lg+ it's
-          unclipped (overflow-visible) since desktop shows the full
-          counter/button row below in normal flow instead. */}
-      <div className="relative w-full h-[420px] lg:h-[580px] overflow-hidden lg:overflow-visible">
-        <div style={{
-          transform: `translateY(${-pullY}px)`,
-          transition: isPullingRef.current ? 'none' : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
-        }}>
-          <div className="relative w-full h-[420px] lg:h-[580px]">
-            {[...cards].reverse().map((item, rIdx) => {
-              const stackPos = cards.length - 1 - rIdx;
-              const isTop    = stackPos === 0;
-              const key = item.kind === 'listing' ? `l-${item.data.id}` : `c-${item.data.id}`;
-              return (
-                <SwipeCard
-                  key={key}
-                  item={item}
-                  stackPos={stackPos}
-                  isTop={isTop}
-                  exitDir={isTop ? exitDir : null}
-                  onSwipeLeft={() => fly('L')}
-                  onSwipeRight={() => fly('R')}
-                  onView={() => viewItem(item)}
-                  onPull={handlePull}
-                />
-              );
-            })}
-          </div>
+    // w-full is load-bearing here: this div is a flex item of Home's own
+    // items-center column, so without it the container shrink-to-fits its
+    // narrowest child's intrinsic width instead of the viewport -- which is
+    // exactly why earlier padding-only tweaks on this element had no
+    // visible effect (the card's own w-full was already 100% of an
+    // already-too-narrow parent). Width itself now matches the exact
+    // recipe requested: near-full viewport width with a small fixed
+    // margin on phones, capped at 430px on larger phones, always centered.
+    <div className="w-[calc(100vw-24px)] max-w-[430px] mx-auto flex flex-col items-center lg:w-full lg:max-w-2xl lg:mx-auto isolate">
+      {/* Card stack — height must fit the tallest rendered card (image +
+          text content), not just the image, or the card visually overflows
+          this container and covers the counter/buttons below it (they're
+          still there in the DOM, just hidden underneath). Deliberately NO
+          overflow-hidden here (or on any ancestor of the card) -- the
+          horizontal swipe/exit animation rotates and translates the card
+          well past its own box, and clipping that container is exactly
+          what produced the "overlay" bug (the card visibly cutting off
+          against its own wrapper's edge mid-swipe). The mobile pull-reveal
+          row below has its own separate, small clipped viewport instead of
+          sharing this one, so it never constrains the card. */}
+      <div className="relative w-full h-[420px] lg:h-[580px] isolate" style={{ zIndex: 2 }}>
+        {[...cards].reverse().map((item, rIdx) => {
+          const stackPos = cards.length - 1 - rIdx;
+          const isTop    = stackPos === 0;
+          const key = item.kind === 'listing' ? `l-${item.data.id}` : `c-${item.data.id}`;
+          return (
+            <SwipeCard
+              key={key}
+              item={item}
+              stackPos={stackPos}
+              isTop={isTop}
+              exitDir={isTop ? exitDir : null}
+              onSwipeLeft={() => fly('L')}
+              onSwipeRight={() => fly('R')}
+              onView={() => viewItem(item)}
+              onPull={handlePull}
+            />
+          );
+        })}
+      </div>
 
-          {/* Compact mobile-only reveal row — Heart / Eye / X only, no
-              labels, no counter, nothing else, exactly what the pull
-              uncovers. The full labeled row + counter below is desktop-only. */}
-          <div className="lg:hidden flex items-center justify-center gap-10 pt-4">
-            <button
-              onClick={() => atLimit ? setShowDailyLimit(true) : fly('L')}
-              aria-label={atLimit ? 'Daily swipe limit reached' : 'Pass'}
-              className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
-                atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-red-200 hover:border-red-400 hover:bg-red-50'
-              }`}>
-              {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <X className="w-5 h-5 text-red-400"/>}
-            </button>
-            <button
-              onClick={() => viewItem(current)}
-              aria-label="See listing"
-              className="w-11 h-11 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center transition-all active:scale-90 hover:border-blue-400 hover:bg-blue-50">
-              <Eye className="w-4 h-4 text-blue-500"/>
-            </button>
-            <button
-              onClick={() => atLimit ? setShowDailyLimit(true) : fly('R')}
-              aria-label={atLimit ? 'Daily swipe limit reached' : 'Like'}
-              className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
-                atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-green-200 hover:border-green-400 hover:bg-green-50'
-              }`}>
-              {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <Heart className="w-5 h-5 text-green-500"/>}
-            </button>
-          </div>
+      {/* Compact mobile-only reveal row — Heart / Eye / X only, no labels,
+          no counter, nothing else. This is the ONLY element that clips:
+          its own height animates from 0 up to the live pull distance, so
+          the row grows into view from underneath the (always fully
+          visible, never-clipped) card above it. The full labeled row +
+          counter below is desktop-only. */}
+      <div
+        className="lg:hidden w-full overflow-hidden"
+        style={{
+          height: pullY,
+          transition: isPullingRef.current ? 'none' : 'height 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      >
+        <div className="flex items-center justify-center gap-10 pt-4" style={{ opacity: Math.min(pullY / 30, 1) }}>
+          <button
+            onClick={() => atLimit ? setShowDailyLimit(true) : fly('L')}
+            aria-label={atLimit ? 'Daily swipe limit reached' : 'Pass'}
+            className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+              atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-red-200 hover:border-red-400 hover:bg-red-50'
+            }`}>
+            {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <X className="w-5 h-5 text-red-400"/>}
+          </button>
+          <button
+            onClick={() => viewItem(current)}
+            aria-label="See listing"
+            className="w-11 h-11 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center transition-all active:scale-90 hover:border-blue-400 hover:bg-blue-50">
+            <Eye className="w-4 h-4 text-blue-500"/>
+          </button>
+          <button
+            onClick={() => atLimit ? setShowDailyLimit(true) : fly('R')}
+            aria-label={atLimit ? 'Daily swipe limit reached' : 'Like'}
+            className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+              atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-green-200 hover:border-green-400 hover:bg-green-50'
+            }`}>
+            {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <Heart className="w-5 h-5 text-green-500"/>}
+          </button>
         </div>
       </div>
 

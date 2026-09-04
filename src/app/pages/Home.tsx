@@ -752,12 +752,15 @@ export function Home() {
            content — no intermediate skeleton, no predefined animation
            duration.
            Below lg, there's no scrolling here at all -- `flex-1 min-h-0`
-           fills exactly the leftover height under the search bar, and
-           `overflow-hidden` keeps the deck fixed/centered with no page
-           scroll; SwipeStack's own pull-to-reveal gesture (drag down on
-           the card, spring back on release) is what surfaces the compact
-           Like/See listing/Pass row, not scrolling. ── */}
-      <div className="relative flex-1 min-h-0 overflow-hidden lg:flex-none lg:min-h-[60vh] lg:h-auto lg:overflow-visible">
+           fills exactly the leftover height under the search bar; the
+           fixed height on the ROOT element above (not overflow here) is
+           what keeps the page from scrolling. Deliberately overflow-visible
+           on this deck region itself -- it directly wraps the swipe card,
+           and clipping it here cut off the card mid-swipe/exit animation.
+           SwipeStack's own pull-to-reveal gesture (drag down on the card,
+           spring back on release) is what surfaces the compact Like/See
+           listing/Pass row, not scrolling. ── */}
+      <div className="relative flex-1 min-h-0 overflow-visible lg:flex-none lg:min-h-[60vh] lg:h-auto">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
             <FilmonsBrandLoader size="lg"/>
