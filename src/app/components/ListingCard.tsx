@@ -96,14 +96,32 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
   }, []);
 
   // Lock body scroll while open -- this sheet can be triggered by a mobile
-  // long-press (see ListingCard's startPress), and without a scroll lock
-  // that same touch gesture can also register as the start of a page
-  // scroll underneath, making the listing grid visibly shift/jump right as
-  // the sheet opens. Same pattern as CommentSheet.tsx/Sidebar.tsx.
+  // long-press (see ListingCard's startPress). A plain `overflow: hidden`
+  // (the pattern used elsewhere in this app, e.g. CommentSheet.tsx) still
+  // let the listing grid visibly shift on open/close here: on iOS Safari
+  // specifically, toggling overflow:hidden on body can snap the page's
+  // scroll position and/or reflow around the (dis)appearing scrollbar,
+  // which is exactly the "listings move" symptom. This uses the more
+  // robust position:fixed lock instead -- pins body at its exact current
+  // scroll offset via a negative `top`, so nothing can reflow or rescroll
+  // under it, then restores the precise scroll position on close.
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, left: body.style.left, right: body.style.right, width: body.style.width };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.left = prev.left;
+      body.style.right = prev.right;
+      body.style.width = prev.width;
+      window.scrollTo(0, scrollY);
+    };
   }, []);
 
   const close = useCallback(() => {
