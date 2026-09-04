@@ -249,7 +249,7 @@ function PayoutModalInner(props: {
               {isCreatorPlus(user?.accountType) && (
                 <p className="text-[11px] text-gray-400 mt-3 flex items-start gap-1.5">
                   <Info className="w-3 h-3 text-gray-300 shrink-0 mt-0.5" />
-                  Recently received funds may still be pending and aren't included above — new funds typically become available within 2–5 business days.
+                  Recently received funds may still be pending and aren't included above. New funds typically become available within 5 business days.
                 </p>
               )}
             </div>
@@ -264,7 +264,7 @@ function PayoutModalInner(props: {
                   <span className="text-sm font-black text-gray-900 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-blue-500" /> Standard</span>
                   {speed === 'standard' && <Check className="w-4 h-4 text-blue-500" />}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Typically 1–2 business days after approval · FILMONS fee {(withdrawalFeeRate * 100).toFixed(0)}%</p>
+                <p className="text-xs text-gray-400 mt-1">Typically 1 to 2 business days after approval · FILMONS fee {(withdrawalFeeRate * 100).toFixed(0)}%</p>
                 <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(Math.max(amountNum - platformFee, 0))}</p>
               </button>
               <button onClick={() => setSpeed('instant')}
@@ -277,7 +277,7 @@ function PayoutModalInner(props: {
                 <p className="text-sm font-bold text-gray-900 mt-1.5">You'll receive {fmtCad(Math.max(amountNum - platformFee - instantFee, 0))}</p>
               </button>
               <p className="text-[11px] text-gray-400 leading-relaxed px-1">
-                Every payout is still reviewed and sent by a Filmons admin — Instant means priority processing, not an automated transfer.
+                Every payout is still reviewed and sent by a Filmons admin. Instant means priority processing, not an automated transfer.
               </p>
             </div>
           )}
@@ -316,7 +316,7 @@ function PayoutModalInner(props: {
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400">Estimated Arrival</span>
-                  <span className="text-sm font-bold text-gray-900">1–6 business days</span>
+                  <span className="text-sm font-bold text-gray-900">1 to 6 business days</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400">Destination</span>
@@ -324,8 +324,8 @@ function PayoutModalInner(props: {
                 </div>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                Your payout will be sent to your bank account and should arrive within 1–6 business days.
-                {destCurrency && ' Since your bank account is in a different currency, the exact amount you receive is confirmed by Stripe at the time your payout is sent — the amount above is an estimate.'}
+                Your payout will be sent to your bank account and should arrive within 1 to 6 business days.
+                {destCurrency && ' Since your bank account is in a different currency, the exact amount you receive is confirmed by Stripe at the time your payout is sent. The amount above is an estimate.'}
               </p>
             </div>
           )}
@@ -368,7 +368,7 @@ function PayoutModalInner(props: {
                 </div>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                This reserves the funds immediately. Cash-outs are reviewed and processed manually by FILMONS — once approved and sent, payment typically arrives within 1–2 business days, depending on your payment method and financial institution.
+                This reserves the funds immediately. Cash-outs are reviewed and processed manually by FILMONS. Once approved and sent, payment typically arrives within 1 to 2 business days, depending on your payment method and financial institution.
               </p>
             </div>
           )}
@@ -389,7 +389,7 @@ function PayoutModalInner(props: {
                 {result.payoutCurrency && result.payoutAmount != null && (
                   <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Sent To Your Bank</span><span className="text-sm font-black text-gray-900">{fmtCad(result.payoutAmount)} {result.payoutCurrency}</span></div>
                 )}
-                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Expected arrival</span><span className="text-sm font-bold text-gray-900">1–6 business days</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Expected arrival</span><span className="text-sm font-bold text-gray-900">1 to 6 business days</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Destination</span><span className="text-sm font-bold text-gray-900">{walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}</span></div>
               </div>
               <button onClick={onDone} className="w-full py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl">Done</button>
@@ -579,7 +579,7 @@ export function Wallet() {
             </div>
             <div className="flex items-center gap-1.5 mt-3 text-blue-200 text-sm">
               {!showWalletLoader && <Clock className="w-3.5 h-3.5" />}
-              {!showWalletLoader && <span>{fmtCad(balance.pending)} pending — {pendingCaption}</span>}
+              {!showWalletLoader && <span>{fmtCad(balance.pending)} pending, {pendingCaption}</span>}
             </div>
             <button
               onClick={() => setShowModal(true)}
@@ -744,7 +744,7 @@ export function Wallet() {
                       )}
                       {p.status === 'sent' && (
                         <p className="text-xs text-gray-400">
-                          Expected arrival: 1–6 business days{p.arrival_date ? ` (around ${new Date(p.arrival_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })})` : ''}
+                          Expected arrival: 1 to 6 business days{p.arrival_date ? ` (around ${new Date(p.arrival_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })})` : ''}
                         </p>
                       )}
                       {p.payout_currency && p.payout_amount != null && (
@@ -825,7 +825,7 @@ export function Wallet() {
           ) : txs.filter(t => t.status !== 'pending').length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 py-12 px-6 text-center">
               <DollarSign className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-400">No available transactions yet — everything above is still pending.</p>
+              <p className="text-sm text-gray-400">No available transactions yet, everything above is still pending.</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
