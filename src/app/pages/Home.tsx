@@ -264,24 +264,6 @@ export function Home() {
   const [loadError, setLoadError] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
 
-  // Fixed swipe interface -- the deck region gets its own small, bounded
-  // scroll (just enough to reveal the Pass/See Listing/Like labels on a
-  // short viewport) instead of the whole page scrolling freely. This ref
-  // is reset to the centered/top position on mount (covers "returning to
-  // Home from another page" since routes unmount/remount by default),
-  // filter change, card change (via SwipeStack's onCardChange), and
-  // resize/orientation change.
-  const deckScrollRef = useRef<HTMLDivElement>(null);
-  const resetDeckScroll = () => { deckScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' }); };
-  useEffect(() => {
-    resetDeckScroll();
-    window.addEventListener('resize', resetDeckScroll);
-    window.addEventListener('orientationchange', resetDeckScroll);
-    return () => {
-      window.removeEventListener('resize', resetDeckScroll);
-      window.removeEventListener('orientationchange', resetDeckScroll);
-    };
-  }, []);
 
   useEffect(() => {
     let done = false;
@@ -479,7 +461,6 @@ export function Home() {
     setDeckDone(false);
     setNoNewListings(false);
     setFilterKey(k => k + 1);
-    resetDeckScroll();
   };
 
   // "Browse All Listings" from the caught-up screen is deliberate
@@ -770,13 +751,13 @@ export function Home() {
            resolves (success OR error), this swaps once to the real
            content — no intermediate skeleton, no predefined animation
            duration.
-           This is also the bounded scroll region: `flex-1 min-h-0` lets it
-           fill exactly the leftover height under the search bar, and
-           `overflow-y-auto overscroll-contain` means any scroll it offers
-           is capped to the real overflow of its own content (typically
-           just enough to reveal the Pass/See Listing/Like labels on a
-           short viewport) rather than an open-ended page scroll. ── */}
-      <div ref={deckScrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain lg:flex-none lg:min-h-[60vh] lg:h-auto lg:overflow-visible">
+           Below lg, there's no scrolling here at all -- `flex-1 min-h-0`
+           fills exactly the leftover height under the search bar, and
+           `overflow-hidden` keeps the deck fixed/centered with no page
+           scroll; SwipeStack's own pull-to-reveal gesture (drag down on
+           the card, spring back on release) is what surfaces the compact
+           Like/See listing/Pass row, not scrolling. ── */}
+      <div className="relative flex-1 min-h-0 overflow-hidden lg:flex-none lg:min-h-[60vh] lg:h-auto lg:overflow-visible">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
             <FilmonsBrandLoader size="lg"/>
@@ -844,7 +825,6 @@ export function Home() {
                   persistKey={filter}
                   onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
                   onSwipeListing={filter === 'talent' ? handleOpportunitySwipe : undefined}
-                  onCardChange={resetDeckScroll}
                 />
               )}
             </div>

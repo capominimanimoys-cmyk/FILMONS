@@ -203,13 +203,22 @@ interface CardProps {
   onSwipeLeft:  () => void;
   onSwipeRight: () => void;
   onView: () => void;
+  /** Mobile pull-to-reveal -- fired with the clamped downward pull distance
+   *  (0-80px) while a clearly-vertical drag is in progress, and with 0 on
+   *  release/cancel so the parent can spring the reveal back to centered.
+   *  The card itself never moves for this gesture (stays "centered and
+   *  fixed" per spec) -- only reported upward for the parent to animate. */
+  onPull?: (dy: number) => void;
 }
 
-function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, onView }: CardProps) {
+const PULL_MAX = 80;
+
+function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, onView, onPull }: CardProps) {
   const [drag, setDrag]     = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
   const startRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const divRef   = useRef<HTMLDivElement>(null);
+  const pulling  = useRef(false);
 
   const down = (e: React.PointerEvent) => {
     if (!isTop || exitDir) return;
@@ -220,11 +229,31 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
 
   const move = (e: React.PointerEvent) => {
     if (!startRef.current || !active) return;
-    setDrag({ x: e.clientX - startRef.current.x, y: e.clientY - startRef.current.y });
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    // Clearly-downward-dominant drag -- report as a pull-to-reveal instead
+    // of moving the card, so the card stays put while the actions row
+    // beneath it becomes visible. A little hysteresis (1.2x) keeps this
+    // from flickering against a horizontal swipe near the diagonal.
+    if (dy > 0 && dy > Math.abs(dx) * 1.2) {
+      pulling.current = true;
+      onPull?.(Math.min(dy, PULL_MAX));
+      return;
+    }
+    if (pulling.current) { pulling.current = false; onPull?.(0); }
+    setDrag({ x: dx, y: dy });
   };
 
   const up = (e: React.PointerEvent) => {
     if (!startRef.current) return;
+    if (pulling.current) {
+      pulling.current = false;
+      onPull?.(0);
+      setActive(false);
+      startRef.current = null;
+      return;
+    }
+
     const dx   = e.clientX - startRef.current.x;
     const dy   = e.clientY - startRef.current.y;
     const dt   = Date.now() - startRef.current.t;
@@ -243,7 +272,10 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
     startRef.current = null;
   };
 
-  const cancel = () => { setDrag({ x: 0, y: 0 }); setActive(false); startRef.current = null; };
+  const cancel = () => {
+    if (pulling.current) { pulling.current = false; onPull?.(0); }
+    setDrag({ x: 0, y: 0 }); setActive(false); startRef.current = null;
+  };
 
   const showSave = isTop && drag.x > 35;
   const showSkip = isTop && drag.x < -35;
@@ -381,10 +413,6 @@ interface SwipeStackProps {
    *  blocks the swipe itself; the deck is already sized to whatever was
    *  allowed at load time (see Home.tsx). */
   onSwipeListing?: (listingId: string) => void;
-  /** Fired whenever the current card changes (swipe/undo, not See Listing)
-   *  -- Home.tsx uses this to reset its bounded scroll region back to the
-   *  centered position for the new card. */
-  onCardChange?: () => void;
 }
 
 function readPersistedIdx(key: string): number {
@@ -400,13 +428,25 @@ export function clearPersistedSwipeIdx(key: string): void {
   try { sessionStorage.removeItem(`filmons_swipe_idx_${key}`); } catch {}
 }
 
-export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipeListing, onCardChange }: SwipeStackProps) {
+export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipeListing }: SwipeStackProps) {
   const { user } = useAuth();
   const navigate  = useNavigate();
   const [idx,     setIdx]     = useState(() => readPersistedIdx(persistKey));
   const [exitDir, setExitDir] = useState<'L' | 'R' | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [undoing, setUndoing] = useState(false);
+
+  // Mobile pull-to-reveal (see SwipeCard's onPull) -- pullY tracks the
+  // finger 1:1 while a downward drag is in progress (isPulling true, no
+  // transition), then springs back to 0 on release (isPulling false,
+  // transition enabled). Only meaningful below lg; desktop's viewport
+  // isn't height-clipped so this transform is a visual no-op there.
+  const [pullY, setPullY] = useState(0);
+  const isPullingRef = useRef(false);
+  const handlePull = (dy: number) => {
+    isPullingRef.current = dy > 0;
+    setPullY(dy);
+  };
 
   const tier = normalizeTier(user?.accountType);
   const dailyLimit = user ? ENTITLEMENTS[tier].swipesPerDay : GUEST_DAILY_LIMIT; // null = unlimited (Professional/Business)
@@ -429,8 +469,6 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
   useEffect(() => {
     try { sessionStorage.setItem(`filmons_swipe_idx_${persistKey}`, String(idx)); } catch {}
   }, [idx, persistKey]);
-
-  useEffect(() => { onCardChange?.(); }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fires onDone the moment idx reaches the end of the deck -- a
   // useLayoutEffect, not useEffect, so it (and whatever state update it
@@ -617,37 +655,79 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
     // it those values compare directly against the page's sticky search
     // bar (z-20) in the shared root stacking context and win, so the deck
     // painted in front of the search bar while scrolling past it.
-    <div className="flex flex-col items-center px-2.5 lg:px-0 lg:max-w-2xl lg:mx-auto isolate">
-      {/* Card stack — height must fit the tallest rendered card (image +
-          text content), not just the image, or the card visually overflows
-          this container and covers the counter/buttons below it (they're
-          still there in the DOM, just hidden underneath). */}
-      <div className="relative w-full h-[420px] lg:h-[580px]">
-        {[...cards].reverse().map((item, rIdx) => {
-          const stackPos = cards.length - 1 - rIdx;
-          const isTop    = stackPos === 0;
-          const key = item.kind === 'listing' ? `l-${item.data.id}` : `c-${item.data.id}`;
-          return (
-            <SwipeCard
-              key={key}
-              item={item}
-              stackPos={stackPos}
-              isTop={isTop}
-              exitDir={isTop ? exitDir : null}
-              onSwipeLeft={() => fly('L')}
-              onSwipeRight={() => fly('R')}
-              onView={() => viewItem(item)}
-            />
-          );
-        })}
+    <div className="flex flex-col items-center px-1 lg:px-0 lg:max-w-2xl lg:mx-auto isolate">
+      {/* Card stack viewport — height must fit the tallest rendered card
+          (image + text content), not just the image, or the card visually
+          overflows this container and covers the counter/buttons below it
+          (they're still there in the DOM, just hidden underneath).
+          Below lg, this is also the pull-to-reveal viewport: clipped
+          (overflow-hidden) so the compact action row sitting just under
+          the card stays hidden until pulled into view; at lg+ it's
+          unclipped (overflow-visible) since desktop shows the full
+          counter/button row below in normal flow instead. */}
+      <div className="relative w-full h-[420px] lg:h-[580px] overflow-hidden lg:overflow-visible">
+        <div style={{
+          transform: `translateY(${-pullY}px)`,
+          transition: isPullingRef.current ? 'none' : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+        }}>
+          <div className="relative w-full h-[420px] lg:h-[580px]">
+            {[...cards].reverse().map((item, rIdx) => {
+              const stackPos = cards.length - 1 - rIdx;
+              const isTop    = stackPos === 0;
+              const key = item.kind === 'listing' ? `l-${item.data.id}` : `c-${item.data.id}`;
+              return (
+                <SwipeCard
+                  key={key}
+                  item={item}
+                  stackPos={stackPos}
+                  isTop={isTop}
+                  exitDir={isTop ? exitDir : null}
+                  onSwipeLeft={() => fly('L')}
+                  onSwipeRight={() => fly('R')}
+                  onView={() => viewItem(item)}
+                  onPull={handlePull}
+                />
+              );
+            })}
+          </div>
+
+          {/* Compact mobile-only reveal row — Heart / Eye / X only, no
+              labels, no counter, nothing else, exactly what the pull
+              uncovers. The full labeled row + counter below is desktop-only. */}
+          <div className="lg:hidden flex items-center justify-center gap-10 pt-4">
+            <button
+              onClick={() => atLimit ? setShowDailyLimit(true) : fly('L')}
+              aria-label={atLimit ? 'Daily swipe limit reached' : 'Pass'}
+              className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+                atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-red-200 hover:border-red-400 hover:bg-red-50'
+              }`}>
+              {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <X className="w-5 h-5 text-red-400"/>}
+            </button>
+            <button
+              onClick={() => viewItem(current)}
+              aria-label="See listing"
+              className="w-11 h-11 rounded-full bg-white border-2 border-blue-200 shadow-md flex items-center justify-center transition-all active:scale-90 hover:border-blue-400 hover:bg-blue-50">
+              <Eye className="w-4 h-4 text-blue-500"/>
+            </button>
+            <button
+              onClick={() => atLimit ? setShowDailyLimit(true) : fly('R')}
+              aria-label={atLimit ? 'Daily swipe limit reached' : 'Like'}
+              className={`w-12 h-12 rounded-full border-2 shadow-md flex items-center justify-center transition-all active:scale-90 ${
+                atLimit ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'bg-white border-green-200 hover:border-green-400 hover:bg-green-50'
+              }`}>
+              {atLimit ? <Lock className="w-5 h-5 text-gray-300"/> : <Heart className="w-5 h-5 text-green-500"/>}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Counter — daily swipe usage only shows for limited tiers
+      {/* Counter — desktop only (mobile shows the compact reveal row
+          above instead). Daily swipe usage only shows for limited tiers
           (Creator/Creator+); Professional/Business have no limit. Near the
           end of the deck (3 or fewer cards including this one), supplement
           with an explicit "N left" so the approaching end is clear without
           interrupting with a modal. */}
-      <div className="flex items-center gap-3 mt-3 mb-5">
+      <div className="hidden lg:flex items-center gap-3 mt-3 mb-5">
         <p className="text-[11px] text-gray-400 font-medium">
           {idx + 1} of {items.length}
           {items.length - idx <= 3 && (
@@ -661,9 +741,10 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
         )}
       </div>
 
-      {/* Action buttons — Creator/Creator+: Pass | See Listing | Like (no
-          Undo at all); Professional/Business: Undo | Pass | See Listing | Like */}
-      <div className="flex items-center gap-6 lg:gap-8">
+      {/* Action buttons — desktop only. Creator/Creator+: Pass | See
+          Listing | Like (no Undo at all); Professional/Business: Undo |
+          Pass | See Listing | Like */}
+      <div className="hidden lg:flex items-center gap-6 lg:gap-8">
         {canUndo && (
           <div className="flex flex-col items-center gap-1.5">
             <button
@@ -712,7 +793,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
         </div>
       </div>
 
-      <p className="text-[11px] text-gray-300 mt-4">
+      <p className="hidden lg:block text-[11px] text-gray-300 mt-4">
         {atLimit ? 'Upgrade to unlock more swipes today' : '← Pass  ·  Like →'}
       </p>
 
