@@ -12,7 +12,6 @@
 import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
 import { sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
 import { addBusinessDays } from '../_shared/businessDays.ts';
-import { normalizeTier } from '../_shared/entitlements.ts';
 import { coveredDates } from '../_shared/bookingDates.ts';
 import { fetchStripeAvailability } from '../_shared/stripeBalanceAvailability.ts';
 
@@ -460,18 +459,12 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ received: true, skipped: 'no host_id/subtotal' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    // Creator+/Professional/Business earnings clear on a business-day hold
-    // (typically 2-5 business days, communicated to the user as a range —
-    // see Wallet.tsx) instead of the flat 48-calendar-hour hold plain
-    // Creator-tier earnings still use. Same anchor point either way
-    // (rental end date if known, else now) — only the offset changes.
+    // Every earning on Filmons clears on the same 5-business-day hold
+    // regardless of account tier (see Wallet.tsx). Anchored to the rental
+    // end date if known, else now.
     const earnerProfile = await selectOne('profiles', `id=eq.${hostId}`);
-    const earnerTier = normalizeTier(earnerProfile?.account_type);
-    const earnerEligibleForHold = earnerTier === 'creator_plus' || earnerTier === 'professional' || earnerTier === 'business';
     const anchor = meta.rental_end_date ? new Date(meta.rental_end_date) : new Date();
-    const availableAt = earnerEligibleForHold
-      ? addBusinessDays(anchor, 3).toISOString()
-      : new Date(anchor.getTime() + 48 * 3600 * 1000).toISOString();
+    const availableAt = addBusinessDays(anchor, 5).toISOString();
 
     // Real Stripe settlement info -- fn_finalize_payment takes the LATER
     // of this hold-period date and Stripe's own available_on, so the host

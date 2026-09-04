@@ -15,23 +15,19 @@ import {
   X, ChevronRight, ChevronLeft, Check, Landmark, Pencil, Zap, ShieldCheck, Info,
 } from 'lucide-react';
 
-// Creator+/Professional/Business earnings clear on a business-day hold
-// (server-authoritative, set on wallet_transactions.available_at by
-// stripe-webhook) instead of the flat 48-hour hold plain Creator-tier
-// earnings still use -- this only ever varies the copy shown, never the
-// actual release timing, which is decided server-side either way.
-const PENDING_HOLD_COPY = 'Funds received through Filmons typically become available in your wallet within 2–5 business days.';
+// Every earning on Filmons clears on the same flat 5-business-day hold,
+// regardless of account tier (server-authoritative, set on
+// wallet_transactions.available_at by stripe-webhook / finalize-cash-payment).
+const PENDING_HOLD_COPY = 'Every amount earned on Filmons stays pending for 5 business days before becoming available in your wallet. Saturday and Sunday do not count toward the 5 days.';
 
 // stripeAvailableOn present means this date came from Stripe's own
 // balance transaction (the real settlement date Stripe's own dashboard
 // shows), not a locally computed hold-period guess -- shown as a
 // definite fact ("Available <date>"), never hedged with "Estimated".
 function estimatedAvailabilityLabel(availableAt: string | null, stripeAvailableOn?: string | null): string {
-  if (stripeAvailableOn) {
-    return `Available ${new Date(stripeAvailableOn).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  }
-  if (!availableAt) return 'Estimated availability: 2–5 business days';
-  return `Estimated available by ${new Date(availableAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  const date = stripeAvailableOn || availableAt;
+  if (!date) return 'This transaction should be available within 5 business days.';
+  return `This transaction should be available on ${new Date(date).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}.`;
 }
 
 const fmtCad = (cad: number) =>
@@ -538,10 +534,9 @@ export function Wallet() {
 
   if (!isAuthenticated || !user) return null;
 
-  const holdNoticeEligible = isCreatorPlus(user.accountType);
-  const pendingCaption = holdNoticeEligible
-    ? 'typically available within 2–5 business days'
-    : 'releases ~48h after each rental ends';
+  // Every earning on Filmons clears on the same 5-business-day hold,
+  // regardless of account tier (see stripe-webhook/index.ts).
+  const pendingCaption = 'typically available within 5 business days';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -618,7 +613,7 @@ export function Wallet() {
               {!showWalletLoader && (
                 <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
                   <Clock className="w-3.5 h-3.5 shrink-0" />
-                  {holdNoticeEligible ? 'Typically available within 2–5 business days' : 'Releases ~48h after each rental ends'}
+                  Typically available within 5 business days
                 </p>
               )}
             </div>
@@ -634,16 +629,14 @@ export function Wallet() {
       </div>
 
       <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* Funds availability notice — Creator+/Professional/Business only */}
-        {holdNoticeEligible && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-bold text-amber-900">Funds availability</p>
-              <p className="text-xs text-amber-700 mt-0.5">{PENDING_HOLD_COPY}</p>
-            </div>
+        {/* Funds availability notice — applies to every account tier */}
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-900">Funds availability</p>
+            <p className="text-xs text-amber-700 mt-0.5">{PENDING_HOLD_COPY}</p>
           </div>
-        )}
+        </div>
 
         {/* On Hold — Opportunity/Hire earnings held until work is confirmed complete */}
         {txs.some(t => (t.transaction_type === 'opportunity_earning' || t.transaction_type === 'hire_earning') && t.status === 'pending') && (
@@ -789,7 +782,36 @@ export function Wallet() {
           </div>
         )}
 
-        {/* Transaction history */}
+        {/* Pending balance — every pending transaction shown separately with
+            its own individually-computed 5-business-day availability date,
+            never combined into a single lump figure. Opportunity/hire
+            earnings held pending work-completion review stay in their own
+            "On Hold" section above (no simple date to show there). */}
+        {!showWalletLoader && txs.some(t => t.status === 'pending' && t.transaction_type !== 'opportunity_earning' && t.transaction_type !== 'hire_earning') && (
+          <div>
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Pending balance</p>
+            <div className="bg-white rounded-2xl border border-amber-100 divide-y divide-gray-50 overflow-hidden">
+              {txs.filter(t => t.status === 'pending' && t.transaction_type !== 'opportunity_earning' && t.transaction_type !== 'hire_earning').map(tx => (
+                <div key={tx.id} className="flex items-center gap-3 px-4 py-3.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-black text-gray-900">{fmtCad(tx.amount)}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-xs text-gray-400">{tx.description || TX_LABELS[tx.transaction_type] || tx.transaction_type.replace(/_/g, ' ')}</p>
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">Pending</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">Earned {new Date(tx.created_at).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                    <p className="text-[11px] text-amber-600 mt-0.5">{estimatedAvailabilityLabel(tx.available_at, tx.stripe_available_on)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Transaction history — settled/available transactions */}
         <div>
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Transaction history</p>
           {showWalletLoader ? (
@@ -800,27 +822,27 @@ export function Wallet() {
               <p className="text-sm font-bold text-gray-900 mb-1">No transactions yet</p>
               <p className="text-xs text-gray-400">Earnings from completed marketplace sales will show up here.</p>
             </div>
+          ) : txs.filter(t => t.status !== 'pending').length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 py-12 px-6 text-center">
+              <DollarSign className="w-8 h-8 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">No available transactions yet — everything above is still pending.</p>
+            </div>
           ) : (
             <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
-              {txs.map(tx => (
+              {txs.filter(t => t.status !== 'pending').map(tx => (
                 <div key={tx.id} className="flex items-center gap-3 px-4 py-3.5">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tx.status === 'pending' ? 'bg-amber-50' : 'bg-green-50'}`}>
-                    <ArrowUpRight className={`w-4 h-4 -rotate-45 ${tx.status === 'pending' ? 'text-amber-500' : 'text-green-500'}`} />
+                  <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
+                    <ArrowUpRight className="w-4 h-4 -rotate-45 text-green-500" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{tx.description || TX_LABELS[tx.transaction_type] || tx.transaction_type.replace(/_/g, ' ')}</p>
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs text-gray-400">{new Date(tx.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${tx.status === 'pending' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'}`}>
-                        {tx.status === 'pending' ? 'Pending' : 'Available'}
-                      </span>
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-green-100 text-green-600">Available</span>
                     </div>
-                    {tx.status === 'pending' && (
-                      <p className="text-[11px] text-amber-600 mt-0.5">{estimatedAvailabilityLabel(tx.available_at, tx.stripe_available_on)}</p>
-                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className={`text-sm font-black ${tx.status === 'pending' ? 'text-amber-600' : 'text-green-600'}`}>+{fmtCad(tx.amount)}</span>
+                    <span className="text-sm font-black text-green-600">+{fmtCad(tx.amount)}</span>
                     <button
                       onClick={() => navigate('/support', { state: {
                         walletTransactionId: tx.id, orderId: tx.order_id || undefined, category: 'wallet_payouts',

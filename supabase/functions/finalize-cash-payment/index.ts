@@ -8,6 +8,7 @@
 // passed here are cross-checked against a fresh checkout-quote calculation,
 // not trusted as-is).
 import { computeBreakdown } from '../_shared/pricing.ts';
+import { addBusinessDays } from '../_shared/businessDays.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -47,9 +48,9 @@ Deno.serve(async (req) => {
     // breakdown, same principle as stripe-charge.
     const breakdown = await computeBreakdown({ subtotal });
 
-    const availableAt = rentalEndDate
-      ? new Date(new Date(rentalEndDate).getTime() + 48 * 3600 * 1000).toISOString()
-      : new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    // Same 5-business-day hold as every other earning path on Filmons (see
+    // stripe-webhook/index.ts), anchored to the rental end date if known.
+    const availableAt = addBusinessDays(rentalEndDate ? new Date(rentalEndDate) : new Date(), 5).toISOString();
 
     const processed = await rpc('fn_finalize_payment', {
       p_idempotency_key: `cash_${orderId}`,
