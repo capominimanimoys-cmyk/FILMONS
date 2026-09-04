@@ -34,6 +34,9 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
   const [show, setShow] = useState(false);
+  const [dragY, setDragY] = useState(0);
+  const dragging = useRef(false);
+  const dragStartY = useRef(0);
 
   useEffect(() => {
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
@@ -43,6 +46,24 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
     setShow(false);
     setTimeout(onClose, 260);
   }, [onClose]);
+
+  // Swipe-down-to-dismiss -- same drag gesture as the shared BottomSheet.tsx.
+  const onHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = true;
+    dragStartY.current = e.clientY;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHandlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    const delta = e.clientY - dragStartY.current;
+    if (delta > 0) setDragY(delta);
+  };
+  const endHandleDrag = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    if (dragY > 100) { close(); return; }
+    setDragY(0);
+  };
 
   const share = async () => {
     const url = `${window.location.origin}/listing/${listing.id}`;
@@ -68,13 +89,19 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
         ref={sheetRef}
         className="fixed inset-x-0 bottom-0 z-[60] bg-white rounded-t-3xl shadow-2xl"
         style={{
-          transform: show ? 'translateY(0)' : 'translateY(100%)',
-          transition: 'transform 280ms cubic-bezier(0.32,0.72,0,1)',
+          transform: show ? `translateY(${dragY}px)` : 'translateY(100%)',
+          transition: dragging.current ? 'none' : 'transform 280ms cubic-bezier(0.32,0.72,0,1)',
           paddingBottom: 'calc(env(safe-area-inset-bottom)+8px)',
         }}
       >
-        {/* Drag handle */}
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-3" />
+        {/* Drag handle -- swipe down to dismiss */}
+        <div
+          className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-3 touch-none cursor-grab active:cursor-grabbing"
+          onPointerDown={onHandlePointerDown}
+          onPointerMove={onHandlePointerMove}
+          onPointerUp={endHandleDrag}
+          onPointerCancel={endHandleDrag}
+        />
 
         {/* Listing preview */}
         <div className="flex items-center gap-3 px-4 pb-3 border-b border-gray-100">

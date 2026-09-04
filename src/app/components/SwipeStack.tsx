@@ -381,6 +381,10 @@ interface SwipeStackProps {
    *  blocks the swipe itself; the deck is already sized to whatever was
    *  allowed at load time (see Home.tsx). */
   onSwipeListing?: (listingId: string) => void;
+  /** Fired whenever the current card changes (swipe/undo, not See Listing)
+   *  -- Home.tsx uses this to reset its bounded scroll region back to the
+   *  centered position for the new card. */
+  onCardChange?: () => void;
 }
 
 function readPersistedIdx(key: string): number {
@@ -396,7 +400,7 @@ export function clearPersistedSwipeIdx(key: string): void {
   try { sessionStorage.removeItem(`filmons_swipe_idx_${key}`); } catch {}
 }
 
-export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipeListing }: SwipeStackProps) {
+export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipeListing, onCardChange }: SwipeStackProps) {
   const { user } = useAuth();
   const navigate  = useNavigate();
   const [idx,     setIdx]     = useState(() => readPersistedIdx(persistKey));
@@ -425,6 +429,8 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
   useEffect(() => {
     try { sessionStorage.setItem(`filmons_swipe_idx_${persistKey}`, String(idx)); } catch {}
   }, [idx, persistKey]);
+
+  useEffect(() => { onCardChange?.(); }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fires onDone the moment idx reaches the end of the deck -- a
   // useLayoutEffect, not useEffect, so it (and whatever state update it

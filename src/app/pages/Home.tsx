@@ -264,6 +264,25 @@ export function Home() {
   const [loadError, setLoadError] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
 
+  // Fixed swipe interface -- the deck region gets its own small, bounded
+  // scroll (just enough to reveal the Pass/See Listing/Like labels on a
+  // short viewport) instead of the whole page scrolling freely. This ref
+  // is reset to the centered/top position on mount (covers "returning to
+  // Home from another page" since routes unmount/remount by default),
+  // filter change, card change (via SwipeStack's onCardChange), and
+  // resize/orientation change.
+  const deckScrollRef = useRef<HTMLDivElement>(null);
+  const resetDeckScroll = () => { deckScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' }); };
+  useEffect(() => {
+    resetDeckScroll();
+    window.addEventListener('resize', resetDeckScroll);
+    window.addEventListener('orientationchange', resetDeckScroll);
+    return () => {
+      window.removeEventListener('resize', resetDeckScroll);
+      window.removeEventListener('orientationchange', resetDeckScroll);
+    };
+  }, []);
+
   useEffect(() => {
     let done = false;
     setLoadError(false);
@@ -460,6 +479,7 @@ export function Home() {
     setDeckDone(false);
     setNoNewListings(false);
     setFilterKey(k => k + 1);
+    resetDeckScroll();
   };
 
   // "Browse All Listings" from the caught-up screen is deliberate
@@ -718,12 +738,22 @@ export function Home() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-100 pb-24 lg:pb-16">
+    // Fixed swipe interface, not a long scrolling feed -- height capped to
+    // exactly the slice of viewport between the (external, in-flow) top
+    // nav and the (fixed, padding-compensated) bottom nav, with overflow
+    // hidden here so the page itself never scrolls. Only the deck region
+    // below gets its own small bounded scroll. Mobile subtracts both the
+    // sticky TopBar (56px) and MobileBottomNav's reserved space (54px +
+    // safe-area); md/lg only subtract the 56px top bar (TopBar up to lg,
+    // DesktopTopBar from lg) since the bottom nav is hidden and `main`'s
+    // own bottom padding drops to 0 at md+ -- see MobileBottomNav.tsx /
+    // Root.tsx for those exact values.
+    <div className="h-[calc(100dvh-56px-54px-env(safe-area-inset-bottom))] md:h-[calc(100dvh-56px)] flex flex-col overflow-hidden bg-gray-100">
 
       {/* ── Search bar — desktop gets DesktopTopBar's search instead, in the
            global top bar above every page, not just Home ── */}
       <div
-        className="lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 lg:px-8"
+        className="shrink-0 lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 lg:px-8"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '10px' }}
       >
         <button
@@ -741,14 +771,20 @@ export function Home() {
            nothing underneath the loader to flash through. Once loading
            resolves (success OR error), this swaps once to the real
            content — no intermediate skeleton, no predefined animation
-           duration. ── */}
-      <div className="relative min-h-[60vh]">
+           duration.
+           This is also the bounded scroll region: `flex-1 min-h-0` lets it
+           fill exactly the leftover height under the search bar, and
+           `overflow-y-auto overscroll-contain` means any scroll it offers
+           is capped to the real overflow of its own content (typically
+           just enough to reveal the Pass/See Listing/Like labels on a
+           short viewport) rather than an open-ended page scroll. ── */}
+      <div ref={deckScrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
             <FilmonsBrandLoader size="lg"/>
           </div>
         ) : (
-          <>
+          <div className="min-h-full flex flex-col">
             {/* ── Filter chips — the Emergency chip itself is now
                  Professional/Business only. Emergency isn't a separate
                  browsable category for Guest/Creator/Creator+ at all
@@ -756,7 +792,7 @@ export function Home() {
                  listings, just inside each one's real category (Rental,
                  Services, ...) with an EMERGENCY badge on the card, capped
                  at emergencyDisplayLimit (2) per category. ── */}
-            <div ref={filterRowRef} className="pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
+            <div ref={filterRowRef} className="shrink-0 pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
               {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
                 <button
                   key={f.id}
@@ -775,8 +811,11 @@ export function Home() {
 
             {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop
                  just gets a bigger card via SwipeStack's own lg: classes, plus
-                 the sidebar/top bar chrome that renders outside this page. ── */}
-            <div className="mt-2 lg:mt-6 lg:px-8">
+                 the sidebar/top bar chrome that renders outside this page.
+                 flex-1 + justify-center: when there's leftover height in the
+                 bounded scroll region above, the card area centers vertically
+                 instead of sitting flush under the chips with dead space below. ── */}
+            <div className="flex-1 flex flex-col items-center justify-center mt-2 lg:mt-6 lg:px-8">
               {/* Explicit state ordering, each branch rendering its own UI
                   rather than falling through to a bare `return null` -- a
                   genuine fetch failure first, then (deckDone checked before
@@ -807,10 +846,11 @@ export function Home() {
                   persistKey={filter}
                   onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
                   onSwipeListing={filter === 'talent' ? handleOpportunitySwipe : undefined}
+                  onCardChange={resetDeckScroll}
                 />
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
 

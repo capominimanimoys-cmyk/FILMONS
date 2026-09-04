@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router';
 import { X, Search, UserCheck, UserPlus } from 'lucide-react';
 import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
 import { useFollow } from '../context/FollowContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface FollowerUser {
   id: string; name: string; username?: string;
@@ -35,6 +35,28 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
     setTimeout(onClose, 280);
   };
 
+  // Swipe-down-to-dismiss (mobile handle only -- same drag gesture as the
+  // shared BottomSheet.tsx and ListingCard.tsx's BottomMenuSheet).
+  const [dragY, setDragY] = useState(0);
+  const dragging = useRef(false);
+  const dragStartY = useRef(0);
+  const onHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = true;
+    dragStartY.current = e.clientY;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHandlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    const delta = e.clientY - dragStartY.current;
+    if (delta > 0) setDragY(delta);
+  };
+  const endHandleDrag = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    if (dragY > 100) { handleClose(); return; }
+    setDragY(0);
+  };
+
   const list = tab === 'followers' ? followers : following;
   const filtered = list.filter(u =>
     !search || u.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -57,13 +79,21 @@ export function FollowersModal({ tab, followers, following, onClose, onTabChange
       {/* Sheet — always slides up from the bottom, mobile and desktop alike */}
       <div className="fixed inset-0 z-50 flex items-end justify-center pointer-events-none">
         <div
-          className={`bg-white w-full md:max-w-sm rounded-t-3xl shadow-2xl flex flex-col pointer-events-auto
-            transition-transform duration-300 ease-out
-            ${visible ? 'translate-y-0' : 'translate-y-full'}`}
-          style={{ maxHeight: '80vh' }}
+          className="bg-white w-full md:max-w-sm rounded-t-3xl shadow-2xl flex flex-col pointer-events-auto"
+          style={{
+            maxHeight: '80vh',
+            transform: visible ? `translateY(${dragY}px)` : 'translateY(100%)',
+            transition: dragging.current ? 'none' : 'transform 300ms ease-out',
+          }}
         >
-          {/* Handle */}
-          <div className="flex justify-center pt-3 pb-1 shrink-0 md:hidden">
+          {/* Handle -- swipe down to dismiss (mobile only) */}
+          <div
+            className="flex justify-center pt-3 pb-1 shrink-0 md:hidden touch-none cursor-grab active:cursor-grabbing"
+            onPointerDown={onHandlePointerDown}
+            onPointerMove={onHandlePointerMove}
+            onPointerUp={endHandleDrag}
+            onPointerCancel={endHandleDrag}
+          >
             <div className="w-10 h-1 bg-gray-200 rounded-full" />
           </div>
 
