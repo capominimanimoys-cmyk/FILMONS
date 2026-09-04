@@ -577,7 +577,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
         >
           {cover ? (
             <img src={cover} alt={listing.title}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              className="w-full h-full object-cover transition-transform duration-500 md:group-hover:scale-[1.03]"
               loading="lazy" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl select-none">🎬</div>
