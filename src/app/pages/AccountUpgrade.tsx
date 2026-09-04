@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { captureSnapshot } from '../lib/smartAnimate';
-import { ArrowLeft, Check, ChevronRight, Lock, ShieldCheck } from 'lucide-react';
+import {
+  ArrowLeft, ChevronRight, Lock, ShieldCheck, Building2, Zap, CheckCircle, X,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../lib/api';
 import { normalizeTier, getTierBadge, type AccountTier } from '../lib/reliabilityApi';
-import { entitlementsApi, ENTITLEMENTS, formatLimit } from '../lib/entitlements';
+import { entitlementsApi, ENTITLEMENTS, formatLimit, formatPrice, getOpportunityUsage } from '../lib/entitlements';
 import { toast } from 'sonner';
 
 // Each tier shows exactly what IT adds (not inherited features — those are shown via inheritance label)
@@ -40,78 +42,196 @@ const TIERS: {
     ownFeatures: [
       `${formatLimit(ENTITLEMENTS.creator_plus.posts)} Opportunity post / ${ENTITLEMENTS.creator_plus.window}`,
       `${formatLimit(ENTITLEMENTS.creator_plus.applications)} Opportunity applications / ${ENTITLEMENTS.creator_plus.window}`,
-      '✓ Verified Creator+ badge',
+      'Verified Creator+ badge',
       'Host gear & studio rentals',
       'List creative services',
       'Booking & payout system',
       'Marketplace analytics',
       'Invoices & transaction tools',
       '3-dimension reliability score (Renter + Host + Service)',
-      'Verification auto-maxed (identity confirmed)',
     ],
     inherited: 'All Creator features',
   },
   {
     id: 'professional', label: 'Professional', emoji: '⭐',
-    price: '$9.99', sub: 'CAD/month',
+    price: formatPrice(ENTITLEMENTS.professional.priceCents), sub: 'CAD / month',
     accentColor: '#7c3aed', borderColor: 'border-purple-400', bgColor: 'bg-purple-50',
-    tagline: 'For creators who need more opportunities.',
+    tagline: 'For creators who want more opportunities and professional tools.',
     requires: 'Creator+ required',
     requiresTier: 'creator_plus',
     ownFeatures: [
-      `${formatLimit(ENTITLEMENTS.professional.posts)} Opportunity posts / ${ENTITLEMENTS.professional.window}`,
-      `${formatLimit(ENTITLEMENTS.professional.applications)} Opportunity applications / ${ENTITLEMENTS.professional.window}`,
-      '✓ Verified Professional badge',
-      'Professionally verified portfolio',
-      'Priority creator & service discovery',
-      'Advanced analytics dashboard',
-      'Lower platform fees',
-      'Instant booking eligibility',
-      'Featured placement eligibility',
-      'Priority dispute support',
-      'Professional trust dimension',
+      'Access all Emergency listings',
+      'Access all Opportunity listings',
+      `Post up to ${ENTITLEMENTS.professional.posts} Opportunities weekly`,
+      `Apply to up to ${ENTITLEMENTS.professional.applications} Opportunities weekly`,
+      'Professional account features',
+      'Professional badge',
     ],
     inherited: 'All Creator+ & Creator features',
   },
   {
     id: 'business', label: 'Business', emoji: '🏢',
-    price: '$19.99', sub: 'CAD/month',
+    price: formatPrice(ENTITLEMENTS.business.priceCents), sub: 'CAD / month',
     accentColor: '#b45309', borderColor: 'border-yellow-400', bgColor: 'bg-yellow-50',
-    tagline: 'For businesses and high-volume users.',
+    tagline: 'For businesses, studios, agencies and teams that need full access.',
     requires: 'Creator+ required',
     requiresTier: 'creator_plus',
     ownFeatures: [
       'Unlimited Opportunity posts',
       'Unlimited Opportunity applications',
-      '✓ Verified Business badge',
-      'Business profile',
-      'Applicant management',
-      'Opportunity insights',
-      'Team management (up to 10 members)',
-      'Multi-user roles (owner, admin, manager, editor)',
-      'Branded company storefront',
-      'Large inventory & warehouse hosting',
-      'Enterprise booking & scheduling system',
-      'Business invoices & tax export tools',
-      'Revenue & operational analytics',
-      'Business trust dimension',
+      'Unlimited Emergency listing access',
+      'Unlimited Opportunity listing access',
+      'Business tools',
+      'Business badge',
+      'Advanced business features',
     ],
     inherited: 'All Professional + Creator+ + Creator features',
   },
 ];
 
 // ── tier order ────────────────────────────────────────────────────────────────
-const TIER_ORDER: AccountTier[] = ['creator','creator_plus','professional','business'];
+const TIER_ORDER: AccountTier[] = ['creator', 'creator_plus', 'professional', 'business'];
 function tierRank(t: AccountTier) { return TIER_ORDER.indexOf(t); }
+
+// Personalized banner when the user arrived here from a specific locked
+// feature (?reason=...), rather than browsing plans generally. Kept to the
+// two concrete cases already wired up (Emergency access, weekly
+// application limit) -- every other entry point still lands on the
+// un-personalized page, which already explains the same limits via
+// "Your usage this week" below.
+const LOCKED_REASON_COPY: Record<string, { title: string; body: string }> = {
+  emergency: {
+    title: 'Unlock all Emergency listings',
+    body: 'Upgrade to Professional or Business to access all Emergency listings.',
+  },
+  applications: {
+    title: 'You reached your weekly application limit',
+    body: 'Creator+ includes 2 Opportunity applications per week. Upgrade to Professional for 5 per week or Business for unlimited access.',
+  },
+  posts: {
+    title: 'You reached your weekly posting limit',
+    body: 'Creator+ includes 1 Opportunity post per week. Upgrade to Professional for 5 per week or Business for unlimited access.',
+  },
+};
+
+const PLAN_ICON: Partial<Record<AccountTier, any>> = { professional: Zap, business: Building2 };
+
+// ── Checkout confirmation — mobile bottom sheet, desktop centered modal
+// with fade + scale (never a bottom sheet on desktop, per the FILMONS
+// modal motion spec). Never charges by itself -- "Confirm and pay" is what
+// actually starts the real Stripe Checkout redirect. ──
+function CheckoutConfirmModal({ tier, onClose, onConfirm, confirming }: {
+  tier: typeof TIERS[number]; onClose: () => void; onConfirm: () => void; confirming: boolean;
+}) {
+  const [agreed, setAgreed] = useState(false);
+  const [show, setShow] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => setShow(true))); }, []);
+  const close = () => { setShow(false); setTimeout(onClose, 180); };
+
+  const body = (
+    <>
+      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <p className="text-base font-black text-gray-900">Upgrade to {tier.label}</p>
+        <button onClick={close} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+          <X className="w-4 h-4 text-gray-500" />
+        </button>
+      </div>
+      <div className="px-5 pb-5 space-y-4">
+        <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">Plan</span>
+            <span className="font-bold text-gray-900">{tier.label} plan</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">Price</span>
+            <span className="font-bold text-gray-900">{tier.price} / month</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">Billing</span>
+            <span className="font-bold text-gray-900">Monthly</span>
+          </div>
+          <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-100 mt-2">
+            <span className="text-gray-700 font-semibold">Due today</span>
+            <span className="font-black text-gray-900 text-lg">{tier.price}</span>
+          </div>
+        </div>
+
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded accent-gray-900 shrink-0" />
+          <span className="text-xs text-gray-600 leading-relaxed">
+            I agree to the FILMONS subscription terms and recurring billing.
+          </span>
+        </label>
+
+        <button
+          onClick={onConfirm}
+          disabled={!agreed || confirming}
+          className="w-full py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-40 transition-opacity"
+          style={{ background: tier.accentColor }}
+        >
+          {confirming ? 'Starting checkout…' : 'Confirm and pay'}
+        </button>
+        <p className="text-center text-[11px] text-gray-400">Cancel anytime</p>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[70] bg-black/50"
+        style={{ opacity: show ? 1 : 0, transition: 'opacity 200ms ease' }}
+        onClick={close}
+      />
+      {/* Mobile: bottom sheet */}
+      <div className="lg:hidden fixed inset-x-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl"
+        style={{
+          transform: show ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 260ms cubic-bezier(0.32,0.72,0,1)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}>
+        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3" />
+        {body}
+      </div>
+      {/* Desktop: centered modal, fade + scale, never a bottom sheet */}
+      <div className="hidden lg:flex fixed inset-0 z-[70] items-center justify-center p-4" onClick={close}>
+        <div
+          className="bg-white rounded-3xl shadow-2xl w-full max-w-sm"
+          style={{
+            opacity: show ? 1 : 0,
+            transform: show ? 'scale(1)' : 'scale(0.96)',
+            transition: 'opacity 220ms ease-out, transform 220ms ease-out',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {body}
+        </div>
+      </div>
+    </>
+  );
+}
 
 export function AccountUpgrade() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { user, setUserDirectly } = useAuth();
   const current  = normalizeTier(user?.accountType);
-  const [expanded, setExpanded] = useState<AccountTier | null>(null);
   const [activating, setActivating] = useState(false);
   const [activatedPlan, setActivatedPlan] = useState<AccountTier | null>(null);
+  const [confirmPlan, setConfirmPlan] = useState<AccountTier | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [usage, setUsage] = useState<{ posts: number; applications: number } | null>(null);
+
+  const lockedReason = params.get('reason');
+  const lockedCopy = lockedReason ? LOCKED_REASON_COPY[lockedReason] : null;
+
+  // "Your usage this week" -- only meaningful for Creator+, whose tight
+  // weekly caps are exactly what a Professional/Business upgrade lifts.
+  useEffect(() => {
+    if (!user?.id || current !== 'creator_plus') return;
+    getOpportunityUsage(user.id, user.accountType).then(setUsage).catch(() => {});
+  }, [user?.id, current]);
 
   // Return from Stripe — mirrors BoostListingFlow.tsx's exact pattern.
   // Activation itself already happened server-side via the webhook; this
@@ -145,33 +265,42 @@ export function AccountUpgrade() {
     })();
   }, [params.get('sub_success')]);
 
-  const upgrade = async (id: AccountTier) => {
+  // Opens the checkout confirmation for a paid plan; Creator+ stays a
+  // direct route (free, verification-based, no payment to confirm).
+  const upgrade = (id: AccountTier) => {
     if (id === current) { toast.info('This is your current plan'); return; }
     if (tierRank(id) < tierRank(current)) { toast.info('Contact support to downgrade'); return; }
     if (id === 'creator_plus') { captureSnapshot(); navigate('/verification'); return; }
     if (id === 'professional' || id === 'business') {
       if (!user) { navigate('/login'); return; }
-      try {
-        const origin = window.location.origin;
-        const { url } = await entitlementsApi.startSubscriptionCheckout(
-          user.id, id, `${origin}/account/upgrade?sub_success=1&plan=${id}&session_id={CHECKOUT_SESSION_ID}`, `${origin}/account/upgrade`,
-        );
-        window.location.href = url;
-      } catch (e: any) {
-        toast.error(e?.message || 'Could not start checkout');
-      }
+      setConfirmPlan(id);
       return;
     }
     toast.info(`${TIERS.find(t=>t.id===id)?.label} upgrade — payment flow coming soon`);
   };
 
-  // Deep-link straight into a specific plan's checkout (?auto=professional
-  // or ?auto=business) -- used by the Opportunity display-limit upgrade
-  // gates (Home.tsx / SearchOverlay.tsx), whose two separate "Upgrade to
-  // Professional" / "Upgrade to Business" buttons would otherwise just
-  // land here and make the user find and tap the right plan card again.
-  // Guarded with a ref (not just consuming the param) so this can never
-  // re-fire and re-open Stripe checkout a second time, e.g. if `user`
+  const confirmAndPay = async () => {
+    if (!user || !confirmPlan) return;
+    setConfirming(true);
+    try {
+      const origin = window.location.origin;
+      const { url } = await entitlementsApi.startSubscriptionCheckout(
+        user.id, confirmPlan, `${origin}/account/upgrade?sub_success=1&plan=${confirmPlan}&session_id={CHECKOUT_SESSION_ID}`, `${origin}/account/upgrade`,
+      );
+      window.location.href = url;
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not start checkout');
+      setConfirming(false);
+    }
+  };
+
+  // Deep-link straight into a specific plan's checkout confirmation
+  // (?auto=professional or ?auto=business) -- used by the Opportunity/
+  // Emergency display-limit upgrade gates elsewhere in the app, whose
+  // "Upgrade to Professional" / "Upgrade to Business" buttons would
+  // otherwise just land here and make the user find and tap the right
+  // plan card again. Guarded with a ref (not just consuming the param) so
+  // this can never re-open the confirmation a second time, e.g. if `user`
   // resolves a moment after mount and this effect re-runs.
   const autoTriggeredRef = useRef(false);
   useEffect(() => {
@@ -189,21 +318,25 @@ export function AccountUpgrade() {
   if (activatedPlan) {
     const tier = TIERS.find(t => t.id === activatedPlan)!;
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-5">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-5 pop-in">
         <div className="max-w-sm w-full text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto"><ShieldCheck className="w-8 h-8 text-green-600" /></div>
           <div>
-            <h2 className="text-lg font-black text-gray-900">Welcome to Filmons {tier.label} ✓</h2>
-            <p className="text-sm text-gray-500 mt-1">Your {tier.label} account is now active. You can now post and apply to {activatedPlan === 'business' ? 'unlimited' : `up to ${ENTITLEMENTS[activatedPlan].posts}`} Opportunities {activatedPlan === 'business' ? 'each month' : `each ${ENTITLEMENTS[activatedPlan].window}`}.</p>
+            <h2 className="text-lg font-black text-gray-900">Welcome to {tier.label}</h2>
+            <p className="text-sm text-gray-500 mt-1">Your account has been upgraded successfully. Your new features are ready to use.</p>
           </div>
           <div className="flex flex-col gap-2">
-            <button onClick={() => navigate('/')} className="w-full py-3.5 rounded-2xl text-white font-bold text-sm" style={{ background: tier.accentColor }}>Explore Opportunities</button>
+            <button onClick={() => navigate('/')} className="w-full py-3.5 rounded-2xl text-white font-bold text-sm" style={{ background: tier.accentColor }}>Explore {tier.label} features</button>
             <button onClick={() => setActivatedPlan(null)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Done</button>
           </div>
         </div>
       </div>
     );
   }
+
+  const currentTierData = TIERS.find(t => t.id === current)!;
+  const subscriptionExpired = (current === 'professional' || current === 'business') && user?.subscriptionStatus === 'canceled';
+  const featuredTiers = TIERS.filter(t => t.id === 'professional' || t.id === 'business');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -214,189 +347,194 @@ export function AccountUpgrade() {
         <h1 className="text-base font-black text-gray-900">Account Upgrade</h1>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6">
+      <div className="max-w-lg lg:max-w-4xl mx-auto px-4 py-6">
 
-        {/* Hero */}
-        <div className="text-center mb-6">
-          <p className="text-xl font-black text-gray-900">Grow your creative career</p>
-          <p className="text-sm text-gray-500 mt-1">Each tier builds on the one below — nothing is lost when you upgrade.</p>
-        </div>
-
-        {/* Progression ladder */}
-        <div className="flex items-center justify-center gap-1 mb-6 overflow-x-auto py-1">
-          {TIERS.map((t, i) => (
-            <div key={t.id} className="flex items-center gap-1 shrink-0">
-              <div className={`flex flex-col items-center px-2 py-1.5 rounded-xl text-center ${
-                t.id === current ? 'bg-white border-2 shadow-sm' : 'bg-gray-50 border border-gray-200'
-              }`} style={t.id === current ? { borderColor: t.accentColor } : {}}>
-                <span className="text-xl">{t.emoji}</span>
-                <p className="text-[10px] font-black" style={{ color: t.id === current ? t.accentColor : '#9ca3af' }}>{t.label}</p>
-                {t.id === current && <p className="text-[8px] font-bold" style={{ color: t.accentColor }}>YOU</p>}
-              </div>
-              {i < TIERS.length - 1 && <ChevronRight className="w-3 h-3 text-gray-300 shrink-0"/>}
+        {/* Locked-feature personalization -- only when arriving from a
+            specific gate (?reason=...); otherwise the generic hero below. */}
+        {lockedCopy ? (
+          <div className="text-center mb-6 pop-in">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-3">
+              <Lock className="w-6 h-6 text-amber-500" />
             </div>
-          ))}
+            <p className="text-xl font-black text-gray-900">{lockedCopy.title}</p>
+            <p className="text-sm text-gray-500 mt-1 max-w-sm mx-auto">{lockedCopy.body}</p>
+          </div>
+        ) : (
+          <div className="text-center mb-6 pop-in">
+            <p className="text-xl font-black text-gray-900">Choose the account that fits your work</p>
+            <p className="text-sm text-gray-500 mt-1">Unlock more opportunities, professional tools and ways to grow on FILMONS.</p>
+          </div>
+        )}
+
+        {/* Your current account */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6 flex items-center justify-between pop-in">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{currentTierData.emoji}</span>
+            <div>
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Your current account</p>
+              <div className="flex items-center gap-2">
+                <p className="text-base font-black text-gray-900">{currentTierData.label}</p>
+                {subscriptionExpired ? (
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-600">Subscription expired</span>
+                ) : (
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-green-50 text-green-600">Current plan</span>
+                )}
+              </div>
+            </div>
+          </div>
+          {subscriptionExpired && (
+            <button onClick={() => upgrade(current)} className="text-xs font-bold px-3.5 py-2 rounded-xl text-white shrink-0" style={{ background: currentTierData.accentColor }}>
+              Renew {currentTierData.label}
+            </button>
+          )}
         </div>
 
-        {/* Tier cards */}
-        <div className="space-y-3">
-          {TIERS.map(tier => {
-            const isCurrent  = tier.id === current;
-            const isAbove    = tierRank(tier.id) > tierRank(current);
-            const isBelow    = tierRank(tier.id) < tierRank(current);
-            const isExpanded = expanded === tier.id;
-            const locked     = tier.requiresTier && tierRank(current) < tierRank(tier.requiresTier);
+        {/* Your usage this week — Creator+ only, the tier the tight weekly
+            caps actually apply to. */}
+        {current === 'creator_plus' && usage && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6 pop-in">
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Your usage this week</p>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">Opportunity posts</p>
+                <p className="text-lg font-black text-gray-900">{Math.min(usage.posts, ENTITLEMENTS.creator_plus.posts!)} of {ENTITLEMENTS.creator_plus.posts} used</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">Applications</p>
+                <p className="text-lg font-black text-gray-900">{Math.min(usage.applications, ENTITLEMENTS.creator_plus.applications!)} of {ENTITLEMENTS.creator_plus.applications} used</p>
+              </div>
+            </div>
+            <button onClick={() => upgrade('professional')}
+              className="w-full flex items-center justify-between gap-2 bg-purple-50 hover:bg-purple-100 transition-colors rounded-xl px-4 py-3 text-left">
+              <div>
+                <p className="text-sm font-bold text-purple-700">Upgrade to Professional</p>
+                <p className="text-xs text-purple-500">Get up to 5 Opportunity posts and 5 applications each week.</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-purple-400 shrink-0" />
+            </button>
+          </div>
+        )}
 
+        {/* Featured plan cards — Professional & Business, side by side on
+            desktop, stacked on mobile. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          {featuredTiers.map(tier => {
+            const Icon = PLAN_ICON[tier.id];
+            const locked = tier.requiresTier && tierRank(current) < tierRank(tier.requiresTier);
+            const isBusiness = tier.id === 'business';
             return (
               <div key={tier.id}
-                className={`rounded-2xl border-2 overflow-hidden transition-all ${tier.borderColor} ${tier.bgColor}`}
-                style={isCurrent ? { boxShadow:`0 0 0 2px ${tier.accentColor}` } : {}}>
+                className={`relative rounded-3xl border-2 ${tier.borderColor} ${tier.bgColor} p-5 pop-in ${isBusiness ? 'lg:scale-[1.02]' : ''}`}>
+                {isBusiness && (
+                  <span className="absolute -top-3 left-5 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full text-white shadow-sm" style={{ background: tier.accentColor }}>
+                    Most Powerful
+                  </span>
+                )}
+                <div className="flex items-center gap-2 mb-1">
+                  {Icon && <Icon className="w-5 h-5" style={{ color: tier.accentColor }} />}
+                  <p className="text-lg font-black uppercase tracking-wide" style={{ color: tier.accentColor }}>{tier.label}</p>
+                  {getTierBadge(tier.id) && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white ml-auto" style={{ background: tier.accentColor }}>
+                      {getTierBadge(tier.id)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-600 mb-4">{tier.tagline}</p>
 
-                {/* Current indicator */}
-                {isCurrent && (
-                  <div className="px-4 py-1.5 text-center text-[10px] font-black tracking-widest text-white"
+                <div className="space-y-2 mb-5">
+                  {tier.ownFeatures.map(f => (
+                    <div key={f} className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: tier.accentColor }} />
+                      <p className="text-sm text-gray-700">{f}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-baseline gap-1 mb-3">
+                  <span className="text-2xl font-black text-gray-900">{tier.price}</span>
+                  <span className="text-xs text-gray-400">{tier.sub}</span>
+                </div>
+
+                {current === tier.id ? (
+                  <div className="w-full py-3 rounded-2xl text-sm font-bold text-center" style={{ background: `${tier.accentColor}15`, color: tier.accentColor }}>
+                    Your Current Plan
+                  </div>
+                ) : (
+                  <button onClick={() => upgrade(tier.id)} disabled={!!locked}
+                    className="w-full py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-40 transition-opacity flex items-center justify-center gap-1.5"
                     style={{ background: tier.accentColor }}>
-                    CURRENT PLAN
-                  </div>
+                    {locked ? <><Lock className="w-3.5 h-3.5" /> Requires Creator+ first</> : `Upgrade to ${tier.label}`}
+                  </button>
                 )}
-
-                {/* Header */}
-                <button onClick={() => setExpanded(isExpanded ? null : tier.id)}
-                  className="w-full flex items-center gap-3 px-4 py-4 text-left">
-                  <span className="text-2xl shrink-0">{tier.emoji}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-base font-black text-gray-900">{tier.label}</p>
-                      {getTierBadge(tier.id) && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                          style={{ background: tier.accentColor }}>
-                          {getTierBadge(tier.id)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{tier.tagline}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="text-right">
-                      <p className="text-base font-black text-gray-900">{tier.price}</p>
-                      <p className="text-[10px] text-gray-400">{tier.sub}</p>
-                    </div>
-                    <ChevronRight className={`w-4 h-4 text-gray-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`}/>
-                  </div>
-                </button>
-
-                {/* Expanded features */}
-                {isExpanded && (
-                  <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
-
-                    {/* Requirements */}
-                    {tier.requires && (
-                      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">
-                        {locked && <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5"/>}
-                        <p className="text-[11px] text-amber-700 font-semibold">{tier.requires}</p>
-                      </div>
-                    )}
-
-                    {/* Inherited */}
-                    {tier.inherited && (
-                      <div className="flex items-center gap-2 py-2 border-b border-gray-100">
-                        <span className="text-xs text-gray-400">Includes:</span>
-                        <span className="text-xs font-semibold text-gray-600">{tier.inherited}</span>
-                      </div>
-                    )}
-
-                    {/* Own features */}
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
-                        {tier.inherited ? 'Plus these additions:' : 'Included:'}
-                      </p>
-                      {tier.ownFeatures.map(f => (
-                        <div key={f} className="flex items-start gap-2">
-                          <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: tier.accentColor }}/>
-                          <p className="text-xs text-gray-700">{f}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* CTA */}
-                    {!isCurrent && (
-                      <button onClick={() => upgrade(tier.id)}
-                        disabled={!!locked}
-                        className="w-full py-3 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-40 mt-2"
-                        style={{ background: tier.accentColor }}>
-                        {locked ? `Requires ${TIERS.find(t=>t.id===tier.requiresTier)?.label} first` :
-                         isAbove ? `Upgrade to ${tier.label}` :
-                         isBelow ? `Downgrade to ${tier.label}` : 'Select'}
-                      </button>
-                    )}
-                    {isCurrent && (
-                      <div className="space-y-2">
-                        <div className="w-full py-3 rounded-xl text-sm font-bold text-center"
-                          style={{ background:`${tier.accentColor}15`, color: tier.accentColor }}>
-                          ✓ Your Current Plan
-                        </div>
-                        {(tier.id === 'professional' || tier.id === 'business') && (
-                          user?.subscriptionCancelAtPeriodEnd ? (
-                            <p className="text-center text-[11px] text-gray-400">
-                              Active until {user.subscriptionCurrentPeriodEnd ? new Date(user.subscriptionCurrentPeriodEnd).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : 'the end of this billing period'}
-                            </p>
-                          ) : (
-                            <button onClick={async () => {
-                              if (!user) return;
-                              try { await entitlementsApi.cancelSubscription(user.id); toast.success('Subscription will end at the current billing period'); }
-                              catch (e: any) { toast.error(e?.message || 'Could not cancel subscription'); }
-                            }} className="w-full text-center text-[11px] font-semibold text-gray-400 underline">
-                              Cancel subscription
-                            </button>
-                          )
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <p className="text-center text-[11px] text-gray-400 mt-2">Cancel anytime</p>
               </div>
             );
           })}
         </div>
 
-        {/* Plan comparison */}
-        <div className="mt-6 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <p className="text-xs font-black text-gray-700 uppercase tracking-wide px-4 pt-4 pb-2">Plan comparison</p>
+        {/* Creator+ path -- only relevant while still on the free Creator
+            tier; a compact card, not a paid plan. */}
+        {current === 'creator' && (
+          <div className="bg-white rounded-2xl border-2 border-blue-200 shadow-sm p-4 mb-6 pop-in">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-black text-blue-700">Creator+</p>
+                <p className="text-xs text-gray-500 mt-0.5">Verify your identity to unlock the marketplace, free.</p>
+              </div>
+              <button onClick={() => upgrade('creator_plus')} className="shrink-0 text-xs font-bold px-3.5 py-2.5 rounded-xl text-white bg-blue-600">
+                Get Creator+
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Compare accounts */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6 pop-in">
+          <p className="text-xs font-black text-gray-700 uppercase tracking-wide px-4 pt-4 pb-2">Compare accounts</p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-400">
-                  <th className="text-left font-semibold px-4 py-2">&nbsp;</th>
-                  <th className="text-center font-semibold px-2 py-2">Creator</th>
+                  <th className="text-left font-semibold px-4 py-2">Feature</th>
+                  <th className="text-center font-semibold px-2 py-2">Creator+</th>
                   <th className="text-center font-semibold px-2 py-2">Professional</th>
                   <th className="text-center font-semibold px-2 py-2">Business</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                <tr><td className="px-4 py-2 text-gray-500">Price</td><td className="text-center px-2 py-2">Free</td><td className="text-center px-2 py-2 font-semibold">$9.99/mo</td><td className="text-center px-2 py-2 font-semibold">$19.99/mo</td></tr>
-                <tr><td className="px-4 py-2 text-gray-500">Opportunity Posts</td><td className="text-center px-2 py-2">2/mo</td><td className="text-center px-2 py-2">5/mo</td><td className="text-center px-2 py-2">Unlimited</td></tr>
-                <tr><td className="px-4 py-2 text-gray-500">Applications</td><td className="text-center px-2 py-2">2/mo</td><td className="text-center px-2 py-2">5/mo</td><td className="text-center px-2 py-2">Unlimited</td></tr>
-                <tr><td className="px-4 py-2 text-gray-500">Professional Tools</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">✓</td><td className="text-center px-2 py-2">✓</td></tr>
-                <tr><td className="px-4 py-2 text-gray-500">Business Profile</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">✓</td></tr>
-                <tr><td className="px-4 py-2 text-gray-500">Business Tools</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">—</td><td className="text-center px-2 py-2">✓</td></tr>
+                <tr><td className="px-4 py-2.5 text-gray-500">Opportunity posts</td><td className="text-center px-2 py-2.5">1 weekly</td><td className="text-center px-2 py-2.5 font-semibold">5 weekly</td><td className="text-center px-2 py-2.5 font-semibold">Unlimited</td></tr>
+                <tr><td className="px-4 py-2.5 text-gray-500">Opportunity applications</td><td className="text-center px-2 py-2.5">2 weekly</td><td className="text-center px-2 py-2.5 font-semibold">5 weekly</td><td className="text-center px-2 py-2.5 font-semibold">Unlimited</td></tr>
+                <tr><td className="px-4 py-2.5 text-gray-500">All Opportunity listings</td><td className="text-center px-2 py-2.5">No</td><td className="text-center px-2 py-2.5">Yes</td><td className="text-center px-2 py-2.5">Yes</td></tr>
+                <tr><td className="px-4 py-2.5 text-gray-500">All Emergency listings</td><td className="text-center px-2 py-2.5">No</td><td className="text-center px-2 py-2.5">Yes</td><td className="text-center px-2 py-2.5">Yes</td></tr>
+                <tr><td className="px-4 py-2.5 text-gray-500">Professional features</td><td className="text-center px-2 py-2.5">No</td><td className="text-center px-2 py-2.5">Yes</td><td className="text-center px-2 py-2.5">Yes</td></tr>
+                <tr><td className="px-4 py-2.5 text-gray-500">Business features</td><td className="text-center px-2 py-2.5">No</td><td className="text-center px-2 py-2.5">No</td><td className="text-center px-2 py-2.5">Yes</td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
         {/* Philosophy note */}
-        <div className="mt-6 bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-          <p className="text-xs font-bold text-gray-700 mb-2">The Filmons progression</p>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm pop-in">
+          <p className="text-xs font-bold text-gray-700 mb-2">The FILMONS progression</p>
           <p className="text-[11px] text-gray-500 leading-relaxed">
-            Creator → Creator+ → Professional → Business is a creative career journey — not just a subscription tier.
+            Creator, Creator+, Professional, Business is a creative career journey, not just a subscription tier.
             Each level requires real verification and real activity. Trust is earned, not purchased.
           </p>
         </div>
 
         <p className="text-center text-[10px] text-gray-400 mt-4 pb-24">
-          Cancel anytime — access continues until the end of your billing period
+          Cancel anytime, access continues until the end of your billing period
         </p>
       </div>
+
+      {confirmPlan && (
+        <CheckoutConfirmModal
+          tier={TIERS.find(t => t.id === confirmPlan)!}
+          onClose={() => { if (!confirming) setConfirmPlan(null); }}
+          onConfirm={confirmAndPay}
+          confirming={confirming}
+        />
+      )}
     </div>
   );
 }

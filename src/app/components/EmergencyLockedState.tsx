@@ -98,8 +98,8 @@ export function EmergencyUpgradeModal({ onClose, isAuthenticated }: { onClose: (
           <button
             onClick={() => {
               onClose();
-              if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
-              navigate('/account/upgrade?auto=professional');
+              if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional&reason=emergency'); navigate('/login'); return; }
+              navigate('/account/upgrade?auto=professional&reason=emergency');
             }}
             className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}
           >
@@ -108,8 +108,8 @@ export function EmergencyUpgradeModal({ onClose, isAuthenticated }: { onClose: (
           <button
             onClick={() => {
               onClose();
-              if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
-              navigate('/account/upgrade?auto=business');
+              if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business&reason=emergency'); navigate('/login'); return; }
+              navigate('/account/upgrade?auto=business&reason=emergency');
             }}
             className={`w-full py-3 text-sm font-bold rounded-2xl active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}
           >
