@@ -95,6 +95,17 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
   }, []);
 
+  // Lock body scroll while open -- this sheet can be triggered by a mobile
+  // long-press (see ListingCard's startPress), and without a scroll lock
+  // that same touch gesture can also register as the start of a page
+  // scroll underneath, making the listing grid visibly shift/jump right as
+  // the sheet opens. Same pattern as CommentSheet.tsx/Sidebar.tsx.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const close = useCallback(() => {
     setShow(false);
     setTimeout(onClose, 260);
