@@ -158,6 +158,77 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
   );
 }
 
+// ── Desktop popover menu — anchored beside/under the three-dot button
+// instead of sliding up from the bottom. Same actions as BottomMenuSheet,
+// laid out compactly (icon + label, no description line) as a standard
+// desktop dropdown. Fade + slight downward move + scale, per the FILMONS
+// desktop menu motion spec (opacity 0->1, scale 0.96->1, y -4px->0,
+// 160-200ms in; closing reverses slightly faster). ──
+function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants }: {
+  listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
+  isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
+  isEmergency: boolean; onEmergency: () => void; onViewApplicants?: () => void;
+}) {
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
+  }, []);
+
+  const close = useCallback(() => {
+    setShow(false);
+    setTimeout(onClose, 120);
+  }, [onClose]);
+
+  const share = async () => {
+    const url = `${window.location.origin}/listing/${listing.id}`;
+    if (navigator.share) { try { await navigator.share({ title: listing.title, url }); } catch {} }
+    else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
+    close();
+  };
+
+  const actions = [
+    ...(isOwn ? [
+      { icon: <Pencil className="w-4 h-4"/>, label: 'Edit Listing', color: 'text-gray-700', action: () => { close(); onEdit(); } },
+      ...(onViewApplicants ? [
+        { icon: <Users className="w-4 h-4"/>, label: 'View Applicants', color: 'text-gray-700', action: () => { close(); onViewApplicants(); } },
+      ] : []),
+      { icon: <AlertTriangle className={`w-4 h-4 ${isEmergency ? 'fill-red-500 text-red-500' : ''}`}/>, label: isEmergency ? 'Emergency Active' : 'Make Emergency Listing', color: isEmergency ? 'text-red-600' : 'text-gray-700', action: () => { close(); onEmergency(); } },
+      { icon: <Trash2 className="w-4 h-4"/>, label: 'Delete Listing', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
+    ] : []),
+    { icon: <Bookmark className="w-4 h-4"/>, label: saved ? 'Remove from saved' : 'Save listing', color: 'text-gray-700', action: () => { onSave(); close(); } },
+    { icon: <Share2 className="w-4 h-4"/>,   label: 'Share listing', color: 'text-gray-700', action: share },
+    ...(isOwn ? [] : [
+      { icon: <EyeOff className="w-4 h-4"/>, label: 'Hide listing',   color: 'text-gray-600', action: () => { toast('Listing hidden'); close(); } },
+      { icon: <Flag className="w-4 h-4"/>,   label: 'Report listing', color: 'text-red-500', action: () => { toast.info('Report submitted — thank you'); close(); } },
+    ]),
+  ];
+
+  return (
+    <>
+      {/* Invisible click-outside catcher */}
+      <div className="fixed inset-0 z-[59]" onClick={close} />
+      <div
+        className="w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 origin-top-right"
+        style={{
+          opacity: show ? 1 : 0,
+          transform: show ? 'translateY(0) scale(1)' : 'translateY(-4px) scale(0.96)',
+          transition: show ? 'opacity 180ms ease-out, transform 180ms ease-out' : 'opacity 120ms ease-in, transform 120ms ease-in',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {actions.map((a, i) => (
+          <button key={i} onClick={a.action}
+            className={`w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-gray-50 transition-colors text-left ${a.color}`}>
+            {a.icon}
+            <span className="text-sm font-semibold">{a.label}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // ── Delete confirmation — checks active rentals server-side before the
 // soft-delete actually happens (see supabase/functions/delete-listing). ──
 function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
@@ -355,18 +426,23 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
     : listing.listingType === 'service' ? '/hr'
     : listing.listingMode === 'sale' ? '' : '/day';
 
+  const menuProps = {
+    listing, saved, onSave: () => handleSave(), onClose: () => setSheet(false),
+    isOwn,
+    onEdit: () => navigate(`/edit-listing/${listing.id}`),
+    onDeleteRequest: () => setShowDeleteConfirm(true),
+    isEmergency, onEmergency: () => navigate(`/listing/${listing.id}/emergency`),
+    onViewApplicants: isOpportunity ? () => navigate(`/listing/${listing.id}/applicants`) : undefined,
+  };
+
   return (
     <>
-      {/* Menu */}
+      {/* Menu — mobile: bottom sheet sliding up. Desktop: anchored popover
+          rendered next to the three-dot button below, not here. */}
       {sheet && (
-        <BottomMenuSheet
-          listing={listing} saved={saved} onSave={() => handleSave()} onClose={() => setSheet(false)}
-          isOwn={isOwn}
-          onEdit={() => navigate(`/edit-listing/${listing.id}`)}
-          onDeleteRequest={() => setShowDeleteConfirm(true)}
-          isEmergency={isEmergency} onEmergency={() => navigate(`/listing/${listing.id}/emergency`)}
-          onViewApplicants={isOpportunity ? () => navigate(`/listing/${listing.id}/applicants`) : undefined}
-        />
+        <div className="lg:hidden">
+          <BottomMenuSheet {...menuProps} />
+        </div>
       )}
       {showDeleteConfirm && user?.id && (
         <DeleteConfirmModal
@@ -388,8 +464,16 @@ export function ListingCard({ listing, onClick, className = '', onDeleted }: Lis
         onTouchStart={startPress}
         onTouchEnd={endPress}
         onTouchMove={endPress}
-        className={`cursor-pointer group select-none film-card active:scale-[0.98] transition-transform duration-100 ${className}`}
+        className={`relative cursor-pointer group select-none film-card active:scale-[0.98] transition-transform duration-100 ${className}`}
       >
+        {/* Desktop popover menu anchor -- rendered here, outside the image
+            container's overflow-hidden, so it isn't clipped. Positioned to
+            line up with the three-dot button inside that container. */}
+        {sheet && (
+          <div className="hidden lg:block absolute top-10 right-2 z-[60]" onClick={e => e.stopPropagation()}>
+            <DesktopListingMenu {...menuProps} />
+          </div>
+        )}
         {/* Image container — shares a data-animate-id with ListingDetail's
             hero image so tapping into a listing FLIPs the card into place
             (smartAnimate.ts's manual FLIP, see captureSnapshot() in

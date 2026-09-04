@@ -617,7 +617,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default', onSwipe
     // it those values compare directly against the page's sticky search
     // bar (z-20) in the shared root stacking context and win, so the deck
     // painted in front of the search bar while scrolling past it.
-    <div className="flex flex-col items-center px-4 lg:px-0 lg:max-w-2xl lg:mx-auto isolate">
+    <div className="flex flex-col items-center px-2.5 lg:px-0 lg:max-w-2xl lg:mx-auto isolate">
       {/* Card stack — height must fit the tallest rendered card (image +
           text content), not just the image, or the card visually overflows
           this container and covers the counter/buttons below it (they're

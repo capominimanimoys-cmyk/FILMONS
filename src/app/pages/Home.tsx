@@ -738,17 +738,15 @@ export function Home() {
   );
 
   return (
-    // Fixed swipe interface, not a long scrolling feed -- height capped to
-    // exactly the slice of viewport between the (external, in-flow) top
-    // nav and the (fixed, padding-compensated) bottom nav, with overflow
-    // hidden here so the page itself never scrolls. Only the deck region
-    // below gets its own small bounded scroll. Mobile subtracts both the
-    // sticky TopBar (56px) and MobileBottomNav's reserved space (54px +
-    // safe-area); md/lg only subtract the 56px top bar (TopBar up to lg,
-    // DesktopTopBar from lg) since the bottom nav is hidden and `main`'s
-    // own bottom padding drops to 0 at md+ -- see MobileBottomNav.tsx /
-    // Root.tsx for those exact values.
-    <div className="h-[calc(100dvh-56px-54px-env(safe-area-inset-bottom))] md:h-[calc(100dvh-56px)] flex flex-col overflow-hidden bg-gray-100">
+    // Fixed swipe interface below lg (mobile and tablet, where TopBar +
+    // this page's own sticky search bar still render) -- height capped to
+    // exactly the slice of viewport between the top nav and the bottom
+    // nav, with overflow hidden here so the page itself never scrolls;
+    // only the deck region below gets its own small bounded scroll. At lg+
+    // (real desktop, sidebar layout, DesktopTopBar), this reverts entirely
+    // to the original free-scrolling min-h-screen page -- desktop keeps
+    // its previous behavior, only mobile/tablet get the bounded interface.
+    <div className="h-[calc(100dvh-56px-54px-env(safe-area-inset-bottom))] md:h-[calc(100dvh-56px)] flex flex-col overflow-hidden bg-gray-100 lg:h-auto lg:min-h-screen lg:flex lg:flex-col lg:overflow-visible lg:pb-16">
 
       {/* ── Search bar — desktop gets DesktopTopBar's search instead, in the
            global top bar above every page, not just Home ── */}
@@ -778,7 +776,7 @@ export function Home() {
            is capped to the real overflow of its own content (typically
            just enough to reveal the Pass/See Listing/Like labels on a
            short viewport) rather than an open-ended page scroll. ── */}
-      <div ref={deckScrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain">
+      <div ref={deckScrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain lg:flex-none lg:min-h-[60vh] lg:h-auto lg:overflow-visible">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
             <FilmonsBrandLoader size="lg"/>
