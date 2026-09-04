@@ -95,31 +95,43 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
   }, []);
 
-  // Lock body scroll while open -- this sheet can be triggered by a mobile
-  // long-press (see ListingCard's startPress). A plain `overflow: hidden`
-  // (the pattern used elsewhere in this app, e.g. CommentSheet.tsx) still
-  // let the listing grid visibly shift on open/close here: on iOS Safari
-  // specifically, toggling overflow:hidden on body can snap the page's
-  // scroll position and/or reflow around the (dis)appearing scrollbar,
-  // which is exactly the "listings move" symptom. This uses the more
-  // robust position:fixed lock instead -- pins body at its exact current
-  // scroll offset via a negative `top`, so nothing can reflow or rescroll
-  // under it, then restores the precise scroll position on close.
+  // Lock body scroll while open. The real cause of "the listing card shifts
+  // right on tap" turned out to be simpler than the touch/long-press
+  // theories this comment used to describe: taking body out of flow
+  // (whether via overflow:hidden or position:fixed) removes the page's own
+  // vertical scrollbar, which WIDENS the available layout width by the
+  // scrollbar's own width -- any centered content (a grid, a max-w-*
+  // mx-auto container) re-centers into that extra space and visibly jumps
+  // sideways the instant the sheet opens, then jumps back on close. Fixed
+  // by measuring the scrollbar's width up front and reserving that exact
+  // amount as padding-right while locked, so the available content width
+  // never actually changes. Still uses position:fixed (not overflow:hidden)
+  // to pin the exact scroll offset too, avoiding the separate iOS
+  // scroll-snap issue this was originally written for.
   useEffect(() => {
+    const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
     const scrollY = window.scrollY;
     const body = document.body;
-    const prev = { position: body.style.position, top: body.style.top, left: body.style.left, right: body.style.right, width: body.style.width };
+    const prev = {
+      position: body.style.position, top: body.style.top, left: body.style.left,
+      right: body.style.right, width: body.style.width, paddingRight: body.style.paddingRight,
+    };
     body.style.position = 'fixed';
     body.style.top = `-${scrollY}px`;
     body.style.left = '0';
     body.style.right = '0';
     body.style.width = '100%';
+    if (scrollBarWidth > 0) {
+      const currentPaddingRight = parseFloat(getComputedStyle(body).paddingRight) || 0;
+      body.style.paddingRight = `${currentPaddingRight + scrollBarWidth}px`;
+    }
     return () => {
       body.style.position = prev.position;
       body.style.top = prev.top;
       body.style.left = prev.left;
       body.style.right = prev.right;
       body.style.width = prev.width;
+      body.style.paddingRight = prev.paddingRight;
       window.scrollTo(0, scrollY);
     };
   }, []);
