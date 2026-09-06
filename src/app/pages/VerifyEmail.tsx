@@ -114,6 +114,17 @@ export function VerifyEmail() {
         password: pending.password,
       });
       if (authError || !authData.user) {
+        // CreateAccount.tsx already checks for this via checkAuthMethods
+        // before a code is ever sent, so reaching it here should be rare
+        // (a genuine race between two concurrent signup attempts for the
+        // same email). Still handled gracefully rather than surfacing
+        // Supabase's raw "User already registered" wording.
+        if (authError?.message?.toLowerCase().includes('already registered')) {
+          toast.error('This email is already registered. Please sign in instead.');
+          navigate(`/email-already-exists?email=${encodeURIComponent(pending.email)}`);
+          setLoading(false);
+          return;
+        }
         toast.error(authError?.message || 'Failed to create account.');
         setLoading(false);
         return;
@@ -135,7 +146,7 @@ export function VerifyEmail() {
 
       if (profileError) {
         if (profileError.code === '23505') {
-          toast.error('Email already in use — this email address is already connected to another Filmons account.');
+          toast.error('This email address is already connected to another Filmons account.');
         } else {
           toast.error('Account created but profile setup failed. Please contact support.');
         }

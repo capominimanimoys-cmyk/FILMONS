@@ -14,6 +14,7 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
+import { authApi } from '../lib/api';
 
 export const PENDING_SIGNUP_KEY = 'filmons_pending_signup';
 
@@ -84,6 +85,28 @@ export function CreateAccount() {
         const provider = meta?.provider as string | undefined;
         const knownProvider = provider === 'google' || provider === 'apple' ? provider : null;
 
+        const params = new URLSearchParams({ email: normalEmail });
+        if (knownProvider) params.set('provider', knownProvider);
+        navigate(`/email-already-exists?${params.toString()}`);
+        setLoading(false);
+        return;
+      }
+
+      // No profiles row -- but that alone doesn't mean the email is free.
+      // A previous signup attempt can leave a real auth.users row with no
+      // matching profile (e.g. the tab closed, or a network drop, between
+      // supabase.auth.signUp() succeeding in VerifyEmail.tsx and the
+      // profile insert that follows it). Without this check, that person
+      // would sail through here, verify a brand new code, and only THEN
+      // discover the problem when VerifyEmail's own auth.signUp() call
+      // fails with "User already registered" -- a much more confusing
+      // dead end than catching it here, before any code is even sent.
+      // checkAuthMethods reads the real auth.users/identities record
+      // (never guessed), same ground-truth check signin() already uses.
+      const authCheck = await authApi.checkAuthMethods(normalEmail);
+      if (authCheck.exists) {
+        const knownProvider = authCheck.providers.includes('google') ? 'google'
+          : authCheck.providers.includes('apple') ? 'apple' : null;
         const params = new URLSearchParams({ email: normalEmail });
         if (knownProvider) params.set('provider', knownProvider);
         navigate(`/email-already-exists?${params.toString()}`);
