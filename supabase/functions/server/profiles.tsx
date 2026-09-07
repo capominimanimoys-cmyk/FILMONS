@@ -45,7 +45,7 @@ function extractMissingCol(err: any): string | null {
 }
 
 // ── JSONB columns ─────────────────────────────────────────────────────────���───
-const JSONB_COLS = new Set(["followers", "following", "links"]);
+const JSONB_COLS = new Set(["followers", "following", "links", "secondary_roles"]);
 
 // ── Runtime column-type detection ────────────────────────────────────────────
 // Some schemas use text[] instead of jsonb for followers / following / links.
@@ -573,6 +573,7 @@ export async function update(id: string, data: any): Promise<any> {
     if (jsKey in data && data[jsKey] !== undefined && !_excluded.has(sqlCol)) {
       let val = (data as any)[jsKey];
       if (sqlCol === "profile_meta") val = JSON.stringify(val ?? {});
+      else if (sqlCol === "secondary_roles") val = JSON.stringify(Array.isArray(val) ? val : []);
       else if (sqlCol === "followers" || sqlCol === "following") {
         if (!_textArrayCols.has(sqlCol)) val = JSON.stringify(Array.isArray(val) ? val : []);
       }
