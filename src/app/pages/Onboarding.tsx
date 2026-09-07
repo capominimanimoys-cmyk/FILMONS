@@ -18,6 +18,7 @@ import { SmartAddressInput } from '../components/SmartAddressInput';
 import { ProfessionPicker, ALL_PROFESSIONS } from '../components/ProfessionPicker';
 import { fetchTagSuggestions, saveTagSuggestion } from '../lib/tagSuggestions';
 import { consumePendingReturnUrl } from '../lib/authReturnUrl';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type AccType = 'creator' | 'professional' | 'creator_plus';
@@ -326,14 +327,30 @@ export function CompleteProfile() {
       // OAuthCallback's own use of the same mechanism) -- a brand-new
       // account finishing onboarding is "successful signup" the same way
       // an existing user's login is, per the guest-mode-limit spec.
-      if (saved?.onboarding_completed) {
-        navigate(consumePendingReturnUrl(), { replace: true });
-      } else {
-        // Flag didn't persist — likely missing RLS UPDATE policy
-        // Navigate anyway so the user isn't stuck; log for debugging
-        console.warn('[onboarding] onboarding_completed not confirmed in DB — check RLS UPDATE policy on profiles');
-        navigate(consumePendingReturnUrl(), { replace: true });
+      if (!saved?.onboarding_completed) {
+        // The direct anon-key .update() above ran with no real Supabase Auth
+        // session (this app never establishes one for regular users), so
+        // profiles' RLS UPDATE policy silently matched zero rows instead of
+        // erroring. Fall back to the service-role server endpoint, which
+        // writes over a direct Postgres connection and bypasses RLS.
+        console.warn('[onboarding] onboarding_completed not confirmed via direct update — retrying through service-role fallback');
+        try {
+          await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users/${user.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+            body: JSON.stringify({
+              username: username.toLowerCase(), accountType, accountMode: accountType,
+              city: city || undefined, province: province || undefined,
+              primaryRole: primaryRole || undefined, secondaryRoles,
+              bio: bio || undefined, profileMeta: mergedMeta, profileSetupCompleted: true,
+              ...(finalAvatarUrl ? { avatar: finalAvatarUrl } : {}),
+            }),
+          });
+        } catch (e) {
+          console.warn('[onboarding] service-role fallback also failed:', e);
+        }
       }
+      navigate(consumePendingReturnUrl(), { replace: true });
     } catch (e: any) {
       toast.error(e?.message || 'Could not save profile');
     } finally {

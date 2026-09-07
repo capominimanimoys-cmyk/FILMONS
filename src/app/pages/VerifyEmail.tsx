@@ -15,6 +15,7 @@ import type { User } from '../types';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { claimIdentity } from '../lib/identity';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 interface PendingSignup {
   name: string;
@@ -53,11 +54,14 @@ export function VerifyEmail() {
     if (!p) {
       if (isAuthenticated && user?.id) {
         // Already logged in with no pending verification — fix the stuck loop by
-        // marking email as verified in the DB and going home.
-        supabase.from('profiles')
-          .update({ email_verified: true })
-          .eq('id', user.id)
-          .then(() => {});
+        // marking email as verified in the DB and going home. Routed through
+        // the service-role server (not a direct anon-key update) for the same
+        // RLS reason as the profile-creation call below.
+        fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users/${user.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          body: JSON.stringify({ emailVerified: true }),
+        }).catch(() => {});
         navigate('/', { replace: true });
       } else {
         navigate('/create-account', { replace: true });
@@ -130,26 +134,34 @@ export function VerifyEmail() {
         return;
       }
 
-      // Create the profile row — email_verified = true since we just verified.
-      // The unique index on lower(profiles.email) is the authoritative guard
-      // against a race with another concurrent signup for the same address.
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id:             authData.user.id,
-        email:          pending.email,
-        name:           pending.name,
-        email_verified: true,
-        account_type:   'creator',
-        account_mode:   'creator',
-        created_at:     new Date().toISOString(),
-        updated_at:     new Date().toISOString(),
-      }, { onConflict: 'id' });
-
-      if (profileError) {
-        if (profileError.code === '23505') {
+      // Create the profile row via the service-role server endpoint, not a
+      // direct client upsert — right after supabase.auth.signUp(), this
+      // browser has no real Supabase Auth session yet (email confirmation
+      // is required, so signUp() returns no session), which means an
+      // anon-key write here is running as an unauthenticated request. The
+      // profiles table's RLS UPDATE/INSERT policies check auth.uid() = id,
+      // which is null in that state, so a direct .upsert() call here would
+      // silently no-op or 42501 instead of actually creating the row —
+      // exactly the "orphaned auth user, no profile" dead-end this flow
+      // used to hit. The server's /users endpoint (profiles.create in
+      // supabase/functions/server/profiles.tsx) writes with the service
+      // role key over a direct Postgres connection, bypassing RLS entirely.
+      const profileRes = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({
+          id: authData.user.id, email: pending.email, name: pending.name,
+          emailVerified: true, accountType: 'creator', accountMode: 'creator',
+        }),
+      });
+      if (!profileRes.ok) {
+        const profileData = await profileRes.json().catch(() => ({}));
+        if (profileRes.status === 409) {
           toast.error('This email address is already connected to another Filmons account.');
         } else {
           toast.error('Account created but profile setup failed. Please contact support.');
         }
+        console.error('[signup] profile creation failed:', profileRes.status, profileData);
         setLoading(false);
         return;
       }

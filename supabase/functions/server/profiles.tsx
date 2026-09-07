@@ -29,7 +29,7 @@ const OPTIONAL_COLS = new Set([
   "links", "account_category", "account_type", "account_mode",
   "followers", "following",
   "instagram", "facebook", "whatsapp",
-  "is_verified", "verification_status", "contact_public",
+  "is_verified", "verification_status", "contact_public", "email_verified",
   // structured address fields
   "street_address", "city", "province", "postal_code",
   "website", "youtube", "tiktok", "years_exp", "cover_photo", "banner_url", "profile_meta",
@@ -106,6 +106,7 @@ function rowToUser(row: any) {
     whatsapp:            row.whatsapp            ?? undefined,
     isVerified:          row.is_verified         ?? false,
     verificationStatus:  row.verification_status ?? "unverified",
+    emailVerified:       row.email_verified      ?? false,
     contactPublic:       row.contact_public      ?? false,
     website:             row.website             ?? undefined,
     youtube:             row.youtube             ?? undefined,
@@ -229,6 +230,7 @@ function buildInsertParts(data: any, excluded: Set<string>, isUpdate = false) {
     whatsapp:            data.whatsapp ?? null,
     is_verified:         data.isVerified ?? false,
     verification_status: data.verificationStatus ?? "unverified",
+    email_verified:      data.emailVerified ?? false,
     contact_public:      data.contactPublic ?? false,
     website:             data.website ?? null,
     youtube:             data.youtube ?? null,
@@ -547,6 +549,9 @@ export async function update(id: string, data: any): Promise<any> {
     accountType: "account_type", accountMode: "account_mode",
     accountCategory: "account_category",
     isVerified: "is_verified", verificationStatus: "verification_status",
+    emailVerified: "email_verified",
+    primaryRole: "primary_role", secondaryRoles: "secondary_roles",
+    profileSetupCompleted: "onboarding_completed",
     followers: "followers", following: "following",
   };
 
