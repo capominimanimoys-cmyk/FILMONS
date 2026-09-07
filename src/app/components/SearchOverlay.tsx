@@ -1265,9 +1265,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   // Logged-in "View More" on a category section — opens the full,
   // uncapped category results page (every account tier alike, per the
-  // Browse Search display-rules spec).
+  // Browse Search display-rules spec). rental/sale use their plural URL
+  // form (rentals/sales) to match CategoryResults.tsx's spec'd routes;
+  // every other tab id is already the same singular/plural.
   const handleViewMoreCategory = useCallback((tab: TabId) => {
-    navigate(`/search/category/${tab}`);
+    const urlTab = tab === 'rental' ? 'rentals' : tab === 'sale' ? 'sales' : tab;
+    navigate(`/search/category/${urlTab}`);
   }, [navigate]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);

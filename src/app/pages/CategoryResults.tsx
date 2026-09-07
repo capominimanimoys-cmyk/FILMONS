@@ -1,45 +1,65 @@
 /**
- * CategoryResults — the full, uncapped Browse Search category page.
+ * CategoryResults — the full, uncapped Browse Search category page
+ * (/search/category/:tab).
  *
  * Reached via "View More" on a Browse Search category preview (see
  * SearchOverlay.tsx's handleViewMoreCategory) once a logged-in user (any
  * tier — Creator, Creator+, Professional, Business all get the same
- * experience here) passes the 5-per-category preview cap. Shows every
- * active listing (or creator profile, for the Creators category) in the
- * category, with no further cap, plus a 4-mode layout switcher
- * (Grid / Large Card / Editorial / Minimal) whose choice is remembered for
- * the rest of this browser session (sessionStorage, not a DB write — this
- * is a display preference, not account data).
+ * experience here, Emergency excepted below) passes the 5-per-category
+ * preview cap. Shows every matching listing/creator, paginated (not one
+ * giant DOM dump), with its own in-category search, category-aware
+ * filters, sort, and a 4-mode layout switcher (Grid / Large Card /
+ * Editorial / Minimal) whose choice is one global session preference
+ * shared across every category (sessionStorage, not a DB write — this is
+ * a display preference, not account data).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  ArrowLeft, Grid3X3, Monitor, LayoutList, AlignJustify,
-  MapPin, ChevronRight, Loader2,
+  ArrowLeft, LayoutGrid, RectangleHorizontal, PanelsTopLeft, List,
+  MapPin, ChevronRight, Loader2, Search, X, SlidersHorizontal, ArrowUpDown, Lock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api';
+import { withModerationFilter, LISTING_COLUMNS, mapListingRow, savedListingsApi } from '../lib/api';
 import { ListingCard } from '../components/ListingCard';
 import { Listing } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { isProfessional } from '../lib/reliabilityApi';
 
+// ── Category + URL plural mapping ────────────────────────────────────────────
+// Internal ids stay singular (matching SearchOverlay's TabId elsewhere in the
+// app); the spec's URLs are plural for rental/sale specifically
+// (/search/category/rentals, /search/category/sales) -- everything else is
+// already the same singular/plural.
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
-type BrowseLayout = 'grid' | 'large_cards' | 'editorial' | 'minimal';
-
+const URL_TO_CATEGORY: Record<string, CategoryTab> = {
+  rentals: 'rental', rental: 'rental',
+  sales: 'sale', sale: 'sale',
+  services: 'services', creators: 'creators', studios: 'studios',
+  opportunities: 'opportunities', emergency: 'emergency',
+};
+const CATEGORY_TO_URL: Record<CategoryTab, string> = {
+  rental: 'rentals', sale: 'sales', services: 'services', creators: 'creators',
+  studios: 'studios', opportunities: 'opportunities', emergency: 'emergency',
+};
 const CATEGORY_LABEL: Record<CategoryTab, string> = {
-  rental: 'Rental', sale: 'Sales', services: 'Services', creators: 'Creators',
+  rental: 'Rentals', sale: 'Sales', services: 'Services', creators: 'Creators',
   studios: 'Studios', opportunities: 'Opportunities', emergency: 'Emergency',
 };
 
+type BrowseLayout = 'grid' | 'large_cards' | 'editorial' | 'minimal';
 const LAYOUTS: { id: BrowseLayout; label: string; Icon: any }[] = [
-  { id: 'grid',        label: 'Grid',        Icon: Grid3X3 },
-  { id: 'large_cards', label: 'Large Card',  Icon: Monitor },
-  { id: 'editorial',   label: 'Editorial',   Icon: LayoutList },
-  { id: 'minimal',     label: 'Minimal',     Icon: AlignJustify },
+  { id: 'grid',        label: 'Grid',        Icon: LayoutGrid },
+  { id: 'large_cards', label: 'Large Card',  Icon: RectangleHorizontal },
+  { id: 'editorial',   label: 'Editorial',   Icon: PanelsTopLeft },
+  { id: 'minimal',     label: 'Minimal',     Icon: List },
 ];
-
-const LAYOUT_KEY = 'filmons_browse_category_layout';
+// One global preference shared across every category for the session --
+// switching Rentals to Editorial then opening Services should also open in
+// Editorial. Resets to Grid (the default) on a fresh browser session since
+// sessionStorage itself doesn't survive one.
+const LAYOUT_KEY = 'filmons-category-layout';
 
 function loadLayout(): BrowseLayout {
   try {
@@ -48,26 +68,97 @@ function loadLayout(): BrowseLayout {
   } catch { return 'grid'; }
 }
 
+type SortOption = 'recommended' | 'price_asc' | 'price_desc';
+const CATEGORY_SORTS: Record<CategoryTab, { value: SortOption; label: string }[]> = {
+  rental:        [{ value: 'recommended', label: 'Recommended' }, { value: 'price_asc', label: 'Price: Low to High' }, { value: 'price_desc', label: 'Price: High to Low' }],
+  sale:          [{ value: 'recommended', label: 'Recommended' }, { value: 'price_asc', label: 'Price: Low to High' }, { value: 'price_desc', label: 'Price: High to Low' }],
+  services:      [{ value: 'recommended', label: 'Recommended' }, { value: 'price_asc', label: 'Price: Low to High' }, { value: 'price_desc', label: 'Price: High to Low' }],
+  studios:       [{ value: 'recommended', label: 'Recommended' }, { value: 'price_asc', label: 'Price: Low to High' }, { value: 'price_desc', label: 'Price: High to Low' }],
+  emergency:     [{ value: 'recommended', label: 'Recommended' }, { value: 'price_asc', label: 'Price: Low to High' }, { value: 'price_desc', label: 'Price: High to Low' }],
+  opportunities: [{ value: 'recommended', label: 'Recommended' }],
+  creators:      [{ value: 'recommended', label: 'Recommended' }],
+};
+
+// Category-aware filters -- a practical subset per category (not every
+// conceivable field), rendered generically from this config rather than a
+// bespoke UI per category. Filtered client-side on the fetched page (the
+// columns backing condition/delivery/paid/verified aren't ones this file
+// otherwise queries against, so this avoids a hard query error if a given
+// live schema doesn't have them under this exact name).
+interface FilterField { key: string; type: 'toggle' | 'select'; label: string; options?: { value: string; label: string }[] }
+const CATEGORY_FILTERS: Record<CategoryTab, FilterField[]> = {
+  rental:        [{ key: 'delivery', type: 'toggle', label: 'Delivery available' }],
+  sale:          [{ key: 'condition', type: 'select', label: 'Condition', options: [
+    { value: 'new', label: 'New' }, { value: 'like-new', label: 'Like New' }, { value: 'good', label: 'Good' }, { value: 'fair', label: 'Fair' },
+  ] }],
+  services:      [],
+  studios:       [],
+  emergency:     [],
+  opportunities: [{ key: 'paidOnly', type: 'toggle', label: 'Paid only' }],
+  creators:      [{ key: 'verifiedOnly', type: 'toggle', label: 'Verified only' }],
+};
+
+const PAGE_SIZE = 30;
+
 interface CreatorRow {
   id: string; name: string; username: string | null; avatar_url: string | null;
   city: string | null; location: string | null; primary_role: string | null; is_verified: boolean | null;
 }
 
+interface CategoryState {
+  search: string;
+  filters: Record<string, any>;
+  sort: SortOption;
+  scrollY: number;
+}
+const stateKey = (cat: CategoryTab) => `filmons_category_state_${cat}`;
+
+function loadState(cat: CategoryTab): CategoryState {
+  try {
+    const raw = sessionStorage.getItem(stateKey(cat));
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { search: '', filters: {}, sort: 'recommended', scrollY: 0 };
+}
+
 export function CategoryResults() {
   const { tab } = useParams<{ tab: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, showGuestPrompt } = useAuth();
-  const category = (tab && tab in CATEGORY_LABEL ? tab : null) as CategoryTab | null;
+  const { user, isAuthenticated, showGuestPrompt } = useAuth();
+  const category = tab ? URL_TO_CATEGORY[tab] ?? null : null;
+
+  const initialState = useMemo(() => category ? loadState(category) : null, [category]);
 
   const [layout, setLayout] = useState<BrowseLayout>(loadLayout);
-  const [listings, setListings] = useState<Listing[]>([]);
+  const [search, setSearch]   = useState(initialState?.search ?? '');
+  const [filters, setFilters] = useState<Record<string, any>>(initialState?.filters ?? {});
+  const [sort, setSort]       = useState<SortOption>(initialState?.sort ?? 'recommended');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSort, setShowSort] = useState(false);
+
+  const [items, setItems]       = useState<Listing[]>([]);
   const [creators, setCreators] = useState<CreatorRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [page, setPage]         = useState(0);
+  const [hasMore, setHasMore]   = useState(true);
+  const [loading, setLoading]   = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const restoredScroll = useRef(false);
 
   const changeLayout = (l: BrowseLayout) => {
     setLayout(l);
     try { sessionStorage.setItem(LAYOUT_KEY, l); } catch {}
   };
+
+  // Emergency stays behind the Professional/Business gate on the FULL page
+  // specifically (the Browse Search preview itself follows the same
+  // uniform 2/5 rule as every other category -- only the uncapped page is
+  // restricted here).
+  const isEmergency = category === 'emergency';
+  const emergencyLocked = isEmergency && !isProfessional(user?.accountType);
 
   // The full category page is locked behind account creation for guests
   // (see the Browse Search display-rules spec) -- reachable only via View
@@ -77,131 +168,400 @@ export function CategoryResults() {
     if (isAuthenticated) return;
     showGuestPrompt(
       'Create your Filmons account to browse all listings, save listings, contact creators, and apply to opportunities.',
-      'Create an account to see more',
+      'Sign up to see more listings',
     );
     navigate('/search', { replace: true });
   }, [isAuthenticated]);
 
+  // Persist search/filters/sort/scroll per category (not the layout, which
+  // is a single global preference handled separately) so returning from a
+  // listing's detail page (or just re-opening this same category later in
+  // the session) restores exactly where the user left off.
   useEffect(() => {
-    if (!category || !isAuthenticated) return;
-    let cancelled = false;
-    setLoading(true);
+    if (!category) return;
+    const scrollY = scrollRef.current?.scrollTop ?? 0;
+    try { sessionStorage.setItem(stateKey(category), JSON.stringify({ search, filters, sort, scrollY })); } catch {}
+  }, [category, search, filters, sort]);
 
-    (async () => {
-      if (category === 'creators') {
-        const res = await supabase.from('profiles')
-          .select('id, name, username, avatar_url, city, location, primary_role, is_verified')
-          .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
-          .order('created_at', { ascending: false }).limit(200);
-        if (!cancelled) { setCreators((res.data ?? []) as CreatorRow[]); setLoading(false); }
-        return;
-      }
-
-      const res = await withModerationFilter((filterActive) => {
-        let query = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
-        if (filterActive) query = query.eq('moderation_status', 'active');
-        switch (category) {
-          case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
-          case 'sale':           query = query.eq('listing_mode', 'sale'); break;
-          case 'services':       query = query.eq('listing_type', 'service'); break;
-          case 'opportunities':  query = query.eq('listing_type', 'opportunity'); break;
-          case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
-          case 'emergency':      query = query.eq('is_emergency', true).gt('emergency_expires_at', new Date().toISOString()); break;
-        }
-        return query.order('created_at', { ascending: false }).limit(200);
-      });
-      if (cancelled) return;
-      let mapped = (res.data ?? []).map(mapListingRow);
-      // Same defensive exclusion SearchOverlay's fetchCategoryBrowse applies
-      // -- the DB filter above can't express "rent and not an opportunity"
-      // in one pass.
-      if (category === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
-      setListings(mapped);
-      setLoading(false);
-    })();
-
-    return () => { cancelled = true; };
+  const saveScroll = useCallback(() => {
+    if (!category || !scrollRef.current) return;
+    try {
+      const raw = sessionStorage.getItem(stateKey(category));
+      const cur = raw ? JSON.parse(raw) : {};
+      sessionStorage.setItem(stateKey(category), JSON.stringify({ ...cur, scrollY: scrollRef.current.scrollTop }));
+    } catch {}
   }, [category]);
 
-  const gridClass = useMemo(() => {
-    switch (layout) {
-      case 'grid':        return 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3';
-      case 'large_cards':  return 'grid grid-cols-1 sm:grid-cols-2 gap-5';
-      case 'editorial':    return 'grid grid-cols-2 gap-4';
-      case 'minimal':      return 'flex flex-col';
+  const isCreators = category === 'creators';
+
+  // ── Fetch a page ────────────────────────────────────────────────────────────
+  const fetchPage = useCallback(async (pageNum: number, replace: boolean) => {
+    if (!category || emergencyLocked) return;
+    if (pageNum === 0) setLoading(true); else setLoadingMore(true);
+    const from = pageNum * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    if (category === 'creators') {
+      let q = supabase.from('profiles')
+        .select('id, name, username, avatar_url, city, location, primary_role, is_verified', { count: 'exact' })
+        .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null);
+      if (search.trim()) {
+        const term = `%${search.trim()}%`;
+        q = q.or(`name.ilike.${term},username.ilike.${term},primary_role.ilike.${term},city.ilike.${term}`);
+      }
+      const res = await q.order('created_at', { ascending: false }).range(from, to);
+      let rows = (res.data ?? []) as CreatorRow[];
+      if (filters.verifiedOnly) rows = rows.filter(r => r.is_verified);
+      setCreators(prev => replace ? rows : [...prev, ...rows]);
+      setTotalCount(res.count ?? null);
+      setHasMore(rows.length === PAGE_SIZE);
+      setLoading(false); setLoadingMore(false);
+      return;
     }
-  }, [layout]);
+
+    const res = await withModerationFilter((filterActive) => {
+      let q = supabase.from('listings').select(LISTING_COLUMNS, { count: 'exact' }).eq('is_active', true);
+      if (filterActive) q = q.eq('moderation_status', 'active');
+      switch (category) {
+        case 'rental':        q = q.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
+        case 'sale':           q = q.eq('listing_mode', 'sale'); break;
+        case 'services':       q = q.eq('listing_type', 'service'); break;
+        case 'opportunities':  q = q.eq('listing_type', 'opportunity'); break;
+        case 'studios':        q = q.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
+        case 'emergency':      q = q.eq('is_emergency', true).gt('emergency_expires_at', new Date().toISOString()); break;
+      }
+      if (search.trim()) {
+        const term = `%${search.trim()}%`;
+        q = q.or(`title.ilike.${term},description.ilike.${term},city.ilike.${term},service_category.ilike.${term}`);
+      }
+      if (sort === 'price_asc') q = q.order('price', { ascending: true });
+      else if (sort === 'price_desc') q = q.order('price', { ascending: false });
+      else q = q.order('created_at', { ascending: false });
+      return q.range(from, to);
+    });
+
+    let mapped = (res.data ?? []).map(mapListingRow);
+    if (category === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
+    if (filters.condition) mapped = mapped.filter(l => l.condition === filters.condition);
+    if (filters.delivery) mapped = mapped.filter(l => (l.deliveryOptions ?? []).includes('delivery'));
+    if (filters.paidOnly) mapped = mapped.filter(l => !!l.opportunity?.paid);
+
+    setItems(prev => replace ? mapped : [...prev, ...mapped]);
+    setTotalCount(res.count ?? null);
+    setHasMore(mapped.length === PAGE_SIZE);
+    setLoading(false); setLoadingMore(false);
+  }, [category, search, sort, filters, emergencyLocked]);
+
+  // Refetch page 0 whenever category/search/sort/filters change.
+  useEffect(() => {
+    if (!category || !isAuthenticated) return;
+    setPage(0);
+    setItems([]); setCreators([]);
+    restoredScroll.current = false;
+    fetchPage(0, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, search, sort, JSON.stringify(filters), isAuthenticated, emergencyLocked]);
+
+  // Restore scroll position once, after the first page for this category lands.
+  useEffect(() => {
+    if (restoredScroll.current || loading || !scrollRef.current || !initialState?.scrollY) return;
+    scrollRef.current.scrollTop = initialState.scrollY;
+    restoredScroll.current = true;
+  }, [loading, initialState]);
+
+  // Infinite scroll -- fetch the next page when the sentinel at the bottom
+  // of the list scrolls into view. Never loads hundreds of cards up front;
+  // "uncapped" only means no artificial account-tier preview limit, not
+  // "everything in the DOM at once".
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || loading || loadingMore || !hasMore) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setPage(p => { const next = p + 1; fetchPage(next, false); return next; });
+      }
+    }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loading, loadingMore, hasMore, fetchPage]);
+
+  const clearFilters = () => setFilters({});
+  const activeFilterCount = Object.keys(filters).filter(k => filters[k]).length;
 
   if (!category) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">
-        Unknown category.
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 text-center px-6">
+        <p className="text-base font-black text-gray-900">Category not found</p>
+        <button onClick={() => navigate('/search')}
+          className="px-5 py-2.5 rounded-2xl bg-gray-900 text-white text-sm font-bold">
+          Back to Browse
+        </button>
       </div>
     );
   }
 
-  const isCreators = category === 'creators';
-  const count = isCreators ? creators.length : listings.length;
+  const count = totalCount ?? (isCreators ? creators.length : items.length);
+  const categoryFilterFields = CATEGORY_FILTERS[category];
+  const sortOptions = CATEGORY_SORTS[category];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ── Header ── */}
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* ── Compact category header ── */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
-        <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+        <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '10px' }}>
           <button onClick={() => navigate(-1)}
             className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-base font-black text-gray-900 truncate">{CATEGORY_LABEL[category]}</p>
             {!loading && <p className="text-xs text-gray-400">{count} {count === 1 ? 'result' : 'results'}</p>}
           </div>
         </div>
 
-        {/* ── Layout selector ── */}
-        <div className="flex gap-1.5 px-4 pb-3 overflow-x-auto no-scrollbar">
-          {LAYOUTS.map(({ id, label, Icon }) => (
-            <button key={id} onClick={() => changeLayout(id)}
-              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 border ${
-                layout === id ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-              }`}>
-              <Icon className="w-3.5 h-3.5"/> {label}
-            </button>
-          ))}
+        {/* ── In-category search ── */}
+        <div className="px-4 pb-2.5">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-2xl px-3.5 py-2.5">
+            <Search className="w-4 h-4 text-gray-400 shrink-0"/>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder={`Search ${CATEGORY_LABEL[category].toLowerCase()}…`}
+              className="flex-1 text-sm text-gray-900 placeholder-gray-400 outline-none bg-transparent"/>
+            {search && (
+              <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4"/>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* ── Filters / Sort / Layout controls ── */}
+        <div className="flex items-center justify-between gap-2 px-4 pb-3">
+          <div className="flex items-center gap-1.5">
+            {categoryFilterFields.length > 0 && (
+              <button onClick={() => setShowFilters(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                <SlidersHorizontal className="w-3.5 h-3.5"/> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              </button>
+            )}
+            {sortOptions.length > 1 && (
+              <button onClick={() => setShowSort(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                <ArrowUpDown className="w-3.5 h-3.5"/> Sort
+              </button>
+            )}
+          </div>
+          <div className="flex gap-1 shrink-0">
+            {LAYOUTS.map(({ id, label, Icon }) => (
+              <button key={id} onClick={() => changeLayout(id)} title={label} aria-label={label}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-95 ${
+                  layout === id ? 'bg-gray-900 text-white' : 'text-gray-400 hover:bg-gray-100'
+                }`}>
+                <Icon className="w-4 h-4"/>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Active filter chips ── */}
+        {activeFilterCount > 0 && (
+          <div className="flex items-center gap-1.5 px-4 pb-3 overflow-x-auto no-scrollbar">
+            {categoryFilterFields.filter(f => filters[f.key]).map(f => (
+              <span key={f.key} className="shrink-0 flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                {f.type === 'toggle' ? f.label : `${f.label}: ${f.options?.find(o => o.value === filters[f.key])?.label}`}
+                <button onClick={() => setFilters(prev => { const next = { ...prev }; delete next[f.key]; return next; })}
+                  className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-indigo-100">
+                  <X className="w-3 h-3"/>
+                </button>
+              </span>
+            ))}
+            <button onClick={clearFilters} className="shrink-0 text-xs font-bold text-gray-400 hover:text-gray-600 px-1.5">
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Body ── */}
-      <div className="px-4 py-4">
-        {loading ? (
+      <div ref={scrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-4 py-4">
+        {emergencyLocked ? (
+          <EmergencyLockedNotice
+            previewItems={items}
+            onUpgrade={() => navigate('/account/upgrade?auto=professional')}
+          />
+        ) : loading ? (
           <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
             <Loader2 className="w-5 h-5 animate-spin"/>
             <span className="text-sm">Loading…</span>
           </div>
         ) : count === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center gap-1">
-            <p className="text-sm font-bold text-gray-500">No {CATEGORY_LABEL[category].toLowerCase()} listings right now</p>
-            <p className="text-xs text-gray-400">Check back soon, or try a different category.</p>
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+            <div>
+              <p className="text-sm font-bold text-gray-500">No {CATEGORY_LABEL[category].toLowerCase()} found</p>
+              <p className="text-xs text-gray-400 mt-1">Try changing your search, location, or filters.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {activeFilterCount > 0 && (
+                <button onClick={clearFilters} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">
+                  Clear filters
+                </button>
+              )}
+              <button onClick={() => navigate('/search')} className="px-4 py-2 rounded-xl bg-gray-100 text-gray-600 text-xs font-bold">
+                Back to Browse
+              </button>
+            </div>
           </div>
         ) : (
-          <AnimatePresence mode="wait">
-            <motion.div key={layout}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}>
-              {isCreators
-                ? <CreatorsLayout creators={creators} layout={layout} onNavigate={id => navigate(`/host/${id}`)}/>
-                : <ListingsLayout listings={listings} layout={layout} gridClass={gridClass!}/>
-              }
-            </motion.div>
-          </AnimatePresence>
+          <>
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div key={layout}
+                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ enter: { duration: 0.2 }, exit: { duration: 0.14 } } as any}>
+                {isCreators
+                  ? <CreatorsLayout creators={creators} layout={layout} onNavigate={id => navigate(`/host/${id}`)}/>
+                  : <ListingsLayout listings={items} layout={layout}/>
+                }
+              </motion.div>
+            </AnimatePresence>
+            <div ref={sentinelRef} className="h-1"/>
+            {loadingMore && (
+              <div className="flex items-center justify-center py-6 text-gray-400">
+                <Loader2 className="w-4 h-4 animate-spin"/>
+              </div>
+            )}
+          </>
         )}
       </div>
+
+      {/* ── Filter sheet ── */}
+      <AnimatePresence>
+        {showFilters && (
+          <FilterSheet fields={categoryFilterFields} values={filters} onChange={setFilters} onClose={() => setShowFilters(false)}/>
+        )}
+      </AnimatePresence>
+
+      {/* ── Sort sheet ── */}
+      <AnimatePresence>
+        {showSort && (
+          <SortSheet options={sortOptions} value={sort} onSelect={v => { setSort(v); setShowSort(false); }} onClose={() => setShowSort(false)}/>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
+// ── Emergency Professional/Business gate ─────────────────────────────────────
+function EmergencyLockedNotice({ previewItems, onUpgrade }: { previewItems: Listing[]; onUpgrade: () => void }) {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-5 text-center space-y-3">
+        <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
+          <Lock className="w-6 h-6 text-amber-600"/>
+        </div>
+        <div>
+          <p className="text-base font-black text-gray-900">Unlock Professional or Business</p>
+          <p className="text-sm text-gray-600 mt-1">Upgrade to Professional or Business to see all emergency listings.</p>
+        </div>
+        <button onClick={onUpgrade} className="w-full py-3 rounded-2xl bg-amber-600 text-white font-bold text-sm">
+          Upgrade Account
+        </button>
+      </div>
+      {previewItems.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {previewItems.map(l => <ListingCard key={l.id} listing={l}/>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Filter / Sort sheets ──────────────────────────────────────────────────────
+function SheetShell({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }} className="fixed inset-0 z-[120] bg-black/50" onClick={onClose}/>
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+        className="fixed inset-x-0 bottom-0 z-[125] bg-white rounded-t-3xl shadow-2xl px-5 pt-6"
+        style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
+        {children}
+      </motion.div>
+    </>
+  );
+}
+
+function FilterSheet({ fields, values, onChange, onClose }: {
+  fields: FilterField[]; values: Record<string, any>; onChange: (v: Record<string, any>) => void; onClose: () => void;
+}) {
+  return (
+    <SheetShell onClose={onClose}>
+      <p className="text-base font-black text-gray-900 mb-4">Filters</p>
+      <div className="space-y-4 mb-5">
+        {fields.map(f => (
+          <div key={f.key}>
+            {f.type === 'toggle' ? (
+              <button onClick={() => onChange({ ...values, [f.key]: !values[f.key] })}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border text-sm font-semibold transition-colors ${
+                  values[f.key] ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600'
+                }`}>
+                {f.label}
+                <div className={`w-9 h-5 rounded-full transition-colors relative ${values[f.key] ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${values[f.key] ? 'translate-x-4' : 'translate-x-0.5'}`}/>
+                </div>
+              </button>
+            ) : (
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{f.label}</p>
+                <div className="flex flex-wrap gap-2">
+                  {f.options?.map(o => (
+                    <button key={o.value}
+                      onClick={() => onChange({ ...values, [f.key]: values[f.key] === o.value ? undefined : o.value })}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                        values[f.key] === o.value ? 'bg-gray-900 text-white border-gray-900' : 'bg-white border-gray-200 text-gray-600'
+                      }`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => { onChange({}); }} className="flex-1 py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">
+          Clear all
+        </button>
+        <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-gray-900 text-white font-bold text-sm">
+          Show Results
+        </button>
+      </div>
+    </SheetShell>
+  );
+}
+
+function SortSheet({ options, value, onSelect, onClose }: {
+  options: { value: SortOption; label: string }[]; value: SortOption; onSelect: (v: SortOption) => void; onClose: () => void;
+}) {
+  return (
+    <SheetShell onClose={onClose}>
+      <p className="text-base font-black text-gray-900 mb-4">Sort</p>
+      <div className="space-y-1 mb-2">
+        {options.map(o => (
+          <button key={o.value} onClick={() => onSelect(o.value)}
+            className={`w-full text-left px-4 py-3 rounded-2xl text-sm font-semibold transition-colors ${
+              value === o.value ? 'bg-gray-900 text-white' : 'hover:bg-gray-50 text-gray-700'
+            }`}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </SheetShell>
+  );
+}
+
 // ── Listings ──────────────────────────────────────────────────────────────────
-function ListingsLayout({ listings, layout, gridClass }: { listings: Listing[]; layout: BrowseLayout; gridClass: string }) {
+function ListingsLayout({ listings, layout }: { listings: Listing[]; layout: BrowseLayout }) {
   if (layout === 'minimal') {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
@@ -210,22 +570,38 @@ function ListingsLayout({ listings, layout, gridClass }: { listings: Listing[]; 
     );
   }
   if (layout === 'editorial') {
-    const [first, ...rest] = listings;
+    // Alternates a large feature card, a wide landscape card, then smaller
+    // supporting cards in pairs -- presentation only, never reorders the
+    // underlying results.
+    const groups: Listing[][] = [];
+    for (let i = 0; i < listings.length; ) {
+      if (i === 0) { groups.push(listings.slice(0, 1)); i += 1; }
+      else if ((i - 1) % 5 === 0) { groups.push(listings.slice(i, i + 1)); i += 1; }
+      else { groups.push(listings.slice(i, i + 2)); i += 2; }
+    }
     return (
       <div className="space-y-4">
-        {first && (
-          <div className="pop-stagger">
-            <ListingCard listing={first} className="[&_img]:aspect-[16/9]"/>
+        {groups.map((g, gi) => g.length === 1 ? (
+          <div key={gi} className="pop-stagger">
+            <ListingCard listing={g[0]} className="[&_img]:aspect-[16/9]"/>
           </div>
-        )}
-        <div className="pop-stagger grid grid-cols-2 gap-4">
-          {rest.map(l => <ListingCard key={l.id} listing={l}/>)}
-        </div>
+        ) : (
+          <div key={gi} className="pop-stagger grid grid-cols-2 gap-4">
+            {g.map(l => <ListingCard key={l.id} listing={l}/>)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (layout === 'large_cards') {
+    return (
+      <div className="pop-stagger grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {listings.map(l => <ListingCard key={l.id} listing={l} className="[&_img]:aspect-[16/10]"/>)}
       </div>
     );
   }
   return (
-    <div className={`pop-stagger ${gridClass}`}>
+    <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
       {listings.map(l => <ListingCard key={l.id} listing={l}/>)}
     </div>
   );
@@ -233,8 +609,20 @@ function ListingsLayout({ listings, layout, gridClass }: { listings: Listing[]; 
 
 function MinimalListingRow({ listing }: { listing: Listing }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [saved, setSaved] = useState(() => !!user?.id && listing.id ? savedListingsApi.isSavedSync(user.id, listing.id) : false);
   const price = `$${Number(listing.price ?? 0).toLocaleString()}${listing.listingMode === 'rent' ? '/day' : ''}`;
-  const category = listing.listingKind === 'talent' ? 'Opportunity' : listing.serviceCategory || listing.listingType;
+  const type = listing.listingKind === 'talent' ? 'Opportunity' : listing.serviceCategory || listing.listingType;
+
+  const toggleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user?.id) return;
+    const prev = saved;
+    setSaved(!prev);
+    try { const result = await savedListingsApi.toggle(user.id, listing.id, listing); setSaved(result); }
+    catch { setSaved(prev); }
+  };
+
   return (
     <button onClick={() => navigate(`/listing/${listing.id}`)}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
@@ -244,9 +632,14 @@ function MinimalListingRow({ listing }: { listing: Listing }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-bold text-gray-900 truncate">{listing.title}</p>
         <p className="text-xs text-gray-400 truncate">
-          {price} · {listing.city}{category ? ` · ${category}` : ''}
+          {price} · {listing.city}{type ? ` · ${type}` : ''}
         </p>
       </div>
+      {user && (
+        <button onClick={toggleSave} className={`shrink-0 text-xs font-bold ${saved ? 'text-red-500' : 'text-gray-300'}`}>
+          ♥
+        </button>
+      )}
       <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
     </button>
   );
