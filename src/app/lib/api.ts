@@ -418,13 +418,21 @@ export const authApi = {
       .maybeSingle();
 
     if (profileError || !data) {
-      // Profile missing — create minimal one
-      await supabase.from('profiles').upsert({
-        id: authData.user.id, email: email.toLowerCase(),
-        name: authData.user.user_metadata?.name || email.split('@')[0],
-        account_type: 'creator', account_mode: 'creator',
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
+      // Profile missing (an orphaned auth.users row from a signup that
+      // failed after supabase.auth.signUp() but before its profile got
+      // created) — create a minimal one now. Routed through the
+      // service-role server, not a direct client upsert: profiles has no
+      // client-writable INSERT policy at all, so a direct upsert here
+      // would always 403 regardless of this real, just-established session.
+      await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({
+          id: authData.user.id, email: email.toLowerCase(),
+          name: authData.user.user_metadata?.name || email.split('@')[0],
+          accountType: 'creator', accountMode: 'creator',
+        }),
+      }).catch(() => {});
     }
 
     const profile = data || { id: authData.user.id, email };

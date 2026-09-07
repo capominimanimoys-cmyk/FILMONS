@@ -6,8 +6,7 @@
  *   • Checks for existing phone in profiles → /phone-already-exists
  *   • Sends OTP via edge function
  * Step 2 — SMS OTP verification
- *   • Verifies OTP
- *   • Upserts profiles row (name, phone, phone_verified=true, onboarding_completed=false)
+ *   • Verifies OTP, creates the profiles row (service role) with phone_verified=true
  *   • Brief success animation → /onboarding
  */
 import { useState, useEffect, useRef } from 'react';
@@ -18,7 +17,6 @@ import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
-import { supabase } from '../../lib/supabase';
 import { claimIdentity } from '../lib/identity';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -240,21 +238,14 @@ export function SignupPhone() {
     setOtpError('');
     setLoading(true);
     try {
-      // Verify OTP and create the Filmons user via edge function
-      const user = await authApi.completePhoneSignup(fullE164, otp, fullName.trim());
+      // Verify OTP and create the Filmons user via edge function (service
+      // role -- a direct client upsert into profiles has no INSERT policy
+      // to run under regardless of session state, same as every other
+      // signup path). phoneVerified is passed straight into creation;
+      // onboardingCompleted/profileSetupPercentage default to false/0.
+      const user = await authApi.completePhoneSignup(fullE164, otp, fullName.trim(), undefined, undefined, { phoneVerified: true });
 
-      // Ensure the profiles row has the correct phone-signup fields
       if (user?.id) {
-        await supabase.from('profiles').upsert({
-          id:                       user.id,
-          name:                     fullName.trim(),
-          phone:                    fullE164,
-          phone_verified:           true,
-          onboarding_completed:     false,
-          profile_setup_percentage: 0,
-          updated_at:               new Date().toISOString(),
-        }, { onConflict: 'id' });
-
         // Best-effort: keep account_identities in sync so future sign-in
         // linking (Google, phone re-signin) resolves correctly. The
         // profiles.phone unique index is the actual signup-time guard —

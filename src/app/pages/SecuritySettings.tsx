@@ -13,6 +13,7 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { authApi } from '../lib/api';
 import { claimIdentity } from '../lib/identity';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 
 function genCode(): string {
@@ -69,9 +70,26 @@ function ChangeEmailFlow({ userId, currentEmail, onChanged }: { userId: string; 
     setLoading(true);
     try {
       const trimmed = newEmail.trim().toLowerCase();
-      const { error } = await supabase.from('profiles').update({ email: trimmed, email_verified: true }).eq('id', userId);
-      if (error) {
-        toast.error((error as any).code === '23505' ? 'Email already in use.' : 'Could not update email.');
+      // Pre-check for a conflict (SELECT stays open under RLS) rather than
+      // relying on the PUT below to report one -- a genuine unique-index
+      // violation there gets caught by profiles.update()'s own internal
+      // legacy-KV fallback and silently treated as a soft success instead
+      // of surfacing the conflict.
+      const { data: conflict } = await supabase.from('profiles').select('id').eq('email', trimmed).neq('id', userId).maybeSingle();
+      if (conflict) {
+        toast.error('Email already in use.');
+        setLoading(false);
+        return;
+      }
+      // Written through the service-role server, not a direct client
+      // update -- profiles has no client-writable UPDATE policy at all.
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ email: trimmed, emailVerified: true }),
+      });
+      if (!res.ok) {
+        toast.error('Could not update email.');
         setLoading(false);
         return;
       }
@@ -155,9 +173,24 @@ function ChangePhoneFlow({ userId, currentPhone, onChanged }: { userId: string; 
     setLoading(true);
     try {
       await authApi.verifyPhoneOTP(e164(), code);
-      const { error } = await supabase.from('profiles').update({ phone: e164(), phone_verified: true }).eq('id', userId);
-      if (error) {
-        toast.error((error as any).code === '23505' ? 'Phone number already in use.' : 'Could not update phone number.');
+      // Pre-check for a conflict, same reasoning as the email-change flow
+      // above -- a real unique-index violation on the PUT below would get
+      // silently swallowed by profiles.update()'s legacy-KV fallback.
+      const { data: conflict } = await supabase.from('profiles').select('id').eq('phone', e164()).neq('id', userId).maybeSingle();
+      if (conflict) {
+        toast.error('Phone number already in use.');
+        setLoading(false);
+        return;
+      }
+      // Written through the service-role server, not a direct client
+      // update -- profiles has no client-writable UPDATE policy at all.
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ phone: e164(), phoneVerified: true }),
+      });
+      if (!res.ok) {
+        toast.error('Could not update phone number.');
         setLoading(false);
         return;
       }
@@ -253,9 +286,15 @@ function AddPasswordFlow({ userId, email, onDone }: { userId: string; email: str
       const { data: row } = await supabase.from('profiles').select('profile_meta').eq('id', userId).maybeSingle();
       const meta = typeof row?.profile_meta === 'string' ? JSON.parse(row.profile_meta || '{}') : (row?.profile_meta || {});
       const providers = Array.from(new Set([...(meta.providers || []), 'email']));
-      await supabase.from('profiles')
-        .update({ email, email_verified: true, profile_meta: { ...meta, providers } })
-        .eq('id', userId).then(undefined, () => {});
+      // Written through the service-role server, not a direct client
+      // update -- profiles has no client-writable UPDATE policy at all, so
+      // this would silently no-op under RLS regardless of session state
+      // (the exact stale-"Add Password" symptom the comment above warns about).
+      await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ email, emailVerified: true, profileMeta: { ...meta, providers } }),
+      }).catch(() => {});
       setStep('done');
     } finally {
       setLoading(false);

@@ -19,6 +19,7 @@ import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { User } from '../types';
 import { toast } from 'sonner';
 import { claimIdentity } from '../lib/identity';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -173,17 +174,16 @@ export function GoogleSignup() {
     try {
       const locationStr = `${locationData.city}, ${locationData.province}`;
 
-      // Only columns confirmed to exist in the profiles table
-      const profileRow: Record<string, any> = {
+      const profileBody: Record<string, any> = {
         id:                  authId,
         email:               googleEmail,
         name:                googleName,
         username,
-        avatar_url:          googleAvatar || null,
-        account_type:        'creator',
-        account_mode:        'creator',
-        primary_role:        primaryRole,
-        secondary_roles:     secondaryRoles,
+        avatar:              googleAvatar || null,
+        accountType:         'creator',
+        accountMode:         'creator',
+        primaryRole,
+        secondaryRoles,
         bio:                 bio.trim()      || null,
         location:            locationStr,
         city:                locationData.city,
@@ -192,12 +192,12 @@ export function GoogleSignup() {
         instagram:           instagram.trim()|| null,
         youtube:             youtube.trim()  || null,
         tiktok:              tiktok.trim()   || null,
-        is_verified:              false,
-        verification_status:      'not_started',
-        email_verified:           true,
-        onboarding_completed:     true,
-        profile_setup_percentage: 100,
-        profile_meta: {
+        isVerified:               false,
+        verificationStatus:       'not_started',
+        emailVerified:            true,
+        profileSetupCompleted:    true,
+        profileSetupPercentage:   100,
+        profileMeta: {
           provider:            'google',
           googleId:            authId,
           providers:           ['google'],
@@ -214,27 +214,31 @@ export function GoogleSignup() {
             lng:              locationData.lng,
           },
         },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       };
 
-      const { data: created, error: insertErr } = await supabase
-        .from('profiles')
-        .upsert(profileRow, { onConflict: 'id' })
-        .select()
-        .single();
-
-      if (insertErr) {
-        console.error('[GoogleSignup] profiles upsert error:', insertErr);
-        // 23505 on the lower(email) unique index — OAuthCallback already
-        // resolves existing accounts by email before ever routing here, so
-        // this only fires on a genuine race between two simultaneous
-        // first-time signups for the same address.
-        if ((insertErr as any).code === '23505') {
+      // Written through the service-role server, not a direct client
+      // upsert — right after Google OAuth this browser has a real session,
+      // but profiles has no client-writable INSERT policy at all (same
+      // service-role-only boundary this codebase already uses for
+      // reputation_scores/wallets/boost) — a direct upsert here always
+      // 403s regardless of session state.
+      const profileRes = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify(profileBody),
+      });
+      const profileData = await profileRes.json().catch(() => ({}));
+      if (!profileRes.ok) {
+        console.error('[GoogleSignup] profile creation failed:', profileRes.status, profileData);
+        // OAuthCallback already resolves existing accounts by email before
+        // ever routing here, so a 409 here only fires on a genuine race
+        // between two simultaneous first-time signups for the same address.
+        if (profileRes.status === 409) {
           throw new Error('Email already in use. This email address is already connected to another Filmons account.');
         }
-        throw new Error(insertErr.message);
+        throw new Error(profileData.error || 'Could not create your profile');
       }
+      const created = profileData.user;
 
       // Best-effort: keep account_identities in sync for future sign-in
       // linking.
@@ -242,10 +246,6 @@ export function GoogleSignup() {
       claimIdentity(authId, 'google', authId).catch(() => {});
 
       await Promise.allSettled([
-        // reputation_scores is no longer client-writable (score is now
-        // computed server-side only, see fn_recalculate_review_trust) --
-        // the row gets created lazily by that function on the user's first
-        // review, or already exists with sensible defaults either way.
         supabase.from('account_verifications').upsert(
           { user_id: authId, identity_verified: false, payment_verified: false, updated_at: new Date().toISOString() },
           { onConflict: 'user_id' }
