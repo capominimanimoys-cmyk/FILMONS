@@ -16,6 +16,8 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { consumePendingReturnUrl } from '../lib/authReturnUrl';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { Lock, Link2, X } from 'lucide-react';
 
 const EXPECTED_EMAIL_KEY = 'fm_expected_login_email';
 
@@ -23,6 +25,13 @@ function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
   if (!domain) return email;
   return `${local.slice(0, 1)}${'•'.repeat(Math.max(3, local.length - 1))}@${domain}`;
+}
+
+interface LinkPrompt {
+  existingProfile: any;
+  googleUserId: string;
+  email: string;
+  provider: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -89,6 +98,15 @@ export function OAuthCallback() {
   const handled            = useRef(false);
   const [loadError, setLoadError] = useState('');
   const [wrongAccount, setWrongAccount] = useState<{ expected: string; got: string } | null>(null);
+
+  // Existing email/password account + a Google identity that isn't linked
+  // to it yet — never auto-link on Google's word alone; require the
+  // account's actual Filmons password before touching it.
+  const [linkPrompt, setLinkPrompt] = useState<LinkPrompt | null>(null);
+  const [linkStep,   setLinkStep]   = useState<'prompt' | 'password' | 'success'>('prompt');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkError,    setLinkError]    = useState('');
+  const [linking,      setLinking]      = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -168,30 +186,25 @@ export function OAuthCallback() {
 
           const alreadyLinked = existingMeta[`${provider}Id`] === user.id;
 
-          if (!alreadyLinked) {
-            const updatedMeta = {
-              ...existingMeta,
-              providers: [...new Set([...(existingMeta.providers || ['email']), provider])],
-              [`${provider}Id`]: user.id,
-            };
-            await supabase.from('profiles').update({ profile_meta: updatedMeta }).eq('id', byEmail.id);
+          if (alreadyLinked) {
+            const u = rowToUser(byEmail);
+            await completeLogin(undefined, undefined, undefined, u, provider);
+            toast.success('Welcome back.');
+            navigate(isComplete(u) ? consumePendingReturnUrl() : '/onboarding', { replace: true });
+            return;
           }
 
-          const u = rowToUser(byEmail);
-          await completeLogin(undefined, undefined, undefined, u, provider);
-
-          toast.success(alreadyLinked ? 'Welcome back.' : 'Google account linked — welcome back!', {
-            description: alreadyLinked ? undefined : "We've connected your Google account to your existing Filmons account.",
-            duration: alreadyLinked ? 3000 : 5000,
-          });
-
-          // For an existing, complete profile this is a real sign-in, not a
-        // fresh signup -- honor a pending return URL from a guest-gated
-        // action (see SearchOverlay's handleGuestSeeMore) the same way
-        // Login.tsx does. A profile still going through /onboarding isn't
-        // done signing up yet, so the pending URL stays put in
-        // sessionStorage until Onboarding's own completion navigates.
-        navigate(isComplete(u) ? consumePendingReturnUrl() : '/onboarding', { replace: true });
+          // Google (or Apple) is reporting an email that already owns a
+          // Filmons account, but this specific provider identity has never
+          // been linked to it. Google having verified the email isn't
+          // treated as sufficient proof of ownership on its own -- sign
+          // this brand-new OAuth identity back out and require the
+          // account's real password before linking anything, so a
+          // Google account that merely shares an email can't silently
+          // take over an existing Filmons account.
+          await supabase.auth.signOut();
+          setLinkPrompt({ existingProfile: byEmail, googleUserId: user.id, email, provider });
+          setLinkStep('prompt');
           return;
         }
       }
@@ -215,6 +228,202 @@ export function OAuthCallback() {
       options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
     });
   };
+
+  // ── Google-link confirmation flow ────────────────────────────────────────
+  const cancelLinkPrompt = () => {
+    setLinkPrompt(null);
+    navigate('/login', { replace: true });
+  };
+
+  const useAnotherGoogleAccount = async () => {
+    setLinkPrompt(null);
+    handled.current = false;
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
+    });
+  };
+
+  const confirmAndConnect = async () => {
+    if (!linkPrompt || !linkPassword || linking) return;
+    setLinking(true);
+    setLinkError('');
+    try {
+      // The real proof of ownership: does this person know the existing
+      // account's actual password? This establishes a genuine session
+      // under the EXISTING profile's own auth id (a separate auth.users
+      // row from the one Google just created for the same email — this
+      // app links accounts at the profiles/profile_meta layer, not via
+      // Supabase's native identity merging).
+      const { error: pwError } = await supabase.auth.signInWithPassword({
+        email: linkPrompt.email, password: linkPassword,
+      });
+      if (pwError) {
+        setLinkError('Incorrect password. Please try again.');
+        setLinking(false);
+        return;
+      }
+
+      const existingMeta: Record<string, any> =
+        typeof linkPrompt.existingProfile.profile_meta === 'string'
+          ? JSON.parse(linkPrompt.existingProfile.profile_meta || '{}')
+          : (linkPrompt.existingProfile.profile_meta || {});
+      const updatedMeta = {
+        ...existingMeta,
+        providers: [...new Set([...(existingMeta.providers || ['email']), linkPrompt.provider])],
+        [`${linkPrompt.provider}Id`]: linkPrompt.googleUserId,
+      };
+
+      // Written through the service-role server, not a direct client
+      // update -- profiles writes have repeatedly turned out to silently
+      // no-op under this table's RLS policy depending on session state,
+      // so this path never depends on that working correctly.
+      await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users/${linkPrompt.existingProfile.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ profileMeta: updatedMeta }),
+      }).catch(() => {});
+
+      const u = rowToUser({ ...linkPrompt.existingProfile, profile_meta: updatedMeta });
+      await completeLogin(undefined, undefined, undefined, u, linkPrompt.provider);
+      setLinkStep('success');
+    } catch (e: any) {
+      setLinkError(e?.message || 'Could not connect your Google account. Please try again.');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const continueAfterLink = () => {
+    if (!linkPrompt) return;
+    const u = rowToUser(linkPrompt.existingProfile);
+    navigate(isComplete(u) ? consumePendingReturnUrl() : '/onboarding', { replace: true });
+  };
+
+  // ── Existing email/password account, unlinked Google identity ────────────
+  if (linkPrompt) {
+    const providerLabel = linkPrompt.provider === 'google' ? 'Google' : 'Apple';
+    return (
+      <AuthScreenLayout>
+        <CinematicBg/>
+        <div
+          className="fixed inset-0 z-[95] bg-black/60 flex items-end md:items-center justify-center"
+          style={{ backdropFilter: 'blur(4px)' }}
+        >
+          <div className="relative z-10 w-full md:max-w-sm bg-gray-900 rounded-t-3xl md:rounded-3xl px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:pb-6 shadow-2xl">
+            {linkStep !== 'password' && (
+              <button
+                onClick={cancelLinkPrompt}
+                aria-label="Close"
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4"/>
+              </button>
+            )}
+
+            {linkStep === 'prompt' && (
+              <div className="space-y-5">
+                <div className="flex justify-center pt-2">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
+                    <Link2 className="w-7 h-7 text-blue-400" strokeWidth={1.5}/>
+                  </div>
+                </div>
+                <div className="text-center space-y-2">
+                  <h2 className="text-xl font-black text-white">This email is already connected to a Filmons account</h2>
+                  <p className="text-white/55 text-sm leading-relaxed">
+                    You already have a Filmons account using this email.
+                  </p>
+                  <p className="text-white/55 text-sm leading-relaxed">
+                    Connect your {providerLabel} account to your existing Filmons account so you can use Continue with {providerLabel} next time.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setLinkStep('password')}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
+                  >
+                    Connect {providerLabel} Account
+                  </button>
+                  <button
+                    onClick={cancelLinkPrompt}
+                    className="w-full py-3.5 bg-white/8 hover:bg-white/12 border border-white/15 text-white font-semibold text-sm rounded-2xl transition-all active:scale-[0.98]"
+                  >
+                    Sign in another way
+                  </button>
+                  <button
+                    onClick={useAnotherGoogleAccount}
+                    className="w-full py-2 text-white/40 hover:text-white/70 text-xs font-semibold transition-colors"
+                  >
+                    Use another {providerLabel} account
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {linkStep === 'password' && (
+              <div className="space-y-5">
+                <div className="flex justify-center pt-2">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
+                    <Lock className="w-7 h-7 text-blue-400" strokeWidth={1.5}/>
+                  </div>
+                </div>
+                <div className="text-center space-y-1">
+                  <h2 className="text-xl font-black text-white">Confirm your Filmons password</h2>
+                  <p className="text-white/50 text-sm">{linkPrompt.email}</p>
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="password" autoFocus value={linkPassword}
+                    onChange={e => { setLinkPassword(e.target.value); setLinkError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && confirmAndConnect()}
+                    placeholder="Password"
+                    className="w-full bg-white/10 border border-white/20 text-white placeholder-white/30 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"
+                  />
+                  {linkError && <p className="text-red-400 text-xs text-center">{linkError}</p>}
+                </div>
+                <div className="space-y-3">
+                  <button
+                    onClick={confirmAndConnect} disabled={!linkPassword || linking}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
+                  >
+                    {linking ? 'Connecting…' : `Confirm & Connect ${providerLabel}`}
+                  </button>
+                  <button
+                    onClick={() => { setLinkStep('prompt'); setLinkPassword(''); setLinkError(''); }}
+                    className="w-full py-2 text-white/40 hover:text-white/70 text-xs font-semibold transition-colors"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {linkStep === 'success' && (
+              <div className="space-y-5">
+                <div className="flex justify-center pt-2">
+                  <div className="w-14 h-14 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+                    <Link2 className="w-7 h-7 text-green-400" strokeWidth={1.5}/>
+                  </div>
+                </div>
+                <div className="text-center space-y-2">
+                  <h2 className="text-xl font-black text-white">{providerLabel} account connected</h2>
+                  <p className="text-white/55 text-sm leading-relaxed">
+                    You can now sign in to Filmons using your email/password or {providerLabel}.
+                  </p>
+                </div>
+                <button
+                  onClick={continueAfterLink}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
+                >
+                  Continue to Filmons
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </AuthScreenLayout>
+    );
+  }
 
   // ── Wrong Google account selected ────────────────────────────────────────
   if (wrongAccount) {
