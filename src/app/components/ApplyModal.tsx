@@ -70,20 +70,21 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
     setTimeout(onClose, 280);
   }, [onClose]);
   const tier = normalizeTier(user?.accountType);
-  // Creator can't apply at all (server-side applications entitlement is 0
-  // for this tier -- see _shared/entitlements.ts) -- gated here on open,
-  // synchronously, rather than letting them fill out the whole form and
-  // only discovering this after a failed submit. The server still enforces
-  // the same limit independently on submit either way; this is purely the
-  // UX shortcut straight to the same upgrade view that path would show.
-  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(
-    tier === 'creator' ? { plan: 'creator', limit: 0 } : null,
-  );
+  // Every tier below Business has a real weekly application cap now
+  // (Creator: 1, Creator+: 2, Professional: 5 -- see _shared/entitlements.ts).
+  // Whether it's already been hit gets checked on submit
+  // (fn_submit_opportunity_application, atomic) -- limitReached only ever
+  // starts non-null when the submit itself reports 403 limit_reached below.
+  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(null);
   const [usage, setUsage] = useState<{ applications: number } | null>(null);
 
   useEffect(() => {
-    if (!user || tier === 'business' || tier === 'creator') return;
-    getOpportunityUsage(user.id, user.accountType).then(u => setUsage({ applications: u.applications })).catch(() => {});
+    if (!user || tier === 'business') return;
+    getOpportunityUsage(user.id, user.accountType).then(u => {
+      setUsage({ applications: u.applications });
+      const limit = getEntitlement(user.accountType).applications;
+      if (limit !== null && u.applications >= limit) setLimitReached({ plan: tier, limit });
+    }).catch(() => {});
   }, [user?.id]);
 
   const handleApply = async () => {
@@ -315,9 +316,11 @@ export function ApplyModal({ listing, host, onClose }: ApplyModalProps) {
               </div>
             ))}
 
-            {usage && tier !== 'business' && (
+            {tier === 'business' ? (
+              <div className="text-center text-[11px] text-gray-400"><p className="font-semibold text-gray-500">Unlimited applications</p></div>
+            ) : usage && (
               <div className="text-center text-[11px] text-gray-400 space-y-0.5">
-                <p className="font-semibold text-gray-500">Applications this week: {usage.applications} of {getEntitlement(user?.accountType).applications}</p>
+                <p className="font-semibold text-gray-500">{usage.applications} / {getEntitlement(user?.accountType).applications} applications this week</p>
                 <p>{resetLabel(getEntitlement(user?.accountType).window)}</p>
               </div>
             )}

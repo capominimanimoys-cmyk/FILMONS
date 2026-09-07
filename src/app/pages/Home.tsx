@@ -15,11 +15,9 @@ import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
-import { opportunityFeedApi } from '../lib/opportunityFeedApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
-import { OpportunityQueueLimitBanner } from '../components/OpportunityQueueLimitBanner';
 import { ListingCard } from '../components/ListingCard';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
@@ -89,7 +87,7 @@ function capEmergencyItems(listings: EnrichedListing[], limit: number): { visibl
 
 function buildDeck(
   listings: EnrichedListing[], creators: CreatorProfile[], filter: FilterId,
-  opportunitySwipesRemaining?: number | null, emergencyLimit: number = Infinity,
+  emergencyLimit: number = Infinity,
 ): DeckItem[] {
   if (filter === 'creators') {
     return creators.map(c => ({ kind: 'creator', data: c }));
@@ -129,16 +127,10 @@ function buildDeck(
     );
     filtered = capEmergencyItems(filtered, emergencyLimit).visible;
   } else if (filter === 'talent') {
-    let talentListings = filtered.filter(isTalentListing);
-    // Guest/Creator/Creator+ see every real Opportunity listing (never a
-    // restricted subset) -- opportunitySwipesRemaining just sizes the
-    // deck to however many swipes they have left today (server-enforced
-    // per-swipe via record-opportunity-swipe, see Home()'s handleSwipe),
-    // so they can never swipe past the daily limit. null/undefined means
-    // Professional/Business (unlimited) -- full list, no truncation.
-    if (opportunitySwipesRemaining != null) {
-      talentListings = talentListings.slice(0, Math.max(0, opportunitySwipesRemaining));
-    }
+    // Every tier (Guest included) sees every real Opportunity listing here
+    // -- no truncation. Viewing is unrestricted; only applying is limited,
+    // enforced weekly at the point of applying (see ApplyModal.tsx).
+    const talentListings = filtered.filter(isTalentListing);
     const talentCreators = creators.filter(c =>
       /model|actor|actress|talent|influencer|ugc/i.test(c.primary_role ?? '')
     );
@@ -196,40 +188,13 @@ export function Home() {
   const canBrowseEmergency = userTier === 'professional' || userTier === 'business';
   const [showEmergencyUpgrade, setShowEmergencyUpgrade] = useState(false);
 
-  // Opportunity ("talent" filter) browsing: Guest/Creator/Creator+ see
-  // every real Opportunity listing (buildDeck's 'talent' branch is never
-  // filtered down by which ones), just capped at 5 SWIPES/day --
-  // server-enforced per swipe (see handleOpportunitySwipe below /
-  // record-opportunity-swipe). oppSwipesRemaining is resolved once per
-  // Home mount (not live-updated as the user swipes through the deck
-  // this session -- the deck is sized once, at load, to whatever was
-  // remaining then) so the deck doesn't shrink out from under an
-  // in-progress swipe-through. Starts at 0 (not the full amount) for a
-  // limited tier so the brief window before the server round-trip
-  // resolves shows zero Opportunity cards, not a flash of everything.
-  const oppUnlimited = userTier === 'professional' || userTier === 'business';
-  const [oppSwipesRemaining, setOppSwipesRemaining] = useState(0);
-  useEffect(() => {
-    if (oppUnlimited) return;
-    let cancelled = false;
-    opportunityFeedApi.getSwipeStatus(user?.id, !user).then(({ unlimited, swipeCount, limit }) => {
-      if (cancelled) return;
-      if (unlimited) return; // unlimited: server disagreed with the client tier read -- oppUnlimited already covers this path
-      setOppSwipesRemaining(Math.max(0, limit - swipeCount));
-    });
-    return () => { cancelled = true; };
-  }, [oppUnlimited, user?.id]);
-
-  // Fire-and-forget per swipe (both directions -- Pass also "uses up" a
-  // preview, matching how the general Home swipe limit already treats
-  // left/right the same). Never blocks the UI: the deck was already
-  // sized to oppSwipesRemaining at load, so nothing here needs to gate
-  // the NEXT card in the same session -- this just keeps the server
-  // count correct for tomorrow/a refresh.
-  const handleOpportunitySwipe = (listingId: string) => {
-    if (oppUnlimited) return;
-    opportunityFeedApi.recordSwipe(user?.id, !user, listingId).catch(() => {});
-  };
+  // Opportunity ("talent" filter) browsing: every tier (Guest included) can
+  // view every real Opportunity listing in Home's deck, with no daily cap
+  // -- viewing is unrestricted; only actually applying is limited, and
+  // that's enforced weekly, server-side, at the point of applying (see
+  // ApplyModal.tsx / OpportunityLimitUpgrade.tsx / _shared/entitlements.ts's
+  // `applications` field). Listings must never disappear from this deck
+  // because of an application limit.
 
   const [listings,  setListings]  = useState<EnrichedListing[]>([]);
   const [creators,  setCreators]  = useState<CreatorProfile[]>([]);
@@ -349,17 +314,6 @@ export function Home() {
     return () => { done = true; };
   }, [user?.id, refreshKey]);
 
-  // Guest/Creator: 2 Opportunity listings/day in the Home queue. Creator+:
-  // 5/day. Professional/Business: unlimited (handled separately below via
-  // oppUnlimited). This is a genuine per-day budget (persisted in
-  // opportunity_swipe_log, resets at UTC midnight, never on refresh/sign-
-  // out) -- oppSwipesRemaining already reflects the correct per-tier limit
-  // minus today's usage, resolved server-side in get-opportunity-feed
-  // (ENTITLEMENTS.opportunityQueueDaily / GUEST_OPPORTUNITY_QUEUE_DAILY),
-  // so it's used directly here rather than re-clamped to a flat number on
-  // the client.
-  const oppDisplayLimit = oppSwipesRemaining;
-
   // Guest/Creator/Creator+ never see more than 2 emergency-flagged items
   // within any one category deck (Rental, Sales, Services, Studios) --
   // non-emergency items in that same deck are untouched. Professional/
@@ -367,21 +321,14 @@ export function Home() {
   const emergencyDisplayLimit = canBrowseEmergency ? Infinity : 2;
 
   // Rebuild deck whenever filter or source data changes; reset deck state via key
-  // null (Professional/Business) means "don't truncate" inside buildDeck.
-  const oppSwipesRemainingForDeck = oppUnlimited ? null : oppDisplayLimit;
   const deck = useMemo(
-    () => buildDeck(listings, creators, filter, oppSwipesRemainingForDeck, emergencyDisplayLimit),
-    [listings, creators, filter, oppSwipesRemainingForDeck, emergencyDisplayLimit],
+    () => buildDeck(listings, creators, filter, emergencyDisplayLimit),
+    [listings, creators, filter, emergencyDisplayLimit],
   );
-  // rawDeck is deliberately NEVER truncated by the swipe-remaining count --
-  // its only job is telling "genuinely nothing exists" apart from "you've
-  // already seen/swiped everything" (see the deckDone-promotion effect
-  // below). Truncating it the same way as `deck` meant once remaining hit
-  // 0, rawDeck also went empty even when real (already-excluded) matching
-  // listings existed, so that effect never fired and the plain "Nothing
-  // here yet" empty state showed instead of the correct caught-up screen.
-  // Emergency capping is skipped here for the same reason.
-  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter, null), [rawListings, rawCreators, filter]);
+  // rawDeck is deliberately never emergency-capped -- its only job is
+  // telling "genuinely nothing exists" apart from "you've already seen/
+  // swiped everything" (see the deckDone-promotion effect below).
+  const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter), [rawListings, rawCreators, filter]);
 
   // How many emergency items got held back from the CURRENT filter's deck
   // -- computed independently of buildDeck (which only returns the deck
@@ -401,14 +348,6 @@ export function Home() {
     else categoryFiltered = listings.filter(l => !isTalentListing(l) && ((l.title?.toLowerCase() ?? '').includes('studio') || (l.serviceCategory?.toLowerCase() ?? '').includes('studio')));
     return capEmergencyItems(categoryFiltered, emergencyDisplayLimit).hiddenCount;
   }, [listings, filter, canBrowseEmergency, emergencyDisplayLimit]);
-
-  // Reaching the end of the 'talent' deck means "hit the daily swipe cap"
-  // only if there were genuinely more real Opportunities than the capped
-  // deck showed -- otherwise the user just saw everything that exists,
-  // same as any other caught-up filter, and the upsell would be
-  // misleading ("unlock more" when there is no more).
-  const talentTotalCount = useMemo(() => listings.filter(isTalentListing).length, [listings]);
-  const oppLimitReached = !oppUnlimited && talentTotalCount > oppDisplayLimit;
 
   // A reload (or first visit this session) after having already swiped
   // through everything for this filter never fires SwipeStack's onDone --
@@ -583,22 +522,12 @@ export function Home() {
     </div>
   );
 
-  // Shown instead of caughtUpScreen/emptyState once a limited tier (Guest/
-  // Creator/Creator+) has gone through today's per-tier Opportunity queue
-  // budget (oppDisplayLimit above -- Guest/Creator: 2, Creator+: 5) --
-  // never loads more, just explains why and offers real next steps
-  // directly, with tier-specific copy (see OpportunityQueueLimitBanner).
-  const opportunityLimitScreen = (
-    <OpportunityQueueLimitBanner tier={userTier} isAuthenticated={!!user} />
-  );
-
   // Shown instead of caughtUpScreen/emptyState once a restricted tier
   // (Guest/Creator/Creator+) reaches the end of a category deck
   // (Rental/Sales/Services/Studios) that held back emergency-flagged
   // items past emergencyDisplayLimit (2) -- everything else in that
   // category was already shown normally, only the excess emergency ones
-  // were capped. Same guest-aware copy/button pattern as
-  // opportunityLimitScreen just above.
+  // were capped.
   const categoryEmergencyLimitScreen = (
     <div className="flex flex-col items-center py-20 px-6 text-center">
       <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-4">
@@ -769,18 +698,15 @@ export function Home() {
                 />
               )
                   : loadError ? errorScreen : deckDone
-                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen
-                     : currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : caughtUpScreen)
+                  ? (currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : caughtUpScreen)
                   : deck.length === 0
-                  ? ((filter === 'talent' && oppLimitReached) ? opportunityLimitScreen
-                     : currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : emptyState)
+                  ? (currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : emptyState)
                   : showNewBanner ? newOpportunitiesScreen : (
                 <SwipeStack
                   key={filterKey}
                   items={deck}
                   persistKey={filter}
                   onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
-                  onSwipeListing={filter === 'talent' ? handleOpportunitySwipe : undefined}
                 />
               )}
             </div>

@@ -31,10 +31,13 @@ interface AuthContextType {
   isGuest:        boolean;
   enterGuestMode: () => void;
   exitGuestMode:  () => void;
-  /** Show the guest auth prompt with an optional action-specific message */
-  guestPromptMsg:  string | null;
-  showGuestPrompt: (msg?: string) => void;
-  hideGuestPrompt: () => void;
+  /** Show the guest auth prompt with an optional action-specific message
+   *  and title (title defaults to the generic "Create an account to
+   *  continue" heading every other caller already relies on). */
+  guestPromptMsg:   string | null;
+  guestPromptTitle: string | null;
+  showGuestPrompt:  (msg?: string, title?: string) => void;
+  hideGuestPrompt:  () => void;
 
   // Email/password (profiles table — no Supabase Auth)
   login:    (email: string, password: string) => Promise<string>;
@@ -114,6 +117,7 @@ const defaultCtx: AuthContextType = {
   enterGuestMode:   () => {},
   exitGuestMode:    () => {},
   guestPromptMsg:   null,
+  guestPromptTitle: null,
   showGuestPrompt:  () => {},
   hideGuestPrompt:  () => {},
   login:            async () => '',
@@ -148,12 +152,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Guest mode
   const [isGuest,       setIsGuest]       = useState(() => localStorage.getItem(GUEST_KEY) === 'true');
   const [guestPromptMsg, setGuestPromptMsg] = useState<string | null>(null);
+  const [guestPromptTitle, setGuestPromptTitle] = useState<string | null>(null);
 
   const enterGuestMode = () => { localStorage.setItem(GUEST_KEY, 'true');  setIsGuest(true);  };
   const exitGuestMode  = () => { localStorage.removeItem(GUEST_KEY);        setIsGuest(false); };
 
-  const showGuestPrompt = (msg = 'Create an account to continue') => setGuestPromptMsg(msg);
-  const hideGuestPrompt = () => setGuestPromptMsg(null);
+  const showGuestPrompt = (msg = 'Create an account to continue', title?: string) => {
+    setGuestPromptMsg(msg);
+    setGuestPromptTitle(title ?? null);
+  };
+  const hideGuestPrompt = () => { setGuestPromptMsg(null); setGuestPromptTitle(null); };
 
   // Must be defined before useEffect so it's captured in closure
   const setAndCache = (u: User | null) => { const s = sanitizeUser(u); setUser(s); cache(s); };
@@ -346,6 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enterGuestMode,
       exitGuestMode,
       guestPromptMsg,
+      guestPromptTitle,
       showGuestPrompt,
       hideGuestPrompt,
       login,

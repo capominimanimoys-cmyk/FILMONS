@@ -9,12 +9,16 @@ export interface TierEntitlement {
   applications: number | null; // Opportunity applications per `window`; null = unlimited
   priceCents: number;          // CAD, per month (billing cadence -- unrelated to `window`); 0 = free
   swipesPerDay: number | null; // Home deck Like+Pass swipes per calendar day; null = unlimited
-  // How many Opportunity listings can appear in Home's swipe queue per
-  // calendar day -- distinct from swipesPerDay (the general deck Like/Pass
-  // budget across every listing type) and from posts/applications (posting
-  // and applying). null = unlimited (Professional/Business). Enforced
-  // server-side by get-opportunity-feed / record-opportunity-swipe via
-  // fn_get/record_opportunity_swipe -- see 20240406000000_opportunity_daily_allowance.sql.
+  // Orphaned as of the "Opportunity Listings must never disappear from
+  // Home/Browse/Search" rule -- Home.tsx no longer truncates the swipe
+  // queue by a daily viewing budget at all (every tier, Guest included,
+  // sees every real Opportunity listing). get-opportunity-feed /
+  // record-opportunity-swipe still read this field but are no longer
+  // called from the client anywhere; left in place rather than torn out
+  // (deleting edge functions + their SQL backing + CI deploy entries) since
+  // nothing calls them and they're otherwise harmless. Only `applications`
+  // below matters now -- viewing is unrestricted, applying is what's
+  // limited (weekly).
   opportunityQueueDaily: number | null;
   // Reset cadence for posts/applications specifically. Creator, Creator+
   // and Professional all reset weekly (Monday 00:00 through Sunday 23:59,
@@ -25,10 +29,10 @@ export interface TierEntitlement {
 }
 
 export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
-  // posts: 0, applications: 0 -- Creator+ is now mandatory for Opportunities
-  // entirely, both posting and applying (limit 0 blocks on the very first
-  // attempt, same as ENTITLEMENTS.creator.applications already did).
-  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 2,    window: 'week'  },
+  // posts stays 0 -- Creator+ is still required to POST an Opportunity.
+  // applications is now 1/week -- Creator can apply (a small taste of the
+  // feature), Creator+ is what actually unlocks meaningful weekly volume.
+  creator:      { posts: 0,    applications: 1,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 2,    window: 'week'  },
   creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 5,    window: 'week'  },
   professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, opportunityQueueDaily: null, window: 'week'  },
   business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, opportunityQueueDaily: null, window: 'month' },

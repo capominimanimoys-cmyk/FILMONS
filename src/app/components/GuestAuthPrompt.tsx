@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { X, UserPlus, LogIn } from 'lucide-react';
 
 export function GuestAuthPrompt() {
-  const { guestPromptMsg, hideGuestPrompt } = useAuth() as any;
+  const { guestPromptMsg, guestPromptTitle, hideGuestPrompt } = useAuth() as any;
   const navigate = useNavigate();
 
   if (!guestPromptMsg) return null;
@@ -59,7 +59,7 @@ export function GuestAuthPrompt() {
 
         {/* Copy */}
         <div className="text-center mb-6 space-y-2">
-          <h2 className="text-xl font-black text-white">Create an account to continue</h2>
+          <h2 className="text-xl font-black text-white">{guestPromptTitle || 'Create an account to continue'}</h2>
           <p className="text-white/55 text-sm leading-relaxed max-w-xs mx-auto">
             {guestPromptMsg}
           </p>

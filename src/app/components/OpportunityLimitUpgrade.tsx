@@ -41,22 +41,17 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
     ? `Your ${limit} ${nounPlural} reset next week.`
     : `Your ${limit} ${nounPlural} reset next month.`;
 
-  // Creator can't post OR apply for Opportunities at all (both limits are
-  // 0) -- a distinct message from the "you've used your weekly/monthly
-  // cap" case below, which only applies to tiers that actually get an
-  // allowance (Creator+ and up).
-  if (plan === 'creator' && (kind === 'applications' || kind === 'posts')) {
-    const benefits = [
-      isPosts ? 'Post Opportunities' : 'Apply to Opportunities',
-      'Creator+ verification',
-      'Increased trust and visibility',
-    ];
+  // Creator still can't post Opportunities at all (posts stays 0) -- a
+  // distinct message from the applications case below, since Creator now
+  // gets a real (if small) weekly application allowance.
+  if (plan === 'creator' && kind === 'posts') {
+    const benefits = ['Post Opportunities', 'Creator+ verification', 'Increased trust and visibility'];
     return (
       <div className="px-5 py-6 space-y-4">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto"><Lock className="w-6 h-6 text-blue-600" /></div>
-          <p className="text-base font-black text-gray-900">{isPosts ? 'Post Opportunities' : 'Apply to Opportunities'}</p>
-          <p className="text-sm text-gray-500">Upgrade to Creator+ to {isPosts ? 'post' : 'apply for'} opportunities on FILMONS.</p>
+          <p className="text-base font-black text-gray-900">Post Opportunities</p>
+          <p className="text-sm text-gray-500">Upgrade to Creator+ to post opportunities on FILMONS.</p>
         </div>
         <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 space-y-2.5">
           {benefits.map(b => (
@@ -74,14 +69,64 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
     );
   }
 
+  // Creator's weekly application allowance (1/week) is used up -- the
+  // primary path is the free Creator+ upgrade, but Professional/Business
+  // are still offered below since either also lifts the cap.
+  if (plan === 'creator' && kind === 'applications') {
+    return (
+      <div className="px-5 py-6 space-y-4">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
+          <p className="text-base font-black text-gray-900">Weekly application limit reached</p>
+          <p className="text-sm text-gray-500">
+            You've used your {limit} Opportunity application{limit === 1 ? '' : 's'} for this week. Upgrade your account to apply to more opportunities.
+          </p>
+          <p className="text-xs text-gray-400">{resetsNote}</p>
+        </div>
+
+        <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-blue-600" />
+            <p className="text-sm font-black text-blue-700">CREATOR+</p>
+          </div>
+          <p className="text-sm font-black text-gray-900">Free</p>
+          <p className="text-xs text-gray-600">2 Opportunity applications / week</p>
+          <button onClick={onUpgradeToCreatorPlus} className="w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm">Upgrade to Creator+</button>
+        </div>
+
+        <div className="rounded-2xl border-2 border-purple-200 bg-purple-50 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <BriefcaseBusiness className="w-4 h-4 text-purple-600" />
+            <p className="text-sm font-black text-purple-700">PROFESSIONAL</p>
+          </div>
+          <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.professional.priceCents)} CAD / month</p>
+          <p className="text-xs text-gray-600">{ENTITLEMENTS.professional.applications} Opportunity applications / {ENTITLEMENTS.professional.window}</p>
+          <button onClick={() => onUpgrade('professional')} className="w-full py-2.5 rounded-xl bg-purple-600 text-white font-bold text-sm">Upgrade to Professional</button>
+        </div>
+
+        <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-amber-600" />
+            <p className="text-sm font-black text-amber-700">BUSINESS</p>
+          </div>
+          <p className="text-sm font-black text-gray-900">{formatPrice(ENTITLEMENTS.business.priceCents)} CAD / month</p>
+          <p className="text-xs text-gray-600">Unlimited Opportunity applications</p>
+          <button onClick={() => onUpgrade('business')} className="w-full py-2.5 rounded-xl bg-amber-600 text-white font-bold text-sm">Upgrade to Business</button>
+        </div>
+
+        <button onClick={onMaybeLater} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-sm">Maybe Later</button>
+      </div>
+    );
+  }
+
   if (plan === 'professional') {
     return (
       <div className="px-5 py-6 space-y-4">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
-          <p className="text-base font-black text-gray-900">Weekly limit reached</p>
+          <p className="text-base font-black text-gray-900">{kind === 'applications' ? 'Weekly application limit reached' : 'Weekly posting limit reached'}</p>
           <p className="text-sm text-gray-500">
-            You have reached your weekly Opportunity limit. Upgrade to Business for unlimited access.
+            You've used your {limit} Opportunity {nounPlural.slice(0, -1)}{limit === 1 ? '' : 's'} for this week. Upgrade to Business for unlimited Opportunity {nounPlural}.
           </p>
           <p className="text-xs text-gray-400">{resetsNote}</p>
         </div>
@@ -112,8 +157,8 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
         </p>
         <p className="text-sm text-gray-500">
           {kind === 'applications'
-            ? `You have used your ${limit} Opportunity application${limit === 1 ? '' : 's'} for this week. Upgrade to Professional or Business to apply to more Opportunities.`
-            : `You have used your ${limit} Opportunity post${limit === 1 ? '' : 's'} for this week. Upgrade to Professional or Business to post more Opportunities.`}
+            ? `You've used your ${limit} Opportunity application${limit === 1 ? '' : 's'} for this week. Upgrade to Professional or Business to apply to more opportunities.`
+            : `You've used your ${limit} Opportunity post${limit === 1 ? '' : 's'} for this week. Upgrade to Professional or Business to post more opportunities.`}
         </p>
         <p className="text-xs text-gray-400">{resetsNote}</p>
       </div>

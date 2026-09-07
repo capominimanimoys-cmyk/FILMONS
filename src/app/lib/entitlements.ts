@@ -19,9 +19,10 @@ export interface TierEntitlement {
 }
 
 export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
-  // posts: 0, applications: 0 -- Creator+ is now mandatory for Opportunities
-  // entirely, both posting and applying.
-  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
+  // posts stays 0 -- Creator+ is still required to POST an Opportunity.
+  // applications is 1/week -- Creator can apply (a small taste of the
+  // feature), Creator+ is what actually unlocks meaningful weekly volume.
+  creator:      { posts: 0,    applications: 1,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
   creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
   professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
   business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
