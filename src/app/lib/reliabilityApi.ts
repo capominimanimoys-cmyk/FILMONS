@@ -262,7 +262,12 @@ export const reliabilityApi = {
   async getScore(userId: string): Promise<ReputationScore> {
     const { data } = await supabase.from('reputation_scores').select('*').eq('user_id', userId).maybeSingle();
     if (data) return data as ReputationScore;
-    await supabase.from('reputation_scores').insert({ user_id: userId, account_type: 'creator' });
+    // reputation_scores is no longer client-writable (see
+    // 20240402000000_review_trust_score.sql -- score is computed
+    // server-side only). A user with no row yet has no reputation signal
+    // at all, so the in-memory DEFAULT below is already correct; the row
+    // itself gets created lazily by fn_recalculate_review_trust on their
+    // first review. No insert to attempt here.
     return { ...DEFAULT, user_id: userId };
   },
 

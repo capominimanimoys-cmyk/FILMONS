@@ -162,7 +162,7 @@ export function ProfessionPicker({
 
       {/* ── Primary Profession ── */}
       <div>
-        <span className={labelCls}>Primary Profession <span className={dark ? 'text-white/20 normal-case font-normal' : 'text-gray-400 normal-case font-normal'}>(required — pick one)</span></span>
+        <span className={labelCls}>Primary Profession <span className={dark ? 'text-white/20 normal-case font-normal' : 'text-gray-400 normal-case font-normal'}>(required, pick one)</span></span>
 
         {/* Selected primary chip */}
         {primaryRole && (
@@ -238,7 +238,7 @@ export function ProfessionPicker({
       {/* ── Secondary Professions ── */}
       {!primaryOnly && (
         <div>
-          <span className={labelCls}>Secondary Professions <span className={dark ? 'text-white/20 normal-case font-normal' : 'text-gray-400 normal-case font-normal'}>(optional — multiple)</span></span>
+          <span className={labelCls}>Secondary Professions <span className={dark ? 'text-white/20 normal-case font-normal' : 'text-gray-400 normal-case font-normal'}>(optional, multiple)</span></span>
 
           {/* Selected secondary chips */}
           {secondaryRoles.length > 0 && (

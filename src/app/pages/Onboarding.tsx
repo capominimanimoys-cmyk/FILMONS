@@ -722,7 +722,7 @@ export function CompleteProfile() {
           <div className="pt-8 space-y-6">
             <div>
               <h2 className="text-2xl font-black text-white">Connect your socials</h2>
-              <p className="text-white/40 text-sm mt-1">Optional — add links to your work</p>
+              <p className="text-white/40 text-sm mt-1">Optional, add links to your work</p>
             </div>
             <div className="space-y-3">
               {([
