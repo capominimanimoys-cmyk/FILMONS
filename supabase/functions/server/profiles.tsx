@@ -20,6 +20,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const isUUID  = (s: string) => UUID_RE.test(s);
 const genId   = () => crypto.randomUUID();
 
+// Builds a real Postgres text[] literal string (e.g. `{}` or `{"a","b"}`)
+// instead of handing postgres.js a bare JS array as an unhinted parameter.
+// An EMPTY array specifically can't be type-inferred by the driver with no
+// cast/context, and gets sent in a form Postgres can't parse as an array at
+// all -- "malformed array literal: ''" -- so every text[] column write goes
+// through this explicit literal + an explicit ::text[] cast instead,
+// regardless of length.
+function toTextArrayLiteral(arr: unknown): string {
+  const items = Array.isArray(arr) ? arr : [];
+  return `{${items.map(v => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`;
+}
+
 // ── Optional-column auto-discovery ───────────────────────────────────────────
 // Columns that may be missing in older/custom schemas.
 const OPTIONAL_COLS = new Set([
@@ -265,12 +277,13 @@ async function execCreate(data: any): Promise<any> {
   const colList      = cols.map(c => `"${c}"`).join(", ");
   const placeholders = cols.map((c, i) => {
     if (JSONB_COLS.has(c)) {
-      // text[] column → pass JS array as-is (postgres.js handles the cast)
+      // text[] column → an explicit literal string + ::text[] cast (see
+      // toTextArrayLiteral -- never a bare JS array, empty ones can't be
+      // type-inferred by the driver at all).
       // jsonb column  → keep the ::jsonb cast, but stringify the value first
       if (_textArrayCols.has(c)) {
-        // postgres.js needs a real JS array for text[] — never pass null/string
-        if (!Array.isArray(vals[i])) vals[i] = [];
-        return `$${i + 1}`;
+        vals[i] = toTextArrayLiteral(vals[i]);
+        return `$${i + 1}::text[]`;
       }
       vals[i] = JSON.stringify(vals[i] ?? []);     // ensure it's a string for ::jsonb
       return `$${i + 1}::jsonb`;
@@ -297,8 +310,8 @@ async function execUpdate(id: string, merged: any): Promise<any> {
   const setClause = setCols.map((c, i) => {
     if (JSONB_COLS.has(c)) {
       if (_textArrayCols.has(c)) {
-        if (!Array.isArray(setVals[i])) setVals[i] = [];
-        return `"${c}" = $${i + 1}`;
+        setVals[i] = toTextArrayLiteral(setVals[i]);
+        return `"${c}" = $${i + 1}::text[]`;
       }
       setVals[i] = JSON.stringify(setVals[i] ?? []);  // stringify for ::jsonb
       return `"${c}" = $${i + 1}::jsonb`;
@@ -568,13 +581,14 @@ export async function update(id: string, data: any): Promise<any> {
 
   const setCols: string[] = [];
   const setVals: any[]    = [];
+  const textArrayCastCols = new Set<string>();
 
   for (const [jsKey, sqlCol] of Object.entries(FIELD_MAP)) {
     if (jsKey in data && data[jsKey] !== undefined && !_excluded.has(sqlCol)) {
       let val = (data as any)[jsKey];
       if (sqlCol === "profile_meta") val = JSON.stringify(val ?? {});
       else if (sqlCol === "secondary_roles" || sqlCol === "followers" || sqlCol === "following") {
-        if (_textArrayCols.has(sqlCol)) { if (!Array.isArray(val)) val = []; }
+        if (_textArrayCols.has(sqlCol)) { val = toTextArrayLiteral(val); textArrayCastCols.add(sqlCol); }
         else val = JSON.stringify(Array.isArray(val) ? val : []);
       }
       if (sqlCol === "years_exp") val = val ? parseInt(val) : null;
@@ -598,7 +612,7 @@ export async function update(id: string, data: any): Promise<any> {
     const activeVals = setVals.filter((_, i) => !_excluded.has(setCols[i]));
     if (activeCols.length === 0) break;
     try {
-      const setClause = activeCols.map((c, i) => `"${c}" = $${i + 1}`).join(", ");
+      const setClause = activeCols.map((c, i) => `"${c}" = $${i + 1}${textArrayCastCols.has(c) ? '::text[]' : ''}`).join(", ");
       const rows = await sql().unsafe(
         `UPDATE profiles SET ${setClause} WHERE id = $${activeCols.length + 1} RETURNING *`,
         [...activeVals, id]
