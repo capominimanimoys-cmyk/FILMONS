@@ -63,7 +63,7 @@ async function ensureColTypes() {
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND table_name   = 'profiles'
-        AND column_name IN ('followers', 'following', 'links')
+        AND column_name IN ('followers', 'following', 'links', 'secondary_roles')
     `;
     for (const row of rows) {
       // udt_name is "_text" for text[], "jsonb" for jsonb
@@ -573,9 +573,9 @@ export async function update(id: string, data: any): Promise<any> {
     if (jsKey in data && data[jsKey] !== undefined && !_excluded.has(sqlCol)) {
       let val = (data as any)[jsKey];
       if (sqlCol === "profile_meta") val = JSON.stringify(val ?? {});
-      else if (sqlCol === "secondary_roles") val = JSON.stringify(Array.isArray(val) ? val : []);
-      else if (sqlCol === "followers" || sqlCol === "following") {
-        if (!_textArrayCols.has(sqlCol)) val = JSON.stringify(Array.isArray(val) ? val : []);
+      else if (sqlCol === "secondary_roles" || sqlCol === "followers" || sqlCol === "following") {
+        if (_textArrayCols.has(sqlCol)) { if (!Array.isArray(val)) val = []; }
+        else val = JSON.stringify(Array.isArray(val) ? val : []);
       }
       if (sqlCol === "years_exp") val = val ? parseInt(val) : null;
       setCols.push(sqlCol);
