@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
-  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, AlertTriangle, Lock,
+  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock, AlertTriangle,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
@@ -18,6 +18,7 @@ import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
+import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -923,50 +924,6 @@ function CreatorCard({ u, onNavigate }: { u: ProfileRow; onNavigate: (url: strin
   );
 }
 
-// One row shape for either a creator or a listing, used only by the "All"
-// mixed preview above -- that section deliberately doesn't reuse
-// CreatorCard/MarketplaceCard/etc. directly since mixing a grid-shaped card
-// and a list-row card in the same 3-item strip would look inconsistent.
-function MixedPreviewCard({ entry, onNavigate }: {
-  entry: { kind: 'creator' | 'listing'; item: any };
-  onNavigate: (url: string, state?: Record<string, unknown>) => void;
-}) {
-  if (entry.kind === 'creator') {
-    const u = entry.item as ProfileRow;
-    return (
-      <motion.button variants={itemV} onClick={() => onNavigate(`/host/${u.id}`)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
-        <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 shrink-0 border border-gray-200">
-          {u.avatar_url
-            ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
-            : <div className="w-full h-full flex items-center justify-center text-sm font-black text-gray-400">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
-          {u.primary_role && <p className="text-xs text-blue-600 font-medium truncate">{u.primary_role} · Creator</p>}
-        </div>
-        <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
-      </motion.button>
-    );
-  }
-  const l = entry.item as ListingRow;
-  const price = `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
-  const typeLabel = isOpportunityListing(l) ? 'Opportunity' : isStudioListing(l) ? 'Studio' : l.listing_type === 'service' ? 'Service' : l.listing_mode === 'sale' ? 'Sale' : 'Rental';
-  return (
-    <motion.button variants={itemV} onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
-      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
-      <div className="w-11 h-11 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-        {l.images?.[0] ? <img src={l.images[0]} className="w-full h-full object-cover" alt=""/> : <div className="w-full h-full flex items-center justify-center text-lg opacity-25">🎬</div>}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
-        <p className="text-xs text-gray-400 truncate">{isOpportunityListing(l) ? typeLabel : `${price} · ${typeLabel}`}</p>
-      </div>
-      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
-    </motion.button>
-  );
-}
-
 // Seeds ListingDetail's skeleton immediately (same hint-only pattern
 // ListingCard.tsx/SwipeStack.tsx already use) and flags the Browse/Search
 // pop-up transition, per the Browse/Search -> Listing Details pop-up spec.
@@ -1094,60 +1051,26 @@ function ResultSection({ label, count, grid=false, children, footer }: { label:s
   );
 }
 
-// "View More" footer for a capped category -- visually belongs to the
+// "See more" footer for a guest-capped category -- visually belongs to the
 // section it's passed into (ResultSection's `footer` prop), matching the
 // spec's "the button should visually belong to that category section".
-// Used for both the guest signup-prompt path and the logged-in
-// full-category-page path -- same label, different onClick.
-function ViewMoreButton({ onClick }: { onClick: () => void }) {
+function GuestSeeMoreButton({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick}
       className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-      View More
+      See more
     </button>
   );
 }
 
-// Guest/Creator/Creator+'s permanent Emergency lock -- two copy variants
-// depending only on whether there's at least one real listing shown above
-// it (hasAny), never an actual count, so the UI can't be used to infer
-// whether the true number is 0, 1, or many.
-function EmergencyLockedNotice({ hasAny, onUpgrade }: { hasAny: boolean; onUpgrade: () => void }) {
+function EmergencyCategoryGateButton({ onClick }: { onClick: () => void }) {
   return (
-    <div className="mx-4 mb-1 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-center space-y-2">
-      <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
-        <Lock className="w-5 h-5 text-amber-600"/>
-      </div>
-      {hasAny ? (
-        <>
-          <p className="text-sm font-black text-gray-900">Unlock all Emergency Listings</p>
-          <p className="text-xs text-gray-600">Upgrade to Professional or Business to see all available Emergency Listings.</p>
-        </>
-      ) : (
-        <>
-          <p className="text-sm font-black text-gray-900">Emergency Listings</p>
-          <p className="text-sm font-bold text-gray-800">Unlock Emergency Listings</p>
-          <p className="text-xs text-gray-600">Upgrade to Professional or Business to access Emergency Listings and respond when urgent opportunities become available.</p>
-        </>
-      )}
-      <button onClick={onUpgrade} className="w-full py-2.5 rounded-xl bg-amber-600 text-white font-bold text-xs mt-1">
-        Upgrade Account
-      </button>
-    </div>
+    <button onClick={onClick}
+      className="w-full py-3 text-center text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
+      See more emergency listings
+    </button>
   );
 }
-
-// Professional/Business's own empty state -- shown instead of hiding the
-// Emergency section entirely when there happen to be none right now.
-function EmptyEmergencySection() {
-  return (
-    <div className="col-span-2 py-6 text-center">
-      <p className="text-sm font-bold text-gray-500">No Emergency Listings right now</p>
-      <p className="text-xs text-gray-400 mt-0.5">Check back later for urgent opportunities in your area.</p>
-    </div>
-  );
-}
-
 
 
 // Singular, category-specific noun for the empty-state copy -- "rental
@@ -1266,22 +1189,41 @@ interface Props {
   onResultNavigate?: (url: string, state?: Record<string, unknown>) => void;
 }
 
-// Browse Search category-preview cap (see the "Browse Search — Category
-// Preview Rules" spec). Applies only in pure browse mode -- a category tab
-// tapped with nothing typed (isBrowsing below) -- never to results after an
-// actual typed search, which must show everything unrestricted regardless
-// of account tier. Every regular category (Rental, Sale, Services, Studios,
-// Creators, Opportunities) shows the same 3 for guest and logged-in alike
-// now; what differs by tier is only what "View More" does (guest -> signup
-// prompt, logged-in -> the full category page). Emergency is the one
-// exception with its own numbers, handled separately below.
-const PREVIEW_LIMIT = 3;
-// Emergency: Guest/Creator/Creator+ never see more than this many real
-// listings, permanently, regardless of tier or how many actually exist --
-// an account-level lock, not a preview convenience (see the Emergency
-// Listings updated-locked-state spec). Professional/Business get the same
-// PREVIEW_LIMIT (3) as every other category, with a real View More.
-const EMERGENCY_LOCKED_LIMIT = 2;
+// Guests get a 5-item preview of every category (never zero -- "Do not
+// hide categories from guests", per the guest-mode-limit spec) with a "See
+// more" that sends them to Login/Sign Up instead of loading more. Signed-in
+// users of any tier are never capped here (Opportunities' separate
+// Professional-tier cap below is unrelated and still applies to them).
+const GUEST_CATEGORY_LIMIT = 5;
+// Creator/Creator+ never see more than this many real Opportunity listings
+// -- a permanent display cap, not a resettable daily allowance. Professional/
+// Business (canBrowseOpportunities) are exempt entirely.
+const CREATOR_OPPORTUNITY_LIMIT = 2;
+// Guest/Creator/Creator+ never see more than this many EMERGENCY-flagged
+// items within any one category's list (Rental, Sales, Services, Studios)
+// -- non-emergency items in the same list are completely untouched.
+// Professional/Business pass Infinity. Opportunities isn't listed here
+// because its own CREATOR_OPPORTUNITY_LIMIT (2 total) already implies at
+// most 2 emergency ones too.
+const EMERGENCY_LIMIT_RESTRICTED = 2;
+
+// Caps how many emergency-flagged items appear within one category's list
+// for a restricted tier -- order otherwise preserved, non-emergency items
+// untouched. Emergency is a status on a listing, not its own category (see
+// isOpportunityListing's comment above for the earlier fix to a related
+// category-contamination bug).
+function capEmergencyInCategory(items: ListingRow[], limit: number): { visible: ListingRow[]; hiddenCount: number } {
+  if (limit === Infinity) return { visible: items, hiddenCount: 0 };
+  let seen = 0, hiddenCount = 0;
+  const visible = items.filter(l => {
+    const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
+    if (!isEmergency) return true;
+    if (seen < limit) { seen++; return true; }
+    hiddenCount++;
+    return false;
+  });
+  return { visible, hiddenCount };
+}
 
 const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
 
@@ -1306,16 +1248,25 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [sort,           setSort]           = useState<SortBy>('best_match');
   const [showFilterSheet,setShowFilterSheet]= useState(false);
   const [showSortSheet,  setShowSortSheet]  = useState(false);
-  const { user, isAuthenticated, showGuestPrompt } = useAuth();
-  // Emergency is the one category with its own permanent account-level
-  // lock, unrelated to isBrowsing/categoryLimit -- Professional/Business
-  // get the same uniform 2/5-then-View-More rule as every other category;
-  // everyone else (Guest, Creator, Creator+) never sees more than 2 real
-  // Emergency listings, ever, regardless of how many actually exist, and
-  // the category itself is never hidden even when there are none (an
-  // empty count must not be distinguishable from a hidden one -- see the
-  // Emergency Listings updated-locked-state spec).
+  // Professional/Business get unlimited Opportunity browsing. Everyone
+  // else sees the 5 latest (opportunityListings is already newest-first,
+  // same as every other category) plus a "See More" button instead of the
+  // rest -- tapping it shows the account-tier gate, it doesn't fetch or
+  // reveal anything further. isProfessional() covers both unlimited
+  // tiers, and defaults false for a guest (no user) or any lower tier.
+  const { user, isAuthenticated } = useAuth();
+  const canBrowseOpportunities = isProfessional(user?.accountType);
+  const [showOpportunityGate, setShowOpportunityGate] = useState(false);
+  // Same Professional-or-Business rule as Home.tsx's canBrowseEmergency --
+  // isProfessional() already covers both, deliberately never Creator+ alone
+  // (see the emergency-listing spec's explicit "Creator+ status alone does
+  // NOT unlock Emergency Listings").
   const canBrowseEmergency = isProfessional(user?.accountType);
+  // Shared across every category section (Rental/Sales/Services/Studios) --
+  // whichever one's "See more emergency listings" button was tapped opens
+  // the same modal, same as showOpportunityGate above.
+  const [showEmergencyCategoryGate, setShowEmergencyCategoryGate] = useState(false);
+  const emergencyLimit = canBrowseEmergency ? Infinity : EMERGENCY_LIMIT_RESTRICTED;
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
@@ -1347,28 +1298,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     }
   }, [navigate, onClose, onResultNavigate, q, activeTab, filters, sort]);
 
-  // Guest "View More" on a category section — never loads more results for
-  // a guest, shows the shared signup-prompt sheet instead (Create Account /
-  // Sign In, per the Browse Search display-rules spec). Remembers the
-  // category (via ?tab= on the return URL, read by activeTab's initializer
-  // above) so a successful login/signup lands back on that same filtered
-  // category view rather than the top of Home or a generic search page.
+  // Guest "See more" on a category section — never loads more results for
+  // a guest, always sends them to Login instead. Remembers the category
+  // (via ?tab= on the return URL, read by activeTab's initializer above)
+  // so a successful login/signup lands back on that same filtered category
+  // view rather than the top of Home or a generic search page.
   const handleGuestSeeMore = useCallback((tab: TabId) => {
     setPendingReturnUrl(`/search?tab=${tab}`);
-    showGuestPrompt(
-      'Create your Filmons account to browse all listings, save listings, contact creators, and apply to opportunities.',
-      'Create an account to see more',
-    );
-  }, [showGuestPrompt]);
-
-  // Logged-in "View More" on a category section — opens the full,
-  // uncapped category results page (every account tier alike, per the
-  // Browse Search display-rules spec). rental/sale use their plural URL
-  // form (rentals/sales) to match CategoryResults.tsx's spec'd routes;
-  // every other tab id is already the same singular/plural.
-  const handleViewMoreCategory = useCallback((tab: TabId) => {
-    const urlTab = tab === 'rental' ? 'rentals' : tab === 'sale' ? 'sales' : tab;
-    navigate(`/search/category/${urlTab}`);
+    navigate(`/login?heading=${encodeURIComponent('Sign up to see more listings')}&sub=${encodeURIComponent("Create your FILMONS account to explore all listings.")}`);
   }, [navigate]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
@@ -1534,45 +1471,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   const visibleUsers        = (activeTab === 'all' || activeTab === 'creators')     ? filteredUsers        : [];
-  const visibleRental       = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
-  const visibleSale         = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
-  const visibleServices     = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
-  const visibleStudios      = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
+  const rawVisibleRental    = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
+  const rawVisibleSale      = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
+  const rawVisibleServices  = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
+  const rawVisibleStudios   = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
   const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
   const visibleEmergency    = (activeTab === 'all' || activeTab === 'emergency')    ? emergencyListings     : [];
 
-  // "All" mixed preview -- a taste of every category in one small row
-  // (max 3 total, not per-category), shown above the per-category
-  // sections on the 'all' tab. Round-robins one item at a time from each
-  // category so 3 consecutive items are never all the same type. Emergency
-  // is deliberately excluded here (it has its own dedicated, always-shown
-  // section right below with its own access rules -- mixing it in here too
-  // would just be a second, less controlled way to see the same items).
-  const allMixedPreview: { kind: 'creator' | 'listing'; item: any }[] = [];
-  if (activeTab === 'all' && !hasTyped) {
-    const buckets: { kind: 'creator' | 'listing'; item: any }[][] = [
-      visibleUsers.map(u => ({ kind: 'creator' as const, item: u })),
-      visibleRental.map(l => ({ kind: 'listing' as const, item: l })),
-      visibleOpportunities.map(l => ({ kind: 'listing' as const, item: l })),
-      visibleServices.map(l => ({ kind: 'listing' as const, item: l })),
-      visibleStudios.map(l => ({ kind: 'listing' as const, item: l })),
-      visibleSale.map(l => ({ kind: 'listing' as const, item: l })),
-    ];
-    outer: for (let i = 0; i < 3; i++) {
-      for (const b of buckets) {
-        if (allMixedPreview.length >= 3) break outer;
-        if (b[i]) allMixedPreview.push(b[i]);
-      }
-    }
-  }
-
-  // Browse Search's 3-item preview cap only ever applies in pure browse
-  // mode (a category tab tapped with nothing typed) -- never to results
-  // after a real typed search, which must always show everything,
-  // uncapped, regardless of account tier (see the display-rules spec's
-  // "must not affect search results after a specific search").
-  const isBrowsing = !hasTyped;
-  const categoryLimit = isBrowsing ? PREVIEW_LIMIT : Infinity;
+  // Emergency-flagged items within each of these four categories are
+  // separately capped at emergencyLimit for a restricted tier -- non-
+  // emergency items in the same list are untouched (see
+  // capEmergencyInCategory above).
+  const { visible: visibleRental,   hiddenCount: hiddenEmergencyRental }   = capEmergencyInCategory(rawVisibleRental, emergencyLimit);
+  const { visible: visibleSale,     hiddenCount: hiddenEmergencySale }     = capEmergencyInCategory(rawVisibleSale, emergencyLimit);
+  const { visible: visibleServices, hiddenCount: hiddenEmergencyServices } = capEmergencyInCategory(rawVisibleServices, emergencyLimit);
+  const { visible: visibleStudios,  hiddenCount: hiddenEmergencyStudios }  = capEmergencyInCategory(rawVisibleStudios, emergencyLimit);
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
@@ -1622,11 +1535,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
         {/* ── Category tabs — always visible, not gated on typing, so tapping
              one fetches that category immediately with no query typed yet.
-             Every tab, Emergency included, follows the same uniform 2/5
-             Browse Search display rule now -- no tier gate on the tab
-             itself. ── */}
+             The Emergency tab itself is Professional/Business only --
+             Guest/Creator/Creator+ still see emergency-flagged listings,
+             just inside each one's real category (Rental, Services, ...)
+             with an EMERGENCY badge, capped per category. ── */}
         <div className="pop-in shrink-0 flex gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-gray-100">
-          {TABS.map(tab => (
+          {TABS.filter(tab => tab.id !== 'emergency' || canBrowseEmergency).map(tab => (
             <button key={tab.id} onClick={() => trySetTab(tab.id)}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
                 activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -1709,85 +1623,73 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             <EmptyState q={q} tab={activeTab}/>
           ) : (
             <div className="py-2">
-              {/* Every category below shares one rule now (see the Browse
-                  Search Category Preview Rules spec): in pure browse mode
-                  (isBrowsing), everyone -- guest or any logged-in tier --
-                  sees PREVIEW_LIMIT (3), with "View More" either prompting
-                  signup (guest) or opening the full, uncapped category page
-                  (logged in, any tier alike). After an actual typed search,
-                  categoryLimit is Infinity -- nothing here is ever capped
-                  or gated. */}
-              {allMixedPreview.length > 0 && (
-                <ResultSection label="🌐 All" count={allMixedPreview.length}
-                  footer={<ViewMoreButton onClick={() => !user ? handleGuestSeeMore('all') : handleViewMoreCategory('all')}/>}>
-                  {allMixedPreview.map((m, i) => (
-                    <MixedPreviewCard key={i} entry={m} onNavigate={handleResultNavigate}/>
-                  ))}
-                </ResultSection>
-              )}
               {visibleUsers.length > 0 && (
                 <ResultSection label="👤 Creators" count={visibleUsers.length}
-                  footer={isBrowsing && visibleUsers.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
-                  {visibleUsers.slice(0, categoryLimit).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
+                  footer={!user && visibleUsers.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('creators')}/> : undefined}>
+                  {visibleUsers.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
+              {/* Each of these four: the generic per-category guest cap
+                  (GUEST_CATEGORY_LIMIT) takes priority when it applies --
+                  it affects the whole category, not just emergency items.
+                  Otherwise, if emergency items were held back within this
+                  category specifically (hiddenEmergencyX, computed on the
+                  already-capped list above), show that gate instead. Both
+                  guest and signed-in Creator/Creator+ can hit the emergency
+                  gate; only guests can hit the generic one. */}
               {visibleRental.length > 0 && (
                 <ResultSection label="📦 Rental" count={visibleRental.length} grid
-                  footer={isBrowsing && visibleRental.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : handleViewMoreCategory('rental')}/> : undefined}>
-                  {visibleRental.slice(0, categoryLimit).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  footer={!user && visibleRental.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('rental')}/>
+                    : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                  {visibleRental.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleSale.length > 0 && (
                 <ResultSection label="🏷️ Sales" count={visibleSale.length} grid
-                  footer={isBrowsing && visibleSale.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : handleViewMoreCategory('sale')}/> : undefined}>
-                  {visibleSale.slice(0, categoryLimit).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  footer={!user && visibleSale.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('sale')}/>
+                    : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                  {visibleSale.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
                 <ResultSection label="🛠️ Services" count={visibleServices.length}
-                  footer={isBrowsing && visibleServices.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/> : undefined}>
-                  {visibleServices.slice(0, categoryLimit).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  footer={!user && visibleServices.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('services')}/>
+                    : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                  {visibleServices.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleStudios.length > 0 && (
                 <ResultSection label="🏢 Studios" count={visibleStudios.length} grid
-                  footer={isBrowsing && visibleStudios.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/> : undefined}>
-                  {visibleStudios.slice(0, categoryLimit).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  footer={!user && visibleStudios.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('studios')}/>
+                    : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                  {visibleStudios.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleOpportunities.length > 0 && (
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}
-                  footer={isBrowsing && visibleOpportunities.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('opportunities') : handleViewMoreCategory('opportunities')}/> : undefined}>
-                  {visibleOpportunities.slice(0, categoryLimit).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  footer={!canBrowseOpportunities && visibleOpportunities.length > CREATOR_OPPORTUNITY_LIMIT
+                    ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See more opportunities</button>
+                    : undefined}>
+                  {/* Opportunities has its OWN cap, separate from every
+                      other category's generic GUEST_CATEGORY_LIMIT (5) --
+                      Guest/Creator/Creator+ (!canBrowseOpportunities, which
+                      covers a guest too since isProfessional(undefined) is
+                      false) never see more than CREATOR_OPPORTUNITY_LIMIT
+                      (2), even if more are available. Professional/Business
+                      get the real, full list. */}
+                  {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : CREATOR_OPPORTUNITY_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {/* Emergency never hides, regardless of tier or count -- see
-                  canBrowseEmergency's comment above. Professional/Business
-                  follow the same uniform preview rule as every other
-                  category (with its own empty state instead of vanishing
-                  when there are none); everyone else gets a permanent
-                  2-listing cap plus an always-shown lock, whose exact copy
-                  depends only on whether there's at least one real listing
-                  to show above it -- never a literal count, so a guest
-                  can't tell 0 apart from "more than 2 hidden". */}
-              {canBrowseEmergency ? (
-                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid
-                  footer={isBrowsing && visibleEmergency.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('emergency')}/> : undefined}>
-                  {visibleEmergency.length > 0
-                    ? visibleEmergency.slice(0, categoryLimit).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)
-                    : <EmptyEmergencySection/>}
-                </ResultSection>
-              ) : (
-                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid
-                  footer={<EmergencyLockedNotice hasAny={visibleEmergency.length > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/>}>
-                  {visibleEmergency.slice(0, EMERGENCY_LOCKED_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+              {/* Dedicated Emergency section is Professional/Business only
+                  now -- Guest/Creator/Creator+ never see it at all (not
+                  even a preview), since Emergency isn't a browsable
+                  category for them anymore. They still see emergency-
+                  flagged listings inside Rental/Sales/Services/Studios/
+                  Opportunities below, each capped at
+                  EMERGENCY_LIMIT_RESTRICTED (2) with its own badge. */}
+              {canBrowseEmergency && visibleEmergency.length > 0 && (
+                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
+                  {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (
@@ -1829,6 +1731,80 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         )}
       </AnimatePresence>
 
+      {/* ── "See more opportunities" past the CREATOR_OPPORTUNITY_LIMIT (2)
+           latest Opportunities -- Professional or Business required for the
+           rest, for Guest/Creator/Creator+ alike. Never fetches or reveals
+           anything further, just explains why and offers real next steps
+           directly. A guest gets an extra "Sign up" button and "Explore"
+           (not "Upgrade") wording on the plan buttons -- both plan buttons
+           still route through the same login-first flow either way
+           (setPendingReturnUrl to the auto-checkout URL, then /login,
+           which itself bridges to signup for someone with no account). ── */}
+      <AnimatePresence>
+        {showOpportunityGate && (
+          <>
+            <motion.div variants={backdropV} initial="hidden" animate="visible" exit="exit"
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[120] bg-black/50"
+              onClick={() => setShowOpportunityGate(false)}/>
+            <motion.div variants={sheetV} initial="hidden" animate="visible" exit="exit"
+              transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+              className="fixed inset-x-0 bottom-0 z-[125] bg-white rounded-t-3xl shadow-2xl px-5 pt-6"
+              style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
+              <div className="text-center space-y-2 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
+                  <Lock className="w-6 h-6 text-indigo-600"/>
+                </div>
+                <p className="text-base font-black text-gray-900">See more opportunities</p>
+                <p className="text-sm text-gray-500">
+                  {isAuthenticated ? 'Upgrade to Professional or Business to access all opportunity listings.'
+                                    : 'Sign up or upgrade to Professional or Business to access all opportunity listings.'}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                {!isAuthenticated && (
+                  <button
+                    onClick={() => { setShowOpportunityGate(false); navigate('/create-account'); }}
+                    className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
+                    Sign up
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowOpportunityGate(false);
+                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
+                    navigate('/account/upgrade?auto=professional');
+                  }}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm active:opacity-80 ${isAuthenticated ? 'bg-indigo-600 text-white' : 'border border-gray-200 text-gray-700'}`}>
+                  {isAuthenticated ? 'Upgrade to Professional' : 'Explore Professional'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowOpportunityGate(false);
+                    if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
+                    navigate('/account/upgrade?auto=business');
+                  }}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
+                  {isAuthenticated ? 'Upgrade to Business' : 'Explore Business'}
+                </button>
+                <button onClick={() => setShowOpportunityGate(false)}
+                  className="w-full py-3 text-gray-500 font-semibold text-sm">
+                  Not Now
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* "See more emergency listings" -- shared by every category section
+          (Rental/Sales/Services/Studios) whose emergency items were capped
+          at EMERGENCY_LIMIT_RESTRICTED (2). Reuses the same modal Home.tsx's
+          dedicated Emergency tab (Professional/Business only now) and its
+          own per-category gate both use. */}
+      {showEmergencyCategoryGate && (
+        <EmergencyUpgradeModal onClose={() => setShowEmergencyCategoryGate(false)} isAuthenticated={isAuthenticated}/>
+      )}
     </>
   );
 }

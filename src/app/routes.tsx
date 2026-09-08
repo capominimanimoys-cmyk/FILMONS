@@ -52,7 +52,6 @@ import { PostDetail } from './pages/PostDetail';
 import { ReelFeed } from './pages/ReelFeed';
 import MyOrders from './pages/MyOrders';
 import { SearchPage } from './pages/SearchPage';
-import { CategoryResults } from './pages/CategoryResults';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
@@ -122,7 +121,6 @@ export const router = createBrowserRouter([
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
       { path: 'search', Component: SearchPage },
-      { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },
       { path: 'profile', Component: Profile },
