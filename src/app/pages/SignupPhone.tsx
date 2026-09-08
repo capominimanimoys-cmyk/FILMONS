@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { claimIdentity } from '../lib/identity';
+import { supabase } from '../../lib/supabase';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
