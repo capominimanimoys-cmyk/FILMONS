@@ -121,13 +121,50 @@ function loadState(cat: CategoryTab): CategoryState {
   return { search: '', filters: {}, sort: 'recommended', scrollY: 0 };
 }
 
+// Entry point: parses :tab, applies the shared guest guard (the whole full
+// category experience -- All included -- is locked behind account
+// creation), then routes to either the mixed-everything feed or a single
+// category's page.
 export function CategoryResults() {
   const { tab } = useParams<{ tab: string }>();
   const navigate = useNavigate();
-  const { user, isAuthenticated, showGuestPrompt } = useAuth();
+  const { isAuthenticated, showGuestPrompt } = useAuth();
+  const isAll = tab === 'all';
   const category = tab ? URL_TO_CATEGORY[tab] ?? null : null;
 
-  const initialState = useMemo(() => category ? loadState(category) : null, [category]);
+  useEffect(() => {
+    if (isAuthenticated) return;
+    showGuestPrompt(
+      'Create your Filmons account to browse all listings, save listings, contact creators, and apply to opportunities.',
+      'Sign up to see more listings',
+    );
+    navigate('/search', { replace: true });
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated) return null;
+
+  if (isAll) return <AllMixedFeed/>;
+
+  if (!category) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 text-center px-6">
+        <p className="text-base font-black text-gray-900">Category not found</p>
+        <button onClick={() => navigate('/search')}
+          className="px-5 py-2.5 rounded-2xl bg-gray-900 text-white text-sm font-bold">
+          Back to Browse
+        </button>
+      </div>
+    );
+  }
+
+  return <SingleCategoryResults category={category}/>;
+}
+
+function SingleCategoryResults({ category }: { category: CategoryTab }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const initialState = useMemo(() => loadState(category), [category]);
 
   const [layout, setLayout] = useState<BrowseLayout>(loadLayout);
   const [search, setSearch]   = useState(initialState?.search ?? '');
@@ -159,19 +196,6 @@ export function CategoryResults() {
   // restricted here).
   const isEmergency = category === 'emergency';
   const emergencyLocked = isEmergency && !isProfessional(user?.accountType);
-
-  // The full category page is locked behind account creation for guests
-  // (see the Browse Search display-rules spec) -- reachable only via View
-  // More from SearchOverlay for a logged-in user, but a guest could still
-  // type the URL directly, so guard it here too.
-  useEffect(() => {
-    if (isAuthenticated) return;
-    showGuestPrompt(
-      'Create your Filmons account to browse all listings, save listings, contact creators, and apply to opportunities.',
-      'Sign up to see more listings',
-    );
-    navigate('/search', { replace: true });
-  }, [isAuthenticated]);
 
   // Persist search/filters/sort/scroll per category (not the layout, which
   // is a single global preference handled separately) so returning from a
@@ -258,13 +282,12 @@ export function CategoryResults() {
 
   // Refetch page 0 whenever category/search/sort/filters change.
   useEffect(() => {
-    if (!category || !isAuthenticated) return;
     setPage(0);
     setItems([]); setCreators([]);
     restoredScroll.current = false;
     fetchPage(0, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, search, sort, JSON.stringify(filters), isAuthenticated, emergencyLocked]);
+  }, [category, search, sort, JSON.stringify(filters), emergencyLocked]);
 
   // Restore scroll position once, after the first page for this category lands.
   useEffect(() => {
@@ -467,6 +490,209 @@ export function CategoryResults() {
           <SortSheet options={sortOptions} value={sort} onSelect={v => { setSort(v); setShowSort(false); }} onClose={() => setShowSort(false)}/>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── /search/category/all — the mixed everything feed ────────────────────────
+// Deliberately simpler than a single category's page: no in-feed search,
+// filters, or sort (the spec only asks for the layout switcher here), and
+// no Emergency mixed in (it has its own permanent, tier-gated access rules
+// that a blended feed would make much harder to enforce/reason about
+// consistently -- Emergency stays reachable only through its own dedicated
+// section/page). Fetches one bounded batch per remaining category, then
+// round-robins them into a single order with no two consecutive items from
+// the same category, same as the Browse Search "All" preview's logic.
+type MixedEntry = { kind: 'creator'; item: CreatorRow } | { kind: 'listing'; item: Listing };
+const ALL_FEED_PER_CATEGORY = 24;
+
+function AllMixedFeed() {
+  const navigate = useNavigate();
+  const [layout, setLayout] = useState<BrowseLayout>(loadLayout);
+  const [pool, setPool] = useState<MixedEntry[]>([]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [loading, setLoading] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const changeLayout = (l: BrowseLayout) => {
+    setLayout(l);
+    try { sessionStorage.setItem(LAYOUT_KEY, l); } catch {}
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const listingCategories: CategoryTab[] = ['rental', 'sale', 'services', 'studios', 'opportunities'];
+      const [listingResults, creatorRes] = await Promise.all([
+        Promise.all(listingCategories.map(cat => withModerationFilter((filterActive) => {
+          let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+          if (filterActive) q = q.eq('moderation_status', 'active');
+          switch (cat) {
+            case 'rental':       q = q.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
+            case 'sale':          q = q.eq('listing_mode', 'sale'); break;
+            case 'services':      q = q.eq('listing_type', 'service'); break;
+            case 'opportunities': q = q.eq('listing_type', 'opportunity'); break;
+            case 'studios':       q = q.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
+          }
+          return q.order('created_at', { ascending: false }).limit(ALL_FEED_PER_CATEGORY);
+        }))),
+        supabase.from('profiles').select('id, name, username, avatar_url, city, location, primary_role, is_verified')
+          .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+          .order('created_at', { ascending: false }).limit(ALL_FEED_PER_CATEGORY),
+      ]);
+      if (cancelled) return;
+
+      const buckets: MixedEntry[][] = listingResults.map((res, i) => {
+        let mapped = (res.data ?? []).map(mapListingRow);
+        if (listingCategories[i] === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
+        return mapped.map(item => ({ kind: 'listing' as const, item }));
+      });
+      buckets.push(((creatorRes.data ?? []) as CreatorRow[]).map(item => ({ kind: 'creator' as const, item })));
+
+      // Round-robin: one item at a time from each non-exhausted bucket, so
+      // the combined order never repeats a category back-to-back while any
+      // other category still has items left to contribute.
+      const mixed: MixedEntry[] = [];
+      let i = 0;
+      while (buckets.some(b => b.length > i)) {
+        for (const b of buckets) if (b[i]) mixed.push(b[i]);
+        i++;
+      }
+      setPool(mixed);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || loading || visibleCount >= pool.length) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setVisibleCount(c => Math.min(c + PAGE_SIZE, pool.length));
+    }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loading, visibleCount, pool.length]);
+
+  const visible = pool.slice(0, visibleCount);
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '10px' }}>
+          <button onClick={() => navigate(-1)}
+            className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+            <ArrowLeft className="w-5 h-5 text-gray-700"/>
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-black text-gray-900 truncate">All</p>
+            {!loading && <p className="text-xs text-gray-400">{pool.length} {pool.length === 1 ? 'result' : 'results'}</p>}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-1 px-4 pb-3">
+          {LAYOUTS.map(({ id, label, Icon }) => (
+            <button key={id} onClick={() => changeLayout(id)} title={label} aria-label={label}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-95 ${
+                layout === id ? 'bg-gray-900 text-white' : 'text-gray-400 hover:bg-gray-100'
+              }`}>
+              <Icon className="w-4 h-4"/>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin"/>
+            <span className="text-sm">Loading…</span>
+          </div>
+        ) : pool.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-1">
+            <p className="text-sm font-bold text-gray-500">Nothing to show right now</p>
+            <p className="text-xs text-gray-400">Check back soon.</p>
+          </div>
+        ) : (
+          <>
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div key={layout}
+                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ enter: { duration: 0.2 }, exit: { duration: 0.14 } } as any}>
+                <MixedFeedLayout entries={visible} layout={layout} onNavigateCreator={id => navigate(`/host/${id}`)}/>
+              </motion.div>
+            </AnimatePresence>
+            <div ref={sentinelRef} className="h-1"/>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MixedFeedCreatorTile({ u, compact }: { u: CreatorRow; compact?: boolean }) {
+  return (
+    <div className={`bg-white rounded-2xl border border-gray-100 flex flex-col items-center text-center gap-1.5 ${compact ? 'p-3' : 'p-4'}`}>
+      <div className={`${compact ? 'w-12 h-12' : 'w-16 h-16'} rounded-full overflow-hidden bg-gray-100 border border-gray-200`}>
+        {u.avatar_url ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-base font-black text-gray-400">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+      </div>
+      <p className="text-xs font-bold text-gray-900 truncate w-full">{u.name}</p>
+      {u.primary_role && <p className="text-[10px] text-blue-600 truncate w-full">{u.primary_role}</p>}
+    </div>
+  );
+}
+
+function MixedFeedLayout({ entries, layout, onNavigateCreator }: { entries: MixedEntry[]; layout: BrowseLayout; onNavigateCreator: (id: string) => void }) {
+  if (layout === 'minimal') {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+        {entries.map((e, i) => e.kind === 'creator' ? (
+          <button key={i} onClick={() => onNavigateCreator(e.item.id)}
+            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 shrink-0">
+              {e.item.avatar_url ? <img src={e.item.avatar_url} className="w-full h-full object-cover" alt=""/>
+                : <div className="w-full h-full flex items-center justify-center text-xs font-black text-gray-400">{e.item.name?.[0]?.toUpperCase() ?? '?'}</div>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-gray-900 truncate">{e.item.name}</p>
+              <p className="text-xs text-gray-400 truncate">{e.item.primary_role ?? 'Creator'}</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+          </button>
+        ) : (
+          <MinimalListingRow key={i} listing={e.item}/>
+        ))}
+      </div>
+    );
+  }
+  if (layout === 'large_cards') {
+    return (
+      <div className="pop-stagger grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {entries.map((e, i) => e.kind === 'creator'
+          ? <button key={i} onClick={() => onNavigateCreator(e.item.id)} className="text-left"><MixedFeedCreatorTile u={e.item}/></button>
+          : <ListingCard key={i} listing={e.item} className="[&_img]:aspect-[16/10]"/>
+        )}
+      </div>
+    );
+  }
+  if (layout === 'editorial') {
+    return (
+      <div className="grid grid-cols-2 gap-4">
+        {entries.map((e, i) => e.kind === 'creator'
+          ? <button key={i} onClick={() => onNavigateCreator(e.item.id)} className="text-left"><MixedFeedCreatorTile u={e.item}/></button>
+          : <ListingCard key={i} listing={e.item}/>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {entries.map((e, i) => e.kind === 'creator'
+        ? <button key={i} onClick={() => onNavigateCreator(e.item.id)} className="text-left"><MixedFeedCreatorTile u={e.item} compact/></button>
+        : <ListingCard key={i} listing={e.item}/>
+      )}
     </div>
   );
 }

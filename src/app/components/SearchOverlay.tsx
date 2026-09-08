@@ -923,6 +923,50 @@ function CreatorCard({ u, onNavigate }: { u: ProfileRow; onNavigate: (url: strin
   );
 }
 
+// One row shape for either a creator or a listing, used only by the "All"
+// mixed preview above -- that section deliberately doesn't reuse
+// CreatorCard/MarketplaceCard/etc. directly since mixing a grid-shaped card
+// and a list-row card in the same 3-item strip would look inconsistent.
+function MixedPreviewCard({ entry, onNavigate }: {
+  entry: { kind: 'creator' | 'listing'; item: any };
+  onNavigate: (url: string, state?: Record<string, unknown>) => void;
+}) {
+  if (entry.kind === 'creator') {
+    const u = entry.item as ProfileRow;
+    return (
+      <motion.button variants={itemV} onClick={() => onNavigate(`/host/${u.id}`)}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
+        <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 shrink-0 border border-gray-200">
+          {u.avatar_url
+            ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
+            : <div className="w-full h-full flex items-center justify-center text-sm font-black text-gray-400">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
+          {u.primary_role && <p className="text-xs text-blue-600 font-medium truncate">{u.primary_role} · Creator</p>}
+        </div>
+        <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+      </motion.button>
+    );
+  }
+  const l = entry.item as ListingRow;
+  const price = `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
+  const typeLabel = isOpportunityListing(l) ? 'Opportunity' : isStudioListing(l) ? 'Studio' : l.listing_type === 'service' ? 'Service' : l.listing_mode === 'sale' ? 'Sale' : 'Rental';
+  return (
+    <motion.button variants={itemV} onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
+      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
+      <div className="w-11 h-11 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+        {l.images?.[0] ? <img src={l.images[0]} className="w-full h-full object-cover" alt=""/> : <div className="w-full h-full flex items-center justify-center text-lg opacity-25">🎬</div>}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-gray-900 truncate">{l.title}</p>
+        <p className="text-xs text-gray-400 truncate">{isOpportunityListing(l) ? typeLabel : `${price} · ${typeLabel}`}</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+    </motion.button>
+  );
+}
+
 // Seeds ListingDetail's skeleton immediately (same hint-only pattern
 // ListingCard.tsx/SwipeStack.tsx already use) and flags the Browse/Search
 // pop-up transition, per the Browse/Search -> Listing Details pop-up spec.
@@ -1222,18 +1266,22 @@ interface Props {
   onResultNavigate?: (url: string, state?: Record<string, unknown>) => void;
 }
 
-// Browse Search category-preview caps (see the "Browse Search — Listing
-// Display Rules" spec). These only ever apply in pure browse mode -- a
-// category tab tapped with nothing typed (isBrowsing below) -- never to
-// results after an actual typed search, which must show everything
-// unrestricted regardless of account tier. Every category (Rental, Sale,
-// Services, Studios, Creators, Opportunities, Emergency) uses the same two
-// numbers now; there used to be separate, stricter Opportunities/Emergency
-// tier gates here, but those contradicted this app's own "Opportunity
-// Listings must never disappear because of tier" rule and have been
-// replaced by this single uniform rule.
-const GUEST_CATEGORY_LIMIT = 2;
-const LOGGED_IN_CATEGORY_LIMIT = 5;
+// Browse Search category-preview cap (see the "Browse Search — Category
+// Preview Rules" spec). Applies only in pure browse mode -- a category tab
+// tapped with nothing typed (isBrowsing below) -- never to results after an
+// actual typed search, which must show everything unrestricted regardless
+// of account tier. Every regular category (Rental, Sale, Services, Studios,
+// Creators, Opportunities) shows the same 3 for guest and logged-in alike
+// now; what differs by tier is only what "View More" does (guest -> signup
+// prompt, logged-in -> the full category page). Emergency is the one
+// exception with its own numbers, handled separately below.
+const PREVIEW_LIMIT = 3;
+// Emergency: Guest/Creator/Creator+ never see more than this many real
+// listings, permanently, regardless of tier or how many actually exist --
+// an account-level lock, not a preview convenience (see the Emergency
+// Listings updated-locked-state spec). Professional/Business get the same
+// PREVIEW_LIMIT (3) as every other category, with a real View More.
+const EMERGENCY_LOCKED_LIMIT = 2;
 
 const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
 
@@ -1493,13 +1541,38 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
   const visibleEmergency    = (activeTab === 'all' || activeTab === 'emergency')    ? emergencyListings     : [];
 
-  // Browse Search's 2/5 preview cap only ever applies in pure browse mode
-  // (a category tab tapped with nothing typed) -- never to results after a
-  // real typed search, which must always show everything, uncapped,
-  // regardless of account tier (see the display-rules spec's "must not
-  // affect search results after a specific search").
+  // "All" mixed preview -- a taste of every category in one small row
+  // (max 3 total, not per-category), shown above the per-category
+  // sections on the 'all' tab. Round-robins one item at a time from each
+  // category so 3 consecutive items are never all the same type. Emergency
+  // is deliberately excluded here (it has its own dedicated, always-shown
+  // section right below with its own access rules -- mixing it in here too
+  // would just be a second, less controlled way to see the same items).
+  const allMixedPreview: { kind: 'creator' | 'listing'; item: any }[] = [];
+  if (activeTab === 'all' && !hasTyped) {
+    const buckets: { kind: 'creator' | 'listing'; item: any }[][] = [
+      visibleUsers.map(u => ({ kind: 'creator' as const, item: u })),
+      visibleRental.map(l => ({ kind: 'listing' as const, item: l })),
+      visibleOpportunities.map(l => ({ kind: 'listing' as const, item: l })),
+      visibleServices.map(l => ({ kind: 'listing' as const, item: l })),
+      visibleStudios.map(l => ({ kind: 'listing' as const, item: l })),
+      visibleSale.map(l => ({ kind: 'listing' as const, item: l })),
+    ];
+    outer: for (let i = 0; i < 3; i++) {
+      for (const b of buckets) {
+        if (allMixedPreview.length >= 3) break outer;
+        if (b[i]) allMixedPreview.push(b[i]);
+      }
+    }
+  }
+
+  // Browse Search's 3-item preview cap only ever applies in pure browse
+  // mode (a category tab tapped with nothing typed) -- never to results
+  // after a real typed search, which must always show everything,
+  // uncapped, regardless of account tier (see the display-rules spec's
+  // "must not affect search results after a specific search").
   const isBrowsing = !hasTyped;
-  const categoryLimit = isBrowsing ? (!user ? GUEST_CATEGORY_LIMIT : LOGGED_IN_CATEGORY_LIMIT) : Infinity;
+  const categoryLimit = isBrowsing ? PREVIEW_LIMIT : Infinity;
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
@@ -1637,13 +1710,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
           ) : (
             <div className="py-2">
               {/* Every category below shares one rule now (see the Browse
-                  Search display-rules spec): in pure browse mode
-                  (isBrowsing), a guest sees GUEST_CATEGORY_LIMIT (2) and any
-                  logged-in tier sees LOGGED_IN_CATEGORY_LIMIT (5), with
-                  "View More" either prompting signup (guest) or opening the
-                  full, uncapped category page (logged in, any tier alike).
-                  After an actual typed search, categoryLimit is Infinity --
-                  nothing here is ever capped or gated. */}
+                  Search Category Preview Rules spec): in pure browse mode
+                  (isBrowsing), everyone -- guest or any logged-in tier --
+                  sees PREVIEW_LIMIT (3), with "View More" either prompting
+                  signup (guest) or opening the full, uncapped category page
+                  (logged in, any tier alike). After an actual typed search,
+                  categoryLimit is Infinity -- nothing here is ever capped
+                  or gated. */}
+              {allMixedPreview.length > 0 && (
+                <ResultSection label="🌐 All" count={allMixedPreview.length}
+                  footer={<ViewMoreButton onClick={() => !user ? handleGuestSeeMore('all') : handleViewMoreCategory('all')}/>}>
+                  {allMixedPreview.map((m, i) => (
+                    <MixedPreviewCard key={i} entry={m} onNavigate={handleResultNavigate}/>
+                  ))}
+                </ResultSection>
+              )}
               {visibleUsers.length > 0 && (
                 <ResultSection label="👤 Creators" count={visibleUsers.length}
                   footer={isBrowsing && visibleUsers.length > categoryLimit
@@ -1706,7 +1787,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               ) : (
                 <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid
                   footer={<EmergencyLockedNotice hasAny={visibleEmergency.length > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/>}>
-                  {visibleEmergency.slice(0, 2).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {visibleEmergency.slice(0, EMERGENCY_LOCKED_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (
