@@ -196,10 +196,14 @@ export function CategoryResults() {
 
   // ── Fetch a page ────────────────────────────────────────────────────────────
   const fetchPage = useCallback(async (pageNum: number, replace: boolean) => {
-    if (!category || emergencyLocked) return;
+    if (!category) return;
+    // Guest/Creator/Creator+ get a permanent 2-listing cap on Emergency,
+    // never more, regardless of how many really exist -- fetch just enough
+    // to know whether there's at least one, no pagination beyond that.
+    if (emergencyLocked && pageNum > 0) return;
     if (pageNum === 0) setLoading(true); else setLoadingMore(true);
-    const from = pageNum * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const from = emergencyLocked ? 0 : pageNum * PAGE_SIZE;
+    const to = emergencyLocked ? 1 : from + PAGE_SIZE - 1;
 
     if (category === 'creators') {
       let q = supabase.from('profiles')
@@ -315,35 +319,65 @@ export function CategoryResults() {
           </button>
           <div className="min-w-0 flex-1">
             <p className="text-base font-black text-gray-900 truncate">{CATEGORY_LABEL[category]}</p>
-            {!loading && <p className="text-xs text-gray-400">{count} {count === 1 ? 'result' : 'results'}</p>}
+            {/* Never show a real count while Emergency is locked -- even
+                the total would leak whether more listings exist. */}
+            {!loading && !emergencyLocked && <p className="text-xs text-gray-400">{count} {count === 1 ? 'result' : 'results'}</p>}
           </div>
         </div>
 
-        {/* ── In-category search ── */}
-        <div className="px-4 pb-2.5">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-2xl px-3.5 py-2.5">
-            <Search className="w-4 h-4 text-gray-400 shrink-0"/>
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder={`Search ${CATEGORY_LABEL[category].toLowerCase()}…`}
-              className="flex-1 text-sm text-gray-900 placeholder-gray-400 outline-none bg-transparent"/>
-            {search && (
-              <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4"/>
-              </button>
+        {/* Search/filters/sort are hidden while Emergency is locked -- any
+            of them could otherwise be used to probe for hidden listings
+            (e.g. searching a specific term and seeing whether a card
+            appears), which is exactly what the "never reveal whether more
+            are hidden" rule is meant to prevent. The layout switcher stays
+            available since it reveals nothing. */}
+        {!emergencyLocked && (
+          <>
+            {/* ── In-category search ── */}
+            <div className="px-4 pb-2.5">
+              <div className="flex items-center gap-2 bg-gray-100 rounded-2xl px-3.5 py-2.5">
+                <Search className="w-4 h-4 text-gray-400 shrink-0"/>
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder={`Search ${CATEGORY_LABEL[category].toLowerCase()}…`}
+                  className="flex-1 text-sm text-gray-900 placeholder-gray-400 outline-none bg-transparent"/>
+                {search && (
+                  <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-4 h-4"/>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ── Active filter chips ── */}
+            {activeFilterCount > 0 && (
+              <div className="flex items-center gap-1.5 px-4 pb-3 overflow-x-auto no-scrollbar">
+                {categoryFilterFields.filter(f => filters[f.key]).map(f => (
+                  <span key={f.key} className="shrink-0 flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                    {f.type === 'toggle' ? f.label : `${f.label}: ${f.options?.find(o => o.value === filters[f.key])?.label}`}
+                    <button onClick={() => setFilters(prev => { const next = { ...prev }; delete next[f.key]; return next; })}
+                      className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-indigo-100">
+                      <X className="w-3 h-3"/>
+                    </button>
+                  </span>
+                ))}
+                <button onClick={clearFilters} className="shrink-0 text-xs font-bold text-gray-400 hover:text-gray-600 px-1.5">
+                  Clear all
+                </button>
+              </div>
             )}
-          </div>
-        </div>
+          </>
+        )}
 
         {/* ── Filters / Sort / Layout controls ── */}
         <div className="flex items-center justify-between gap-2 px-4 pb-3">
           <div className="flex items-center gap-1.5">
-            {categoryFilterFields.length > 0 && (
+            {!emergencyLocked && categoryFilterFields.length > 0 && (
               <button onClick={() => setShowFilters(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
                 <SlidersHorizontal className="w-3.5 h-3.5"/> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
               </button>
             )}
-            {sortOptions.length > 1 && (
+            {!emergencyLocked && sortOptions.length > 1 && (
               <button onClick={() => setShowSort(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
                 <ArrowUpDown className="w-3.5 h-3.5"/> Sort
@@ -361,33 +395,21 @@ export function CategoryResults() {
             ))}
           </div>
         </div>
-
-        {/* ── Active filter chips ── */}
-        {activeFilterCount > 0 && (
-          <div className="flex items-center gap-1.5 px-4 pb-3 overflow-x-auto no-scrollbar">
-            {categoryFilterFields.filter(f => filters[f.key]).map(f => (
-              <span key={f.key} className="shrink-0 flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">
-                {f.type === 'toggle' ? f.label : `${f.label}: ${f.options?.find(o => o.value === filters[f.key])?.label}`}
-                <button onClick={() => setFilters(prev => { const next = { ...prev }; delete next[f.key]; return next; })}
-                  className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-indigo-100">
-                  <X className="w-3 h-3"/>
-                </button>
-              </span>
-            ))}
-            <button onClick={clearFilters} className="shrink-0 text-xs font-bold text-gray-400 hover:text-gray-600 px-1.5">
-              Clear all
-            </button>
-          </div>
-        )}
       </div>
 
       {/* ── Body ── */}
       <div ref={scrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-4 py-4">
         {emergencyLocked ? (
-          <EmergencyLockedNotice
-            previewItems={items}
-            onUpgrade={() => navigate('/account/upgrade?auto=professional')}
-          />
+          loading ? (
+            <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
+              <Loader2 className="w-5 h-5 animate-spin"/>
+            </div>
+          ) : (
+            <EmergencyLockedNotice
+              previewItems={items.slice(0, 2)}
+              onUpgrade={() => navigate('/account/upgrade?auto=professional')}
+            />
+          )
         ) : loading ? (
           <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
             <Loader2 className="w-5 h-5 animate-spin"/>
@@ -449,27 +471,39 @@ export function CategoryResults() {
   );
 }
 
-// ── Emergency Professional/Business gate ─────────────────────────────────────
+// ── Emergency lock (Guest/Creator/Creator+) ──────────────────────────────────
+// Two copy variants depending only on whether there's at least one real
+// listing to show above it (hasAny) -- never a literal count, so the UI
+// can't be used to infer whether the true number is 0, 1, or many.
 function EmergencyLockedNotice({ previewItems, onUpgrade }: { previewItems: Listing[]; onUpgrade: () => void }) {
+  const hasAny = previewItems.length > 0;
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-5 text-center space-y-3">
-        <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
-          <Lock className="w-6 h-6 text-amber-600"/>
-        </div>
-        <div>
-          <p className="text-base font-black text-gray-900">Unlock Professional or Business</p>
-          <p className="text-sm text-gray-600 mt-1">Upgrade to Professional or Business to see all emergency listings.</p>
-        </div>
-        <button onClick={onUpgrade} className="w-full py-3 rounded-2xl bg-amber-600 text-white font-bold text-sm">
-          Upgrade Account
-        </button>
-      </div>
-      {previewItems.length > 0 && (
+      {hasAny && (
         <div className="grid grid-cols-2 gap-3">
           {previewItems.map(l => <ListingCard key={l.id} listing={l}/>)}
         </div>
       )}
+      <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-5 text-center space-y-2">
+        <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
+          <Lock className="w-6 h-6 text-amber-600"/>
+        </div>
+        {hasAny ? (
+          <>
+            <p className="text-base font-black text-gray-900">Unlock all Emergency Listings</p>
+            <p className="text-sm text-gray-600">Upgrade to Professional or Business to see all available Emergency Listings.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-base font-black text-gray-900">Emergency Listings</p>
+            <p className="text-sm font-bold text-gray-800">Unlock Emergency Listings</p>
+            <p className="text-sm text-gray-600">Upgrade to Professional or Business to access Emergency Listings and respond when urgent opportunities become available.</p>
+          </>
+        )}
+        <button onClick={onUpgrade} className="w-full py-3 rounded-2xl bg-amber-600 text-white font-bold text-sm mt-1">
+          Upgrade Account
+        </button>
+      </div>
     </div>
   );
 }

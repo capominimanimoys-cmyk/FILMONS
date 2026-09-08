@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
-  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, AlertTriangle,
+  TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, AlertTriangle, Lock,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
@@ -16,6 +16,7 @@ import {
 } from '../lib/searchUtils';
 import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { isProfessional } from '../lib/reliabilityApi';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 
@@ -1063,6 +1064,46 @@ function ViewMoreButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+// Guest/Creator/Creator+'s permanent Emergency lock -- two copy variants
+// depending only on whether there's at least one real listing shown above
+// it (hasAny), never an actual count, so the UI can't be used to infer
+// whether the true number is 0, 1, or many.
+function EmergencyLockedNotice({ hasAny, onUpgrade }: { hasAny: boolean; onUpgrade: () => void }) {
+  return (
+    <div className="mx-4 mb-1 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-center space-y-2">
+      <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
+        <Lock className="w-5 h-5 text-amber-600"/>
+      </div>
+      {hasAny ? (
+        <>
+          <p className="text-sm font-black text-gray-900">Unlock all Emergency Listings</p>
+          <p className="text-xs text-gray-600">Upgrade to Professional or Business to see all available Emergency Listings.</p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm font-black text-gray-900">Emergency Listings</p>
+          <p className="text-sm font-bold text-gray-800">Unlock Emergency Listings</p>
+          <p className="text-xs text-gray-600">Upgrade to Professional or Business to access Emergency Listings and respond when urgent opportunities become available.</p>
+        </>
+      )}
+      <button onClick={onUpgrade} className="w-full py-2.5 rounded-xl bg-amber-600 text-white font-bold text-xs mt-1">
+        Upgrade Account
+      </button>
+    </div>
+  );
+}
+
+// Professional/Business's own empty state -- shown instead of hiding the
+// Emergency section entirely when there happen to be none right now.
+function EmptyEmergencySection() {
+  return (
+    <div className="col-span-2 py-6 text-center">
+      <p className="text-sm font-bold text-gray-500">No Emergency Listings right now</p>
+      <p className="text-xs text-gray-400 mt-0.5">Check back later for urgent opportunities in your area.</p>
+    </div>
+  );
+}
+
 
 
 // Singular, category-specific noun for the empty-state copy -- "rental
@@ -1218,6 +1259,15 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [showFilterSheet,setShowFilterSheet]= useState(false);
   const [showSortSheet,  setShowSortSheet]  = useState(false);
   const { user, isAuthenticated, showGuestPrompt } = useAuth();
+  // Emergency is the one category with its own permanent account-level
+  // lock, unrelated to isBrowsing/categoryLimit -- Professional/Business
+  // get the same uniform 2/5-then-View-More rule as every other category;
+  // everyone else (Guest, Creator, Creator+) never sees more than 2 real
+  // Emergency listings, ever, regardless of how many actually exist, and
+  // the category itself is never hidden even when there are none (an
+  // empty count must not be distinguishable from a hidden one -- see the
+  // Emergency Listings updated-locked-state spec).
+  const canBrowseEmergency = isProfessional(user?.accountType);
 
   const navigate    = useNavigate();
   const inputRef    = useRef<HTMLInputElement>(null);
@@ -1636,11 +1686,27 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleOpportunities.slice(0, categoryLimit).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {visibleEmergency.length > 0 && (
+              {/* Emergency never hides, regardless of tier or count -- see
+                  canBrowseEmergency's comment above. Professional/Business
+                  follow the same uniform preview rule as every other
+                  category (with its own empty state instead of vanishing
+                  when there are none); everyone else gets a permanent
+                  2-listing cap plus an always-shown lock, whose exact copy
+                  depends only on whether there's at least one real listing
+                  to show above it -- never a literal count, so a guest
+                  can't tell 0 apart from "more than 2 hidden". */}
+              {canBrowseEmergency ? (
                 <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid
                   footer={isBrowsing && visibleEmergency.length > categoryLimit
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('emergency') : handleViewMoreCategory('emergency')}/> : undefined}>
-                  {visibleEmergency.slice(0, categoryLimit).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('emergency')}/> : undefined}>
+                  {visibleEmergency.length > 0
+                    ? visibleEmergency.slice(0, categoryLimit).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)
+                    : <EmptyEmergencySection/>}
+                </ResultSection>
+              ) : (
+                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid
+                  footer={<EmergencyLockedNotice hasAny={visibleEmergency.length > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/>}>
+                  {visibleEmergency.slice(0, 2).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && (
