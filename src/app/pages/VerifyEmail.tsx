@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Loader2, Mail, ArrowLeft } from 'lucide-react';
+import { Loader2, LoaderCircle, Mail, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
@@ -97,26 +97,49 @@ export function VerifyEmail() {
     }
   };
 
+  // Verify code → authenticate → create the minimum profile → redirect.
+  // Nothing else runs before the redirect -- no notifications, analytics,
+  // onboarding data, preferences, or portfolio init. claimIdentity below is
+  // the one exception, and it's deliberately fire-and-forget (never
+  // awaited), not part of this critical path.
+  //
+  // Bounded to VERIFY_TIMEOUT_MS total so the loader can never spin
+  // indefinitely -- a genuinely slow/broken network still resolves to the
+  // timeout error UI within a fixed window instead of hanging forever.
+  const VERIFY_TIMEOUT_MS = 15_000;
+
   const handleVerify = async () => {
     if (!pending || !full || loading) return;
-    setLoading(true);
-    try {
-      if (Date.now() > pending.expiresAt) {
-        toast.error('Code expired. Please request a new one.');
-        setLoading(false);
-        return;
-      }
-      if (code !== pending.code) {
-        toast.error('Incorrect code. Please try again.');
-        setLoading(false);
-        return;
-      }
 
-      // Create the Supabase auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: pending.email,
-        password: pending.password,
-      });
+    if (Date.now() > pending.expiresAt) {
+      toast.error('Code expired. Please request a new one.');
+      return;
+    }
+    if (code !== pending.code) {
+      toast.error('Incorrect verification code', { description: 'Check the code and try again.' });
+      return;
+    }
+
+    setLoading(true);
+    const t0 = performance.now();
+    const mark = (stage: string) => console.log(`[verify] ${stage} (+${Math.round(performance.now() - t0)}ms)`);
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), VERIFY_TIMEOUT_MS);
+
+    try {
+      mark('OTP verified, starting auth');
+
+      // 1. Authenticate — the one call this step actually needs Supabase
+      // Auth for. AbortController can't cancel supabase-js's own signUp()
+      // call directly, but Promise.race still bounds how long we wait on
+      // it before giving up and showing the timeout error.
+      const signUpPromise = supabase.auth.signUp({ email: pending.email, password: pending.password });
+      const { data: authData, error: authError } = await Promise.race([
+        signUpPromise,
+        new Promise<never>((_, reject) => abort.signal.addEventListener('abort', () => reject(new Error('TIMEOUT')))),
+      ]);
+      mark('session received');
+
       if (authError || !authData.user) {
         // CreateAccount.tsx already checks for this via checkAuthMethods
         // before a code is ever sent, so reaching it here should be rare
@@ -126,15 +149,14 @@ export function VerifyEmail() {
         if (authError?.message?.toLowerCase().includes('already registered')) {
           toast.error('This email is already registered. Please sign in instead.');
           navigate(`/email-already-exists?email=${encodeURIComponent(pending.email)}`);
-          setLoading(false);
           return;
         }
         toast.error(authError?.message || 'Failed to create account.');
-        setLoading(false);
         return;
       }
 
-      // Create the profile row via the service-role server endpoint, not a
+      // 2. Create (or, if a retry hit this exact id again, confirm) the
+      // minimal profile row via the service-role server endpoint, not a
       // direct client upsert — right after supabase.auth.signUp(), this
       // browser has no real Supabase Auth session yet (email confirmation
       // is required, so signUp() returns no session), which means an
@@ -145,7 +167,10 @@ export function VerifyEmail() {
       // exactly the "orphaned auth user, no profile" dead-end this flow
       // used to hit. The server's /users endpoint (profiles.create in
       // supabase/functions/server/profiles.tsx) writes with the service
-      // role key over a direct Postgres connection, bypassing RLS entirely.
+      // role key over a direct Postgres connection, bypassing RLS entirely,
+      // and is idempotent on this id (a repeat of this exact request
+      // returns the already-created row instead of erroring).
+      mark('profile lookup/creation started');
       const profileRes = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
@@ -153,7 +178,9 @@ export function VerifyEmail() {
           id: authData.user.id, email: pending.email, name: pending.name,
           emailVerified: true, accountType: 'creator', accountMode: 'creator',
         }),
+        signal: abort.signal,
       });
+      mark('profile creation completed');
       if (!profileRes.ok) {
         const profileData = await profileRes.json().catch(() => ({}));
         if (profileRes.status === 409) {
@@ -162,13 +189,8 @@ export function VerifyEmail() {
           toast.error('Account created but profile setup failed. Please contact support.');
         }
         console.error('[signup] profile creation failed:', profileRes.status, profileData);
-        setLoading(false);
         return;
       }
-
-      // Best-effort: keep account_identities in sync for future sign-in
-      // linking (Google/phone resolving to this account by email).
-      claimIdentity(authData.user.id, 'email', pending.email).catch(() => {});
 
       // Build the initial User object and start the session
       const user: User = {
@@ -185,12 +207,26 @@ export function VerifyEmail() {
         following:            [],
       };
 
+      // completeLogin(preloadedUser) itself is synchronous (cache + a
+      // fire-and-forget device registration) — no extra network wait here.
       await completeLogin(pending.email, pending.password, undefined, user, 'email');
       sessionStorage.removeItem(PENDING_SIGNUP_KEY);
+      mark('redirect started');
       navigate('/onboarding', { replace: true });
+
+      // Everything below is non-critical setup, deliberately fired after
+      // the redirect already happened rather than awaited before it.
+      claimIdentity(authData.user.id, 'email', pending.email).catch(() => {});
     } catch (e: any) {
-      toast.error(e?.message || 'Something went wrong.');
+      if (e?.message === 'TIMEOUT' || e?.name === 'AbortError') {
+        toast.error("We couldn't finish verification", {
+          description: 'Your code may have expired or there may be a connection issue.',
+        });
+      } else {
+        toast.error(e?.message || 'Something went wrong.');
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   };
@@ -319,7 +355,7 @@ export function VerifyEmail() {
             style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
           >
             {loading
-              ? <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+              ? <span className="flex items-center justify-center gap-2"><LoaderCircle className="w-4 h-4 animate-spin" /> Verifying</span>
               : 'Verify →'}
           </button>
 

@@ -543,6 +543,20 @@ export async function create(data: any): Promise<any> {
       // ── Unique constraint on a fresh signup → duplicate user ─────────────
       if (e?.code === "23505") {
         const msg = String(e?.message ?? "");
+        // Idempotency: a conflict on the id itself (not email/phone/username)
+        // means this exact create request already succeeded once -- a
+        // network retry, a double-tap, whatever caused it, the row is
+        // already there. Return it instead of erroring, so a repeated
+        // verify-and-create call can never produce a duplicate profile or
+        // surface a confusing "already exists" error for what is, from the
+        // caller's perspective, the same signup succeeding twice.
+        if (msg.includes("pkey")) {
+          const existing = await getById(id);
+          if (existing) {
+            console.log(`[profiles] Idempotent create — row already exists for id=${id}, returning it`);
+            return existing;
+          }
+        }
         if (msg.includes("email"))    throw new Error("User with this email already exists");
         if (msg.includes("phone"))    throw new Error("User with this phone number already exists");
         if (msg.includes("username")) throw new Error("Username is already taken");
