@@ -11,7 +11,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { ArrowLeft, Smartphone, Check } from 'lucide-react';
+import { ArrowLeft, Smartphone, Check, LoaderCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { authApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -96,6 +96,26 @@ function OtpInput({ value, onChange, hasError }: {
 
   useEffect(() => { focus(0); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Best-effort SMS autofill via the WebOTP API (Chrome/Android; no-op
+  // everywhere else, including iOS Safari, which relies on the OS-level
+  // "from Messages" suggestion above the keyboard instead, already covered
+  // by autoComplete="one-time-code" on the first digit below). Aborted on
+  // unmount so a stale credential request never overwrites a code the
+  // user already entered by hand on a later screen.
+  useEffect(() => {
+    if (!('OTPCredential' in window)) return;
+    const ac = new AbortController();
+    (navigator as any).credentials
+      .get({ otp: { transport: ['sms'] }, signal: ac.signal })
+      .then((cred: any) => {
+        const otpCode = cred?.code?.replace(/\D/g, '').slice(0, 6);
+        if (otpCode?.length === 6) { onChange(otpCode); focus(5); }
+      })
+      .catch(() => {});
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="flex gap-2 justify-center" onPaste={handlePaste}>
       {digits.map((d, i) => (
@@ -152,6 +172,7 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 type Step = 'form' | 'otp' | 'success';
+type FieldError = { title: string; body?: string } | null;
 
 const ic = 'w-full bg-white/10 border border-white/20 text-white placeholder-white/30 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all';
 
@@ -168,12 +189,12 @@ export function SignupPhone() {
   const [phone,              setPhone]              = useState('');
   const [showCountryPicker,  setShowCountryPicker]  = useState(false);
   const [nameError,          setNameError]          = useState('');
-  const [phoneError,         setPhoneError]         = useState('');
+  const [phoneError,         setPhoneError]         = useState<FieldError>(null);
 
   // Step 2 fields
   const [otp,        setOtp]        = useState('');
   const [otpKey,     setOtpKey]     = useState(0);
-  const [otpError,   setOtpError]   = useState('');
+  const [otpError,   setOtpError]   = useState<FieldError>(null);
 
   const [loading, setLoading] = useState(false);
 
@@ -188,14 +209,14 @@ export function SignupPhone() {
   // ── Step 1: send OTP ───────────────────────────────────────────────────────
   const handleSend = async () => {
     setNameError('');
-    setPhoneError('');
+    setPhoneError(null);
 
     if (fullName.trim().length < 2) {
       setNameError('Please enter your full name.');
       return;
     }
     if (!isPhoneComplete) {
-      setPhoneError('Enter a valid Canadian or United States phone number.');
+      setPhoneError({ title: 'Enter a valid phone number', body: 'Check your Canadian or United States number and try again.' });
       return;
     }
 
@@ -226,7 +247,7 @@ export function SignupPhone() {
         const params = new URLSearchParams({ phone, dial: country.dial, flag: country.flag });
         navigate(`/phone-already-exists?${params.toString()}`);
       } else {
-        setPhoneError(msg || 'Failed to send verification code. Please try again.');
+        setPhoneError({ title: "We couldn't send the verification code", body: 'Check your phone number and try again.' });
       }
     } finally {
       setLoading(false);
@@ -235,8 +256,8 @@ export function SignupPhone() {
 
   // ── Step 2: verify OTP → create profile → onboarding ──────────────────────
   const handleVerify = async () => {
-    if (otp.length !== 6) { setOtpError('Enter the 6-digit code.'); return; }
-    setOtpError('');
+    if (otp.length !== 6) { setOtpError({ title: 'Enter the 6-digit code' }); return; }
+    setOtpError(null);
     setLoading(true);
     try {
       // Verify OTP and create the Filmons user via edge function (service
@@ -264,11 +285,11 @@ export function SignupPhone() {
     } catch (err: any) {
       const msg: string = err?.message ?? '';
       if (msg.toLowerCase().includes('expired')) {
-        setOtpError('This verification code has expired. Request a new one.');
+        setOtpError({ title: 'Verification code expired', body: 'Request a new code to continue.' });
       } else if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('wrong')) {
-        setOtpError('The verification code is incorrect. Please try again.');
+        setOtpError({ title: 'Incorrect verification code', body: 'Check the code and try again.' });
       } else {
-        setOtpError(msg || 'Verification failed. Please try again.');
+        setOtpError({ title: msg || 'Verification failed', body: 'Please try again.' });
       }
     } finally {
       setLoading(false);
@@ -281,10 +302,10 @@ export function SignupPhone() {
       await authApi.sendPhoneOTP(fullE164);
       setOtp('');
       setOtpKey(k => k + 1);
-      setOtpError('');
+      setOtpError(null);
       toast.success('New code sent!');
     } catch {
-      toast.error('Failed to resend code. Please try again.');
+      toast.error("We couldn't send the verification code", { description: 'Check your phone number and try again.' });
     } finally {
       setLoading(false);
     }
@@ -452,7 +473,12 @@ export function SignupPhone() {
                   }`}
                 />
               </div>
-              {phoneError && <p className="text-red-400 text-xs mt-1.5 px-1" role="alert">{phoneError}</p>}
+              {phoneError && (
+                <div className="mt-1.5 px-1" role="alert">
+                  <p className="text-red-400 text-xs font-bold">{phoneError.title}</p>
+                  {phoneError.body && <p className="text-red-400/70 text-xs">{phoneError.body}</p>}
+                </div>
+              )}
               {!phoneError && (
                 <p className="text-[11px] text-white/25 mt-1.5 px-1">
                   Standard messaging rates may apply.
@@ -468,7 +494,7 @@ export function SignupPhone() {
               className="w-full min-h-[52px] py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2"
             >
               {loading ? (
-                <><svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Sending…</>
+                <><LoaderCircle className="w-4 h-4 animate-spin"/> Sending…</>
               ) : (
                 <><Smartphone className="w-4 h-4"/> Send Verification Code</>
               )}
@@ -506,10 +532,13 @@ export function SignupPhone() {
               </div>
             </div>
 
-            <OtpInput key={otpKey} value={otp} onChange={v => { setOtp(v); setOtpError(''); }} hasError={!!otpError}/>
+            <OtpInput key={otpKey} value={otp} onChange={v => { setOtp(v); setOtpError(null); }} hasError={!!otpError}/>
 
             {otpError ? (
-              <p className="text-red-400 text-xs text-center -mt-2" role="alert">{otpError}</p>
+              <div className="text-center -mt-2" role="alert">
+                <p className="text-red-400 text-xs font-bold">{otpError.title}</p>
+                {otpError.body && <p className="text-red-400/70 text-xs">{otpError.body}</p>}
+              </div>
             ) : (
               <div className="-mt-2"/>
             )}
@@ -523,13 +552,13 @@ export function SignupPhone() {
               className="w-full min-h-[52px] py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2"
             >
               {loading ? (
-                <><svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Verifying code…</>
+                <><LoaderCircle className="w-4 h-4 animate-spin"/> Verifying</>
               ) : 'Verify Phone Number'}
             </button>
 
             <button
               type="button"
-              onClick={() => { setStep('form'); setOtp(''); setOtpError(''); }}
+              onClick={() => { setStep('form'); setOtp(''); setOtpError(null); }}
               className="w-full text-center text-white/40 text-sm hover:text-white/70 transition-colors min-h-[44px]"
             >
               Change Phone Number
