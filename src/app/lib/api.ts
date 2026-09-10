@@ -734,7 +734,7 @@ function extractListingUrls(arr: any): string[] {
     .filter((s: string) => s && s.length > 4);
 }
 
-function mapListingRow(row: any): Listing {
+export function mapListingRow(row: any): Listing {
   // Parse metadata — images may be stored here instead of the images column
   const meta = (() => {
     if (!row.metadata) return {};
@@ -775,7 +775,7 @@ function mapListingRow(row: any): Listing {
   } as Listing;
 }
 
-const LISTING_COLUMNS = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at';
+export const LISTING_COLUMNS = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at';
 
 export const listingsApi = {
   getAll: async (): Promise<Listing[]> => {
