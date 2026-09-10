@@ -20,6 +20,11 @@ export interface SafePayoutMethod {
   method: 'card' | 'bank';
   displayName: string;
   last4: string | null;
+  // Bank/branch routing identifier (e.g. Canada's "institution-transit"
+  // format) -- not sensitive the way a full account number is, Stripe
+  // returns it in full for the connected account's own external accounts.
+  // null for cards, which have no routing number.
+  routingNumber: string | null;
   country: string | null;
   currency: string | null;
   standardPayoutEligible: boolean;
@@ -46,11 +51,20 @@ export async function syncPayoutMethodFromStripeAccount(hostId: string, stripeAc
   const requirementsDue: string[] = account.requirements?.currently_due || [];
   const needsAttention = requirementsDue.length > 0;
 
-  const externalAccount = account.external_accounts?.data?.[0] || null;
+  // Stripe's external_accounts list can hold more than one bank/card (an
+  // old account kept around after the host switched banks, for example) --
+  // array order is creation order, NOT "default first", so picking data[0]
+  // silently displays whichever account happened to be added first rather
+  // than the one Stripe actually pays out to. default_for_currency is
+  // Stripe's own authoritative flag for "this is where payouts go"; only
+  // fall back to data[0] in the (should-never-happen) case where nothing
+  // is flagged default.
+  const externalAccounts = account.external_accounts?.data || [];
+  const externalAccount = externalAccounts.find((a: any) => a.default_for_currency) || externalAccounts[0] || null;
   if (!externalAccount) {
     // Onboarding started but no payout destination collected yet.
     await upsertPayoutMethodRow(hostId, stripeAccountId, null, {
-      method: 'bank', displayName: 'Payout method', last4: null,
+      method: 'bank', displayName: 'Payout method', last4: null, routingNumber: null,
       country: account.country || null, currency: null,
       standardPayoutEligible: false, instantPayoutEligible: false,
       status: needsAttention ? 'action_required' : 'incomplete', requirementsDue,
@@ -65,6 +79,7 @@ export async function syncPayoutMethodFromStripeAccount(hostId: string, stripeAc
         method: 'card',
         displayName: `${externalAccount.brand || 'Card'} Debit`,
         last4: externalAccount.last4 || null,
+        routingNumber: null, // cards have no routing number
         country: externalAccount.country || account.country || null,
         currency: (externalAccount.currency || '').toUpperCase() || null,
         standardPayoutEligible: !!account.payouts_enabled,
@@ -79,6 +94,7 @@ export async function syncPayoutMethodFromStripeAccount(hostId: string, stripeAc
         method: 'bank',
         displayName: externalAccount.bank_name || 'Bank account',
         last4: externalAccount.last4 || null,
+        routingNumber: externalAccount.routing_number || null,
         country: externalAccount.country || account.country || null,
         currency: (externalAccount.currency || '').toUpperCase() || null,
         standardPayoutEligible: !!account.payouts_enabled,
@@ -99,6 +115,7 @@ async function upsertPayoutMethodRow(hostId: string, stripeAccountId: string, ex
     stripe_external_account_id: externalAccountId,
     display_name: safe.displayName,
     last4: safe.last4,
+    routing_number: safe.routingNumber,
     country: safe.country,
     currency: safe.currency,
     standard_payout_eligible: safe.standardPayoutEligible,

@@ -676,6 +676,12 @@ export function Wallet() {
                   <p className="text-sm font-bold text-gray-900">{defaultMethod.provider === 'stripe' ? defaultMethod.display_name : METHOD_LABEL[defaultMethod.method]}</p>
                   <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
                     {walletApi.maskDestination(defaultMethod.method, defaultMethod.details, defaultMethod.last4)}
+                    {defaultMethod.provider === 'stripe' && defaultMethod.routing_number && (
+                      <span>· Routing {defaultMethod.routing_number}</span>
+                    )}
+                    {defaultMethod.provider === 'stripe' && defaultMethod.currency && (
+                      <span>· {defaultMethod.currency}</span>
+                    )}
                     {defaultMethod.provider === 'stripe' && defaultMethod.account_type && (
                       <span className="capitalize">· {defaultMethod.account_type}</span>
                     )}

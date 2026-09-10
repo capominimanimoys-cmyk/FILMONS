@@ -69,6 +69,7 @@ export interface PayoutMethod {
   provider?: 'manual' | 'stripe';
   display_name?: string | null;
   last4?: string | null;
+  routing_number?: string | null;
   country?: string | null;
   currency?: string | null;
   standard_payout_eligible?: boolean;
