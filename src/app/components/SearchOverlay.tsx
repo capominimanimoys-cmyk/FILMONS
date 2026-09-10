@@ -1051,14 +1051,16 @@ function ResultSection({ label, count, grid=false, children, footer }: { label:s
   );
 }
 
-// "See more" footer for a guest-capped category -- visually belongs to the
+// "View more" footer for a capped category -- visually belongs to the
 // section it's passed into (ResultSection's `footer` prop), matching the
 // spec's "the button should visually belong to that category section".
-function GuestSeeMoreButton({ onClick }: { onClick: () => void }) {
+// Used for both the guest signup-prompt path and the logged-in
+// full-category-page path -- same label, different onClick.
+function ViewMoreButton({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick}
       className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-      See more
+      View more
     </button>
   );
 }
@@ -1069,6 +1071,24 @@ function EmergencyCategoryGateButton({ onClick }: { onClick: () => void }) {
       className="w-full py-3 text-center text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
       See more emergency listings
     </button>
+  );
+}
+
+// Guest/Creator/Creator+'s permanent Opportunity cap -- an inline locked
+// section, not a button, since there's no further page to send these tiers
+// to (per the Opportunity browsing limit spec: "Do not expose the
+// remaining opportunities through ... /search/category/opportunities").
+function OpportunityLockedNotice({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="mx-4 mb-1 rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-4 text-center space-y-2">
+      <p className="text-sm font-black text-gray-900">Unlock all opportunities</p>
+      <p className="text-xs text-gray-600">
+        You're seeing {OPPORTUNITY_LOCKED_LIMIT} available opportunities. Upgrade to a Professional or Business account to browse all Opportunity listings.
+      </p>
+      <button onClick={onClick} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs mt-1">
+        Upgrade account
+      </button>
+    </div>
   );
 }
 
@@ -1189,22 +1209,28 @@ interface Props {
   onResultNavigate?: (url: string, state?: Record<string, unknown>) => void;
 }
 
-// Guests get a 5-item preview of every category (never zero -- "Do not
-// hide categories from guests", per the guest-mode-limit spec) with a "See
-// more" that sends them to Login/Sign Up instead of loading more. Signed-in
-// users of any tier are never capped here (Opportunities' separate
-// Professional-tier cap below is unrelated and still applies to them).
-const GUEST_CATEGORY_LIMIT = 5;
-// Creator/Creator+ never see more than this many real Opportunity listings
-// -- a permanent display cap, not a resettable daily allowance. Professional/
+// Browse Search's preview cap -- every regular category (Rental, Sale,
+// Services, Creators, Studios) shows at most this many, for guest and
+// logged-in alike, per the Browse Search Category Display Rules spec.
+// What differs by account state is only what "View More" does: a guest
+// gets the signup prompt, a logged-in user (any tier) gets the full,
+// uncapped /search/category/:tab page. Opportunities' own, stricter cap
+// below is unrelated and still applies on top of this for Guest/Creator/
+// Creator+.
+const PREVIEW_LIMIT = 5;
+// Guest/Creator/Creator+ never see more than this many real Opportunity
+// listings, anywhere -- Browse Search, the Opportunity category page,
+// search results, filters -- a permanent display cap, not a resettable
+// daily allowance, and never exposed via "View More" for these tiers
+// (there's no further category page to send them to). Professional/
 // Business (canBrowseOpportunities) are exempt entirely.
-const CREATOR_OPPORTUNITY_LIMIT = 2;
+const OPPORTUNITY_LOCKED_LIMIT = 5;
 // Guest/Creator/Creator+ never see more than this many EMERGENCY-flagged
 // items within any one category's list (Rental, Sales, Services, Studios)
 // -- non-emergency items in the same list are completely untouched.
 // Professional/Business pass Infinity. Opportunities isn't listed here
-// because its own CREATOR_OPPORTUNITY_LIMIT (2 total) already implies at
-// most 2 emergency ones too.
+// because its own OPPORTUNITY_LOCKED_LIMIT (5 total) already implies at
+// most 5 emergency ones too.
 const EMERGENCY_LIMIT_RESTRICTED = 2;
 
 // Caps how many emergency-flagged items appear within one category's list
@@ -1307,6 +1333,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setPendingReturnUrl(`/search?tab=${tab}`);
     navigate(`/login?heading=${encodeURIComponent('Sign up to see more listings')}&sub=${encodeURIComponent("Create your FILMONS account to explore all listings.")}`);
   }, [navigate]);
+
+  // Logged-in "View More" on a category section — opens the full, uncapped
+  // /search/category/:tab page, carrying the current search state (query,
+  // filters, sort) so the full page picks up right where Browse Search
+  // left off instead of starting from a blank category browse.
+  const handleViewMoreCategory = useCallback((tab: TabId) => {
+    navigate(`/search/category/${tab}`, { state: { query: q, filters, sort } });
+  }, [navigate, q, filters, sort]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
   useEffect(() => {
@@ -1623,61 +1657,72 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             <EmptyState q={q} tab={activeTab}/>
           ) : (
             <div className="py-2">
+              {/* Browse Search is always a preview experience -- every
+                  regular category caps at PREVIEW_LIMIT (5) for guest and
+                  logged-in alike, whether the user is just browsing or has
+                  typed a search/applied a filter (this page never dumps a
+                  full result set, typed or not). "View More" either
+                  prompts signup (guest) or opens the full, uncapped
+                  /search/category/:tab page (logged in, any tier alike),
+                  carrying the current query/filters/sort along with it. */}
               {visibleUsers.length > 0 && (
                 <ResultSection label="👤 Creators" count={visibleUsers.length}
-                  footer={!user && visibleUsers.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('creators')}/> : undefined}>
-                  {visibleUsers.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
+                  footer={visibleUsers.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
+                  {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {/* Each of these four: the generic per-category guest cap
-                  (GUEST_CATEGORY_LIMIT) takes priority when it applies --
-                  it affects the whole category, not just emergency items.
-                  Otherwise, if emergency items were held back within this
-                  category specifically (hiddenEmergencyX, computed on the
-                  already-capped list above), show that gate instead. Both
-                  guest and signed-in Creator/Creator+ can hit the emergency
-                  gate; only guests can hit the generic one. */}
+              {/* Each of these four: the generic PREVIEW_LIMIT cap takes
+                  priority when it applies -- it affects the whole
+                  category, not just emergency items. Otherwise, if
+                  emergency items were held back within this category
+                  specifically (hiddenEmergencyX, computed on the
+                  already-capped list above), show that gate instead. */}
               {visibleRental.length > 0 && (
                 <ResultSection label="📦 Rental" count={visibleRental.length} grid
-                  footer={!user && visibleRental.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('rental')}/>
+                  footer={visibleRental.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : handleViewMoreCategory('rental')}/>
                     : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleRental.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {visibleRental.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleSale.length > 0 && (
                 <ResultSection label="🏷️ Sales" count={visibleSale.length} grid
-                  footer={!user && visibleSale.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('sale')}/>
+                  footer={visibleSale.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : handleViewMoreCategory('sale')}/>
                     : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleSale.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {visibleSale.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
                 <ResultSection label="🛠️ Services" count={visibleServices.length}
-                  footer={!user && visibleServices.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('services')}/>
+                  footer={visibleServices.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
                     : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleServices.slice(0, !user ? GUEST_CATEGORY_LIMIT : 10).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {visibleServices.slice(0, PREVIEW_LIMIT).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleStudios.length > 0 && (
                 <ResultSection label="🏢 Studios" count={visibleStudios.length} grid
-                  footer={!user && visibleStudios.length > GUEST_CATEGORY_LIMIT ? <GuestSeeMoreButton onClick={() => handleGuestSeeMore('studios')}/>
+                  footer={visibleStudios.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/>
                     : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleStudios.slice(0, !user ? GUEST_CATEGORY_LIMIT : 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                  {visibleStudios.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleOpportunities.length > 0 && (
                 <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}
-                  footer={!canBrowseOpportunities && visibleOpportunities.length > CREATOR_OPPORTUNITY_LIMIT
-                    ? <button onClick={() => setShowOpportunityGate(true)} className="w-full py-3 text-center text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">See more opportunities</button>
-                    : undefined}>
-                  {/* Opportunities has its OWN cap, separate from every
-                      other category's generic GUEST_CATEGORY_LIMIT (5) --
+                  footer={canBrowseOpportunities
+                    ? (visibleOpportunities.length > PREVIEW_LIMIT ? <ViewMoreButton onClick={() => handleViewMoreCategory('opportunities')}/> : undefined)
+                    : (visibleOpportunities.length > OPPORTUNITY_LOCKED_LIMIT ? <OpportunityLockedNotice onClick={() => setShowOpportunityGate(true)}/> : undefined)}>
+                  {/* Opportunities has its own, stricter permanent cap for
                       Guest/Creator/Creator+ (!canBrowseOpportunities, which
                       covers a guest too since isProfessional(undefined) is
-                      false) never see more than CREATOR_OPPORTUNITY_LIMIT
-                      (2), even if more are available. Professional/Business
-                      get the real, full list. */}
-                  {visibleOpportunities.slice(0, canBrowseOpportunities ? 10 : CREATOR_OPPORTUNITY_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                      false) -- OPPORTUNITY_LOCKED_LIMIT (5), never exposed
+                      further via View More, search, or filters. Professional/
+                      Business get the same PREVIEW_LIMIT (5) as every other
+                      category, with a real View More to the full page. */}
+                  {visibleOpportunities.slice(0, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {/* Dedicated Emergency section is Professional/Business only
@@ -1694,6 +1739,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               )}
               {resultsReady && !loading && !hasVisible && (
                 <EmptyState q={q} tab={activeTab}/>
+              )}
+              {/* All tab only -- one final action below every category
+                  section, opening the combined, uncapped results page. */}
+              {activeTab === 'all' && hasVisible && (
+                <div className="px-4 pt-2 pb-4">
+                  <button
+                    onClick={() => !user ? handleGuestSeeMore('all') : handleViewMoreCategory('all')}
+                    className="w-full py-3.5 rounded-2xl bg-gray-900 text-white text-sm font-bold text-center hover:bg-gray-800 transition-colors"
+                  >
+                    View all results
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1731,12 +1788,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── "See more opportunities" past the CREATOR_OPPORTUNITY_LIMIT (2)
-           latest Opportunities -- Professional or Business required for the
-           rest, for Guest/Creator/Creator+ alike. Never fetches or reveals
-           anything further, just explains why and offers real next steps
-           directly. A guest gets an extra "Sign up" button and "Explore"
-           (not "Upgrade") wording on the plan buttons -- both plan buttons
+      {/* ── "Upgrade account" past OPPORTUNITY_LOCKED_LIMIT (5) Opportunity
+           listings -- Professional or Business required for the rest, for
+           Guest/Creator/Creator+ alike. Never fetches or reveals anything
+           further, just explains why and offers real next steps directly.
+           A guest gets an extra "Sign up" button and "Explore" (not
+           "Upgrade") wording on the plan buttons -- both plan buttons
            still route through the same login-first flow either way
            (setPendingReturnUrl to the auto-checkout URL, then /login,
            which itself bridges to signup for someone with no account). ── */}
@@ -1755,10 +1812,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
                   <Lock className="w-6 h-6 text-indigo-600"/>
                 </div>
-                <p className="text-base font-black text-gray-900">See more opportunities</p>
+                <p className="text-base font-black text-gray-900">Unlock all opportunities</p>
                 <p className="text-sm text-gray-500">
-                  {isAuthenticated ? 'Upgrade to Professional or Business to access all opportunity listings.'
-                                    : 'Sign up or upgrade to Professional or Business to access all opportunity listings.'}
+                  You're seeing {OPPORTUNITY_LOCKED_LIMIT} available opportunities.{' '}
+                  {isAuthenticated ? 'Upgrade to a Professional or Business account to browse all Opportunity listings.'
+                                    : 'Sign up and upgrade to a Professional or Business account to browse all Opportunity listings.'}
                 </p>
               </div>
               <div className="flex flex-col gap-2">
