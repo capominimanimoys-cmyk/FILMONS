@@ -1324,6 +1324,25 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     }
   }, [navigate, onClose, onResultNavigate, q, activeTab, filters, sort]);
 
+  // Shared by every navigation-away-from-search action below (View More,
+  // View all results, the guest signup prompt) -- same close-then-navigate
+  // pattern handleResultNavigate already uses for listing clicks. Without
+  // this, navigating away only changes the route; when SearchOverlay is
+  // mounted as Root.tsx's modal (searchOpen, no onResultNavigate passed),
+  // the overlay itself has no idea the URL changed and stays mounted on
+  // top of whatever the new route renders underneath it. Closing first (or
+  // via onResultNavigate when the route-page caller provides one) is what
+  // actually unmounts it.
+  const closeAndNavigate = useCallback((url: string, state?: Record<string, unknown>) => {
+    setClosing(true);
+    if (onResultNavigate) {
+      onResultNavigate(url, state);
+    } else {
+      navigate(url, state ? { state } : undefined);
+      setTimeout(onClose, 280);
+    }
+  }, [navigate, onClose, onResultNavigate]);
+
   // Guest "See more" on a category section — never loads more results for
   // a guest, always sends them to Login instead. Remembers the category
   // (via ?tab= on the return URL, read by activeTab's initializer above)
@@ -1331,16 +1350,19 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // view rather than the top of Home or a generic search page.
   const handleGuestSeeMore = useCallback((tab: TabId) => {
     setPendingReturnUrl(`/search?tab=${tab}`);
-    navigate(`/login?heading=${encodeURIComponent('Sign up to see more listings')}&sub=${encodeURIComponent("Create your FILMONS account to explore all listings.")}`);
-  }, [navigate]);
+    closeAndNavigate(`/login?heading=${encodeURIComponent('Sign up to see more listings')}&sub=${encodeURIComponent("Create your FILMONS account to explore all listings.")}`);
+  }, [closeAndNavigate]);
 
   // Logged-in "View More" on a category section — opens the full, uncapped
   // /search/category/:tab page, carrying the current search state (query,
   // filters, sort) so the full page picks up right where Browse Search
-  // left off instead of starting from a blank category browse.
+  // left off instead of starting from a blank category browse. Its own
+  // dedicated page, not rendered as a child/overlay of this one -- see
+  // closeAndNavigate above for why that requires actually closing this
+  // overlay, not just changing the route.
   const handleViewMoreCategory = useCallback((tab: TabId) => {
-    navigate(`/search/category/${tab}`, { state: { query: q, filters, sort } });
-  }, [navigate, q, filters, sort]);
+    closeAndNavigate(`/search/category/${tab}`, { query: q, filters, sort });
+  }, [closeAndNavigate, q, filters, sort]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
   useEffect(() => {

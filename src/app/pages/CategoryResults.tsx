@@ -141,7 +141,11 @@ function SingleCategoryResults({ category, navState }: { category: CategoryTab; 
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
         <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
-          <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+          {/* Always back to Browse Search itself, not browser history --
+              this page is reachable from a modal that never had its own
+              route (Root.tsx's search icon), so navigate(-1) could land
+              anywhere the user was before opening it. */}
+          <button onClick={() => navigate('/search')} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
           <div className="min-w-0">
@@ -286,7 +290,11 @@ function AllGroupedResults({ navState }: { navState: NavState }) {
     <div className="min-h-screen bg-gray-50">
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
         <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
-          <button onClick={() => navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+          {/* Always back to Browse Search itself, not browser history --
+              this page is reachable from a modal that never had its own
+              route (Root.tsx's search icon), so navigate(-1) could land
+              anywhere the user was before opening it. */}
+          <button onClick={() => navigate('/search')} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
           <p className="text-base font-black text-gray-900">All Results</p>
