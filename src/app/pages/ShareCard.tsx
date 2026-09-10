@@ -6,9 +6,7 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
-import { getPortfolioItems } from '../lib/portfolioApi';
 import { authApi } from '../lib/api';
-import { supabase } from '../../lib/supabase';
 import { normalizeTier } from '../lib/reliabilityApi';
 import {
   EW, SF, NEUE, Photo, VBar, Stat, tierBadgeFor, shareCardNavBtn,
@@ -23,8 +21,6 @@ interface CardUser {
   avatar: string;
   bio: string;
   primaryRole: string;
-  followers: number;
-  projects: number;
   isVerified: boolean;
   location: string;
   accountType?: string;
@@ -112,9 +108,7 @@ function ProfileCard({ user, isExport: X }: CP) {
             display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', flexWrap: 'wrap',
             gap: X ? '28px' : '2.6%',
           }}>
-            <Stat label="Followers" value={user.followers} X={X} />
             <Stat label="Role" value={role} X={X} />
-            <Stat label="Works" value={user.projects} X={X} />
             {user.location && (
               <>
                 <VBar X={X} />
@@ -136,7 +130,6 @@ export function ShareCard() {
   const exportRef   = useRef<HTMLDivElement>(null);
   const [exporting,  setExporting]  = useState(false);
   const [leaving,    setLeaving]    = useState(false);
-  const [projects,   setProjects]   = useState(0);
   const [copied,     setCopied]     = useState(false);
 
   // Sharing someone else's profile (from their host page / portfolio) passes
@@ -156,21 +149,6 @@ export function ShareCard() {
   }, [viewUserId, isOther]);
 
   const user = isOther ? otherUser : me;
-
-  useEffect(() => {
-    if (!user?.id) return;
-    getPortfolioItems(user.id).then(items => setProjects(items.length));
-  }, [user?.id]);
-
-  // Live follower count from the follows table — profiles.followers is a
-  // legacy array column that follow/unfollow no longer writes to, so it
-  // drifts (same fix as Profile.tsx / HostProfile.tsx).
-  const [followerCount, setFollowerCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!user?.id) { setFollowerCount(null); return; }
-    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id)
-      .then(({ count }) => setFollowerCount(count ?? null));
-  }, [user?.id]);
 
   // index.html sets no background on <html>/<body> (defaults to white), so
   // mobile Safari's overscroll bounce reveals white at the edges even though
@@ -211,8 +189,6 @@ export function ShareCard() {
     avatar:      user?.avatar      || '',
     bio:         user?.bio         || '',
     primaryRole: user?.primaryRole || 'Creator',
-    followers:   followerCount ?? (user?.followers?.length || 0),
-    projects,
     isVerified:  !!user?.isVerified,
     location:    user?.location || user?.city || '',
     accountType: user?.accountType,
