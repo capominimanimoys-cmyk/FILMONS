@@ -495,8 +495,15 @@ export function Wallet() {
     }
   };
 
+  // Creator accounts can't create listings, so there's nothing for them to
+  // earn or receive payouts on -- Wallet is Creator+ and up only. Guarded
+  // here (not just hidden behind a nav link) so typing /wallet directly
+  // never reaches it either.
+  const walletLocked = isAuthenticated && !isCreatorPlus(user?.accountType);
+
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login', { replace: true }); return; }
+    if (walletLocked) { navigate('/creator-plus-required?type=wallet', { replace: true }); return; }
     (async () => {
       // Re-sync payout_methods from Stripe before the first render -- a
       // host who finished setup via Stripe's own hosted onboarding link

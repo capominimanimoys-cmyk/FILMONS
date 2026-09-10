@@ -4,13 +4,14 @@ import { CheckCircle, Star, Building2, Zap, CreditCard } from 'lucide-react';
 const ACCOUNT_INFO = {
   wallet: {
     Icon: CreditCard,
-    label: 'Creator+ Required',
+    label: 'Unlock your Wallet',
     gradient: 'from-emerald-600 to-teal-700',
     accent: 'bg-emerald-500',
     glow: 'shadow-emerald-700/50',
     textAccent: 'text-emerald-200',
-    lockNote: 'Wallet, payouts, and payment tools require a free Creator+ account with verified identity and payout setup.',
-    requiresLabel: 'Upgrade to Creator+ — It\'s Free',
+    lockNote: 'Wallet access is available with Creator+ and higher accounts. Upgrade your account to create listings, receive payments, and manage your earnings.',
+    requiresLabel: 'Upgrade to Creator+',
+    secondaryLabel: 'Not now',
     tagline: 'Verified payout & payment account',
     audience: [
       'Creators ready to earn on Filmons',
@@ -139,7 +140,7 @@ export function CreatorPlusRequired() {
           className={`w-full bg-gradient-to-r ${info.gradient} text-white font-black rounded-2xl py-4 hover:opacity-90 transition-opacity`}>
           {info.requiresLabel} →
         </button>
-        <button onClick={() => navigate(-1)} className="text-gray-400 text-sm hover:text-gray-600">Go back</button>
+        <button onClick={() => navigate(-1)} className="text-gray-400 text-sm hover:text-gray-600">{(info as any).secondaryLabel ?? 'Go back'}</button>
       </div>
     </div>
   );
