@@ -26,7 +26,7 @@ export function DesktopTopBar({ onSearchOpen }: DesktopTopBarProps) {
   }, [user?.id]);
 
   return (
-    <div className="hidden lg:flex items-center justify-between gap-4 h-14 px-6 border-b border-gray-100 bg-white/95 backdrop-blur-md sticky top-0 z-20">
+    <div className="hidden lg:flex items-center justify-between gap-4 h-14 px-6 border-b border-gray-100 bg-white/95 backdrop-blur-md sticky top-0 z-40">
       <button
         onClick={onSearchOpen}
         className="flex items-center gap-2.5 bg-gray-100 rounded-2xl px-3.5 py-2 text-left hover:bg-gray-200 transition-colors w-full max-w-sm"
