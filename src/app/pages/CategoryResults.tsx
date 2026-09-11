@@ -256,16 +256,34 @@ function EmergencyBlockedNotice({ onUpgrade }: { onUpgrade: () => void }) {
 // on the dedicated one-per-line category page) rather than that component
 // squeezed into a fixed box -- ListingCard carries save/boost/menu actions
 // that don't fit a strictly fixed-height card.
-const PREVIEW_CARD_CLASS = 'shrink-0 w-40 h-[213px] sm:w-60 sm:h-80 rounded-2xl overflow-hidden border border-gray-100 bg-white shadow-sm text-left flex flex-col active:scale-[0.97] transition-transform';
-const PREVIEW_IMAGE_CLASS = 'relative w-full h-[120px] sm:h-[180px] shrink-0 bg-gray-100 overflow-hidden';
+// Every dimension here is an inline style, not a Tailwind utility class --
+// deliberately, so this can never be affected by a breakpoint, a purge/
+// content-scanning miss, or some other utility's specificity. One fixed
+// 240x320 footprint (image 240x180) for every result type at every screen
+// size, per spec -- no responsive variant, no grid, no flex:1 stretch,
+// no width:100%. `flex: 0 0 240px` (not just flex-shrink) is what actually
+// stops these from ever being asked to grow OR shrink to fill the row.
+const PREVIEW_CARD_STYLE: React.CSSProperties = {
+  width: 240, height: 320, minWidth: 240, maxWidth: 240, flex: '0 0 240px', borderRadius: 16,
+};
+const PREVIEW_IMAGE_STYLE: React.CSSProperties = {
+  width: 240, height: 180, minHeight: 180, maxHeight: 180, aspectRatio: '4 / 3',
+};
+// `snap-start` lives here (not on a wrapper div) so the element carrying
+// the fixed-size inline style IS the actual flex item in the scroll row --
+// a wrapper with no explicit size would just shrink-to-fit around it,
+// which happens to look right but leaves nothing to stop a future change
+// to this card from silently losing its fixed footprint again.
+const PREVIEW_CARD_CLASS = 'snap-start overflow-hidden border border-gray-100 bg-white shadow-sm text-left flex flex-col active:scale-[0.97] transition-transform';
+const PREVIEW_IMAGE_CLASS = 'relative shrink-0 bg-gray-100 overflow-hidden';
 
 function PreviewListingCard({ listing }: { listing: Listing }) {
   const navigate = useNavigate();
   const price = `$${Number(listing.price ?? 0).toLocaleString()}${listing.listingMode === 'rent' ? '/day' : ''}`;
   const isEmergency = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
   return (
-    <button onClick={() => navigate(`/listing/${listing.id}`)} className={PREVIEW_CARD_CLASS}>
-      <div className={PREVIEW_IMAGE_CLASS}>
+    <button onClick={() => navigate(`/listing/${listing.id}`)} style={PREVIEW_CARD_STYLE} className={PREVIEW_CARD_CLASS}>
+      <div style={PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
         {listing.images?.[0]
           ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
@@ -286,11 +304,15 @@ function PreviewListingCard({ listing }: { listing: Listing }) {
   );
 }
 
+// Creators get the exact same PREVIEW_CARD_STYLE/PREVIEW_IMAGE_STYLE as
+// every other result type -- no separate, larger design. A creator's photo
+// fills the same fixed 240x180 image area (object-cover, never influencing
+// the card's own size) as a listing's cover photo would.
 function PreviewCreatorCard({ u }: { u: CreatorRow }) {
   const navigate = useNavigate();
   return (
-    <button onClick={() => navigate(`/host/${u.id}`)} className={PREVIEW_CARD_CLASS}>
-      <div className={PREVIEW_IMAGE_CLASS}>
+    <button onClick={() => navigate(`/host/${u.id}`)} style={PREVIEW_CARD_STYLE} className={PREVIEW_CARD_CLASS}>
+      <div style={PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
         {u.avatar_url
           ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
@@ -406,8 +428,8 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
       ) : (
         <div className="flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
           {category === 'creators'
-            ? creators.map(u => <div key={u.id} className="snap-start"><PreviewCreatorCard u={u}/></div>)
-            : listings.map(l => <div key={l.id} className="snap-start"><PreviewListingCard listing={l}/></div>)
+            ? creators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
+            : listings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
           }
         </div>
       )}
