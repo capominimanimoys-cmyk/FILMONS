@@ -112,15 +112,26 @@ function OtpInput({ value, onChange, hasError }: {
   // unmount so a stale credential request never overwrites a code the
   // user already entered by hand on a later screen.
   useEffect(() => {
-    if (!('OTPCredential' in window)) return;
+    if (!('OTPCredential' in window) || !navigator.credentials?.get) return;
     const ac = new AbortController();
-    (navigator as any).credentials
-      .get({ otp: { transport: ['sms'] }, signal: ac.signal })
-      .then((cred: any) => {
-        const otpCode = cred?.code?.replace(/\D/g, '').slice(0, 6);
-        if (otpCode?.length === 6) { onChange(otpCode); focus(5); }
-      })
-      .catch(() => {});
+    // The call itself (not just the promise it returns) can throw
+    // synchronously on some Android WebViews that expose the
+    // `OTPCredential` global but don't fully implement the Credential
+    // Management API behind it -- an uncaught throw here would propagate
+    // as a render-phase error, not just a silently-rejected promise, and
+    // has nothing to do with rendering the OTP input itself, but is worth
+    // shutting out entirely so it can never take anything down with it.
+    try {
+      (navigator as any).credentials
+        .get({ otp: { transport: ['sms'] }, signal: ac.signal })
+        .then((cred: any) => {
+          const otpCode = cred?.code?.replace(/\D/g, '').slice(0, 6);
+          if (otpCode?.length === 6) { onChange(otpCode); focus(5); }
+        })
+        .catch(() => {});
+    } catch (e) {
+      console.warn('[phone-signup] WebOTP credentials.get threw synchronously:', e);
+    }
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -212,6 +223,16 @@ export function SignupPhone() {
 
   useEffect(() => { setTimeout(() => setMounted(true), 80); }, []);
 
+  // Diagnostic only -- the OTP input's visibility depends solely on
+  // `step === 'otp'` (see the JSX below), never on `user`/session/profile
+  // state. This log exists so a report of "the code sent but the input
+  // never appeared" can be confirmed or ruled out from the browser
+  // console alone: if "step -> otp" doesn't print, the step transition
+  // itself never happened (a handleSend problem); if it does print, the
+  // OTP input is guaranteed to be in the render tree and the fault lies
+  // elsewhere (paint/CSS/cache), not in this component's logic.
+  useEffect(() => { console.log('[phone-signup] step ->', step); }, [step]);
+
   const digits   = phoneDigits(phone);
   const fullE164 = `${country.dial}${digits}`;
   const isPhoneComplete = digits.length === 10;
@@ -249,11 +270,13 @@ export function SignupPhone() {
 
       // Send OTP via edge function
       await authApi.sendPhoneOTP(fullE164);
+      console.log('[phone-signup] OTP send succeeded, advancing to otp step');
       toast.success(`Code sent to ${country.flag} ${country.dial} ${phone}`);
       setOtp('');
       setOtpKey(k => k + 1);
       setStep('otp');
     } catch (err: any) {
+      console.error('[phone-signup] sendPhoneOTP failed:', err);
       const msg: string = err?.message ?? '';
       if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('already registered')) {
         const params = new URLSearchParams({ phone, dial: country.dial, flag: country.flag });

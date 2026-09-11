@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Loader2, LoaderCircle, Mail, ArrowLeft } from 'lucide-react';
+import { Loader2, LoaderCircle, Mail, ArrowLeft, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { EMAILJS_CONFIG, sendEmail, sendWelcomeEmail } from '../lib/emailjs-config';
@@ -25,6 +25,43 @@ interface PendingSignup {
   expiresAt: number;
 }
 
+// Full-screen "Verifying…" takeover -- shown the instant Verify is tapped,
+// before the network round-trip even starts. A small rotating ring around
+// a compact FILMONS mark, matching the pop-in entrance every other auth
+// screen in this app already uses (`auth-pop-main`, defined once in
+// AuthScreenLayout).
+function VerifyingPanel() {
+  return (
+    <div className="auth-pop-main flex flex-col items-center text-center py-10">
+      <div className="relative w-16 h-16 mb-6">
+        <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-white font-black text-lg">F</span>
+        </div>
+      </div>
+      <p className="text-white text-lg font-black mb-1.5">Verifying your email…</p>
+      <p className="text-white/45 text-sm max-w-[15rem] leading-relaxed">
+        Please don't close this page. We're securely verifying your account.
+      </p>
+    </div>
+  );
+}
+
+// Brief success beat shown after verification, auth, and profile creation
+// have all actually finished -- before completeLogin/navigate fire.
+function VerifiedPanel() {
+  return (
+    <div className="auth-pop-main flex flex-col items-center text-center py-10">
+      <div className="w-16 h-16 rounded-full bg-green-500/15 border-2 border-green-500/40 flex items-center justify-center mb-6">
+        <Check className="w-8 h-8 text-green-400" strokeWidth={2.5} />
+      </div>
+      <p className="text-white text-lg font-black mb-1.5">✓ Email verified</p>
+      <p className="text-white/45 text-sm">Your FILMONS account is ready.</p>
+    </div>
+  );
+}
+
 function genCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
@@ -38,12 +75,22 @@ function readPending(): PendingSignup | null {
   }
 }
 
+// The verification screen's own loading state, distinct from `loading`
+// (an internal busy flag used for timing/finally bookkeeping). `phase`
+// drives which panel is on screen: the normal code-entry form, the full
+// "Verifying your email…" takeover (inputs/buttons disabled, no way to
+// double-submit or navigate away mid-verification), or a brief "Email
+// verified" success beat before completeLogin/navigate actually fire.
+type VerifyPhase = 'form' | 'verifying' | 'verified';
+
 export function VerifyEmail() {
   const navigate   = useNavigate();
   const { completeLogin, user, isAuthenticated } = useAuth() as any;
   const [pending,   setPending]  = useState<PendingSignup | null>(null);
   const [digits,    setDigits]   = useState(['', '', '', '', '', '']);
   const [loading,   setLoading]  = useState(false);
+  const [phase,     setPhase]    = useState<VerifyPhase>('form');
+  const [verifyError, setVerifyError] = useState<{ title: string; body?: string } | null>(null);
   const [resending, setResending] = useState(false);
   const [editEmail, setEditEmail] = useState(false);
   const [newEmail,  setNewEmail]  = useState('');
@@ -80,6 +127,7 @@ export function VerifyEmail() {
     const next = [...digits];
     next[i] = ch;
     setDigits(next);
+    setVerifyError(null);
     if (ch && i < 5) inputRefs.current[i + 1]?.focus();
   };
 
@@ -93,6 +141,7 @@ export function VerifyEmail() {
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (pasted.length === 6) {
       setDigits(pasted.split(''));
+      setVerifyError(null);
       inputRefs.current[5]?.focus();
     }
   };
@@ -109,17 +158,28 @@ export function VerifyEmail() {
   const VERIFY_TIMEOUT_MS = 15_000;
 
   const handleVerify = async () => {
-    if (!pending || !full || loading) return;
+    // phase !== 'form' (not just `loading`) is the actual re-entrancy guard
+    // here -- it's already true the instant the takeover panel appears
+    // (set synchronously below, before any await), so a second tap/Enter
+    // while the request is in flight can never start a duplicate
+    // verification attempt.
+    if (!pending || !full || phase !== 'form') return;
+
+    setVerifyError(null);
 
     if (Date.now() > pending.expiresAt) {
-      toast.error('Code expired. Please request a new one.');
+      setVerifyError({ title: 'Verification code expired', body: 'Request a new code to continue.' });
       return;
     }
     if (code !== pending.code) {
-      toast.error('Incorrect verification code', { description: 'Check the code and try again.' });
+      setVerifyError({ title: "We couldn't verify this code", body: 'Please check the code and try again.' });
       return;
     }
 
+    // Switches the whole screen into the "Verifying…" takeover immediately,
+    // before the network round-trip even starts -- the user never sees a
+    // half-disabled form or has to guess whether their tap registered.
+    setPhase('verifying');
     setLoading(true);
     const t0 = performance.now();
     const mark = (stage: string) => console.log(`[verify] ${stage} (+${Math.round(performance.now() - t0)}ms)`);
@@ -151,7 +211,8 @@ export function VerifyEmail() {
           navigate(`/email-already-exists?email=${encodeURIComponent(pending.email)}`);
           return;
         }
-        toast.error(authError?.message || 'Failed to create account.');
+        setPhase('form');
+        setVerifyError({ title: 'Could not create your account', body: authError?.message || 'Please try again.' });
         return;
       }
 
@@ -183,10 +244,11 @@ export function VerifyEmail() {
       mark('profile creation completed');
       if (!profileRes.ok) {
         const profileData = await profileRes.json().catch(() => ({}));
+        setPhase('form');
         if (profileRes.status === 409) {
-          toast.error('This email address is already connected to another Filmons account.');
+          setVerifyError({ title: 'Account already exists', body: 'This email address is already connected to another Filmons account.' });
         } else {
-          toast.error('Account created but profile setup failed. Please contact support.');
+          setVerifyError({ title: 'Account created but profile setup failed', body: 'Please contact support.' });
         }
         console.error('[signup] profile creation failed:', profileRes.status, profileData);
         return;
@@ -207,6 +269,14 @@ export function VerifyEmail() {
         following:            [],
       };
 
+      // Verification, auth, and profile creation have all actually
+      // finished at this point -- the brief "Email verified" beat below is
+      // purely a confirmation moment for the user, not something any
+      // further work waits on.
+      mark('verified, showing confirmation');
+      setPhase('verified');
+      await new Promise(r => setTimeout(r, 900));
+
       // completeLogin(preloadedUser) itself is synchronous (cache + a
       // fire-and-forget device registration) — no extra network wait here.
       await completeLogin(pending.email, pending.password, undefined, user, 'email');
@@ -219,12 +289,14 @@ export function VerifyEmail() {
       claimIdentity(authData.user.id, 'email', pending.email).catch(() => {});
       sendWelcomeEmail(pending.email, pending.name).catch(() => {});
     } catch (e: any) {
+      setPhase('form');
       if (e?.message === 'TIMEOUT' || e?.name === 'AbortError') {
-        toast.error("We couldn't finish verification", {
-          description: 'Your code may have expired or there may be a connection issue.',
+        setVerifyError({
+          title: "We couldn't finish verification",
+          body: 'Your code may have expired or there may be a connection issue.',
         });
       } else {
-        toast.error(e?.message || 'Something went wrong.');
+        setVerifyError({ title: 'Something went wrong', body: e?.message || 'Please try again.' });
       }
     } finally {
       clearTimeout(timeout);
@@ -309,9 +381,16 @@ export function VerifyEmail() {
 
       <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5"
         style={{ paddingTop: 'calc(3.5rem + env(safe-area-inset-top))', paddingBottom: 'calc(2.5rem + env(safe-area-inset-bottom))' }}>
-        <Link to="/create-account" className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-sm mb-10 w-fit">
-          <ArrowLeft className="w-4 h-4" /> Back
-        </Link>
+        {/* Navigating away mid-verification would abandon an in-flight
+            signUp()/profile-creation call with no way back to it -- the
+            back link only exists while phase is still 'form'. */}
+        {phase === 'form' ? (
+          <Link to="/create-account" className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-sm mb-10 w-fit">
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Link>
+        ) : (
+          <div className="h-4 mb-10" />
+        )}
 
         <div className="flex flex-col items-center mb-10">
           <FilmonsLogo iconSize={32} theme="dark" className="mb-8" />
@@ -325,6 +404,12 @@ export function VerifyEmail() {
           </p>
         </div>
 
+        {phase === 'verifying' ? (
+          <VerifyingPanel />
+        ) : phase === 'verified' ? (
+          <VerifiedPanel />
+        ) : (
+        <>
         {/* Code input */}
         <div className="flex gap-2.5 justify-center mb-8" onPaste={handlePaste}>
           {digits.map((d, i) => (
@@ -342,11 +427,21 @@ export function VerifyEmail() {
           ))}
         </div>
 
-        {/* Subtle, non-alert helper text -- placed between the code inputs
-            and Resend Code per spec, not styled as a warning. */}
-        <p className="text-[12px] text-white/35 text-center mb-4">
-          Didn't receive the code? Check your spam or junk folder.
-        </p>
+        {/* Inline verification error -- replaces the code inputs' helper
+            text when present, per spec ("remove the loader and show the
+            OTP fields again with: ..."). */}
+        {verifyError ? (
+          <div className="text-center mb-4 px-2" role="alert">
+            <p className="text-red-400 text-sm font-bold">{verifyError.title}</p>
+            {verifyError.body && <p className="text-red-400/70 text-xs mt-0.5">{verifyError.body}</p>}
+          </div>
+        ) : (
+          /* Subtle, non-alert helper text -- placed between the code inputs
+             and Resend Code per spec, not styled as a warning. */
+          <p className="text-[12px] text-white/35 text-center mb-4">
+            Didn't receive the code? Check your spam or junk folder.
+          </p>
+        )}
 
         <div className="w-full max-w-sm mx-auto space-y-3">
           <button
@@ -362,7 +457,7 @@ export function VerifyEmail() {
 
           <button
             onClick={handleResend}
-            disabled={resending}
+            disabled={resending || loading}
             className="w-full py-3.5 rounded-2xl font-bold text-white/60 text-sm border border-white/10 hover:border-white/20 hover:text-white/80 disabled:opacity-40 transition-all"
           >
             {resending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Resend Code'}
@@ -371,7 +466,8 @@ export function VerifyEmail() {
           {!editEmail ? (
             <button
               onClick={() => setEditEmail(true)}
-              className="w-full py-3 text-blue-400 text-sm font-semibold hover:text-blue-300 transition-colors"
+              disabled={loading}
+              className="w-full py-3 text-blue-400 text-sm font-semibold hover:text-blue-300 disabled:opacity-40 transition-colors"
             >
               Change Email
             </button>
@@ -402,6 +498,8 @@ export function VerifyEmail() {
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
     </AuthScreenLayout>
   );
