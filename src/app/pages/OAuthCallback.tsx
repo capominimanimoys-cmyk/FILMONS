@@ -18,6 +18,10 @@ import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { consumePendingReturnUrl } from '../lib/authReturnUrl';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Lock, Link2, X } from 'lucide-react';
+import { claimIdentity } from '../lib/identity';
+import { logAudit } from '../lib/devicesApi';
+import { sendWelcomeBackEmail, sendGoogleAccountLinkedEmail } from '../lib/emailjs-config';
+import { sendGoogleLinkCode, verifyGoogleLinkCode } from '../lib/googleLinkVerification';
 
 const EXPECTED_EMAIL_KEY = 'fm_expected_login_email';
 
@@ -100,13 +104,18 @@ export function OAuthCallback() {
   const [wrongAccount, setWrongAccount] = useState<{ expected: string; got: string } | null>(null);
 
   // Existing email/password account + a Google identity that isn't linked
-  // to it yet — never auto-link on Google's word alone; require the
-  // account's actual Filmons password before touching it.
+  // to it yet — never auto-link on Google's word alone; require proof the
+  // requester controls the existing account's email inbox (a 6-digit code
+  // sent there) before touching anything.
   const [linkPrompt, setLinkPrompt] = useState<LinkPrompt | null>(null);
-  const [linkStep,   setLinkStep]   = useState<'prompt' | 'password' | 'success'>('prompt');
-  const [linkPassword, setLinkPassword] = useState('');
-  const [linkError,    setLinkError]    = useState('');
-  const [linking,      setLinking]      = useState(false);
+  const [linkStep,   setLinkStep]   = useState<'prompt' | 'otp' | 'confirm' | 'success'>('prompt');
+  const [otpCode,     setOtpCode]     = useState('');
+  const [otpSending,  setOtpSending]  = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [resendIn,    setResendIn]    = useState(0);
+  const [linkError,   setLinkError]   = useState('');
+  const [linking,     setLinking]     = useState(false);
+  const resendTimerRef = useRef<ReturnType<typeof setInterval>>();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -160,6 +169,7 @@ export function OAuthCallback() {
         const u = rowToUser(byId);
         await completeLogin(undefined, undefined, undefined, u, provider);
         toast.success('Welcome back.');
+        if (u.email) sendWelcomeBackEmail(u.email, u.name, provider).catch(() => {});
         // For an existing, complete profile this is a real sign-in, not a
         // fresh signup -- honor a pending return URL from a guest-gated
         // action (see SearchOverlay's handleGuestSeeMore) the same way
@@ -190,6 +200,7 @@ export function OAuthCallback() {
             const u = rowToUser(byEmail);
             await completeLogin(undefined, undefined, undefined, u, provider);
             toast.success('Welcome back.');
+            if (u.email) sendWelcomeBackEmail(u.email, u.name, provider).catch(() => {});
             navigate(isComplete(u) ? consumePendingReturnUrl() : '/onboarding', { replace: true });
             return;
           }
@@ -244,26 +255,55 @@ export function OAuthCallback() {
     });
   };
 
+  const startResendCooldown = (ms: number) => {
+    const seconds = Math.max(1, Math.ceil(ms / 1000));
+    setResendIn(seconds);
+    clearInterval(resendTimerRef.current);
+    resendTimerRef.current = setInterval(() =>
+      setResendIn(n => { if (n <= 1) { clearInterval(resendTimerRef.current); return 0; } return n - 1; }), 1000);
+  };
+  useEffect(() => () => clearInterval(resendTimerRef.current), []);
+
+  // Step 1 — send the email OTP challenge that proves the requester
+  // controls the EXISTING Filmons account's inbox. Auto-fired the moment
+  // the user taps "Link Google account" from the prompt step.
+  const sendLinkCode = async () => {
+    if (!linkPrompt || otpSending) return;
+    setOtpSending(true);
+    setLinkError('');
+    const res = await sendGoogleLinkCode(linkPrompt.existingProfile.id, linkPrompt.googleUserId);
+    setOtpSending(false);
+    if (res.success) startResendCooldown(60_000);
+    else if (res.retryInMs) startResendCooldown(res.retryInMs);
+    else setLinkError(res.error || 'Could not send verification code');
+  };
+
+  const goToOtpStep = () => {
+    setLinkStep('otp');
+    setOtpCode('');
+    setLinkError('');
+    sendLinkCode();
+  };
+
+  const verifyLinkCode = async () => {
+    if (!linkPrompt || otpCode.length < 6 || otpVerifying) return;
+    setOtpVerifying(true);
+    setLinkError('');
+    const res = await verifyGoogleLinkCode(linkPrompt.existingProfile.id, linkPrompt.googleUserId, otpCode);
+    setOtpVerifying(false);
+    if (!res.success) {
+      setLinkError(res.error || 'Incorrect verification code');
+      return;
+    }
+    // Step 2 — show exactly what's about to be linked before doing it.
+    setLinkStep('confirm');
+  };
+
   const confirmAndConnect = async () => {
-    if (!linkPrompt || !linkPassword || linking) return;
+    if (!linkPrompt || linking) return;
     setLinking(true);
     setLinkError('');
     try {
-      // The real proof of ownership: does this person know the existing
-      // account's actual password? This establishes a genuine session
-      // under the EXISTING profile's own auth id (a separate auth.users
-      // row from the one Google just created for the same email — this
-      // app links accounts at the profiles/profile_meta layer, not via
-      // Supabase's native identity merging).
-      const { error: pwError } = await supabase.auth.signInWithPassword({
-        email: linkPrompt.email, password: linkPassword,
-      });
-      if (pwError) {
-        setLinkError('Incorrect password. Please try again.');
-        setLinking(false);
-        return;
-      }
-
       const existingMeta: Record<string, any> =
         typeof linkPrompt.existingProfile.profile_meta === 'string'
           ? JSON.parse(linkPrompt.existingProfile.profile_meta || '{}')
@@ -283,6 +323,17 @@ export function OAuthCallback() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
         body: JSON.stringify({ profileMeta: updatedMeta }),
       }).catch(() => {});
+
+      // Keep account_identities in sync too (see identity.ts) — best
+      // effort, the profile_meta write above is the authoritative record
+      // this app's own sign-in resolution actually reads.
+      claimIdentity(linkPrompt.existingProfile.id, 'google', linkPrompt.googleUserId).catch(() => {});
+
+      logAudit(linkPrompt.existingProfile.id, null, 'google_account_linked', `Linked ${linkPrompt.provider} account (${linkPrompt.email})`).catch(() => {});
+
+      if (linkPrompt.existingProfile.email) {
+        sendGoogleAccountLinkedEmail(linkPrompt.existingProfile.email, linkPrompt.existingProfile.name || 'there', linkPrompt.email).catch(() => {});
+      }
 
       const u = rowToUser({ ...linkPrompt.existingProfile, profile_meta: updatedMeta });
       await completeLogin(undefined, undefined, undefined, u, linkPrompt.provider);
@@ -311,7 +362,7 @@ export function OAuthCallback() {
           style={{ backdropFilter: 'blur(4px)' }}
         >
           <div className="relative z-10 w-full md:max-w-sm bg-gray-900 rounded-t-3xl md:rounded-3xl px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:pb-6 shadow-2xl">
-            {linkStep !== 'password' && (
+            {linkStep !== 'otp' && linkStep !== 'confirm' && (
               <button
                 onClick={cancelLinkPrompt}
                 aria-label="Close"
@@ -329,20 +380,21 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <div className="text-center space-y-2">
-                  <h2 className="text-xl font-black text-white">This email is already connected to a Filmons account</h2>
+                  <h2 className="text-xl font-black text-white">Filmons account found</h2>
                   <p className="text-white/55 text-sm leading-relaxed">
-                    You already have a Filmons account using this email.
+                    There's already a Filmons account using<br/>
+                    <span className="text-white font-bold">{linkPrompt.email}</span>
                   </p>
                   <p className="text-white/55 text-sm leading-relaxed">
-                    Connect your {providerLabel} account to your existing Filmons account so you can use Continue with {providerLabel} next time.
+                    If this is your account, you can securely link {providerLabel} and use it to sign in next time.
                   </p>
                 </div>
                 <div className="space-y-3">
                   <button
-                    onClick={() => setLinkStep('password')}
+                    onClick={goToOtpStep}
                     className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
                   >
-                    Connect {providerLabel} Account
+                    Link {providerLabel} account
                   </button>
                   <button
                     onClick={cancelLinkPrompt}
@@ -360,7 +412,7 @@ export function OAuthCallback() {
               </div>
             )}
 
-            {linkStep === 'password' && (
+            {linkStep === 'otp' && (
               <div className="space-y-5">
                 <div className="flex justify-center pt-2">
                   <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
@@ -368,28 +420,84 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <div className="text-center space-y-1">
-                  <h2 className="text-xl font-black text-white">Confirm your Filmons password</h2>
-                  <p className="text-white/50 text-sm">{linkPrompt.email}</p>
+                  <h2 className="text-xl font-black text-white">Verify it's you</h2>
+                  <p className="text-white/55 text-sm leading-relaxed">
+                    We sent a 6-digit verification code to<br/>
+                    <span className="text-white font-bold">{maskEmail(linkPrompt.email)}</span>
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <input
-                    type="password" autoFocus value={linkPassword}
-                    onChange={e => { setLinkPassword(e.target.value); setLinkError(''); }}
-                    onKeyDown={e => e.key === 'Enter' && confirmAndConnect()}
-                    placeholder="Password"
-                    className="w-full bg-white/10 border border-white/20 text-white placeholder-white/30 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"
+                    value={otpCode}
+                    onChange={e => { setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setLinkError(''); }}
+                    type="tel" inputMode="numeric" placeholder="000000" maxLength={6} autoFocus
+                    onKeyDown={e => e.key === 'Enter' && verifyLinkCode()}
+                    onPaste={e => { setOtpCode(e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)); e.preventDefault(); }}
+                    className="w-full bg-white/10 border border-white/20 text-white placeholder-white/20 rounded-2xl px-4 py-5 text-3xl font-black text-center tracking-[0.6em] outline-none focus:border-blue-400 focus:bg-white/15 transition-all"
                   />
                   {linkError && <p className="text-red-400 text-xs text-center">{linkError}</p>}
                 </div>
                 <div className="space-y-3">
                   <button
-                    onClick={confirmAndConnect} disabled={!linkPassword || linking}
+                    onClick={verifyLinkCode} disabled={otpCode.length < 6 || otpVerifying}
                     className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
                   >
-                    {linking ? 'Connecting…' : `Confirm & Connect ${providerLabel}`}
+                    {otpVerifying ? 'Verifying…' : 'Verify code'}
+                  </button>
+                  <p className="text-center text-xs text-white/40">
+                    Didn't receive it?{' '}
+                    <button
+                      onClick={sendLinkCode} disabled={resendIn > 0 || otpSending}
+                      className="font-semibold"
+                      style={{ color: resendIn > 0 ? 'rgba(255,255,255,0.25)' : '#60a5fa' }}
+                    >
+                      {resendIn > 0 ? `Resend code in ${resendIn}s` : otpSending ? 'Sending…' : 'Resend code'}
+                    </button>
+                  </p>
+                  <button
+                    onClick={() => { setLinkStep('prompt'); setOtpCode(''); setLinkError(''); }}
+                    className="w-full py-2 text-white/40 hover:text-white/70 text-xs font-semibold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {linkStep === 'confirm' && (
+              <div className="space-y-5">
+                <div className="flex justify-center pt-2">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
+                    <Link2 className="w-7 h-7 text-blue-400" strokeWidth={1.5}/>
+                  </div>
+                </div>
+                <div className="text-center space-y-2">
+                  <h2 className="text-xl font-black text-white">Confirm account linking</h2>
+                  <p className="text-white/55 text-sm leading-relaxed">You're about to link:</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-0.5">Filmons account</p>
+                    <p className="text-white text-sm font-semibold">{linkPrompt.existingProfile.email || linkPrompt.email}</p>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-0.5">{providerLabel} account</p>
+                    <p className="text-white text-sm font-semibold">{linkPrompt.email}</p>
+                  </div>
+                </div>
+                <p className="text-white/45 text-xs text-center leading-relaxed">
+                  Once linked, you'll be able to sign in using either your existing Filmons credentials or {providerLabel}.
+                </p>
+                {linkError && <p className="text-red-400 text-xs text-center">{linkError}</p>}
+                <div className="space-y-3">
+                  <button
+                    onClick={confirmAndConnect} disabled={linking}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl disabled:opacity-40 transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
+                  >
+                    {linking ? 'Linking…' : 'Confirm & link'}
                   </button>
                   <button
-                    onClick={() => { setLinkStep('prompt'); setLinkPassword(''); setLinkError(''); }}
+                    onClick={() => setLinkStep('otp')} disabled={linking}
                     className="w-full py-2 text-white/40 hover:text-white/70 text-xs font-semibold transition-colors"
                   >
                     Back
@@ -406,9 +514,9 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <div className="text-center space-y-2">
-                  <h2 className="text-xl font-black text-white">{providerLabel} account connected</h2>
+                  <h2 className="text-xl font-black text-white">{providerLabel} account linked</h2>
                   <p className="text-white/55 text-sm leading-relaxed">
-                    You can now sign in to Filmons using your email/password or {providerLabel}.
+                    {providerLabel} has been securely connected to your Filmons account.
                   </p>
                 </div>
                 <button

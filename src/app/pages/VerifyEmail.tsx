@@ -8,7 +8,7 @@ import { useNavigate, Link } from 'react-router';
 import { Loader2, LoaderCircle, Mail, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
-import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
+import { EMAILJS_CONFIG, sendEmail, sendWelcomeEmail } from '../lib/emailjs-config';
 import { useAuth } from '../context/AuthContext';
 import { PENDING_SIGNUP_KEY } from './CreateAccount';
 import type { User } from '../types';
@@ -217,6 +217,7 @@ export function VerifyEmail() {
       // Everything below is non-critical setup, deliberately fired after
       // the redirect already happened rather than awaited before it.
       claimIdentity(authData.user.id, 'email', pending.email).catch(() => {});
+      sendWelcomeEmail(pending.email, pending.name).catch(() => {});
     } catch (e: any) {
       if (e?.message === 'TIMEOUT' || e?.name === 'AbortError') {
         toast.error("We couldn't finish verification", {

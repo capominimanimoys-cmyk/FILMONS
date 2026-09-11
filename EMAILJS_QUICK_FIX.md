@@ -98,15 +98,20 @@ After making changes, verify:
 
 ## 📧 Need to Configure Verification Submission Template Too?
 
-For the final submission template (`template_ryty7se`), configure:
+⚠️ The identity-verification decision email (approved/denied/changes-requested,
+sent from AdminVerifications.tsx to the applicant) moved from
+`template_ryty7se` to `template_verification_decision` — `template_ryty7se`
+is now the signup Welcome email instead. Configure the new template:
 
 ```
-To Email: filmons481@gmail.com
+To Email: {{to_email}}
 From Name: Filmons Verification System
-Subject: New Host Verification Request - {{user_name}}
+Subject: Your Filmons Verification Status
 ```
 
-This template sends verification submissions to the Filmons team, so the recipient email is hardcoded to `filmons481@gmail.com`.
+`{{to_email}}` here is the applicant's own address (`request.userEmail`),
+not a hardcoded Filmons team inbox — see AdminVerifications.tsx's
+`sendUserEmail`.
 
 ---
 

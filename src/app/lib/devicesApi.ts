@@ -41,7 +41,7 @@ export interface ActiveDevice {
 
 export interface SecurityAuditEntry {
   id:         string;
-  action:     'successful_signin' | 'new_device_signin' | 'device_signed_out' | 'all_others_revoked' | 'password_changed' | 'device_removed';
+  action:     'successful_signin' | 'new_device_signin' | 'device_signed_out' | 'all_others_revoked' | 'password_changed' | 'device_removed' | 'google_account_linked';
   detail:     string | null;
   created_at: string;
 }
@@ -133,7 +133,7 @@ function getSessionToken(): string {
   return t;
 }
 
-async function logAudit(userId: string, deviceId: string | null, action: SecurityAuditEntry['action'], detail?: string) {
+export async function logAudit(userId: string, deviceId: string | null, action: SecurityAuditEntry['action'], detail?: string) {
   await supabase.from('security_audit_log').insert({ user_id: userId, device_id: deviceId, action, detail: detail || null })
     .then(() => {}, () => {});
 }

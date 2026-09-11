@@ -19,6 +19,7 @@ import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { User } from '../types';
 import { toast } from 'sonner';
 import { claimIdentity } from '../lib/identity';
+import { sendWelcomeEmail } from '../lib/emailjs-config';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -244,6 +245,7 @@ export function GoogleSignup() {
       // linking.
       claimIdentity(authId, 'email', googleEmail).catch(() => {});
       claimIdentity(authId, 'google', authId).catch(() => {});
+      sendWelcomeEmail(googleEmail, googleName).catch(() => {});
 
       await Promise.allSettled([
         supabase.from('account_verifications').upsert(

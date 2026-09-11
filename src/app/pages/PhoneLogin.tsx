@@ -9,6 +9,7 @@ import { setPendingReturnUrl, getPendingReturnUrl, consumePendingReturnUrl } fro
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { sendWelcomeBackEmail } from '../lib/emailjs-config';
 
 const COUNTRIES = [
   { code: 'CA', name: 'Canada',        dial: '+1', flag: '🇨🇦', format: '(###) ###-####' },
@@ -193,6 +194,7 @@ export function PhoneLogin() {
     try {
       const user = await authApi.completePhoneSignin(fullPhone, otp);
       setUserDirectly(user, 'phone');
+      if (user.email) sendWelcomeBackEmail(user.email, user.name, 'phone').catch(() => {});
 
       fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/send-login-sms`,

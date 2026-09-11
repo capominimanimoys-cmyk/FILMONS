@@ -12,10 +12,21 @@ export const EMAILJS_CONFIG = {
   publicKey:  PUBLIC_KEY,
   templates: {
     emailVerification:      'template_p5pgn33',
-    verificationSubmission: 'template_ryty7se',
+    // ⚠️ template_ryty7se used to be the identity-verification decision
+    // email (AdminVerifications.tsx). That dashboard template's content
+    // must be moved to a NEW template created with this placeholder ID
+    // before this repoint goes live, or approve/reject/changes-requested
+    // emails will send the wrong content. See src/app/templates/ for the
+    // decision-email copy previously sent through template_ryty7se.
+    verificationSubmission: 'template_verification_decision',
     adminNotification:      'template_rd3nhik',
     rentalAgreement:        'template_synqixt',
-    welcome:                'template_welcome',
+    // Repointed (was the placeholder template_welcome) to the real,
+    // already-in-use template_ryty7se — see src/app/templates/
+    // welcome-email-template.html for the content to put in that
+    // dashboard template. Merge fields: user_name, to_email, signup_date,
+    // site_url.
+    welcome:                'template_ryty7se',
     passwordReset:          'template_password_reset',
     messageNotification:    'template_d5zpvid',
     // ⚠️ Not yet created in the EmailJS dashboard — new-device sign-in
@@ -30,6 +41,18 @@ export const EMAILJS_CONFIG = {
     // merge fields: to_email, to_name, last4, device, location, date,
     // secure_account_url.
     payoutMethodChanged:    'template_payout_method_changed',
+    // "Welcome back" login-notification email — sent only on an explicit
+    // sign-in action (see registerDevice's signInMethod comment in
+    // devicesApi.ts), never on a session/token refresh. See
+    // src/app/templates/welcome-back-template.html. Merge fields:
+    // to_email, to_name, sign_in_method, date, site_url.
+    welcomeBack:            'template_0ocwe54',
+    // "Google account linked" confirmation — sent after the email-OTP
+    // linking flow in OAuthCallback.tsx succeeds. See
+    // src/app/templates/google-account-linked-template.html. Merge
+    // fields: to_email, to_name, google_email, date, secure_account_url.
+    // ⚠️ Not yet created in the EmailJS dashboard.
+    googleAccountLinked:    'template_google_account_linked',
   },
   filmons: {
     email:    'filmons481@gmail.com',
@@ -71,12 +94,34 @@ export const sendEmail = async (
 export const sendWelcomeEmail = (email: string, name: string) =>
   sendEmail(EMAILJS_CONFIG.templates.welcome, {
     to_email: email, to_name: name, user_name: name,
+    signup_date: new Date().toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' }),
     // Always the real production domain, never window.location.origin —
     // this email must send users to filmons.app even when triggered from
     // a dev/preview/staging environment, matching every other email in
     // this app (all hardcode https://filmons.app/... rather than deriving
     // it from wherever the code happened to run).
     site_url: 'https://filmons.app',
+  });
+
+// Sent only on an explicit sign-in action (email/password, phone OTP,
+// Google/Apple) — never on a cached-session/token refresh. See the
+// signInMethod comment on registerDevice() in devicesApi.ts for why those
+// two are kept strictly separate.
+export const sendWelcomeBackEmail = (email: string, name: string, signInMethod: string) =>
+  sendEmail(EMAILJS_CONFIG.templates.welcomeBack, {
+    to_email: email, to_name: name, user_name: name,
+    sign_in_method: signInMethod,
+    date: new Date().toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' }),
+    site_url: 'https://filmons.app',
+  });
+
+// Security email, not a disable-able marketing notification — sent after
+// the OAuthCallback.tsx email-OTP linking flow succeeds.
+export const sendGoogleAccountLinkedEmail = (email: string, name: string, googleEmail: string) =>
+  sendEmail(EMAILJS_CONFIG.templates.googleAccountLinked, {
+    to_email: email, to_name: name, user_name: name, google_email: googleEmail,
+    date: new Date().toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' }),
+    secure_account_url: `${window.location.origin}/settings/security`,
   });
 
 export const sendPasswordResetEmail = (email: string, name: string, resetLink: string) =>

@@ -15,6 +15,7 @@ import { authApi } from '../lib/api';
 import { seedDemoData } from '../lib/initializeData';
 import { registerDevice, checkCurrentDeviceStatus } from '../lib/devicesApi';
 import { checkTrustedDevice } from '../lib/deviceVerification';
+import { sendWelcomeBackEmail } from '../lib/emailjs-config';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -232,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     exitGuestMode();
     seedDemoData(found.id);
     registerDevice(found.id, 'email').catch(() => {});
+    if (found.email) sendWelcomeBackEmail(found.email, found.name, 'email').catch(() => {});
     return '000000';
   };
 
