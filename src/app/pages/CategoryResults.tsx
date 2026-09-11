@@ -166,11 +166,14 @@ function SingleCategoryResults({ category, navState }: { category: CategoryTab; 
             <p className="text-xs text-gray-400">Try a different search or check back soon.</p>
           </div>
         ) : category === 'creators' ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {creators.map(u => <CreatorTile key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
+          // One per line, full-width, vertical scroll -- no horizontal
+          // carousel or multi-column grid on the dedicated category page
+          // (that's Browse Search / the All page's job).
+          <div className="grid grid-cols-1 gap-3">
+            {creators.map(u => <CreatorRowFull key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {listings.map(l => <ListingCard key={l.id} listing={l}/>)}
           </div>
         )}
@@ -223,7 +226,34 @@ function CreatorTile({ u, onClick }: { u: CreatorRow; onClick: () => void }) {
   );
 }
 
+// Full-width row variant of CreatorTile -- used on the dedicated category
+// page's one-per-line vertical list (CreatorTile itself stays for the
+// compact grid cell on the All page's horizontal-scroll row).
+function CreatorRowFull({ u, onClick }: { u: CreatorRow; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full bg-white rounded-2xl border border-gray-100 flex items-center gap-3 p-4 text-left">
+      <div className="w-14 h-14 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0">
+        {u.avatar_url ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-base font-black text-gray-400">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
+        {u.primary_role && <p className="text-xs text-blue-600 truncate">{u.primary_role}</p>}
+        {(u.city ?? u.location) && (
+          <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
+        )}
+      </div>
+    </button>
+  );
+}
+
 // ── /search/category/all ─────────────────────────────────────────────────────
+// Each section previews at most ALL_PAGE_PREVIEW_LIMIT (5) in a single
+// horizontal-scroll row -- never paginated in place, "View all" is the only
+// way to see more, which opens that category's own dedicated (uncapped,
+// vertical) page instead.
+const ALL_PAGE_PREVIEW_LIMIT = 5;
+
 function CategorySection({ category, navState }: { category: CategoryTab; navState: NavState }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -232,22 +262,18 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
 
   const [listings, setListings] = useState<Listing[]>([]);
   const [creators, setCreators] = useState<CreatorRow[]>([]);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async (pageNum: number) => {
-    if (pageNum === 0) setLoading(true); else setLoadingMore(true);
-    const from = locked ? 0 : pageNum * PAGE_SIZE;
-    const to   = locked ? OPPORTUNITY_LOCKED_LIMIT - 1 : from + PAGE_SIZE - 1;
-    const { listings: l, creators: c } = await fetchCategoryPage(category, navState, from, to);
-    if (pageNum === 0) { setListings(l); setCreators(c); } else { setListings(prev => [...prev, ...l]); setCreators(prev => [...prev, ...c]); }
-    setHasMore(!locked && (l.length + c.length) === PAGE_SIZE);
-    setLoading(false); setLoadingMore(false);
-  }, [category, locked, navState.query, navState.filters]);
-
-  useEffect(() => { load(0); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchCategoryPage(category, navState, 0, ALL_PAGE_PREVIEW_LIMIT - 1).then(({ listings: l, creators: c }) => {
+      if (cancelled) return;
+      setListings(l); setCreators(c); setLoading(false);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, navState.query, JSON.stringify(navState.filters)]);
 
   const count = category === 'creators' ? creators.length : listings.length;
   if (!loading && count === 0) return null;
@@ -260,23 +286,32 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
       </div>
       {loading ? (
         <div className="flex items-center justify-center py-8 text-gray-400"><Loader2 className="w-4 h-4 animate-spin"/></div>
-      ) : category === 'creators' ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 px-4">
-          {creators.map(u => <CreatorTile key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
-        </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 px-4">
-          {listings.map(l => <ListingCard key={l.id} listing={l}/>)}
+        <div className="flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+          {category === 'creators'
+            ? creators.map(u => (
+                <div key={u.id} className="shrink-0 w-32 snap-start">
+                  <CreatorTile u={u} onClick={() => navigate(`/host/${u.id}`)}/>
+                </div>
+              ))
+            : listings.map(l => (
+                <div key={l.id} className="shrink-0 w-44 snap-start">
+                  <ListingCard listing={l}/>
+                </div>
+              ))
+          }
         </div>
       )}
       {locked && (
-        <div className="px-4"><OpportunityLockedNotice hasAny={count > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/></div>
+        <div className="px-4 mt-2"><OpportunityLockedNotice hasAny={count > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/></div>
       )}
-      {!loading && hasMore && (
+      {!loading && !locked && count > 0 && (
         <div className="px-4 mt-2">
-          <button onClick={() => { const next = page + 1; setPage(next); load(next); }} disabled={loadingMore}
-            className="w-full py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 disabled:opacity-50">
-            {loadingMore ? 'Loading…' : 'Load more'}
+          <button
+            onClick={() => navigate(`/search/category/${category}`, { state: navState })}
+            className="w-full py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50"
+          >
+            View all {CATEGORY_LABEL[category].toLowerCase()}
           </button>
         </div>
       )}
