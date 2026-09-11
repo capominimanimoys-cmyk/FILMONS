@@ -17,6 +17,7 @@ import {
 import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
+import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
@@ -39,7 +40,7 @@ interface ProfileRow {
   available_to_travel?: boolean | null;
 }
 interface ListingRow {
-  id: string; title: string; description: string | null; price: number;
+  id: string; user_id?: string; title: string; description: string | null; price: number;
   city: string | null; province: string | null; images: string[] | null;
   listing_type: string; listing_mode: string | null;
   delivery_options?: string[] | null;
@@ -377,7 +378,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
 function safe(s: string) { return s.replace(/[%_\\]/g, ''); }
 
 // Columns confirmed to exist in DB (matches api.ts getAll select — no province)
-const LISTING_SELECT  = 'id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at';
+const LISTING_SELECT  = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at';
 const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
 
 // ── Category classification ──────────────────────────────────────────────────
@@ -1258,6 +1259,10 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
   const [rawListings,    setRawListings]    = useState<ListingRow[]>([]);
+  // Cached account_type per Opportunity-listing owner, used to exclude
+  // locked (over-tier) listings from every result surface here -- grows
+  // as new owners show up in results, never refetches one already known.
+  const [oppOwnerTypes,  setOppOwnerTypes]  = useState<Map<string, string | undefined>>(new Map());
   const [suggestions,    setSuggestions]    = useState<Suggestion[]>([]);
   const [loading,        setLoading]        = useState(false);
   const [suggLoading,    setSuggLoading]    = useState(false);
@@ -1363,6 +1368,27 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const handleViewMoreCategory = useCallback((tab: TabId) => {
     closeAndNavigate(`/search/category/${tab}`, { query: q, filters, sort });
   }, [closeAndNavigate, q, filters, sort]);
+
+  // Backfills oppOwnerTypes for any Opportunity-listing owner in the
+  // current results not already cached -- one small profiles lookup per
+  // newly-seen batch of owners, never re-fetching one already known.
+  useEffect(() => {
+    const ownerIds = [...new Set(
+      rawListings.filter(l => l.listing_type === 'opportunity' && l.user_id).map(l => l.user_id!)
+    )].filter(id => !oppOwnerTypes.has(id));
+    if (!ownerIds.length) return;
+    let cancelled = false;
+    supabase.from('profiles').select('id, account_type').in('id', ownerIds).then(({ data }) => {
+      if (cancelled || !data) return;
+      setOppOwnerTypes(prev => {
+        const next = new Map(prev);
+        for (const row of data as any[]) next.set(row.id, row.account_type);
+        for (const id of ownerIds) if (!next.has(id)) next.set(id, undefined);
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [rawListings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
   useEffect(() => {
@@ -1518,8 +1544,34 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // typed search otherwise ranks by relevance, not recency) -- "the 5
   // latest" needs a real recency order underneath it, not whatever the
   // general result ranking happens to produce.
-  const opportunityListings = filteredListings.filter(l => isOpportunityListing(l))
+  // Exclude Opportunity listings beyond their own host's tier entitlement
+  // (see lib/entitlements.ts's getLockedOpportunityIds/
+  // filterOutLockedOpportunities) -- a locked listing stays visible on the
+  // host's own management view, but never in Browse Search. Grouped by
+  // owner since "locked" is relative to that owner's other concurrent
+  // Opportunity posts, using oppOwnerTypes (fetched below) for whichever
+  // owners it covers; an owner not yet in the map is treated as
+  // unrestricted for this render rather than hiding their listing over a
+  // fetch that just hasn't resolved yet.
+  const rawOpportunityListings = filteredListings.filter(l => isOpportunityListing(l))
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const opportunityListings = (() => {
+    const byOwner = new Map<string, ListingRow[]>();
+    for (const l of rawOpportunityListings) {
+      if (!l.user_id) continue;
+      if (!byOwner.has(l.user_id)) byOwner.set(l.user_id, []);
+      byOwner.get(l.user_id)!.push(l);
+    }
+    const lockedIds = new Set<string>();
+    for (const [ownerId, ownerListings] of byOwner) {
+      if (!oppOwnerTypes.has(ownerId)) continue;
+      const ids = getLockedOpportunityIds(oppOwnerTypes.get(ownerId), ownerListings.map(l => ({
+        id: l.id, listingType: l.listing_type, isActive: l.is_active ?? true, createdAt: l.created_at ?? undefined,
+      })));
+      for (const id of ids) lockedIds.add(id);
+    }
+    return lockedIds.size === 0 ? rawOpportunityListings : rawOpportunityListings.filter(l => !lockedIds.has(l.id));
+  })();
   // Cross-cutting flag, not a mutually-exclusive category like the others
   // above (an Emergency listing is still also a Rental/Sale/Service) --
   // its own tab/section regardless of what underlying type it is.

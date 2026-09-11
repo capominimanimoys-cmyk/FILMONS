@@ -50,6 +50,37 @@ export function getLockedOpportunityIds(accountType: string | undefined, listing
   return new Set(activeOpportunities.slice(limit).map(l => l.id));
 }
 
+// Excludes locked Opportunity listings (the ones beyond an owner's tier
+// entitlement, per getLockedOpportunityIds above) from a general discovery
+// surface -- Home's swipe deck, Browse Search -- so browsers never see a
+// listing its own host can't currently get applicants for. Reverses the
+// earlier "locked listings stay visible" stance (see
+// supabase/functions/server/index.tsx's PUT /listings/:id comment) by
+// explicit request; that comment is now stale for these two surfaces
+// specifically (the owner's own management view is unaffected -- a locked
+// listing still needs to be visible there so the host can see/upgrade past
+// it). Groups by owner (a listing's "locked" status only makes sense
+// relative to its own host's tier and their OTHER concurrent Opportunity
+// posts, not some global cutoff) using ownerAccountTypes for whichever
+// owners aren't in the map (fetch failed, host deleted, etc.), assumes the
+// most permissive default ('creator' via getEntitlement) rather than
+// silently hiding a listing over missing data.
+export function filterOutLockedOpportunities<T extends {
+  id: string; userId: string; listingType?: string; listingKind?: string; isActive?: boolean; createdAt?: string;
+}>(listings: T[], ownerAccountTypes: Map<string, string | undefined>): T[] {
+  const byOwner = new Map<string, T[]>();
+  for (const l of listings) {
+    if (l.listingType !== 'opportunity' && l.listingKind !== 'talent') continue;
+    if (!byOwner.has(l.userId)) byOwner.set(l.userId, []);
+    byOwner.get(l.userId)!.push(l);
+  }
+  const lockedIds = new Set<string>();
+  for (const [ownerId, ownerListings] of byOwner) {
+    for (const id of getLockedOpportunityIds(ownerAccountTypes.get(ownerId), ownerListings)) lockedIds.add(id);
+  }
+  return lockedIds.size === 0 ? listings : listings.filter(l => !lockedIds.has(l.id));
+}
+
 export function formatLimit(n: number | null): string {
   return n === null ? 'Unlimited' : String(n);
 }

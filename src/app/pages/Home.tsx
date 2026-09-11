@@ -10,6 +10,7 @@ import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { supabase } from '../../lib/supabase';
+import { filterOutLockedOpportunities } from '../lib/entitlements';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
@@ -260,6 +261,17 @@ export function Home() {
       // getAll()'s 80-newest window would otherwise appear twice.
       const seenIds = new Set(l0.map(x => x.id));
       let l = [...l0, ...opp.filter(o => !seenIds.has(o.id))];
+
+      // Exclude Opportunity listings beyond their own host's tier
+      // entitlement -- a locked listing (see filterOutLockedOpportunities)
+      // stays visible on the host's own management view, but never in a
+      // general discovery surface like this deck.
+      const oppOwnerIds = [...new Set(l.filter(x => x.listingType === 'opportunity' || x.listingKind === 'talent').map(x => x.userId))];
+      if (oppOwnerIds.length) {
+        const { data: ownerRows } = await supabase.from('profiles').select('id, account_type').in('id', oppOwnerIds);
+        const ownerAccountTypes = new Map((ownerRows ?? []).map((r: any) => [r.id, r.account_type as string | undefined]));
+        l = filterOutLockedOpportunities(l, ownerAccountTypes);
+      }
       setRawListings(l);
       setRawCreators(c);
       // Already-left-swiped items are a permanent skip (Tinder-style) --
