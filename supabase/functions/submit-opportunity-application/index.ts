@@ -27,7 +27,7 @@ async function selectOne(table: string, filter: string) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 
-import { ENTITLEMENTS, normalizeTier } from '../_shared/entitlements.ts';
+import { ENTITLEMENTS, normalizeTier, isCreatorPlus } from '../_shared/entitlements.ts';
 import { windowStart } from '../_shared/limitWindow.ts';
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
 import { sendNewApplicationEmail } from '../_shared/notificationEmails.ts';
@@ -47,6 +47,22 @@ Deno.serve(async (req) => {
     const profile = await selectOne('profiles', `id=eq.${userId}`);
     if (!profile) return json({ error: 'Profile not found' }, 404);
     const tier = normalizeTier(profile.account_type);
+
+    // Hard account-type gate, checked BEFORE the entitlement/limit RPC and
+    // never trusting anything the client sent -- a plain Creator gets zero
+    // Opportunity applications, permanently, not a quota that happens to
+    // be 0 this window. Applying can require receiving a payout, and
+    // Wallet access only starts at Creator+ (see Wallet.tsx), so this is
+    // enforced here even if ENTITLEMENTS.creator.applications ever drifts
+    // away from 0 for some other reason -- someone calling this endpoint
+    // directly (skipping the UI's own lock on the Apply button) still
+    // can't get past it. Distinct from the generic 'limit_reached' error
+    // below (which implies "wait for the window to reset") since this
+    // never resets.
+    if (!isCreatorPlus(tier)) {
+      return json({ error: 'creator_plus_required', plan: tier, limit: 0 }, 403);
+    }
+
     const limit = ENTITLEMENTS[tier].applications;
 
     const res = await fetch(rest('/rpc/fn_submit_opportunity_application'), {

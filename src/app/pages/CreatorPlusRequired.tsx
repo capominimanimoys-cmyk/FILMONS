@@ -28,6 +28,30 @@ const ACCOUNT_INFO = {
     ],
     requires: 'ID verification · Selfie verification · Payout verification',
   },
+  applications: {
+    Icon: Zap,
+    label: 'Upgrade to Creator+ to apply',
+    gradient: 'from-blue-600 to-indigo-700',
+    accent: 'bg-blue-500',
+    glow: 'shadow-blue-700/50',
+    textAccent: 'text-blue-200',
+    lockNote: 'A Wallet is required to receive Opportunity payouts. Upgrade to Creator+ to unlock Wallet access and apply.',
+    requiresLabel: 'Upgrade to Creator+ — It\'s Free',
+    secondaryLabel: 'Not now',
+    tagline: 'Apply to paid Opportunities',
+    audience: [
+      'Creators ready to apply for paid work',
+      'Freelancers seeking Opportunity gigs',
+      'Anyone who needs Wallet access to get paid',
+    ],
+    extras: [
+      { label: 'Apply to Opportunities',       sub: 'Submit applications to paid gigs and projects' },
+      { label: 'Wallet & payouts',              sub: 'Receive payment directly for Opportunity work' },
+      { label: 'Verified Creator+ badge',       sub: 'Build trust with Opportunity posters' },
+      { label: 'Booking & payout system',       sub: 'Accept bookings and receive direct payments' },
+    ],
+    requires: 'ID verification · Selfie verification · Payout verification',
+  },
   listings: {
     Icon: Zap,
     label: 'Creator+ Required',
@@ -115,7 +139,7 @@ const ACCOUNT_INFO = {
 export function CreatorPlusRequired() {
   const navigate    = useNavigate();
   const [params]    = useSearchParams();
-  const type        = (params.get('type') ?? 'professional') as 'wallet' | 'listings' | 'professional' | 'business';
+  const type        = (params.get('type') ?? 'professional') as 'wallet' | 'listings' | 'applications' | 'professional' | 'business';
   const info        = ACCOUNT_INFO[type] ?? ACCOUNT_INFO.professional;
 
   return (
@@ -136,7 +160,7 @@ export function CreatorPlusRequired() {
           ))}
         </div>
         <button
-          onClick={() => navigate(type === 'listings' || type === 'wallet' ? '/verification' : '/account/upgrade')}
+          onClick={() => navigate(type === 'listings' || type === 'wallet' || type === 'applications' ? '/verification' : '/account/upgrade')}
           className={`w-full bg-gradient-to-r ${info.gradient} text-white font-black rounded-2xl py-4 hover:opacity-90 transition-opacity`}>
           {info.requiresLabel} →
         </button>

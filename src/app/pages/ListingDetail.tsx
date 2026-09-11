@@ -2,7 +2,7 @@ import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'reac
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'motion/react';
 import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
-import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, Share2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign, AlertTriangle } from 'lucide-react';
+import { MapPin, ArrowLeft, Star, Play, Send, Heart, Link2, Share2, X, ChevronLeft, ChevronRight, User as UserIcon, Shield, Clock, Calendar, Award, Wrench, Tag, Film, MessageCircle, DollarSign, AlertTriangle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Listing, User, Review } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,7 @@ import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
+import { isCreatorPlus } from '../lib/reliabilityApi';
 import { playTransition } from '../lib/smartAnimate';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
@@ -330,7 +331,14 @@ export function ListingDetail() {
 
   const isOpportunity = listing.listingType === 'opportunity' || listing.listingKind === 'talent';
   const applicationsClosed = isOpportunity && (listing.opportunity?.opportunityStatus === 'applications_closed' || listing.opportunity?.opportunityStatus === 'completed');
-  const actionLabel = isOpportunity ? (applicationsClosed ? 'Applications Closed' : 'Apply')
+  // A plain Creator gets zero Opportunity applications, permanently --
+  // applying can require receiving a payout, and Wallet access only starts
+  // at Creator+ (same isCreatorPlus gate Wallet.tsx itself uses). Guests
+  // get their own separate "create an account" prompt below, unaffected by
+  // this -- this only locks an already-signed-in Creator-tier account.
+  const creatorLockedFromApplying = isOpportunity && !!user && !isCreatorPlus(user.accountType);
+  const actionLabel = isOpportunity
+    ? (applicationsClosed ? 'Applications Closed' : creatorLockedFromApplying ? 'Upgrade to Creator+ to apply' : 'Apply')
     : listing.listingType === 'service' ? 'Request Service'
     : listing.listingMode === 'sale' ? 'Request to Buy'
     : 'Request to Rent';
@@ -346,6 +354,7 @@ export function ListingDetail() {
       navigate('/login'); return;
     }
     if (isOwnListing) { toast.error("You can't request your own listing"); return; }
+    if (creatorLockedFromApplying) { navigate('/creator-plus-required?type=applications'); return; }
     setShowRequestModal(true);
   };
 
@@ -776,10 +785,15 @@ export function ListingDetail() {
 
                 <button onClick={handleRequest} disabled={applicationsClosed}
                   className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-xl transition-colors text-sm ${
-                    applicationsClosed ? 'bg-gray-300 cursor-not-allowed' : isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
+                    applicationsClosed ? 'bg-gray-300 cursor-not-allowed' : creatorLockedFromApplying ? 'bg-gray-700 hover:bg-gray-800' : isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
                   }`}>
-                  {!applicationsClosed && <Send className="w-4 h-4" />} {actionLabel}
+                  {applicationsClosed ? null : creatorLockedFromApplying ? <Lock className="w-4 h-4" /> : <Send className="w-4 h-4" />} {actionLabel}
                 </button>
+                {creatorLockedFromApplying && (
+                  <p className="text-xs text-gray-400 text-center mt-2 leading-relaxed">
+                    A Wallet is required to receive Opportunity payouts. Upgrade to Creator+ to unlock Wallet access and apply.
+                  </p>
+                )}
                 </div>
 
                 <div className="mt-4 space-y-2 text-xs text-gray-500">
@@ -858,9 +872,9 @@ export function ListingDetail() {
         </div>
         <button onClick={handleRequest} disabled={applicationsClosed}
           className={`shrink-0 flex items-center justify-center gap-1.5 text-white font-bold px-6 py-3 rounded-xl transition-colors text-sm ${
-            applicationsClosed ? 'bg-gray-300 cursor-not-allowed' : isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
+            applicationsClosed ? 'bg-gray-300 cursor-not-allowed' : creatorLockedFromApplying ? 'bg-gray-700 hover:bg-gray-800' : isOpportunity ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
           }`}>
-          {actionLabel}
+          {creatorLockedFromApplying && <Lock className="w-3.5 h-3.5" />} {actionLabel}
         </button>
       </div>
 

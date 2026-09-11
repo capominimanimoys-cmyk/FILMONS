@@ -69,19 +69,22 @@ export function OpportunityLimitUpgrade({ kind, plan, limit, onUpgrade, onUpgrad
     );
   }
 
-  // Creator's weekly application allowance (1/week) is used up -- the
-  // primary path is the free Creator+ upgrade, but Professional/Business
-  // are still offered below since either also lifts the cap.
+  // Creator has ZERO Opportunity applications, permanently -- not a weekly
+  // allowance that runs out. Applying can require receiving a payout, and
+  // Wallet access only starts at Creator+ (see Wallet.tsx's isCreatorPlus
+  // gate), so this is a hard account-type lock, not a resettable quota --
+  // no "resets next week" copy, and the free Creator+ upgrade is the only
+  // primary path (Professional/Business are still offered below since
+  // either also clears the Creator+ bar and unlocks Wallet).
   if (plan === 'creator' && kind === 'applications') {
     return (
       <div className="px-5 py-6 space-y-4">
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto"><CircleAlert className="w-6 h-6 text-amber-500" /></div>
-          <p className="text-base font-black text-gray-900">Weekly application limit reached</p>
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto"><Lock className="w-6 h-6 text-blue-600" /></div>
+          <p className="text-base font-black text-gray-900">Upgrade to Creator+ to apply</p>
           <p className="text-sm text-gray-500">
-            You've used your {limit} Opportunity application{limit === 1 ? '' : 's'} for this week. Upgrade your account to apply to more opportunities.
+            A Wallet is required to receive Opportunity payouts. Upgrade to Creator+ to unlock Wallet access and apply.
           </p>
-          <p className="text-xs text-gray-400">{resetsNote}</p>
         </div>
 
         <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 space-y-2">

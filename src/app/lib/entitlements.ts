@@ -19,10 +19,12 @@ export interface TierEntitlement {
 }
 
 export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
-  // posts stays 0 -- Creator+ is still required to POST an Opportunity.
-  // applications is 1/week -- Creator can apply (a small taste of the
-  // feature), Creator+ is what actually unlocks meaningful weekly volume.
-  creator:      { posts: 0,    applications: 1,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
+  // posts and applications are BOTH 0 for Creator, permanently -- not a
+  // resettable weekly quota. Applying to a paid Opportunity can require
+  // receiving a payout, and Wallet access only starts at Creator+ (see
+  // Wallet.tsx's isCreatorPlus gate), so a plain Creator has no Wallet to
+  // pay into and is blocked from applying at all, not just rate-limited.
+  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
   creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
   professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
   business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
@@ -162,7 +164,15 @@ export const entitlementsApi = {
   }): Promise<{ applicationId: string } | { limitReached: LimitReachedInfo }> => {
     const { ok, status, data } = await callFn('submit-opportunity-application', params);
     if (!ok) {
-      if (status === 403 && data.error === 'limit_reached') return { limitReached: { plan: data.plan, limit: data.limit } };
+      // 'creator_plus_required' is the server's hard, permanent Creator
+      // lock (see submit-opportunity-application/index.ts) -- routed into
+      // the same limitReached shape as 'limit_reached' since
+      // OpportunityLimitUpgrade's plan==='creator' branch already renders
+      // the correct "Upgrade to Creator+ to apply" copy for it regardless
+      // of which of the two codes triggered it.
+      if (status === 403 && (data.error === 'limit_reached' || data.error === 'creator_plus_required')) {
+        return { limitReached: { plan: data.plan, limit: data.limit } };
+      }
       throw new Error(data.error || 'Could not submit application');
     }
     return { applicationId: data.application.id };
