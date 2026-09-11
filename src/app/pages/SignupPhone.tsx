@@ -42,6 +42,15 @@ function phoneDigits(formatted: string) {
   return formatted.replace(/\D/g, '');
 }
 
+// "+1 ••• ••• 1234" -- masks everything but the last 4 digits, shown on the
+// OTP screen so the code-sent confirmation doesn't print the full number.
+function maskPhoneDisplay(dial: string, digits: string): string {
+  const last4 = digits.slice(-4);
+  const masked = digits.slice(0, -4).replace(/\d/g, '•');
+  const grouped = `${masked.slice(0, 3)} ${masked.slice(3)}`.trim();
+  return `${dial} ${grouped} ${last4}`.replace(/\s+/g, ' ');
+}
+
 // ── Background ────────────────────────────────────────────────────────────────
 
 function CinematicBg() {
@@ -154,9 +163,12 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
     return () => clearTimeout(t);
   }, [secs]);
 
+  const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+  const ss = String(secs % 60).padStart(2, '0');
+
   if (secs > 0) return (
     <p className="text-xs text-white/30 text-center">
-      Resend code in <span className="text-white/60 font-bold">{secs}s</span>
+      Didn't receive it? <span className="text-white/60 font-bold">Resend code in {mm}:{ss}</span>
     </p>
   );
   return (
@@ -164,7 +176,7 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
       onClick={() => { onResend(); setSecs(60); }}
       className="text-sm text-blue-400 font-semibold text-center w-full hover:text-blue-300 transition-colors min-h-[44px]"
     >
-      Resend Code
+      Resend code
     </button>
   );
 }
@@ -527,7 +539,7 @@ export function SignupPhone() {
                 <h1 className="text-2xl font-black text-white leading-tight">Verify your<br/>phone number</h1>
                 <p className="text-white/45 text-sm mt-1.5">
                   We sent a 6-digit code to{' '}
-                  <span className="text-white/80 font-semibold">{country.flag} {country.dial} {phone}</span>
+                  <span className="text-white/80 font-semibold">{maskPhoneDisplay(country.dial, digits)}</span>
                 </p>
               </div>
             </div>
@@ -553,7 +565,7 @@ export function SignupPhone() {
             >
               {loading ? (
                 <><LoaderCircle className="w-4 h-4 animate-spin"/> Verifying</>
-              ) : 'Verify Phone Number'}
+              ) : 'Verify code'}
             </button>
 
             <button
