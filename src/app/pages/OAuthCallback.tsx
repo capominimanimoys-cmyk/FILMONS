@@ -246,15 +246,6 @@ export function OAuthCallback() {
     navigate('/login', { replace: true });
   };
 
-  const useAnotherGoogleAccount = async () => {
-    setLinkPrompt(null);
-    handled.current = false;
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
-    });
-  };
-
   const startResendCooldown = (ms: number) => {
     const seconds = Math.max(1, Math.ceil(ms / 1000));
     setResendIn(seconds);
@@ -380,13 +371,16 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <div className="text-center space-y-2">
-                  <h2 className="text-xl font-black text-white">Filmons account found</h2>
+                  <h2 className="text-xl font-black text-white">FILMONS account found</h2>
                   <p className="text-white/55 text-sm leading-relaxed">
-                    There's already a Filmons account using<br/>
+                    A FILMONS account already exists with:<br/>
                     <span className="text-white font-bold">{linkPrompt.email}</span>
                   </p>
                   <p className="text-white/55 text-sm leading-relaxed">
-                    If this is your account, you can securely link {providerLabel} and use it to sign in next time.
+                    Your {providerLabel} account uses the same email, but it is not linked yet.
+                  </p>
+                  <p className="text-white/55 text-sm leading-relaxed">
+                    If this is your account, verify your identity before linking {providerLabel}.
                   </p>
                 </div>
                 <div className="space-y-3">
@@ -394,19 +388,13 @@ export function OAuthCallback() {
                     onClick={goToOtpStep}
                     className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
                   >
-                    Link {providerLabel} account
+                    Link {providerLabel} securely
                   </button>
                   <button
                     onClick={cancelLinkPrompt}
                     className="w-full py-3.5 bg-white/8 hover:bg-white/12 border border-white/15 text-white font-semibold text-sm rounded-2xl transition-all active:scale-[0.98]"
                   >
-                    Sign in another way
-                  </button>
-                  <button
-                    onClick={useAnotherGoogleAccount}
-                    className="w-full py-2 text-white/40 hover:text-white/70 text-xs font-semibold transition-colors"
-                  >
-                    Use another {providerLabel} account
+                    Cancel
                   </button>
                 </div>
               </div>
@@ -472,12 +460,11 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <div className="text-center space-y-2">
-                  <h2 className="text-xl font-black text-white">Confirm account linking</h2>
-                  <p className="text-white/55 text-sm leading-relaxed">You're about to link:</p>
+                  <h2 className="text-xl font-black text-white">Confirm {providerLabel} linking</h2>
                 </div>
                 <div className="space-y-2">
                   <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-0.5">Filmons account</p>
+                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-0.5">FILMONS account</p>
                     <p className="text-white text-sm font-semibold">{linkPrompt.existingProfile.email || linkPrompt.email}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
@@ -486,7 +473,7 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <p className="text-white/45 text-xs text-center leading-relaxed">
-                  Once linked, you'll be able to sign in using either your existing Filmons credentials or {providerLabel}.
+                  Once linked, you'll be able to sign in using either your existing FILMONS credentials or {providerLabel}.
                 </p>
                 {linkError && <p className="text-red-400 text-xs text-center">{linkError}</p>}
                 <div className="space-y-3">
@@ -514,16 +501,16 @@ export function OAuthCallback() {
                   </div>
                 </div>
                 <div className="text-center space-y-2">
-                  <h2 className="text-xl font-black text-white">{providerLabel} account linked</h2>
+                  <h2 className="text-xl font-black text-white">✓ {providerLabel} account linked</h2>
                   <p className="text-white/55 text-sm leading-relaxed">
-                    {providerLabel} has been securely connected to your Filmons account.
+                    You can now sign in to FILMONS using either your password or {providerLabel}.
                   </p>
                 </div>
                 <button
                   onClick={continueAfterLink}
                   className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-blue-900/30"
                 >
-                  Continue to Filmons
+                  Continue to FILMONS
                 </button>
               </div>
             )}

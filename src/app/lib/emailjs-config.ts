@@ -51,8 +51,7 @@ export const EMAILJS_CONFIG = {
     // linking flow in OAuthCallback.tsx succeeds. See
     // src/app/templates/google-account-linked-template.html. Merge
     // fields: to_email, to_name, google_email, date, secure_account_url.
-    // ⚠️ Not yet created in the EmailJS dashboard.
-    googleAccountLinked:    'template_google_account_linked',
+    googleAccountLinked:    'template_evah1t1',
   },
   filmons: {
     email:    'filmons481@gmail.com',
