@@ -20,6 +20,19 @@ import type { ReactNode } from 'react';
  * Direct children should use `flex-1` (not `h-full`) to fill the
  * remaining space, since the ancestor is a minimum height, not a fixed
  * one -- same convention Root.tsx's own shell already uses.
+ *
+ * 3. overflow-x only, not a blanket overflow:hidden. The X-clip is what
+ *    contains CreateAccount.tsx's horizontal slide-in/out transform;
+ *    clipping Y too was never needed for that and only risked hiding
+ *    content that legitimately runs past this box's min-height. Every
+ *    screen already scrolls internally via its own `overflow-y-auto`
+ *    content div, so the root doesn't need to own vertical clipping.
+ *
+ * Every page using this (Login, CreateAccount, etc.) is registered
+ * OUTSIDE Root's route tree (see routes.tsx's "Auth routes — outside
+ * Root layout" section) -- there is no TopBar/BottomNav/marketplace
+ * max-width wrapper around any of them to begin with, on mobile or
+ * desktop, so this shell is the only layout concern for the whole page.
  */
 // Pop-up appearance classes shared by auth screens that opt in (currently
 // just Login.tsx) -- defined once here rather than per-page. Plain <style>
@@ -46,7 +59,7 @@ const AUTH_POP_CSS = `
 
 export function AuthScreenLayout({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`relative min-h-[100dvh] flex flex-col overflow-hidden ${className}`}>
+    <div className={`relative min-h-[100dvh] w-full flex flex-col overflow-x-hidden ${className}`}>
       <style>{AUTH_POP_CSS}</style>
       {children}
     </div>
