@@ -185,17 +185,29 @@ export function CreateAccount() {
 
   return (
     <AuthScreenLayout className="bg-gray-950">
+      {/* Ambient — kept OUTSIDE the sliding motion.div below and `fixed`
+          rather than `absolute`. Two reasons: (1) a `transform` on an
+          ancestor (which framer-motion applies for the slide, even at
+          rest as `translateX(0)`) creates a new containing block for
+          `fixed`/`absolute` descendants, so this would stop tracking the
+          real viewport if left nested inside the slide; (2) `absolute
+          inset-0` only ever covers its containing block's own box, which
+          falls short of the true screen edges during iOS's rubber-band
+          overscroll bounce, exposing html/body's flat white fallback (see
+          globals.css) instead of this gradient on mobile. `fixed` pins it
+          to the actual visual viewport regardless of bounce or dvh
+          recalculation lag, and staying non-interactive
+          (pointer-events-none) means it can never swallow a tap. */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />
+        <div className="absolute top-1/3 left-1/4 w-80 h-80 rounded-full bg-blue-600 opacity-10 blur-[100px]" />
+        <div className="absolute bottom-1/3 right-1/4 w-56 h-56 rounded-full bg-violet-500 opacity-10 blur-[80px]" />
+      </div>
+
       <motion.div
         variants={pageVariants} initial="enter" animate={leaving ? 'exit' : 'center'}
         className="flex flex-col flex-1"
       >
-        {/* Ambient */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />
-          <div className="absolute top-1/3 left-1/4 w-80 h-80 rounded-full bg-blue-600 opacity-10 blur-[100px]" />
-          <div className="absolute bottom-1/3 right-1/4 w-56 h-56 rounded-full bg-violet-500 opacity-10 blur-[80px]" />
-        </div>
-
         <motion.div
           variants={staggerContainer} initial="hidden" animate="visible"
           className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(2.5rem+env(safe-area-inset-bottom))]"

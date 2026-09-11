@@ -33,9 +33,20 @@ function isLikelyPhone(v: string): boolean {
 }
 
 // ── Cinematic background ───────────────────────────────────────────────────
+// `fixed`, not `absolute` -- an `absolute inset-0` background only ever
+// covers AuthScreenLayout's own box, which falls short of the real edges
+// of the screen during iOS's rubber-band overscroll bounce (there's no
+// DOM content to size against out there), exposing html/body's flat
+// white fallback (see globals.css) instead of this dark gradient.
+// `position: fixed` pins it to the actual visual viewport regardless of
+// bounce or dvh recalculation lag. Safe here specifically because this
+// layer is purely decorative and non-interactive (`pointer-events-none`)
+// -- AuthScreenLayout's own root deliberately avoids `fixed` because that
+// one carries real tap targets, and fixed roots are known to drop taps on
+// iOS Safari; that risk doesn't apply to a layer nothing can be tapped in.
 function CinematicBg() {
   return (
-    <div className="absolute inset-0 overflow-hidden">
+    <div className="fixed inset-0 overflow-hidden pointer-events-none">
       <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950"/>
       {/* Film grain overlay */}
       <div className="absolute inset-0 opacity-[0.03]"
@@ -109,7 +120,7 @@ export function Login() {
   const [remember, setRemember] = useState(true);
   const [loading,  setLoading]  = useState(false);
   const [otp,      setOtp]      = useState('');
-  const [pwError,  setPwError]  = useState('');
+  const [pwError,  setPwError]  = useState<{ title: string; body: string } | null>(null);
   const [oauthOnlyProviders, setOauthOnlyProviders] = useState<string[]>([]);
   const [oauthLoading, setOauthLoading] = useState(false);
 
@@ -132,7 +143,7 @@ export function Login() {
 
   const handleEmailLogin = async () => {
     if (!email || !password) { toast.error('Enter your email and password'); return; }
-    setPwError('');
+    setPwError(null);
     setLoading(true);
     try {
       await login(email, password);
@@ -151,7 +162,11 @@ export function Login() {
       } else if (msg.includes('confirm') || msg.includes('Confirm')) {
         toast.error(msg, { duration: 6000, description: 'Check your inbox and click the confirmation link, then try again.' });
       } else if (msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('invalid')) {
-        setPwError('Email or password is incorrect.');
+        // Reached only when check-auth-methods confirmed this email has a
+        // password identity (see api.ts's signin()) -- a wrong password on
+        // a genuine social-only account is routed to OAUTH_ONLY above
+        // instead, never here.
+        setPwError({ title: 'Incorrect password', body: 'The password you entered is incorrect. Please try again.' });
       } else {
         toast.error(msg || 'Something went wrong. Please try again.');
       }
@@ -198,7 +213,7 @@ export function Login() {
   const handleDesktopSignIn = async () => {
     if (!email.trim()) { toast.error('Enter your email or phone number'); return; }
     if (isLikelyPhone(email)) {
-      setPwError(''); setLoading(true);
+      setPwError(null); setLoading(true);
       try {
         await authApi.signinWithPhone(email);
         toast.success(`Code sent to ${email}`);
@@ -268,12 +283,12 @@ export function Login() {
               <p className="text-2xl font-black text-gray-900">{customHeading || 'Welcome back'}</p>
               <p className="text-sm text-gray-500 mt-1 mb-7">{customSub || 'Sign in to your FILMONS account.'}</p>
               <div className="space-y-3">
-                <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
+                <input value={email} onChange={e => { setEmail(e.target.value); setPwError(null); }}
                   type="text" placeholder="Email or phone number" autoComplete="username"
                   onKeyDown={e => e.key === 'Enter' && handleDesktopSignIn()}
                   className="auth-input-fx w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white transition-all"/>
                 <div className="relative">
-                  <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
+                  <input value={password} onChange={e => { setPassword(e.target.value); setPwError(null); }}
                     type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
                     onKeyDown={e => e.key === 'Enter' && handleDesktopSignIn()}
                     className={`auth-input-fx w-full bg-gray-50 border text-gray-900 placeholder-gray-400 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'}`}/>
@@ -282,7 +297,21 @@ export function Login() {
                     {showPw ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
                   </button>
                 </div>
-                {pwError && <p className="auth-pop-error text-red-500 text-xs font-medium px-1 leading-snug">{pwError}</p>}
+                {pwError && (
+                  <div className="auth-pop-error px-1">
+                    <p className="text-red-500 text-sm font-bold leading-snug">{pwError.title}</p>
+                    <p className="text-gray-500 text-xs mt-0.5 leading-snug">{pwError.body}</p>
+                    <div className="flex items-center gap-4 mt-2">
+                      <button type="button" onClick={() => { setPwError(null); setPassword(''); }}
+                        className="text-xs font-bold text-blue-600 hover:underline">
+                        Try again
+                      </button>
+                      <Link to={`/forgot-password?email=${encodeURIComponent(email)}`} className="text-xs font-bold text-blue-600 hover:underline">
+                        Forgot password?
+                      </Link>
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-end">
                   <Link to="/forgot-password" className="text-xs text-blue-600 font-semibold hover:underline">Forgot password?</Link>
                 </div>
@@ -389,14 +418,14 @@ export function Login() {
           <div className="space-y-3">
             {/* Email */}
             <div className="group">
-              <input value={email} onChange={e => { setEmail(e.target.value); setPwError(''); }}
+              <input value={email} onChange={e => { setEmail(e.target.value); setPwError(null); }}
                 type="email" placeholder="Email address" autoComplete="email"
                 onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
                 className="auth-input-fx w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
             </div>
             {/* Password */}
             <div className="relative">
-              <input value={password} onChange={e => { setPassword(e.target.value); setPwError(''); }}
+              <input value={password} onChange={e => { setPassword(e.target.value); setPwError(null); }}
                 type={showPw ? 'text' : 'password'} placeholder="Password" autoComplete="current-password"
                 onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
                 className={`auth-input-fx w-full bg-white/10 border text-white placeholder-white/40 rounded-2xl px-4 py-3.5 pr-12 text-sm outline-none focus:bg-white/15 transition-all ${pwError ? 'border-red-400 focus:border-red-400' : 'border-white/20 focus:border-blue-400'}`}/>
@@ -407,9 +436,19 @@ export function Login() {
             </div>
             {/* Inline password error */}
             {pwError && (
-              <p className="auth-pop-error text-red-400 text-xs font-medium px-1 leading-snug">
-                {pwError}
-              </p>
+              <div className="auth-pop-error px-1">
+                <p className="text-red-400 text-sm font-bold leading-snug">{pwError.title}</p>
+                <p className="text-white/50 text-xs mt-0.5 leading-snug">{pwError.body}</p>
+                <div className="flex items-center gap-4 mt-2">
+                  <button type="button" onClick={() => { setPwError(null); setPassword(''); }}
+                    className="text-xs font-bold text-blue-400 hover:underline">
+                    Try again
+                  </button>
+                  <Link to={`/forgot-password?email=${encodeURIComponent(email)}`} className="text-xs font-bold text-blue-400 hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
+              </div>
             )}
             {/* Remember + Forgot */}
             <div className="flex items-center justify-between px-1">

@@ -6,6 +6,21 @@
 // supabase.auth.resend() happened to succeed — that guess was wrong for
 // Google-only accounts (which have no email/password identity and were
 // being misreported as "email not confirmed").
+//
+// This project does NOT have Supabase Auth's automatic identity linking
+// enabled (confirmed by OAuthCallback.tsx's own custom "email already
+// has a Filmons account" handling -- that code path only exists because
+// Google sign-in creates a BRAND NEW, separate auth.users row for an
+// email that already has a password account, rather than merging into
+// it). Merely clicking "Continue with Google" on a matching email is
+// enough to create that second row, even if the user never finishes
+// linking it. So there can be MULTIPLE auth.users rows sharing one
+// email, each with only one identity provider on it -- picking just the
+// first match (the old `.find()`) could return the Google-only row and
+// wrongly report the email as having no password identity at all. Every
+// row for this email is aggregated below instead, so a password
+// identity on ANY of them is never lost because of a stray, possibly
+// abandoned OAuth attempt on another row.
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -31,16 +46,26 @@ Deno.serve(async (req) => {
     }
 
     // Different GoTrue versions return either a bare array or { users: [...] }.
+    // The admin list endpoint's `?email=` filter isn't guaranteed to be an
+    // exact match either, so this still re-checks equality itself.
     const users = Array.isArray(data) ? data : (data.users || []);
-    const match = users.find((u: any) => (u.email || '').toLowerCase() === email.toLowerCase());
+    const matches = users.filter((u: any) => (u.email || '').toLowerCase() === email.toLowerCase());
 
-    if (!match) return json({ exists: false, providers: [], emailConfirmed: false });
+    if (matches.length === 0) return json({ exists: false, providers: [], emailConfirmed: false });
 
-    const providers: string[] = (match.identities || []).map((i: any) => i.provider);
+    // Union providers/confirmation across every row for this email — see
+    // the file header for why more than one row can exist.
+    const providerSet = new Set<string>();
+    let emailConfirmed = false;
+    for (const u of matches) {
+      for (const i of (u.identities || [])) if (i.provider) providerSet.add(i.provider);
+      if (u.email_confirmed_at) emailConfirmed = true;
+    }
+
     return json({
       exists: true,
-      providers,
-      emailConfirmed: !!match.email_confirmed_at,
+      providers: Array.from(providerSet),
+      emailConfirmed,
     });
   } catch (e) {
     console.error('check-auth-methods error:', e);

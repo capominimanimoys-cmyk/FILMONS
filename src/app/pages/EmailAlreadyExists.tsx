@@ -39,22 +39,17 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
   );
 }
 
-function AppleLogo({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.39-1.32 2.76-2.53 3.99zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-    </svg>
-  );
-}
-
 export function EmailAlreadyExists() {
   const [params]   = useSearchParams();
   const navigate   = useNavigate();
 
   const email    = params.get('email') ?? '';
-  const provider = (params.get('provider') ?? '') as 'google' | 'apple' | '';
+  // Apple sign-in has no "Continue with Apple" entry point anywhere in this
+  // app's signup flow -- only Google. A stray ?provider=apple is treated
+  // the same as no provider (the generic Sign In fallback below).
+  const provider = (params.get('provider') ?? '') as 'google' | '';
 
-  const handleOAuth = async (p: 'google' | 'apple') => {
+  const handleOAuth = async (p: 'google') => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: p,
       options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
@@ -77,8 +72,8 @@ export function EmailAlreadyExists() {
     navigate('/create-account', { state: { clearEmail: true } });
   };
 
-  const hasProvider = provider === 'google' || provider === 'apple';
-  const providerLabel = provider === 'google' ? 'Google' : provider === 'apple' ? 'Apple' : '';
+  const hasProvider = provider === 'google';
+  const providerLabel = hasProvider ? 'Google' : '';
 
   return (
     <AuthScreenLayout>
@@ -135,7 +130,7 @@ export function EmailAlreadyExists() {
             </p>
 
             <p className="text-white/30 text-xs">
-              You may have previously signed up with email, Google, or Apple.
+              You may have previously signed up with email or Google.
             </p>
           </div>
 
@@ -145,11 +140,11 @@ export function EmailAlreadyExists() {
             {/* Primary: provider-specific or generic Sign In */}
             {hasProvider ? (
               <button
-                onClick={() => handleOAuth(provider as 'google' | 'apple')}
+                onClick={() => handleOAuth('google')}
                 className="w-full min-h-[52px] flex items-center justify-center gap-3 bg-white hover:bg-gray-100 text-gray-900 font-bold text-sm rounded-2xl transition-all active:scale-[0.98] shadow-lg"
                 aria-label={`Continue with ${providerLabel}`}
               >
-                {provider === 'google' ? <GoogleLogo size={18}/> : <AppleLogo size={18}/>}
+                <GoogleLogo size={18}/>
                 Continue with {providerLabel}
               </button>
             ) : (
@@ -202,8 +197,8 @@ export function EmailAlreadyExists() {
           </div>
 
           {/* Sign in with other providers */}
-          <div className="space-y-2.5">
-            {!hasProvider && (
+          {!hasProvider && (
+            <div className="space-y-2.5">
               <button
                 onClick={() => handleOAuth('google')}
                 className="w-full min-h-[48px] flex items-center gap-3 bg-white hover:bg-gray-100 text-gray-900 font-semibold text-sm rounded-2xl px-4 py-3 transition-all active:scale-[0.98] shadow-sm"
@@ -212,18 +207,8 @@ export function EmailAlreadyExists() {
                 <GoogleLogo size={18}/>
                 <span className="flex-1 text-left">Continue with Google</span>
               </button>
-            )}
-            {!hasProvider && (
-              <button
-                onClick={() => handleOAuth('apple')}
-                className="w-full min-h-[48px] flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/15 text-white font-semibold text-sm rounded-2xl px-4 py-3 transition-all active:scale-[0.98]"
-                aria-label="Continue with Apple"
-              >
-                <AppleLogo size={18}/>
-                <span className="flex-1 text-left">Continue with Apple</span>
-              </button>
-            )}
-          </div>
+            </div>
+          )}
 
           <p className="text-center text-[11px] text-white/20 leading-relaxed px-4">
             If you believe this is a mistake or need help accessing your account,{' '}
