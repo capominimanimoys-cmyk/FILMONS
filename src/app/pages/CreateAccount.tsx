@@ -7,6 +7,7 @@
  */
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { motion } from 'motion/react';
 import { Eye, EyeOff, Loader2, Phone } from 'lucide-react';
 import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 import { toast } from 'sonner';
@@ -40,8 +41,33 @@ function pwStrength(password: string): { label: string; color: string; pct: numb
   return           { label: 'Very Strong', color: '#22c55e', pct: 100 };
 }
 
+// Page slides in from the right on entry, out to the right when leaving
+// (e.g. tapping "Sign In") -- respects prefers-reduced-motion by
+// collapsing both the slide and the staggered pop-in below to a plain,
+// instant appearance.
+const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const pageVariants = {
+  enter:  { x: reduceMotion ? 0 : '100%' },
+  center: { x: 0, transition: { duration: reduceMotion ? 0 : 0.4, ease: [0.16, 1, 0.3, 1] } },
+  exit:   { x: reduceMotion ? 0 : '100%', transition: { duration: reduceMotion ? 0 : 0.32, ease: [0.7, 0, 0.84, 0] } },
+};
+const staggerContainer = {
+  hidden:  {},
+  visible: { transition: { staggerChildren: reduceMotion ? 0 : 0.055, delayChildren: reduceMotion ? 0 : 0.18 } },
+};
+const popItem = {
+  hidden:  reduceMotion ? { opacity: 1 } : { opacity: 0, scale: 0.96, y: 10 },
+  visible: { opacity: 1, scale: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.28, ease: 'easeOut' } },
+};
+
 export function CreateAccount() {
   const navigate = useNavigate();
+  const [leaving, setLeaving] = useState(false);
+  const goBack = (to: string) => {
+    setLeaving(true);
+    setTimeout(() => navigate(to), reduceMotion ? 0 : 320);
+  };
 
   const [name,            setName]            = useState('');
   const [email,           setEmail]           = useState('');
@@ -159,23 +185,31 @@ export function CreateAccount() {
 
   return (
     <AuthScreenLayout className="bg-gray-950">
-      {/* Ambient */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />
-        <div className="absolute top-1/3 left-1/4 w-80 h-80 rounded-full bg-blue-600 opacity-10 blur-[100px]" />
-        <div className="absolute bottom-1/3 right-1/4 w-56 h-56 rounded-full bg-violet-500 opacity-10 blur-[80px]" />
-      </div>
-
-      <div className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
-        <div className="flex flex-col items-center mb-8">
-          <FilmonsLogo iconSize={34} theme="dark" className="mb-7" />
-          <h1 className="text-2xl font-black text-white mb-1">Create your account</h1>
-          <p className="text-white/40 text-sm text-center">Join the Filmons creative community</p>
+      <motion.div
+        variants={pageVariants} initial="enter" animate={leaving ? 'exit' : 'center'}
+        className="flex flex-col flex-1"
+      >
+        {/* Ambient */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-indigo-950" />
+          <div className="absolute top-1/3 left-1/4 w-80 h-80 rounded-full bg-blue-600 opacity-10 blur-[100px]" />
+          <div className="absolute bottom-1/3 right-1/4 w-56 h-56 rounded-full bg-violet-500 opacity-10 blur-[80px]" />
         </div>
+
+        <motion.div
+          variants={staggerContainer} initial="hidden" animate="visible"
+          className="relative z-10 flex flex-col flex-1 overflow-y-auto px-5 pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(2.5rem+env(safe-area-inset-bottom))]"
+        >
+        <motion.div variants={popItem} className="flex justify-center mb-7">
+          <FilmonsLogo iconSize={34} theme="dark" />
+        </motion.div>
+        <motion.h1 variants={popItem} className="text-2xl font-black text-white mb-1 text-center">Create your account</motion.h1>
+        <motion.p variants={popItem} className="text-white/40 text-sm text-center mb-8">Join the Filmons creative community</motion.p>
 
         <form onSubmit={handleSubmit} className="space-y-4 w-full max-w-sm mx-auto" noValidate>
 
-          {/* Full Name */}
+          {/* Full Name + Email */}
+          <motion.div variants={popItem} className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest block mb-1.5">
               Full Name
@@ -204,8 +238,10 @@ export function CreateAccount() {
               className="w-full bg-white/10 border border-white/20 text-white placeholder-white/30 rounded-2xl px-4 py-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white/15 transition-all"
             />
           </div>
+          </motion.div>
 
           {/* Password */}
+          <motion.div variants={popItem} className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest block mb-1.5">
               Password
@@ -298,6 +334,7 @@ export function CreateAccount() {
               </p>
             )}
           </div>
+          </motion.div>
 
           {/* Terms of Service / Privacy Policy agreement -- separate from
               cookie consent (CookieConsent.tsx), and never pre-checked.
@@ -312,7 +349,7 @@ export function CreateAccount() {
               own label text are associated via id/htmlFor; the Terms of
               Service and Privacy Policy links sit outside that
               association as plain siblings. */}
-          <div className="flex items-start gap-2.5 pt-1">
+          <motion.div variants={popItem} className="flex items-start gap-2.5 pt-1">
             <input
               id="agree-terms"
               type="checkbox"
@@ -330,9 +367,10 @@ export function CreateAccount() {
               <Link to="/privacy-policy" className="text-blue-400 hover:text-blue-300 underline">Privacy Policy</Link>
               <label htmlFor="agree-terms" className="cursor-pointer select-none">.</label>
             </span>
-          </div>
+          </motion.div>
 
           {/* Submit */}
+          <motion.div variants={popItem}>
           <button
             type="submit"
             disabled={!canSubmit || loading}
@@ -343,17 +381,18 @@ export function CreateAccount() {
               ? <Loader2 className="w-4 h-4 animate-spin mx-auto" />
               : 'Create Account →'}
           </button>
+          </motion.div>
         </form>
 
         {/* Divider */}
-        <div className="flex items-center gap-3 my-6 w-full max-w-sm mx-auto">
+        <motion.div variants={popItem} className="flex items-center gap-3 my-6 w-full max-w-sm mx-auto">
           <div className="flex-1 h-px bg-white/10" />
           <span className="text-[11px] text-white/25 font-semibold whitespace-nowrap">or continue with</span>
           <div className="flex-1 h-px bg-white/10" />
-        </div>
+        </motion.div>
 
         {/* OAuth & Phone buttons */}
-        <div className="space-y-3 w-full max-w-sm mx-auto">
+        <motion.div variants={popItem} className="space-y-3 w-full max-w-sm mx-auto">
           {/* Google */}
           <button
             onClick={() => handleOAuth('google')}
@@ -379,13 +418,20 @@ export function CreateAccount() {
             <Phone className="w-4 h-4 shrink-0" />
             Continue with Phone Number
           </button>
-        </div>
+        </motion.div>
 
-        <p className="text-center text-white/35 text-sm mt-4">
+        <motion.p variants={popItem} className="text-center text-white/35 text-sm mt-4">
           Already have an account?{' '}
-          <Link to="/login" className="text-blue-400 font-bold hover:text-blue-300">Sign In</Link>
-        </p>
-      </div>
+          <a
+            href="/login"
+            onClick={(e) => { e.preventDefault(); goBack('/login'); }}
+            className="text-blue-400 font-bold hover:text-blue-300"
+          >
+            Sign In
+          </a>
+        </motion.p>
+        </motion.div>
+      </motion.div>
     </AuthScreenLayout>
   );
 }
