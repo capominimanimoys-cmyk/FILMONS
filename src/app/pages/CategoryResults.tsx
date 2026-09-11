@@ -390,7 +390,7 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
 
   return (
     <section className="mb-6">
-      <div className="flex items-center justify-between px-4 mb-2">
+      <div className="flex items-center justify-between w-full px-4 mb-2">
         <p className="text-sm font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
         {!loading && !locked && hasMore && (
           <button
