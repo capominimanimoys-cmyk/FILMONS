@@ -198,17 +198,34 @@ export function VerifyEmail() {
         signUpPromise,
         new Promise<never>((_, reject) => abort.signal.addEventListener('abort', () => reject(new Error('TIMEOUT')))),
       ]);
-      mark('session received');
+      mark(`session received (authError=${authError ? `${(authError as any)?.status ?? '?'}:${authError.message}` : 'none'})`);
 
-      if (authError || !authData.user) {
+      // `authData` itself should always be a `{user, session}` object per
+      // supabase-js's types even on error, but guarded with `?.` anyway --
+      // if the server ever returns a shape that breaks that assumption,
+      // `!authData.user` would throw a TypeError instead of falling into
+      // the graceful branch below, and that TypeError was being
+      // misreported as the generic connection-issue message instead of
+      // the real problem.
+      if (authError || !authData?.user) {
         // CreateAccount.tsx already checks for this via checkAuthMethods
         // before a code is ever sent, so reaching it here should be rare
         // (a genuine race between two concurrent signup attempts for the
         // same email). Still handled gracefully rather than surfacing
-        // Supabase's raw "User already registered" wording.
-        if (authError?.message?.toLowerCase().includes('already registered')) {
+        // Supabase's raw wording verbatim for the cases this app already
+        // knows how to name -- matched on the error CODE first (stable
+        // across wording changes), falling back to a message-substring
+        // check only for older responses that don't carry one.
+        const code = (authError as any)?.code || (authError as any)?.error_code || '';
+        const msg  = (authError?.message || '').toLowerCase();
+        if (code === 'user_already_exists' || msg.includes('already registered') || msg.includes('already been registered')) {
           toast.error('This email is already registered. Please sign in instead.');
           navigate(`/email-already-exists?email=${encodeURIComponent(pending.email)}`);
+          return;
+        }
+        if (code === 'weak_password' || msg.includes('weak') || msg.includes('leaked') || msg.includes('pwned') || msg.includes('compromised')) {
+          setPhase('form');
+          setVerifyError({ title: 'Choose a different password', body: 'This password is too common or has appeared in a data breach. Please pick a different one.' });
           return;
         }
         setPhase('form');
