@@ -1366,7 +1366,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // closeAndNavigate above for why that requires actually closing this
   // overlay, not just changing the route.
   const handleViewMoreCategory = useCallback((tab: TabId) => {
-    closeAndNavigate(`/search/category/${tab}`, { query: q, filters, sort });
+    // `q` also rides along as a real URL query param (not just router
+    // state) so the destination is a shareable/bookmarkable standalone URL
+    // per spec, e.g. `/search/category/all?q=dji` -> `/search/category/
+    // rentals?q=dji`. State still carries filters/sort, which don't have a
+    // URL representation yet.
+    const trimmed = q.trim();
+    const qs = trimmed ? `?q=${encodeURIComponent(trimmed)}` : '';
+    closeAndNavigate(`/search/category/${tab}${qs}`, { query: q, filters, sort });
   }, [closeAndNavigate, q, filters, sort]);
 
   // Backfills oppOwnerTypes for any Opportunity-listing owner in the
