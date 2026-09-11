@@ -56,10 +56,16 @@ export function normalizeTier(t?: string | null): AccountTier {
   return 'creator';
 }
 
-// Server-side twin of src/app/lib/reliabilityApi.ts's isCreatorPlus() --
-// that file isn't importable from Deno edge functions (it pulls in the
-// browser supabase client), so this is duplicated rather than shared.
+// Server-side twins of src/app/lib/reliabilityApi.ts's isCreatorPlus() /
+// isProfessional() -- that file isn't importable from Deno edge functions
+// (it pulls in the browser supabase client), so these are duplicated
+// rather than shared.
 export function isCreatorPlus(t?: string | null): boolean {
   const tier = normalizeTier(t);
   return tier === 'creator_plus' || tier === 'professional' || tier === 'business';
+}
+
+export function isProfessional(t?: string | null): boolean {
+  const tier = normalizeTier(t);
+  return tier === 'professional' || tier === 'business';
 }

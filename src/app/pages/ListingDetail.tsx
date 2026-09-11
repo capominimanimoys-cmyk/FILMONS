@@ -10,7 +10,7 @@ import { RentRequestModal } from '../components/RentRequestModal';
 import { ApplyModal } from '../components/ApplyModal';
 import { boostApi } from '../lib/boostApi';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
-import { isCreatorPlus } from '../lib/reliabilityApi';
+import { isCreatorPlus, isProfessional } from '../lib/reliabilityApi';
 import { playTransition } from '../lib/smartAnimate';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
@@ -106,6 +106,14 @@ export function ListingDetail() {
   const [saved, setSaved]                 = useState(false);
   const [lightbox, setLightbox]           = useState<{ items: { url: string; type: 'image'|'video' }[]; index: number } | null>(null);
   const [activeImg, setActiveImg]         = useState(0);
+  // Emergency listings are Professional/Business only to view at all, not
+  // just to browse as a category (see get-emergency-listings/index.ts and
+  // CategoryResults.tsx's Emergency gate) -- checked here too so a direct
+  // URL, saved link, or shared listing id can't bypass the category-level
+  // lock. The listing is still fetched (this app's `listings` table has no
+  // real per-row RLS to prevent that -- see that file's own comment), but
+  // its content is never rendered past this check for a restricted viewer.
+  const [emergencyBlocked, setEmergencyBlocked] = useState(false);
 
   useEffect(() => { if (id) loadListing(id); }, [id]);
 
@@ -140,6 +148,12 @@ export function ListingDetail() {
         listingsApi.getOne(listingId),
         reviewsApi.getListingReviews(listingId),
       ]);
+      const isEmergencyActive = !!data.isEmergency && !!data.emergencyExpiresAt && new Date(data.emergencyExpiresAt) > new Date();
+      if (isEmergencyActive && !isProfessional(user?.accountType)) {
+        setEmergencyBlocked(true);
+        setLoading(false);
+        return;
+      }
       setListing(data);
       setReviews(reviewData);
       boostApi.logEvent(listingId, 'view', data.boosted ? 'boosted' : 'organic', undefined, user?.id);
@@ -296,6 +310,24 @@ export function ListingDetail() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+
+  if (emergencyBlocked) return (
+    <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="text-center max-w-sm space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto">
+          <Lock className="w-7 h-7 text-red-600" />
+        </div>
+        <div>
+          <h2 className="text-xl font-black text-gray-900">Emergency opportunities are locked</h2>
+          <p className="text-sm text-gray-500 mt-2">Emergency listings are available exclusively to Professional and Business accounts.</p>
+        </div>
+        <button onClick={() => navigate('/account/upgrade?auto=professional')} className="w-full bg-red-600 text-white px-6 py-3 rounded-2xl font-bold text-sm">
+          Upgrade account
+        </button>
+        <button onClick={() => navigate(-1)} className="text-gray-400 text-sm font-semibold">Go back</button>
       </div>
     </div>
   );
