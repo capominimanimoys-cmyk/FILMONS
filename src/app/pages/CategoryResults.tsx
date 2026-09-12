@@ -346,7 +346,13 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
         </aside>
 
         {/* ── Results ──────────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 px-4 md:px-0 py-4 md:py-0">
+        {/* pl-16 (not px-4) on mobile only -- CategoryHeader's label sits
+            after a w-9 back button + gap-3 (36px + 12px = 48px) past its
+            own px-4, so the header text's true left edge is 64px from the
+            screen edge, not 16px. Matching that here (rather than the
+            page's raw padding) is what actually keeps every card's left
+            edge under the first letter of the category label above it. */}
+        <div className="flex-1 min-w-0 pl-16 pr-4 md:px-0 py-4 md:py-0">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold text-gray-500">
               {loading ? 'Searching…' : `${total} ${total === 1 ? noun.toLowerCase() : CATEGORY_LABEL[category].toLowerCase()}`}
