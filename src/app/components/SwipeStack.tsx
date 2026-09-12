@@ -802,7 +802,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
           end of the deck (3 or fewer cards including this one), supplement
           with an explicit "N left" so the approaching end is clear without
           interrupting with a modal. */}
-      <div className="hidden lg:flex items-center gap-3 mt-1 mb-2.5">
+      <div className="hidden lg:flex items-center gap-3 mt-3 mb-3">
         <p className="text-[11px] text-gray-400 font-medium">
           {idx + 1} of {items.length}
           {items.length - idx <= 3 && (
