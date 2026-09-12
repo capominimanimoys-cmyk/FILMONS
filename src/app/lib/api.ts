@@ -3432,18 +3432,38 @@ export const chatApi = {
       }
       const convIds = activeRows.map((r: any) => r.id);
 
-      // 2. ONE query for ALL messages across ALL conversations (no N+1)
+      // 2. ONE query for ALL messages across ALL conversations (no N+1) --
+      // capped to the CONVERSATION_LIST_MSG_CAP most recent messages
+      // account-wide (not per-conversation) rather than truly unlimited.
+      // This just builds preview/unread state for the conversation LIST --
+      // fetchMessages loads a specific conversation's full history
+      // separately once it's actually opened -- so fetching every message
+      // ever sent across every conversation here was pure waste that grew
+      // (and slowed this load down) with total message history, without
+      // the list ever needing more than a recent window. Ordered DESC to
+      // get the most RECENT messages under the cap (not the oldest), then
+      // reversed back to ascending per-conversation below since every
+      // downstream consumer (message rendering, "last message" preview,
+      // reply-to lookups) expects chronological order.
+      // Trade-off: a very old, rarely-used conversation with unread
+      // messages older than this window could undercount unread on this
+      // list preview (opening that conversation still shows everything
+      // correctly, via fetchMessages) -- accepted as a rare edge case
+      // rather than building a per-conversation-capped RPC for it.
+      const CONVERSATION_LIST_MSG_CAP = 200;
       let allMsgs: any[] | null = null;
       try {
         const { data } = await supabase
           .from('messages')
           .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
           .in('conversation_id', convIds)
-          .order('created_at', { ascending: true });
+          .order('created_at', { ascending: false })
+          .limit(CONVERSATION_LIST_MSG_CAP);
         allMsgs = data;
       } catch { allMsgs = null; }
 
-      // Group messages by conversation
+      // Group messages by conversation (still DESC-ordered within each
+      // group at this point -- reversed to ascending right after).
       const msgsByConv = new Map<string, ChatMessage[]>();
       (allMsgs || []).forEach((m: any) => {
         const msgs = msgsByConv.get(m.conversation_id) || [];
@@ -3471,6 +3491,10 @@ export const chatApi = {
         });
         msgsByConv.set(m.conversation_id, msgs);
       });
+      // Restore ascending (oldest-first) order within each conversation --
+      // the query above fetched DESC to get the most recent messages under
+      // the account-wide cap, which left each group newest-first.
+      msgsByConv.forEach(msgs => msgs.reverse());
 
       // Populate users cache from message sender data (no extra query needed)
       const cache: Record<string, any> = (() => { try { return JSON.parse(localStorage.getItem('filmons_users_cache') || '{}'); } catch { return {}; } })();
