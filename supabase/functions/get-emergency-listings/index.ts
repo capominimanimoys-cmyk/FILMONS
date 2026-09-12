@@ -60,7 +60,17 @@ Deno.serve(async (req) => {
     params.append('is_emergency', 'eq.true');
     params.append('emergency_expires_at', `gt.${new Date().toISOString()}`);
     const term = typeof query === 'string' ? query.trim() : '';
-    if (term) params.set('or', `(title.ilike.%${term}%,description.ilike.%${term}%,city.ilike.%${term}%)`);
+    // Matches every WORD of a multi-word query separately (OR'd across
+    // title/description/city), not the raw phrase as one literal
+    // substring -- a query like "vancouver photographer" would otherwise
+    // never match anything, since no listing's fields literally contain
+    // that exact contiguous phrase. See CategoryResults.tsx's
+    // termOrClause() for the client-side twin of this.
+    if (term) {
+      const words = term.split(/\s+/).filter(Boolean);
+      const orParts = words.flatMap(w => [`title.ilike.%${w}%`, `description.ilike.%${w}%`, `city.ilike.%${w}%`]);
+      params.set('or', `(${orParts.join(',')})`);
+    }
     if (priceMin != null) params.append('price', `gte.${priceMin}`);
     if (priceMax != null) params.append('price', `lte.${priceMax}`);
     params.set('order', 'created_at.desc');

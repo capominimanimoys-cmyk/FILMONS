@@ -89,6 +89,21 @@ function useGuestGuard() {
 // Returns a real `total` (Postgres exact count, or the gated Emergency
 // endpoint's own count) wherever the query itself can produce one --
 // Opportunity paid/remote is the one exception (see below).
+// Matches SearchOverlay.tsx's own approach of searching each WORD of a
+// multi-word query separately, not the raw phrase as one literal
+// substring -- without this, a query like "vancouver photographer" (city
+// + role, two different fields) never matches anything here, since no
+// listing's title/description/city literally contains that exact
+// contiguous phrase, even though SearchOverlay itself finds it fine (it
+// expands the query into per-word terms and unions the results). This is
+// a smaller version of that -- an OR across every word x every field --
+// not a full port of SearchOverlay's alias/synonym expansion, but enough
+// to stop a real multi-word search from silently coming back empty here.
+function termOrClause(term: string, fields: string[]): string {
+  const words = term.split(/\s+/).filter(Boolean);
+  return words.flatMap(w => fields.map(f => `${f}.ilike.%${w}%`)).join(',');
+}
+
 async function fetchCategoryPage(
   category: CategoryTab, navState: NavState, from: number, to: number, userId?: string,
 ): Promise<{ listings: Listing[]; creators: CreatorRow[]; total: number }> {
@@ -112,7 +127,7 @@ async function fetchCategoryPage(
     let q = supabase.from('profiles')
       .select('id, name, username, avatar_url, city, location, primary_role, is_verified', { count: 'exact' })
       .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null);
-    if (term) q = q.or(`name.ilike.%${term}%,username.ilike.%${term}%,primary_role.ilike.%${term}%,city.ilike.%${term}%`);
+    if (term) q = q.or(termOrClause(term, ['name', 'username', 'primary_role', 'city']));
     const { data, count } = await q.order('created_at', { ascending: false }).range(from, to);
     return { listings: [], creators: (data ?? []) as CreatorRow[], total: count ?? (data?.length ?? 0) };
   }
@@ -130,7 +145,7 @@ async function fetchCategoryPage(
       case 'opportunities':  query = query.eq('listing_type', 'opportunity'); break;
       case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
     }
-    if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,city.ilike.%${term}%`);
+    if (term) query = query.or(termOrClause(term, ['title', 'description', 'city']));
     if (price?.min != null) query = query.gte('price', price.min);
     if (price?.max != null) query = query.lte('price', price.max);
     return query.order(sortCol, { ascending }).range(from, to);
