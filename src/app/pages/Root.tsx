@@ -65,6 +65,17 @@ export function Root() {
   const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
   const showFooter   = location.pathname === '/';
   const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || conversationOpen;
+  // The dedicated /search/category/* pages (CategoryResults.tsx) want the
+  // full desktop width for their own two-column filters+results layout --
+  // removing DesktopSidebar from the DOM entirely (not just visually
+  // hiding it) lets the flex row's other child (`main`, flex-1) expand
+  // into that space on its own, with no leftover gap and no per-page
+  // layout math. Route-based here at the shared layout level rather than
+  // something every category component would otherwise have to opt into
+  // individually. A category page's own Filters sidebar (inside
+  // CategoryResults.tsx) is unrelated to this and stays untouched either
+  // way -- this only ever controls the global FILMONS nav.
+  const hideDesktopSidebar = location.pathname.startsWith('/search/category/');
 
   // New Browser / First Sign-In Verification — checked before anything
   // else that requires a real session. deviceVerified is null until the
@@ -127,7 +138,7 @@ export function Root() {
             fixed) naturally stops at the bottom of this row instead of
             staying pinned over the footer below. */}
         <div className="flex flex-1">
-          <DesktopSidebar />
+          {!hideDesktopSidebar && <DesktopSidebar />}
 
           <main className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
             {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
