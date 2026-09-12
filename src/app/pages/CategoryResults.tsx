@@ -947,7 +947,7 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
 // short, increase height while keeping exactly 5 across" follow-up --
 // still width-driven, so 5-per-row + full desktop width still holds.
 const DESKTOP_CARD_STYLE: React.CSSProperties = {
-  flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180, aspectRatio: '1.15 / 1', overflow: 'hidden',
+  flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180, aspectRatio: '0.95 / 1', overflow: 'hidden',
 };
 // Image area is a fixed PERCENTAGE OF THE CARD'S OWN (aspect-ratio-fixed)
 // height, not of the image's intrinsic dimensions -- a portrait creator
