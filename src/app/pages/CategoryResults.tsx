@@ -778,6 +778,12 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
   const isEmergency = category === 'emergency';
   const canBrowseEmergency = isProfessional(user?.accountType);
   const locked = isOpportunities && !isProfessional(user?.accountType);
+  // Only these three sections get the pl-16 left-inset fix (matching
+  // AllGroupedResults' "All Results" header text position, which sits
+  // after a w-9 back button + gap-3) -- scoped here per explicit request
+  // rather than applied to every category.
+  const mobilePad = (category === 'rental' || category === 'opportunities' || category === 'creators')
+    ? 'pl-16 pr-4' : 'px-4';
 
   const [listings, setListings] = useState<Listing[]>([]);
   const [creators, setCreators] = useState<CreatorRow[]>([]);
@@ -870,12 +876,11 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
   return (
     <section className="mb-6 lg:mb-8">
       {/* ── Mobile header (unchanged fixed-card design) ───────────────────
-          pl-16 (not px-4) matches AllGroupedResults' own "All Results"
-          header text position -- that header has a w-9 back button + gap-3
-          before its title (16px + 36px + 12px = 64px), so every category
-          label/row on this page needs the same 64px left inset to actually
-          line up with it and with each other, not just plain px-4. */}
-      <div className="lg:hidden flex items-center justify-between w-full pl-16 pr-4 mb-2">
+          mobilePad (see above) gives Rentals/Opportunities/Creators a
+          pl-16 left inset matching AllGroupedResults' "All Results"
+          header text position (which sits after a w-9 back button +
+          gap-3, i.e. 64px in); every other category keeps plain px-4. */}
+      <div className={`lg:hidden flex items-center justify-between w-full ${mobilePad} mb-2`}>
         <p className="text-sm font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
         {!loading && !locked && hasMore && (
           <button
@@ -927,8 +932,8 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
       ) : (
         <>
           {/* ── Mobile row: fixed 240x320 cards (unchanged) ───────────────
-              pl-16, matching the header above -- see its comment. */}
-          <div className="lg:hidden flex gap-4 pl-16 pr-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+              mobilePad, matching the header above -- see its comment. */}
+          <div className={`lg:hidden flex gap-4 ${mobilePad} overflow-x-auto no-scrollbar snap-x snap-mandatory`}>
             {category === 'creators'
               ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
               : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
