@@ -7,12 +7,13 @@
 //
 // On /search/category/* specifically, Root.tsx removes DesktopSidebar
 // entirely (that page wants the full desktop width) -- which would
-// otherwise also remove the FILMONS logo and every nav link the sidebar
-// normally carries, with nothing replacing them. This bar expands into a
-// full horizontal marketplace nav (logo + Marketplace/Creators/Studios/
-// Opportunities + search + notifications + messages + avatar) ONLY on
-// that route, so the page never loses its way back to the rest of the
-// app. Everywhere else this renders exactly as before.
+// otherwise also remove the FILMONS logo and messages entry point the
+// sidebar normally carries, with nothing replacing them. This bar expands
+// into logo + search + messages + notifications + avatar ONLY on that
+// route, so the page never loses its way back to the rest of the app
+// (category text links were tried here and removed per feedback -- the
+// category rows on the page itself are the actual navigation for that).
+// Everywhere else this renders exactly as before.
 import { Link, useLocation } from 'react-router';
 import { Search, Bell, MessageCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -23,13 +24,6 @@ import * as notifStore from '../lib/notifications';
 import { chatApi } from '../lib/api';
 
 interface DesktopTopBarProps { onSearchOpen: () => void; }
-
-const CATEGORY_NAV_LINKS = [
-  { label: 'Marketplace',   to: '/search' },
-  { label: 'Creators',      to: '/search/category/creators' },
-  { label: 'Studios',       to: '/search/category/studios' },
-  { label: 'Opportunities', to: '/search/category/opportunities' },
-];
 
 export function DesktopTopBar({ onSearchOpen }: DesktopTopBarProps) {
   const { user, isAuthenticated } = useAuth();
@@ -59,13 +53,6 @@ export function DesktopTopBar({ onSearchOpen }: DesktopTopBarProps) {
     return (
       <div className="hidden lg:flex items-center gap-6 h-14 px-8 border-b border-gray-100 bg-white/95 backdrop-blur-md sticky top-0 z-40">
         <Link to="/" className="shrink-0"><FilmonsLogo iconSize={20} theme="light" /></Link>
-        <nav className="flex items-center gap-5 shrink-0">
-          {CATEGORY_NAV_LINKS.map(l => (
-            <Link key={l.to} to={l.to} className="text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors">
-              {l.label}
-            </Link>
-          ))}
-        </nav>
         <button
           onClick={onSearchOpen}
           className="flex items-center gap-2.5 bg-gray-100 rounded-2xl px-3.5 py-2 text-left hover:bg-gray-200 transition-colors flex-1 max-w-sm"

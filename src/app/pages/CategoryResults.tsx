@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
 import {
   ArrowLeft, ArrowRight, Loader2, Lock, MapPin, AlertTriangle, Search, SlidersHorizontal,
-  Bookmark, Calendar, CalendarClock, X, ChevronDown, Heart, CheckCircle,
+  Bookmark, Calendar, CalendarClock, X, ChevronDown, ChevronLeft, ChevronRight, Heart, CheckCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api';
@@ -860,18 +860,17 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
           </button>
         )}
       </div>
-      {/* ── Desktop header: label + circular "View all" arrow, circular
+      {/* ── Desktop header: label + "View all" text+arrow, circular
           prev/next carousel controls far right ─────────────────────────── */}
       <div className={`hidden lg:flex items-center justify-between w-full ${DESKTOP_SECTION_PAD} mb-3`}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <p className="text-base font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
           {!loading && !locked && hasMore && (
             <button
               onClick={() => navigate(categoryUrl(category, navState), { state: navState })}
-              aria-label={`View all ${CATEGORY_LABEL[category]}`}
-              className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+              className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
             >
-              <ArrowRight className="w-3.5 h-3.5 text-gray-700"/>
+              View all <ArrowRight className="w-4 h-4"/>
             </button>
           )}
         </div>
@@ -879,19 +878,19 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
           <div className="flex items-center gap-2">
             <button
               onClick={() => scrollByPage(-1)} disabled={!canScrollLeft} aria-label="Previous"
-              className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors ${
-                canScrollLeft ? 'border-gray-200 hover:bg-gray-100 text-gray-700' : 'border-gray-100 text-gray-300 cursor-default'
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                canScrollLeft ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-gray-50 text-gray-300 cursor-default'
               }`}
             >
-              <ArrowLeft className="w-4 h-4"/>
+              <ChevronLeft className="w-4 h-4"/>
             </button>
             <button
               onClick={() => scrollByPage(1)} disabled={!canScrollRight} aria-label="Next"
-              className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors ${
-                canScrollRight ? 'border-gray-200 hover:bg-gray-100 text-gray-700' : 'border-gray-100 text-gray-300 cursor-default'
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                canScrollRight ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-gray-50 text-gray-300 cursor-default'
               }`}
             >
-              <ArrowRight className="w-4 h-4"/>
+              <ChevronRight className="w-4 h-4"/>
             </button>
           </div>
         )}
@@ -935,19 +934,20 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
 // container's own content width (after ITS padding), which is exactly
 // "rowWidth" as the spec defines it.
 //
-// Height comes from `aspectRatio` on the CARD ITSELF (~1.55:1, not just on
-// the image) -- this is the actual fix for the previous bug: cards were
-// tall/portrait/inconsistent-between-categories because only the image
-// area had a ratio, while the text area below it had no height limit at
-// all, so a card's TOTAL height was "image height + however much text this
-// particular listing happens to have" -- an Opportunity's role chips vs. a
-// Rental's short price line produced visibly different total heights. With
-// aspect-ratio on the outer box, total height is a pure function of width,
-// identical for every category; `overflow: hidden` is what makes that
-// actually hold when content would otherwise want more room, instead of
-// silently growing past it.
+// Height comes from `aspectRatio` on the CARD ITSELF (not just on the
+// image) -- fixes the earlier bug where cards were tall/portrait/
+// inconsistent-between-categories because only the image area had a
+// ratio, while the text area below it had no height limit, so a card's
+// TOTAL height was "image height + however much text this particular
+// listing happens to have". With aspect-ratio on the outer box, total
+// height is a pure function of width, identical for every category;
+// `overflow: hidden` is what makes that actually hold when content would
+// otherwise want more room, instead of silently growing past it.
+// 1.15:1 (taller than the first pass's 1.55:1) per the "cards are too
+// short, increase height while keeping exactly 5 across" follow-up --
+// still width-driven, so 5-per-row + full desktop width still holds.
 const DESKTOP_CARD_STYLE: React.CSSProperties = {
-  flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180, aspectRatio: '1.55 / 1', overflow: 'hidden',
+  flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180, aspectRatio: '1.15 / 1', overflow: 'hidden',
 };
 // Image area is a fixed PERCENTAGE OF THE CARD'S OWN (aspect-ratio-fixed)
 // height, not of the image's intrinsic dimensions -- a portrait creator
@@ -1001,19 +1001,19 @@ function DesktopListingCard({ listing }: { listing: Listing }) {
           being pushed to its content's natural size, and overflow-hidden
           on the card above clips anything that still doesn't fit, so a
           long title/many chips can never grow the card. */}
-      <div className="flex-1 min-h-0 min-w-0 px-2.5 py-1.5 flex flex-col justify-center gap-0.5 overflow-hidden">
-        <p className="text-xs font-bold text-gray-900 truncate leading-tight">{listing.title}</p>
-        {typeLabel && <p className="text-[11px] text-blue-600 font-semibold capitalize truncate leading-tight">{typeLabel}</p>}
-        {listing.city && <p className="text-[11px] text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-2.5 h-2.5 shrink-0"/>{listing.city}</p>}
-        {eventDate && <p className="text-[11px] text-gray-400 flex items-center gap-1 truncate leading-tight"><Calendar className="w-2.5 h-2.5 shrink-0"/>{eventDate}</p>}
+      <div className="flex-1 min-h-0 min-w-0 px-3 py-2 flex flex-col justify-center gap-1 overflow-hidden">
+        <p className="text-sm font-bold text-gray-900 truncate leading-tight">{listing.title}</p>
+        {typeLabel && <p className="text-xs text-blue-600 font-semibold capitalize truncate leading-tight">{typeLabel}</p>}
+        {listing.city && <p className="text-xs text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-3 h-3 shrink-0"/>{listing.city}</p>}
+        {eventDate && <p className="text-xs text-gray-400 flex items-center gap-1 truncate leading-tight"><Calendar className="w-3 h-3 shrink-0"/>{eventDate}</p>}
         {roleChips.length > 0 && (
           <div className="flex flex-nowrap gap-1 overflow-hidden">
             {roleChips.slice(0, 2).map(c => (
-              <span key={c} className="shrink-0 text-[9px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize truncate max-w-[45%]">{c}</span>
+              <span key={c} className="shrink-0 text-[10px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize truncate max-w-[45%]">{c}</span>
             ))}
           </div>
         )}
-        {!isOpp && <p className="text-xs font-black text-blue-600 leading-tight">{price}</p>}
+        {!isOpp && <p className="text-sm font-black text-blue-600 leading-tight">{price}</p>}
       </div>
     </button>
   );
@@ -1030,16 +1030,16 @@ function DesktopCreatorCard({ u }: { u: CreatorRow }) {
       <div style={DESKTOP_CARD_IMAGE_STYLE} className="relative w-full shrink-0 bg-gray-100">
         {u.avatar_url
           ? <img src={u.avatar_url} className="w-full h-full object-cover object-center" alt=""/>
-          : <div className="w-full h-full flex items-center justify-center text-2xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+          : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
       </div>
-      <div className="flex-1 min-h-0 min-w-0 px-2.5 py-1.5 flex flex-col justify-center gap-0.5 overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 px-3 py-2 flex flex-col justify-center gap-1 overflow-hidden">
         <div className="flex items-center gap-1 min-w-0">
-          <p className="text-xs font-bold text-gray-900 truncate leading-tight">{u.name}</p>
-          {u.is_verified && <CheckCircle className="w-3 h-3 text-blue-500 fill-blue-50 shrink-0"/>}
+          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{u.name}</p>
+          {u.is_verified && <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-50 shrink-0"/>}
         </div>
-        {u.primary_role && <p className="text-[11px] text-blue-600 font-semibold truncate leading-tight">{u.primary_role}</p>}
+        {u.primary_role && <p className="text-xs text-blue-600 font-semibold truncate leading-tight">{u.primary_role}</p>}
         {(u.city ?? u.location) && (
-          <p className="text-[11px] text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-2.5 h-2.5 shrink-0"/>{u.city ?? u.location}</p>
+          <p className="text-xs text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
         )}
       </div>
     </button>
