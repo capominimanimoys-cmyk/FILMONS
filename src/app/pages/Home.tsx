@@ -262,42 +262,49 @@ export function Home() {
       const seenIds = new Set(l0.map(x => x.id));
       let l = [...l0, ...opp.filter(o => !seenIds.has(o.id))];
 
+      // The two lookups below (opportunity owners' account tiers, and
+      // which recycled-Emergency ids are on cooldown) each only depend on
+      // this initial batch (`l`/`excluded`), not on each other -- they used
+      // to run one after the other (await, then a second await), adding a
+      // full extra round-trip of latency to every Home load on top of the
+      // three already-parallel queries above. Computing both ID sets up
+      // front and firing the lookups together cuts that back down to one.
+      const isActiveEmergency = (x: EnrichedListing) =>
+        !!x.isEmergency && !!x.emergencyExpiresAt && new Date(x.emergencyExpiresAt) > new Date();
       // Exclude Opportunity listings beyond their own host's tier
       // entitlement -- a locked listing (see filterOutLockedOpportunities)
       // stays visible on the host's own management view, but never in a
       // general discovery surface like this deck.
       const oppOwnerIds = [...new Set(l.filter(x => x.listingType === 'opportunity' || x.listingKind === 'talent').map(x => x.userId))];
-      if (oppOwnerIds.length) {
-        const { data: ownerRows } = await supabase.from('profiles').select('id, account_type').in('id', oppOwnerIds);
-        const ownerAccountTypes = new Map((ownerRows ?? []).map((r: any) => [r.id, r.account_type as string | undefined]));
-        l = filterOutLockedOpportunities(l, ownerAccountTypes);
-      }
-      setRawListings(l);
-      setRawCreators(c);
-      // Already-left-swiped items are a permanent skip (Tinder-style) --
-      // filtered out here, before buildDeck(), so every filter tab and any
-      // reload excludes them consistently instead of just the current one.
-      // Active Emergency listings are the one deliberate exception: they're
-      // exempt from this permanent exclusion (paid feed-recycling is the
-      // whole point), so a previously-swiped one can legitimately come
-      // back as long as its Emergency period hasn't expired yet.
-      if (excluded.size) {
-        const isActiveEmergency = (x: EnrichedListing) =>
-          !!x.isEmergency && !!x.emergencyExpiresAt && new Date(x.emergencyExpiresAt) > new Date();
-        const recycledIds = l.filter(x => excluded.has(x.id) && isActiveEmergency(x)).map(x => x.id);
+      // Already-left-swiped items are a permanent skip (Tinder-style),
+      // except active Emergency listings (paid feed-recycling is the whole
+      // point) -- recycledIds is exactly that exception set, computed from
+      // the SAME pre-filter `l`/`excluded` a locked-opportunity filter
+      // wouldn't meaningfully change (Emergency listings aren't
+      // Opportunities in this data model).
+      const recycledIds = excluded.size ? l.filter(x => excluded.has(x.id) && isActiveEmergency(x)).map(x => x.id) : [];
 
+      const [ownerRowsRes, recentlySeen] = await Promise.all([
+        oppOwnerIds.length
+          ? supabase.from('profiles').select('id, account_type').in('id', oppOwnerIds)
+          : Promise.resolve({ data: [] as any[] }),
         // Spacing: a recycled Emergency listing shouldn't resurface too
         // soon after this viewer was already shown it this same way --
         // hold it back for a cooldown window rather than letting it cycle
         // back on literally every refresh.
-        let onCooldown = new Set<string>();
-        if (user?.id && recycledIds.length) {
-          try {
-            const seen = await emergencyApi.getRecentlySeenEmergency(user.id, recycledIds, EMERGENCY_RECYCLE_COOLDOWN_HOURS);
-            onCooldown = new Set(Object.keys(seen));
-          } catch {}
-        }
+        (user?.id && recycledIds.length)
+          ? emergencyApi.getRecentlySeenEmergency(user.id, recycledIds, EMERGENCY_RECYCLE_COOLDOWN_HOURS).catch(() => ({} as Record<string, unknown>))
+          : Promise.resolve({} as Record<string, unknown>),
+      ]);
 
+      if (oppOwnerIds.length) {
+        const ownerAccountTypes = new Map((ownerRowsRes.data ?? []).map((r: any) => [r.id, r.account_type as string | undefined]));
+        l = filterOutLockedOpportunities(l, ownerAccountTypes);
+      }
+      setRawListings(l);
+      setRawCreators(c);
+      if (excluded.size) {
+        const onCooldown = new Set(Object.keys(recentlySeen));
         l = l.filter(x => !excluded.has(x.id) || (isActiveEmergency(x) && !onCooldown.has(x.id)));
         c = c.filter(x => !excluded.has(x.id));
 
