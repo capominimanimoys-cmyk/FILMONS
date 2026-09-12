@@ -429,11 +429,18 @@ async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
     console.log(`[Search] listings text: ${textRes.data?.length ?? 0} rows (term="${term}")`);
   }
 
-  // Tags array: case-insensitive contains via raw filter
+  // Tags: `listings.tags` is a json/jsonb column, not a Postgres text[]
+  // array (confirmed by the runtime error this used to throw: "invalid
+  // input syntax for type json" -- Postgres was trying to cast the
+  // curly-brace array-literal string `{"term"}` to json and failing,
+  // since that's not valid JSON). The `cs` (contains) filter needs an
+  // actual JSON array literal for a json/jsonb column, not the `{...}`
+  // syntax that only applies to a real Postgres array column (see
+  // profiles.secondary_roles/skills/gear below, which need the opposite).
   const tagRes = await withModerationFilter((filterActive) => {
     let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
     if (filterActive) q = q.eq('moderation_status', 'active');
-    return q.filter('tags', 'cs', `{"${term}"}`).limit(10);
+    return q.filter('tags', 'cs', `["${term}"]`).limit(10);
   });
 
   if (tagRes.error) {
@@ -471,26 +478,30 @@ async function searchProfilesByTerm(term: string): Promise<ProfileRow[]> {
     console.log(`[Search] profiles: ${res.data?.length ?? 0} rows (term="${term}")`);
   }
 
-  // secondary_roles/skills/gear are jsonb string arrays -- `cs` (contains)
-  // only matches a whole element exactly, not a substring, so this is a
+  // secondary_roles/skills/gear are real Postgres text[] arrays, NOT jsonb
+  // (confirmed by the runtime error this used to throw: "malformed array
+  // literal" -- Postgres rejected the JSON-bracket syntax below because a
+  // text[] column's `cs` filter needs the `{...}` array-literal form
+  // instead, the opposite of listings.tags above). `cs` (contains) only
+  // matches a whole element exactly, not a substring, so this is a
   // best-effort supplement to the ilike fields above, same limitation the
-  // existing `tags` containment search on listings already accepts.
-  const jsonbRes = await supabase
+  // `tags` containment search on listings already accepts.
+  const arrayRes = await supabase
     .from('profiles')
     .select(PROFILE_SELECT)
     .or([
-      `secondary_roles.cs.["${term}"]`,
-      `skills.cs.["${term}"]`,
-      `gear.cs.["${term}"]`,
+      `secondary_roles.cs.{"${term}"}`,
+      `skills.cs.{"${term}"}`,
+      `gear.cs.{"${term}"}`,
     ].join(','))
     .not('name', 'is', null)
     .neq('name', '')
     .limit(10);
-  if (jsonbRes.error) console.warn(`[Search] profiles jsonb error (term="${term}"):`, jsonbRes.error.message);
+  if (arrayRes.error) console.warn(`[Search] profiles array error (term="${term}"):`, arrayRes.error.message);
 
   const seen = new Set<string>();
   const combined: ProfileRow[] = [];
-  for (const row of [...(res.data ?? []), ...(jsonbRes.data ?? [])]) {
+  for (const row of [...(res.data ?? []), ...(arrayRes.data ?? [])]) {
     if (row?.id && !seen.has(row.id)) { seen.add(row.id); combined.push(row as ProfileRow); }
   }
   return combined;
