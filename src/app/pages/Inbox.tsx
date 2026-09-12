@@ -1282,6 +1282,30 @@ function ConvRow({
   );
 }
 
+// ── "FILMONS Chat" title (list-view header, both breakpoints) ───────
+// FILMONS gets the actual branded wordmark treatment -- the `--font-logo`
+// CSS variable (fonts.css: 'Neue Montreal', with 'SF Pro Display' as its
+// own fallback) with the exact weight/letter-spacing FilmonsLoader's
+// splash-screen wordmark uses (600 / 0.06em), just at header scale
+// instead of that screen's huge clamp() size. Not FilmonsLogo.tsx --
+// that component hardcodes Inter/900/0.04em instead of the shared
+// --font-logo variable, which doesn't match the real wordmark here.
+// "Chat" stays in the normal UI font (--font-sans, SF Pro-based) at a
+// lighter weight/color so FILMONS remains the visually dominant half.
+function FilmonsChatTitle() {
+  return (
+    <span className="flex items-baseline gap-1.5 min-w-0 truncate">
+      <span
+        style={{ fontFamily: 'var(--font-logo)', fontWeight: 600, letterSpacing: '0.06em' }}
+        className="text-gray-900"
+      >
+        FILMONS
+      </span>
+      <span className="font-medium text-gray-500">Chat</span>
+    </span>
+  );
+}
+
 // ── Main Inbox ─────────────────────────────────────────────────────
 export function Inbox() {
   const { user } = useAuth();
@@ -2749,7 +2773,7 @@ export function Inbox() {
             className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
             <ArrowBackIosNewRounded sx={{fontSize:18}} />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 flex-1 truncate">{user?.name}</h1>
+          <h1 className="text-lg flex-1 truncate"><FilmonsChatTitle /></h1>
           {(!activeConv || showSidebar) && (
             <button
               onClick={() => setShowNewConv(true)}
@@ -2766,16 +2790,16 @@ export function Inbox() {
           )}
         </div>
 
-        {/* Desktop content -- own identity bar. The recipient's name/avatar
-            live in the Thread header below instead (see "Thread header"),
-            never here -- this row never changes based on which
-            conversation (if any) is open. */}
+        {/* Desktop content -- the "FILMONS Chat" identity bar. The
+            recipient's name/avatar live in the Thread header below
+            instead (see "Thread header"), never here -- this row never
+            changes based on which conversation (if any) is open. */}
         <div className="hidden lg:flex items-center gap-3 flex-1 min-w-0">
           <button onClick={() => navigate(-1)}
             className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 flex-1 truncate">{user?.name}</h1>
+          <h1 className="text-lg flex-1 truncate"><FilmonsChatTitle /></h1>
           <button
             onClick={() => setShowNewConv(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors shrink-0"
