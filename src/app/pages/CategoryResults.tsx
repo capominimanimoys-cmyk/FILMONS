@@ -869,8 +869,13 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
 
   return (
     <section className="mb-6 lg:mb-8">
-      {/* ── Mobile header (unchanged fixed-card design) ─────────────────── */}
-      <div className="lg:hidden flex items-center justify-between w-full px-4 mb-2">
+      {/* ── Mobile header (unchanged fixed-card design) ───────────────────
+          pl-16 (not px-4) matches AllGroupedResults' own "All Results"
+          header text position -- that header has a w-9 back button + gap-3
+          before its title (16px + 36px + 12px = 64px), so every category
+          label/row on this page needs the same 64px left inset to actually
+          line up with it and with each other, not just plain px-4. */}
+      <div className="lg:hidden flex items-center justify-between w-full pl-16 pr-4 mb-2">
         <p className="text-sm font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
         {!loading && !locked && hasMore && (
           <button
@@ -921,8 +926,9 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
         <div className="flex items-center justify-center py-8 text-gray-400"><Loader2 className="w-4 h-4 animate-spin"/></div>
       ) : (
         <>
-          {/* ── Mobile row: fixed 240x320 cards (unchanged) ─────────────── */}
-          <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+          {/* ── Mobile row: fixed 240x320 cards (unchanged) ───────────────
+              pl-16, matching the header above -- see its comment. */}
+          <div className="lg:hidden flex gap-4 pl-16 pr-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
             {category === 'creators'
               ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
               : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
