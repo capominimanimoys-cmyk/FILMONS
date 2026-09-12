@@ -36,7 +36,7 @@ import { toast } from 'sonner';
 import {
   searchMatchingListings, searchMatchingCreators,
   isRentalListing, isSaleListing, isServiceListing, isOpportunityListing, isStudioListing,
-  SearchListingRow,
+  SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
@@ -107,6 +107,39 @@ const CATEGORY_CLASSIFIER: Record<Exclude<CategoryTab, 'creators' | 'emergency'>
   opportunities: isOpportunityListing, studios: isStudioListing,
 };
 
+// Pure (no fetch): classify/filter/sort/paginate an already-fetched shared
+// match set for one category. Pulled out of fetchCategoryPage so
+// /search/category/all can fetch the shared match set ONCE for the whole
+// page (see AllGroupedResults) and hand the same array to all 5
+// listings-based category sections, instead of each of those 5 sections
+// independently re-running the identical searchMatchingListings() query --
+// that redundant fan-out (5x the same query, all in flight at once) was
+// the actual cause of "other listings take time to fetch" on that page.
+function classifyListingsPage(
+  category: Exclude<CategoryTab, 'creators' | 'emergency'>, matched: SearchListingRow[], navState: NavState, from: number, to: number,
+): { listings: Listing[]; total: number } {
+  const price = navState.filters?.priceRange;
+  const sortCol = navState.sort === 'price_low' || navState.sort === 'price_high' ? 'price' : 'created_at';
+  const ascending = navState.sort === 'price_low';
+
+  let bucket = matched.filter(CATEGORY_CLASSIFIER[category]);
+  if (price?.min != null) bucket = bucket.filter(l => (l.price ?? 0) >= price.min!);
+  if (price?.max != null) bucket = bucket.filter(l => (l.price ?? 0) <= price.max!);
+
+  let mapped = bucket.map(mapListingRow);
+  if (category === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
+  if (category === 'opportunities') {
+    if (navState.filters?.paid === true)  mapped = mapped.filter(l => l.opportunity?.paid === true);
+    if (navState.filters?.paid === false) mapped = mapped.filter(l => l.opportunity?.paid === false);
+    if (navState.filters?.remote)         mapped = mapped.filter(l => l.opportunity?.workArrangement === 'remote');
+  }
+  mapped.sort((a, b) => sortCol === 'price'
+    ? (ascending ? (a.price ?? 0) - (b.price ?? 0) : (b.price ?? 0) - (a.price ?? 0))
+    : new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+
+  return { listings: mapped.slice(from, to + 1), total: mapped.length };
+}
+
 async function fetchCategoryPage(
   category: CategoryTab, navState: NavState, from: number, to: number, userId?: string,
 ): Promise<{ listings: Listing[]; creators: CreatorRow[]; total: number }> {
@@ -143,22 +176,8 @@ async function fetchCategoryPage(
 
   if (term) {
     const matched = await searchMatchingListings(term);
-    let bucket = matched.filter(CATEGORY_CLASSIFIER[category]);
-    if (price?.min != null) bucket = bucket.filter(l => (l.price ?? 0) >= price.min!);
-    if (price?.max != null) bucket = bucket.filter(l => (l.price ?? 0) <= price.max!);
-
-    let mapped = bucket.map(mapListingRow);
-    if (category === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
-    if (category === 'opportunities') {
-      if (navState.filters?.paid === true)  mapped = mapped.filter(l => l.opportunity?.paid === true);
-      if (navState.filters?.paid === false) mapped = mapped.filter(l => l.opportunity?.paid === false);
-      if (navState.filters?.remote)         mapped = mapped.filter(l => l.opportunity?.workArrangement === 'remote');
-    }
-    mapped.sort((a, b) => sortCol === 'price'
-      ? (ascending ? (a.price ?? 0) - (b.price ?? 0) : (b.price ?? 0) - (a.price ?? 0))
-      : new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
-
-    return { listings: mapped.slice(from, to + 1), creators: [], total: mapped.length };
+    const { listings, total } = classifyListingsPage(category, matched, navState, from, to);
+    return { listings, creators: [], total };
   }
 
   // No search term (plain category browse, e.g. landing on the page
@@ -798,7 +817,19 @@ function categoryUrl(category: CategoryTab, navState: NavState): string {
 // requirement). ~32px at lg:, ~40px at xl: and up.
 const DESKTOP_SECTION_PAD = 'px-4 lg:px-8 xl:px-10';
 
-function CategorySection({ category, navState }: { category: CategoryTab; navState: NavState }) {
+// `matched` -- the shared search result set from AllGroupedResults, when a
+// search term is active: `undefined` means no term is active (this section
+// runs its own cheap category-filtered browse query, as before); `null`
+// means a term IS active but the ONE shared searchMatchingListings/
+// searchMatchingCreators call for the whole page hasn't resolved yet;
+// the object means it has, and this section just classifies/slices it
+// synchronously (classifyListingsPage), with no fetch of its own. Emergency
+// always gets `undefined` regardless of term -- it stays on its own
+// per-tier-gated fetch (fetchEmergencyListings), never shares this set.
+function CategorySection({ category, navState, matched }: {
+  category: CategoryTab; navState: NavState;
+  matched?: { listings: SearchListingRow[]; creators: SearchProfileRow[] } | null;
+}) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isOpportunities = category === 'opportunities';
@@ -821,6 +852,31 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
     // since we can't safely tell "zero results" apart from "some exist
     // but you're blocked" without leaking which one it is).
     if (isEmergency && !canBrowseEmergency) { setLoading(false); return; }
+
+    const to = locked ? ALL_PAGE_PREVIEW_LIMIT - 1 : ALL_PAGE_FETCH_LIMIT - 1;
+
+    // Search-term mode: classify the page's ONE shared match set instead
+    // of firing another identical query per section (this was the actual
+    // cause of the other categories being slow to fetch -- 5 listings
+    // sections were each independently re-running the same search).
+    if (matched !== undefined) {
+      if (matched === null) { setLoading(true); return; } // shared fetch still in flight
+      if (category === 'creators') {
+        setHasMore(matched.creators.length > ALL_PAGE_PREVIEW_LIMIT);
+        setCreators(matched.creators.slice(0, to + 1) as CreatorRow[]);
+        setListings([]);
+      } else {
+        const { listings: l, total } = classifyListingsPage(category as Exclude<CategoryTab, 'creators' | 'emergency'>, matched.listings, navState, 0, to);
+        setHasMore(total > ALL_PAGE_PREVIEW_LIMIT);
+        setListings(l);
+        setCreators([]);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // Browse mode (no search term) -- unchanged, one cheap per-category
+    // fetch each (there's no shared set to reuse without a term).
     let cancelled = false;
     setLoading(true);
     // Desktop's carousel needs somewhere to scroll to beyond the first 5 --
@@ -831,7 +887,6 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
     // though only a slice of it is ever fetched here. A locked-tier
     // Opportunities preview never asks for more than its permanent cap at
     // all -- the query itself stays capped, not just the display.
-    const to = locked ? ALL_PAGE_PREVIEW_LIMIT - 1 : ALL_PAGE_FETCH_LIMIT - 1;
     fetchCategoryPage(category, navState, 0, to, user?.id).then(({ listings: l, creators: c, total }) => {
       if (cancelled) return;
       setHasMore(total > ALL_PAGE_PREVIEW_LIMIT);
@@ -841,7 +896,7 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, isEmergency, canBrowseEmergency, user?.id, navState.query, JSON.stringify(navState.filters)]);
+  }, [category, isEmergency, canBrowseEmergency, user?.id, navState.query, JSON.stringify(navState.filters), matched, locked]);
 
   const updateScrollState = useCallback(() => {
     const el = desktopScrollRef.current;
@@ -1106,6 +1161,30 @@ function DesktopCreatorCard({ u }: { u: CreatorRow }) {
 
 function AllGroupedResults({ navState }: { navState: NavState }) {
   const navigate = useNavigate();
+  const term = navState.query?.trim();
+
+  // The ONE shared searchMatchingListings/searchMatchingCreators call for
+  // this whole page -- fetched here, once, and handed to every non-
+  // Emergency CategorySection below instead of each of them (5 listings
+  // categories + Creators) independently re-running the identical search.
+  // That fan-out -- 6 concurrent calls doing the same multi-term Supabase
+  // queries -- was why categories other than the first to resolve looked
+  // slow to load. `null` while in flight, so sections can tell "no term"
+  // (undefined, handled per-section) apart from "term active, still
+  // loading" (null).
+  const [sharedMatched, setSharedMatched] = useState<{ listings: SearchListingRow[]; creators: SearchProfileRow[] } | null>(null);
+  useEffect(() => {
+    if (!term) { setSharedMatched(null); return; }
+    let cancelled = false;
+    setSharedMatched(null);
+    Promise.all([searchMatchingListings(term), searchMatchingCreators(term)]).then(([listings, creators]) => {
+      if (!cancelled) setSharedMatched({ listings, creators });
+    });
+    return () => { cancelled = true; };
+  }, [term]);
+
+  const matchedFor = (cat: CategoryTab) => (term && cat !== 'emergency') ? sharedMatched : undefined;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
@@ -1124,7 +1203,7 @@ function AllGroupedResults({ navState }: { navState: NavState }) {
         </div>
       </div>
       <div className="py-4 lg:py-6">
-        {CATEGORY_IDS.map(cat => <CategorySection key={cat} category={cat} navState={navState}/>)}
+        {CATEGORY_IDS.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
       </div>
     </div>
   );
