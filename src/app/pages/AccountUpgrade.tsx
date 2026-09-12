@@ -474,14 +474,20 @@ export function AccountUpgrade() {
                   subscription states this is: already canceled and past its
                   paid-through date (subscriptionExpired), canceled but still
                   within the paid-through window (cancel_at_period_end),
-                  or actively renewing. */}
-              {isPaidTier && periodEndLabel && (
+                  or actively renewing. An account granted this tier outside
+                  the real Stripe checkout flow (no webhook ever ran) has no
+                  period-end date at all -- say so plainly instead of
+                  silently showing nothing, which reads as a broken feature
+                  rather than an account with no billing record. */}
+              {isPaidTier && (
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {subscriptionExpired
-                    ? `Access ended ${periodEndLabel}`
-                    : user?.subscriptionCancelAtPeriodEnd
-                      ? `Cancels ${periodEndLabel} — access continues until then`
-                      : `Renews ${periodEndLabel}`}
+                  {periodEndLabel
+                    ? (subscriptionExpired
+                        ? `Access ended ${periodEndLabel}`
+                        : user?.subscriptionCancelAtPeriodEnd
+                          ? `Cancels ${periodEndLabel} — access continues until then`
+                          : `Renews ${periodEndLabel}`)
+                    : 'No billing record on file'}
                 </p>
               )}
             </div>
