@@ -8,7 +8,7 @@ import { ProfessionPicker } from './ProfessionPicker';
 // DATA
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALL_SKILLS = [
+export const ALL_SKILLS = [
   'Cinematic Filming','Storytelling','Video Editing','Color Grading','Drone Filming',
   'Documentary','Music Video','Lighting','Sound Recording','Directing','Screenwriting',
   'Storyboarding','Short-form Content','Livestream','Vlogging',
@@ -30,7 +30,7 @@ const ALL_SKILLS = [
   'AR Filter Creation','XR Design','Digital Fashion','Generative Art',
 ];
 
-const CA_CITIES = [
+export const CA_CITIES = [
   'Toronto, ON','Mississauga, ON','Brampton, ON','Hamilton, ON','Ottawa, ON',
   'London, ON','Markham, ON','Vaughan, ON','Kitchener, ON','Windsor, ON',
   'Richmond Hill, ON','Oakville, ON','Burlington, ON','Oshawa, ON','Barrie, ON',

@@ -29,7 +29,10 @@ import { supabase } from '../../lib/supabase';
 import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api';
 import { Listing } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { isProfessional } from '../lib/reliabilityApi';
+import { useFollow } from '../context/FollowContext';
+import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
+import { ALL_PROFESSIONS } from '../components/ProfessionPicker';
+import { ALL_SKILLS, CA_CITIES } from '../components/AboutEditor';
 import { fetchEmergencyListings } from '../lib/emergencyListings';
 import { savedListingsApi } from '../lib/api';
 import { toast } from 'sonner';
@@ -56,7 +59,7 @@ const CATEGORY_SEARCH_PLACEHOLDER: Record<CategoryTab, string> = {
 const OPPORTUNITY_LOCKED_LIMIT = 5;
 const PAGE_SIZE = 20;
 
-type SortOption = 'recent' | 'price_low' | 'price_high';
+type SortOption = 'recent' | 'price_low' | 'price_high' | 'name_asc';
 
 interface NavState {
   query?: string;
@@ -67,6 +70,17 @@ interface NavState {
     // fetchCategoryPage) rather than via a precise server-side count.
     paid?: boolean | null;
     remote?: boolean | null;
+    // Creators-only (see CreatorFilterPanel) -- every other category
+    // ignores these. Applied client-side (applyCreatorFilters) for the
+    // same reason paid/remote are: not all of these map to a single
+    // indexed column comparison (skills/role match against array or
+    // fuzzy-matched fields).
+    role?: string | null;
+    skills?: string[] | null;
+    location?: string | null;
+    availableOnly?: boolean | null;
+    verifiedOnly?: boolean | null;
+    accountLevel?: AccountTier | null;
   } | null;
   sort?: SortOption;
 }
@@ -74,6 +88,10 @@ interface NavState {
 interface CreatorRow {
   id: string; name: string; username: string | null; avatar_url: string | null;
   city: string | null; location: string | null; primary_role: string | null; is_verified: boolean | null;
+  secondary_roles?: string[] | null;
+  skills?: string[] | null;
+  available_for_hire?: boolean | null;
+  account_type?: string | null;
 }
 
 function useGuestGuard() {
@@ -140,6 +158,77 @@ function classifyListingsPage(
   return { listings: mapped.slice(from, to + 1), total: mapped.length };
 }
 
+// Full field set the creators filter panel needs -- wider than the plain
+// browse query used before it (name/username/avatar/city/location/
+// primary_role/is_verified only), since role/skills/availability/account
+// level all need their backing columns actually selected to filter on.
+const CREATOR_SELECT = 'id, name, username, avatar_url, city, location, primary_role, is_verified, secondary_roles, skills, available_for_hire, account_type';
+// Same order of magnitude as filmSearch.ts's own per-term cap -- once a
+// term or any creator filter is active, there's no single DB query that
+// can push every one of these fields at once (skills-contains-all,
+// role/location fuzzy match), so this fetches a large candidate batch
+// once and filters+paginates it client-side, same pattern as
+// classifyListingsPage above.
+const CREATOR_BROWSE_FETCH_LIMIT = 300;
+
+function applyCreatorFilters(rows: CreatorRow[], filters: NavState['filters']): CreatorRow[] {
+  if (!filters) return rows;
+  let out = rows;
+  if (filters.role) {
+    const r = filters.role.toLowerCase();
+    out = out.filter(u => u.primary_role?.toLowerCase() === r || (u.secondary_roles ?? []).some(s => s?.toLowerCase() === r));
+  }
+  if (filters.skills?.length) {
+    const wanted = filters.skills.map(s => s.toLowerCase());
+    out = out.filter(u => wanted.every(w => (u.skills ?? []).some(s => s?.toLowerCase() === w)));
+  }
+  if (filters.location) {
+    const loc = filters.location.toLowerCase();
+    out = out.filter(u => (u.city ?? '').toLowerCase().includes(loc) || (u.location ?? '').toLowerCase().includes(loc));
+  }
+  if (filters.availableOnly) out = out.filter(u => u.available_for_hire === true);
+  if (filters.verifiedOnly)  out = out.filter(u => u.is_verified === true);
+  if (filters.accountLevel)  out = out.filter(u => normalizeTier(u.account_type ?? undefined) === filters.accountLevel);
+  return out;
+}
+
+function hasCreatorFilters(filters: NavState['filters']): boolean {
+  return !!(filters?.role || filters?.skills?.length || filters?.location || filters?.availableOnly || filters?.verifiedOnly || filters?.accountLevel);
+}
+
+async function fetchCreatorsForCategory(navState: NavState, from: number, to: number): Promise<{ creators: CreatorRow[]; total: number }> {
+  const term = navState.query?.trim();
+  const f = navState.filters;
+  const nameSort = navState.sort === 'name_asc';
+
+  if (!term && !hasCreatorFilters(f)) {
+    // Plain browse, no term, no filters -- cheap, exact DB-level pagination.
+    const { data, count } = await supabase.from('profiles')
+      .select(CREATOR_SELECT, { count: 'exact' })
+      .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+      .order(nameSort ? 'name' : 'created_at', { ascending: nameSort })
+      .range(from, to);
+    return { creators: (data ?? []) as CreatorRow[], total: count ?? (data?.length ?? 0) };
+  }
+
+  // A search term and/or a creator filter is active -- same "query once,
+  // filter+paginate client-side" shape as classifyListingsPage.
+  let rows: CreatorRow[];
+  if (term) {
+    rows = (await searchMatchingCreators(term)) as CreatorRow[];
+  } else {
+    const { data } = await supabase.from('profiles')
+      .select(CREATOR_SELECT)
+      .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(CREATOR_BROWSE_FETCH_LIMIT);
+    rows = (data ?? []) as CreatorRow[];
+  }
+  let filtered = applyCreatorFilters(rows, f);
+  if (nameSort) filtered = [...filtered].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return { creators: filtered.slice(from, to + 1), total: filtered.length };
+}
+
 async function fetchCategoryPage(
   category: CategoryTab, navState: NavState, from: number, to: number, userId?: string,
 ): Promise<{ listings: Listing[]; creators: CreatorRow[]; total: number }> {
@@ -160,15 +249,8 @@ async function fetchCategoryPage(
   }
 
   if (category === 'creators') {
-    if (term) {
-      const rows = await searchMatchingCreators(term);
-      return { listings: [], creators: rows.slice(from, to + 1) as CreatorRow[], total: rows.length };
-    }
-    const q = supabase.from('profiles')
-      .select('id, name, username, avatar_url, city, location, primary_role, is_verified', { count: 'exact' })
-      .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null);
-    const { data, count } = await q.order('created_at', { ascending: false }).range(from, to);
-    return { listings: [], creators: (data ?? []) as CreatorRow[], total: count ?? (data?.length ?? 0) };
+    const { creators, total } = await fetchCreatorsForCategory(navState, from, to);
+    return { listings: [], creators, total };
   }
 
   const sortCol = navState.sort === 'price_low' || navState.sort === 'price_high' ? 'price' : 'created_at';
@@ -223,7 +305,11 @@ async function fetchCategoryPage(
 // mobile: full-width vertical list with search+chips+sort above it; desktop:
 // filter sidebar + one-row-per-result list. Card content adapts per category
 // (adaptFields below) rather than this being an Opportunities-only design.
-const SORT_LABEL: Record<SortOption, string> = { recent: 'Most recent', price_low: 'Price: Low to High', price_high: 'Price: High to Low' };
+const SORT_LABEL: Record<SortOption, string> = { recent: 'Most recent', price_low: 'Price: Low to High', price_high: 'Price: High to Low', name_asc: 'Name (A–Z)' };
+// Creators have no price to sort by -- every other category keeps the
+// price-based options instead of an alphabetical one.
+const SORT_OPTIONS_FOR = (category: CategoryTab): SortOption[] =>
+  category === 'creators' ? ['recent', 'name_asc'] : ['recent', 'price_low', 'price_high'];
 const QUICK_CHIPS: { id: 'all' | 'paid' | 'unpaid' | 'remote'; label: string }[] = [
   { id: 'all', label: 'All' }, { id: 'paid', label: 'Paid' }, { id: 'unpaid', label: 'Unpaid' }, { id: 'remote', label: 'Remote' },
 ];
@@ -253,6 +339,14 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
   const [chip, setChip] = useState<'all' | 'paid' | 'unpaid' | 'remote'>(
     initialNavState.filters?.remote ? 'remote' : initialNavState.filters?.paid === true ? 'paid' : initialNavState.filters?.paid === false ? 'unpaid' : 'all'
   );
+  // Creators-only filters -- every other category leaves these null/empty.
+  const [role, setRole] = useState(initialNavState.filters?.role ?? '');
+  const [skills, setSkills] = useState<string[]>(initialNavState.filters?.skills ?? []);
+  const [creatorLocation, setCreatorLocation] = useState(initialNavState.filters?.location ?? '');
+  const [availableOnly, setAvailableOnly] = useState(!!initialNavState.filters?.availableOnly);
+  const [verifiedOnly, setVerifiedOnly] = useState(!!initialNavState.filters?.verifiedOnly);
+  const [accountLevel, setAccountLevel] = useState<AccountTier | ''>(initialNavState.filters?.accountLevel ?? '');
+  const toggleSkill = (s: string) => setSkills(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
 
@@ -266,6 +360,12 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
       priceRange: (priceMin || priceMax) ? { min: priceMin ? Number(priceMin) : undefined, max: priceMax ? Number(priceMax) : undefined } : null,
       paid: chip === 'paid' ? true : chip === 'unpaid' ? false : null,
       remote: chip === 'remote',
+      role: category === 'creators' ? (role || null) : null,
+      skills: category === 'creators' && skills.length ? skills : null,
+      location: category === 'creators' ? (creatorLocation || null) : null,
+      availableOnly: category === 'creators' ? availableOnly : null,
+      verifiedOnly: category === 'creators' ? verifiedOnly : null,
+      accountLevel: category === 'creators' ? (accountLevel || null) : null,
     },
   };
 
@@ -291,9 +391,9 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
     setHasMore(!locked && (l.length + c.length) === PAGE_SIZE);
     setLoading(false); setLoadingMore(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip]);
+  }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip, role, JSON.stringify(skills), creatorLocation, availableOnly, verifiedOnly, accountLevel]);
 
-  useEffect(() => { setPage(0); loadPage(0); }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(0); loadPage(0); }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip, role, JSON.stringify(skills), creatorLocation, availableOnly, verifiedOnly, accountLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -308,16 +408,21 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
   const count = category === 'creators' ? creators.length : listings.length;
   const noun = count === 1 ? CATEGORY_LABEL[category].replace(/s$/, '') : CATEGORY_LABEL[category];
 
-  // Back always returns to the Browse Search "All" hub with the current
-  // search text carried along, per spec -- this page has no other sensible
-  // "previous state" to restore to (it's reachable from several different
-  // entry points, not just /all's own "View all").
+  // Back always returns to the Browse Search "All" hub, carrying the FULL
+  // current search state -- query, sort, and every active filter (price,
+  // paid/remote, and for Creators: role/skills/location/availability/
+  // verified/account level) -- not just the query text, so a user who
+  // narrowed this page down and then goes back doesn't lose that framing.
+  // categoryUrl already serializes all of it into the URL too, so this is
+  // also a shareable/bookmarkable/back-forward-safe link, not just state.
   const goBackToAll = () => {
-    const q = searchText.trim();
-    navigate(`/search/category/all${q ? `?q=${encodeURIComponent(q)}` : ''}`, { state: { query: q } });
+    navigate(categoryUrl('all', navState), { state: navState });
   };
 
-  const clearFilters = () => { setPriceMin(''); setPriceMax(''); setChip('all'); setSort('recent'); };
+  const clearFilters = () => {
+    setPriceMin(''); setPriceMax(''); setChip('all'); setSort('recent');
+    setRole(''); setSkills([]); setCreatorLocation(''); setAvailableOnly(false); setVerifiedOnly(false); setAccountLevel('');
+  };
 
   const toggleSave = async (listingId: string, listingData: any) => {
     if (!user) { showGuestPrompt('Create your Filmons account to save listings.', 'Sign up to save listings'); return; }
@@ -337,7 +442,17 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
     );
   }
 
-  const filterPanel = (
+  const filterPanel = category === 'creators' ? (
+    <CreatorFilterPanel
+      role={role} setRole={setRole}
+      skills={skills} toggleSkill={toggleSkill}
+      location={creatorLocation} setLocation={setCreatorLocation}
+      availableOnly={availableOnly} setAvailableOnly={setAvailableOnly}
+      verifiedOnly={verifiedOnly} setVerifiedOnly={setVerifiedOnly}
+      accountLevel={accountLevel} setAccountLevel={setAccountLevel}
+      onClear={clearFilters}
+    />
+  ) : (
     <FilterPanel
       category={category} hasPrice={hasPrice}
       priceMin={priceMin} priceMax={priceMax} setPriceMin={setPriceMin} setPriceMax={setPriceMax}
@@ -397,31 +512,33 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
             own px-4, so the header text's true left edge is 64px from the
             screen edge, not 16px. Matching that here (rather than the
             page's raw padding) is what actually keeps every card's left
-            edge under the first letter of the category label above it. */}
-        <div className="flex-1 min-w-0 pl-16 pr-4 md:px-0 py-4 md:py-0">
+            edge under the first letter of the category label above it.
+            Creators is the one exception -- its mobile card is a full,
+            self-contained block (not a thin row that needs to visually
+            line up with the label above it), so it gets a plain, simple
+            16px px-4 per spec instead. */}
+        <div className={`flex-1 min-w-0 ${category === 'creators' ? 'px-4' : 'pl-16 pr-4'} md:px-0 py-4 md:py-0`}>
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold text-gray-500">
               {loading ? 'Searching…' : `${total} ${total === 1 ? noun.toLowerCase() : CATEGORY_LABEL[category].toLowerCase()}`}
             </p>
-            {hasPrice && (
-              <div className="relative">
-                <button onClick={() => setSortOpen(v => !v)} className="flex items-center gap-1 text-xs font-bold text-gray-600 hover:text-gray-900">
-                  Sort by: {SORT_LABEL[sort]} <ChevronDown className="w-3.5 h-3.5"/>
-                </button>
-                {sortOpen && (
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-10 w-44">
-                    {(Object.keys(SORT_LABEL) as SortOption[]).map(s => (
-                      <button
-                        key={s} onClick={() => { setSort(s); setSortOpen(false); }}
-                        className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold hover:bg-gray-50 ${sort === s ? 'text-blue-600' : 'text-gray-700'}`}
-                      >
-                        {SORT_LABEL[s]}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="relative">
+              <button onClick={() => setSortOpen(v => !v)} className="flex items-center gap-1 text-xs font-bold text-gray-600 hover:text-gray-900">
+                Sort: {SORT_LABEL[sort]} <ChevronDown className="w-3.5 h-3.5"/>
+              </button>
+              {sortOpen && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-10 w-44">
+                  {SORT_OPTIONS_FOR(category).map(s => (
+                    <button
+                      key={s} onClick={() => { setSort(s); setSortOpen(false); }}
+                      className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold hover:bg-gray-50 ${sort === s ? 'text-blue-600' : 'text-gray-700'}`}
+                    >
+                      {SORT_LABEL[s]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -433,12 +550,22 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
               <p className="text-sm font-bold text-gray-500">No {CATEGORY_LABEL[category].toLowerCase()} found</p>
               <p className="text-xs text-gray-400">Try a different search or check back soon.</p>
             </div>
+          ) : category === 'creators' ? (
+            // Mobile gets a much simpler full-card, one-per-row layout
+            // (CreatorCardMobile) than desktop's compact avatar row
+            // (CreatorResultRow, unchanged) -- two lists, one hidden per
+            // breakpoint, same pattern CategorySection uses on /all.
+            <>
+              <div className="flex flex-col gap-3.5 md:hidden">
+                {creators.map(u => <CreatorCardMobile key={u.id} u={u} onView={() => navigate(`/host/${u.id}`)}/>)}
+              </div>
+              <div className="hidden md:flex md:flex-col gap-3">
+                {creators.map(u => <CreatorResultRow key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
+              </div>
+            </>
           ) : (
             <div className="flex flex-col gap-3 md:gap-3">
-              {category === 'creators'
-                ? creators.map(u => <CreatorResultRow key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)
-                : listings.map(l => <ListingResultRow key={l.id} listing={l} onSave={() => toggleSave(l.id, l)}/>)
-              }
+              {listings.map(l => <ListingResultRow key={l.id} listing={l} onSave={() => toggleSave(l.id, l)}/>)}
             </div>
           )}
 
@@ -544,6 +671,124 @@ function FilterPanel({ category, hasPrice, priceMin, priceMax, setPriceMin, setP
           </div>
         </div>
       )}
+
+      <button onClick={onClear} className="md:hidden w-full py-2.5 rounded-xl border border-gray-200 text-gray-600 font-bold text-xs">
+        Clear all
+      </button>
+    </div>
+  );
+}
+
+function CreatorToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between py-0.5">
+      <span className="text-sm font-semibold text-gray-700">{label}</span>
+      <button
+        onClick={() => onChange(!checked)}
+        aria-label={label}
+        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 ${checked ? 'bg-gray-900' : 'bg-gray-200'}`}>
+        <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-6' : 'translate-x-0.5'}`}/>
+      </button>
+    </div>
+  );
+}
+
+// ── Creators-only filter sidebar (desktop) / sheet body (mobile) ────────────
+// A separate panel from FilterPanel above rather than another branch inside
+// it -- Creators has no price at all, and needs several fields (role,
+// skills, location, account level) none of the other categories carry, so
+// bolting them onto FilterPanel's shared shape would mean every prop being
+// optional-and-usually-unused for 6 of 7 categories. Role/location options
+// are pulled from this app's own existing canonical lists (ProfessionPicker's
+// ALL_PROFESSIONS, AboutEditor's ALL_SKILLS/CA_CITIES) rather than a new,
+// separately-maintained taxonomy.
+function CreatorFilterPanel({
+  role, setRole, skills, toggleSkill, location, setLocation,
+  availableOnly, setAvailableOnly, verifiedOnly, setVerifiedOnly,
+  accountLevel, setAccountLevel, onClear,
+}: {
+  role: string; setRole: (v: string) => void;
+  skills: string[]; toggleSkill: (s: string) => void;
+  location: string; setLocation: (v: string) => void;
+  availableOnly: boolean; setAvailableOnly: (v: boolean) => void;
+  verifiedOnly: boolean; setVerifiedOnly: (v: boolean) => void;
+  accountLevel: AccountTier | ''; setAccountLevel: (v: AccountTier | '') => void;
+  onClear: () => void;
+}) {
+  const [skillQuery, setSkillQuery] = useState('');
+  const visibleSkills = (skillQuery.trim()
+    ? ALL_SKILLS.filter(s => s.toLowerCase().includes(skillQuery.trim().toLowerCase()))
+    : ALL_SKILLS
+  ).slice(0, 24);
+
+  return (
+    <div className="bg-white md:border md:border-gray-100 md:rounded-2xl md:p-5 space-y-5">
+      <div className="hidden md:flex items-center justify-between">
+        <p className="text-sm font-black text-gray-900">Filters</p>
+        <button onClick={onClear} className="text-xs font-bold text-blue-600 hover:text-blue-700">Clear all</button>
+      </div>
+
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Role</p>
+        <select
+          value={role} onChange={e => setRole(e.target.value)}
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+        >
+          <option value="">Any role</option>
+          {ALL_PROFESSIONS.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Skills</p>
+        <input
+          value={skillQuery} onChange={e => setSkillQuery(e.target.value)}
+          placeholder="Search skills…"
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 mb-2"
+        />
+        <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+          {visibleSkills.map(s => (
+            <button
+              key={s} onClick={() => toggleSkill(s)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                skills.includes(s) ? 'bg-gray-900 text-white' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Location</p>
+        <select
+          value={location} onChange={e => setLocation(e.target.value)}
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+        >
+          <option value="">Any location</option>
+          {CA_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Account level</p>
+        <select
+          value={accountLevel} onChange={e => setAccountLevel(e.target.value as AccountTier | '')}
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+        >
+          <option value="">Any level</option>
+          <option value="creator">Creator</option>
+          <option value="creator_plus">Creator+</option>
+          <option value="professional">Professional</option>
+          <option value="business">Business</option>
+        </select>
+      </div>
+
+      <div className="space-y-1">
+        <CreatorToggle label="Available for hire" checked={availableOnly} onChange={setAvailableOnly}/>
+        <CreatorToggle label="Verified only" checked={verifiedOnly} onChange={setVerifiedOnly}/>
+      </div>
 
       <button onClick={onClear} className="md:hidden w-full py-2.5 rounded-xl border border-gray-200 text-gray-600 font-bold text-xs">
         Clear all
@@ -699,6 +944,69 @@ function CreatorResultRow({ u, onClick }: { u: CreatorRow; onClick: () => void }
   );
 }
 
+// ── Mobile-only full creator card (/search/category/creators) ───────────────
+// Deliberately a full, single-column card, not the compact avatar row
+// (CreatorResultRow, still used on desktop) -- per spec, mobile stays much
+// simpler than desktop: one big card per creator, no side-by-side info
+// crammed into a small row. Follow doubles as this card's "save" action --
+// there's no separate saved-creators concept in this app, unlike listings.
+const CREATOR_CARD_HEIGHT = 392;       // spec: ~360-420px
+const CREATOR_CARD_IMAGE_HEIGHT = 236; // spec: ~220-250px
+
+function CreatorCardMobile({ u, onView }: { u: CreatorRow; onView: () => void }) {
+  const { user, showGuestPrompt } = useAuth();
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
+  const following = isFollowing(u.id);
+  const tierBadge = getTierBadge(u.account_type ?? undefined);
+  const tags = ((u.secondary_roles?.length ? u.secondary_roles : u.skills) ?? []).slice(0, 3);
+
+  const onToggleFollow = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) { showGuestPrompt('Create your Filmons account to follow creators.', 'Sign up to follow creators'); return; }
+    if (following) await unfollow(u.id); else await follow(u.id);
+  };
+
+  return (
+    <div className="w-full bg-white rounded-2xl border border-gray-100 overflow-hidden flex flex-col" style={{ height: CREATOR_CARD_HEIGHT }}>
+      <button onClick={onView} className="relative w-full shrink-0 bg-gray-100 text-left" style={{ height: CREATOR_CARD_IMAGE_HEIGHT }}>
+        {u.avatar_url
+          ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-5xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+        {/* Optional Creator+/Pro badge -- omitted entirely for base Creator
+            tier (getTierBadge returns null), never a visible "no badge" state. */}
+        {tierBadge && (
+          <span className="absolute top-2.5 left-2.5 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full bg-indigo-600 text-white shadow-sm">
+            {tierBadge.replace('✓ Verified ', '')}
+          </span>
+        )}
+        <button
+          onClick={onToggleFollow} disabled={isPending(u.id)} aria-label={following ? 'Unfollow' : 'Follow'}
+          className="absolute top-2.5 right-2.5 w-9 h-9 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-sm active:scale-90 transition-transform"
+        >
+          <Heart className={`w-4 h-4 ${following ? 'text-red-500 fill-red-500' : 'text-gray-700'}`}/>
+        </button>
+      </button>
+      <div className="flex-1 min-h-0 px-4 py-3 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-base font-black text-gray-900 truncate">{u.name}</p>
+          {u.is_verified && <CheckCircle className="w-4 h-4 text-blue-500 fill-blue-50 shrink-0"/>}
+        </div>
+        {u.primary_role && <p className="text-sm text-blue-600 font-semibold truncate">{u.primary_role}</p>}
+        {(u.city ?? u.location) && (
+          <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3.5 h-3.5 shrink-0"/>{u.city ?? u.location}</p>
+        )}
+        {tags.length > 0 && <p className="text-xs text-gray-500 truncate mt-0.5">{tags.join(' • ')}</p>}
+        <button
+          onClick={onView}
+          className="mt-auto w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors"
+        >
+          View profile
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function formatShortDate(iso?: string): string | undefined {
   if (!iso) return undefined;
   try { return new Date(iso + (iso.length <= 10 ? 'T00:00:00' : '')).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }); }
@@ -793,12 +1101,14 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
 const ALL_PAGE_PREVIEW_LIMIT = 5;
 const ALL_PAGE_FETCH_LIMIT = 15;
 
-// Builds `/search/category/:tab`, carrying the search text as a real URL
-// query param (not just router state) so the page is a shareable/bookmark-
-// able, standalone URL per spec (e.g. `/search/category/all?q=dji` ->
-// `/search/category/rentals?q=dji`) -- state is still passed alongside for
-// filters/sort, which don't have a URL representation yet.
-function categoryUrl(category: CategoryTab, navState: NavState): string {
+// Builds `/search/category/:tab` (or `/search/category/all`, used by
+// goBackToAll below), carrying the search text as a real URL query param
+// (not just router state) so the page is a shareable/bookmarkable,
+// standalone URL per spec (e.g. `/search/category/all?q=dji` ->
+// `/search/category/rentals?q=dji`) -- state is still passed alongside as
+// the authoritative source (see CategoryResults() entry point), so the URL
+// only has to be a faithful-enough fallback for a fresh load/shared link.
+function categoryUrl(category: CategoryTab | 'all', navState: NavState): string {
   const params = new URLSearchParams();
   const q = navState.query?.trim();
   if (q) params.set('q', q);
@@ -807,6 +1117,12 @@ function categoryUrl(category: CategoryTab, navState: NavState): string {
   if (navState.filters?.priceRange?.max != null) params.set('priceMax', String(navState.filters.priceRange.max));
   if (navState.filters?.paid != null) params.set('paid', String(navState.filters.paid));
   if (navState.filters?.remote) params.set('remote', '1');
+  if (navState.filters?.role) params.set('role', navState.filters.role);
+  if (navState.filters?.skills?.length) params.set('skills', navState.filters.skills.join(','));
+  if (navState.filters?.location) params.set('loc', navState.filters.location);
+  if (navState.filters?.availableOnly) params.set('avail', '1');
+  if (navState.filters?.verifiedOnly) params.set('verified', '1');
+  if (navState.filters?.accountLevel) params.set('level', navState.filters.accountLevel);
   const qs = params.toString();
   return `/search/category/${category}${qs ? `?${qs}` : ''}`;
 }
@@ -1224,6 +1540,7 @@ export function CategoryResults() {
   const urlPriceMin = searchParams.get('priceMin');
   const urlPriceMax = searchParams.get('priceMax');
   const urlPaid = searchParams.get('paid');
+  const urlSkills = searchParams.get('skills');
   const navState: NavState = {
     query: stateNav.query ?? searchParams.get('q') ?? undefined,
     sort: stateNav.sort ?? (searchParams.get('sort') as SortOption | null) ?? 'recent',
@@ -1231,6 +1548,12 @@ export function CategoryResults() {
       priceRange: (urlPriceMin || urlPriceMax) ? { min: urlPriceMin ? Number(urlPriceMin) : undefined, max: urlPriceMax ? Number(urlPriceMax) : undefined } : null,
       paid: urlPaid != null ? urlPaid === 'true' : null,
       remote: searchParams.get('remote') === '1',
+      role: searchParams.get('role') || null,
+      skills: urlSkills ? urlSkills.split(',').filter(Boolean) : null,
+      location: searchParams.get('loc') || null,
+      availableOnly: searchParams.get('avail') === '1',
+      verifiedOnly: searchParams.get('verified') === '1',
+      accountLevel: (searchParams.get('level') as AccountTier | null) || null,
     },
   };
 

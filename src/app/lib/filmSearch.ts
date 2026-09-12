@@ -43,14 +43,22 @@ export interface SearchListingRow {
   emergency_plan?: string | null;
 }
 
+// secondary_roles/skills/available_for_hire/account_type are pulled in
+// alongside the original preview-sized field set so CategoryResults.tsx's
+// creators filter panel (role/skills/availability/account level) can
+// filter this same shared result set client-side, without a second query.
 export interface SearchProfileRow {
   id: string; name: string; username: string | null; avatar_url: string | null;
   city: string | null; location: string | null; primary_role: string | null;
   bio: string | null; is_verified: boolean | null;
+  secondary_roles?: string[] | null;
+  skills?: string[] | null;
+  available_for_hire?: boolean | null;
+  account_type?: string | null;
 }
 
 const LISTING_SELECT = LISTING_COLUMNS;
-const PROFILE_SELECT = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
+const PROFILE_SELECT = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified, secondary_roles, skills, available_for_hire, account_type';
 
 function safe(s: string) { return s.replace(/[%_\\]/g, ''); }
 
