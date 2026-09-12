@@ -665,7 +665,16 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
           against its own wrapper's edge mid-swipe). The mobile pull-reveal
           row below has its own separate, small clipped viewport instead of
           sharing this one, so it never constrains the card. */}
-      <div className="relative w-full h-[420px] lg:h-[580px] isolate" style={{ zIndex: 2 }}>
+      {/* lg height trimmed close to the actual rendered card height (image
+          420px + content block ~130px =~ 552px) -- it used to reserve 580px
+          of flow space regardless of the card's real height, leaving a
+          visible gap of empty space below the card before the counter/
+          buttons row even started. Cards are absolutely positioned inside
+          this container (position comes from STACK[stackPos]/drag
+          transforms, not layout), so shrinking this doesn't clip anything
+          -- it only changes how much flow space this box reserves before
+          its next sibling (the counter row) starts. */}
+      <div className="relative w-full h-[420px] lg:h-[560px] isolate" style={{ zIndex: 2 }}>
         {[...cards].reverse().map((item, rIdx) => {
           const stackPos = cards.length - 1 - rIdx;
           const isTop    = stackPos === 0;
