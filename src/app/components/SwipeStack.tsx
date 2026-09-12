@@ -138,10 +138,18 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
 }
 
 // ── Creator card body ─────────────────────────────────────────────────────────
+// Mirrors ListingContent's exact breakpoints (h-72/lg:h-[420px] image,
+// px-4 lg:px-6 py-3.5 lg:py-5 content block, same text-size steps) --
+// it used to stop at the mobile sizing with no lg: variants at all, so a
+// Creator card was noticeably shorter than a Listing card on desktop.
+// Now that the deck container measures whichever card is on top (see
+// SwipeStack's stackHeight effect) instead of using one fixed height for
+// both, that mismatch would otherwise make the whole deck visibly resize
+// every time a swipe crossed from one card kind to the other.
 function CreatorContent({ profile }: { profile: CreatorProfile }) {
   return (
     <>
-      <div className="relative h-72 bg-gradient-to-br from-slate-800 to-indigo-900 overflow-hidden">
+      <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-slate-800 to-indigo-900 overflow-hidden">
         {profile.avatar_url && (
           <img
             src={profile.avatar_url}
@@ -150,10 +158,10 @@ function CreatorContent({ profile }: { profile: CreatorProfile }) {
           />
         )}
         <div className="absolute inset-0 flex items-center justify-center pb-4">
-          <div className="w-28 h-28 rounded-full border-4 border-white/90 overflow-hidden shadow-2xl">
+          <div className="w-28 h-28 lg:w-36 lg:h-36 rounded-full border-4 border-white/90 overflow-hidden shadow-2xl">
             {profile.avatar_url
               ? <img src={profile.avatar_url} className="w-full h-full object-cover" alt=""/>
-              : <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white text-3xl font-black">
+              : <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white text-3xl lg:text-5xl font-black">
                   {profile.name?.[0]?.toUpperCase() ?? '?'}
                 </div>
             }
@@ -167,20 +175,20 @@ function CreatorContent({ profile }: { profile: CreatorProfile }) {
         </div>
         {profile.is_verified && (
           <div className="absolute top-3 right-3">
-            <ShieldCheck className="w-5 h-5 text-blue-400" strokeWidth={2.5}/>
+            <ShieldCheck className="w-5 h-5 lg:w-6 lg:h-6 text-blue-400" strokeWidth={2.5}/>
           </div>
         )}
       </div>
 
-      <div className="px-4 py-3.5">
-        <h3 className="text-[16px] font-black text-gray-900 mb-0.5">{profile.name}</h3>
+      <div className="px-4 lg:px-6 py-3.5 lg:py-5">
+        <h3 className="text-[16px] lg:text-xl font-black text-gray-900 mb-0.5 lg:mb-1">{profile.name}</h3>
         {profile.primary_role && (
-          <p className="text-sm text-blue-600 font-semibold mb-1">{profile.primary_role}</p>
+          <p className="text-sm lg:text-base text-blue-600 font-semibold mb-1">{profile.primary_role}</p>
         )}
         {profile.bio && (
-          <p className="text-[13px] text-gray-500 line-clamp-2 mb-2 leading-snug">{profile.bio}</p>
+          <p className="text-[13px] lg:text-sm text-gray-500 line-clamp-2 mb-2 leading-snug">{profile.bio}</p>
         )}
-        <div className="flex items-center gap-1 text-xs text-gray-400">
+        <div className="flex items-center gap-1 text-xs lg:text-sm text-gray-400">
           <MapPin className="w-3 h-3 shrink-0"/>
           <span>{profile.city ?? 'Canada'}</span>
         </div>
