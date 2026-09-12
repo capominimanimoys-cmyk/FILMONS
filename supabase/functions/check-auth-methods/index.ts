@@ -55,12 +55,35 @@ Deno.serve(async (req) => {
 
     // Union providers/confirmation across every row for this email — see
     // the file header for why more than one row can exist.
+    //
+    // `identities[].provider` is NOT a reliable source on its own -- this
+    // was the actual root cause of a real "wrong password shows a social-
+    // account message" bug: for a genuine email/password account, GoTrue
+    // doesn't always populate the `identities` sub-array (it was designed
+    // to track LINKED identities, and behavior around whether a plain
+    // password signup gets its own entry there has varied across GoTrue
+    // versions/configs). Since this whole function only ever runs after
+    // signInWithPassword has already FAILED, an empty `identities` array
+    // was silently read as "no email/password identity exists at all",
+    // producing an OAUTH_ONLY classification with an empty providers list
+    // -- which is exactly why Login.tsx's providerLabel fell through to
+    // the generic "a social account" wording instead of naming Google:
+    // there was no real provider in the list at all, empty or otherwise.
+    // `app_metadata.provider`/`app_metadata.providers` is GoTrue's own
+    // summary of what the user actually signed up/in with and is far more
+    // consistently populated -- unioned in alongside `identities` instead
+    // of relied on exclusively, so either source finding "email" is
+    // enough to correctly rule out OAUTH_ONLY.
     const providerSet = new Set<string>();
     let emailConfirmed = false;
     for (const u of matches) {
       for (const i of (u.identities || [])) if (i.provider) providerSet.add(i.provider);
+      if (u.app_metadata?.provider) providerSet.add(u.app_metadata.provider);
+      for (const p of (u.app_metadata?.providers || [])) if (p) providerSet.add(p);
       if (u.email_confirmed_at) emailConfirmed = true;
     }
+
+    console.log(`check-auth-methods: email="${email}" matchedRows=${matches.length} providers=${JSON.stringify(Array.from(providerSet))}`);
 
     return json({
       exists: true,
