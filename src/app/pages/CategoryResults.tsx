@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
 import {
   ArrowLeft, ArrowRight, Loader2, Lock, MapPin, AlertTriangle, Search, SlidersHorizontal,
-  Bookmark, Calendar, CalendarClock, X, ChevronDown,
+  Bookmark, Calendar, CalendarClock, X, ChevronDown, Heart, CheckCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api';
@@ -717,11 +717,14 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
 }
 
 // ── /search/category/all ─────────────────────────────────────────────────────
-// Each section previews at most ALL_PAGE_PREVIEW_LIMIT (5) in a single
-// horizontal-scroll row -- never paginated in place, "View all" is the only
-// way to see more, which opens that category's own dedicated (uncapped,
-// vertical) page instead.
+// Mobile shows exactly ALL_PAGE_PREVIEW_LIMIT (5) cards, full stop -- "View
+// all" is the only way to see more there. Desktop shows exactly 5 AT A TIME
+// (fluid-width cards filling the row) but the row itself holds up to
+// ALL_PAGE_FETCH_LIMIT so the carousel arrows / trackpad scroll have
+// somewhere to go beyond the first 5 -- still a capped preview, not the
+// dedicated page's uncapped list, just a slightly deeper one on desktop.
 const ALL_PAGE_PREVIEW_LIMIT = 5;
+const ALL_PAGE_FETCH_LIMIT = 15;
 
 // Builds `/search/category/:tab`, carrying the search text as a real URL
 // query param (not just router state) so the page is a shareable/bookmark-
@@ -741,6 +744,12 @@ function categoryUrl(category: CategoryTab, navState: NavState): string {
   return `/search/category/${category}${qs ? `?${qs}` : ''}`;
 }
 
+// Horizontal padding shared by every section's header row AND its card
+// row on desktop -- both must use the identical value or the first card
+// won't align under the first letter of the category label (spec's exact
+// requirement). ~32px at lg:, ~40px at xl: and up.
+const DESKTOP_SECTION_PAD = 'px-4 lg:px-8 xl:px-10';
+
 function CategorySection({ category, navState }: { category: CategoryTab; navState: NavState }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -753,6 +762,9 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
   const [creators, setCreators] = useState<CreatorRow[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const desktopScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   useEffect(() => {
     // Restricted tiers never fetch Emergency at all here -- the section
@@ -763,24 +775,36 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
     if (isEmergency && !canBrowseEmergency) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    // Fetches one extra row beyond the preview limit purely to answer "are
-    // there more than 5 total" (spec: only show View all when true) without
-    // a separate COUNT query -- only the first ALL_PAGE_PREVIEW_LIMIT are
-    // ever rendered. A locked-tier Opportunities preview never asks for
-    // that extra row at all -- the query itself stays capped at their
-    // permanent limit, not just the display.
-    const to = locked ? ALL_PAGE_PREVIEW_LIMIT - 1 : ALL_PAGE_PREVIEW_LIMIT;
-    fetchCategoryPage(category, navState, 0, to, user?.id).then(({ listings: l, creators: c }) => {
+    // Desktop's carousel needs somewhere to scroll to beyond the first 5 --
+    // fetches up to ALL_PAGE_FETCH_LIMIT (mobile still only ever renders
+    // the first ALL_PAGE_PREVIEW_LIMIT of whatever comes back). `total` is
+    // the real Postgres/edge-function count, not a fetched-row count, so
+    // "View all" and the carousel arrows reflect the true dataset even
+    // though only a slice of it is ever fetched here. A locked-tier
+    // Opportunities preview never asks for more than its permanent cap at
+    // all -- the query itself stays capped, not just the display.
+    const to = locked ? ALL_PAGE_PREVIEW_LIMIT - 1 : ALL_PAGE_FETCH_LIMIT - 1;
+    fetchCategoryPage(category, navState, 0, to, user?.id).then(({ listings: l, creators: c, total }) => {
       if (cancelled) return;
-      const total = category === 'creators' ? c.length : l.length;
       setHasMore(total > ALL_PAGE_PREVIEW_LIMIT);
-      setListings(l.slice(0, ALL_PAGE_PREVIEW_LIMIT));
-      setCreators(c.slice(0, ALL_PAGE_PREVIEW_LIMIT));
+      setListings(l);
+      setCreators(c);
       setLoading(false);
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, isEmergency, canBrowseEmergency, user?.id, navState.query, JSON.stringify(navState.filters)]);
+
+  const updateScrollState = useCallback(() => {
+    const el = desktopScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+  useEffect(() => { updateScrollState(); }, [listings, creators, updateScrollState]);
+  const scrollByPage = (dir: 1 | -1) => {
+    desktopScrollRef.current?.scrollBy({ left: dir * (desktopScrollRef.current.clientWidth || 0), behavior: 'smooth' });
+  };
 
   // Emergency is ALWAYS shown as a locked category for a restricted tier --
   // never fully hidden (so the category itself isn't a secret), but never
@@ -789,16 +813,16 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
   // a tier that never fetches.
   if (isEmergency && !canBrowseEmergency) {
     return (
-      <section className="mb-6">
-        <div className="flex items-center justify-between w-full px-4 mb-2">
+      <section className="mb-6 lg:mb-8">
+        <div className={`flex items-center justify-between w-full ${DESKTOP_SECTION_PAD} mb-2 lg:mb-3`}>
           <div className="flex items-center gap-1.5">
-            <p className="text-sm font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
+            <p className="text-sm lg:text-base font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
             <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">
               <Lock className="w-2.5 h-2.5"/> Locked
             </span>
           </div>
         </div>
-        <div className="px-4">
+        <div className={DESKTOP_SECTION_PAD}>
           <button
             onClick={() => navigate('/account/upgrade?auto=professional')}
             className="w-full rounded-2xl border-2 border-red-200 bg-red-50 p-4 text-left flex items-center gap-3 active:scale-[0.99] transition-transform"
@@ -819,9 +843,13 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
   const count = category === 'creators' ? creators.length : listings.length;
   if (!loading && count === 0) return null;
 
+  const mobileListings = listings.slice(0, ALL_PAGE_PREVIEW_LIMIT);
+  const mobileCreators = creators.slice(0, ALL_PAGE_PREVIEW_LIMIT);
+
   return (
-    <section className="mb-6">
-      <div className="flex items-center justify-between w-full px-4 mb-2">
+    <section className="mb-6 lg:mb-8">
+      {/* ── Mobile header (unchanged fixed-card design) ─────────────────── */}
+      <div className="lg:hidden flex items-center justify-between w-full px-4 mb-2">
         <p className="text-sm font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
         {!loading && !locked && hasMore && (
           <button
@@ -832,20 +860,167 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
           </button>
         )}
       </div>
+      {/* ── Desktop header: label + circular "View all" arrow, circular
+          prev/next carousel controls far right ─────────────────────────── */}
+      <div className={`hidden lg:flex items-center justify-between w-full ${DESKTOP_SECTION_PAD} mb-3`}>
+        <div className="flex items-center gap-2">
+          <p className="text-base font-black text-gray-900">{CATEGORY_LABEL[category]}</p>
+          {!loading && !locked && hasMore && (
+            <button
+              onClick={() => navigate(categoryUrl(category, navState), { state: navState })}
+              aria-label={`View all ${CATEGORY_LABEL[category]}`}
+              className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+            >
+              <ArrowRight className="w-3.5 h-3.5 text-gray-700"/>
+            </button>
+          )}
+        </div>
+        {!loading && hasMore && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => scrollByPage(-1)} disabled={!canScrollLeft} aria-label="Previous"
+              className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors ${
+                canScrollLeft ? 'border-gray-200 hover:bg-gray-100 text-gray-700' : 'border-gray-100 text-gray-300 cursor-default'
+              }`}
+            >
+              <ArrowLeft className="w-4 h-4"/>
+            </button>
+            <button
+              onClick={() => scrollByPage(1)} disabled={!canScrollRight} aria-label="Next"
+              className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors ${
+                canScrollRight ? 'border-gray-200 hover:bg-gray-100 text-gray-700' : 'border-gray-100 text-gray-300 cursor-default'
+              }`}
+            >
+              <ArrowRight className="w-4 h-4"/>
+            </button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center py-8 text-gray-400"><Loader2 className="w-4 h-4 animate-spin"/></div>
       ) : (
-        <div className="flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
-          {category === 'creators'
-            ? creators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
-            : listings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
-          }
-        </div>
+        <>
+          {/* ── Mobile row: fixed 240x320 cards (unchanged) ─────────────── */}
+          <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+            {category === 'creators'
+              ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
+              : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
+            }
+          </div>
+          {/* ── Desktop row: exactly 5 fluid-width cards fill the row;
+              anything past 5 sits outside the viewport, reachable only by
+              scrolling or the arrow controls above -- never a partial
+              peek, never shrunk to fit 6+, never a wrapping grid. ────── */}
+          <div
+            ref={desktopScrollRef} onScroll={updateScrollState}
+            className={`hidden lg:flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}
+          >
+            {category === 'creators'
+              ? creators.map(u => <DesktopCreatorCard key={u.id} u={u}/>)
+              : listings.map(l => <DesktopListingCard key={l.id} listing={l}/>)
+            }
+          </div>
+        </>
       )}
       {locked && (
-        <div className="px-4 mt-2"><OpportunityLockedNotice hasAny={count > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/></div>
+        <div className={`${DESKTOP_SECTION_PAD} mt-2`}><OpportunityLockedNotice hasAny={count > 0} onUpgrade={() => navigate('/account/upgrade?auto=professional')}/></div>
       )}
     </section>
+  );
+}
+
+// Fluid card width -- exactly 5 fill the row (rowWidth - 4*16px gaps) / 5 --
+// instead of the mobile row's fixed 240px, per the desktop spec's explicit
+// "do not use a fixed 240px width anymore" for this view. `%` here resolves
+// against the scroll container's own content width (after ITS padding),
+// which is exactly "rowWidth" as the spec defines it.
+const DESKTOP_CARD_STYLE: React.CSSProperties = { flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180 };
+
+function DesktopListingCard({ listing }: { listing: Listing }) {
+  const navigate = useNavigate();
+  const { user, showGuestPrompt } = useAuth();
+  const isOpp = listing.listingType === 'opportunity';
+  const price = `$${Number(listing.price ?? 0).toLocaleString()}${listing.listingMode === 'rent' ? '/day' : ''}`;
+  const isEmergencyActive = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
+  const typeLabel = categoryTypeLabel(listing);
+  const eventDate = isOpp ? formatShortDate(listing.opportunity?.startDate) : undefined;
+  const roleChips = [listing.opportunity?.roleNeeded, listing.opportunity?.categoryIndustry, listing.opportunity?.workArrangement === 'remote' ? 'Remote' : undefined]
+    .filter(Boolean) as string[];
+
+  const onSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) { showGuestPrompt('Create your Filmons account to save listings.', 'Sign up to save listings'); return; }
+    await savedListingsApi.toggle(user.id, listing.id, listing);
+    toast.success('Saved');
+  };
+
+  return (
+    <button
+      onClick={() => navigate(`/listing/${listing.id}`)}
+      style={DESKTOP_CARD_STYLE}
+      className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow"
+    >
+      <div className="relative w-full aspect-[4/3] bg-gray-100 shrink-0">
+        {listing.images?.[0]
+          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
+        {isOpp && (
+          <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full shadow-sm ${listing.opportunity?.paid ? 'bg-green-600 text-white' : 'bg-gray-700 text-white'}`}>
+            {listing.opportunity?.paid ? 'Paid' : 'Unpaid'}
+          </span>
+        )}
+        {isEmergencyActive && (
+          <span className="absolute top-2 left-2 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
+            <AlertTriangle className="w-2.5 h-2.5 fill-white"/> Emergency
+          </span>
+        )}
+        <button onClick={onSave} aria-label="Save" className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-sm active:scale-90 transition-transform">
+          <Heart className="w-3.5 h-3.5 text-gray-700"/>
+        </button>
+      </div>
+      <div className="p-3 flex flex-col gap-1 min-w-0">
+        <p className="text-sm font-bold text-gray-900 truncate leading-snug">{listing.title}</p>
+        {typeLabel && <p className="text-xs text-blue-600 font-semibold capitalize truncate">{typeLabel}</p>}
+        {listing.city && <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{listing.city}</p>}
+        {eventDate && <p className="text-xs text-gray-400 flex items-center gap-1"><Calendar className="w-3 h-3 shrink-0"/>{eventDate}</p>}
+        {roleChips.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-0.5">
+            {roleChips.slice(0, 3).map(c => (
+              <span key={c} className="text-[9px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize truncate max-w-full">{c}</span>
+            ))}
+          </div>
+        )}
+        {!isOpp && <p className="text-sm font-black text-blue-600 mt-0.5">{price}</p>}
+      </div>
+    </button>
+  );
+}
+
+function DesktopCreatorCard({ u }: { u: CreatorRow }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => navigate(`/host/${u.id}`)}
+      style={DESKTOP_CARD_STYLE}
+      className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow"
+    >
+      <div className="relative w-full aspect-[4/3] bg-gray-100 shrink-0">
+        {u.avatar_url
+          ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+      </div>
+      <div className="p-3 flex flex-col gap-1 min-w-0">
+        <div className="flex items-center gap-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
+          {u.is_verified && <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-50 shrink-0"/>}
+        </div>
+        {u.primary_role && <p className="text-xs text-blue-600 font-semibold truncate">{u.primary_role}</p>}
+        {(u.city ?? u.location) && (
+          <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
+        )}
+      </div>
+    </button>
   );
 }
 
@@ -854,7 +1029,10 @@ function AllGroupedResults({ navState }: { navState: NavState }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
-        <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+        {/* Same DESKTOP_SECTION_PAD as every category row below it, so this
+            bar's content lines up with them -- not a separate narrower
+            max-width container. */}
+        <div className={`flex items-center gap-3 px-4 lg:px-8 xl:px-10`} style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
           {/* Always back to Browse Search itself, not browser history --
               this page is reachable from a modal that never had its own
               route (Root.tsx's search icon), so navigate(-1) could land
@@ -862,10 +1040,10 @@ function AllGroupedResults({ navState }: { navState: NavState }) {
           <button onClick={() => navigate('/search')} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
-          <p className="text-base font-black text-gray-900">All Results</p>
+          <p className="text-base lg:text-lg font-black text-gray-900">All Results</p>
         </div>
       </div>
-      <div className="py-4">
+      <div className="py-4 lg:py-6">
         {CATEGORY_IDS.map(cat => <CategorySection key={cat} category={cat} navState={navState}/>)}
       </div>
     </div>
