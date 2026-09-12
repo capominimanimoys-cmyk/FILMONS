@@ -88,6 +88,21 @@ export function expandSearchTerms(rawQ: string): string[] {
   return [needle, ...aliasTerms];
 }
 
+// Per-term fetch caps -- these used to be tuned for SearchOverlay's own
+// preview modal (a handful of top matches is all it ever rendered), but
+// they are now also the ONLY source /search/category/:tab and /all draw
+// from, including their "uncapped"/infinite-scroll pagination -- slicing a
+// pre-truncated in-memory array can never surface more than what was
+// fetched here, no matter how far the caller scrolls. 20/10/15/10 was too
+// small for that job (a category with more real matches than the cap
+// simply could never show the rest) -- raised well above any realistic
+// per-term match count for this app's current scale while still bounding
+// the query for a truly generic single-letter term.
+const LISTING_TEXT_LIMIT = 300;
+const LISTING_TAG_LIMIT = 150;
+const PROFILE_TEXT_LIMIT = 300;
+const PROFILE_ARRAY_LIMIT = 150;
+
 async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
   const textRes = await withModerationFilter((filterActive) => {
     let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
@@ -99,7 +114,7 @@ async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
         `service_category.ilike.%${term}%`,
         `city.ilike.%${term}%`,
       ].join(','))
-      .limit(20);
+      .limit(LISTING_TEXT_LIMIT);
   });
   if (textRes.error) console.error(`[filmSearch] listings text error (term="${term}"):`, textRes.error.message);
 
@@ -109,7 +124,7 @@ async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
   const tagRes = await withModerationFilter((filterActive) => {
     let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
     if (filterActive) q = q.eq('moderation_status', 'active');
-    return q.filter('tags', 'cs', `["${term}"]`).limit(10);
+    return q.filter('tags', 'cs', `["${term}"]`).limit(LISTING_TAG_LIMIT);
   });
   if (tagRes.error) console.warn(`[filmSearch] listings tags error (term="${term}"):`, tagRes.error.message);
 
@@ -134,7 +149,7 @@ async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
     ].join(','))
     .not('name', 'is', null)
     .neq('name', '')
-    .limit(15);
+    .limit(PROFILE_TEXT_LIMIT);
   if (res.error) console.error(`[filmSearch] profiles error (term="${term}"):`, res.error.message);
 
   // secondary_roles/skills/gear are real Postgres text[] arrays (not
@@ -152,7 +167,7 @@ async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
     ].join(','))
     .not('name', 'is', null)
     .neq('name', '')
-    .limit(10);
+    .limit(PROFILE_ARRAY_LIMIT);
   if (arrayRes.error) console.warn(`[filmSearch] profiles array error (term="${term}"):`, arrayRes.error.message);
 
   const seen = new Set<string>();
