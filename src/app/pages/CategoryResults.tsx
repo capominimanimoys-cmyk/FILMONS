@@ -931,11 +931,28 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
 }
 
 // Fluid card width -- exactly 5 fill the row (rowWidth - 4*16px gaps) / 5 --
-// instead of the mobile row's fixed 240px, per the desktop spec's explicit
-// "do not use a fixed 240px width anymore" for this view. `%` here resolves
-// against the scroll container's own content width (after ITS padding),
-// which is exactly "rowWidth" as the spec defines it.
-const DESKTOP_CARD_STYLE: React.CSSProperties = { flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180 };
+// instead of a fixed 240px. `%` here resolves against the scroll
+// container's own content width (after ITS padding), which is exactly
+// "rowWidth" as the spec defines it.
+//
+// Height comes from `aspectRatio` on the CARD ITSELF (~1.55:1, not just on
+// the image) -- this is the actual fix for the previous bug: cards were
+// tall/portrait/inconsistent-between-categories because only the image
+// area had a ratio, while the text area below it had no height limit at
+// all, so a card's TOTAL height was "image height + however much text this
+// particular listing happens to have" -- an Opportunity's role chips vs. a
+// Rental's short price line produced visibly different total heights. With
+// aspect-ratio on the outer box, total height is a pure function of width,
+// identical for every category; `overflow: hidden` is what makes that
+// actually hold when content would otherwise want more room, instead of
+// silently growing past it.
+const DESKTOP_CARD_STYLE: React.CSSProperties = {
+  flex: '0 0 calc((100% - 64px) / 5)', minWidth: 180, aspectRatio: '1.55 / 1', overflow: 'hidden',
+};
+// Image area is a fixed PERCENTAGE OF THE CARD'S OWN (aspect-ratio-fixed)
+// height, not of the image's intrinsic dimensions -- a portrait creator
+// photo is cropped to this box via object-fit: cover, never the reverse.
+const DESKTOP_CARD_IMAGE_STYLE: React.CSSProperties = { height: '58%' };
 
 function DesktopListingCard({ listing }: { listing: Listing }) {
   const navigate = useNavigate();
@@ -959,39 +976,44 @@ function DesktopListingCard({ listing }: { listing: Listing }) {
     <button
       onClick={() => navigate(`/listing/${listing.id}`)}
       style={DESKTOP_CARD_STYLE}
-      className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow"
+      className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col hover:shadow-md transition-shadow"
     >
-      <div className="relative w-full aspect-[4/3] bg-gray-100 shrink-0">
+      <div style={DESKTOP_CARD_IMAGE_STYLE} className="relative w-full shrink-0 bg-gray-100">
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
+          ? <img src={listing.images[0]} className="w-full h-full object-cover object-center" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
         {isOpp && (
-          <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full shadow-sm ${listing.opportunity?.paid ? 'bg-green-600 text-white' : 'bg-gray-700 text-white'}`}>
+          <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full shadow-sm ${listing.opportunity?.paid ? 'bg-green-600 text-white' : 'bg-gray-700 text-white'}`}>
             {listing.opportunity?.paid ? 'Paid' : 'Unpaid'}
           </span>
         )}
         {isEmergencyActive && (
-          <span className="absolute top-2 left-2 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
+          <span className="absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
             <AlertTriangle className="w-2.5 h-2.5 fill-white"/> Emergency
           </span>
         )}
-        <button onClick={onSave} aria-label="Save" className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-sm active:scale-90 transition-transform">
-          <Heart className="w-3.5 h-3.5 text-gray-700"/>
+        <button onClick={onSave} aria-label="Save" className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-sm active:scale-90 transition-transform">
+          <Heart className="w-3 h-3 text-gray-700"/>
         </button>
       </div>
-      <div className="p-3 flex flex-col gap-1 min-w-0">
-        <p className="text-sm font-bold text-gray-900 truncate leading-snug">{listing.title}</p>
-        {typeLabel && <p className="text-xs text-blue-600 font-semibold capitalize truncate">{typeLabel}</p>}
-        {listing.city && <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{listing.city}</p>}
-        {eventDate && <p className="text-xs text-gray-400 flex items-center gap-1"><Calendar className="w-3 h-3 shrink-0"/>{eventDate}</p>}
+      {/* flex-1 fills exactly what's left of the card's fixed total height
+          (100% - image's 58%) -- min-h-0 lets it actually shrink instead of
+          being pushed to its content's natural size, and overflow-hidden
+          on the card above clips anything that still doesn't fit, so a
+          long title/many chips can never grow the card. */}
+      <div className="flex-1 min-h-0 min-w-0 px-2.5 py-1.5 flex flex-col justify-center gap-0.5 overflow-hidden">
+        <p className="text-xs font-bold text-gray-900 truncate leading-tight">{listing.title}</p>
+        {typeLabel && <p className="text-[11px] text-blue-600 font-semibold capitalize truncate leading-tight">{typeLabel}</p>}
+        {listing.city && <p className="text-[11px] text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-2.5 h-2.5 shrink-0"/>{listing.city}</p>}
+        {eventDate && <p className="text-[11px] text-gray-400 flex items-center gap-1 truncate leading-tight"><Calendar className="w-2.5 h-2.5 shrink-0"/>{eventDate}</p>}
         {roleChips.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-0.5">
-            {roleChips.slice(0, 3).map(c => (
-              <span key={c} className="text-[9px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize truncate max-w-full">{c}</span>
+          <div className="flex flex-nowrap gap-1 overflow-hidden">
+            {roleChips.slice(0, 2).map(c => (
+              <span key={c} className="shrink-0 text-[9px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full capitalize truncate max-w-[45%]">{c}</span>
             ))}
           </div>
         )}
-        {!isOpp && <p className="text-sm font-black text-blue-600 mt-0.5">{price}</p>}
+        {!isOpp && <p className="text-xs font-black text-blue-600 leading-tight">{price}</p>}
       </div>
     </button>
   );
@@ -1003,21 +1025,21 @@ function DesktopCreatorCard({ u }: { u: CreatorRow }) {
     <button
       onClick={() => navigate(`/host/${u.id}`)}
       style={DESKTOP_CARD_STYLE}
-      className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow"
+      className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col hover:shadow-md transition-shadow"
     >
-      <div className="relative w-full aspect-[4/3] bg-gray-100 shrink-0">
+      <div style={DESKTOP_CARD_IMAGE_STYLE} className="relative w-full shrink-0 bg-gray-100">
         {u.avatar_url
-          ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
-          : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
+          ? <img src={u.avatar_url} className="w-full h-full object-cover object-center" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-2xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
       </div>
-      <div className="p-3 flex flex-col gap-1 min-w-0">
+      <div className="flex-1 min-h-0 min-w-0 px-2.5 py-1.5 flex flex-col justify-center gap-0.5 overflow-hidden">
         <div className="flex items-center gap-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
-          {u.is_verified && <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-50 shrink-0"/>}
+          <p className="text-xs font-bold text-gray-900 truncate leading-tight">{u.name}</p>
+          {u.is_verified && <CheckCircle className="w-3 h-3 text-blue-500 fill-blue-50 shrink-0"/>}
         </div>
-        {u.primary_role && <p className="text-xs text-blue-600 font-semibold truncate">{u.primary_role}</p>}
+        {u.primary_role && <p className="text-[11px] text-blue-600 font-semibold truncate leading-tight">{u.primary_role}</p>}
         {(u.city ?? u.location) && (
-          <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
+          <p className="text-[11px] text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-2.5 h-2.5 shrink-0"/>{u.city ?? u.location}</p>
         )}
       </div>
     </button>
