@@ -42,6 +42,17 @@ export interface User {
   subscriptionStatus?: 'active' | 'canceled';
   subscriptionCurrentPeriodEnd?: string;
   subscriptionCancelAtPeriodEnd?: boolean;
+  /** Set by fn_deactivate_subscription when Stripe cancels a lapsed
+   *  subscription (no valid billing method survived retries) -- the tier
+   *  the account just fell FROM ('professional' | 'business'), so the
+   *  downgrade banner can say which one expired. Cleared back to null by
+   *  fn_activate_subscription on a successful (re)subscribe. */
+  subscriptionDowngradedFrom?: string | null;
+  /** false right after an auto-downgrade, until the user dismisses the
+   *  banner ("Continue with Creator+") or successfully renews -- the ONLY
+   *  one of these subscription fields a client write is allowed to touch
+   *  directly (it carries no privilege, just banner visibility). */
+  subscriptionDowngradeAcknowledged?: boolean;
   /** Parsed `profiles.profile_meta` JSON — skills, gear, socials, secondary roles, etc. */
   profileMeta?: Record<string, any>;
 }

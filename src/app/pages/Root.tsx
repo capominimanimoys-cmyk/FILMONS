@@ -8,6 +8,7 @@ import { Footer } from '../components/Footer';
 import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { GuestBanner } from '../components/GuestBanner';
+import { SubscriptionDowngradeBanner } from '../components/SubscriptionDowngradeBanner';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { CookieConsent } from '../components/CookieConsent';
 import { RouteProgressBar } from '../components/RouteProgressBar';
@@ -124,6 +125,7 @@ export function Root() {
       <div className="min-h-screen flex flex-col">
         {/* Guest mode banner — shown above everything when browsing without account */}
         {isGuest && !isAuthenticated && <GuestBanner />}
+        {isAuthenticated && <SubscriptionDowngradeBanner />}
 
         {sidebarOpen && <SideDrawer onClose={() => setSidebarOpen(false)} />}
 

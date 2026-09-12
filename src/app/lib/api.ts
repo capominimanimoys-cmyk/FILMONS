@@ -183,6 +183,8 @@ function profileRowToUser(data: Record<string, any>): User {
     subscriptionStatus:            data.subscription_status ?? undefined,
     subscriptionCurrentPeriodEnd:  data.subscription_current_period_end ?? undefined,
     subscriptionCancelAtPeriodEnd: data.subscription_cancel_at_period_end ?? false,
+    subscriptionDowngradedFrom:         data.subscription_downgraded_from ?? null,
+    subscriptionDowngradeAcknowledged:  data.subscription_downgrade_acknowledged ?? true,
   } as User;
 }
 
@@ -473,7 +475,7 @@ export const authApi = {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end')
+        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end, subscription_downgraded_from, subscription_downgrade_acknowledged')
         .eq('id', cached.id)
         .single();
       if (data) {
@@ -512,6 +514,8 @@ export const authApi = {
           subscriptionStatus:            data.subscription_status ?? cached.subscriptionStatus,
           subscriptionCurrentPeriodEnd:  data.subscription_current_period_end ?? cached.subscriptionCurrentPeriodEnd,
           subscriptionCancelAtPeriodEnd: data.subscription_cancel_at_period_end ?? cached.subscriptionCancelAtPeriodEnd ?? false,
+          subscriptionDowngradedFrom:         data.subscription_downgraded_from ?? cached.subscriptionDowngradedFrom ?? null,
+          subscriptionDowngradeAcknowledged:  data.subscription_downgrade_acknowledged ?? cached.subscriptionDowngradeAcknowledged ?? true,
         };
         saveSession(fresh);
         return { user: fresh };
