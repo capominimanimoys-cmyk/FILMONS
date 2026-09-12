@@ -78,7 +78,6 @@ interface NavState {
     role?: string | null;
     skills?: string[] | null;
     location?: string | null;
-    availableOnly?: boolean | null;
     verifiedOnly?: boolean | null;
     accountLevel?: AccountTier | null;
   } | null;
@@ -90,7 +89,6 @@ interface CreatorRow {
   city: string | null; location: string | null; primary_role: string | null; is_verified: boolean | null;
   secondary_roles?: string[] | null;
   skills?: string[] | null;
-  available_for_hire?: boolean | null;
   account_type?: string | null;
 }
 
@@ -160,9 +158,12 @@ function classifyListingsPage(
 
 // Full field set the creators filter panel needs -- wider than the plain
 // browse query used before it (name/username/avatar/city/location/
-// primary_role/is_verified only), since role/skills/availability/account
-// level all need their backing columns actually selected to filter on.
-const CREATOR_SELECT = 'id, name, username, avatar_url, city, location, primary_role, is_verified, secondary_roles, skills, available_for_hire, account_type';
+// primary_role/is_verified only), since role/skills/account level all need
+// their backing columns actually selected to filter on. Does NOT include
+// available_for_hire -- it isn't a real column on `profiles` (see
+// filmSearch.ts's own comment); selecting a nonexistent column fails this
+// entire query, not just that one field.
+const CREATOR_SELECT = 'id, name, username, avatar_url, city, location, primary_role, is_verified, secondary_roles, skills, account_type';
 // Same order of magnitude as filmSearch.ts's own per-term cap -- once a
 // term or any creator filter is active, there's no single DB query that
 // can push every one of these fields at once (skills-contains-all,
@@ -186,14 +187,13 @@ function applyCreatorFilters(rows: CreatorRow[], filters: NavState['filters']): 
     const loc = filters.location.toLowerCase();
     out = out.filter(u => (u.city ?? '').toLowerCase().includes(loc) || (u.location ?? '').toLowerCase().includes(loc));
   }
-  if (filters.availableOnly) out = out.filter(u => u.available_for_hire === true);
-  if (filters.verifiedOnly)  out = out.filter(u => u.is_verified === true);
-  if (filters.accountLevel)  out = out.filter(u => normalizeTier(u.account_type ?? undefined) === filters.accountLevel);
+  if (filters.verifiedOnly) out = out.filter(u => u.is_verified === true);
+  if (filters.accountLevel) out = out.filter(u => normalizeTier(u.account_type ?? undefined) === filters.accountLevel);
   return out;
 }
 
 function hasCreatorFilters(filters: NavState['filters']): boolean {
-  return !!(filters?.role || filters?.skills?.length || filters?.location || filters?.availableOnly || filters?.verifiedOnly || filters?.accountLevel);
+  return !!(filters?.role || filters?.skills?.length || filters?.location || filters?.verifiedOnly || filters?.accountLevel);
 }
 
 async function fetchCreatorsForCategory(navState: NavState, from: number, to: number): Promise<{ creators: CreatorRow[]; total: number }> {
@@ -343,7 +343,6 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
   const [role, setRole] = useState(initialNavState.filters?.role ?? '');
   const [skills, setSkills] = useState<string[]>(initialNavState.filters?.skills ?? []);
   const [creatorLocation, setCreatorLocation] = useState(initialNavState.filters?.location ?? '');
-  const [availableOnly, setAvailableOnly] = useState(!!initialNavState.filters?.availableOnly);
   const [verifiedOnly, setVerifiedOnly] = useState(!!initialNavState.filters?.verifiedOnly);
   const [accountLevel, setAccountLevel] = useState<AccountTier | ''>(initialNavState.filters?.accountLevel ?? '');
   const toggleSkill = (s: string) => setSkills(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -363,7 +362,6 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
       role: category === 'creators' ? (role || null) : null,
       skills: category === 'creators' && skills.length ? skills : null,
       location: category === 'creators' ? (creatorLocation || null) : null,
-      availableOnly: category === 'creators' ? availableOnly : null,
       verifiedOnly: category === 'creators' ? verifiedOnly : null,
       accountLevel: category === 'creators' ? (accountLevel || null) : null,
     },
@@ -391,9 +389,9 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
     setHasMore(!locked && (l.length + c.length) === PAGE_SIZE);
     setLoading(false); setLoadingMore(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip, role, JSON.stringify(skills), creatorLocation, availableOnly, verifiedOnly, accountLevel]);
+  }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip, role, JSON.stringify(skills), creatorLocation, verifiedOnly, accountLevel]);
 
-  useEffect(() => { setPage(0); loadPage(0); }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip, role, JSON.stringify(skills), creatorLocation, availableOnly, verifiedOnly, accountLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(0); loadPage(0); }, [category, locked, emergencyBlocked, user?.id, debouncedQuery, sort, priceMin, priceMax, chip, role, JSON.stringify(skills), creatorLocation, verifiedOnly, accountLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -410,8 +408,8 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
 
   // Back always returns to the Browse Search "All" hub, carrying the FULL
   // current search state -- query, sort, and every active filter (price,
-  // paid/remote, and for Creators: role/skills/location/availability/
-  // verified/account level) -- not just the query text, so a user who
+  // paid/remote, and for Creators: role/skills/location/verified/account
+  // level) -- not just the query text, so a user who
   // narrowed this page down and then goes back doesn't lose that framing.
   // categoryUrl already serializes all of it into the URL too, so this is
   // also a shareable/bookmarkable/back-forward-safe link, not just state.
@@ -421,7 +419,7 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
 
   const clearFilters = () => {
     setPriceMin(''); setPriceMax(''); setChip('all'); setSort('recent');
-    setRole(''); setSkills([]); setCreatorLocation(''); setAvailableOnly(false); setVerifiedOnly(false); setAccountLevel('');
+    setRole(''); setSkills([]); setCreatorLocation(''); setVerifiedOnly(false); setAccountLevel('');
   };
 
   const toggleSave = async (listingId: string, listingData: any) => {
@@ -447,7 +445,6 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
       role={role} setRole={setRole}
       skills={skills} toggleSkill={toggleSkill}
       location={creatorLocation} setLocation={setCreatorLocation}
-      availableOnly={availableOnly} setAvailableOnly={setAvailableOnly}
       verifiedOnly={verifiedOnly} setVerifiedOnly={setVerifiedOnly}
       accountLevel={accountLevel} setAccountLevel={setAccountLevel}
       onClear={clearFilters}
@@ -704,13 +701,12 @@ function CreatorToggle({ label, checked, onChange }: { label: string; checked: b
 // separately-maintained taxonomy.
 function CreatorFilterPanel({
   role, setRole, skills, toggleSkill, location, setLocation,
-  availableOnly, setAvailableOnly, verifiedOnly, setVerifiedOnly,
+  verifiedOnly, setVerifiedOnly,
   accountLevel, setAccountLevel, onClear,
 }: {
   role: string; setRole: (v: string) => void;
   skills: string[]; toggleSkill: (s: string) => void;
   location: string; setLocation: (v: string) => void;
-  availableOnly: boolean; setAvailableOnly: (v: boolean) => void;
   verifiedOnly: boolean; setVerifiedOnly: (v: boolean) => void;
   accountLevel: AccountTier | ''; setAccountLevel: (v: AccountTier | '') => void;
   onClear: () => void;
@@ -786,7 +782,6 @@ function CreatorFilterPanel({
       </div>
 
       <div className="space-y-1">
-        <CreatorToggle label="Available for hire" checked={availableOnly} onChange={setAvailableOnly}/>
         <CreatorToggle label="Verified only" checked={verifiedOnly} onChange={setVerifiedOnly}/>
       </div>
 
@@ -1120,7 +1115,6 @@ function categoryUrl(category: CategoryTab | 'all', navState: NavState): string 
   if (navState.filters?.role) params.set('role', navState.filters.role);
   if (navState.filters?.skills?.length) params.set('skills', navState.filters.skills.join(','));
   if (navState.filters?.location) params.set('loc', navState.filters.location);
-  if (navState.filters?.availableOnly) params.set('avail', '1');
   if (navState.filters?.verifiedOnly) params.set('verified', '1');
   if (navState.filters?.accountLevel) params.set('level', navState.filters.accountLevel);
   const qs = params.toString();
@@ -1551,7 +1545,6 @@ export function CategoryResults() {
       role: searchParams.get('role') || null,
       skills: urlSkills ? urlSkills.split(',').filter(Boolean) : null,
       location: searchParams.get('loc') || null,
-      availableOnly: searchParams.get('avail') === '1',
       verifiedOnly: searchParams.get('verified') === '1',
       accountLevel: (searchParams.get('level') as AccountTier | null) || null,
     },
