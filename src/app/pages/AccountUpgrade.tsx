@@ -89,6 +89,12 @@ const TIERS: {
 const TIER_ORDER: AccountTier[] = ['creator', 'creator_plus', 'professional', 'business'];
 function tierRank(t: AccountTier) { return TIER_ORDER.indexOf(t); }
 
+function formatSubDate(iso?: string): string | null {
+  if (!iso) return null;
+  try { return new Date(iso).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' }); }
+  catch { return null; }
+}
+
 const TIER_ICON: Record<AccountTier, any> = {
   creator: UserRound, creator_plus: BadgeCheck, professional: BriefcaseBusiness, business: Building2,
 };
@@ -409,7 +415,9 @@ export function AccountUpgrade() {
 
   const currentTierData = TIERS.find(t => t.id === current)!;
   const CurrentIcon = TIER_ICON[current];
-  const subscriptionExpired = (current === 'professional' || current === 'business') && user?.subscriptionStatus === 'canceled';
+  const isPaidTier = current === 'professional' || current === 'business';
+  const subscriptionExpired = isPaidTier && user?.subscriptionStatus === 'canceled';
+  const periodEndLabel = formatSubDate(user?.subscriptionCurrentPeriodEnd);
   // Creator sees Creator+ (the recommended next step) alongside
   // Professional/Business (locked behind Creator+, explained on tap);
   // Creator+ and up only see Professional/Business.
@@ -461,6 +469,21 @@ export function AccountUpgrade() {
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-green-50 text-green-600">Current account</span>
                 )}
               </div>
+              {/* Paid tiers only -- Creator/Creator+ are free, nothing to
+                  renew/expire. Wording depends on which of the three real
+                  subscription states this is: already canceled and past its
+                  paid-through date (subscriptionExpired), canceled but still
+                  within the paid-through window (cancel_at_period_end),
+                  or actively renewing. */}
+              {isPaidTier && periodEndLabel && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {subscriptionExpired
+                    ? `Access ended ${periodEndLabel}`
+                    : user?.subscriptionCancelAtPeriodEnd
+                      ? `Cancels ${periodEndLabel} — access continues until then`
+                      : `Renews ${periodEndLabel}`}
+                </p>
+              )}
             </div>
           </div>
           {subscriptionExpired && (
