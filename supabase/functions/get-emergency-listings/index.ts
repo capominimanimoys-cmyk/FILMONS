@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
-    const { userId, query, priceMin, priceMax, from = 0, to = 29 } = await req.json();
+    const { userId, query, priceMin, priceMax, location, from = 0, to = 29 } = await req.json();
 
     // Guest (no userId at all) is denied before anything else runs.
     if (!userId) return json({ error: 'professional_required' }, 403);
@@ -64,8 +64,7 @@ Deno.serve(async (req) => {
     // title/description/city), not the raw phrase as one literal
     // substring -- a query like "vancouver photographer" would otherwise
     // never match anything, since no listing's fields literally contain
-    // that exact contiguous phrase. See CategoryResults.tsx's
-    // termOrClause() for the client-side twin of this.
+    // that exact contiguous phrase.
     if (term) {
       const words = term.split(/\s+/).filter(Boolean);
       const orParts = words.flatMap(w => [`title.ilike.%${w}%`, `description.ilike.%${w}%`, `city.ilike.%${w}%`]);
@@ -73,6 +72,10 @@ Deno.serve(async (req) => {
     }
     if (priceMin != null) params.append('price', `gte.${priceMin}`);
     if (priceMax != null) params.append('price', `lte.${priceMax}`);
+    // Universal Location filter from /search/category/all's filter bar.
+    if (typeof location === 'string' && location.trim()) {
+      params.append('city', `ilike.%${location.trim()}%`);
+    }
     params.set('order', 'created_at.desc');
     params.set('limit', String(Math.max(0, (to - from) + 1)));
     params.set('offset', String(Math.max(0, from)));

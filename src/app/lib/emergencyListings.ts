@@ -7,7 +7,7 @@ import { Listing } from '../types';
 import { mapListingRow } from './api';
 
 export async function fetchEmergencyListings(params: {
-  userId?: string; query?: string; priceMin?: number; priceMax?: number; from?: number; to?: number;
+  userId?: string; query?: string; priceMin?: number; priceMax?: number; location?: string; from?: number; to?: number;
 }): Promise<{ listings: Listing[]; total: number; blocked: boolean }> {
   try {
     const res = await fetch(`https://${projectId}.supabase.co/functions/v1/get-emergency-listings`, {

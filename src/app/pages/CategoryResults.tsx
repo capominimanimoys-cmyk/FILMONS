@@ -59,7 +59,12 @@ const CATEGORY_SEARCH_PLACEHOLDER: Record<CategoryTab, string> = {
 const OPPORTUNITY_LOCKED_LIMIT = 5;
 const PAGE_SIZE = 20;
 
-type SortOption = 'recent' | 'price_low' | 'price_high' | 'name_asc';
+// 'relevance' preserves whatever order the shared search's own scoreResult()
+// ranking (or, with no query, the plain created_at-desc browse query)
+// already produced, instead of re-sorting -- used by /all's "Relevance" and
+// "Nearest" sort options (see AllGroupedResults -- "Nearest" has no real
+// distance to sort by, so it falls back to this rather than faking one).
+type SortOption = 'recent' | 'price_low' | 'price_high' | 'name_asc' | 'relevance';
 
 interface NavState {
   query?: string;
@@ -70,6 +75,17 @@ interface NavState {
     // fetchCategoryPage) rather than via a precise server-side count.
     paid?: boolean | null;
     remote?: boolean | null;
+    // Universal on /search/category/all (AllGroupedResults' filter bar) --
+    // city/location text match, applied to BOTH listings (classifyListingsPage)
+    // and creators (applyCreatorFilters). Also settable from the Creators-
+    // only panel on its own dedicated page.
+    location?: string | null;
+    // "Available now" -- the only category with a real, data-backed notion
+    // of current availability is Opportunities (application deadline not
+    // passed). Every other category's results are already exactly its
+    // active/non-expired set with nothing else to narrow, so this is a
+    // deliberate no-op there, not a fake filter (see classifyListingsPage).
+    availableNow?: boolean | null;
     // Creators-only (see CreatorFilterPanel) -- every other category
     // ignores these. Applied client-side (applyCreatorFilters) for the
     // same reason paid/remote are: not all of these map to a single
@@ -77,7 +93,6 @@ interface NavState {
     // fuzzy-matched fields).
     role?: string | null;
     skills?: string[] | null;
-    location?: string | null;
     verifiedOnly?: boolean | null;
     accountLevel?: AccountTier | null;
   } | null;
@@ -135,12 +150,18 @@ function classifyListingsPage(
   category: Exclude<CategoryTab, 'creators' | 'emergency'>, matched: SearchListingRow[], navState: NavState, from: number, to: number,
 ): { listings: Listing[]; total: number } {
   const price = navState.filters?.priceRange;
-  const sortCol = navState.sort === 'price_low' || navState.sort === 'price_high' ? 'price' : 'created_at';
+  const location = navState.filters?.location;
+  const sortCol = navState.sort === 'price_low' || navState.sort === 'price_high' ? 'price'
+    : navState.sort === 'relevance' ? 'relevance' : 'created_at';
   const ascending = navState.sort === 'price_low';
 
   let bucket = matched.filter(CATEGORY_CLASSIFIER[category]);
   if (price?.min != null) bucket = bucket.filter(l => (l.price ?? 0) >= price.min!);
   if (price?.max != null) bucket = bucket.filter(l => (l.price ?? 0) <= price.max!);
+  if (location) {
+    const loc = location.toLowerCase();
+    bucket = bucket.filter(l => (l.city ?? '').toLowerCase().includes(loc));
+  }
 
   let mapped = bucket.map(mapListingRow);
   if (category === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
@@ -148,10 +169,25 @@ function classifyListingsPage(
     if (navState.filters?.paid === true)  mapped = mapped.filter(l => l.opportunity?.paid === true);
     if (navState.filters?.paid === false) mapped = mapped.filter(l => l.opportunity?.paid === false);
     if (navState.filters?.remote)         mapped = mapped.filter(l => l.opportunity?.workArrangement === 'remote');
+    // "Available now" only has a real meaning here -- still accepting
+    // applications (no deadline, or deadline hasn't passed). Every other
+    // category is already its complete active/non-expired set with
+    // nothing else to narrow (see NavState's own comment on this field),
+    // so this branch is the ONLY place availableNow does anything.
+    if (navState.filters?.availableNow) {
+      const now = Date.now();
+      mapped = mapped.filter(l => l.opportunity?.noDeadline || !l.opportunity?.applicationDeadline
+        || new Date(l.opportunity.applicationDeadline).getTime() >= now);
+    }
   }
-  mapped.sort((a, b) => sortCol === 'price'
-    ? (ascending ? (a.price ?? 0) - (b.price ?? 0) : (b.price ?? 0) - (a.price ?? 0))
-    : new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  // 'relevance' -- leave `mapped` in whatever order it already arrived in
+  // (the shared search's own scoreResult() ranking, or created_at-desc from
+  // the plain browse query) instead of re-sorting it.
+  if (sortCol !== 'relevance') {
+    mapped.sort((a, b) => sortCol === 'price'
+      ? (ascending ? (a.price ?? 0) - (b.price ?? 0) : (b.price ?? 0) - (a.price ?? 0))
+      : new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  }
 
   return { listings: mapped.slice(from, to + 1), total: mapped.length };
 }
@@ -243,7 +279,7 @@ async function fetchCategoryPage(
   // itself refuses and this just returns nothing.
   if (category === 'emergency') {
     const { listings, total } = await fetchEmergencyListings({
-      userId, query: term, priceMin: price?.min, priceMax: price?.max, from, to,
+      userId, query: term, priceMin: price?.min, priceMax: price?.max, location: navState.filters?.location ?? undefined, from, to,
     });
     return { listings, creators: [], total };
   }
@@ -276,23 +312,29 @@ async function fetchCategoryPage(
     }
     if (price?.min != null) query = query.gte('price', price.min);
     if (price?.max != null) query = query.lte('price', price.max);
+    if (navState.filters?.location) query = query.ilike('city', `%${navState.filters.location}%`);
     return query.order(sortCol, { ascending }).range(from, to);
   });
   let listings = (res.data ?? []).map(mapListingRow);
   if (category === 'rental') listings = listings.filter(l => l.listingType !== 'opportunity');
   let total = (res as any).count ?? listings.length;
 
-  // Paid/Unpaid/Remote live inside opportunity metadata, not an indexed
-  // column, so they narrow this already-fetched page client-side rather
-  // than the database query -- `total` below stops being an exact count
-  // once either is active (there is no cheap way to get one without a
-  // second full-table scan), so it's approximated from what's left on
-  // this page instead of claimed as precise.
-  if (category === 'opportunities' && (navState.filters?.paid != null || navState.filters?.remote)) {
+  // Paid/Unpaid/Remote/availableNow live inside opportunity metadata, not
+  // an indexed column, so they narrow this already-fetched page
+  // client-side rather than the database query -- `total` below stops
+  // being an exact count once any is active (there is no cheap way to get
+  // one without a second full-table scan), so it's approximated from
+  // what's left on this page instead of claimed as precise.
+  if (category === 'opportunities' && (navState.filters?.paid != null || navState.filters?.remote || navState.filters?.availableNow)) {
     const before = listings.length;
     if (navState.filters?.paid === true)  listings = listings.filter(l => l.opportunity?.paid === true);
     if (navState.filters?.paid === false) listings = listings.filter(l => l.opportunity?.paid === false);
     if (navState.filters?.remote)         listings = listings.filter(l => l.opportunity?.workArrangement === 'remote');
+    if (navState.filters?.availableNow) {
+      const now = Date.now();
+      listings = listings.filter(l => l.opportunity?.noDeadline || !l.opportunity?.applicationDeadline
+        || new Date(l.opportunity.applicationDeadline).getTime() >= now);
+    }
     if (before > 0) total = Math.round(total * (listings.length / before));
   }
 
@@ -1469,8 +1511,99 @@ function DesktopCreatorCard({ u }: { u: CreatorRow }) {
   );
 }
 
-function AllGroupedResults({ navState }: { navState: NavState }) {
+// ── /search/category/all filter bar ──────────────────────────────────────────
+// Deliberately UNIVERSAL, not per-category -- this page mixes all 7 result
+// types, so only filters that mean roughly the same thing across every one
+// of them live here (Category, Location, Distance, Sort, Availability,
+// Price). Anything narrower (gear brand, creator skills, opportunity paid/
+// remote, etc.) belongs on the dedicated /search/category/:tab pages
+// (SingleCategoryResults' FilterPanel / CreatorFilterPanel), not here.
+type AllCategoryFilter = 'all' | CategoryTab;
+const ALL_CATEGORY_OPTIONS: { id: AllCategoryFilter; label: string }[] = [
+  { id: 'all', label: 'All categories' },
+  ...CATEGORY_IDS.map(id => ({ id, label: CATEGORY_LABEL[id] })),
+];
+// /all's sort is a separate, simpler vocabulary than the dedicated pages'
+// (recent/price_low/price_high/name_asc) -- Relevance and Newest map onto
+// the shared SortOption type ('relevance' / 'recent'); Nearest would too if
+// there were real distance data to sort by (see Distance below), so it
+// falls back to 'relevance' rather than faking a distance sort.
+type AllSortOption = 'relevance' | 'newest' | 'nearest';
+const ALL_SORT_LABEL: Record<AllSortOption, string> = { relevance: 'Relevance', newest: 'Newest', nearest: 'Nearest' };
+const ALL_DISTANCE_OPTIONS = ['5', '10', '25', '50', '100'];
+type AllMenu = 'category' | 'location' | 'distance' | 'availability' | 'price' | 'sort' | null;
+
+function DropdownButton({ label, active, isOpen, onToggle, children, widthClass = 'w-56' }: {
+  label: string; active: boolean; isOpen: boolean; onToggle: () => void; children: React.ReactNode; widthClass?: string;
+}) {
+  return (
+    <div className="relative" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={onToggle}
+        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-bold whitespace-nowrap transition-colors ${
+          active ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        {label} <ChevronDown className="w-3.5 h-3.5 shrink-0"/>
+      </button>
+      {isOpen && (
+        <div className={`absolute left-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-3 ${widthClass}`}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RadioRow({ label, checked, onClick }: { label: string; checked: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 text-left">
+      <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${checked ? 'border-blue-600' : 'border-gray-300'}`}>
+        {checked && <span className="w-2 h-2 rounded-full bg-blue-600"/>}
+      </span>
+      <span className={`text-sm ${checked ? 'font-bold text-gray-900' : 'text-gray-600'}`}>{label}</span>
+    </button>
+  );
+}
+
+function AllGroupedResults({ navState: initialNavState }: { navState: NavState }) {
   const navigate = useNavigate();
+
+  const [searchText, setSearchText] = useState(initialNavState.query ?? '');
+  const [debouncedQuery, setDebouncedQuery] = useState(searchText);
+  useEffect(() => { const t = setTimeout(() => setDebouncedQuery(searchText), 350); return () => clearTimeout(t); }, [searchText]);
+
+  const [categoryFilter, setCategoryFilter] = useState<AllCategoryFilter>('all');
+  const [location, setLocation] = useState(initialNavState.filters?.location ?? '');
+  // Distance has no real effect on matching yet -- see the comment on the
+  // Distance dropdown content below for exactly why, and what it takes to
+  // change that. It's still tracked/shown as an active-filter chip so the
+  // control isn't silently inert from the user's point of view.
+  const [distance, setDistance] = useState('');
+  const [allSort, setAllSort] = useState<AllSortOption>('relevance');
+  const [availableNow, setAvailableNow] = useState(false);
+  const [priceMin, setPriceMin] = useState(initialNavState.filters?.priceRange?.min != null ? String(initialNavState.filters.priceRange.min) : '');
+  const [priceMax, setPriceMax] = useState(initialNavState.filters?.priceRange?.max != null ? String(initialNavState.filters.priceRange.max) : '');
+  const [openMenu, setOpenMenu] = useState<AllMenu>(null);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const toggleMenu = (m: AllMenu) => setOpenMenu(v => v === m ? null : m);
+
+  const clearAll = () => {
+    setCategoryFilter('all'); setLocation(''); setDistance(''); setAllSort('relevance');
+    setAvailableNow(false); setPriceMin(''); setPriceMax('');
+  };
+
+  const navState: NavState = {
+    query: debouncedQuery,
+    sort: allSort === 'newest' ? 'recent' : 'relevance',
+    filters: {
+      priceRange: (priceMin || priceMax) ? { min: priceMin ? Number(priceMin) : undefined, max: priceMax ? Number(priceMax) : undefined } : null,
+      location: location || null,
+      availableNow,
+    },
+  };
+
+  const visibleCategories = categoryFilter === 'all' ? CATEGORY_IDS : [categoryFilter];
   const term = navState.query?.trim();
 
   // The ONE shared searchMatchingListings/searchMatchingCreators call for
@@ -1495,13 +1628,116 @@ function AllGroupedResults({ navState }: { navState: NavState }) {
 
   const matchedFor = (cat: CategoryTab) => (term && cat !== 'emergency') ? sharedMatched : undefined;
 
+  const activeChips: { key: string; label: string; onRemove: () => void }[] = [
+    ...(categoryFilter !== 'all' ? [{ key: 'cat', label: CATEGORY_LABEL[categoryFilter], onRemove: () => setCategoryFilter('all') }] : []),
+    ...(location ? [{ key: 'loc', label: location, onRemove: () => setLocation('') }] : []),
+    ...(distance ? [{ key: 'dist', label: `${distance} km`, onRemove: () => setDistance('') }] : []),
+    ...(availableNow ? [{ key: 'avail', label: 'Available now', onRemove: () => setAvailableNow(false) }] : []),
+    ...((priceMin || priceMax) ? [{ key: 'price', label: `$${priceMin || '0'}–${priceMax || '∞'}`, onRemove: () => { setPriceMin(''); setPriceMax(''); } }] : []),
+  ];
+
+  const categoryMenu = (
+    <div className="max-h-72 overflow-y-auto">
+      {ALL_CATEGORY_OPTIONS.map(o => (
+        <RadioRow key={o.id} label={o.label} checked={categoryFilter === o.id} onClick={() => { setCategoryFilter(o.id); setOpenMenu(null); }}/>
+      ))}
+    </div>
+  );
+  const locationMenu = (
+    <div>
+      <select
+        value={location} onChange={e => setLocation(e.target.value)}
+        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400"
+      >
+        <option value="">Any location</option>
+        {CA_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </div>
+  );
+  const distanceMenu = (
+    <div>
+      {/* Real "within X km" filtering needs a coordinate to measure from
+          (this Location text) and a coordinate on every result -- neither
+          listings nor profiles store one anywhere in this app today (only
+          city/location strings). Rather than fake a distance calculation,
+          this stays a simple "no distance filtering yet" selector: it's
+          tracked and shown as an active chip, but the value doesn't
+          currently narrow results beyond what Location already does. Wiring
+          it up for real needs lat/lng captured at listing-creation and
+          profile-setup time plus a geocode step here (locationApi.ts
+          already has a geocoder -- searchNominatim -- that could back it). */}
+      <RadioRow label="Any distance" checked={!distance} onClick={() => { setDistance(''); setOpenMenu(null); }}/>
+      {ALL_DISTANCE_OPTIONS.map(d => (
+        <RadioRow key={d} label={`${d} km`} checked={distance === d} onClick={() => { setDistance(d); setOpenMenu(null); }}/>
+      ))}
+    </div>
+  );
+  const availabilityMenu = (
+    <div>
+      <RadioRow label="Any availability" checked={!availableNow} onClick={() => { setAvailableNow(false); setOpenMenu(null); }}/>
+      <RadioRow label="Available now" checked={availableNow} onClick={() => { setAvailableNow(true); setOpenMenu(null); }}/>
+    </div>
+  );
+  const sortMenu = (
+    <div>
+      {(Object.keys(ALL_SORT_LABEL) as AllSortOption[]).map(s => (
+        <RadioRow key={s} label={ALL_SORT_LABEL[s]} checked={allSort === s} onClick={() => { setAllSort(s); setOpenMenu(null); }}/>
+      ))}
+    </div>
+  );
+  // "When applicable" per spec -- Creators has no price at all, so this
+  // simply never matches anything there (classifyListingsPage only applies
+  // priceRange to listings-based categories; fetchCreatorsForCategory
+  // never reads it). Kept as a dropdown here rather than a 6th always-
+  // visible control, matching the compact-bar spec.
+  const priceMenu = (
+    <div className="flex items-center gap-2">
+      <input
+        type="number" inputMode="numeric" placeholder="Min" value={priceMin}
+        onChange={e => setPriceMin(e.target.value)}
+        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400"
+      />
+      <span className="text-gray-300">–</span>
+      <input
+        type="number" inputMode="numeric" placeholder="Max" value={priceMax}
+        onChange={e => setPriceMax(e.target.value)}
+        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400"
+      />
+    </div>
+  );
+
+  const filterBody = (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Category</p>
+        {categoryMenu}
+      </div>
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Location</p>
+        {locationMenu}
+      </div>
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Distance</p>
+        {distanceMenu}
+      </div>
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Availability</p>
+        {availabilityMenu}
+      </div>
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Price (when applicable)</p>
+        {priceMenu}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" onClick={() => openMenu && setOpenMenu(null)}>
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
         {/* Same DESKTOP_SECTION_PAD as every category row below it, so this
             bar's content lines up with them -- not a separate narrower
             max-width container. */}
-        <div className={`flex items-center gap-3 px-4 lg:px-8 xl:px-10`} style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+        <div className="flex items-center gap-3 px-4 lg:px-8 xl:px-10" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
           {/* Always back to Browse Search itself, not browser history --
               this page is reachable from a modal that never had its own
               route (Root.tsx's search icon), so navigate(-1) could land
@@ -1511,10 +1747,103 @@ function AllGroupedResults({ navState }: { navState: NavState }) {
           </button>
           <p className="text-base lg:text-lg font-black text-gray-900">All Results</p>
         </div>
+
+        {/* ── Mobile: search input + Filters/Sort row ─────────────────────── */}
+        <div className="lg:hidden px-4 pb-3 space-y-2.5">
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
+            <input
+              value={searchText} onChange={e => setSearchText(e.target.value)}
+              placeholder="Search results..."
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowMobileFilters(true); }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5"/> Filters{activeChips.length > 0 ? ` (${activeChips.length})` : ''}
+            </button>
+            <div onClick={e => e.stopPropagation()}>
+              <DropdownButton label={`Sort: ${ALL_SORT_LABEL[allSort]}`} active={allSort !== 'relevance'} isOpen={openMenu === 'sort'} onToggle={() => toggleMenu('sort')}>
+                {sortMenu}
+              </DropdownButton>
+            </div>
+          </div>
+          {(location || distance) && (
+            <p className="text-xs text-gray-500 font-semibold">
+              {location}{location && distance ? ' • ' : ''}{distance ? `Within ${distance} km` : ''}
+            </p>
+          )}
+        </div>
+
+        {/* ── Desktop: compact dropdown row + active-filter chips ─────────── */}
+        <div className="hidden lg:block px-4 lg:px-8 xl:px-10 pb-3" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <DropdownButton label={categoryFilter === 'all' ? 'All categories' : CATEGORY_LABEL[categoryFilter]} active={categoryFilter !== 'all'} isOpen={openMenu === 'category'} onToggle={() => toggleMenu('category')}>
+                {categoryMenu}
+              </DropdownButton>
+              <DropdownButton label={location || 'Location'} active={!!location} isOpen={openMenu === 'location'} onToggle={() => toggleMenu('location')}>
+                {locationMenu}
+              </DropdownButton>
+              <DropdownButton label={distance ? `${distance} km` : 'Distance'} active={!!distance} isOpen={openMenu === 'distance'} onToggle={() => toggleMenu('distance')}>
+                {distanceMenu}
+              </DropdownButton>
+              <DropdownButton label={availableNow ? 'Available now' : 'Availability'} active={availableNow} isOpen={openMenu === 'availability'} onToggle={() => toggleMenu('availability')}>
+                {availabilityMenu}
+              </DropdownButton>
+              <DropdownButton label={(priceMin || priceMax) ? `$${priceMin || '0'}–${priceMax || '∞'}` : 'Price'} active={!!(priceMin || priceMax)} isOpen={openMenu === 'price'} onToggle={() => toggleMenu('price')} widthClass="w-64">
+                {priceMenu}
+              </DropdownButton>
+            </div>
+            <DropdownButton label={`Sort: ${ALL_SORT_LABEL[allSort]}`} active={allSort !== 'relevance'} isOpen={openMenu === 'sort'} onToggle={() => toggleMenu('sort')}>
+              {sortMenu}
+            </DropdownButton>
+          </div>
+          {activeChips.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap mt-3">
+              <span className="text-xs font-bold text-gray-400">Active filters:</span>
+              {activeChips.map(c => (
+                <span key={c.key} className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-100 text-xs font-bold text-gray-700">
+                  {c.label}
+                  <button onClick={c.onRemove} aria-label={`Remove ${c.label}`} className="hover:text-gray-900"><X className="w-3 h-3"/></button>
+                </span>
+              ))}
+              <button onClick={clearAll} className="text-xs font-bold text-blue-600 hover:text-blue-700">Clear all</button>
+            </div>
+          )}
+        </div>
       </div>
+
       <div className="py-4 lg:py-6">
-        {CATEGORY_IDS.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+        {visibleCategories.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
       </div>
+
+      {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}
+      {showMobileFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={e => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)}/>
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-base font-black text-gray-900">Filters</p>
+              <button onClick={() => setShowMobileFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                <X className="w-4 h-4 text-gray-500"/>
+              </button>
+            </div>
+            {filterBody}
+            <div className="flex items-center gap-3 mt-5">
+              <button onClick={clearAll} className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 font-bold text-sm">
+                Clear all
+              </button>
+              <button onClick={() => setShowMobileFilters(false)} className="flex-1 py-3 rounded-2xl bg-gray-900 text-white font-bold text-sm">
+                Apply filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
