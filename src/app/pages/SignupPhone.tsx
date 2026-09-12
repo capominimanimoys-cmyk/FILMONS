@@ -282,7 +282,11 @@ export function SignupPhone() {
         const params = new URLSearchParams({ phone, dial: country.dial, flag: country.flag });
         navigate(`/phone-already-exists?${params.toString()}`);
       } else {
-        setPhoneError({ title: "We couldn't send the verification code", body: 'Check your phone number and try again.' });
+        // Show the real server-reported reason (Twilio credentials missing,
+        // a trial account rejecting an unverified "To" number, rate limit,
+        // etc.) instead of a generic "check your number" message that gave
+        // no way to tell those apart from a genuinely bad phone number.
+        setPhoneError({ title: "We couldn't send the verification code", body: msg || 'Check your phone number and try again.' });
       }
     } finally {
       setLoading(false);
@@ -339,8 +343,9 @@ export function SignupPhone() {
       setOtpKey(k => k + 1);
       setOtpError(null);
       toast.success('New code sent!');
-    } catch {
-      toast.error("We couldn't send the verification code", { description: 'Check your phone number and try again.' });
+    } catch (err: any) {
+      console.error('[phone-signup] resend sendPhoneOTP failed:', err);
+      toast.error("We couldn't send the verification code", { description: err?.message || 'Check your phone number and try again.' });
     } finally {
       setLoading(false);
     }

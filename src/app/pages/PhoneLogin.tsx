@@ -227,8 +227,9 @@ export function PhoneLogin() {
       toast.success('New code sent!');
       setOtp('');
       setOtpKey(k => k + 1);
-    } catch {
-      toast.error('Failed to resend code');
+    } catch (error) {
+      console.error('[phone-login] resend sendPhoneOTP failed:', error);
+      toast.error('Failed to resend code', { description: error instanceof Error ? error.message : undefined });
     }
     setIsLoading(false);
   };
