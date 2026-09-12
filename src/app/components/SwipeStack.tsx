@@ -297,6 +297,7 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
   return (
     <div
       ref={divRef}
+      data-stack-top={isTop || undefined}
       className={`absolute inset-x-0 rounded-[28px] overflow-hidden shadow-2xl bg-white select-none cursor-grab ${!active && !exitDir ? STACK[stackPos] ?? 'opacity-0' : ''}`}
       style={style}
       onPointerDown={down}
@@ -607,6 +608,30 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
 
   const current = items[idx];
   const cards   = items.slice(idx, idx + 3);
+
+  // The card stack container used to reserve a hand-picked fixed height
+  // (previously 580px, then 560px) that never quite matched the top card's
+  // actual rendered height (it varies -- opportunity vs. listing vs.
+  // creator content, long vs. short titles, wrapped location text, etc.),
+  // always leaving SOME leftover gap before the counter/buttons below it no
+  // matter how carefully the guess was tuned. Measuring the real top card
+  // (data-stack-top) and sizing the container to match exactly removes the
+  // guesswork entirely -- ResizeObserver keeps it correct across card
+  // changes, content reflow, and viewport/breakpoint resizes.
+  const stackRef = useRef<HTMLDivElement>(null);
+  const [stackHeight, setStackHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const el = stackRef.current;
+    if (!el) return;
+    const measure = () => {
+      const top = el.querySelector<HTMLElement>('[data-stack-top="true"]');
+      if (top) setStackHeight(top.offsetHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [idx, items.length]);
   const viewItem = (target: DeckItem) => {
     if (target.kind === 'listing') {
       const listing = target.data;
@@ -665,16 +690,19 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
           against its own wrapper's edge mid-swipe). The mobile pull-reveal
           row below has its own separate, small clipped viewport instead of
           sharing this one, so it never constrains the card. */}
-      {/* lg height trimmed close to the actual rendered card height (image
-          420px + content block ~130px =~ 552px) -- it used to reserve 580px
-          of flow space regardless of the card's real height, leaving a
-          visible gap of empty space below the card before the counter/
-          buttons row even started. Cards are absolutely positioned inside
-          this container (position comes from STACK[stackPos]/drag
-          transforms, not layout), so shrinking this doesn't clip anything
-          -- it only changes how much flow space this box reserves before
-          its next sibling (the counter row) starts. */}
-      <div className="relative w-full h-[420px] lg:h-[560px] isolate" style={{ zIndex: 2 }}>
+      {/* Height comes from measuring the actual top card (see the
+          stackHeight effect above), not a hand-picked fixed value -- cards
+          are absolutely positioned inside this container (position comes
+          from STACK[stackPos]/drag transforms, not layout), so a fixed
+          guess always either clipped nothing but left a leftover gap
+          before the counter/buttons row, or risked being too short. The
+          Tailwind height classes are only the fallback for the very first
+          frame before the ResizeObserver's first measurement lands. */}
+      <div
+        ref={stackRef}
+        className="relative w-full h-[420px] lg:h-[560px] isolate"
+        style={{ zIndex: 2, ...(stackHeight ? { height: stackHeight } : {}) }}
+      >
         {[...cards].reverse().map((item, rIdx) => {
           const stackPos = cards.length - 1 - rIdx;
           const isTop    = stackPos === 0;
@@ -766,7 +794,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
           end of the deck (3 or fewer cards including this one), supplement
           with an explicit "N left" so the approaching end is clear without
           interrupting with a modal. */}
-      <div className="hidden lg:flex items-center gap-3 mt-1.5 mb-3">
+      <div className="hidden lg:flex items-center gap-3 mt-1 mb-2.5">
         <p className="text-[11px] text-gray-400 font-medium">
           {idx + 1} of {items.length}
           {items.length - idx <= 3 && (
