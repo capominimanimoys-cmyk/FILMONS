@@ -921,8 +921,18 @@ function CategorySection({ category, navState }: { category: CategoryTab; navSta
         <div className="flex items-center justify-center py-8 text-gray-400"><Loader2 className="w-4 h-4 animate-spin"/></div>
       ) : (
         <>
-          {/* ── Mobile row: fixed 240x320 cards (unchanged) ─────────────── */}
-          <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory">
+          {/* ── Mobile row: fixed 240x320 cards (unchanged) ───────────────
+              scroll-pl-4 (scroll-padding-left, matching the row's own
+              px-4) is the actual fix for the first card rendering flush
+              against the screen edge instead of under the category label:
+              a snap-x/snap-mandatory scroll container with no explicit
+              scroll-padding can settle its initial scroll position so the
+              first snap-aligned child's edge lines up with the scrollport
+              edge, effectively scrolling past the container's own left
+              padding before it's ever seen -- the header above (not a
+              scroll container) never had this problem, which is why only
+              the row looked misaligned. */}
+          <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
             {category === 'creators'
               ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
               : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
