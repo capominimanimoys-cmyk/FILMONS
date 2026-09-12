@@ -1399,6 +1399,10 @@ export function Inbox() {
   const [msgMenu, setMsgMenu]             = useState<{ msg: ChatMessage; x: number; y: number } | null>(null);
   const [pinnedMsgs, setPinnedMsgs]       = useState<ChatMessage[]>([]);
   const [showMsgSearch, setShowMsgSearch] = useState(false);
+  // Mobile-only overflow menu (the Thread header's "⋯") consolidating
+  // Search/Call/Request Payment into one control -- desktop keeps them as
+  // separate inline icon buttons (unchanged, more room there).
+  const [showThreadMenu, setShowThreadMenu] = useState(false);
   const [msgSearch, setMsgSearch]         = useState('');
   const [msgSearchResults, setMsgSearchResults] = useState<ChatMessage[]>([]);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2679,25 +2683,17 @@ export function Inbox() {
   const showTopBar = !(activeConv && !showSidebar);
 
   return (
-    // h-[calc(100dvh-56px)] on mobile, not h-[100dvh] -- this page sits
-    // below the global sticky mobile TopBar (h-14 = 56px) there in normal
-    // document flow, so claiming the FULL viewport height on top of that
-    // made the whole page exactly 56px taller than the viewport, forcing
-    // the page itself to scroll. Since the top nav is `sticky top-0`, it
-    // stayed pinned through that scroll while this page's own (correctly
-    // `shrink-0`, non-sticky-by-design) header scrolled up underneath it --
-    // exactly "chat header hidden behind the main nav until you scroll back
-    // up". Subtracting the nav's height here means this page's bottom edge
-    // lands exactly at the viewport's bottom edge, the page itself never
-    // scrolls, and the existing internal overflow-y-auto regions
-    // (conversation list, message thread) handle 100% of the scrolling on
-    // their own -- which is what already kept this header in place, once
-    // given the correct height budget. Desktop (lg:) no longer sits below
-    // any global top nav at all (Root.tsx removes DesktopTopBar/
-    // DesktopSidebar for this route so Inbox's own header is the only
-    // one) -- lg:h-[100dvh] claims the full height instead of leaving that
-    // same 56px as dead, unreserved space at the bottom of the page.
-    <div className="h-[calc(100dvh-56px)] lg:h-[100dvh] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
+    // h-[100dvh] on every breakpoint -- Root.tsx now removes the global
+    // top nav (mobile TopBar / DesktopTopBar) for /inbox entirely, so this
+    // page never sits below a 56px bar the way it used to on mobile. This
+    // used to be h-[calc(100dvh-56px)] there specifically to leave room
+    // for that global bar; keeping that subtraction now that the bar is
+    // gone would leave 56px of dead, unreserved space at the bottom of
+    // the page instead. The page itself still never scrolls -- the
+    // existing internal overflow-y-auto regions (conversation list,
+    // message thread) handle 100% of the scrolling on their own, with
+    // this page's own header/composer staying `shrink-0` at top/bottom.
+    <div className="h-[100dvh] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
       {/* Mobile conversation-list -> chat slide (left-to-right on open,
           reversed on back). Raw CSS, not Tailwind transition/translate
           utilities -- this app's global `*` rule in theme.css always beats
@@ -2727,39 +2723,46 @@ export function Inbox() {
           .inbox-panel-thread { transition: none !important; }
         }
       `}</style>
-      {/* Top bar -- on desktop this is now the ONLY top navigation for
-          /inbox (Root.tsx hides the global DesktopSidebar/DesktopTopBar,
-          with their Search/Notifications/account avatar, for this route
+      {/* Top bar -- the ONLY top navigation for /inbox on every breakpoint
+          now (Root.tsx hides the global TopBar/DesktopTopBar, with their
+          menu/logo/Search/Notifications/account avatar, for this route
           entirely), so it carries the user's own identity + New
           conversation + their avatar instead of a recipient-dependent
-          title. Mobile keeps its own separate content unchanged --
-          dynamic title (Inbox / unread count / recipient name once a
-          conversation is open) + icon-only compose button, no avatar.
-          sticky (not just shrink-0) + an explicit z-index/opaque
-          background is what keeps this from ever being visually
-          overlapped by the message thread scrolling underneath it,
-          per the same class of bug the Thread header below had before
-          the global DesktopTopBar (z-40) was removed from this route. */}
+          title, on both mobile and desktop. Once a conversation is open
+          on mobile, `showTopBar` below goes false and this entire bar
+          disappears (mobile only -- `hidden lg:flex`) so the Thread
+          header becomes the only header there, per spec; desktop keeps
+          both panels (and this bar) visible side by side regardless, so
+          it never depends on `showTopBar` there. sticky (not just
+          shrink-0) + an explicit z-index/opaque background is what keeps
+          this from ever being visually overlapped by the message thread
+          scrolling underneath it, per the same class of bug the Thread
+          header below had before the global top nav (z-40) was removed
+          from this route. */}
       <div className={`sticky top-0 z-30 items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden lg:flex'}`}>
-        {/* Mobile content */}
+        {/* Mobile content -- conversation-list header only (see above:
+            `showTopBar` hides this whole bar on mobile once a
+            conversation opens, before this content would ever need to
+            reflect one). */}
         <div className="lg:hidden flex items-center gap-3 flex-1 min-w-0">
           <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
             className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
             <ArrowBackIosNewRounded sx={{fontSize:18}} />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 flex-1 truncate">
-            {activeConv && otherUser && !showSidebar
-              ? otherUser.name
-              : totalUnread > 0 ? `Inbox (${totalUnread})` : 'Inbox'}
-          </h1>
+          <h1 className="text-lg font-bold text-gray-900 flex-1 truncate">{user?.name}</h1>
           {(!activeConv || showSidebar) && (
             <button
               onClick={() => setShowNewConv(true)}
               title="New conversation"
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shrink-0"
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shrink-0"
             >
-              <EditRounded sx={{fontSize:18,color:"white"}} />
+              <Plus className="w-[18px] h-[18px] text-white" strokeWidth={2.5} />
             </button>
+          )}
+          {user && (
+            <Link to="/profile" className="shrink-0">
+              <UserAvatar user={user} size={30} />
+            </Link>
           )}
         </div>
 
@@ -3093,7 +3096,10 @@ export function Inbox() {
                     </>
                   )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Desktop: separate inline icons (unchanged) -- more room
+                    there, and this bar isn't competing with anything else
+                    for width the way mobile's is. */}
+                <div className="hidden lg:flex items-center gap-2 shrink-0">
                   <button onClick={e => { e.stopPropagation(); setShowMsgSearch(v => !v); setMsgSearch(''); setMsgSearchResults([]); }}
                     className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500" title="Search messages">
                     <SearchRounded sx={{fontSize:16}} />
@@ -3110,6 +3116,42 @@ export function Inbox() {
                       className="flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-xl transition-colors">
                       <CreditCardRounded sx={{fontSize:12}} /> Request Payment
                     </button>
+                  )}
+                </div>
+
+                {/* Mobile: same three actions collapsed into one "⋯" menu --
+                    limited header width, and per spec this header should
+                    read as just "← [Avatar] Name ⋯". */}
+                <div className="lg:hidden relative shrink-0">
+                  <button onClick={e => { e.stopPropagation(); setShowThreadMenu(v => !v); }}
+                    className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600" title="More options">
+                    <MoreHorizontal className="w-5 h-5" />
+                  </button>
+                  {showThreadMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowThreadMenu(false)} />
+                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-20 w-52 py-1">
+                        <button
+                          onClick={e => { e.stopPropagation(); setShowThreadMenu(false); setShowMsgSearch(v => !v); setMsgSearch(''); setMsgSearchResults([]); }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 text-left">
+                          <Search className="w-4 h-4 text-gray-500" /> Search messages
+                        </button>
+                        {canCall && (
+                          <button
+                            onClick={() => { setShowThreadMenu(false); setShowCallScreen(true); }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 text-left">
+                            <Phone className="w-4 h-4 text-green-600" /> Call
+                          </button>
+                        )}
+                        {isHostInConv && (user?.accountType === 'business' || user?.accountMode === 'business') && (
+                          <button
+                            onClick={() => { setShowThreadMenu(false); setShowPaymentModal(true); }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 text-left">
+                            <CreditCard className="w-4 h-4 text-blue-600" /> Request Payment
+                          </button>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

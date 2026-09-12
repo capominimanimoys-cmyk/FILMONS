@@ -63,9 +63,21 @@ export function Root() {
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
   const hideAll      = NO_NAV_PAGES.includes(location.pathname);
-  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname);
+  // /inbox now carries its OWN complete top navigation (mobile and
+  // desktop both -- see Inbox.tsx's "Top bar" / "Thread header") instead
+  // of the global one, so the global TopBar/DesktopTopBar (menu/logo/
+  // Search/Notifications/avatar) is redundant there on every breakpoint --
+  // unlike the sidebar/bottom-nav flags below, this ONE flag now covers
+  // both the mobile `TopBar` and `DesktopTopBar` renders, since both
+  // should disappear together for this route.
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox');
   const showFooter   = location.pathname === '/';
-  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || conversationOpen;
+  // /inbox wants the full viewport on mobile too, matching a dedicated
+  // messaging app (no bottom tab bar under the conversation list OR an
+  // open conversation) -- conversationOpen (below) already covered the
+  // open-conversation case via its own event from Inbox.tsx, but the list
+  // view itself should never show it either now.
+  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || location.pathname.startsWith('/inbox') || conversationOpen;
   // The dedicated /search/category/* pages (CategoryResults.tsx) want the
   // full desktop width for their own two-column filters+results layout --
   // removing DesktopSidebar from the DOM entirely (not just visually
@@ -81,14 +93,6 @@ export function Root() {
   // complete top navigation (see Inbox.tsx's "Top bar") instead of the
   // global one.
   const hideDesktopSidebar = location.pathname.startsWith('/search/category/') || location.pathname.startsWith('/inbox');
-  // DesktopTopBar (Search/Notifications/account avatar) is redundant on
-  // /inbox specifically -- Inbox.tsx's own top bar now carries New
-  // conversation + the user's own avatar, so keeping the global one too
-  // would be two stacked headers doing overlapping jobs, per spec. This is
-  // deliberately its OWN flag rather than folding into `hideTopBar` --
-  // that one also controls the MOBILE `TopBar` component, which must stay
-  // exactly as it is on /inbox (desktop-only change).
-  const hideDesktopTopBar = hideTopBar || location.pathname.startsWith('/inbox');
 
   // New Browser / First Sign-In Verification — checked before anything
   // else that requires a real session. deviceVerified is null until the
@@ -155,7 +159,7 @@ export function Root() {
           {!hideDesktopSidebar && <DesktopSidebar />}
 
           <main className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
-            {!hideDesktopTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
+            {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
             <Outlet />
           </main>
         </div>
