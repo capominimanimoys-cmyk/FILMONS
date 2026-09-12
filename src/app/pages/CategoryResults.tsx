@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft, ArrowRight, Loader2, Lock, MapPin, AlertTriangle, Search, SlidersHorizontal,
   Bookmark, Calendar, CalendarClock, X, ChevronDown, ChevronLeft, ChevronRight, Heart, CheckCircle,
@@ -58,6 +59,11 @@ const CATEGORY_SEARCH_PLACEHOLDER: Record<CategoryTab, string> = {
 // module; kept in sync deliberately (see that file's own comment on it).
 const OPPORTUNITY_LOCKED_LIMIT = 5;
 const PAGE_SIZE = 20;
+// Shared mobile filter/sort transitions -- same spring as AvatarActionSheet's
+// bottom sheet (SHEET_SPRING) so every animated sheet in the app feels the
+// same, rather than each screen inventing its own timing.
+const SHEET_SPRING = { type: 'spring' as const, damping: 32, stiffness: 340, mass: 0.9 };
+const DROPDOWN_TRANSITION = { duration: 0.16, ease: 'easeOut' as const };
 
 // 'relevance' preserves whatever order the shared search's own scoreResult()
 // ranking (or, with no query, the plain created_at-desc browse query)
@@ -565,18 +571,27 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
               <button onClick={() => setSortOpen(v => !v)} className="flex items-center gap-1 text-xs font-bold text-gray-600 hover:text-gray-900">
                 Sort: {SORT_LABEL[sort]} <ChevronDown className="w-3.5 h-3.5"/>
               </button>
-              {sortOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-10 w-44">
-                  {SORT_OPTIONS_FOR(category).map(s => (
-                    <button
-                      key={s} onClick={() => { setSort(s); setSortOpen(false); }}
-                      className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold hover:bg-gray-50 ${sort === s ? 'text-blue-600' : 'text-gray-700'}`}
-                    >
-                      {SORT_LABEL[s]}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <AnimatePresence>
+                {sortOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={DROPDOWN_TRANSITION}
+                    style={{ transformOrigin: 'top right' }}
+                    className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-10 w-44"
+                  >
+                    {SORT_OPTIONS_FOR(category).map(s => (
+                      <button
+                        key={s} onClick={() => { setSort(s); setSortOpen(false); }}
+                        className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold hover:bg-gray-50 ${sort === s ? 'text-blue-600' : 'text-gray-700'}`}
+                      >
+                        {SORT_LABEL[s]}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
@@ -620,23 +635,32 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
       </div>
 
       {/* ── Mobile filter sheet ──────────────────────────────────────────── */}
-      {showMobileFilters && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)}/>
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-base font-black text-gray-900">Filters</p>
-              <button onClick={() => setShowMobileFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                <X className="w-4 h-4 text-gray-500"/>
+      <AnimatePresence>
+        {showMobileFilters && (
+          <motion.div
+            className="fixed inset-0 z-50 md:hidden"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+          >
+            <motion.div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)}/>
+            <motion.div
+              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto"
+              style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={SHEET_SPRING}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-base font-black text-gray-900">Filters</p>
+                <button onClick={() => setShowMobileFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                  <X className="w-4 h-4 text-gray-500"/>
+                </button>
+              </div>
+              {filterPanel}
+              <button onClick={() => setShowMobileFilters(false)} className="w-full mt-4 py-3.5 rounded-2xl bg-gray-900 text-white font-bold text-sm">
+                Apply filters
               </button>
-            </div>
-            {filterPanel}
-            <button onClick={() => setShowMobileFilters(false)} className="w-full mt-4 py-3.5 rounded-2xl bg-gray-900 text-white font-bold text-sm">
-              Apply filters
-            </button>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1546,11 +1570,20 @@ function DropdownButton({ label, active, isOpen, onToggle, children, widthClass 
       >
         {label} <ChevronDown className="w-3.5 h-3.5 shrink-0"/>
       </button>
-      {isOpen && (
-        <div className={`absolute left-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-3 ${widthClass}`}>
-          {children}
-        </div>
-      )}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={DROPDOWN_TRANSITION}
+            style={{ transformOrigin: 'top left' }}
+            className={`absolute left-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-3 ${widthClass}`}
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1822,28 +1855,37 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
       </div>
 
       {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}
-      {showMobileFilters && (
-        <div className="fixed inset-0 z-50 lg:hidden" onClick={e => e.stopPropagation()}>
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)}/>
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-base font-black text-gray-900">Filters</p>
-              <button onClick={() => setShowMobileFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                <X className="w-4 h-4 text-gray-500"/>
-              </button>
-            </div>
-            {filterBody}
-            <div className="flex items-center gap-3 mt-5">
-              <button onClick={clearAll} className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 font-bold text-sm">
-                Clear all
-              </button>
-              <button onClick={() => setShowMobileFilters(false)} className="flex-1 py-3 rounded-2xl bg-gray-900 text-white font-bold text-sm">
-                Apply filters
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showMobileFilters && (
+          <motion.div
+            className="fixed inset-0 z-50 lg:hidden" onClick={e => e.stopPropagation()}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+          >
+            <motion.div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)}/>
+            <motion.div
+              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto"
+              style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={SHEET_SPRING}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-base font-black text-gray-900">Filters</p>
+                <button onClick={() => setShowMobileFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                  <X className="w-4 h-4 text-gray-500"/>
+                </button>
+              </div>
+              {filterBody}
+              <div className="flex items-center gap-3 mt-5">
+                <button onClick={clearAll} className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 font-bold text-sm">
+                  Clear all
+                </button>
+                <button onClick={() => setShowMobileFilters(false)} className="flex-1 py-3 rounded-2xl bg-gray-900 text-white font-bold text-sm">
+                  Apply filters
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
