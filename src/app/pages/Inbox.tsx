@@ -2679,21 +2679,25 @@ export function Inbox() {
   const showTopBar = !(activeConv && !showSidebar);
 
   return (
-    // h-[calc(100dvh-56px)], not h-[100dvh] -- this page already sits below
-    // the global sticky top nav (DesktopTopBar / mobile TopBar, both h-14 =
-    // 56px) in normal document flow, so claiming the FULL viewport height
-    // on top of that made the whole page exactly 56px taller than the
-    // viewport, forcing the page itself to scroll. Since the top nav is
-    // `sticky top-0`, it stayed pinned through that scroll while this
-    // page's own (correctly `shrink-0`, non-sticky-by-design) header
-    // scrolled up underneath it -- exactly "chat header hidden behind the
-    // main nav until you scroll back up". Subtracting the nav's height
-    // here means this page's bottom edge lands exactly at the viewport's
-    // bottom edge, the page itself never scrolls, and the existing
-    // internal overflow-y-auto regions (conversation list, message thread)
-    // handle 100% of the scrolling on their own -- which is what already
-    // kept this header in place, once given the correct height budget.
-    <div className="h-[calc(100dvh-56px)] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
+    // h-[calc(100dvh-56px)] on mobile, not h-[100dvh] -- this page sits
+    // below the global sticky mobile TopBar (h-14 = 56px) there in normal
+    // document flow, so claiming the FULL viewport height on top of that
+    // made the whole page exactly 56px taller than the viewport, forcing
+    // the page itself to scroll. Since the top nav is `sticky top-0`, it
+    // stayed pinned through that scroll while this page's own (correctly
+    // `shrink-0`, non-sticky-by-design) header scrolled up underneath it --
+    // exactly "chat header hidden behind the main nav until you scroll back
+    // up". Subtracting the nav's height here means this page's bottom edge
+    // lands exactly at the viewport's bottom edge, the page itself never
+    // scrolls, and the existing internal overflow-y-auto regions
+    // (conversation list, message thread) handle 100% of the scrolling on
+    // their own -- which is what already kept this header in place, once
+    // given the correct height budget. Desktop (lg:) no longer sits below
+    // any global top nav at all (Root.tsx removes DesktopTopBar/
+    // DesktopSidebar for this route so Inbox's own header is the only
+    // one) -- lg:h-[100dvh] claims the full height instead of leaving that
+    // same 56px as dead, unreserved space at the bottom of the page.
+    <div className="h-[calc(100dvh-56px)] lg:h-[100dvh] w-full max-w-full min-w-0 overflow-x-hidden flex flex-col bg-gray-50" onClick={() => { setMsgMenu(null); setShowEmojiPicker(false); }}>
       {/* Mobile conversation-list -> chat slide (left-to-right on open,
           reversed on back). Raw CSS, not Tailwind transition/translate
           utilities -- this app's global `*` rule in theme.css always beats
@@ -2723,26 +2727,64 @@ export function Inbox() {
           .inbox-panel-thread { transition: none !important; }
         }
       `}</style>
-      {/* Top bar */}
-      <div className={`items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden lg:flex'}`}>
-        <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
-          className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600">
-          <ArrowBackIosNewRounded sx={{fontSize:18}} />
-        </button>
-        <h1 className="text-lg font-bold text-gray-900 flex-1">
-          {activeConv && otherUser && !showSidebar
-            ? otherUser.name
-            : totalUnread > 0 ? `Inbox (${totalUnread})` : 'Inbox'}
-        </h1>
-        {(!activeConv || showSidebar) && (
+      {/* Top bar -- on desktop this is now the ONLY top navigation for
+          /inbox (Root.tsx hides the global DesktopSidebar/DesktopTopBar,
+          with their Search/Notifications/account avatar, for this route
+          entirely), so it carries the user's own identity + New
+          conversation + their avatar instead of a recipient-dependent
+          title. Mobile keeps its own separate content unchanged --
+          dynamic title (Inbox / unread count / recipient name once a
+          conversation is open) + icon-only compose button, no avatar.
+          sticky (not just shrink-0) + an explicit z-index/opaque
+          background is what keeps this from ever being visually
+          overlapped by the message thread scrolling underneath it,
+          per the same class of bug the Thread header below had before
+          the global DesktopTopBar (z-40) was removed from this route. */}
+      <div className={`sticky top-0 z-30 items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shrink-0 ${showTopBar ? 'flex' : 'hidden lg:flex'}`}>
+        {/* Mobile content */}
+        <div className="lg:hidden flex items-center gap-3 flex-1 min-w-0">
+          <button onClick={() => { if (!showSidebar) { setShowSidebar(true); setActiveId(null); } else navigate(-1); }}
+            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
+            <ArrowBackIosNewRounded sx={{fontSize:18}} />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900 flex-1 truncate">
+            {activeConv && otherUser && !showSidebar
+              ? otherUser.name
+              : totalUnread > 0 ? `Inbox (${totalUnread})` : 'Inbox'}
+          </h1>
+          {(!activeConv || showSidebar) && (
+            <button
+              onClick={() => setShowNewConv(true)}
+              title="New conversation"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shrink-0"
+            >
+              <EditRounded sx={{fontSize:18,color:"white"}} />
+            </button>
+          )}
+        </div>
+
+        {/* Desktop content -- own identity bar. The recipient's name/avatar
+            live in the Thread header below instead (see "Thread header"),
+            never here -- this row never changes based on which
+            conversation (if any) is open. */}
+        <div className="hidden lg:flex items-center gap-3 flex-1 min-w-0">
+          <button onClick={() => navigate(-1)}
+            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900 flex-1 truncate">{user?.name}</h1>
           <button
             onClick={() => setShowNewConv(true)}
-            title="New conversation"
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shrink-0"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors shrink-0"
           >
-            <EditRounded sx={{fontSize:18,color:"white"}} />
+            <Plus className="w-4 h-4" /> New conversation
           </button>
-        )}
+          {user && (
+            <Link to="/profile" className="shrink-0">
+              <UserAvatar user={user} size={32} />
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Mobile: conversation list -> chat is a left-to-right slide, not an

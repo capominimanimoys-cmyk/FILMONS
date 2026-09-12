@@ -75,8 +75,20 @@ export function Root() {
   // something every category component would otherwise have to opt into
   // individually. A category page's own Filters sidebar (inside
   // CategoryResults.tsx) is unrelated to this and stays untouched either
-  // way -- this only ever controls the global FILMONS nav.
-  const hideDesktopSidebar = location.pathname.startsWith('/search/category/');
+  // way -- this only ever controls the global FILMONS nav. /inbox joins
+  // this for the same reason -- its own two-panel (conversation list +
+  // thread) layout wants the full desktop width, and now carries its own
+  // complete top navigation (see Inbox.tsx's "Top bar") instead of the
+  // global one.
+  const hideDesktopSidebar = location.pathname.startsWith('/search/category/') || location.pathname.startsWith('/inbox');
+  // DesktopTopBar (Search/Notifications/account avatar) is redundant on
+  // /inbox specifically -- Inbox.tsx's own top bar now carries New
+  // conversation + the user's own avatar, so keeping the global one too
+  // would be two stacked headers doing overlapping jobs, per spec. This is
+  // deliberately its OWN flag rather than folding into `hideTopBar` --
+  // that one also controls the MOBILE `TopBar` component, which must stay
+  // exactly as it is on /inbox (desktop-only change).
+  const hideDesktopTopBar = hideTopBar || location.pathname.startsWith('/inbox');
 
   // New Browser / First Sign-In Verification — checked before anything
   // else that requires a real session. deviceVerified is null until the
@@ -143,7 +155,7 @@ export function Root() {
           {!hideDesktopSidebar && <DesktopSidebar />}
 
           <main className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
-            {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
+            {!hideDesktopTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
             <Outlet />
           </main>
         </div>
