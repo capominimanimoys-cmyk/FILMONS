@@ -12,7 +12,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import {
-  expandQuery, normalize, scoreResult, extractLocation,
+  expandQuery, normalize, extractLocation,
 } from '../lib/searchUtils';
 import { withModerationFilter } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,10 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
+import {
+  searchMatchingListings, searchMatchingCreators,
+  isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
+} from '../lib/filmSearch';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Global-search categories -- deliberately separate from ListingTypeFilter
@@ -375,196 +379,33 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
 }
 
 // ── Universal search ───────────────────────────────────────────────────────────
-function safe(s: string) { return s.replace(/[%_\\]/g, ''); }
-
 // Columns confirmed to exist in DB (matches api.ts getAll select — no province)
 const LISTING_SELECT  = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at';
 const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
 
-// ── Category classification ──────────────────────────────────────────────────
-// Mirrors the exact same rental/sale/service/studio/opportunity logic already
-// used by FilterSheet's TYPE_OPTIONS (marketplace filter) and Home.tsx's
-// buildDeck -- reused here rather than re-invented, since a global-search
-// category and the marketplace filter's "Type" facet should always agree on
-// what counts as a rental vs. a studio. Studios aren't a separate listing_type
-// the data model tracks on their own (a studio is just a listing whose title/
-// category mentions "studio", the only real signal available for it), but
-// Opportunities are: listing_type = 'opportunity'. This used to also fall
-// back to a keyword match (title containing "model"/"actor"/"talent"/"ugc")
-// for older rows, which pulled ordinary gear listings into Opportunities any
-// time their title happened to mention a camera "model" -- and, worse,
-// isRentalListing's own exclusion of isOpportunityListing matches meant that
-// same gear listing got stripped back OUT of Rental too. Category
-// contamination in both directions from one bad heuristic; gone now, strict
-// listing_type only.
-const isOpportunityListing = (l: ListingRow) => l.listing_type === 'opportunity';
-const isStudioListing = (l: ListingRow) =>
-  /studio/i.test(l.title ?? '') || /studio/i.test(l.service_category ?? '');
-const isRentalListing = (l: ListingRow) =>
-  l.listing_mode === 'rent' && l.listing_type !== 'service' && !isOpportunityListing(l);
-const isSaleListing = (l: ListingRow) => l.listing_mode === 'sale' && !isOpportunityListing(l);
-const isServiceListing = (l: ListingRow) => l.listing_type === 'service' && !isOpportunityListing(l);
+// ── Category classification + core matching ──────────────────────────────────
+// Both now live in filmSearch.ts, imported below -- shared with
+// CategoryResults.tsx so /search and /search/category/all can never
+// disagree again about what matches a query or which category a listing
+// belongs to (this used to be a second, independently-written copy of both).
 
-async function searchListingsByTerm(term: string): Promise<ListingRow[]> {
-  // Search: title, description, service_category, city (text fields).
-  // is_active excludes deleted/inactive listings from every category,
-  // including opportunities (no separate "closed"/"expired" column exists
-  // in this data model -- is_active is the one real signal for that).
-  const textRes = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
-    if (filterActive) q = q.eq('moderation_status', 'active');
-    return q
-      .or([
-        `title.ilike.%${term}%`,
-        `description.ilike.%${term}%`,
-        `service_category.ilike.%${term}%`,
-        `city.ilike.%${term}%`,
-      ].join(','))
-      .limit(20);
-  });
-
-  if (textRes.error) {
-    console.error(`[Search] listings text error (term="${term}"):`, textRes.error.message);
-  } else {
-    console.log(`[Search] listings text: ${textRes.data?.length ?? 0} rows (term="${term}")`);
-  }
-
-  // Tags: `listings.tags` is a json/jsonb column, not a Postgres text[]
-  // array (confirmed by the runtime error this used to throw: "invalid
-  // input syntax for type json" -- Postgres was trying to cast the
-  // curly-brace array-literal string `{"term"}` to json and failing,
-  // since that's not valid JSON). The `cs` (contains) filter needs an
-  // actual JSON array literal for a json/jsonb column, not the `{...}`
-  // syntax that only applies to a real Postgres array column (see
-  // profiles.secondary_roles/skills/gear below, which need the opposite).
-  const tagRes = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
-    if (filterActive) q = q.eq('moderation_status', 'active');
-    return q.filter('tags', 'cs', `["${term}"]`).limit(10);
-  });
-
-  if (tagRes.error) {
-    console.warn(`[Search] listings tags error (term="${term}"):`, tagRes.error.message);
-  } else if (tagRes.data?.length) {
-    console.log(`[Search] listings tags: ${tagRes.data.length} rows (term="${term}")`);
-  }
-
-  const seen = new Set<string>();
-  const combined: ListingRow[] = [];
-  for (const row of [...(textRes.data ?? []), ...(tagRes.data ?? [])]) {
-    if (row?.id && !seen.has(row.id)) { seen.add(row.id); combined.push(row as unknown as ListingRow); }
-  }
-  return combined;
-}
-
-async function searchProfilesByTerm(term: string): Promise<ProfileRow[]> {
-  const res = await supabase
-    .from('profiles')
-    .select(PROFILE_SELECT)
-    .or([
-      `name.ilike.%${term}%`,
-      `username.ilike.%${term}%`,
-      `primary_role.ilike.%${term}%`,
-      `bio.ilike.%${term}%`,
-      `city.ilike.%${term}%`,
-    ].join(','))
-    .not('name', 'is', null)
-    .neq('name', '')
-    .limit(15);
-
-  if (res.error) {
-    console.error(`[Search] profiles error (term="${term}"):`, res.error.message);
-  } else {
-    console.log(`[Search] profiles: ${res.data?.length ?? 0} rows (term="${term}")`);
-  }
-
-  // secondary_roles/skills/gear are real Postgres text[] arrays, NOT jsonb
-  // (confirmed by the runtime error this used to throw: "malformed array
-  // literal" -- Postgres rejected the JSON-bracket syntax below because a
-  // text[] column's `cs` filter needs the `{...}` array-literal form
-  // instead, the opposite of listings.tags above). `cs` (contains) only
-  // matches a whole element exactly, not a substring, so this is a
-  // best-effort supplement to the ilike fields above, same limitation the
-  // `tags` containment search on listings already accepts.
-  const arrayRes = await supabase
-    .from('profiles')
-    .select(PROFILE_SELECT)
-    .or([
-      `secondary_roles.cs.{"${term}"}`,
-      `skills.cs.{"${term}"}`,
-      `gear.cs.{"${term}"}`,
-    ].join(','))
-    .not('name', 'is', null)
-    .neq('name', '')
-    .limit(10);
-  if (arrayRes.error) console.warn(`[Search] profiles array error (term="${term}"):`, arrayRes.error.message);
-
-  const seen = new Set<string>();
-  const combined: ProfileRow[] = [];
-  for (const row of [...(res.data ?? []), ...(arrayRes.data ?? [])]) {
-    if (row?.id && !seen.has(row.id)) { seen.add(row.id); combined.push(row as ProfileRow); }
-  }
-  return combined;
-}
-
+// Delegates entirely to filmSearch.ts's searchMatchingListings/
+// searchMatchingCreators -- see that module's header comment. This used to
+// have its own copy of the term-expansion + per-term-query + dedup logic;
+// CategoryResults.tsx had a second, different copy for /search/category/all,
+// and the two could (and did) disagree about which listings matched a given
+// query. One implementation now, called from both places.
 async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings: ListingRow[] }> {
   const q = rawQ.trim();
   if (!q) return { users: [], listings: [] };
 
-  const needle = safe(normalize(q));
-  if (!needle) return { users: [], listings: [] };
-
-  // Alias terms — single-word, no special chars
-  const aliasTerms = Array.from(new Set(
-    expandQuery(rawQ)
-      .filter(t => !t.includes(' ') && t.length >= 2)
-      .map(t => safe(normalize(t)))
-      .filter(t => t && t !== needle)
-  )).slice(0, 3);
-
-  const allTerms = [needle, ...aliasTerms];
-
-  console.log('[Search] ──────────────────────────────');
-  console.log(`[Search] raw query    : "${q}"`);
-  console.log(`[Search] needle       : "${needle}"`);
-  console.log(`[Search] alias terms  : [${aliasTerms.join(', ')}]`);
-  console.log(`[Search] all terms    : [${allTerms.join(', ')}]`);
-  console.log('[Search] tables       : listings, profiles');
-
-  // Run all term queries in parallel
-  const [listingBatches, profileBatches] = await Promise.all([
-    Promise.all(allTerms.map(searchListingsByTerm)),
-    Promise.all(allTerms.map(searchProfilesByTerm)),
+  const [listings, users] = await Promise.all([
+    searchMatchingListings(rawQ),
+    searchMatchingCreators(rawQ),
   ]);
 
-  // Deduplicate across term batches
-  const seenL = new Set<string>();
-  const listings: ListingRow[] = [];
-  for (const batch of listingBatches) {
-    for (const l of batch) {
-      if (!seenL.has(l.id)) { seenL.add(l.id); listings.push(l); }
-    }
-  }
-
-  const seenU = new Set<string>();
-  const users: ProfileRow[] = [];
-  for (const batch of profileBatches) {
-    for (const u of batch) {
-      if (!seenU.has(u.id)) { seenU.add(u.id); users.push(u); }
-    }
-  }
-
-  // Sort by relevance
-  listings.sort((a, b) =>
-    scoreResult(q, b.title, b.description ?? '', b.city ?? '') -
-    scoreResult(q, a.title, a.description ?? '', a.city ?? ''));
-  users.sort((a, b) =>
-    scoreResult(q, b.name, b.primary_role ?? '', b.bio ?? '') -
-    scoreResult(q, a.name, a.primary_role ?? '', a.bio ?? ''));
-
-  console.log(`[Search] TOTAL → ${listings.length} listings | ${users.length} profiles`);
-
-  return { users, listings };
+  console.log(`[Search] "${q}" → ${listings.length} listings | ${users.length} profiles`);
+  return { users: users as ProfileRow[], listings: listings as unknown as ListingRow[] };
 }
 
 // ── Category browse (no query typed yet) ─────────────────────────────────────

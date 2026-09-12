@@ -33,6 +33,11 @@ import { isProfessional } from '../lib/reliabilityApi';
 import { fetchEmergencyListings } from '../lib/emergencyListings';
 import { savedListingsApi } from '../lib/api';
 import { toast } from 'sonner';
+import {
+  searchMatchingListings, searchMatchingCreators,
+  isRentalListing, isSaleListing, isServiceListing, isOpportunityListing, isStudioListing,
+  SearchListingRow,
+} from '../lib/filmSearch';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 const CATEGORY_IDS: CategoryTab[] = ['rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
@@ -86,23 +91,21 @@ function useGuestGuard() {
 }
 
 // ── Shared query builder — one category, uncapped, paginated ────────────────
-// Returns a real `total` (Postgres exact count, or the gated Emergency
-// endpoint's own count) wherever the query itself can produce one --
-// Opportunity paid/remote is the one exception (see below).
-// Matches SearchOverlay.tsx's own approach of searching each WORD of a
-// multi-word query separately, not the raw phrase as one literal
-// substring -- without this, a query like "vancouver photographer" (city
-// + role, two different fields) never matches anything here, since no
-// listing's title/description/city literally contains that exact
-// contiguous phrase, even though SearchOverlay itself finds it fine (it
-// expands the query into per-word terms and unions the results). This is
-// a smaller version of that -- an OR across every word x every field --
-// not a full port of SearchOverlay's alias/synonym expansion, but enough
-// to stop a real multi-word search from silently coming back empty here.
-function termOrClause(term: string, fields: string[]): string {
-  const words = term.split(/\s+/).filter(Boolean);
-  return words.flatMap(w => fields.map(f => `${f}.ilike.%${w}%`)).join(',');
-}
+// When a search term is present, this now runs through the exact same
+// searchMatchingListings()/searchMatchingCreators() as /search
+// (SearchOverlay.tsx) -- see filmSearch.ts's header comment. This used to
+// run its own, narrower query per category (a single-word-split OR clause,
+// no alias/synonym expansion, no tags/array containment search), which
+// could and did disagree with what /search found for the same query. Now:
+// query once against the shared matcher, classify the result into this
+// category client-side, then filter/sort/paginate that -- the query itself
+// never changes based on who's asking. `total` is the size of that full
+// classified set (exact, not approximated), so paid/remote filtering no
+// longer needs the old proportional-estimate hack.
+const CATEGORY_CLASSIFIER: Record<Exclude<CategoryTab, 'creators' | 'emergency'>, (l: SearchListingRow) => boolean> = {
+  rental: isRentalListing, sale: isSaleListing, services: isServiceListing,
+  opportunities: isOpportunityListing, studios: isStudioListing,
+};
 
 async function fetchCategoryPage(
   category: CategoryTab, navState: NavState, from: number, to: number, userId?: string,
@@ -124,10 +127,13 @@ async function fetchCategoryPage(
   }
 
   if (category === 'creators') {
-    let q = supabase.from('profiles')
+    if (term) {
+      const rows = await searchMatchingCreators(term);
+      return { listings: [], creators: rows.slice(from, to + 1) as CreatorRow[], total: rows.length };
+    }
+    const q = supabase.from('profiles')
       .select('id, name, username, avatar_url, city, location, primary_role, is_verified', { count: 'exact' })
       .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null);
-    if (term) q = q.or(termOrClause(term, ['name', 'username', 'primary_role', 'city']));
     const { data, count } = await q.order('created_at', { ascending: false }).range(from, to);
     return { listings: [], creators: (data ?? []) as CreatorRow[], total: count ?? (data?.length ?? 0) };
   }
@@ -135,6 +141,28 @@ async function fetchCategoryPage(
   const sortCol = navState.sort === 'price_low' || navState.sort === 'price_high' ? 'price' : 'created_at';
   const ascending = navState.sort === 'price_low';
 
+  if (term) {
+    const matched = await searchMatchingListings(term);
+    let bucket = matched.filter(CATEGORY_CLASSIFIER[category]);
+    if (price?.min != null) bucket = bucket.filter(l => (l.price ?? 0) >= price.min!);
+    if (price?.max != null) bucket = bucket.filter(l => (l.price ?? 0) <= price.max!);
+
+    let mapped = bucket.map(mapListingRow);
+    if (category === 'rental') mapped = mapped.filter(l => l.listingType !== 'opportunity');
+    if (category === 'opportunities') {
+      if (navState.filters?.paid === true)  mapped = mapped.filter(l => l.opportunity?.paid === true);
+      if (navState.filters?.paid === false) mapped = mapped.filter(l => l.opportunity?.paid === false);
+      if (navState.filters?.remote)         mapped = mapped.filter(l => l.opportunity?.workArrangement === 'remote');
+    }
+    mapped.sort((a, b) => sortCol === 'price'
+      ? (ascending ? (a.price ?? 0) - (b.price ?? 0) : (b.price ?? 0) - (a.price ?? 0))
+      : new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+
+    return { listings: mapped.slice(from, to + 1), creators: [], total: mapped.length };
+  }
+
+  // No search term (plain category browse, e.g. landing on the page
+  // directly with no query) -- unchanged DB-level query.
   const res = await withModerationFilter((filterActive) => {
     let query = supabase.from('listings').select(LISTING_COLUMNS, { count: 'exact' }).eq('is_active', true);
     if (filterActive) query = query.eq('moderation_status', 'active');
@@ -145,7 +173,6 @@ async function fetchCategoryPage(
       case 'opportunities':  query = query.eq('listing_type', 'opportunity'); break;
       case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
     }
-    if (term) query = query.or(termOrClause(term, ['title', 'description', 'city']));
     if (price?.min != null) query = query.gte('price', price.min);
     if (price?.max != null) query = query.lte('price', price.max);
     return query.order(sortCol, { ascending }).range(from, to);
