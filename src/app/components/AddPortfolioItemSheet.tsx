@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
   PORTFOLIO_CATEGORIES, createPortfolioItem, uploadPortfolioMedia,
-  readImageDimensions, workTypeToMediaType, type WorkType, type PortfolioItem,
+  readImageDimensions, readVideoDimensions, workTypeToMediaType, type WorkType, type PortfolioItem,
 } from '../lib/portfolioApi';
 
 type Step = 'type' | 'details' | 'media';
@@ -79,10 +79,19 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     if (isImg) setFilePreview(URL.createObjectURL(file));
     else setFilePreview('');
 
+    const isVideo = file.type.startsWith('video/');
     if (isImg) {
       readImageDimensions(file).then(d => {
         setImgWidth(d.width);
         setImgHeight(d.height);
+        setImgAr(d.aspect_ratio);
+      });
+    } else if (isVideo) {
+      // Portfolio cards need a video's OWN orientation (vertical,
+      // widescreen, square) rather than a fixed 16:9 default -- this was
+      // previously never captured at all for video uploads, only images.
+      readVideoDimensions(file).then(d => {
+        if (d.width && d.height) { setImgWidth(d.width); setImgHeight(d.height); }
         setImgAr(d.aspect_ratio);
       });
     }

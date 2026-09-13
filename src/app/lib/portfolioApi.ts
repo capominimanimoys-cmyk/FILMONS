@@ -367,6 +367,42 @@ export function readImageDimensions(file: File): Promise<{ width: number; height
   });
 }
 
+/** Read a video file's intrinsic width/height (from its decoded frame size,
+ * not its display/CSS size) once metadata loads. Portfolio cards need this
+ * to render a video at its OWN orientation (vertical, widescreen, square)
+ * instead of a fixed default -- this was the actual gap: the upload flow
+ * only ever called readImageDimensions, so every uploaded video fell back
+ * to a hardcoded 16:9 box regardless of its real shape. Falls back to 16:9
+ * only if the browser genuinely never fires loadedmetadata (rare/corrupt
+ * file) or duration is unavailable, not silently for any error. */
+export function readVideoDimensions(file: File): Promise<{ width: number; height: number; aspect_ratio: number }> {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+
+    let settled = false;
+    const finish = (w: number, h: number) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      URL.revokeObjectURL(url);
+      resolve({ width: w, height: h, aspect_ratio: w && h ? w / h : 16 / 9 });
+    };
+    // Same reasoning as extractVideoFrame's own timeout below -- some
+    // browsers/codecs never fire loadedmetadata for certain short or
+    // oddly-encoded files, which would otherwise hang the upload
+    // indefinitely waiting on this promise.
+    const timeoutId = setTimeout(() => finish(0, 0), 4000);
+
+    video.onloadedmetadata = () => finish(video.videoWidth, video.videoHeight);
+    video.onerror = () => finish(0, 0);
+    video.src = url;
+  });
+}
+
 // ── Album CRUD ────────────────────────────────────────────────────────────────
 export async function getAlbums(userId: string): Promise<PortfolioAlbum[]> {
   try {
@@ -422,7 +458,15 @@ export async function replaceItemMedia(itemId: string, file: File): Promise<bool
   if (!item) return false;
   const result = await uploadPortfolioMedia(item.user_id, file);
   if (!result) return false;
-  return updatePortfolioItem(itemId, { media_url: result.url, thumbnail_url: result.thumbnailUrl || result.url });
+  // Re-measure dimensions for the NEW file -- without this, replacing e.g.
+  // a landscape photo with a vertical one would keep the stale old
+  // aspect_ratio, rendering the new media in the wrong shape.
+  const isVideo = file.type.startsWith('video/');
+  const dims = isVideo ? await readVideoDimensions(file) : file.type.startsWith('image/') ? await readImageDimensions(file) : null;
+  return updatePortfolioItem(itemId, {
+    media_url: result.url, thumbnail_url: result.thumbnailUrl || result.url,
+    ...(dims ? { width: dims.width || undefined, height: dims.height || undefined, aspect_ratio: dims.aspect_ratio } : {}),
+  });
 }
 
 export async function deleteAlbum(id: string): Promise<boolean> {

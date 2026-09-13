@@ -47,17 +47,33 @@ function timeAgo(iso: string): string {
 // stored aspect_ratio (falls back to a sane default per media type) and the
 // image/video itself is object-cover within that box, so orientation is
 // respected instead of forcing every post into one fixed square.
-function PortfolioMedia({ item }: { item: PortfolioItem }) {
+// Portfolio cards respect the creator's own upload -- a vertical portrait
+// stays vertical, a widescreen video stays widescreen, never forced into
+// one fixed shape the way a marketplace listing card is allowed to be.
+// aspect_ratio comes from real stored width/height metadata captured at
+// upload time (see AddPortfolioItemSheet.tsx / readImageDimensions /
+// readVideoDimensions in portfolioApi.ts) so the card can reserve the
+// correct space before the asset itself loads, preventing feed layout
+// shift -- not measured from the live element here. MEDIA_MAX_HEIGHT caps
+// an extremely tall upload from creating an excessively long feed card;
+// object-contain (not cover) is what keeps that cap from cropping the
+// image/video instead of just letterboxing it -- when the box's rendered
+// ratio is unclamped (the common case), contain and cover are pixel-
+// identical anyway, since the box already matches the media's own ratio.
+const MEDIA_MAX_HEIGHT = 'max-h-[75vh] lg:max-h-[750px]';
+
+function PortfolioMedia({ item, capHeight = true }: { item: PortfolioItem; capHeight?: boolean }) {
   const [playing, setPlaying] = useState(false);
+  const maxHeightClass = capHeight ? MEDIA_MAX_HEIGHT : '';
   if (item.media_type === 'video') {
     return (
-      <div className="relative w-full bg-black rounded-2xl overflow-hidden" style={{ aspectRatio: item.aspect_ratio || 16 / 9 }}>
+      <div className={`relative w-full bg-black rounded-2xl overflow-hidden mx-auto ${maxHeightClass}`} style={{ aspectRatio: item.aspect_ratio || 16 / 9 }}>
         {playing ? (
           <video src={item.media_url} controls autoPlay muted className="w-full h-full object-contain" />
         ) : (
           <button onClick={() => setPlaying(true)} className="relative w-full h-full block">
             {item.thumbnail_url
-              ? <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+              ? <img src={item.thumbnail_url} alt="" className="w-full h-full object-contain" />
               : <div className="w-full h-full flex items-center justify-center text-4xl opacity-30">🎬</div>}
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
               <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center">
@@ -78,9 +94,9 @@ function PortfolioMedia({ item }: { item: PortfolioItem }) {
   }
   // image / link -- link items still usually carry a preview thumbnail
   return (
-    <div className="w-full rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: item.aspect_ratio || 4 / 5 }}>
+    <div className={`w-full rounded-2xl overflow-hidden bg-gray-100 mx-auto ${maxHeightClass}`} style={{ aspectRatio: item.aspect_ratio || 4 / 5 }}>
       {(item.media_url || item.thumbnail_url)
-        ? <img src={item.media_url || item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+        ? <img src={item.media_url || item.thumbnail_url} alt="" className="w-full h-full object-contain" />
         : <div className="w-full h-full flex items-center justify-center text-4xl opacity-30">🎨</div>}
     </div>
   );
@@ -731,7 +747,12 @@ function ItemFocusView({ item, onClose }: { item: PortfolioItem; onClose: () => 
       </div>
       <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
         <div className="w-full max-w-lg space-y-3">
-          <PortfolioMedia item={item} />
+          {/* Uncapped -- "the full original media can be shown when the
+              user opens the Portfolio item detail" (the feed's own height
+              cap is specifically about keeping the compact feed dense, not
+              a constraint that should follow the media into its own
+              detail view). */}
+          <PortfolioMedia item={item} capHeight={false} />
           {item.title && <p className="text-sm font-bold text-white">{item.title}</p>}
           {item.description && <p className="text-sm text-white/70 leading-snug">{item.description}</p>}
         </div>
@@ -819,7 +840,7 @@ function AlbumMedia({ entry }: { entry: Extract<PortfolioFeedEntry, { type: 'alb
             {albumItems === null ? (
               <p className="text-center text-xs text-gray-400 py-10">Loading…</p>
             ) : (
-              albumItems.map(item => <PortfolioMedia key={item.id} item={item} />)
+              albumItems.map(item => <PortfolioMedia key={item.id} item={item} capHeight={false} />)
             )}
           </div>
         </div>
