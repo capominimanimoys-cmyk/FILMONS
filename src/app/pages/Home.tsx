@@ -2,7 +2,7 @@
  * Filmons Home — Tinder-style discovery deck.
  * Users swipe through a mixed feed of listings, services, studios, and creator profiles.
  */
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,6 +44,25 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
   // accounts -- see canBrowseEmergency below and check-emergency-access,
   // which re-verifies server-side rather than trusting the client tier.
   { id: 'emergency', label: 'Emergency', icon: AlertTriangle },
+];
+
+// ── Portfolio Feed filters ───────────────────────────────────────────────────
+// There's no dedicated creative-category taxonomy on `posts` -- Photography/
+// Film/Music/Design match against each post's own `tags` (best-effort,
+// depends on creators actually tagging their work) with `postType` as a
+// fallback signal for Film/Music specifically (video/audio posts). Nearby
+// matches `location` text against the viewer's own profile city -- same
+// honest, no-fake-geo-distance approach used elsewhere in this app (there's
+// no lat/lng captured on posts or profiles to compute a real distance from).
+type PortfolioFilterId = 'foryou' | 'following' | 'nearby' | 'photography' | 'film' | 'music' | 'design';
+const PORTFOLIO_FILTERS: { id: PortfolioFilterId; label: string }[] = [
+  { id: 'foryou',      label: 'For You' },
+  { id: 'following',   label: 'Following' },
+  { id: 'nearby',      label: 'Nearby' },
+  { id: 'photography', label: 'Photography' },
+  { id: 'film',        label: 'Film' },
+  { id: 'music',       label: 'Music' },
+  { id: 'design',      label: 'Design' },
 ];
 
 // Real Opportunity listings — listing_type === 'opportunity' is the
@@ -237,25 +256,73 @@ export function Home() {
   // so desktop has no way to change this state at all -- it stays 'listings'
   // there permanently, which is what keeps the desktop layout completely
   // untouched by this feature without needing a second, duplicated render
-  // path per breakpoint.
-  const [homeMode, setHomeMode] = useState<'listings' | 'portfolio'>('listings');
-  const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou');
-  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
-  const [feedLoading, setFeedLoading] = useState(false);
+  // path per breakpoint. Persisted to sessionStorage (not localStorage) --
+  // "remember for this session" per spec; carrying the choice across
+  // sessions entirely is a deliberate later step, not this one.
+  const HOME_MODE_KEY = 'filmons_home_mode';
+  const [homeMode, setHomeModeState] = useState<'listings' | 'portfolio'>(() => {
+    try { return sessionStorage.getItem(HOME_MODE_KEY) === 'portfolio' ? 'portfolio' : 'listings'; } catch { return 'listings'; }
+  });
+  const setHomeMode = (m: 'listings' | 'portfolio') => {
+    setHomeModeState(m);
+    try { sessionStorage.setItem(HOME_MODE_KEY, m); } catch {}
+  };
 
-  useEffect(() => {
-    if (homeMode !== 'portfolio') return;
-    let cancelled = false;
+  const [feedTab, setFeedTab] = useState<PortfolioFilterId>('foryou');
+  // Fetched once per session (feedFetchedRef), not on every toggle switch --
+  // switching modes is local UI state from here on, never a refetch.
+  const [allFeedPosts, setAllFeedPosts] = useState<Post[]>([]);
+  const [followingPosts, setFollowingPosts] = useState<Post[] | null>(null);
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedError, setFeedError] = useState(false);
+  const feedFetchedRef = useRef(false);
+
+  const loadFeed = useCallback(() => {
     setFeedLoading(true);
-    const request = feedTab === 'following'
-      ? postsApi.getFeedPosts(user?.following ?? [])
-      : postsApi.getAll(30, 0);
-    request
-      .then(p => { if (!cancelled) setFeedPosts(p); })
-      .catch(() => { if (!cancelled) setFeedPosts([]); })
-      .finally(() => { if (!cancelled) setFeedLoading(false); });
-    return () => { cancelled = true; };
-  }, [homeMode, feedTab, user?.following]);
+    setFeedError(false);
+    postsApi.getAll(60, 0)
+      .then(setAllFeedPosts)
+      .catch(() => setFeedError(true))
+      .finally(() => setFeedLoading(false));
+  }, []);
+
+  // First time Portfolio is opened this session -- not on every mode switch.
+  useEffect(() => {
+    if (homeMode !== 'portfolio' || feedFetchedRef.current) return;
+    feedFetchedRef.current = true;
+    loadFeed();
+  }, [homeMode, loadFeed]);
+
+  // Following posts are fetched lazily too -- only the first time that tab
+  // is actually opened, not alongside the main feed fetch.
+  useEffect(() => {
+    if (feedTab !== 'following' || followingPosts !== null) return;
+    postsApi.getFeedPosts(user?.following ?? []).then(setFollowingPosts).catch(() => setFollowingPosts([]));
+  }, [feedTab, followingPosts, user?.following]);
+
+  const displayedFeedPosts = useMemo(() => {
+    if (feedTab === 'following') return followingPosts ?? [];
+    let pool = allFeedPosts;
+    const hasTag = (p: Post, ...needles: string[]) => (p.tags ?? []).some(t => needles.some(n => t.toLowerCase().includes(n)));
+    switch (feedTab) {
+      case 'nearby':
+        pool = user?.city ? pool.filter(p => p.location?.toLowerCase().includes(user.city!.toLowerCase())) : [];
+        break;
+      case 'photography':
+        pool = pool.filter(p => p.postType === 'photo' || hasTag(p, 'photo'));
+        break;
+      case 'film':
+        pool = pool.filter(p => p.postType === 'video' || hasTag(p, 'film', 'video'));
+        break;
+      case 'music':
+        pool = pool.filter(p => p.postType === 'audio' || hasTag(p, 'music', 'audio'));
+        break;
+      case 'design':
+        pool = pool.filter(p => hasTag(p, 'design', 'graphic'));
+        break;
+    }
+    return pool;
+  }, [feedTab, allFeedPosts, followingPosts, user?.city]);
 
 
   useEffect(() => {
@@ -675,8 +742,10 @@ export function Home() {
            that's what keeps the desktop layout below completely untouched
            by this feature without a second, duplicated render path. */}
       <div className="lg:hidden shrink-0 px-4 pt-2 pb-1 bg-white">
-        <div className="flex rounded-full p-1 gap-1">
+        <div role="tablist" aria-label="Home mode" className="flex rounded-full p-1 gap-1">
           <button
+            role="tab"
+            aria-selected={homeMode === 'listings'}
             onClick={() => setHomeMode('listings')}
             className={`flex-1 py-2 text-sm font-bold rounded-full transition-colors duration-200 ${
               homeMode === 'listings' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700'
@@ -685,6 +754,8 @@ export function Home() {
             Listings
           </button>
           <button
+            role="tab"
+            aria-selected={homeMode === 'portfolio'}
             onClick={() => setHomeMode('portfolio')}
             className={`flex-1 py-2 text-sm font-bold rounded-full transition-colors duration-200 ${
               homeMode === 'portfolio' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700'
@@ -713,16 +784,100 @@ export function Home() {
            spring back on release) is what surfaces the compact Like/See
            listing/Pass row, not scrolling. ── */}
       <div className="relative flex-1 min-h-0 overflow-visible lg:flex-none lg:min-h-[60vh] lg:h-auto">
-        {loading ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
-            <FilmonsBrandLoader size="lg"/>
-          </div>
-        ) : homeMode === 'portfolio' ? (
-          // ── Portfolio Feed (mobile only -- see the toggle above) ────────
-          <div className="min-h-full flex flex-col overflow-y-auto lg:hidden">
-            <p className="px-4 pt-3 pb-1 text-sm text-gray-500">Discover what creators are making.</p>
-            <div className="shrink-0 flex gap-2 px-4 py-2 overflow-x-auto no-scrollbar">
-              {([{ id: 'foryou', label: 'For You' }, { id: 'following', label: 'Following' }] as const).map(t => (
+        {/* Listings content -- kept MOUNTED (hidden via CSS, never removed
+            from the tree) when Portfolio is active, not conditionally
+            rendered. SwipeStack owns real state (current card index,
+            already-passed/liked items, daily counters, locked-opportunity
+            filtering) that a full unmount/remount would otherwise reset --
+            hiding it instead means switching back to Listings resumes
+            exactly where the user left off, with no refetch. Desktop can
+            never actually reach the `hidden` branch (homeMode never leaves
+            'listings' there), so this is a no-op change for desktop. */}
+        <div className={loading || homeMode !== 'portfolio' ? 'block' : 'hidden'}>
+          {loading ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
+              <FilmonsBrandLoader size="lg"/>
+            </div>
+          ) : (
+            <div className="min-h-full flex flex-col">
+              <p className="lg:hidden px-4 pt-1 pb-2 text-sm text-gray-500">
+                Discover gear, services, creators and opportunities near you.
+              </p>
+              {/* ── Filter chips — the Emergency chip itself is now
+                   Professional/Business only. Emergency isn't a separate
+                   browsable category for Guest/Creator/Creator+ at all
+                   (removed per spec) -- they still see emergency-flagged
+                   listings, just inside each one's real category (Rental,
+                   Services, ...) with an EMERGENCY badge on the card, capped
+                   at emergencyDisplayLimit (2) per category. ── */}
+              <div ref={filterRowRef} className="shrink-0 pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
+                {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => handleFilter(f.id)}
+                    className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
+                      filter === f.id
+                        ? f.id === 'emergency' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-900 text-white shadow-sm'
+                        : f.id === 'emergency' ? 'bg-red-50 text-red-600 border border-red-100 hover:border-red-200'
+                        : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
+                    }`}>
+                    <f.icon className="w-3.5 h-3.5"/>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop
+                   just gets a bigger card via SwipeStack's own lg: classes, plus
+                   the sidebar/top bar chrome that renders outside this page.
+                   flex-1 + justify-center: when there's leftover height in the
+                   bounded scroll region above, the card area centers vertically
+                   instead of sitting flush under the chips with dead space below. ── */}
+              <div className="flex-1 flex flex-col items-center justify-center mt-2 lg:mt-6 lg:px-8">
+                {/* Explicit state ordering, each branch rendering its own UI
+                    rather than falling through to a bare `return null` -- a
+                    genuine fetch failure first, then (deckDone checked before
+                    the plain deck.length === 0 empty state, since a Refresh
+                    Listings click that comes up with nothing new sets deckDone
+                    with an empty deck, and that must still render the
+                    caught-up screen with its no-new-listings copy, not the
+                    generic "Nothing here yet" state meant for a filter that
+                    never had any listings at all) the caught-up/empty/new-
+                    opportunities states, then the deck itself. */}
+                {(filter === 'emergency' && !canBrowseEmergency && deck.length > 0) ? (
+                  <EmergencyPreviewGate
+                    items={deck.filter(d => d.kind === 'listing').map(d => d.data)}
+                    renderCard={listing => <ListingCard key={listing.id} listing={listing} />}
+                    isAuthenticated={!!user}
+                  />
+                )
+                    : loadError ? errorScreen : deckDone
+                    ? (currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : caughtUpScreen)
+                    : deck.length === 0
+                    ? (currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : emptyState)
+                    : showNewBanner ? newOpportunitiesScreen : (
+                  <SwipeStack
+                    key={filterKey}
+                    items={deck}
+                    persistKey={filter}
+                    onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Portfolio Feed -- mobile only (`lg:hidden` unconditionally, on
+            top of `homeMode` never reaching 'portfolio' on desktop in the
+            first place). Also kept mounted-but-hidden rather than
+            conditionally rendered once loading has resolved once, so its
+            own scroll position survives switching to Listings and back. */}
+        {!loading && (
+          <div className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} min-h-full flex flex-col overflow-y-auto`}>
+            <p className="px-4 pt-1 pb-2 text-sm text-gray-500">Discover what creators are making.</p>
+            <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
+              {PORTFOLIO_FILTERS.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setFeedTab(t.id)}
@@ -735,78 +890,47 @@ export function Home() {
               ))}
             </div>
             <div className="flex-1 px-4 pb-6 space-y-4">
-              {feedLoading ? (
-                <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md"/></div>
-              ) : feedPosts.length === 0 ? (
-                <p className="text-center text-sm text-gray-400 py-16">
-                  {feedTab === 'following' ? "Follow creators to see their work here." : 'Nothing to show yet.'}
-                </p>
+              {feedError ? (
+                <div className="flex flex-col items-center gap-3 py-16 text-center">
+                  <p className="text-sm text-gray-500">Couldn't load portfolio posts.</p>
+                  <button onClick={loadFeed} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+                </div>
+              ) : feedLoading ? (
+                <div className="space-y-4">
+                  {[0, 1].map(i => (
+                    <div key={i} className="animate-pulse space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"/>
+                        <div className="flex-1 space-y-1.5"><div className="h-3 w-24 bg-gray-200 rounded"/><div className="h-2.5 w-32 bg-gray-100 rounded"/></div>
+                      </div>
+                      <div className="w-full aspect-square bg-gray-200 rounded-2xl"/>
+                      <div className="h-3 w-3/4 bg-gray-200 rounded"/>
+                      <div className="h-2.5 w-full bg-gray-100 rounded"/>
+                    </div>
+                  ))}
+                </div>
+              ) : displayedFeedPosts.length === 0 ? (
+                feedTab === 'following' ? (
+                  <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their work here.</p>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-16 text-center">
+                    <p className="text-sm font-bold text-gray-700">Discover creators on Filmons</p>
+                    <p className="text-xs text-gray-400 max-w-[220px]">Portfolio projects from creators will appear here.</p>
+                    <button onClick={() => navigate('/search')} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Explore Creators</button>
+                  </div>
+                )
               ) : (
-                feedPosts.map(p => <PostCard key={p.id} post={p}/>)
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="min-h-full flex flex-col">
-            {/* ── Filter chips — the Emergency chip itself is now
-                 Professional/Business only. Emergency isn't a separate
-                 browsable category for Guest/Creator/Creator+ at all
-                 (removed per spec) -- they still see emergency-flagged
-                 listings, just inside each one's real category (Rental,
-                 Services, ...) with an EMERGENCY badge on the card, capped
-                 at emergencyDisplayLimit (2) per category. ── */}
-            <div ref={filterRowRef} className="shrink-0 pop-in flex gap-2 px-4 lg:px-8 py-3 overflow-x-auto no-scrollbar">
-              {FILTERS.filter(f => f.id !== 'emergency' || canBrowseEmergency).map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => handleFilter(f.id)}
-                  className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap ${
-                    filter === f.id
-                      ? f.id === 'emergency' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-900 text-white shadow-sm'
-                      : f.id === 'emergency' ? 'bg-red-50 text-red-600 border border-red-100 hover:border-red-200'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
-                  }`}>
-                  <f.icon className="w-3.5 h-3.5"/>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop
-                 just gets a bigger card via SwipeStack's own lg: classes, plus
-                 the sidebar/top bar chrome that renders outside this page.
-                 flex-1 + justify-center: when there's leftover height in the
-                 bounded scroll region above, the card area centers vertically
-                 instead of sitting flush under the chips with dead space below. ── */}
-            <div className="flex-1 flex flex-col items-center justify-center mt-2 lg:mt-6 lg:px-8">
-              {/* Explicit state ordering, each branch rendering its own UI
-                  rather than falling through to a bare `return null` -- a
-                  genuine fetch failure first, then (deckDone checked before
-                  the plain deck.length === 0 empty state, since a Refresh
-                  Listings click that comes up with nothing new sets deckDone
-                  with an empty deck, and that must still render the
-                  caught-up screen with its no-new-listings copy, not the
-                  generic "Nothing here yet" state meant for a filter that
-                  never had any listings at all) the caught-up/empty/new-
-                  opportunities states, then the deck itself. */}
-              {(filter === 'emergency' && !canBrowseEmergency && deck.length > 0) ? (
-                <EmergencyPreviewGate
-                  items={deck.filter(d => d.kind === 'listing').map(d => d.data)}
-                  renderCard={listing => <ListingCard key={listing.id} listing={listing} />}
-                  isAuthenticated={!!user}
-                />
-              )
-                  : loadError ? errorScreen : deckDone
-                  ? (currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : caughtUpScreen)
-                  : deck.length === 0
-                  ? (currentCategoryEmergencyHidden > 0 ? categoryEmergencyLimitScreen : emptyState)
-                  : showNewBanner ? newOpportunitiesScreen : (
-                <SwipeStack
-                  key={filterKey}
-                  items={deck}
-                  persistKey={filter}
-                  onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
-                />
+                displayedFeedPosts.map(p => (
+                  <div key={p.id} className="space-y-2">
+                    <PostCard post={p}/>
+                    <button
+                      onClick={() => navigate(`/host/${p.userId}`)}
+                      className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
+                    >
+                      View Portfolio
+                    </button>
+                  </div>
+                ))
               )}
             </div>
           </div>
