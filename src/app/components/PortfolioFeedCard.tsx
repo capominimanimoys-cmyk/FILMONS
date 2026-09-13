@@ -8,12 +8,12 @@
 // Save reuses the generic `favorites` table (see togglePortfolioSave) --
 // the same primitive savedPostsApi/savedListingsApi already use with a
 // different item_type, not a new table.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Heart, MessageCircle, Send, Bookmark, Play, X, MoreHorizontal,
-  BadgeCheck, UserPlus, UserCheck, ExternalLink, ChevronRight,
-  User, Share2, Flag, Trash2, FolderCog,
+  BadgeCheck, UserPlus, UserCheck, ExternalLink, ChevronRight, ChevronUp,
+  User, Share2, Flag, Trash2, FolderCog, Pencil, EyeOff, ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
@@ -24,7 +24,8 @@ import {
   PortfolioFeedEntry, PortfolioItem, PortfolioComment, PortfolioFeedPreviewItem,
   toggleItemLike, isItemLiked, getItemComments, addItemComment, getAlbumItems,
   isPortfolioSaved, togglePortfolioSave, deletePortfolioItem, deleteAlbum,
-  reportPortfolioContent,
+  reportPortfolioContent, toggleCommentLike, deleteItemComment, updatePortfolioItem,
+  setItemHidden,
 } from '../lib/portfolioApi';
 
 function timeAgo(iso: string): string {
@@ -83,70 +84,228 @@ function PortfolioMedia({ item }: { item: PortfolioItem }) {
   );
 }
 
-// ── Comment sheet -- minimal bottom sheet: view + add, portfolio's own
-// comment table (portfolio_item_comments), not posts' CommentSheet. ───────
-function PortfolioCommentSheet({ itemId, onClose }: { itemId: string; onClose: () => void }) {
+function timeAgoShort(iso: string): string { return timeAgo(iso); }
+
+// ── One comment row (+ its replies, indented) ───────────────────────────────
+function CommentRow({
+  comment, depth = 0, onReply, onToggleLike, onDelete, canModerate, meId,
+}: {
+  comment: PortfolioComment; depth?: number;
+  onReply: (c: PortfolioComment) => void;
+  onToggleLike: (c: PortfolioComment) => void;
+  onDelete: (c: PortfolioComment) => void;
+  canModerate: boolean; meId?: string;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isOwnComment = !!meId && comment.user_id === meId;
+  const canDelete = isOwnComment || canModerate;
+
+  return (
+    <div className={depth > 0 ? 'ml-9 mt-2.5' : ''}>
+      <div className="flex items-start gap-2.5">
+        <div className="w-7 h-7 rounded-full bg-gray-200 shrink-0 overflow-hidden">
+          {comment.author?.avatar_url && <img src={comment.author.avatar_url} alt="" className="w-full h-full object-cover" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold text-gray-900">{comment.author?.name ?? 'Filmons user'}</p>
+          <p className="text-sm text-gray-800 leading-snug break-words">{comment.body}</p>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] text-gray-400">{timeAgoShort(comment.created_at)}</span>
+            <button onClick={() => onReply(comment)} className="text-[10px] font-bold text-gray-500">Reply</button>
+            {comment.likes_count > 0 && <span className="text-[10px] text-gray-400">{comment.likes_count} like{comment.likes_count === 1 ? '' : 's'}</span>}
+          </div>
+        </div>
+        <button onClick={() => onToggleLike(comment)} className="shrink-0 pt-0.5">
+          <Heart className={`w-3.5 h-3.5 ${comment.liked ? 'text-red-500 fill-red-500' : 'text-gray-300'}`} />
+        </button>
+        {canDelete && (
+          <div className="relative shrink-0">
+            <button onClick={() => setMenuOpen(v => !v)} className="w-6 h-6 flex items-center justify-center text-gray-300">
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-6 z-20 bg-white rounded-xl shadow-lg border border-gray-100 py-1 w-32">
+                  <button
+                    onClick={() => { setMenuOpen(false); onDelete(comment); }}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      {comment.replies.map(r => (
+        <CommentRow key={r.id} comment={r} depth={depth + 1} onReply={onReply} onToggleLike={onToggleLike} onDelete={onDelete} canModerate={canModerate} meId={meId} />
+      ))}
+    </div>
+  );
+}
+
+// ── Comments bottom sheet -- portfolio's own comment table
+// (portfolio_item_comments), not posts' CommentSheet. Reuses the shared
+// BottomSheet (same slide-up/backdrop/drag-to-dismiss motion as the card's
+// three-dot menu, per spec) rather than a bespoke overlay -- was a plain
+// `fixed inset-0` div before this, now consistent with every other sheet
+// in the app. Newest top-level page loads first (reversed for oldest-at-
+// top display); "Load earlier comments" pages further back in time.
+// canModerate = the viewer owns the portfolio this item belongs to (item
+// owners can delete any comment on their own work, not just their own). ──
+function PortfolioCommentSheet({
+  itemId, canModerate, onClose,
+}: {
+  itemId: string; canModerate: boolean; onClose: () => void;
+}) {
   const { user, showGuestPrompt } = useAuth();
   const [comments, setComments] = useState<PortfolioComment[] | null>(null);
+  const [count, setCount] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [text, setText] = useState('');
   const [posting, setPosting] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<PortfolioComment | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { getItemComments(itemId).then(setComments); }, [itemId]);
+  const countAll = (list: PortfolioComment[]) => list.reduce((n, c) => n + 1 + c.replies.length, 0);
+
+  useEffect(() => {
+    getItemComments(itemId, { viewerId: user?.id }).then(({ comments: c, hasMore: hm }) => {
+      setComments(c);
+      setHasMore(hm);
+      setCount(countAll(c));
+    });
+  }, [itemId]); // eslint-disable-line
+
+  const loadEarlier = async () => {
+    if (!comments?.length || loadingMore) return;
+    setLoadingMore(true);
+    const oldestCursor = comments[0].created_at;
+    const { comments: more, hasMore: hm } = await getItemComments(itemId, { before: oldestCursor, viewerId: user?.id });
+    setLoadingMore(false);
+    setHasMore(hm);
+    setComments(prev => {
+      const merged = [...more, ...(prev ?? [])];
+      setCount(countAll(merged));
+      return merged;
+    });
+  };
 
   const post = async () => {
     if (!user) { showGuestPrompt('Create your Filmons account to comment.', 'Sign up to comment'); return; }
     const body = text.trim();
     if (!body || posting) return;
     setPosting(true);
-    const c = await addItemComment(itemId, user.id, body);
+    const c = await addItemComment(itemId, user.id, body, replyingTo?.id);
     setPosting(false);
-    if (c) { setComments(prev => [...(prev ?? []), c]); setText(''); }
-    else toast.error('Could not post comment');
+    if (!c) { toast.error('Could not post comment'); return; }
+    const withAuthor: PortfolioComment = { ...c, author: { id: user.id, name: user.name, username: user.username ?? null, avatar_url: user.avatar ?? null } };
+    setComments(prev => {
+      const base = prev ?? [];
+      const merged = replyingTo
+        ? base.map(p => p.id === replyingTo.id ? { ...p, replies: [...p.replies, withAuthor] } : p)
+        : [...base, withAuthor];
+      setCount(countAll(merged));
+      return merged;
+    });
+    setText('');
+    setReplyingTo(null);
+  };
+
+  const handleToggleLike = async (c: PortfolioComment) => {
+    if (!user) { showGuestPrompt('Create your Filmons account to like comments.', 'Sign up to like'); return; }
+    const next = !c.liked;
+    let snapshot: PortfolioComment[] | null = null;
+    setComments(prev => {
+      snapshot = prev;
+      if (!prev) return prev;
+      return prev.map(row => {
+        if (row.id === c.id) return { ...row, liked: next, likes_count: Math.max(0, row.likes_count + (next ? 1 : -1)) };
+        if (row.replies.some(r => r.id === c.id)) {
+          return { ...row, replies: row.replies.map(r => r.id === c.id ? { ...r, liked: next, likes_count: Math.max(0, r.likes_count + (next ? 1 : -1)) } : r) };
+        }
+        return row;
+      });
+    });
+    const ok = await toggleCommentLike(c.id, user.id, c.liked);
+    if (!ok) { toast.error('Could not update like'); setComments(snapshot); }
+  };
+
+  const handleDelete = async (c: PortfolioComment) => {
+    if (!window.confirm('Delete this comment?')) return;
+    const ok = await deleteItemComment(c.id);
+    if (!ok) { toast.error('Could not delete comment'); return; }
+    setComments(prev => {
+      if (!prev) return prev;
+      const merged = prev
+        .filter(row => row.id !== c.id)
+        .map(row => ({ ...row, replies: row.replies.filter(r => r.id !== c.id) }));
+      setCount(countAll(merged));
+      return merged;
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end lg:items-center lg:justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        className="relative w-full lg:max-w-md bg-white rounded-t-3xl lg:rounded-3xl max-h-[75vh] flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 pt-4 pb-2 border-b border-gray-100 shrink-0">
-          <p className="text-sm font-black text-gray-900">Comments</p>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-          {comments === null ? (
-            <p className="text-center text-xs text-gray-400 py-6">Loading…</p>
-          ) : comments.length === 0 ? (
-            <p className="text-center text-xs text-gray-400 py-6">No comments yet.</p>
-          ) : (
-            comments.map(c => (
-              <div key={c.id} className="flex items-start gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-gray-200 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-800 leading-snug">{c.body}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{timeAgo(c.created_at)}</p>
-                </div>
-              </div>
-            ))
+    <BottomSheet
+      onClose={onClose}
+      title={count != null && count > 0 ? `Comments · ${count}` : 'Comments'}
+      maxHeightVh={85}
+      footer={
+        <div>
+          {replyingTo && (
+            <div className="flex items-center justify-between px-1 pb-2">
+              <span className="text-[11px] text-gray-500">Replying to <b>{replyingTo.author?.name ?? 'comment'}</b></span>
+              <button onClick={() => setReplyingTo(null)} className="text-[11px] font-bold text-gray-400">Cancel</button>
+            </div>
           )}
+          <div className="flex items-end gap-2">
+            <div className="w-8 h-8 rounded-full bg-gray-200 shrink-0 overflow-hidden">
+              {user?.avatar && <img src={user.avatar} alt="" className="w-full h-full object-cover" />}
+            </div>
+            <textarea
+              ref={inputRef}
+              value={text} onChange={e => setText(e.target.value)}
+              placeholder={replyingTo ? 'Write a reply…' : 'Add a comment…'}
+              rows={1}
+              className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm outline-none resize-none max-h-24"
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); post(); } }}
+            />
+            <button onClick={post} disabled={!text.trim() || posting} className="w-9 h-9 rounded-full bg-blue-600 disabled:opacity-40 flex items-center justify-center shrink-0">
+              <Send className="w-4 h-4 text-white" />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-100 shrink-0" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-          <input
-            value={text} onChange={e => setText(e.target.value)}
-            placeholder="Add a comment…"
-            className="flex-1 bg-gray-100 rounded-full px-4 py-2.5 text-sm outline-none"
-            onKeyDown={e => { if (e.key === 'Enter') post(); }}
-          />
-          <button onClick={post} disabled={!text.trim() || posting} className="w-9 h-9 rounded-full bg-blue-600 disabled:opacity-40 flex items-center justify-center shrink-0">
-            <Send className="w-4 h-4 text-white" />
-          </button>
-        </div>
+      }
+    >
+      <div className="px-4 py-3 min-h-[55vh] space-y-3.5">
+        {comments === null ? (
+          <p className="text-center text-xs text-gray-400 py-10">Loading…</p>
+        ) : comments.length === 0 ? (
+          <p className="text-center text-xs text-gray-400 py-10">No comments yet. Be the first to say something.</p>
+        ) : (
+          <>
+            {hasMore && (
+              <button onClick={loadEarlier} disabled={loadingMore} className="flex items-center gap-1 mx-auto text-xs font-bold text-gray-400 hover:text-gray-600">
+                <ChevronUp className="w-3.5 h-3.5" /> {loadingMore ? 'Loading…' : 'Load earlier comments'}
+              </button>
+            )}
+            {comments.map(c => (
+              <CommentRow
+                key={c.id} comment={c}
+                onReply={cm => { setReplyingTo(cm); inputRef.current?.focus(); }}
+                onToggleLike={handleToggleLike}
+                onDelete={handleDelete}
+                canModerate={canModerate}
+                meId={user?.id}
+              />
+            ))}
+          </>
+        )}
       </div>
-    </div>
+    </BottomSheet>
   );
 }
 
@@ -274,15 +433,16 @@ function CreatorHeader({
 // drift a shared codebase is supposed to avoid. Delete is simple and
 // low-risk enough to wire directly instead.
 function CardMenu({
-  entry, isOwn, saved, onToggleSave, onShare, onClose, onRemoved,
+  entry, isOwn, saved, onToggleSave, onShare, onClose, onRemoved, onViewItem,
 }: {
   entry: PortfolioFeedEntry; isOwn: boolean; saved: boolean;
   onToggleSave: () => void; onShare: () => void; onClose: () => void;
-  onRemoved: () => void;
+  onRemoved: () => void; onViewItem: () => void;
 }) {
   const navigate = useNavigate();
   const { user, showGuestPrompt } = useAuth();
   const [deleting, setDeleting] = useState(false);
+  const [hiding, setHiding] = useState(false);
   const isAlbum = entry.type === 'album';
 
   const run = (fn: () => void) => { onClose(); fn(); };
@@ -290,13 +450,25 @@ function CardMenu({
   const handleDelete = async () => {
     const confirmMsg = isAlbum
       ? 'Delete this album? Its photos/videos will stay in your portfolio, just ungrouped.'
-      : 'Delete this project? This action cannot be undone.';
+      : 'Delete this item? This action cannot be undone.';
     if (!window.confirm(confirmMsg)) return;
     setDeleting(true);
     const ok = isAlbum ? await deleteAlbum(entry.album.id) : await deletePortfolioItem(entry.item.id);
     setDeleting(false);
-    if (!ok) { toast.error(`Could not delete this ${isAlbum ? 'album' : 'project'}.`); return; }
-    toast.success(`${isAlbum ? 'Album' : 'Project'} deleted`);
+    if (!ok) { toast.error(`Could not delete this ${isAlbum ? 'album' : 'item'}.`); return; }
+    toast.success(`${isAlbum ? 'Album' : 'Item'} deleted`);
+    onClose();
+    onRemoved();
+  };
+
+  const handleHide = async () => {
+    if (isAlbum) return;
+    if (!window.confirm('Hide this item from your Portfolio? You can still find and unhide it from Manage in Portfolio.')) return;
+    setHiding(true);
+    const ok = await setItemHidden(entry.item.id, true);
+    setHiding(false);
+    if (!ok) { toast.error('Could not hide this item.'); return; }
+    toast.success('Item hidden from your Portfolio');
     onClose();
     onRemoved();
   };
@@ -313,7 +485,7 @@ function CardMenu({
   return (
     <BottomSheet onClose={onClose}>
       <div className="px-2 py-1">
-        {isOwn ? (
+        {isOwn ? isAlbum ? (
           <>
             <button onClick={() => run(() => navigate('/portfolio'))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <FolderCog className="w-4 h-4 text-gray-400" /> Manage in Portfolio
@@ -323,7 +495,29 @@ function CardMenu({
             </button>
             <div className="border-t border-gray-50 my-1" />
             <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-50">
-              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : `Delete ${isAlbum ? 'album' : 'project'}`}
+              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete album'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => run(onViewItem)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <ExternalLink className="w-4 h-4 text-gray-400" /> View Item
+            </button>
+            <button onClick={() => run(() => navigate(`/edit-portfolio-item/${entry.item.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <Pencil className="w-4 h-4 text-gray-400" /> Edit Work
+            </button>
+            <button onClick={() => run(() => navigate('/portfolio'))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <FolderCog className="w-4 h-4 text-gray-400" /> Add to Album
+            </button>
+            <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <Share2 className="w-4 h-4 text-gray-400" /> Share
+            </button>
+            <button onClick={handleHide} disabled={hiding} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50">
+              <EyeOff className="w-4 h-4 text-gray-400" /> {hiding ? 'Hiding…' : 'Hide from Portfolio'}
+            </button>
+            <div className="border-t border-gray-50 my-1" />
+            <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-50">
+              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete Item'}
             </button>
           </>
         ) : (
@@ -358,6 +552,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
   const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [viewingItem, setViewingItem] = useState(false);
   const isOwn = !!user && user.id === entry.creator.id;
 
   const itemForLikes = entry.type === 'item' ? entry.item : null;
@@ -441,14 +636,34 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
       )}
 
       {showComments && entry.type === 'item' && (
-        <PortfolioCommentSheet itemId={entry.item.id} onClose={() => setShowComments(false)} />
+        <PortfolioCommentSheet itemId={entry.item.id} canModerate={isOwn} onClose={() => setShowComments(false)} />
       )}
       {showMenu && (
         <CardMenu
           entry={entry} isOwn={isOwn} saved={saved}
           onToggleSave={handleToggleSave} onShare={handleShare}
           onClose={() => setShowMenu(false)} onRemoved={onRemoved}
+          onViewItem={() => setViewingItem(true)}
         />
+      )}
+      {viewingItem && entry.type === 'item' && (
+        <div className="fixed inset-0 z-[70] bg-black flex flex-col">
+          <div className="px-4 py-3 shrink-0">
+            <button
+              onClick={() => setViewingItem(false)}
+              className="flex items-center gap-1.5 h-10 pl-2.5 pr-3.5 rounded-full bg-white/10 text-white active:bg-white/20 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" /> <span className="text-sm font-semibold">Close</span>
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
+            <div className="w-full max-w-lg space-y-3">
+              <PortfolioMedia item={entry.item} />
+              {entry.item.title && <p className="text-sm font-bold text-white">{entry.item.title}</p>}
+              {entry.item.description && <p className="text-sm text-white/70 leading-snug">{entry.item.description}</p>}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

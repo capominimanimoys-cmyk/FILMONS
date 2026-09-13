@@ -38,6 +38,7 @@ export interface PortfolioItem {
   sort_order?:         number;
   comments_count?:     number;
   download_allowed?:   boolean;
+  is_hidden?:          boolean;
   created_at:          string;
   updated_at?:         string;
 }
@@ -107,12 +108,21 @@ export const DEFAULT_PORTFOLIO_SETTINGS: Omit<PortfolioSettings, 'id' | 'user_id
   cover_path: null, cover_position_y: 50, max_featured: 6,
 };
 
+export interface PortfolioCommentAuthor {
+  id: string; name: string; username: string | null; avatar_url: string | null;
+}
+
 export interface PortfolioComment {
-  id:         string;
-  item_id:    string;
-  user_id:    string;
-  body:       string;
-  created_at: string;
+  id:          string;
+  item_id:     string;
+  user_id:     string;
+  body:        string;
+  created_at:  string;
+  parent_id:   string | null;
+  likes_count: number;
+  liked:       boolean;
+  author:      PortfolioCommentAuthor | null;
+  replies:     PortfolioComment[];
 }
 
 export const PORTFOLIO_CATEGORIES = [
@@ -138,18 +148,47 @@ export function workTypeToMediaType(wt: WorkType): MediaType {
   return 'image';
 }
 
+// Mirrors api.ts's withModerationFilter -- 20240423000000 adds
+// portfolio_items.is_hidden, which may not be applied yet (migrations in
+// this repo are never auto-applied). Retries without the is_hidden filter
+// on undefined_column (42703) so a not-yet-applied migration can't take
+// down portfolio browsing, same protection listings already has.
+async function withHiddenFilter<T = any>(
+  build: (filterActive: boolean) => PromiseLike<{ data: T[] | null; error: any }>,
+): Promise<{ data: T[] | null; error: any }> {
+  let res = await build(true);
+  if (res.error?.code === '42703') res = await build(false);
+  return res;
+}
+
 // ── Fetch ─────────────────────────────────────────────────────────────────────
-export async function getPortfolioItems(userId: string): Promise<PortfolioItem[]> {
+// includeHidden -- the owner's own Portfolio page passes true so they can
+// still see/manage a hidden item; every other viewer (a public visitor, or
+// this same function used indirectly for someone else's page) defaults to
+// excluding it, matching "Hide from Portfolio" meaning hidden from
+// everyone except its owner.
+export async function getPortfolioItems(userId: string, opts: { includeHidden?: boolean } = {}): Promise<PortfolioItem[]> {
   try {
-    const { data, error } = await supabase
-      .from('portfolio_items')
-      .select('*')
-      .eq('user_id', userId)
-      .order('is_featured', { ascending: false })
-      .order('created_at', { ascending: false });
+    const { data, error } = await withHiddenFilter((filterActive) => {
+      let q = supabase.from('portfolio_items').select('*').eq('user_id', userId);
+      if (filterActive && !opts.includeHidden) q = q.eq('is_hidden', false);
+      return q.order('is_featured', { ascending: false }).order('created_at', { ascending: false });
+    });
     if (error) { console.warn('[portfolio] fetch error:', error.message); return []; }
     return (data ?? []) as PortfolioItem[];
   } catch { return []; }
+}
+
+export async function getPortfolioItem(id: string): Promise<PortfolioItem | null> {
+  try {
+    const { data, error } = await supabase.from('portfolio_items').select('*').eq('id', id).maybeSingle();
+    if (error) { console.warn('[portfolio] fetch item error:', error.message); return null; }
+    return data as PortfolioItem | null;
+  } catch { return null; }
+}
+
+export async function setItemHidden(itemId: string, hidden: boolean): Promise<boolean> {
+  return updatePortfolioItem(itemId, { is_hidden: hidden });
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -576,26 +615,124 @@ export async function toggleItemLike(itemId: string, userId: string, currentlyLi
   return !error;
 }
 
-export async function getItemComments(itemId: string): Promise<PortfolioComment[]> {
+const COMMENT_PAGE_SIZE = 20;
+
+// portfolio_item_comments.user_id has no declared FK to profiles (unlike
+// item_id -> portfolio_items), so PostgREST can't auto-embed it -- authors
+// are fetched as a separate batched query and merged client-side, same
+// pattern getPortfolioFeed() already uses for creator profiles below.
+//
+// Top-level comments (parent_id IS NULL) are the paginated unit -- fetched
+// newest-first then reversed for chat-style oldest-at-top display, so
+// "Load earlier comments" is a plain `created_at < cursor` page. Replies
+// are fetched in one batched follow-up query for every top-level comment
+// on the page (not paginated separately -- expected reply volume per
+// comment is small) and attached to their parent client-side.
+export async function getItemComments(
+  itemId: string,
+  opts: { limit?: number; before?: string; viewerId?: string } = {},
+): Promise<{ comments: PortfolioComment[]; hasMore: boolean }> {
+  const limit = opts.limit ?? COMMENT_PAGE_SIZE;
   try {
-    const { data, error } = await supabase
+    let topQ = supabase
       .from('portfolio_item_comments')
       .select('*')
       .eq('item_id', itemId)
+      .is('parent_id', null)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (opts.before) topQ = topQ.lt('created_at', opts.before);
+    const { data: topRows, error: topErr } = await topQ;
+    if (topErr) { console.warn('[portfolio comments] fetch error:', topErr.message); return { comments: [], hasMore: false }; }
+
+    const top = [...(topRows ?? [])].reverse();
+    const hasMore = (topRows ?? []).length === limit;
+    if (!top.length) return { comments: [], hasMore: false };
+
+    const topIds = top.map((c: any) => c.id);
+    const { data: replyRows } = await supabase
+      .from('portfolio_item_comments')
+      .select('*')
+      .in('parent_id', topIds)
       .order('created_at', { ascending: true });
-    if (error) { console.warn('[portfolio comments] fetch error:', error.message); return []; }
-    return (data ?? []) as PortfolioComment[];
-  } catch { return []; }
+    const replies = replyRows ?? [];
+
+    const allRows = [...top, ...replies];
+    const allIds = allRows.map((r: any) => r.id);
+    const authorIds = [...new Set(allRows.map((r: any) => r.user_id))];
+
+    const [{ data: profileRows }, { data: likeRows }, viewerLikedRes] = await Promise.all([
+      supabase.from('profiles').select('id, name, username, avatar_url').in('id', authorIds),
+      supabase.from('portfolio_comment_likes').select('comment_id').in('comment_id', allIds),
+      opts.viewerId
+        ? supabase.from('portfolio_comment_likes').select('comment_id').eq('user_id', opts.viewerId).in('comment_id', allIds)
+        : Promise.resolve({ data: [] as { comment_id: string }[] }),
+    ]);
+
+    const authorMap = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
+    const likeCounts = new Map<string, number>();
+    (likeRows ?? []).forEach((r: any) => likeCounts.set(r.comment_id, (likeCounts.get(r.comment_id) ?? 0) + 1));
+    const likedSet = new Set((viewerLikedRes.data ?? []).map((r: any) => r.comment_id));
+
+    const toComment = (row: any): PortfolioComment => {
+      const a = authorMap.get(row.user_id);
+      return {
+        ...row,
+        likes_count: likeCounts.get(row.id) ?? 0,
+        liked: likedSet.has(row.id),
+        author: a ? { id: row.user_id, name: a.name, username: a.username, avatar_url: a.avatar_url } : null,
+        replies: [],
+      };
+    };
+
+    const repliesByParent = new Map<string, PortfolioComment[]>();
+    replies.forEach((r: any) => {
+      const list = repliesByParent.get(r.parent_id) ?? [];
+      list.push(toComment(r));
+      repliesByParent.set(r.parent_id, list);
+    });
+
+    const comments = top.map((c: any) => ({ ...toComment(c), replies: repliesByParent.get(c.id) ?? [] }));
+    return { comments, hasMore };
+  } catch (e) {
+    console.warn('[portfolio comments] fetch error:', e);
+    return { comments: [], hasMore: false };
+  }
 }
 
-export async function addItemComment(itemId: string, userId: string, body: string): Promise<PortfolioComment | null> {
+export async function addItemComment(
+  itemId: string, userId: string, body: string, parentId?: string,
+): Promise<PortfolioComment | null> {
   const { data, error } = await supabase
     .from('portfolio_item_comments')
-    .insert({ item_id: itemId, user_id: userId, body })
+    .insert({ item_id: itemId, user_id: userId, body, parent_id: parentId ?? null })
     .select()
     .single();
   if (error) { console.error('[portfolio comments] create error:', error.message); return null; }
-  return data as PortfolioComment;
+  // author is left null -- the caller (PortfolioCommentSheet) already knows
+  // who just posted (the current user) and fills it in locally rather than
+  // this doing a redundant profile fetch for a row it already knows the
+  // author of.
+  return { ...data, likes_count: 0, liked: false, author: null, replies: [] } as PortfolioComment;
+}
+
+export async function isCommentLiked(commentId: string, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('portfolio_comment_likes')
+    .select('comment_id')
+    .eq('comment_id', commentId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return !!data;
+}
+
+export async function toggleCommentLike(commentId: string, userId: string, currentlyLiked: boolean): Promise<boolean> {
+  if (currentlyLiked) {
+    const { error } = await supabase.from('portfolio_comment_likes').delete().eq('comment_id', commentId).eq('user_id', userId);
+    return !error;
+  }
+  const { error } = await supabase.from('portfolio_comment_likes').insert({ comment_id: commentId, user_id: userId });
+  return !error;
 }
 
 export async function deleteItemComment(commentId: string): Promise<boolean> {
@@ -733,17 +870,29 @@ export async function getPortfolioFeed(opts: {
       (data ?? []).forEach((r: any) => excludeItemIds.add(r.item_id));
     }
 
-    let itemsQ = supabase.from('portfolio_items').select('*').order('created_at', { ascending: false }).limit(fetchN);
+    // withHidden=false is the 42703 (undefined_column) fallback -- same
+    // not-yet-applied-migration protection as withHiddenFilter above, kept
+    // as its own inline builder here since this query also carries
+    // before/authorIds/category/nonPublicUserIds that a generic wrapper
+    // would otherwise have to duplicate.
+    const buildItemsQuery = (withHidden: boolean) => {
+      let q = supabase.from('portfolio_items').select('*');
+      if (withHidden) q = q.eq('is_hidden', false);
+      q = q.order('created_at', { ascending: false }).limit(fetchN);
+      if (opts.before) q = q.lt('created_at', opts.before);
+      if (opts.authorIds) q = q.in('user_id', opts.authorIds);
+      if (opts.category) q = q.eq('category', opts.category);
+      if (nonPublicUserIds.length) q = q.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
+      return q;
+    };
     let albumsQ = supabase.from('portfolio_albums').select('*').eq('visibility', 'public').order('created_at', { ascending: false }).limit(fetchN);
-    if (opts.before) { itemsQ = itemsQ.lt('created_at', opts.before); albumsQ = albumsQ.lt('created_at', opts.before); }
-    if (opts.authorIds) { itemsQ = itemsQ.in('user_id', opts.authorIds); albumsQ = albumsQ.in('user_id', opts.authorIds); }
-    if (opts.category) { itemsQ = itemsQ.eq('category', opts.category); albumsQ = albumsQ.eq('category', opts.category); }
-    if (nonPublicUserIds.length) {
-      itemsQ = itemsQ.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
-      albumsQ = albumsQ.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
-    }
+    if (opts.before) albumsQ = albumsQ.lt('created_at', opts.before);
+    if (opts.authorIds) albumsQ = albumsQ.in('user_id', opts.authorIds);
+    if (opts.category) albumsQ = albumsQ.eq('category', opts.category);
+    if (nonPublicUserIds.length) albumsQ = albumsQ.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
 
-    const [itemsRes, albumsRes] = await Promise.all([itemsQ, albumsQ]);
+    const [itemsRes0, albumsRes] = await Promise.all([buildItemsQuery(true), albumsQ]);
+    const itemsRes = itemsRes0.error?.code === '42703' ? await buildItemsQuery(false) : itemsRes0;
     let items = ((itemsRes.data ?? []) as PortfolioItem[]).filter(i => !excludeItemIds.has(i.id));
     let albums = (albumsRes.data ?? []) as PortfolioAlbum[];
     if (!items.length && !albums.length) return [];

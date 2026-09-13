@@ -57,6 +57,7 @@ import { OAuthCallback } from './pages/OAuthCallback';
 import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
 import { Portfolio } from './pages/Portfolio';
+import { EditPortfolioItem } from './pages/EditPortfolioItem';
 import { VerifyEmail } from './pages/VerifyEmail';
 import { VerifyDevice } from './pages/VerifyDevice';
 import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
@@ -125,6 +126,7 @@ export const router = createBrowserRouter([
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },
+      { path: 'edit-portfolio-item/:itemId', Component: EditPortfolioItem },
       { path: 'profile', Component: Profile },
       { path: 'share-card', Component: ShareCard },
       { path: 'verification', Component: Verification },

@@ -25,7 +25,7 @@ const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card
 // (fixed bottom:0, same z-40 as MobileBottomNav) as well as
 // EmergencyListingFlow's sticky CTA and OpportunityApplicants -- all under
 // the /listing/:id prefix.
-const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio', '/listing'];
+const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio', '/listing', '/edit-portfolio-item'];
 
 function isOnboardingIncomplete(user: User | null): boolean {
   if (!user) return false;

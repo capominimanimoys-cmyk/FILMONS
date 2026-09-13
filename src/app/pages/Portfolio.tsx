@@ -293,7 +293,7 @@ function PortfolioViewer({
 
   const openComments = async () => {
     setShowComments(v => !v);
-    if (!showComments && comments.length === 0) setComments(await getItemComments(item.id));
+    if (!showComments && comments.length === 0) setComments((await getItemComments(item.id, { viewerId: meId })).comments);
   };
 
   const submitComment = async () => {
@@ -1278,7 +1278,7 @@ export function Portfolio() {
     try {
       const [hostData, portfolioData, albumData, settingsData] = await Promise.all([
         authApi.getUserById(uid),
-        getPortfolioItems(uid),
+        getPortfolioItems(uid, { includeHidden: isOwner }),
         getAlbums(uid),
         getPortfolioSettings(uid),
       ]);

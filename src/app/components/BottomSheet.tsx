@@ -8,11 +8,14 @@ import { X } from 'lucide-react';
 // this component from the parent (`{open && <BottomSheet ...>}`) rather
 // than passing an `open` prop — `close()` delays the real `onClose` call
 // until the exit animation finishes.
-export function BottomSheet({ title, onClose, children, footer }: {
+export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92 }: {
   title?: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Caps the sheet's own height (vh) below the default 92 -- e.g. the
+   * Portfolio comments sheet wants ~85vh rather than nearly full-screen. */
+  maxHeightVh?: number;
 }) {
   const [show, setShow] = useState(false);
   const [dragY, setDragY] = useState(0);
@@ -58,7 +61,7 @@ export function BottomSheet({ title, onClose, children, footer }: {
       <div
         className="fixed inset-x-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl flex flex-col md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:bottom-4 md:w-full md:max-w-lg md:rounded-3xl"
         style={{
-          maxHeight: '92vh',
+          maxHeight: `${maxHeightVh}vh`,
           transform: show ? `translateY(${dragY}px)` : 'translateY(100%)',
           transition: dragging.current ? 'none' : 'transform 280ms cubic-bezier(0.32,0.72,0,1)',
         }}
