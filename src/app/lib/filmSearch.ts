@@ -115,27 +115,33 @@ const LISTING_TAG_LIMIT = 150;
 const PROFILE_TEXT_LIMIT = 300;
 const PROFILE_ARRAY_LIMIT = 150;
 
-async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
-  // Text-field match and tag match are two independent queries -- they used
-  // to run as two sequential `await`s back to back, doubling this
-  // function's own latency for no reason (neither depends on the other's
-  // result). Every term already runs in parallel with every other term via
-  // Promise.all in searchMatchingListings/searchMatchingCreators below, but
-  // that only parallelizes ACROSS terms; each term's own pair of queries
-  // still needs its own Promise.all to actually run concurrently. Same fix
-  // applied to searchProfilesByTerm's res/arrayRes pair below.
+// Every expanded term used to fire its OWN pair of requests (Promise.all
+// across terms in searchMatchingListings/searchMatchingCreators below), so
+// a 4-term expansion meant up to 16 separate HTTP round trips to Supabase
+// for one search (4 terms x 2 queries x listings-and-profiles). Each
+// individual query got faster once the trigram/GIN indexes were added, but
+// round-trip COUNT itself is still real latency (connection/TLS overhead
+// per request, and up to 16 simultaneous requests can queue behind a
+// browser's or Supabase's own connection limits rather than all genuinely
+// running in parallel) -- that overhead didn't go away just because each
+// query got cheaper. Folding every term into ONE `.or()` clause per query
+// turns this into exactly 4 requests total (text + tags for listings, text
+// + array for profiles), regardless of how many terms expandSearchTerms
+// produced. Postgres evaluates the combined OR as a bitmap-OR across the
+// same per-field indexes it would have used per term anyway, so this loses
+// no matching power -- it just stops paying for it once per term.
+async function searchListingsByTerms(terms: string[]): Promise<SearchListingRow[]> {
   const [textRes, tagRes] = await Promise.all([
     withModerationFilter((filterActive) => {
       let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
       if (filterActive) q = q.eq('moderation_status', 'active');
-      return q
-        .or([
-          `title.ilike.%${term}%`,
-          `description.ilike.%${term}%`,
-          `service_category.ilike.%${term}%`,
-          `city.ilike.%${term}%`,
-        ].join(','))
-        .limit(LISTING_TEXT_LIMIT);
+      const clauses = terms.flatMap(term => [
+        `title.ilike.%${term}%`,
+        `description.ilike.%${term}%`,
+        `service_category.ilike.%${term}%`,
+        `city.ilike.%${term}%`,
+      ]);
+      return q.or(clauses.join(',')).limit(LISTING_TEXT_LIMIT);
     }),
     // tags is a json/jsonb column (not a Postgres text[] array) -- needs a
     // JSON array literal for the `cs` (contains) filter, not the `{...}`
@@ -143,11 +149,12 @@ async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
     withModerationFilter((filterActive) => {
       let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
       if (filterActive) q = q.eq('moderation_status', 'active');
-      return q.filter('tags', 'cs', `["${term}"]`).limit(LISTING_TAG_LIMIT);
+      const clauses = terms.map(term => `tags.cs.["${term}"]`);
+      return q.or(clauses.join(',')).limit(LISTING_TAG_LIMIT);
     }),
   ]);
-  if (textRes.error) console.error(`[filmSearch] listings text error (term="${term}"):`, textRes.error.message);
-  if (tagRes.error) console.warn(`[filmSearch] listings tags error (term="${term}"):`, tagRes.error.message);
+  if (textRes.error) console.error('[filmSearch] listings text error:', textRes.error.message);
+  if (tagRes.error) console.warn('[filmSearch] listings tags error:', tagRes.error.message);
 
   const seen = new Set<string>();
   const combined: SearchListingRow[] = [];
@@ -157,52 +164,42 @@ async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
   return combined;
 }
 
-async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
-  // Same fix as searchListingsByTerm above -- these two queries are
-  // independent and were running as sequential awaits.
+async function searchProfilesByTerms(terms: string[]): Promise<SearchProfileRow[]> {
   const [res, arrayRes] = await Promise.all([
     supabase
       .from('profiles')
       .select(PROFILE_SELECT)
-      .or([
+      .or(terms.flatMap(term => [
         `name.ilike.%${term}%`,
         `username.ilike.%${term}%`,
         `primary_role.ilike.%${term}%`,
         `bio.ilike.%${term}%`,
         `city.ilike.%${term}%`,
-      ].join(','))
+      ]).join(','))
       .not('name', 'is', null)
       .neq('name', '')
       .limit(PROFILE_TEXT_LIMIT),
-    // secondary_roles/skills/gear: the migration file
-    // (20240124000000_profiles_add_missing_columns.sql) declares these
-    // `jsonb`, which is what led to a previous "fix" here switching this to
-    // the `[...]` JSON-array-literal form -- but the LIVE database rejected
-    // that with "malformed array literal", which is Postgres's own error
-    // for parsing a value against a native array type, not jsonb. The
-    // migration file doesn't match the live schema (these columns predate
-    // it, or were created through some other untracked path, so `ADD
-    // COLUMN IF NOT EXISTS jsonb` silently no-opped against an
-    // already-existing array column instead of ever actually running).
-    // Reverted to the `{...}` Postgres-array-literal form, confirmed
-    // against live query errors rather than the migration's stated type.
-    // `cs` only matches a whole element exactly, not a substring, so this
-    // is a best-effort supplement to the ilike fields above, same
-    // limitation the listings tags search accepts.
+    // secondary_roles/skills/gear are native Postgres arrays on the live
+    // database (confirmed via a live "malformed array literal" error when
+    // this briefly used the jsonb `[...]` form instead -- see git history),
+    // not the jsonb the 20240124000000 migration file claims. `cs` only
+    // matches a whole element exactly, not a substring, so this is a
+    // best-effort supplement to the ilike fields above, same limitation
+    // the listings tags search accepts.
     supabase
       .from('profiles')
       .select(PROFILE_SELECT)
-      .or([
+      .or(terms.flatMap(term => [
         `secondary_roles.cs.{"${term}"}`,
         `skills.cs.{"${term}"}`,
         `gear.cs.{"${term}"}`,
-      ].join(','))
+      ]).join(','))
       .not('name', 'is', null)
       .neq('name', '')
       .limit(PROFILE_ARRAY_LIMIT),
   ]);
-  if (res.error) console.error(`[filmSearch] profiles error (term="${term}"):`, res.error.message);
-  if (arrayRes.error) console.warn(`[filmSearch] profiles array error (term="${term}"):`, arrayRes.error.message);
+  if (res.error) console.error('[filmSearch] profiles error:', res.error.message);
+  if (arrayRes.error) console.warn('[filmSearch] profiles array error:', arrayRes.error.message);
 
   const seen = new Set<string>();
   const combined: SearchProfileRow[] = [];
@@ -223,10 +220,7 @@ async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
 export async function searchMatchingListings(rawQuery: string): Promise<SearchListingRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];
-  const batches = await Promise.all(terms.map(searchListingsByTerm));
-  const seen = new Set<string>();
-  const listings: SearchListingRow[] = [];
-  for (const batch of batches) for (const l of batch) if (!seen.has(l.id)) { seen.add(l.id); listings.push(l); }
+  const listings = await searchListingsByTerms(terms);
   listings.sort((a, b) =>
     scoreResult(rawQuery, b.title, b.description ?? '', b.city ?? '') -
     scoreResult(rawQuery, a.title, a.description ?? '', a.city ?? ''));
@@ -236,10 +230,7 @@ export async function searchMatchingListings(rawQuery: string): Promise<SearchLi
 export async function searchMatchingCreators(rawQuery: string): Promise<SearchProfileRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];
-  const batches = await Promise.all(terms.map(searchProfilesByTerm));
-  const seen = new Set<string>();
-  const users: SearchProfileRow[] = [];
-  for (const batch of batches) for (const u of batch) if (!seen.has(u.id)) { seen.add(u.id); users.push(u); }
+  const users = await searchProfilesByTerms(terms);
   users.sort((a, b) =>
     scoreResult(rawQuery, b.name, b.primary_role ?? '', b.bio ?? '') -
     scoreResult(rawQuery, a.name, a.primary_role ?? '', a.bio ?? ''));
