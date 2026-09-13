@@ -34,7 +34,7 @@ import {
   Play, Pause, CheckCircle2, Users, MessageSquare, Briefcase,
   Grid3X3, AlignJustify, LayoutList, Monitor,
   FolderOpen, Search, UserCheck, Check, CheckSquare, FolderPlus,
-  Heart, MessageCircle, Download, Eye, Lock, Send, Trash2,
+  Heart, MessageCircle, Download, Eye, Lock, Send, Trash2, ArrowLeft,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -345,13 +345,26 @@ function PortfolioViewer({
         if (Math.abs(dx) > 50) { dx > 0 ? next() : prev(); }
       }}
     >
-      {/* Top bar */}
+      {/* Top bar -- the back control lives here, in the item detail's own
+          header, rather than as a floating icon-only close button. This
+          viewer is a same-page overlay on top of Portfolio.tsx (Main
+          Portfolio / Portfolio albums / a public creator's Portfolio all
+          render through this one component) -- onClose just flips local
+          state back off, so the underlying page (scroll position, active
+          tab, active album, layout) was never actually disturbed and needs
+          no separate restore logic. When reached via Home -> Portfolio's
+          "View Portfolio" link, a second back step from THIS page (browser
+          back, or leaving Portfolio.tsx) already lands back in Home's own
+          Portfolio feed at its previous scroll position via that page's
+          existing sessionStorage restore -- nothing extra needed here. */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 z-10">
         <button
           onClick={onClose}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
+          className="flex items-center gap-1.5 h-10 pl-2.5 pr-3.5 rounded-full bg-white/10 text-white active:bg-white/20 transition-colors"
         >
-          <X className="w-5 h-5" />
+          <ArrowLeft className="w-5 h-5 shrink-0" />
+          <span className="text-sm font-semibold sm:hidden">Portfolio</span>
+          <span className="text-sm font-semibold hidden sm:inline">Back to Portfolio</span>
         </button>
         <span className="text-white/50 text-xs font-semibold tabular-nums">
           {idx + 1} / {items.length}
