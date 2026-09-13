@@ -260,88 +260,6 @@ export function Home() {
   const [loadError, setLoadError] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
 
-  // ── Listings: limited vertical collapse of the subtitle only ────────────────
-  // Deliberately NOT a real scroll container around the deck -- wrapping the
-  // swipe deck in anything with overflow-y set to non-'visible' also forces
-  // its overflow-x to compute to 'auto' (CSS's "other axis becomes auto when
-  // one axis isn't visible" rule), which would clip the card's own
-  // fly-out-past-its-own-box exit animation -- the exact bug `overflow-visible`
-  // on the deck wrapper above was already added to fix. So instead of a real
-  // scrollable ancestor, only the subtitle `<p>`'s own HEIGHT collapses
-  // (measured from its actual rendered size, never hardcoded -- see
-  // subtitleHeight below), and the filter chips/deck rise into the space it
-  // vacates simply because they're normal-flow siblings after it -- no
-  // transform/clipping ancestor needed around the deck at all.
-  //
-  // collapseAmount (0..subtitleHeight) drives that height continuously,
-  // updated by INCREMENTAL pointer deltas (this frame's Y vs last frame's,
-  // not vs. the original touch-start Y) so hitting the clamp and reversing
-  // direction moves again immediately with zero slack/rubber-band lag --
-  // this IS the "follow the finger directly, no easing mid-drag" behavior.
-  // A transition is applied only once the pointer lifts (isSettlingCollapse
-  // true), animating to whichever end is nearer -- "smoothly settle", not a
-  // sudden jump, and never mid-drag where a CSS transition would visibly
-  // lag behind the finger.
-  //
-  // Gesture priority: uses Pointer events (not Touch), same event system
-  // SwipeCard's own drag handling already uses -- a drag that starts ON the
-  // card is captured by SwipeCard's own setPointerCapture() and never
-  // reaches this ancestor listener at all (capture re-targets move/up
-  // dispatch, bypassing the normal bubble path), so card swipes are
-  // untouched by construction. For drags starting elsewhere in this content
-  // (subtitle, chips row, empty space), gestureAxisRef disambiguates
-  // vertical-dominant (collapse) from horizontal-dominant (e.g. the chips
-  // row's own native horizontal scroll) the same way SwipeCard itself
-  // already tells a horizontal swipe apart from its vertical pull-reveal.
-  const COLLAPSE_SETTLE_TRANSITION = 'height 280ms ease-out, opacity 280ms ease-out, padding 280ms ease-out';
-  const [subtitleHeight, setSubtitleHeight] = useState<number | null>(null);
-  const [collapseAmount, setCollapseAmount] = useState(0);
-  const [isSettlingCollapse, setIsSettlingCollapse] = useState(false);
-  const subtitleRef = useRef<HTMLParagraphElement>(null);
-  const collapseGestureRef = useRef<{ startX: number; startY: number; lastY: number; axis: 'unknown' | 'vertical' | 'horizontal' } | null>(null);
-
-  useEffect(() => {
-    const measure = () => { if (subtitleRef.current) setSubtitleHeight(subtitleRef.current.scrollHeight); };
-    measure();
-    // Re-measure on resize/rotation -- the sentence can wrap onto a
-    // different number of lines at a different viewport width, which is
-    // exactly the "don't hardcode a pixel value" case this is meant to
-    // handle correctly.
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
-
-  const maxCollapse = subtitleHeight ?? 0;
-
-  const handleCollapsePointerDown = (e: React.PointerEvent) => {
-    collapseGestureRef.current = { startX: e.clientX, startY: e.clientY, lastY: e.clientY, axis: 'unknown' };
-    setIsSettlingCollapse(false);
-  };
-  const handleCollapsePointerMove = (e: React.PointerEvent) => {
-    const g = collapseGestureRef.current;
-    if (!g) return;
-    const dxTotal = e.clientX - g.startX;
-    const dyTotal = e.clientY - g.startY;
-    if (g.axis === 'unknown') {
-      if (Math.abs(dxTotal) < 6 && Math.abs(dyTotal) < 6) return; // too small yet to tell intent
-      g.axis = Math.abs(dyTotal) > Math.abs(dxTotal) * 1.2 ? 'vertical' : 'horizontal';
-    }
-    if (g.axis !== 'vertical') return; // horizontal gesture -- leave it to card swipe / native chip scroll entirely
-    const dy = e.clientY - g.lastY;
-    g.lastY = e.clientY;
-    // Swiping UP (dy negative) increases collapseAmount (hides more).
-    setCollapseAmount(prev => Math.min(maxCollapse, Math.max(0, prev - dy)));
-  };
-  const handleCollapsePointerUp = () => {
-    if (collapseGestureRef.current?.axis === 'vertical') {
-      setIsSettlingCollapse(true);
-      // Settle to whichever end is nearer -- a smooth animated snap
-      // (COLLAPSE_SETTLE_TRANSITION), never a sudden jump.
-      setCollapseAmount(prev => (prev > maxCollapse / 2 ? maxCollapse : 0));
-    }
-    collapseGestureRef.current = null;
-  };
-
   // ── Mobile-only Listings/Portfolio toggle ──────────────────────────────────
   // The toggle button itself only ever renders `lg:hidden` (see JSX below),
   // so desktop has no way to change this state at all -- it stays 'listings'
@@ -937,31 +855,7 @@ export function Home() {
               <FilmonsBrandLoader size="lg"/>
             </div>
           ) : (
-            <div
-              className="min-h-full flex flex-col"
-              onPointerDown={handleCollapsePointerDown}
-              onPointerMove={handleCollapsePointerMove}
-              onPointerUp={handleCollapsePointerUp}
-              onPointerCancel={handleCollapsePointerUp}
-            >
-              <p
-                ref={subtitleRef}
-                className="lg:hidden px-4 text-sm text-gray-500 overflow-hidden"
-                style={{
-                  height: maxCollapse ? Math.max(0, maxCollapse - collapseAmount) : 'auto',
-                  opacity: maxCollapse ? Math.max(0, 1 - collapseAmount / maxCollapse) : 1,
-                  paddingTop: maxCollapse ? Math.max(0, 4 * (1 - collapseAmount / maxCollapse)) : 4,
-                  paddingBottom: maxCollapse ? Math.max(0, 8 * (1 - collapseAmount / maxCollapse)) : 8,
-                  // No transition while actively dragging -- it must follow
-                  // the finger 1:1 with zero lag. Only applied once the
-                  // pointer lifts and this settles smoothly to whichever
-                  // end is nearer (see handleCollapsePointerUp).
-                  transition: isSettlingCollapse ? COLLAPSE_SETTLE_TRANSITION : 'none',
-                }}
-                onTransitionEnd={() => setIsSettlingCollapse(false)}
-              >
-                Discover gear, services, creators and opportunities near you.
-              </p>
+            <div className="min-h-full flex flex-col">
               {/* ── Filter chips — the Emergency chip itself is now
                    Professional/Business only. Emergency isn't a separate
                    browsable category for Guest/Creator/Creator+ at all
