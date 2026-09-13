@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { socialApi } from '../lib/api';
@@ -9,6 +9,13 @@ interface FollowContextValue {
   isPending:   (targetId: string) => boolean;
   follow:      (targetId: string) => Promise<void>;
   unfollow:    (targetId: string) => Promise<void>;
+  // The real, live list backing isFollowing -- NOT profiles.following (a
+  // stale array column nothing ever writes to; see Home.tsx's Portfolio
+  // "Following" tab, which used to read that dead column instead of this).
+  // Memoized on the underlying Set reference so it's stable across renders
+  // where nothing actually changed -- safe to use as a useEffect dependency
+  // without refiring every render.
+  followingIds: string[];
 }
 
 const FollowContext = createContext<FollowContextValue | null>(null);
@@ -111,11 +118,14 @@ export function FollowProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const followingIdsArray = useMemo(() => Array.from(followingIds), [followingIds]);
+
   const value: FollowContextValue = {
     isFollowing: id => followingIds.has(id),
     isPending:   id => pendingIds.has(id),
     follow,
     unfollow,
+    followingIds: followingIdsArray,
   };
 
   return <FollowContext.Provider value={value}>{children}</FollowContext.Provider>;

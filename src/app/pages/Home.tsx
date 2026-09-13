@@ -12,6 +12,7 @@ import { normalizeTier } from '../lib/reliabilityApi';
 import { supabase } from '../../lib/supabase';
 import { filterOutLockedOpportunities } from '../lib/entitlements';
 import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
 import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
@@ -289,12 +290,24 @@ export function Home() {
   // refetching; only a genuinely new tab or "Try again" hits the network.
   const feedCacheRef = useRef<Partial<Record<PortfolioFilterId, { entries: PortfolioFeedEntry[]; cursor?: string; hasMore: boolean }>>>({});
 
+  // The real, live follow list -- NOT user.following. That's a raw
+  // profiles.following array column that NOTHING in this codebase ever
+  // writes to (the actual Follow button, via FollowContext/socialApi, only
+  // ever inserts/deletes rows in the `follows` table) -- reading it here
+  // was the root cause of a followed creator's Portfolio content never
+  // appearing in this tab: the "Following" filter was built from a column
+  // that's permanently stale from account creation, completely
+  // disconnected from real follow state. FollowContext's followingIds is
+  // the same live, realtime-synced Set every Follow button in the app
+  // already reads from.
+  const { followingIds } = useFollow();
+
   const loadFeed = useCallback((tab: PortfolioFilterId) => {
     setFeedLoading(true);
     setFeedError(false);
     getPortfolioFeed({
       limit: FEED_PAGE_SIZE,
-      authorIds: tab === 'following' ? (user?.following ?? []) : undefined,
+      authorIds: tab === 'following' ? followingIds : undefined,
       category: PORTFOLIO_CATEGORY_FOR_TAB[tab],
     })
       .then(entries => {
@@ -306,21 +319,36 @@ export function Home() {
       })
       .catch(() => setFeedError(true))
       .finally(() => setFeedLoading(false));
-  }, [user?.following]);
+  }, [followingIds]);
+
+  // Follow/unfollow anywhere in the app changes FollowContext's live
+  // followingIds -- any cached "following" page must be invalidated so it
+  // can never serve results from before the change (per spec: "follow
+  // succeeds -> invalidate -> refetch"). Tracked via a ref rather than a
+  // separate effect specifically so the invalidation always happens BEFORE
+  // the tab-switch effect below reads the cache in the same pass -- two
+  // separate effects run in declaration order, which would otherwise let
+  // the tab-switch effect serve one stale paint from the old cache before
+  // a second effect corrected it on the next tick.
+  const lastFollowingIdsRef = useRef(followingIds);
+  if (lastFollowingIdsRef.current !== followingIds) {
+    lastFollowingIdsRef.current = followingIds;
+    delete feedCacheRef.current.following;
+  }
 
   // Fires on first entry into Portfolio mode AND whenever the tab changes --
   // each tab is a genuinely different query (different category/authorIds),
   // unlike switching Listings<->Portfolio, which never refetches anything.
   useEffect(() => {
     if (homeMode !== 'portfolio') return;
-    if (feedTab === 'following' && !user?.following?.length) {
+    if (feedTab === 'following' && !followingIds.length) {
       setFeedEntries([]); setFeedHasMore(false); setFeedLoading(false); setFeedError(false);
       return;
     }
     const cached = feedCacheRef.current[feedTab];
     if (cached) { setFeedEntries(cached.entries); setFeedHasMore(cached.hasMore); setFeedError(false); return; }
     loadFeed(feedTab);
-  }, [homeMode, feedTab, loadFeed, user?.following]);
+  }, [homeMode, feedTab, loadFeed, followingIds]);
 
   const retryFeed = () => { delete feedCacheRef.current[feedTab]; loadFeed(feedTab); };
 
@@ -347,7 +375,7 @@ export function Home() {
     getPortfolioFeed({
       limit: FEED_PAGE_SIZE,
       before: cached.cursor,
-      authorIds: feedTab === 'following' ? (user?.following ?? []) : undefined,
+      authorIds: feedTab === 'following' ? followingIds : undefined,
       category: PORTFOLIO_CATEGORY_FOR_TAB[feedTab],
     })
       .then(more => {
@@ -360,7 +388,7 @@ export function Home() {
       })
       .catch(() => {})
       .finally(() => setFeedLoadingMore(false));
-  }, [feedTab, feedLoadingMore, feedHasMore, user?.following]);
+  }, [feedTab, feedLoadingMore, feedHasMore, followingIds]);
 
   // Nearby is the one filter with no direct query param (no lat/lng exists
   // to filter by server-side) -- applied client-side against the already-
