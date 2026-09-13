@@ -1361,18 +1361,35 @@ export function Portfolio() {
   };
 
   const handleDelete = async (id: string) => {
-    await deletePortfolioItem(id);
+    const ok = await deletePortfolioItem(id);
+    if (!ok) { toast.error('Could not delete this project. Please try again.'); return; }
+    // items and albumItems are two SEPARATE state arrays -- whichever one is
+    // actually on screen right now (albumItems while viewing an album's
+    // contents, items everywhere else -- see cardProps.items below) needs
+    // its own update, since removing the item from only one of them left it
+    // still visible when deleted from inside an album view: the DB delete
+    // genuinely succeeded, but the currently-rendered list never changed,
+    // which is exactly what "delete doesn't work" looks like from there.
     setItems(prev => prev.filter(p => p.id !== id));
+    setAlbumItems(prev => prev.filter(p => p.id !== id));
+    if (activeTab === 'albums' && activeAlbum) {
+      setAlbumCounts(prev => ({ ...prev, [activeAlbum.id]: Math.max(0, (prev[activeAlbum.id] ?? 1) - 1) }));
+    }
+    toast.success('Project deleted');
   };
 
   const handleBulkDelete = async () => {
     const ids = [...selectedIds];
     if (!ids.length) return;
     if (!window.confirm(`Delete ${ids.length} project${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
-    await Promise.all(ids.map(id => deletePortfolioItem(id)));
-    setItems(prev => prev.filter(p => !selectedIds.has(p.id)));
+    const results = await Promise.all(ids.map(id => deletePortfolioItem(id)));
+    const deletedIds = new Set(ids.filter((_, i) => results[i]));
+    setItems(prev => prev.filter(p => !deletedIds.has(p.id)));
+    setAlbumItems(prev => prev.filter(p => !deletedIds.has(p.id)));
     exitSelectMode();
-    toast.success(`${ids.length} project${ids.length === 1 ? '' : 's'} deleted`);
+    const failedCount = ids.length - deletedIds.size;
+    if (deletedIds.size > 0) toast.success(`${deletedIds.size} project${deletedIds.size === 1 ? '' : 's'} deleted`);
+    if (failedCount > 0) toast.error(`${failedCount} project${failedCount === 1 ? '' : 's'} could not be deleted`);
   };
 
   const changeLayout = async (l: PortfolioLayout) => {
