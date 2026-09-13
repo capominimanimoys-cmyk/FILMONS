@@ -276,7 +276,23 @@ export function Home() {
     try { sessionStorage.setItem(HOME_MODE_KEY, m); } catch {}
   };
 
-  const [feedTab, setFeedTab] = useState<PortfolioFilterId>('foryou');
+  // Persisted the same way homeMode is above -- "View Portfolio" navigates
+  // to a real route (the creator's /portfolio/:id page), which unmounts
+  // Home entirely; without this, pressing Back would remount Home with
+  // feedTab reset to its initial 'foryou' regardless of whether the user
+  // had actually been on Following or a specific personalized category,
+  // which is exactly the "don't send the user back to the top" gap this
+  // closes. Scroll position already had its own sessionStorage restore
+  // (PORTFOLIO_SCROLL_KEY below); this is the matching piece for which
+  // TAB that scroll position belongs to.
+  const FEED_TAB_KEY = 'filmons_portfolio_feed_tab';
+  const [feedTab, setFeedTabState] = useState<PortfolioFilterId>(() => {
+    try { return sessionStorage.getItem(FEED_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
+  });
+  const setFeedTab = (tab: PortfolioFilterId) => {
+    setFeedTabState(tab);
+    try { sessionStorage.setItem(FEED_TAB_KEY, tab); } catch {}
+  };
   const [feedEntries, setFeedEntries] = useState<PortfolioFeedEntry[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);

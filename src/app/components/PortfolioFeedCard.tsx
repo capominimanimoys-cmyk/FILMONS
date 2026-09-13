@@ -540,6 +540,7 @@ function AlbumCardMenu({
 
 export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEntry; onRemoved: () => void }) {
   const { user, showGuestPrompt } = useAuth();
+  const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [viewingItem, setViewingItem] = useState(false);
@@ -595,26 +596,34 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
 
       {entry.type === 'item' ? (
         <>
-          <PortfolioMedia item={entry.item} />
+          {/* Tapping the media/title opens THIS item's own full-screen
+              detail (ItemFocusView) -- not the creator's page. Video keeps
+              its own established tap-to-play-inline behavior unchanged
+              (PortfolioMedia's own internal button), so the click-to-open-
+              detail wrapper only applies to non-video media -- otherwise a
+              single tap would both start playback AND open the detail view
+              at once. "View portfolio" below is the ONLY thing that
+              navigates to the creator's general Portfolio page. */}
+          <div
+            onClick={entry.item.media_type !== 'video' ? () => setViewingItem(true) : undefined}
+            className={entry.item.media_type !== 'video' ? 'cursor-pointer' : ''}
+          >
+            <PortfolioMedia item={entry.item} />
+          </div>
           <EngagementRow
             liked={liked} likesCount={likesCount} commentsCount={commentsCount} saved={saved}
             onToggleLike={handleToggleLike} onOpenComments={() => setShowComments(true)} onShare={handleShare} onToggleSave={handleToggleSave}
           />
-          {entry.item.title && <p className="text-sm font-bold text-gray-900">{entry.item.title}</p>}
+          {entry.item.title && (
+            <p onClick={() => setViewingItem(true)} className="text-sm font-bold text-gray-900 cursor-pointer">{entry.item.title}</p>
+          )}
           {entry.item.description && <ClampedText text={entry.item.description} />}
           <TagRow tags={entry.item.tags ?? []} />
-          {/* Opens THIS item's own full-screen detail (ItemFocusView --
-              same portaled, chrome-hiding, transitioning overlay the
-              three-dot menu's "View Item" already uses), not the
-              creator's general /portfolio page. Since it's a same-page
-              overlay over the still-mounted feed, closing it already
-              preserves scroll position and the active For You/Following
-              tab with no extra restore logic -- the creator's own
-              Portfolio page stays reachable via the avatar/name and the
-              three-dot menu's "View portfolio" entry, unaffected by
-              this change. */}
+          {/* Always the creator's general Portfolio page -- clicking the
+              media/title above is what opens the specific item's own
+              detail view instead. */}
           <button
-            onClick={() => setViewingItem(true)}
+            onClick={() => navigate(`/portfolio/${entry.creator.id}`)}
             className="flex items-center gap-0.5 text-xs font-bold text-blue-600"
           >
             View portfolio <ChevronRight className="w-3.5 h-3.5" />
