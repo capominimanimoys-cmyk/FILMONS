@@ -251,6 +251,51 @@ export function Home() {
   const [loadError, setLoadError] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
 
+  // ── Listings: limited vertical collapse of the subtitle only ────────────────
+  // Deliberately NOT a real scroll container around the deck -- wrapping the
+  // swipe deck in anything with overflow-y set to non-'visible' also forces
+  // its overflow-x to compute to 'auto' (CSS's "other axis becomes auto when
+  // one axis isn't visible" rule), which would clip the card's own
+  // fly-out-past-its-own-box exit animation -- the exact bug `overflow-visible`
+  // on the deck wrapper above was already added to fix. So instead of a real
+  // scrollable ancestor, only the subtitle `<p>` itself collapses (height
+  // measured from its own rendered size, never hardcoded -- see
+  // subtitleHeight below), and the filter chips/deck rise into the space it
+  // vacates simply because they're normal-flow siblings after it -- no
+  // transform on them needed. A small swipe-up/down gesture on this content
+  // toggles it; the gesture is a plain non-capturing touch/wheel listener
+  // (no preventDefault, no pointer capture), so it never competes with
+  // SwipeCard's own pointer-captured horizontal swipe / pull-to-reveal drag.
+  const [subtitleCollapsed, setSubtitleCollapsed] = useState(false);
+  const [subtitleHeight, setSubtitleHeight] = useState<number | null>(null);
+  const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const collapseGestureStartY = useRef<number | null>(null);
+  const COLLAPSE_GESTURE_THRESHOLD = 24; // px of drag/wheel to trigger -- a gesture-sensitivity tuning value, not the collapse distance itself (that's subtitleHeight, measured)
+
+  useEffect(() => {
+    const measure = () => { if (subtitleRef.current) setSubtitleHeight(subtitleRef.current.scrollHeight); };
+    measure();
+    // Re-measure on resize/rotation -- the sentence can wrap onto a
+    // different number of lines at a different viewport width, which is
+    // exactly the "don't hardcode a pixel value" case this is meant to
+    // handle correctly.
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  const handleCollapseTouchStart = (e: React.TouchEvent) => { collapseGestureStartY.current = e.touches[0]?.clientY ?? null; };
+  const handleCollapseTouchMove = (e: React.TouchEvent) => {
+    if (collapseGestureStartY.current == null) return;
+    const dy = (e.touches[0]?.clientY ?? 0) - collapseGestureStartY.current;
+    if (dy < -COLLAPSE_GESTURE_THRESHOLD && !subtitleCollapsed) setSubtitleCollapsed(true);
+    else if (dy > COLLAPSE_GESTURE_THRESHOLD && subtitleCollapsed) setSubtitleCollapsed(false);
+  };
+  const handleCollapseTouchEnd = () => { collapseGestureStartY.current = null; };
+  const handleCollapseWheel = (e: React.WheelEvent) => {
+    if (e.deltaY > COLLAPSE_GESTURE_THRESHOLD && !subtitleCollapsed) setSubtitleCollapsed(true);
+    else if (e.deltaY < -COLLAPSE_GESTURE_THRESHOLD && subtitleCollapsed) setSubtitleCollapsed(false);
+  };
+
   // ── Mobile-only Listings/Portfolio toggle ──────────────────────────────────
   // The toggle button itself only ever renders `lg:hidden` (see JSX below),
   // so desktop has no way to change this state at all -- it stays 'listings'
@@ -844,8 +889,23 @@ export function Home() {
               <FilmonsBrandLoader size="lg"/>
             </div>
           ) : (
-            <div className="min-h-full flex flex-col">
-              <p className="lg:hidden px-4 pt-1 pb-2 text-sm text-gray-500">
+            <div
+              className="min-h-full flex flex-col"
+              onTouchStart={handleCollapseTouchStart}
+              onTouchMove={handleCollapseTouchMove}
+              onTouchEnd={handleCollapseTouchEnd}
+              onWheel={handleCollapseWheel}
+            >
+              <p
+                ref={subtitleRef}
+                className="lg:hidden px-4 text-sm text-gray-500 overflow-hidden transition-[height,opacity,padding-top,padding-bottom] duration-300 ease-out"
+                style={{
+                  height: subtitleCollapsed ? 0 : (subtitleHeight ?? 'auto'),
+                  opacity: subtitleCollapsed ? 0 : 1,
+                  paddingTop: subtitleCollapsed ? 0 : 4,
+                  paddingBottom: subtitleCollapsed ? 0 : 8,
+                }}
+              >
                 Discover gear, services, creators and opportunities near you.
               </p>
               {/* ── Filter chips — the Emergency chip itself is now
