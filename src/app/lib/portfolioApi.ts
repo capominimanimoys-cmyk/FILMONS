@@ -979,3 +979,91 @@ export async function getPortfolioFeed(opts: {
     return [];
   }
 }
+
+// ── "People You May Know" -- Home -> Portfolio feed's creator-discovery
+// row. No blocking infrastructure exists anywhere in this app yet (verified
+// earlier this session -- only a hardcoded isBlocked:false placeholder in
+// Conversation mapping) and profiles has no deactivated/suspended status
+// column, so "blocked users" / "hidden/deactivated profiles" exclusions
+// have nothing to actually filter against -- not faked here. Everything
+// else in the spec IS backed by real columns/tables: candidates must have
+// a public portfolio visibility (creator-level portfolio_settings, same
+// gate getPortfolioFeed already enforces) and at least one non-hidden
+// portfolio_items row, and "mutual follows" is a real count against the
+// follows table, not a placeholder. ──────────────────────────────────────
+export interface SuggestedCreator {
+  id: string; name: string; username: string | null; avatar_url: string | null;
+  primary_role: string | null; city: string | null; is_verified: boolean;
+  mutualCount: number;
+}
+
+export async function getSuggestedCreators(
+  userId: string, opts: { limit?: number } = {},
+): Promise<SuggestedCreator[]> {
+  const limit = opts.limit ?? 10;
+  try {
+    // Same shape as Home.tsx's existing Listings creator-card query
+    // (profiles with a real name + primary_role) -- overfetch since a
+    // chunk of candidates gets filtered out below (non-public portfolio,
+    // no visible items).
+    const { data: myFollowingRows } = await supabase.from('follows').select('following_id').eq('follower_id', userId);
+    const alreadyFollowing = new Set((myFollowingRows ?? []).map((r: any) => r.following_id));
+
+    const { data: candidateRows } = await supabase
+      .from('profiles')
+      .select('id, name, username, avatar_url, primary_role, city, is_verified')
+      .not('name', 'is', null).neq('name', '')
+      .not('primary_role', 'is', null)
+      .order('is_verified', { ascending: false })
+      .limit(limit * 6);
+    const candidates = (candidateRows ?? []).filter((c: any) => c.id !== userId && !alreadyFollowing.has(c.id));
+    if (!candidates.length) return [];
+    const candidateIds = candidates.map((c: any) => c.id);
+
+    // Visibility -- exclude any candidate whose portfolio is explicitly
+    // non-public, checked BEFORE anything else touches their content (same
+    // "never query for content the viewer shouldn't see" approach
+    // getPortfolioFeed uses). A candidate with no settings row at all is
+    // NOT excluded, matching the schema's own 'public' column default.
+    const { data: settingsRows } = await supabase.from('portfolio_settings').select('user_id, visibility').in('user_id', candidateIds);
+    const nonPublic = new Set((settingsRows ?? []).filter((s: any) => s.visibility !== 'public').map((s: any) => s.user_id));
+
+    // Must have at least one visible portfolio item -- an empty or fully-
+    // hidden portfolio isn't a useful discovery recommendation. is_hidden
+    // may not exist yet if 20240423000000 hasn't been applied -- falls
+    // back to "has any item at all" on that specific error rather than
+    // breaking this feature over a not-yet-applied migration.
+    let itemRows = (await supabase.from('portfolio_items').select('user_id, is_hidden').in('user_id', candidateIds));
+    if (itemRows.error?.code === '42703') {
+      itemRows = await supabase.from('portfolio_items').select('user_id').in('user_id', candidateIds) as any;
+    }
+    const withVisibleItem = new Set(
+      (itemRows.data ?? []).filter((r: any) => !r.is_hidden).map((r: any) => r.user_id),
+    );
+
+    const eligible = candidates.filter((c: any) => !nonPublic.has(c.id) && withVisibleItem.has(c.id));
+    if (!eligible.length) return [];
+    const eligibleIds = eligible.map((c: any) => c.id);
+
+    // Mutual follows -- how many people the CURRENT user already follows
+    // also follow this candidate.
+    const mutualCounts = new Map<string, number>();
+    if (alreadyFollowing.size) {
+      const { data: mutualRows } = await supabase
+        .from('follows').select('following_id')
+        .in('following_id', eligibleIds).in('follower_id', [...alreadyFollowing]);
+      (mutualRows ?? []).forEach((r: any) => mutualCounts.set(r.following_id, (mutualCounts.get(r.following_id) ?? 0) + 1));
+    }
+
+    const suggestions: SuggestedCreator[] = eligible.map((c: any) => ({
+      id: c.id, name: c.name, username: c.username, avatar_url: c.avatar_url,
+      primary_role: c.primary_role, city: c.city, is_verified: !!c.is_verified,
+      mutualCount: mutualCounts.get(c.id) ?? 0,
+    }));
+    suggestions.sort((a, b) => (b.mutualCount - a.mutualCount) || (Number(b.is_verified) - Number(a.is_verified)));
+    return suggestions.slice(0, limit);
+  } catch (e) {
+    console.warn('[discovery] suggested creators error:', e);
+    return [];
+  }
+}

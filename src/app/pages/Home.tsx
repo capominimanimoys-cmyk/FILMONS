@@ -21,8 +21,9 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
-import { getPortfolioFeed, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { getPortfolioFeed, getSuggestedCreators, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
+import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -399,6 +400,35 @@ export function Home() {
     if (!user?.city) return [];
     return feedEntries.filter(e => e.creator.city?.toLowerCase().includes(user.city!.toLowerCase()));
   }, [feedTab, feedEntries, user?.city]);
+
+  // "People You May Know" -- fetched once per Home mount (not once per tab
+  // switch/load-more) since recommendations don't need to track pagination
+  // the way real feed entries do. Skipped entirely for guests -- there's no
+  // account to personalize against or follow with. Inserted into the
+  // rendered list below at a fixed position (after the 4th entry) purely at
+  // render time, not stored in feed state -- keeps it out of
+  // feedCacheRef/feedEntries entirely so it can never get paginated,
+  // deleted, or cached as if it were real feed content.
+  const [suggestedCreators, setSuggestedCreators] = useState<SuggestedCreator[]>([]);
+  const suggestedFetchedRef = useRef(false);
+  useEffect(() => {
+    if (homeMode !== 'portfolio' || suggestedFetchedRef.current || !user?.id) return;
+    suggestedFetchedRef.current = true;
+    getSuggestedCreators(user.id, { limit: 10 }).then(setSuggestedCreators);
+  }, [homeMode, user?.id]);
+
+  const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
+  const feedRenderItems = useMemo(() => {
+    type RenderItem = { kind: 'entry'; entry: PortfolioFeedEntry } | { kind: 'suggested' };
+    const list: RenderItem[] = displayedFeedEntries.map(entry => ({ kind: 'entry' as const, entry }));
+    // Never the very first thing in the feed, and only once (not
+    // re-inserted every few entries) -- simplest way to satisfy "avoid
+    // repeating it too often" without tracking freshness/impressions.
+    if (suggestedCreators.length > 0 && list.length > PEOPLE_YOU_MAY_KNOW_INDEX) {
+      list.splice(PEOPLE_YOU_MAY_KNOW_INDEX, 0, { kind: 'suggested' as const });
+    }
+    return list;
+  }, [displayedFeedEntries, suggestedCreators]);
 
   // ── Portfolio scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -1107,8 +1137,14 @@ export function Home() {
                       switching Listings -> Portfolio replays this pop-in for
                       free, with no extra JS state and no remount/refetch. */}
                   <div className="space-y-4 pop-stagger-card">
-                    {displayedFeedEntries.map(entry => (
-                      <PortfolioFeedCard key={`${entry.type}-${entry.id}`} entry={entry} onRemoved={() => removeFeedEntry(entry)}/>
+                    {feedRenderItems.map(item => item.kind === 'suggested' ? (
+                      <PeopleYouMayKnowRow
+                        key="people-you-may-know"
+                        creators={suggestedCreators}
+                        onSeeAll={() => navigate('/search/category/creators')}
+                      />
+                    ) : (
+                      <PortfolioFeedCard key={`${item.entry.type}-${item.entry.id}`} entry={item.entry} onRemoved={() => removeFeedEntry(item.entry)}/>
                     ))}
                   </div>
                   {/* Infinite scroll footer -- handlePortfolioScroll triggers
