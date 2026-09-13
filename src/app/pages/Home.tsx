@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
+import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi, postsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
@@ -713,29 +713,17 @@ export function Home() {
   );
 
   return (
-    // Fixed swipe interface below lg (mobile and tablet, where TopBar +
-    // this page's own sticky search bar still render) -- height capped to
-    // exactly the slice of viewport between the top nav and the bottom
-    // nav, with overflow hidden here so the page itself never scrolls;
+    // Fixed swipe interface below lg (mobile and tablet, where the global
+    // TopBar still renders above this page -- its own Search icon is the
+    // only search entry point here now, this page no longer has its own
+    // separate search bar) -- height capped to exactly the slice of
+    // viewport between the top nav and the bottom nav, with overflow
+    // hidden here so the page itself never scrolls;
     // only the deck region below gets its own small bounded scroll. At lg+
     // (real desktop, sidebar layout, DesktopTopBar), this reverts entirely
     // to the original free-scrolling min-h-screen page -- desktop keeps
     // its previous behavior, only mobile/tablet get the bounded interface.
     <div className="h-[calc(100dvh-56px-54px-env(safe-area-inset-bottom))] md:h-[calc(100dvh-56px)] flex flex-col overflow-hidden bg-gray-100 lg:h-auto lg:min-h-screen lg:flex lg:flex-col lg:overflow-visible lg:pb-16">
-
-      {/* ── Search bar — desktop gets DesktopTopBar's search instead, in the
-           global top bar above every page, not just Home ── */}
-      <div
-        className="shrink-0 lg:hidden sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 lg:px-8"
-        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '10px' }}
-      >
-        <button
-          onClick={() => navigate('/search')}
-          className="w-full lg:max-w-xl flex items-center gap-2.5 bg-gray-100 rounded-2xl px-3.5 py-2.5 text-left hover:bg-gray-200 transition-colors active:scale-[0.99]">
-          <Search className="w-4 h-4 text-blue-500 shrink-0"/>
-          <span className="text-sm text-gray-400">Search creators, gear, services…</span>
-        </button>
-      </div>
 
       {/* ── Listings / Portfolio toggle — mobile only. Only renders below
            lg:, so desktop has no way to ever set homeMode to 'portfolio' --
