@@ -324,6 +324,19 @@ export function Home() {
 
   const retryFeed = () => { delete feedCacheRef.current[feedTab]; loadFeed(feedTab); };
 
+  // Deleting an item/album from the card's own menu (see PortfolioFeedCard's
+  // CardMenu) needs to disappear from the feed immediately -- updates both
+  // the live state AND the per-tab cache, since switching tabs and back
+  // would otherwise restore the stale cached array (with the deleted entry
+  // still in it) instead of refetching, same mount-preservation trade-off
+  // the cache exists for in the first place.
+  const removeFeedEntry = (removed: PortfolioFeedEntry) => {
+    const filterOut = (list: PortfolioFeedEntry[]) => list.filter(e => !(e.type === removed.type && e.id === removed.id));
+    setFeedEntries(filterOut);
+    const cached = feedCacheRef.current[feedTab];
+    if (cached) feedCacheRef.current[feedTab] = { ...cached, entries: filterOut(cached.entries) };
+  };
+
   // Infinite scroll -- appends the next page instead of replacing anything,
   // triggered by the scroll handler below as the user nears the bottom of
   // the feed's own scroll container (not the window -- see that handler).
@@ -1067,7 +1080,7 @@ export function Home() {
                       free, with no extra JS state and no remount/refetch. */}
                   <div className="space-y-4 pop-stagger-card">
                     {displayedFeedEntries.map(entry => (
-                      <PortfolioFeedCard key={`${entry.type}-${entry.id}`} entry={entry}/>
+                      <PortfolioFeedCard key={`${entry.type}-${entry.id}`} entry={entry} onRemoved={() => removeFeedEntry(entry)}/>
                     ))}
                   </div>
                   {/* Infinite scroll footer -- handlePortfolioScroll triggers

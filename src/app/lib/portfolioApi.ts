@@ -636,6 +636,22 @@ export async function togglePortfolioSave(
   return !error;
 }
 
+// Report -- backs the Home -> Portfolio feed card menu's "Report" action.
+// No report/flag infrastructure existed anywhere in this app before this;
+// see the 20240421000000_content_reports migration (not yet applied --
+// needs manual application, same as every migration in this repo). This
+// only records the report -- there is no admin/moderation view reading
+// this table yet.
+export async function reportPortfolioContent(
+  reporterId: string, targetId: string, targetType: PortfolioSaveTargetType, reason?: string,
+): Promise<boolean> {
+  const { error } = await supabase.from('content_reports').insert({
+    reporter_id: reporterId, target_id: targetId, target_type: targetType, reason: reason || null,
+  });
+  if (error) { console.error('[portfolio] report error:', error.message); return false; }
+  return true;
+}
+
 export async function incrementItemView(itemId: string): Promise<void> {
   try {
     await supabase.rpc('increment_portfolio_item_views', { p_item_id: itemId });

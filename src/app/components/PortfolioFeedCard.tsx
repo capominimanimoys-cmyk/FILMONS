@@ -12,17 +12,19 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Heart, MessageCircle, Send, Bookmark, Play, X, MoreHorizontal,
-  BadgeCheck, UserPlus, UserCheck, Link2, ExternalLink, ChevronRight,
+  BadgeCheck, UserPlus, UserCheck, ExternalLink, ChevronRight,
+  User, Share2, Flag, Trash2, FolderCog,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { UserAvatar } from './AccountTypeBadge';
-import { BottomSheet } from './BottomSheet';
+import { BottomSheet, SheetCancel } from './BottomSheet';
 import { toast } from 'sonner';
 import {
   PortfolioFeedEntry, PortfolioItem, PortfolioComment, PortfolioFeedPreviewItem,
   toggleItemLike, isItemLiked, getItemComments, addItemComment, getAlbumItems,
-  isPortfolioSaved, togglePortfolioSave,
+  isPortfolioSaved, togglePortfolioSave, deletePortfolioItem, deleteAlbum,
+  reportPortfolioContent,
 } from '../lib/portfolioApi';
 
 function timeAgo(iso: string): string {
@@ -254,34 +256,104 @@ function CreatorHeader({
   );
 }
 
-// ── Creator-header overflow menu -- deliberately minimal (Copy link + Open
-// Portfolio): editing/removing a creator's own portfolio content already
-// has its own dedicated flow (Portfolio.tsx / PortfolioSettings.tsx), not
-// duplicated here as a half-built shortcut. ────────────────────────────────
-function CardMenu({ entry, onClose }: { entry: PortfolioFeedEntry; onClose: () => void }) {
+// ── Creator-header overflow menu -- a real BottomSheet (slide up from
+// bottom, backdrop, drag-to-dismiss, safe-area padding, above every other
+// page chrome via its z-[70] -- higher than TopBar/MobileBottomNav's z-40,
+// so it always sits above the page regardless of Home's own auto-hide
+// chrome state) rather than a floating dropdown, shared with every other
+// action sheet in this app (ItemActionsSheet, etc.) instead of a bespoke
+// mobile-only implementation. Context-sensitive: own content swaps in
+// manage/delete actions instead of follow-oriented ones a creator would
+// never use on their own post.
+//
+// "Edit" / "Add to album" for own content deliberately route to the
+// existing Portfolio management page instead of duplicating those flows
+// here -- both already exist as real, working UI there (ItemActionsSheet's
+// own album-context actions, AddPortfolioItemSheet), and forking a second
+// implementation of them into the feed card risks exactly the kind of
+// drift a shared codebase is supposed to avoid. Delete is simple and
+// low-risk enough to wire directly instead.
+function CardMenu({
+  entry, isOwn, saved, onToggleSave, onShare, onClose, onRemoved,
+}: {
+  entry: PortfolioFeedEntry; isOwn: boolean; saved: boolean;
+  onToggleSave: () => void; onShare: () => void; onClose: () => void;
+  onRemoved: () => void;
+}) {
   const navigate = useNavigate();
-  const portfolioUrl = `${window.location.origin}/portfolio/${entry.creator.id}`;
+  const { user, showGuestPrompt } = useAuth();
+  const [deleting, setDeleting] = useState(false);
+  const isAlbum = entry.type === 'album';
+
+  const run = (fn: () => void) => { onClose(); fn(); };
+
+  const handleDelete = async () => {
+    const confirmMsg = isAlbum
+      ? 'Delete this album? Its photos/videos will stay in your portfolio, just ungrouped.'
+      : 'Delete this project? This action cannot be undone.';
+    if (!window.confirm(confirmMsg)) return;
+    setDeleting(true);
+    const ok = isAlbum ? await deleteAlbum(entry.album.id) : await deletePortfolioItem(entry.item.id);
+    setDeleting(false);
+    if (!ok) { toast.error(`Could not delete this ${isAlbum ? 'album' : 'project'}.`); return; }
+    toast.success(`${isAlbum ? 'Album' : 'Project'} deleted`);
+    onClose();
+    onRemoved();
+  };
+
+  const handleReport = async () => {
+    if (!user) { onClose(); showGuestPrompt('Create your Filmons account to report content.', 'Sign up'); return; }
+    if (!window.confirm('Report this content to Filmons?')) return;
+    const targetId = isAlbum ? entry.album.id : entry.item.id;
+    const ok = await reportPortfolioContent(user.id, targetId, isAlbum ? 'portfolio_album' : 'portfolio_item');
+    onClose();
+    toast[ok ? 'success' : 'error'](ok ? 'Reported. Thanks for letting us know.' : 'Could not submit report. Please try again.');
+  };
+
   return (
     <BottomSheet onClose={onClose}>
       <div className="px-2 py-1">
-        <button
-          onClick={() => { onClose(); navigator.clipboard?.writeText(portfolioUrl).then(() => toast.success('Link copied!')).catch(() => toast.error('Could not copy link')); }}
-          className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors"
-        >
-          <Link2 className="w-4 h-4 text-gray-400" /> Copy link
-        </button>
-        <button
-          onClick={() => { onClose(); navigate(`/portfolio/${entry.creator.id}`); }}
-          className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors"
-        >
-          <ExternalLink className="w-4 h-4 text-gray-400" /> Open Portfolio
-        </button>
+        {isOwn ? (
+          <>
+            <button onClick={() => run(() => navigate('/portfolio'))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <FolderCog className="w-4 h-4 text-gray-400" /> Manage in Portfolio
+            </button>
+            <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <Share2 className="w-4 h-4 text-gray-400" /> Share
+            </button>
+            <div className="border-t border-gray-50 my-1" />
+            <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-50">
+              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : `Delete ${isAlbum ? 'album' : 'project'}`}
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => run(() => navigate(`/host/${entry.creator.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <User className="w-4 h-4 text-gray-400" /> View creator profile
+            </button>
+            <button onClick={() => run(() => navigate(`/portfolio/${entry.creator.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <ExternalLink className="w-4 h-4 text-gray-400" /> View portfolio
+            </button>
+            <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <Share2 className="w-4 h-4 text-gray-400" /> Share
+            </button>
+            <button onClick={() => run(onToggleSave)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+              <Bookmark className={`w-4 h-4 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-400'}`} /> {saved ? 'Unsave' : 'Save'}
+            </button>
+            <div className="border-t border-gray-50 my-1" />
+            <button onClick={handleReport} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+              <Flag className="w-4 h-4" /> Report
+            </button>
+          </>
+        )}
+        <div className="border-t border-gray-50 mt-1" />
+        <SheetCancel onClick={onClose} />
       </div>
     </BottomSheet>
   );
 }
 
-export function PortfolioFeedCard({ entry }: { entry: PortfolioFeedEntry }) {
+export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEntry; onRemoved: () => void }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
@@ -371,7 +443,13 @@ export function PortfolioFeedCard({ entry }: { entry: PortfolioFeedEntry }) {
       {showComments && entry.type === 'item' && (
         <PortfolioCommentSheet itemId={entry.item.id} onClose={() => setShowComments(false)} />
       )}
-      {showMenu && <CardMenu entry={entry} onClose={() => setShowMenu(false)} />}
+      {showMenu && (
+        <CardMenu
+          entry={entry} isOwn={isOwn} saved={saved}
+          onToggleSave={handleToggleSave} onShare={handleShare}
+          onClose={() => setShowMenu(false)} onRemoved={onRemoved}
+        />
+      )}
     </div>
   );
 }
