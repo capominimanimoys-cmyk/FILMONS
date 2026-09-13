@@ -655,6 +655,22 @@ export async function getPortfolioFeed(opts: {
   if (opts.authorIds && opts.authorIds.length === 0) return [];
 
   try {
+    // Visibility is checked BEFORE fetching any items/albums, not after --
+    // this app's tables all have permissive RLS (USING (true), see
+    // project_auth_model), so there is no real row-level enforcement to
+    // lean on here; the closest equivalent this architecture allows is
+    // never asking a non-public creator's content INTO this query's own
+    // result set in the first place, rather than fetching it and filtering
+    // client-side afterward (which briefly pulls private content into a
+    // network response even if the UI never renders it). `.neq('visibility',
+    // 'public')` catches any non-public value this schema uses now or adds
+    // later ('private', 'followers', or anything else) without hardcoding
+    // an enum of "bad" values -- a creator with NO settings row at all is
+    // NOT excluded here, matching this schema's own column default of
+    // 'public' for a row that doesn't exist yet.
+    const { data: nonPublicRows } = await supabase.from('portfolio_settings').select('user_id').neq('visibility', 'public');
+    const nonPublicUserIds = (nonPublicRows ?? []).map((r: any) => r.user_id);
+
     const excludeItemIds = new Set<string>();
     {
       const { data } = await supabase
@@ -670,47 +686,45 @@ export async function getPortfolioFeed(opts: {
     if (opts.before) { itemsQ = itemsQ.lt('created_at', opts.before); albumsQ = albumsQ.lt('created_at', opts.before); }
     if (opts.authorIds) { itemsQ = itemsQ.in('user_id', opts.authorIds); albumsQ = albumsQ.in('user_id', opts.authorIds); }
     if (opts.category) { itemsQ = itemsQ.eq('category', opts.category); albumsQ = albumsQ.eq('category', opts.category); }
+    if (nonPublicUserIds.length) {
+      itemsQ = itemsQ.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
+      albumsQ = albumsQ.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
+    }
 
     const [itemsRes, albumsRes] = await Promise.all([itemsQ, albumsQ]);
     let items = ((itemsRes.data ?? []) as PortfolioItem[]).filter(i => !excludeItemIds.has(i.id));
     let albums = (albumsRes.data ?? []) as PortfolioAlbum[];
-
-    const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
-    if (!authorIds.length) return [];
-
-    // Standalone items have no per-item visibility column -- only the
-    // creator-level portfolio_settings.visibility gates them (matching
-    // "respect any existing Portfolio privacy settings"). Albums ALSO have
-    // their own per-album `visibility`, already filtered via .eq() above --
-    // this is an ADDITIONAL creator-level gate on top of that. A creator
-    // with no settings row yet defaults to 'public', matching this schema's
-    // own column default.
-    const [{ data: profileRows }, { data: settingsRows }] = await Promise.all([
-      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', authorIds),
-      supabase.from('portfolio_settings').select('user_id, visibility').in('user_id', authorIds),
-    ]);
-    const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
-    const settingsByUser = new Map((settingsRows ?? []).map((s: any) => [s.user_id, s.visibility]));
-    const isPublicCreator = (userId: string) => (settingsByUser.get(userId) ?? 'public') === 'public';
-
-    items = items.filter(i => isPublicCreator(i.user_id));
-    albums = albums.filter(a => isPublicCreator(a.user_id));
     if (!items.length && !albums.length) return [];
 
-    // Album cards only need a cover + count here -- full contents (in
-    // sort_order) are fetched lazily via the existing getAlbumItems() only
-    // once "View album" is actually tapped, not eagerly for every album in
-    // the feed.
+    // Empty-album check -- an album must never appear with zero valid
+    // items. portfolio_album_items.item_id has ON DELETE CASCADE against
+    // portfolio_items, so a deleted item's membership row is already gone
+    // by the time this query runs -- counting these rows directly already
+    // reflects only items that still exist, with no separate "is the item
+    // still there" check needed. This schema has no archived/hidden/status
+    // column on portfolio_items to additionally check (verified against
+    // the actual columns this table has) -- existence via this join is the
+    // whole of "otherwise eligible" for standalone items too.
+    const itemCountByAlbum = new Map<string, number>();
+    if (albums.length) {
+      const { data } = await supabase.from('portfolio_album_items').select('album_id').in('album_id', albums.map(a => a.id));
+      (data ?? []).forEach((r: any) => itemCountByAlbum.set(r.album_id, (itemCountByAlbum.get(r.album_id) ?? 0) + 1));
+    }
+    albums = albums.filter(a => (itemCountByAlbum.get(a.id) ?? 0) > 0);
+    if (!items.length && !albums.length) return [];
+
+    const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
+    const { data: profileRows } = await supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', authorIds);
+    const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
+
+    // Album cards only need a cover here -- full contents (in sort_order)
+    // are fetched lazily via the existing getAlbumItems() only once "View
+    // album" is actually tapped, not eagerly for every album in the feed.
     const coverLookupIds = albums.filter(a => !a.cover_url && a.cover_item_id).map(a => a.cover_item_id!);
     const coverItemMap = new Map<string, string | null>();
     if (coverLookupIds.length) {
       const { data } = await supabase.from('portfolio_items').select('id, thumbnail_url, media_url').in('id', coverLookupIds);
       (data ?? []).forEach((r: any) => coverItemMap.set(r.id, r.thumbnail_url || r.media_url || null));
-    }
-    const itemCountByAlbum = new Map<string, number>();
-    if (albums.length) {
-      const { data } = await supabase.from('portfolio_album_items').select('album_id').in('album_id', albums.map(a => a.id));
-      (data ?? []).forEach((r: any) => itemCountByAlbum.set(r.album_id, (itemCountByAlbum.get(r.album_id) ?? 0) + 1));
     }
 
     const creatorFor = (userId: string): PortfolioFeedCreator => {
