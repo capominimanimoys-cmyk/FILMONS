@@ -116,28 +116,37 @@ const PROFILE_TEXT_LIMIT = 300;
 const PROFILE_ARRAY_LIMIT = 150;
 
 async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
-  const textRes = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
-    if (filterActive) q = q.eq('moderation_status', 'active');
-    return q
-      .or([
-        `title.ilike.%${term}%`,
-        `description.ilike.%${term}%`,
-        `service_category.ilike.%${term}%`,
-        `city.ilike.%${term}%`,
-      ].join(','))
-      .limit(LISTING_TEXT_LIMIT);
-  });
+  // Text-field match and tag match are two independent queries -- they used
+  // to run as two sequential `await`s back to back, doubling this
+  // function's own latency for no reason (neither depends on the other's
+  // result). Every term already runs in parallel with every other term via
+  // Promise.all in searchMatchingListings/searchMatchingCreators below, but
+  // that only parallelizes ACROSS terms; each term's own pair of queries
+  // still needs its own Promise.all to actually run concurrently. Same fix
+  // applied to searchProfilesByTerm's res/arrayRes pair below.
+  const [textRes, tagRes] = await Promise.all([
+    withModerationFilter((filterActive) => {
+      let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+      if (filterActive) q = q.eq('moderation_status', 'active');
+      return q
+        .or([
+          `title.ilike.%${term}%`,
+          `description.ilike.%${term}%`,
+          `service_category.ilike.%${term}%`,
+          `city.ilike.%${term}%`,
+        ].join(','))
+        .limit(LISTING_TEXT_LIMIT);
+    }),
+    // tags is a json/jsonb column (not a Postgres text[] array) -- needs a
+    // JSON array literal for the `cs` (contains) filter, not the `{...}`
+    // syntax that applies to a real array column (see profiles below).
+    withModerationFilter((filterActive) => {
+      let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+      if (filterActive) q = q.eq('moderation_status', 'active');
+      return q.filter('tags', 'cs', `["${term}"]`).limit(LISTING_TAG_LIMIT);
+    }),
+  ]);
   if (textRes.error) console.error(`[filmSearch] listings text error (term="${term}"):`, textRes.error.message);
-
-  // tags is a json/jsonb column (not a Postgres text[] array) -- needs a
-  // JSON array literal for the `cs` (contains) filter, not the `{...}`
-  // syntax that applies to a real array column (see profiles below).
-  const tagRes = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
-    if (filterActive) q = q.eq('moderation_status', 'active');
-    return q.filter('tags', 'cs', `["${term}"]`).limit(LISTING_TAG_LIMIT);
-  });
   if (tagRes.error) console.warn(`[filmSearch] listings tags error (term="${term}"):`, tagRes.error.message);
 
   const seen = new Set<string>();
@@ -149,37 +158,40 @@ async function searchListingsByTerm(term: string): Promise<SearchListingRow[]> {
 }
 
 async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
-  const res = await supabase
-    .from('profiles')
-    .select(PROFILE_SELECT)
-    .or([
-      `name.ilike.%${term}%`,
-      `username.ilike.%${term}%`,
-      `primary_role.ilike.%${term}%`,
-      `bio.ilike.%${term}%`,
-      `city.ilike.%${term}%`,
-    ].join(','))
-    .not('name', 'is', null)
-    .neq('name', '')
-    .limit(PROFILE_TEXT_LIMIT);
+  // Same fix as searchListingsByTerm above -- these two queries are
+  // independent and were running as sequential awaits.
+  const [res, arrayRes] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select(PROFILE_SELECT)
+      .or([
+        `name.ilike.%${term}%`,
+        `username.ilike.%${term}%`,
+        `primary_role.ilike.%${term}%`,
+        `bio.ilike.%${term}%`,
+        `city.ilike.%${term}%`,
+      ].join(','))
+      .not('name', 'is', null)
+      .neq('name', '')
+      .limit(PROFILE_TEXT_LIMIT),
+    // secondary_roles/skills/gear are real Postgres text[] arrays (not
+    // jsonb) -- need the `{...}` array-literal form for `cs`, the opposite
+    // of listings.tags above. `cs` only matches a whole element exactly,
+    // not a substring, so this is a best-effort supplement to the ilike
+    // fields above, same limitation the listings tags search accepts.
+    supabase
+      .from('profiles')
+      .select(PROFILE_SELECT)
+      .or([
+        `secondary_roles.cs.{"${term}"}`,
+        `skills.cs.{"${term}"}`,
+        `gear.cs.{"${term}"}`,
+      ].join(','))
+      .not('name', 'is', null)
+      .neq('name', '')
+      .limit(PROFILE_ARRAY_LIMIT),
+  ]);
   if (res.error) console.error(`[filmSearch] profiles error (term="${term}"):`, res.error.message);
-
-  // secondary_roles/skills/gear are real Postgres text[] arrays (not
-  // jsonb) -- need the `{...}` array-literal form for `cs`, the opposite
-  // of listings.tags above. `cs` only matches a whole element exactly,
-  // not a substring, so this is a best-effort supplement to the ilike
-  // fields above, same limitation the listings tags search accepts.
-  const arrayRes = await supabase
-    .from('profiles')
-    .select(PROFILE_SELECT)
-    .or([
-      `secondary_roles.cs.{"${term}"}`,
-      `skills.cs.{"${term}"}`,
-      `gear.cs.{"${term}"}`,
-    ].join(','))
-    .not('name', 'is', null)
-    .neq('name', '')
-    .limit(PROFILE_ARRAY_LIMIT);
   if (arrayRes.error) console.warn(`[filmSearch] profiles array error (term="${term}"):`, arrayRes.error.message);
 
   const seen = new Set<string>();

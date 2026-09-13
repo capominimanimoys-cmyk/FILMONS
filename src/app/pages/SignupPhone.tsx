@@ -19,6 +19,7 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { claimIdentity } from '../lib/identity';
 import { supabase } from '../../lib/supabase';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -316,6 +317,22 @@ export function SignupPhone() {
 
       // Update auth context — mark phone verified, onboarding not yet done
       updateUser({ ...user, phoneVerified: true, profileSetupCompleted: false });
+
+      // Welcome SMS -- this edge function already existed (send-welcome-sms)
+      // but nothing in the client ever called it, so new phone signups never
+      // actually got one. Fire-and-forget, same pattern PhoneLogin.tsx uses
+      // for its own post-verify "welcome back" SMS -- must never block
+      // landing on onboarding.
+      fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ec8fe879/send-welcome-sms`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          body: JSON.stringify({ phone: fullE164, name: fullName.trim() }),
+        }
+      )
+        .then(async res => { const d = await res.json().catch(() => ({})); if (!res.ok) console.error('[phone-signup] welcome SMS failed:', d); })
+        .catch(err => console.error('[phone-signup] welcome SMS error:', err));
 
       setStep('success');
       // Brief success animation then redirect to onboarding
