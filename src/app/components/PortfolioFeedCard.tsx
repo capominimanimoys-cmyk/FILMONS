@@ -5,21 +5,24 @@
 // portfolio_item_likes/portfolio_item_comments functions (toggleItemLike,
 // getItemComments, addItemComment) -- a completely separate engagement
 // system from marketplace listings AND from posts' own likes/comments.
-//
-// Save is intentionally NOT included -- there is no portfolio-item-save
-// table in this schema yet (only savedPostsApi for posts and
-// savedListingsApi for marketplace listings exist). Adding one wasn't part
-// of this correction and would need its own migration; flagging rather
-// than faking it with the wrong table.
+// Save reuses the generic `favorites` table (see togglePortfolioSave) --
+// the same primitive savedPostsApi/savedListingsApi already use with a
+// different item_type, not a new table.
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Share2, Play, Images, X, Send } from 'lucide-react';
+import {
+  Heart, MessageCircle, Send, Bookmark, Play, X, MoreHorizontal,
+  BadgeCheck, UserPlus, UserCheck, Link2, ExternalLink, ChevronRight,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useFollow } from '../context/FollowContext';
 import { UserAvatar } from './AccountTypeBadge';
+import { BottomSheet } from './BottomSheet';
 import { toast } from 'sonner';
 import {
-  PortfolioFeedEntry, PortfolioItem, PortfolioComment,
+  PortfolioFeedEntry, PortfolioItem, PortfolioComment, PortfolioFeedPreviewItem,
   toggleItemLike, isItemLiked, getItemComments, addItemComment, getAlbumItems,
+  isPortfolioSaved, togglePortfolioSave,
 } from '../lib/portfolioApi';
 
 function timeAgo(iso: string): string {
@@ -35,6 +38,10 @@ function timeAgo(iso: string): string {
 }
 
 // ── Media renderer -- image / video (poster + tap-to-play) / audio ─────────
+// Never stretches: the container's aspect-ratio comes from the item's own
+// stored aspect_ratio (falls back to a sane default per media type) and the
+// image/video itself is object-cover within that box, so orientation is
+// respected instead of forcing every post into one fixed square.
 function PortfolioMedia({ item }: { item: PortfolioItem }) {
   const [playing, setPlaying] = useState(false);
   if (item.media_type === 'video') {
@@ -142,8 +149,11 @@ function PortfolioCommentSheet({ itemId, onClose }: { itemId: string; onClose: (
 }
 
 function EngagementRow({
-  liked, likesCount, commentsCount, onToggleLike, onOpenComments, onShare,
-}: { liked: boolean; likesCount: number; commentsCount: number; onToggleLike: () => void; onOpenComments: () => void; onShare: () => void }) {
+  liked, likesCount, commentsCount, saved, onToggleLike, onOpenComments, onShare, onToggleSave,
+}: {
+  liked: boolean; likesCount: number; commentsCount: number; saved: boolean;
+  onToggleLike: () => void; onOpenComments: () => void; onShare: () => void; onToggleSave: () => void;
+}) {
   return (
     <div className="flex items-center gap-5 pt-1">
       <button onClick={onToggleLike} className="flex items-center gap-1.5 text-sm text-gray-600">
@@ -155,25 +165,119 @@ function EngagementRow({
         {commentsCount > 0 && <span className="font-semibold">{commentsCount}</span>}
       </button>
       <button onClick={onShare} className="flex items-center gap-1.5 text-sm text-gray-600">
-        <Share2 className="w-5 h-5 text-gray-500" />
+        <Send className="w-5 h-5 text-gray-500" />
+      </button>
+      <button onClick={onToggleSave} className="ml-auto flex items-center text-sm text-gray-600">
+        <Bookmark className={`w-5 h-5 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-500'}`} />
       </button>
     </div>
   );
 }
 
-function CreatorHeader({ entry }: { entry: PortfolioFeedEntry }) {
-  const navigate = useNavigate();
-  const c = entry.creator;
-  const roleLocation = [c.primary_role, c.city].filter(Boolean).join(' · ');
+// ── Expandable "…more" clamp for titles/descriptions ────────────────────────
+function ClampedText({ text, lines = 3 }: { text: string; lines?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 140;
   return (
-    <button onClick={() => navigate(`/host/${c.id}`)} className="flex items-center gap-2.5 w-full text-left">
-      <UserAvatar user={{ id: c.id, name: c.name, avatar: c.avatar_url }} size={38} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-gray-900 truncate">{c.name}</p>
-        {roleLocation && <p className="text-xs text-gray-400 truncate">{roleLocation}</p>}
-      </div>
+    <p className="text-sm text-gray-600 leading-snug">
+      <span className={expanded ? '' : `line-clamp-${lines}`}>{text}</span>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="ml-1 text-gray-400 font-semibold text-xs align-baseline"
+        >
+          {expanded ? 'less' : 'more'}
+        </button>
+      )}
+    </p>
+  );
+}
+
+function TagRow({ tags }: { tags: string[] }) {
+  if (!tags.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tags.slice(0, 6).map(t => (
+        <span key={t} className="text-[10px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">{t}</span>
+      ))}
+    </div>
+  );
+}
+
+function CreatorHeader({
+  entry, isOwn, onOpenMenu,
+}: { entry: PortfolioFeedEntry; isOwn: boolean; onOpenMenu: () => void }) {
+  const navigate = useNavigate();
+  const { user, showGuestPrompt } = useAuth();
+  const { isFollowing, isPending, follow, unfollow } = useFollow();
+  const c = entry.creator;
+  const subline = [c.username ? `@${c.username}` : null, c.city].filter(Boolean).join(' · ');
+  const following = isFollowing(c.id);
+
+  const handleFollowClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) { showGuestPrompt('Create your Filmons account to follow creators.', 'Sign up to follow'); return; }
+    following ? unfollow(c.id) : follow(c.id);
+  };
+
+  return (
+    <div className="flex items-center gap-2.5 w-full">
+      <button onClick={() => navigate(`/host/${c.id}`)} className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
+        <UserAvatar user={{ id: c.id, name: c.name, avatar: c.avatar_url }} size={40} />
+        <div className="min-w-0">
+          <div className="flex items-center gap-1">
+            <p className="text-sm font-bold text-gray-900 truncate">{c.name}</p>
+            {c.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
+          </div>
+          {subline && <p className="text-xs text-gray-400 truncate">{subline}</p>}
+        </div>
+      </button>
       <span className="text-[11px] text-gray-400 shrink-0">{timeAgo(entry.created_at)}</span>
-    </button>
+      {!isOwn && (
+        <button
+          onClick={handleFollowClick}
+          disabled={isPending(c.id)}
+          className={`shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full transition-colors ${
+            following ? 'bg-gray-100 text-gray-700' : 'bg-blue-600 text-white'
+          }`}
+        >
+          {following ? <><UserCheck className="w-3 h-3" /> Following</> : <><UserPlus className="w-3 h-3" /> Follow</>}
+        </button>
+      )}
+      <button
+        onClick={onOpenMenu}
+        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+// ── Creator-header overflow menu -- deliberately minimal (Copy link + Open
+// Portfolio): editing/removing a creator's own portfolio content already
+// has its own dedicated flow (Portfolio.tsx / PortfolioSettings.tsx), not
+// duplicated here as a half-built shortcut. ────────────────────────────────
+function CardMenu({ entry, onClose }: { entry: PortfolioFeedEntry; onClose: () => void }) {
+  const navigate = useNavigate();
+  const portfolioUrl = `${window.location.origin}/portfolio/${entry.creator.id}`;
+  return (
+    <BottomSheet onClose={onClose}>
+      <div className="px-2 py-1">
+        <button
+          onClick={() => { onClose(); navigator.clipboard?.writeText(portfolioUrl).then(() => toast.success('Link copied!')).catch(() => toast.error('Could not copy link')); }}
+          className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors"
+        >
+          <Link2 className="w-4 h-4 text-gray-400" /> Copy link
+        </button>
+        <button
+          onClick={() => { onClose(); navigate(`/portfolio/${entry.creator.id}`); }}
+          className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors"
+        >
+          <ExternalLink className="w-4 h-4 text-gray-400" /> Open Portfolio
+        </button>
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -181,15 +285,25 @@ export function PortfolioFeedCard({ entry }: { entry: PortfolioFeedEntry }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const isOwn = !!user && user.id === entry.creator.id;
 
   const itemForLikes = entry.type === 'item' ? entry.item : null;
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(itemForLikes?.likes_count ?? 0);
   const [commentsCount] = useState(itemForLikes?.comments_count ?? 0);
+  const [saved, setSaved] = useState(false);
+
+  const saveTargetId = entry.type === 'item' ? entry.item.id : entry.album.id;
+  const saveTargetType = entry.type === 'item' ? 'portfolio_item' as const : 'portfolio_album' as const;
 
   useEffect(() => {
     if (itemForLikes && user) isItemLiked(itemForLikes.id, user.id).then(setLiked);
   }, [itemForLikes?.id, user?.id]);
+
+  useEffect(() => {
+    if (user) isPortfolioSaved(user.id, saveTargetId, saveTargetType).then(setSaved);
+  }, [saveTargetId, saveTargetType, user?.id]);
 
   const handleToggleLike = async () => {
     if (!itemForLikes) return; // album cards don't carry their own like -- likes are per-item
@@ -201,57 +315,97 @@ export function PortfolioFeedCard({ entry }: { entry: PortfolioFeedEntry }) {
     if (!ok) { setLiked(!next); setLikesCount(c => c + (next ? -1 : 1)); toast.error('Could not update like'); }
   };
 
+  const handleToggleSave = async () => {
+    if (!user) { showGuestPrompt('Create your Filmons account to save portfolio work.', 'Sign up to save'); return; }
+    const next = !saved;
+    setSaved(next);
+    const ok = await togglePortfolioSave(user.id, saveTargetId, saveTargetType, !next);
+    if (!ok) { setSaved(!next); toast.error('Could not update save'); }
+  };
+
   const handleShare = async () => {
-    const url = `${window.location.origin}/host/${entry.creator.id}`;
+    const url = `${window.location.origin}/portfolio/${entry.creator.id}`;
     if (navigator.share) { navigator.share({ url, title: entry.creator.name }).catch(() => {}); return; }
     try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };
 
   return (
-    <div className="space-y-2.5">
-      <CreatorHeader entry={entry} />
+    <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3.5 space-y-2.5">
+      <CreatorHeader entry={entry} isOwn={isOwn} onOpenMenu={() => setShowMenu(true)} />
 
       {entry.type === 'item' ? (
         <>
           <PortfolioMedia item={entry.item} />
-          {entry.item.title && <p className="text-sm font-bold text-gray-900">{entry.item.title}</p>}
-          {entry.item.description && <p className="text-sm text-gray-600 line-clamp-3">{entry.item.description}</p>}
-          {!!entry.item.tags?.length && (
-            <div className="flex flex-wrap gap-1.5">
-              {entry.item.tags.slice(0, 6).map(t => (
-                <span key={t} className="text-[10px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">{t}</span>
-              ))}
-            </div>
-          )}
           <EngagementRow
-            liked={liked} likesCount={likesCount} commentsCount={commentsCount}
-            onToggleLike={handleToggleLike} onOpenComments={() => setShowComments(true)} onShare={handleShare}
+            liked={liked} likesCount={likesCount} commentsCount={commentsCount} saved={saved}
+            onToggleLike={handleToggleLike} onOpenComments={() => setShowComments(true)} onShare={handleShare} onToggleSave={handleToggleSave}
           />
+          {entry.item.title && <p className="text-sm font-bold text-gray-900">{entry.item.title}</p>}
+          {entry.item.description && <ClampedText text={entry.item.description} />}
+          <TagRow tags={entry.item.tags ?? []} />
+          <button
+            onClick={() => navigate(`/portfolio/${entry.creator.id}`)}
+            className="flex items-center gap-0.5 text-xs font-bold text-blue-600"
+          >
+            View portfolio <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </>
       ) : (
-        <AlbumMedia entry={entry} />
+        <>
+          <p className="text-sm font-bold text-gray-900">{entry.album.title}</p>
+          {(entry.album.description || entry.itemCount) && (
+            <p className="text-xs text-gray-400">
+              {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}
+              {entry.album.description ? ` · ${entry.album.description}` : ''}
+            </p>
+          )}
+          <AlbumMedia entry={entry} />
+          <EngagementRow
+            liked={liked} likesCount={likesCount} commentsCount={commentsCount} saved={saved}
+            onToggleLike={handleToggleLike} onOpenComments={() => setShowComments(true)} onShare={handleShare} onToggleSave={handleToggleSave}
+          />
+          <TagRow tags={entry.album.tags ?? []} />
+        </>
       )}
-
-      <button
-        onClick={() => navigate(`/host/${entry.creator.id}`)}
-        className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
-      >
-        View Portfolio
-      </button>
 
       {showComments && entry.type === 'item' && (
         <PortfolioCommentSheet itemId={entry.item.id} onClose={() => setShowComments(false)} />
+      )}
+      {showMenu && <CardMenu entry={entry} onClose={() => setShowMenu(false)} />}
+    </div>
+  );
+}
+
+function CollageThumb({ item, className = '' }: { item: PortfolioFeedPreviewItem; className?: string }) {
+  return (
+    <div className={`relative bg-gray-100 overflow-hidden ${className}`}>
+      {item.url
+        ? <img src={item.url} alt="" className="w-full h-full object-cover" />
+        : <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎨</div>}
+      {item.media_type === 'video' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+          <div className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center">
+            <Play className="w-3.5 h-3.5 text-gray-900 ml-0.5" fill="currentColor" />
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-// Album card -- cover + count only until "View album" is tapped, per spec
-// (full contents fetched lazily via the existing getAlbumItems()).
+// Album card -- eager editorial collage (large left + 2 stacked right, per
+// the reference design) built from the feed's own previewItems (already
+// fetched respecting portfolio_album_items.sort_order -- see
+// getPortfolioFeed) rather than a single cover + count badge. Tapping the
+// collage or "View album" opens the full, real ordered set of items
+// in-place (lazy-fetched via the existing getAlbumItems()) without
+// navigating away from the feed, so the feed's own scroll position is
+// never disturbed.
 function AlbumMedia({ entry }: { entry: Extract<PortfolioFeedEntry, { type: 'album' }> }) {
-  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [albumItems, setAlbumItems] = useState<PortfolioItem[] | null>(null);
+  const preview = entry.previewItems;
+  const remaining = entry.itemCount - preview.length;
 
   const openAlbum = async () => {
     setExpanded(true);
@@ -260,18 +414,33 @@ function AlbumMedia({ entry }: { entry: Extract<PortfolioFeedEntry, { type: 'alb
 
   return (
     <div className="space-y-2.5">
-      <div className="relative w-full rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: 4 / 5 }}>
-        {entry.coverUrl
-          ? <img src={entry.coverUrl} alt="" className="w-full h-full object-cover" />
-          : <div className="w-full h-full flex items-center justify-center text-4xl opacity-30">📁</div>}
-        <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-black/60 text-white text-[10px] font-bold px-2 py-1 rounded-full">
-          <Images className="w-3 h-3" /> {entry.itemCount}
-        </div>
-      </div>
-      <p className="text-sm font-bold text-gray-900">{entry.album.title}</p>
-      {entry.album.description && <p className="text-sm text-gray-600 line-clamp-2">{entry.album.description}</p>}
-      <button onClick={openAlbum} className="w-full py-2.5 rounded-xl bg-gray-900 text-white text-xs font-bold">
-        View album ({entry.itemCount})
+      <button onClick={openAlbum} className="block w-full rounded-2xl overflow-hidden" style={{ aspectRatio: preview.length <= 1 ? 4 / 5 : 4 / 3 }}>
+        {preview.length === 0 ? (
+          <div className="w-full h-full bg-gray-100 flex items-center justify-center text-4xl opacity-30">📁</div>
+        ) : preview.length === 1 ? (
+          <CollageThumb item={preview[0]} className="w-full h-full" />
+        ) : preview.length === 2 ? (
+          <div className="grid grid-cols-2 gap-1 w-full h-full">
+            <CollageThumb item={preview[0]} className="w-full h-full" />
+            <CollageThumb item={preview[1]} className="w-full h-full" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 grid-rows-2 gap-1 w-full h-full">
+            <CollageThumb item={preview[0]} className="row-span-2 w-full h-full" />
+            <CollageThumb item={preview[1]} className="w-full h-full" />
+            <div className="relative w-full h-full">
+              <CollageThumb item={preview[2]} className="w-full h-full" />
+              {remaining > 0 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+                  <span className="text-white text-lg font-black">+{remaining}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </button>
+      <button onClick={openAlbum} className="w-full py-2.5 rounded-xl bg-gray-100 text-gray-800 text-xs font-bold flex items-center justify-center gap-0.5">
+        View album <ChevronRight className="w-3.5 h-3.5" />
       </button>
 
       {expanded && (

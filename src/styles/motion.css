@@ -265,6 +265,28 @@ html[data-theme="dark"] .skeleton {
   animation: filmons-pop-new 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* ── 8d. Portfolio feed card entrance -- Home -> Portfolio mode. Fuller
+   opacity+scale+Y pop than .pop-stagger (which is scale-only), matching the
+   "Listings -> Portfolio" toggle spec (opacity 0->1, translateY 8px->0,
+   scale .98->1, ~300ms ease-out). Cards are kept mounted (never unmounted)
+   when switching back to Listings -- toggling the wrapper's `hidden`/`block`
+   class means becoming visible again naturally restarts each child's CSS
+   animation (browsers drop animation state while display:none), so this
+   replays on every switch back into Portfolio for free, with no extra JS
+   state and no remount/refetch. ────────────────────────────────────────── */
+@keyframes filmons-pop-feed-card {
+  from { opacity: 0; transform: scale(0.98) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.pop-stagger-card > * {
+  animation: filmons-pop-feed-card 300ms ease-out both;
+}
+.pop-stagger-card > *:nth-child(1) { animation-delay:  0ms; }
+.pop-stagger-card > *:nth-child(2) { animation-delay: 40ms; }
+.pop-stagger-card > *:nth-child(3) { animation-delay: 80ms; }
+.pop-stagger-card > *:nth-child(4) { animation-delay: 120ms; }
+.pop-stagger-card > *:nth-child(n+5) { animation-delay: 160ms; }
+
 /* ── 9. Shared element transition helper ─────────────────────────────────── */
 [data-animate-id] {
   will-change: transform;

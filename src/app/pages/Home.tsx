@@ -386,12 +386,44 @@ export function Home() {
   // own bounded container (not the window), so "near the bottom" has to be
   // measured against this element directly rather than a viewport-based
   // IntersectionObserver.
+  //
+  // Also drives the auto-hide header/bottom-nav behavior below: once a
+  // meaningful downward scroll is seen, bars hide and STAY hidden (even
+  // through a small upward wiggle) until the feed is scrolled back within
+  // TOP_THRESHOLD of its very top -- deliberately not a plain "any upward
+  // scroll brings them back" toggle, per spec.
+  const TOP_THRESHOLD = 12;
+  const HIDE_SCROLL_DELTA = 10;
+  const lastPortfolioScrollTopRef = useRef(0);
+  const [portfolioBarsHidden, setPortfolioBarsHidden] = useState(false);
+
   const handlePortfolioScroll = () => {
     const el = portfolioScrollRef.current;
     if (!el) return;
     try { sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(el.scrollTop)); } catch {}
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) loadMoreFeed();
+
+    const top = el.scrollTop;
+    const last = lastPortfolioScrollTopRef.current;
+    if (top <= TOP_THRESHOLD) setPortfolioBarsHidden(false);
+    else if (top > last + HIDE_SCROLL_DELTA) setPortfolioBarsHidden(true);
+    lastPortfolioScrollTopRef.current = top;
   };
+
+  // Bridges to the global TopBar/MobileBottomNav (rendered by Root.tsx,
+  // outside this page) -- same window CustomEvent pattern Root.tsx already
+  // uses for Inbox's 'filmons:inbox-conversation-open'. Only ever true
+  // while genuinely in Portfolio mode; leaving Portfolio (or unmounting
+  // Home entirely, e.g. navigating away) always restores both bars so
+  // they never stay hidden on an unrelated page.
+  useEffect(() => {
+    const hidden = homeMode === 'portfolio' && portfolioBarsHidden;
+    window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden } }));
+  }, [homeMode, portfolioBarsHidden]);
+  useEffect(() => {
+    return () => { window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: false } })); };
+  }, []);
+  useEffect(() => { if (homeMode !== 'portfolio') setPortfolioBarsHidden(false); }, [homeMode]);
 
   useEffect(() => {
     let done = false;
@@ -959,7 +991,7 @@ export function Home() {
                 </button>
               ))}
             </div>
-            <div className="flex-1 px-4 pb-6 space-y-4">
+            <div className="flex-1 px-4 pb-6 space-y-4 lg:max-w-[680px] lg:w-full lg:mx-auto">
               {feedError ? (
                 <div className="flex flex-col items-center gap-3 py-16 text-center">
                   <p className="text-sm text-gray-500">Couldn't load portfolio posts.</p>
@@ -991,9 +1023,20 @@ export function Home() {
                 )
               ) : (
                 <>
-                  {displayedFeedEntries.map(entry => (
-                    <PortfolioFeedCard key={`${entry.type}-${entry.id}`} entry={entry}/>
-                  ))}
+                  {/* pop-stagger-card -- CSS-animation-on-mount entrance
+                      (opacity+scale+Y pop, first few cards staggered). This
+                      whole panel is kept mounted (never unmounted) when the
+                      user switches to Listings and back -- but toggling the
+                      wrapper between `hidden` and `block` naturally restarts
+                      each child's CSS animation on becoming visible again
+                      (browsers drop animation state while display:none), so
+                      switching Listings -> Portfolio replays this pop-in for
+                      free, with no extra JS state and no remount/refetch. */}
+                  <div className="space-y-4 pop-stagger-card">
+                    {displayedFeedEntries.map(entry => (
+                      <PortfolioFeedCard key={`${entry.type}-${entry.id}`} entry={entry}/>
+                    ))}
+                  </div>
                   {/* Infinite scroll footer -- handlePortfolioScroll triggers
                       loadMoreFeed() as the container nears its own bottom
                       (not the window's), so this just reflects that state

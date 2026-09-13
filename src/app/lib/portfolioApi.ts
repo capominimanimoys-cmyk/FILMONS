@@ -603,6 +603,39 @@ export async function deleteItemComment(commentId: string): Promise<boolean> {
   return !error;
 }
 
+// Save (bookmark) -- reuses the same generic `favorites` table already used
+// by savedPostsApi/savedListingsApi (see lib/api.ts) with a new item_type
+// discriminator, rather than a new portfolio_item_saves/portfolio_album_saves
+// table -- `favorites` already has no CHECK constraint tying item_type to a
+// fixed enum (posts and listings already share it with two different
+// values), so this needs no migration.
+export type PortfolioSaveTargetType = 'portfolio_item' | 'portfolio_album';
+
+export async function isPortfolioSaved(userId: string, targetId: string, targetType: PortfolioSaveTargetType): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('favorites').select('item_id')
+      .eq('user_id', userId).eq('item_id', targetId).eq('item_type', targetType)
+      .maybeSingle();
+    return !!data;
+  } catch { return false; }
+}
+
+export async function togglePortfolioSave(
+  userId: string, targetId: string, targetType: PortfolioSaveTargetType, currentlySaved: boolean,
+): Promise<boolean> {
+  if (currentlySaved) {
+    const { error } = await supabase.from('favorites').delete()
+      .eq('user_id', userId).eq('item_id', targetId).eq('item_type', targetType);
+    return !error;
+  }
+  const { error } = await supabase.from('favorites').upsert(
+    { user_id: userId, item_id: targetId, item_type: targetType, item_data: {} },
+    { onConflict: 'user_id,item_id' },
+  );
+  return !error;
+}
+
 export async function incrementItemView(itemId: string): Promise<void> {
   try {
     await supabase.rpc('increment_portfolio_item_views', { p_item_id: itemId });
@@ -622,11 +655,14 @@ export async function incrementItemView(itemId: string): Promise<void> {
 // would be much harder to diagnose blind than the equivalent JS.
 export interface PortfolioFeedCreator {
   id: string; name: string; username: string | null; avatar_url: string | null;
-  primary_role: string | null; city: string | null;
+  primary_role: string | null; city: string | null; is_verified: boolean;
+}
+export interface PortfolioFeedPreviewItem {
+  id: string; media_type: MediaType; url: string | null;
 }
 export type PortfolioFeedEntry =
   | { type: 'item'; id: string; created_at: string; creator: PortfolioFeedCreator; item: PortfolioItem }
-  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; itemCount: number };
+  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; itemCount: number; previewItems: PortfolioFeedPreviewItem[] };
 
 // Capped rather than truly exhaustive -- covers realistic recent activity
 // without a full table scan every feed load. An item added long ago to an
@@ -705,21 +741,43 @@ export async function getPortfolioFeed(opts: {
     // column on portfolio_items to additionally check (verified against
     // the actual columns this table has) -- existence via this join is the
     // whole of "otherwise eligible" for standalone items too.
+    //
+    // The same query also collects each album's first 3 items (by
+    // sort_order) for the editorial-collage preview (large + 2 stacked) --
+    // one round trip instead of a separate count-only query plus a later
+    // per-album lazy fetch, since the feed card needs real thumbnails
+    // up front, not just a count.
     const itemCountByAlbum = new Map<string, number>();
+    const previewByAlbum = new Map<string, PortfolioFeedPreviewItem[]>();
     if (albums.length) {
-      const { data } = await supabase.from('portfolio_album_items').select('album_id').in('album_id', albums.map(a => a.id));
-      (data ?? []).forEach((r: any) => itemCountByAlbum.set(r.album_id, (itemCountByAlbum.get(r.album_id) ?? 0) + 1));
+      const { data } = await supabase
+        .from('portfolio_album_items')
+        .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url)')
+        .in('album_id', albums.map(a => a.id))
+        .order('album_id', { ascending: true })
+        .order('sort_order', { ascending: true });
+      (data ?? []).forEach((r: any) => {
+        itemCountByAlbum.set(r.album_id, (itemCountByAlbum.get(r.album_id) ?? 0) + 1);
+        const it = r.portfolio_items;
+        if (!it) return;
+        const list = previewByAlbum.get(r.album_id) ?? [];
+        if (list.length < 3) {
+          list.push({ id: it.id, media_type: it.media_type, url: it.thumbnail_url || it.media_url || null });
+          previewByAlbum.set(r.album_id, list);
+        }
+      });
     }
     albums = albums.filter(a => (itemCountByAlbum.get(a.id) ?? 0) > 0);
     if (!items.length && !albums.length) return [];
 
     const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
-    const { data: profileRows } = await supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', authorIds);
+    const { data: profileRows } = await supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds);
     const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
 
-    // Album cards only need a cover here -- full contents (in sort_order)
-    // are fetched lazily via the existing getAlbumItems() only once "View
-    // album" is actually tapped, not eagerly for every album in the feed.
+    // An explicit cover_item_id (a creator-chosen "featured" cover) can be
+    // any item in the album, not necessarily one of the first 3 by sort
+    // order -- looked up separately from previewByAlbum below rather than
+    // assumed to already be in that slice.
     const coverLookupIds = albums.filter(a => !a.cover_url && a.cover_item_id).map(a => a.cover_item_id!);
     const coverItemMap = new Map<string, string | null>();
     if (coverLookupIds.length) {
@@ -732,16 +790,22 @@ export async function getPortfolioFeed(opts: {
       return {
         id: userId, name: p?.name ?? 'Creator', username: p?.username ?? null,
         avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+        is_verified: !!p?.is_verified,
       };
     };
 
     const entries: PortfolioFeedEntry[] = [
       ...items.map(item => ({ type: 'item' as const, id: item.id, created_at: item.created_at, creator: creatorFor(item.user_id), item })),
-      ...albums.map(album => ({
-        type: 'album' as const, id: album.id, created_at: album.created_at, creator: creatorFor(album.user_id),
-        album, coverUrl: album.cover_url || coverItemMap.get(album.cover_item_id ?? '') || null,
-        itemCount: itemCountByAlbum.get(album.id) ?? 0,
-      })),
+      ...albums.map(album => {
+        const preview = previewByAlbum.get(album.id) ?? [];
+        return {
+          type: 'album' as const, id: album.id, created_at: album.created_at, creator: creatorFor(album.user_id),
+          album,
+          coverUrl: album.cover_url || (album.cover_item_id ? coverItemMap.get(album.cover_item_id) : null) || preview[0]?.url || null,
+          itemCount: itemCountByAlbum.get(album.id) ?? 0,
+          previewItems: preview,
+        };
+      }),
     ];
     entries.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return entries.slice(0, limit);
