@@ -6,13 +6,13 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
-import { listingsApi, postsApi } from '../lib/api';
+import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { supabase } from '../../lib/supabase';
 import { filterOutLockedOpportunities } from '../lib/entitlements';
 import { useAuth } from '../context/AuthContext';
-import { Listing, Post } from '../types';
+import { Listing } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
@@ -20,7 +20,8 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
-import { PostCard } from '../components/PostCard';
+import { getPortfolioFeed, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -47,13 +48,13 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
 ];
 
 // ── Portfolio Feed filters ───────────────────────────────────────────────────
-// There's no dedicated creative-category taxonomy on `posts` -- Photography/
-// Film/Music/Design match against each post's own `tags` (best-effort,
-// depends on creators actually tagging their work) with `postType` as a
-// fallback signal for Film/Music specifically (video/audio posts). Nearby
-// matches `location` text against the viewer's own profile city -- same
-// honest, no-fake-geo-distance approach used elsewhere in this app (there's
-// no lat/lng captured on posts or profiles to compute a real distance from).
+// Photography/Film/Music/Design map onto getPortfolioFeed()'s own `category`
+// param, which matches portfolio_items.category / portfolio_albums.category
+// directly against this schema's real PORTFOLIO_CATEGORIES taxonomy (see
+// lib/portfolioApi.ts) -- a real column, not a best-effort tag/type guess
+// the way the old posts-backed version had to do it. Nearby is still a
+// client-side filter against the viewer's own profile city (no lat/lng
+// exists on profiles or portfolio content to compute a real distance from).
 type PortfolioFilterId = 'foryou' | 'following' | 'nearby' | 'photography' | 'film' | 'music' | 'design';
 const PORTFOLIO_FILTERS: { id: PortfolioFilterId; label: string }[] = [
   { id: 'foryou',      label: 'For You' },
@@ -64,6 +65,14 @@ const PORTFOLIO_FILTERS: { id: PortfolioFilterId; label: string }[] = [
   { id: 'music',       label: 'Music' },
   { id: 'design',      label: 'Design' },
 ];
+// Real values from PORTFOLIO_CATEGORIES (lib/portfolioApi.ts) -- keep in
+// sync with that list if it ever changes.
+const PORTFOLIO_CATEGORY_FOR_TAB: Partial<Record<PortfolioFilterId, string>> = {
+  photography: 'Photography',
+  film: 'Film & Video',
+  music: 'Music & Audio',
+  design: 'Design & Creative',
+};
 
 // Real Opportunity listings — listing_type === 'opportunity' is the
 // authoritative source of truth; metadata.listingKind === 'talent' (the
@@ -314,84 +323,86 @@ export function Home() {
   };
 
   const [feedTab, setFeedTab] = useState<PortfolioFilterId>('foryou');
-  // Fetched once per session (feedFetchedRef), not on every toggle switch --
-  // switching modes is local UI state from here on, never a refetch.
-  const [allFeedPosts, setAllFeedPosts] = useState<Post[]>([]);
-  const [followingPosts, setFollowingPosts] = useState<Post[] | null>(null);
+  const [feedEntries, setFeedEntries] = useState<PortfolioFeedEntry[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);
   const [feedHasMore, setFeedHasMore] = useState(true);
   const [feedError, setFeedError] = useState(false);
-  const feedFetchedRef = useRef(false);
-  const feedOffsetRef = useRef(0);
   const FEED_PAGE_SIZE = 20;
+  // Cached per tab -- switching tabs (or leaving Portfolio for Listings and
+  // coming back to the same tab) restores instantly from here instead of
+  // refetching; only a genuinely new tab or "Try again" hits the network.
+  const feedCacheRef = useRef<Partial<Record<PortfolioFilterId, { entries: PortfolioFeedEntry[]; cursor?: string; hasMore: boolean }>>>({});
 
-  const loadFeed = useCallback(() => {
+  const loadFeed = useCallback((tab: PortfolioFilterId) => {
     setFeedLoading(true);
     setFeedError(false);
-    postsApi.getAll(FEED_PAGE_SIZE, 0)
-      .then(p => {
-        setAllFeedPosts(p);
-        feedOffsetRef.current = p.length;
-        setFeedHasMore(p.length === FEED_PAGE_SIZE);
+    getPortfolioFeed({
+      limit: FEED_PAGE_SIZE,
+      authorIds: tab === 'following' ? (user?.following ?? []) : undefined,
+      category: PORTFOLIO_CATEGORY_FOR_TAB[tab],
+    })
+      .then(entries => {
+        const cursor = entries.length ? entries[entries.length - 1].created_at : undefined;
+        const hasMore = entries.length === FEED_PAGE_SIZE;
+        feedCacheRef.current[tab] = { entries, cursor, hasMore };
+        setFeedEntries(entries);
+        setFeedHasMore(hasMore);
       })
       .catch(() => setFeedError(true))
       .finally(() => setFeedLoading(false));
-  }, []);
+  }, [user?.following]);
+
+  // Fires on first entry into Portfolio mode AND whenever the tab changes --
+  // each tab is a genuinely different query (different category/authorIds),
+  // unlike switching Listings<->Portfolio, which never refetches anything.
+  useEffect(() => {
+    if (homeMode !== 'portfolio') return;
+    if (feedTab === 'following' && !user?.following?.length) {
+      setFeedEntries([]); setFeedHasMore(false); setFeedLoading(false); setFeedError(false);
+      return;
+    }
+    const cached = feedCacheRef.current[feedTab];
+    if (cached) { setFeedEntries(cached.entries); setFeedHasMore(cached.hasMore); setFeedError(false); return; }
+    loadFeed(feedTab);
+  }, [homeMode, feedTab, loadFeed, user?.following]);
+
+  const retryFeed = () => { delete feedCacheRef.current[feedTab]; loadFeed(feedTab); };
 
   // Infinite scroll -- appends the next page instead of replacing anything,
   // triggered by the scroll handler below as the user nears the bottom of
   // the feed's own scroll container (not the window -- see that handler).
   const loadMoreFeed = useCallback(() => {
-    if (feedLoadingMore || !feedHasMore || feedTab === 'following') return;
+    const cached = feedCacheRef.current[feedTab];
+    if (feedLoadingMore || !feedHasMore || !cached?.cursor) return;
     setFeedLoadingMore(true);
-    postsApi.getAll(FEED_PAGE_SIZE, feedOffsetRef.current)
-      .then(p => {
-        setAllFeedPosts(prev => [...prev, ...p]);
-        feedOffsetRef.current += p.length;
-        setFeedHasMore(p.length === FEED_PAGE_SIZE);
+    getPortfolioFeed({
+      limit: FEED_PAGE_SIZE,
+      before: cached.cursor,
+      authorIds: feedTab === 'following' ? (user?.following ?? []) : undefined,
+      category: PORTFOLIO_CATEGORY_FOR_TAB[feedTab],
+    })
+      .then(more => {
+        const merged = [...cached.entries, ...more];
+        const cursor = more.length ? more[more.length - 1].created_at : cached.cursor;
+        const hasMore = more.length === FEED_PAGE_SIZE;
+        feedCacheRef.current[feedTab] = { entries: merged, cursor, hasMore };
+        setFeedEntries(merged);
+        setFeedHasMore(hasMore);
       })
       .catch(() => {})
       .finally(() => setFeedLoadingMore(false));
-  }, [feedLoadingMore, feedHasMore, feedTab]);
+  }, [feedTab, feedLoadingMore, feedHasMore, user?.following]);
 
-  // First time Portfolio is opened this session -- not on every mode switch.
-  useEffect(() => {
-    if (homeMode !== 'portfolio' || feedFetchedRef.current) return;
-    feedFetchedRef.current = true;
-    loadFeed();
-  }, [homeMode, loadFeed]);
-
-  // Following posts are fetched lazily too -- only the first time that tab
-  // is actually opened, not alongside the main feed fetch.
-  useEffect(() => {
-    if (feedTab !== 'following' || followingPosts !== null) return;
-    postsApi.getFeedPosts(user?.following ?? []).then(setFollowingPosts).catch(() => setFollowingPosts([]));
-  }, [feedTab, followingPosts, user?.following]);
-
-  const displayedFeedPosts = useMemo(() => {
-    if (feedTab === 'following') return followingPosts ?? [];
-    let pool = allFeedPosts;
-    const hasTag = (p: Post, ...needles: string[]) => (p.tags ?? []).some(t => needles.some(n => t.toLowerCase().includes(n)));
-    switch (feedTab) {
-      case 'nearby':
-        pool = user?.city ? pool.filter(p => p.location?.toLowerCase().includes(user.city!.toLowerCase())) : [];
-        break;
-      case 'photography':
-        pool = pool.filter(p => p.postType === 'photo' || hasTag(p, 'photo'));
-        break;
-      case 'film':
-        pool = pool.filter(p => p.postType === 'video' || hasTag(p, 'film', 'video'));
-        break;
-      case 'music':
-        pool = pool.filter(p => p.postType === 'audio' || hasTag(p, 'music', 'audio'));
-        break;
-      case 'design':
-        pool = pool.filter(p => hasTag(p, 'design', 'graphic'));
-        break;
-    }
-    return pool;
-  }, [feedTab, allFeedPosts, followingPosts, user?.city]);
+  // Nearby is the one filter with no direct query param (no lat/lng exists
+  // to filter by server-side) -- applied client-side against the already-
+  // fetched page, same honest limitation as Home's Listings "Nearby"-style
+  // filters elsewhere in this app.
+  const displayedFeedEntries = useMemo(() => {
+    if (feedTab !== 'nearby') return feedEntries;
+    if (!user?.city) return [];
+    return feedEntries.filter(e => e.creator.city?.toLowerCase().includes(user.city!.toLowerCase()));
+  }, [feedTab, feedEntries, user?.city]);
 
   // ── Portfolio scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -407,14 +418,14 @@ export function Home() {
 
   useEffect(() => {
     if (scrollRestoredRef.current) return;
-    if (homeMode !== 'portfolio' || feedLoading || displayedFeedPosts.length === 0) return;
+    if (homeMode !== 'portfolio' || feedLoading || displayedFeedEntries.length === 0) return;
     const el = portfolioScrollRef.current;
     if (!el) return;
     scrollRestoredRef.current = true;
     let saved = 0;
     try { saved = Number(sessionStorage.getItem(PORTFOLIO_SCROLL_KEY)) || 0; } catch {}
     if (saved > 0) el.scrollTop = saved;
-  }, [homeMode, feedLoading, displayedFeedPosts.length]);
+  }, [homeMode, feedLoading, displayedFeedEntries.length]);
 
   // Also drives infinite-scroll pagination -- this feed scrolls inside its
   // own bounded container (not the window), so "near the bottom" has to be
@@ -1015,7 +1026,7 @@ export function Home() {
               {feedError ? (
                 <div className="flex flex-col items-center gap-3 py-16 text-center">
                   <p className="text-sm text-gray-500">Couldn't load portfolio posts.</p>
-                  <button onClick={loadFeed} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+                  <button onClick={retryFeed} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
                 </div>
               ) : feedLoading ? (
                 <div className="space-y-4">
@@ -1031,7 +1042,7 @@ export function Home() {
                     </div>
                   ))}
                 </div>
-              ) : displayedFeedPosts.length === 0 ? (
+              ) : displayedFeedEntries.length === 0 ? (
                 feedTab === 'following' ? (
                   <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their work here.</p>
                 ) : (
@@ -1043,24 +1054,16 @@ export function Home() {
                 )
               ) : (
                 <>
-                  {displayedFeedPosts.map(p => (
-                    <div key={p.id} className="space-y-2">
-                      <PostCard post={p}/>
-                      <button
-                        onClick={() => navigate(`/host/${p.userId}`)}
-                        className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
-                      >
-                        View Portfolio
-                      </button>
-                    </div>
+                  {displayedFeedEntries.map(entry => (
+                    <PortfolioFeedCard key={`${entry.type}-${entry.id}`} entry={entry}/>
                   ))}
                   {/* Infinite scroll footer -- handlePortfolioScroll triggers
                       loadMoreFeed() as the container nears its own bottom
                       (not the window's), so this just reflects that state
-                      rather than driving it. Only the For You/Nearby/
-                      category tabs paginate -- Following fetches its (much
-                      smaller) full set in one call, see loadMoreFeed. */}
-                  {feedTab !== 'following' && feedLoadingMore && (
+                      rather than driving it. Every tab (including Following)
+                      paginates the same way now that getPortfolioFeed()
+                      supports authorIds + a cursor together. */}
+                  {feedLoadingMore && (
                     <div className="flex items-center justify-center py-6 text-gray-400">
                       <FilmonsBrandLoader size="sm"/>
                     </div>

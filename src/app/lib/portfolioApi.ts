@@ -608,3 +608,131 @@ export async function incrementItemView(itemId: string): Promise<void> {
     await supabase.rpc('increment_portfolio_item_views', { p_item_id: itemId });
   } catch { /* best-effort */ }
 }
+
+// ── Cross-creator discovery feed (Home -> Portfolio mode) ───────────────────
+// Deliberately NOT the `posts` table -- this reads the real
+// portfolio_items/portfolio_albums/portfolio_album_items schema above, the
+// same one every other function in this file already uses for a single
+// creator's own portfolio page. A standalone item that's actually a member
+// of an album is excluded from appearing as its own entry (the album card
+// represents it instead) -- see excludeItemIds below. Composed client-side
+// (a few plain queries + a merge/sort) rather than one SQL function -- this
+// app has no way to test a new Postgres function against the live database
+// from here, and a subtle bug in hand-written cursor-pagination/dedup SQL
+// would be much harder to diagnose blind than the equivalent JS.
+export interface PortfolioFeedCreator {
+  id: string; name: string; username: string | null; avatar_url: string | null;
+  primary_role: string | null; city: string | null;
+}
+export type PortfolioFeedEntry =
+  | { type: 'item'; id: string; created_at: string; creator: PortfolioFeedCreator; item: PortfolioItem }
+  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; itemCount: number };
+
+// Capped rather than truly exhaustive -- covers realistic recent activity
+// without a full table scan every feed load. An item added long ago to an
+// album, if that item is itself independently very recent, is the one edge
+// case this doesn't catch (a real per-item `album_id` column or a dedicated
+// SQL view would remove this cap entirely; flagging as a known limitation
+// rather than silently pretending it's exhaustive).
+const FEED_ALBUM_MEMBERSHIP_LOOKBACK = 2000;
+
+export async function getPortfolioFeed(opts: {
+  /** created_at cursor -- only entries strictly older than this (pagination) */
+  before?: string;
+  limit?: number;
+  /** Restrict to these creators only (e.g. a "Following" feed) */
+  authorIds?: string[];
+  /** One of PORTFOLIO_CATEGORIES */
+  category?: string;
+} = {}): Promise<PortfolioFeedEntry[]> {
+  const limit = opts.limit ?? 20;
+  // Overfetch from each source before merging -- the two pools get combined
+  // and re-sorted by created_at, so asking each source for exactly `limit`
+  // could under-fill the merged page (e.g. all `limit` newest items happen
+  // to be older than all `limit` newest albums).
+  const fetchN = Math.max(limit * 2, 40);
+
+  if (opts.authorIds && opts.authorIds.length === 0) return [];
+
+  try {
+    const excludeItemIds = new Set<string>();
+    {
+      const { data } = await supabase
+        .from('portfolio_album_items')
+        .select('item_id')
+        .order('added_at', { ascending: false })
+        .limit(FEED_ALBUM_MEMBERSHIP_LOOKBACK);
+      (data ?? []).forEach((r: any) => excludeItemIds.add(r.item_id));
+    }
+
+    let itemsQ = supabase.from('portfolio_items').select('*').order('created_at', { ascending: false }).limit(fetchN);
+    let albumsQ = supabase.from('portfolio_albums').select('*').eq('visibility', 'public').order('created_at', { ascending: false }).limit(fetchN);
+    if (opts.before) { itemsQ = itemsQ.lt('created_at', opts.before); albumsQ = albumsQ.lt('created_at', opts.before); }
+    if (opts.authorIds) { itemsQ = itemsQ.in('user_id', opts.authorIds); albumsQ = albumsQ.in('user_id', opts.authorIds); }
+    if (opts.category) { itemsQ = itemsQ.eq('category', opts.category); albumsQ = albumsQ.eq('category', opts.category); }
+
+    const [itemsRes, albumsRes] = await Promise.all([itemsQ, albumsQ]);
+    let items = ((itemsRes.data ?? []) as PortfolioItem[]).filter(i => !excludeItemIds.has(i.id));
+    let albums = (albumsRes.data ?? []) as PortfolioAlbum[];
+
+    const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
+    if (!authorIds.length) return [];
+
+    // Standalone items have no per-item visibility column -- only the
+    // creator-level portfolio_settings.visibility gates them (matching
+    // "respect any existing Portfolio privacy settings"). Albums ALSO have
+    // their own per-album `visibility`, already filtered via .eq() above --
+    // this is an ADDITIONAL creator-level gate on top of that. A creator
+    // with no settings row yet defaults to 'public', matching this schema's
+    // own column default.
+    const [{ data: profileRows }, { data: settingsRows }] = await Promise.all([
+      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', authorIds),
+      supabase.from('portfolio_settings').select('user_id, visibility').in('user_id', authorIds),
+    ]);
+    const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
+    const settingsByUser = new Map((settingsRows ?? []).map((s: any) => [s.user_id, s.visibility]));
+    const isPublicCreator = (userId: string) => (settingsByUser.get(userId) ?? 'public') === 'public';
+
+    items = items.filter(i => isPublicCreator(i.user_id));
+    albums = albums.filter(a => isPublicCreator(a.user_id));
+    if (!items.length && !albums.length) return [];
+
+    // Album cards only need a cover + count here -- full contents (in
+    // sort_order) are fetched lazily via the existing getAlbumItems() only
+    // once "View album" is actually tapped, not eagerly for every album in
+    // the feed.
+    const coverLookupIds = albums.filter(a => !a.cover_url && a.cover_item_id).map(a => a.cover_item_id!);
+    const coverItemMap = new Map<string, string | null>();
+    if (coverLookupIds.length) {
+      const { data } = await supabase.from('portfolio_items').select('id, thumbnail_url, media_url').in('id', coverLookupIds);
+      (data ?? []).forEach((r: any) => coverItemMap.set(r.id, r.thumbnail_url || r.media_url || null));
+    }
+    const itemCountByAlbum = new Map<string, number>();
+    if (albums.length) {
+      const { data } = await supabase.from('portfolio_album_items').select('album_id').in('album_id', albums.map(a => a.id));
+      (data ?? []).forEach((r: any) => itemCountByAlbum.set(r.album_id, (itemCountByAlbum.get(r.album_id) ?? 0) + 1));
+    }
+
+    const creatorFor = (userId: string): PortfolioFeedCreator => {
+      const p = profiles.get(userId);
+      return {
+        id: userId, name: p?.name ?? 'Creator', username: p?.username ?? null,
+        avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+      };
+    };
+
+    const entries: PortfolioFeedEntry[] = [
+      ...items.map(item => ({ type: 'item' as const, id: item.id, created_at: item.created_at, creator: creatorFor(item.user_id), item })),
+      ...albums.map(album => ({
+        type: 'album' as const, id: album.id, created_at: album.created_at, creator: creatorFor(album.user_id),
+        album, coverUrl: album.cover_url || coverItemMap.get(album.cover_item_id ?? '') || null,
+        itemCount: itemCountByAlbum.get(album.id) ?? 0,
+      })),
+    ];
+    entries.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return entries.slice(0, limit);
+  } catch (e) {
+    console.warn('[portfolio feed] fetch error:', e);
+    return [];
+  }
+}
