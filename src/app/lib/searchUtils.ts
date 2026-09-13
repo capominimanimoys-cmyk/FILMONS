@@ -168,14 +168,29 @@ function termMatchesAlias(word: string, alias: string): boolean {
   return false;
 }
 
+// Single-slot memo -- scoreResult (below) calls expandQuery(rawQuery) fresh
+// on EVERY comparison inside a results .sort() in filmSearch.ts, and a
+// sort of n results makes O(n log n) comparisons, each calling scoreResult
+// twice (once per side). That was re-running this whole 26-group alias
+// scan from scratch tens of thousands of times per search for no reason --
+// every one of those calls shares the exact same rawQuery for the entire
+// sort (a single JS .sort() call is synchronous/atomic, so there's no risk
+// of a different in-flight query invalidating this mid-sort). Caching the
+// last input/output pair turns all of those into a cache hit after the
+// first call.
+let lastExpandInput: string | null = null;
+let lastExpandResult: string[] = [];
+
 /**
  * Expands a raw query into all alias terms.
  * "dji" → ["dji", "drone", "aerial", "fpv", "mavic", ...]
  * "sony camera" → ["sony", "fx3", "a7siii", ..., "camera", "cam", ...]
  */
 export function expandQuery(rawQ: string): string[] {
+  if (rawQ === lastExpandInput) return lastExpandResult;
+
   const q = normalize(rawQ).trim();
-  if (!q) return [];
+  if (!q) return (lastExpandInput = rawQ), (lastExpandResult = []);
 
   const words = q.split(/\s+/).filter(w => w.length >= 2);
   const expanded = new Set<string>([q, ...words]);
@@ -189,7 +204,10 @@ export function expandQuery(rawQ: string): string[] {
     }
   }
 
-  return Array.from(expanded).slice(0, 16);
+  const result = Array.from(expanded).slice(0, 16);
+  lastExpandInput = rawQ;
+  lastExpandResult = result;
+  return result;
 }
 
 // ── Client-side matching ──────────────────────────────────────────────────────
