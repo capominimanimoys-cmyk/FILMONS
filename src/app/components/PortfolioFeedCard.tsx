@@ -14,19 +14,19 @@ import { useNavigate } from 'react-router';
 import {
   Heart, MessageCircle, Send, Bookmark, Play, X, MoreHorizontal,
   BadgeCheck, UserPlus, UserCheck, ExternalLink, ChevronRight, ChevronUp,
-  User, Share2, Flag, Trash2, FolderCog, Pencil, EyeOff, ArrowLeft,
+  User, Share2, Flag, Trash2, FolderCog, ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { UserAvatar } from './AccountTypeBadge';
 import { BottomSheet, SheetCancel } from './BottomSheet';
+import { PortfolioItemActionSheet } from './PortfolioItemActionSheet';
 import { toast } from 'sonner';
 import {
   PortfolioFeedEntry, PortfolioItem, PortfolioComment, PortfolioFeedPreviewItem,
   toggleItemLike, isItemLiked, getItemComments, addItemComment, getAlbumItems,
-  isPortfolioSaved, togglePortfolioSave, deletePortfolioItem, deleteAlbum,
-  reportPortfolioContent, toggleCommentLike, deleteItemComment, updatePortfolioItem,
-  setItemHidden,
+  isPortfolioSaved, togglePortfolioSave, deleteAlbum,
+  reportPortfolioContent, toggleCommentLike, deleteItemComment,
 } from '../lib/portfolioApi';
 
 function timeAgo(iso: string): string {
@@ -421,18 +421,14 @@ function CreatorHeader({
 // page chrome via its z-[70] -- higher than TopBar/MobileBottomNav's z-40,
 // so it always sits above the page regardless of Home's own auto-hide
 // chrome state) rather than a floating dropdown, shared with every other
-// action sheet in this app (ItemActionsSheet, etc.) instead of a bespoke
-// mobile-only implementation. Context-sensitive: own content swaps in
-// manage/delete actions instead of follow-oriented ones a creator would
-// never use on their own post.
+// action sheet in this app instead of a bespoke mobile-only implementation.
 //
-// "Edit" / "Add to album" for own content deliberately route to the
-// existing Portfolio management page instead of duplicating those flows
-// here -- both already exist as real, working UI there (ItemActionsSheet's
-// own album-context actions, AddPortfolioItemSheet), and forking a second
-// implementation of them into the feed card risks exactly the kind of
-// drift a shared codebase is supposed to avoid. Delete is simple and
-// low-risk enough to wire directly instead.
+// Standalone items delegate entirely to PortfolioItemActionSheet -- the
+// same shared component Portfolio.tsx's own grid uses, so "my item" is an
+// identical menu (same actions, ordering, labels, handlers) no matter
+// which page it's opened from. Albums keep their own simpler menu here
+// (own: Manage/Share/Delete; someone else's: profile/portfolio/Share/
+// Save/Report) -- unifying album menus wasn't part of this request.
 function CardMenu({
   entry, isOwn, saved, onToggleSave, onShare, onClose, onRemoved, onViewItem,
 }: {
@@ -440,36 +436,51 @@ function CardMenu({
   onToggleSave: () => void; onShare: () => void; onClose: () => void;
   onRemoved: () => void; onViewItem: () => void;
 }) {
+  // A plain dispatcher, not itself a hook-using component -- entry.type
+  // decides between two entirely separate components below (AlbumCardMenu
+  // owns its own hooks) rather than an early-return-before-hooks inside one
+  // function, which would violate the Rules of Hooks even though this
+  // particular case (a stable `entry` prop for the component's whole
+  // mounted lifetime) happens to never actually change branches at runtime.
+  if (entry.type === 'item') {
+    return (
+      <PortfolioItemActionSheet
+        item={entry.item}
+        creatorId={entry.creator.id}
+        isOwn={isOwn}
+        onClose={onClose}
+        onViewItem={onViewItem}
+        onRemoved={onRemoved}
+      />
+    );
+  }
+  return (
+    <AlbumCardMenu
+      entry={entry} isOwn={isOwn} saved={saved}
+      onToggleSave={onToggleSave} onShare={onShare} onClose={onClose} onRemoved={onRemoved}
+    />
+  );
+}
+
+function AlbumCardMenu({
+  entry, isOwn, saved, onToggleSave, onShare, onClose, onRemoved,
+}: {
+  entry: Extract<PortfolioFeedEntry, { type: 'album' }>; isOwn: boolean; saved: boolean;
+  onToggleSave: () => void; onShare: () => void; onClose: () => void; onRemoved: () => void;
+}) {
   const navigate = useNavigate();
   const { user, showGuestPrompt } = useAuth();
   const [deleting, setDeleting] = useState(false);
-  const [hiding, setHiding] = useState(false);
-  const isAlbum = entry.type === 'album';
 
   const run = (fn: () => void) => { onClose(); fn(); };
 
   const handleDelete = async () => {
-    const confirmMsg = isAlbum
-      ? 'Delete this album? Its photos/videos will stay in your portfolio, just ungrouped.'
-      : 'Delete this item? This action cannot be undone.';
-    if (!window.confirm(confirmMsg)) return;
+    if (!window.confirm('Delete this album? Its photos/videos will stay in your portfolio, just ungrouped.')) return;
     setDeleting(true);
-    const ok = isAlbum ? await deleteAlbum(entry.album.id) : await deletePortfolioItem(entry.item.id);
+    const ok = await deleteAlbum(entry.album.id);
     setDeleting(false);
-    if (!ok) { toast.error(`Could not delete this ${isAlbum ? 'album' : 'item'}.`); return; }
-    toast.success(`${isAlbum ? 'Album' : 'Item'} deleted`);
-    onClose();
-    onRemoved();
-  };
-
-  const handleHide = async () => {
-    if (isAlbum) return;
-    if (!window.confirm('Hide this item from your Portfolio? You can still find and unhide it from Manage in Portfolio.')) return;
-    setHiding(true);
-    const ok = await setItemHidden(entry.item.id, true);
-    setHiding(false);
-    if (!ok) { toast.error('Could not hide this item.'); return; }
-    toast.success('Item hidden from your Portfolio');
+    if (!ok) { toast.error('Could not delete this album.'); return; }
+    toast.success('Album deleted');
     onClose();
     onRemoved();
   };
@@ -477,8 +488,7 @@ function CardMenu({
   const handleReport = async () => {
     if (!user) { onClose(); showGuestPrompt('Create your Filmons account to report content.', 'Sign up'); return; }
     if (!window.confirm('Report this content to Filmons?')) return;
-    const targetId = isAlbum ? entry.album.id : entry.item.id;
-    const ok = await reportPortfolioContent(user.id, targetId, isAlbum ? 'portfolio_album' : 'portfolio_item');
+    const ok = await reportPortfolioContent(user.id, entry.album.id, 'portfolio_album');
     onClose();
     toast[ok ? 'success' : 'error'](ok ? 'Reported. Thanks for letting us know.' : 'Could not submit report. Please try again.');
   };
@@ -486,7 +496,7 @@ function CardMenu({
   return (
     <BottomSheet onClose={onClose}>
       <div className="px-2 py-1">
-        {isOwn ? isAlbum ? (
+        {isOwn ? (
           <>
             <button onClick={() => run(() => navigate('/portfolio'))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <FolderCog className="w-4 h-4 text-gray-400" /> Manage in Portfolio
@@ -497,28 +507,6 @@ function CardMenu({
             <div className="border-t border-gray-50 my-1" />
             <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-50">
               <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete album'}
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => run(onViewItem)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-              <ExternalLink className="w-4 h-4 text-gray-400" /> View Item
-            </button>
-            <button onClick={() => run(() => navigate(`/edit-portfolio-item/${entry.item.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-              <Pencil className="w-4 h-4 text-gray-400" /> Edit Work
-            </button>
-            <button onClick={() => run(() => navigate('/portfolio'))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-              <FolderCog className="w-4 h-4 text-gray-400" /> Add to Album
-            </button>
-            <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-              <Share2 className="w-4 h-4 text-gray-400" /> Share
-            </button>
-            <button onClick={handleHide} disabled={hiding} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50">
-              <EyeOff className="w-4 h-4 text-gray-400" /> {hiding ? 'Hiding…' : 'Hide from Portfolio'}
-            </button>
-            <div className="border-t border-gray-50 my-1" />
-            <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-50">
-              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete Item'}
             </button>
           </>
         ) : (

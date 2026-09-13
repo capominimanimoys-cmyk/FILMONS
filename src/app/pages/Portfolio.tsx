@@ -11,7 +11,8 @@ import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import { HireFlowSheet } from '../components/HireFlowSheet';
-import { ItemActionsSheet } from '../components/ItemActionsSheet';
+import { AddToAlbumSheet } from '../components/AddToAlbumSheet';
+import { PortfolioItemActionSheet } from '../components/PortfolioItemActionSheet';
 import { AlbumActionsSheet, type EditAlbumSection } from '../components/AlbumActionsSheet';
 import { EditAlbumScreen } from '../components/EditAlbumScreen';
 import FilmonsLoader from '../components/FilmonsLoader';
@@ -734,8 +735,19 @@ function ItemCard({
         </div>
       )}
 
-      {/* Three-dot button — opens the shared bottom-sheet menu (portal-rendered) */}
-      {isOwner && !selectMode && (
+      {/* Three-dot button -- PortfolioItemActionSheet, the SAME shared
+          component (same actions, ordering, labels, handlers) Home ->
+          Portfolio's feed card uses for its own three-dot menu, portal-
+          rendered so it can never end up visually clipped to/attached to
+          this card. Shown for every viewer now, not just the owner --
+          someone else's item gets the sheet's viewer-actions branch
+          (View creator profile / View portfolio / Share / Save / Report),
+          which this page never exposed before this. onRemoved reuses the
+          existing onDelete wire purely as a "this id is gone, update your
+          list" signal now -- the sheet itself performs the actual
+          delete/hide API call, Portfolio.tsx only needs to sync state
+          afterward (see handleItemRemoved). */}
+      {!selectMode && (
         <div className="absolute bottom-2 right-2 z-[10]" onClick={e => e.stopPropagation()}>
           <button
             onClick={openMenu}
@@ -744,15 +756,14 @@ function ItemCard({
             <MoreVertical className="w-4 h-4 text-white" />
           </button>
 
-          {createPortal(
-            <ItemActionsSheet
+          {menuOpen && createPortal(
+            <PortfolioItemActionSheet
               item={item}
-              open={menuOpen}
+              creatorId={item.user_id}
+              isOwn={isOwner}
               onClose={closeMenu}
-              onToggle={onToggle}
-              onShare={onShare}
-              onAddToAlbum={onAddToAlbum}
-              onDelete={onDelete}
+              onViewItem={onTap}
+              onRemoved={onDelete}
             />,
             document.body,
           )}
@@ -838,14 +849,16 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, o
   );
 }
 
+// Same shared PortfolioItemActionSheet as ItemCard (Grid/Cinematic
+// layouts) -- Service/Minimal layouts get the identical three-dot menu
+// experience rather than their own separate one.
 function ServiceItemMenu({
-  item, onToggle, onDelete, onShare, onAddToAlbum,
+  item, isOwner, onTap, onDelete,
 }: {
   item: PortfolioItem;
-  onToggle:     () => void;
-  onDelete:     () => void;
-  onShare:      () => void;
-  onAddToAlbum: () => void;
+  isOwner: boolean;
+  onTap: () => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -856,15 +869,14 @@ function ServiceItemMenu({
       >
         <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
       </button>
-      {createPortal(
-        <ItemActionsSheet
+      {open && createPortal(
+        <PortfolioItemActionSheet
           item={item}
-          open={open}
+          creatorId={item.user_id}
+          isOwn={isOwner}
           onClose={() => setOpen(false)}
-          onToggle={onToggle}
-          onShare={onShare}
-          onAddToAlbum={onAddToAlbum}
-          onDelete={onDelete}
+          onViewItem={onTap}
+          onRemoved={onDelete}
         />,
         document.body,
       )}
@@ -909,13 +921,12 @@ function ServiceLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {item.is_featured && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-300" />}
-                  {isOwner && !selectMode && (
+                  {!selectMode && (
                     <ServiceItemMenu
                       item={item}
-                      onToggle={() => onToggle(item)}
+                      isOwner={isOwner}
+                      onTap={() => onTap(item, i)}
                       onDelete={() => onDelete(item.id)}
-                      onShare={() => onShare(item)}
-                      onAddToAlbum={() => onAddToAlbum(item)}
                     />
                   )}
                 </div>
@@ -965,13 +976,12 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {item.is_featured && <Star className="w-4 h-4 text-amber-400 fill-amber-300" />}
-              {isOwner && !selectMode && (
+              {!selectMode && (
                 <ServiceItemMenu
                   item={item}
-                  onToggle={() => onToggle(item)}
+                  isOwner={isOwner}
+                  onTap={() => onTap(item, i)}
                   onDelete={() => onDelete(item.id)}
-                  onShare={() => onShare(item)}
-                  onAddToAlbum={() => onAddToAlbum(item)}
                 />
               )}
             </div>
@@ -979,73 +989,6 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
         );
       })}
     </div>
-  );
-}
-
-// ── Add to Album sheet ────────────────────────────────────────────────────────
-function AddToAlbumSheet({
-  item, albums, onClose,
-}: {
-  item:    PortfolioItem;
-  albums:  PortfolioAlbum[];
-  onClose: () => void;
-}) {
-  const [adding, setAdding] = useState<string | null>(null);
-
-  const handleAdd = async (albumId: string) => {
-    setAdding(albumId);
-    const ok = await addItemToAlbum(albumId, item.id);
-    setAdding(null);
-    if (ok) { toast.success('Added to album'); onClose(); }
-    else     { toast.error('Could not add to album'); }
-  };
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[70] bg-black/50" onClick={onClose} />
-      <div
-        className="fixed inset-x-0 bottom-0 z-[71] bg-white rounded-t-3xl flex flex-col"
-        style={{ maxHeight: '80vh', animation: 'casUp 0.3s cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <div className="flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-10 h-1 bg-gray-200 rounded-full" />
-        </div>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
-          <h3 className="text-sm font-black text-gray-900">Add to Album</h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-            <X className="w-4 h-4 text-gray-600" />
-          </button>
-        </div>
-        {albums.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center px-4 py-12">
-            <p className="text-sm text-gray-400 text-center">No albums yet. Create an album first.</p>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-            {albums.map(album => (
-              <button
-                key={album.id}
-                onClick={() => handleAdd(album.id)}
-                disabled={!!adding}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-gray-100 active:scale-[0.98] transition-all text-left disabled:opacity-60"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
-                  {album.cover_url
-                    ? <img src={album.cover_url} alt={album.title} className="w-full h-full object-cover" />
-                    : <FolderOpen className="w-5 h-5 text-gray-400" />
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900 truncate">{album.title}</p>
-                  <p className="text-xs text-gray-400 capitalize">{album.visibility}</p>
-                </div>
-                {adding === album.id && <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
   );
 }
 
@@ -1361,22 +1304,22 @@ export function Portfolio() {
     setItems(prev => sortItems(prev.map(p => p.id === item.id ? { ...p, is_featured: !p.is_featured } : p), settings.sort_order));
   };
 
-  const handleDelete = async (id: string) => {
-    const ok = await deletePortfolioItem(id);
-    if (!ok) { toast.error('Could not delete this project. Please try again.'); return; }
-    // items and albumItems are two SEPARATE state arrays -- whichever one is
-    // actually on screen right now (albumItems while viewing an album's
-    // contents, items everywhere else -- see cardProps.items below) needs
-    // its own update, since removing the item from only one of them left it
-    // still visible when deleted from inside an album view: the DB delete
-    // genuinely succeeded, but the currently-rendered list never changed,
-    // which is exactly what "delete doesn't work" looks like from there.
+  // PortfolioItemActionSheet (the shared three-dot menu, same component
+  // Home -> Portfolio's feed card uses) now performs the actual delete/hide
+  // API call itself and shows its own success/error toast -- this only
+  // syncs local state afterward (called as the sheet's onRemoved), for
+  // either outcome. items and albumItems are two SEPARATE state arrays --
+  // whichever one is actually on screen right now (albumItems while
+  // viewing an album's contents, items everywhere else -- see
+  // cardProps.items below) needs its own update, since removing the item
+  // from only one of them left it still visible when removed from inside
+  // an album view.
+  const handleItemRemoved = (id: string) => {
     setItems(prev => prev.filter(p => p.id !== id));
     setAlbumItems(prev => prev.filter(p => p.id !== id));
     if (activeTab === 'albums' && activeAlbum) {
       setAlbumCounts(prev => ({ ...prev, [activeAlbum.id]: Math.max(0, (prev[activeAlbum.id] ?? 1) - 1) }));
     }
-    toast.success('Project deleted');
   };
 
   const handleBulkDelete = async () => {
@@ -1410,7 +1353,7 @@ export function Portfolio() {
       setViewer({ open: true, index: globalIndex >= 0 ? globalIndex : index });
     },
     onToggle:     handleToggle,
-    onDelete:     handleDelete,
+    onDelete:     handleItemRemoved,
     onShare:      item => setShareTarget({ type: 'item', item }),
     onAddToAlbum: item => setAddToAlbumTarget(item),
     selectMode,
