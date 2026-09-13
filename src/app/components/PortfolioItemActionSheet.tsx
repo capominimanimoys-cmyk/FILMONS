@@ -33,6 +33,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet, SheetCancel } from './BottomSheet';
 import { AddToAlbumSheet } from './AddToAlbumSheet';
+import { logPortfolioInteraction } from '../lib/personalization';
 import {
   type PortfolioItem, type PortfolioAlbum,
   deletePortfolioItem, setItemHidden, reportPortfolioContent,
@@ -81,7 +82,8 @@ export function PortfolioItemActionSheet({
     const next = !saved;
     setSaved(next);
     const ok = await togglePortfolioSave(user.id, item.id, 'portfolio_item', !next);
-    if (!ok) { setSaved(!next); toast.error('Could not update save'); }
+    if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
+    logPortfolioInteraction(user.id, item.category, next ? 'save' : 'unsave');
   };
 
   const handleOpenAddToAlbum = async () => {

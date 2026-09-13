@@ -22,6 +22,7 @@ import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
 import { getPortfolioFeed, getSuggestedCreators, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
+import { getPersonalizedCategories } from '../lib/personalization';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 
@@ -50,31 +51,27 @@ const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
 ];
 
 // ── Portfolio Feed filters ───────────────────────────────────────────────────
-// Photography/Film/Music/Design map onto getPortfolioFeed()'s own `category`
-// param, which matches portfolio_items.category / portfolio_albums.category
-// directly against this schema's real PORTFOLIO_CATEGORIES taxonomy (see
-// lib/portfolioApi.ts) -- a real column, not a best-effort tag/type guess
-// the way the old posts-backed version had to do it. Nearby is still a
-// client-side filter against the viewer's own profile city (no lat/lng
-// exists on profiles or portfolio content to compute a real distance from).
-type PortfolioFilterId = 'foryou' | 'following' | 'nearby' | 'photography' | 'film' | 'music' | 'design';
-const PORTFOLIO_FILTERS: { id: PortfolioFilterId; label: string }[] = [
-  { id: 'foryou',      label: 'For You' },
-  { id: 'following',   label: 'Following' },
-  { id: 'nearby',      label: 'Nearby' },
-  { id: 'photography', label: 'Photography' },
-  { id: 'film',        label: 'Film' },
-  { id: 'music',       label: 'Music' },
-  { id: 'design',      label: 'Design' },
-];
-// Real values from PORTFOLIO_CATEGORIES (lib/portfolioApi.ts) -- keep in
-// sync with that list if it ever changes.
-const PORTFOLIO_CATEGORY_FOR_TAB: Partial<Record<PortfolioFilterId, string>> = {
-  photography: 'Photography',
-  film: 'Film & Video',
-  music: 'Music & Audio',
-  design: 'Design & Creative',
-};
+// Two top-level tabs (For You / Following) -- "Following answers 'what are
+// people I follow creating', For You answers 'what does Filmons think I'll
+// like'" (per spec). A personalized second-level chip row (All + up to 6
+// ranked PORTFOLIO_CATEGORIES values, see lib/personalization.ts) only
+// shows under For You; Following stays a plain, unfiltered "everyone I
+// follow" list, deliberately not put through the same personalization --
+// its whole purpose is showing exactly what followed creators post, not a
+// ranked/filtered version of it.
+//
+// feedTab itself just widened from a fixed union to a plain string: 'foryou'
+// and 'following' keep their old meaning, and any OTHER value IS a specific
+// category name (e.g. "Photography") selected from the personalized row --
+// categories are per-user now, not a fixed list, so they can't be a fixed
+// TS union anymore. Every existing Record<PortfolioFilterId, ...>/
+// useState<PortfolioFilterId> site elsewhere in this file needed no other
+// change for this.
+type PortfolioFilterId = string;
+// Nearby (a client-side filter against the viewer's own profile city) was
+// dropped in this restructure -- not part of the new For You/Following
+// design, and personalization's own trending/role signals cover
+// "creators like me" better than a same-city-string-match ever did.
 
 // Real Opportunity listings — listing_type === 'opportunity' is the
 // authoritative source of truth; metadata.listingKind === 'talent' (the
@@ -309,7 +306,7 @@ export function Home() {
     getPortfolioFeed({
       limit: FEED_PAGE_SIZE,
       authorIds: tab === 'following' ? followingIds : undefined,
-      category: PORTFOLIO_CATEGORY_FOR_TAB[tab],
+      category: (tab !== 'foryou' && tab !== 'following') ? tab : undefined,
     })
       .then(entries => {
         const cursor = entries.length ? entries[entries.length - 1].created_at : undefined;
@@ -377,7 +374,7 @@ export function Home() {
       limit: FEED_PAGE_SIZE,
       before: cached.cursor,
       authorIds: feedTab === 'following' ? followingIds : undefined,
-      category: PORTFOLIO_CATEGORY_FOR_TAB[feedTab],
+      category: (feedTab !== 'foryou' && feedTab !== 'following') ? feedTab : undefined,
     })
       .then(more => {
         const merged = [...cached.entries, ...more];
@@ -391,15 +388,12 @@ export function Home() {
       .finally(() => setFeedLoadingMore(false));
   }, [feedTab, feedLoadingMore, feedHasMore, followingIds]);
 
-  // Nearby is the one filter with no direct query param (no lat/lng exists
-  // to filter by server-side) -- applied client-side against the already-
-  // fetched page, same honest limitation as Home's Listings "Nearby"-style
-  // filters elsewhere in this app.
-  const displayedFeedEntries = useMemo(() => {
-    if (feedTab !== 'nearby') return feedEntries;
-    if (!user?.city) return [];
-    return feedEntries.filter(e => e.creator.city?.toLowerCase().includes(user.city!.toLowerCase()));
-  }, [feedTab, feedEntries, user?.city]);
+  // No client-side filtering left now that Nearby is gone -- every tab's
+  // filtering (category, or authorIds for Following) already happens
+  // server-side in loadFeed/loadMoreFeed above. Kept as its own name
+  // (rather than using feedEntries directly everywhere below) since the
+  // scroll-restore effect and render loop both already reference it.
+  const displayedFeedEntries = feedEntries;
 
   // "People You May Know" -- fetched once per Home mount (not once per tab
   // switch/load-more) since recommendations don't need to track pagination
@@ -415,6 +409,18 @@ export function Home() {
     if (homeMode !== 'portfolio' || suggestedFetchedRef.current || !user?.id) return;
     suggestedFetchedRef.current = true;
     getSuggestedCreators(user.id, { limit: 10 }).then(setSuggestedCreators);
+  }, [homeMode, user?.id]);
+
+  // Personalized "For You" category chips -- fetched once per Home mount,
+  // same reasoning as suggestedCreators above (a ranking snapshot, not
+  // paginated feed content). Guests get no personalized row at all (there's
+  // no account to rank against) -- just the plain For You/Following tabs.
+  const [personalizedCategories, setPersonalizedCategories] = useState<string[]>([]);
+  const personalizedFetchedRef = useRef(false);
+  useEffect(() => {
+    if (homeMode !== 'portfolio' || personalizedFetchedRef.current || !user?.id) return;
+    personalizedFetchedRef.current = true;
+    getPersonalizedCategories(user.id, { limit: 6 }).then(setPersonalizedCategories);
   }, [homeMode, user?.id]);
 
   const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
@@ -1069,19 +1075,64 @@ export function Home() {
             onScroll={handlePortfolioScroll}
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
-            <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-              {PORTFOLIO_FILTERS.map(t => (
+            {/* Top-level: For You vs Following -- "Following answers 'what
+                are people I follow creating', For You answers 'what does
+                Filmons think I'll like'" (per spec). Any feedTab value
+                other than 'following' counts as For You, including a
+                specific category selected from the row below. */}
+            <div className="shrink-0 px-4 pt-1 pb-2">
+              <div role="tablist" aria-label="Portfolio mode" className="flex gap-2">
                 <button
-                  key={t.id}
-                  onClick={() => setFeedTab(t.id)}
-                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                    feedTab === t.id ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  role="tab" aria-selected={feedTab !== 'following'}
+                  onClick={() => setFeedTab('foryou')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                    feedTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                   }`}
                 >
-                  {t.label}
+                  For You
                 </button>
-              ))}
+                <button
+                  role="tab" aria-selected={feedTab === 'following'}
+                  onClick={() => setFeedTab('following')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                    feedTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  Following
+                </button>
+              </div>
             </div>
+            {/* Personalized category chips -- For You only, and only for a
+                signed-in user (there's no account to rank against for a
+                guest). "All" is always first and always resets to the
+                unfiltered For You feed; the rest are this specific user's
+                top-ranked PORTFOLIO_CATEGORIES values (see
+                getPersonalizedCategories), never the same fixed list for
+                everyone. Horizontally scrollable, no wrapping, so it never
+                grows past one line on mobile. */}
+            {feedTab !== 'following' && user && (
+              <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
+                <button
+                  onClick={() => setFeedTab('foryou')}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    feedTab === 'foryou' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+                {personalizedCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setFeedTab(cat)}
+                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                      feedTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
             <div
               className="flex-1 px-4 pb-6 space-y-4 lg:max-w-[680px] lg:w-full lg:mx-auto"
               style={{
