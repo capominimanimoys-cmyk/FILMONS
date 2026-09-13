@@ -56,6 +56,24 @@ export function Root() {
   // sticking on an unrelated page.
   useEffect(() => { if (!location.pathname.startsWith('/inbox')) setConversationOpen(false); }, [location.pathname]);
 
+  // Home -> Portfolio full-screen mode -- Home.tsx dispatches this while
+  // scrolling its Portfolio feed (see its own 'filmons:home-bars-hidden'
+  // handling), same bridge TopBar.tsx/MobileBottomNav.tsx already listen
+  // to for their own slide-away animation. This is the THIRD piece: <main>
+  // below still reserves `pb-[calc(54px+env(safe-area-inset-bottom))]` for
+  // MobileBottomNav's clearance regardless of whether the nav is actually
+  // visible, which would otherwise leave a blank reserved strip at the
+  // bottom even once the nav itself has slid off-canvas. Always reset on
+  // route change too, so it can never linger true on a page that never
+  // dispatches it.
+  const [chromeHidden, setChromeHidden] = useState(false);
+  useEffect(() => {
+    const handler = (e: any) => setChromeHidden(!!e.detail?.hidden);
+    window.addEventListener('filmons:home-bars-hidden', handler);
+    return () => window.removeEventListener('filmons:home-bars-hidden', handler);
+  }, []);
+  useEffect(() => { setChromeHidden(false); }, [location.pathname]);
+
   // Close the vertical menu on every route change, regardless of how
   // navigation happened (menu link, back/forward, programmatic redirect) —
   // it was staying open across pages since only an explicit tap on the
@@ -158,7 +176,13 @@ export function Root() {
         <div className="flex flex-1">
           {!hideDesktopSidebar && <DesktopSidebar />}
 
-          <main className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}>
+          <main
+            className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}
+            style={{
+              paddingBottom: chromeHidden ? 0 : undefined,
+              transition: 'padding-bottom 280ms ease-out',
+            }}
+          >
             {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
             <Outlet />
           </main>

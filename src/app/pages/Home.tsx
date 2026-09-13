@@ -387,13 +387,17 @@ export function Home() {
   // measured against this element directly rather than a viewport-based
   // IntersectionObserver.
   //
-  // Also drives the auto-hide header/bottom-nav behavior below: once a
-  // meaningful downward scroll is seen, bars hide and STAY hidden (even
-  // through a small upward wiggle) until the feed is scrolled back within
-  // TOP_THRESHOLD of its very top -- deliberately not a plain "any upward
-  // scroll brings them back" toggle, per spec.
+  // Also drives the auto-hide header/bottom-nav behavior below: a
+  // meaningful downward scroll hides both bars, and a meaningful UPWARD
+  // scroll brings them back immediately (not only at the very top) --
+  // same symmetric deadzone-based direction check MobileBottomNav.tsx's
+  // own dimming effect already uses elsewhere in this app. TOP_THRESHOLD
+  // is just a floor: always visible within a few px of the very top,
+  // regardless of direction (covers a fresh load/tab switch landing at
+  // scrollTop 0 with no prior delta to compare against).
   const TOP_THRESHOLD = 12;
   const HIDE_SCROLL_DELTA = 10;
+  const REVEAL_SCROLL_DELTA = 10;
   const lastPortfolioScrollTopRef = useRef(0);
   const [portfolioBarsHidden, setPortfolioBarsHidden] = useState(false);
 
@@ -407,6 +411,7 @@ export function Home() {
     const last = lastPortfolioScrollTopRef.current;
     if (top <= TOP_THRESHOLD) setPortfolioBarsHidden(false);
     else if (top > last + HIDE_SCROLL_DELTA) setPortfolioBarsHidden(true);
+    else if (top < last - REVEAL_SCROLL_DELTA) setPortfolioBarsHidden(false);
     lastPortfolioScrollTopRef.current = top;
   };
 
@@ -823,7 +828,23 @@ export function Home() {
     // (real desktop, sidebar layout, DesktopTopBar), this reverts entirely
     // to the original free-scrolling min-h-screen page -- desktop keeps
     // its previous behavior, only mobile/tablet get the bounded interface.
-    <div className="h-[calc(100dvh-56px-54px-env(safe-area-inset-bottom))] md:h-[calc(100dvh-56px)] flex flex-col overflow-hidden bg-gray-100 lg:h-auto lg:min-h-screen lg:flex lg:flex-col lg:overflow-visible lg:pb-16">
+    //
+    // True full-screen Portfolio mode: when portfolioBarsHidden, TopBar
+    // collapses its own height to 0 (not just translate away) and Root.tsx
+    // zeroes <main>'s bottom-nav-clearance padding via the same
+    // 'filmons:home-bars-hidden' event -- so nothing outside this page
+    // reserves any space anymore, and this box can genuinely grow to fill
+    // the whole viewport instead of leaving the old header/nav bands blank.
+    // The inline style only overrides the default calc() classes in that
+    // one state (undefined lets them win otherwise), and never fires on
+    // desktop since portfolioBarsHidden can't become true there.
+    <div
+      className="h-[calc(100dvh-56px-54px-env(safe-area-inset-bottom))] md:h-[calc(100dvh-56px)] flex flex-col overflow-hidden bg-gray-100 lg:h-auto lg:min-h-screen lg:flex lg:flex-col lg:overflow-visible lg:pb-16"
+      style={{
+        height: (homeMode === 'portfolio' && portfolioBarsHidden) ? '100dvh' : undefined,
+        transition: 'height 280ms ease-out',
+      }}
+    >
 
       {/* ── Listings / Portfolio toggle — mobile only. Only renders below
            lg:, so desktop has no way to ever set homeMode to 'portfolio' --
@@ -991,7 +1012,19 @@ export function Home() {
                 </button>
               ))}
             </div>
-            <div className="flex-1 px-4 pb-6 space-y-4 lg:max-w-[680px] lg:w-full lg:mx-auto">
+            <div
+              className="flex-1 px-4 pb-6 space-y-4 lg:max-w-[680px] lg:w-full lg:mx-auto"
+              style={{
+                // Full-screen mode: the fixed bottom nav is off-canvas and
+                // Root.tsx's <main> no longer reserves its clearance either
+                // (see the root container's own style above), so the only
+                // thing left to keep the last card off the physical bottom
+                // edge is the safe-area itself -- not the normal 24px (pb-6)
+                // sized for the nav's own height.
+                paddingBottom: portfolioBarsHidden ? 'env(safe-area-inset-bottom)' : undefined,
+                transition: 'padding-bottom 280ms ease-out',
+              }}
+            >
               {feedError ? (
                 <div className="flex flex-col items-center gap-3 py-16 text-center">
                   <p className="text-sm text-gray-500">Couldn't load portfolio posts.</p>

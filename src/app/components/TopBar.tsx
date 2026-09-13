@@ -32,12 +32,22 @@ export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
   }, [user?.id]);
 
   return (
+    // height (56px -> 0) is what actually frees the space back up for
+    // Home's own full-screen Portfolio mode -- translateY/opacity alone
+    // would slide this out of VIEW but still leave its 56px flow box
+    // reserved above whatever renders below it (Home.tsx's own root
+    // container explicitly assumes this height in its calc()s), which is
+    // exactly the "empty reserved strip" the immersive mode needs gone.
+    // overflow-hidden clips the still-56px-tall inner content during the
+    // collapse; border only drawn while visible so a collapsed 0-height
+    // box doesn't still render a stray 1px line.
     <header
-      className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 lg:hidden"
+      className={`sticky top-0 z-40 bg-white/95 backdrop-blur-md overflow-hidden lg:hidden ${barsHidden ? '' : 'border-b border-gray-100'}`}
       style={{
+        height: barsHidden ? 0 : 56,
         transform: barsHidden ? 'translateY(-100%)' : 'translateY(0)',
         opacity: barsHidden ? 0 : 1,
-        transition: 'transform 300ms ease-out, opacity 250ms ease-out',
+        transition: 'height 280ms ease-out, transform 300ms ease-out, opacity 250ms ease-out',
       }}
     >
       <div className={barsHidden ? 'pointer-events-none' : ''}>
