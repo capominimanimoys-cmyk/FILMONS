@@ -174,18 +174,26 @@ async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
       .not('name', 'is', null)
       .neq('name', '')
       .limit(PROFILE_TEXT_LIMIT),
-    // secondary_roles/skills/gear are real Postgres text[] arrays (not
-    // jsonb) -- need the `{...}` array-literal form for `cs`, the opposite
-    // of listings.tags above. `cs` only matches a whole element exactly,
-    // not a substring, so this is a best-effort supplement to the ilike
-    // fields above, same limitation the listings tags search accepts.
+    // secondary_roles/skills/gear are jsonb columns (confirmed via
+    // 20240124000000_profiles_add_missing_columns.sql: `jsonb DEFAULT
+    // '[]'::jsonb`), NOT native Postgres arrays -- they need the SAME `[...]`
+    // JSON-array-literal form `cs` uses for listings.tags below, not the
+    // `{...}` Postgres-array-literal form this was using. `{"term"}` isn't
+    // valid JSON at all (neither a JSON array nor object), so this was
+    // erroring on every single call and silently returning zero matches
+    // every time (the `res.error` below only ever warned, and `?? []`
+    // swallowed it) -- creator search never actually matched on skills/
+    // gear/secondary roles despite appearing to run a query for it. `cs`
+    // only matches a whole element exactly, not a substring, so this is a
+    // best-effort supplement to the ilike fields above, same limitation
+    // the listings tags search accepts.
     supabase
       .from('profiles')
       .select(PROFILE_SELECT)
       .or([
-        `secondary_roles.cs.{"${term}"}`,
-        `skills.cs.{"${term}"}`,
-        `gear.cs.{"${term}"}`,
+        `secondary_roles.cs.["${term}"]`,
+        `skills.cs.["${term}"]`,
+        `gear.cs.["${term}"]`,
       ].join(','))
       .not('name', 'is', null)
       .neq('name', '')
