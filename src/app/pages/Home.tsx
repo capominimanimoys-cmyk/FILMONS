@@ -1069,7 +1069,6 @@ export function Home() {
             onScroll={handlePortfolioScroll}
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
-            <p className="px-4 pt-1 pb-2 text-sm text-gray-500">Discover what creators are making.</p>
             <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
               {PORTFOLIO_FILTERS.map(t => (
                 <button
