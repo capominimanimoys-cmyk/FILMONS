@@ -257,6 +257,35 @@ function PortfolioViewer({
   const touchX = useRef(0);
   const item = items[idx];
 
+  // Full-screen mode -- hides the global TopBar/MobileBottomNav via the
+  // same 'filmons:home-bars-hidden' window event Home.tsx's own Portfolio
+  // feed and ItemFocusView already use (both TopBar.tsx and
+  // MobileBottomNav.tsx already listen for it, collapsing their own
+  // reserved height, not just sliding out of view -- see that earlier
+  // full-screen-mode work), so opening a Portfolio item from /portfolio
+  // gets the identical true-full-screen behavior as opening one from
+  // Home -> Portfolio. Always cleared on unmount so it can never linger
+  // once this viewer closes. `show` drives the same slide-in-from-right /
+  // slide-out-to-right + fade motion as ItemFocusView -- this component
+  // was previously mounted/unmounted with no exit animation at all
+  // (viewer.open && <PortfolioViewer/> in the parent unmounts it
+  // immediately), so `close()` now delays the real onClose to let the
+  // closing transition actually play, same delayed-unmount pattern
+  // BottomSheet/ItemFocusView already use.
+  const [show, setShow] = useState(false);
+  const closedRef = useRef(false);
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
+    window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: true } }));
+    return () => { window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: false } })); };
+  }, []);
+  const close = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    setShow(false);
+    setTimeout(onClose, 320);
+  }, [onClose]);
+
   const [liked,       setLiked]       = useState(false);
   const [likesCount,  setLikesCount]  = useState(0);
   const [viewsCount,  setViewsCount]  = useState(0);
@@ -311,13 +340,13 @@ function PortfolioViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')      onClose();
+      if (e.key === 'Escape')      close();
       if (e.key === 'ArrowLeft')   prev();
       if (e.key === 'ArrowRight')  next();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, prev, next]);
+  }, [close, prev, next]);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -340,6 +369,12 @@ function PortfolioViewer({
   return (
     <div
       className="fixed inset-0 z-[80] flex flex-col bg-black"
+      style={{
+        transform: show ? 'translateX(0)' : 'translateX(100%)',
+        opacity: show ? 1 : 0,
+        transition: show ? 'transform 350ms ease-out, opacity 350ms ease-out' : 'transform 280ms ease-in, opacity 280ms ease-in',
+        height: '100dvh',
+      }}
       onTouchStart={e => { touchX.current = e.touches[0].clientX; }}
       onTouchEnd={e => {
         const dx = touchX.current - e.changedTouches[0].clientX;
@@ -350,7 +385,7 @@ function PortfolioViewer({
           header, rather than as a floating icon-only close button. This
           viewer is a same-page overlay on top of Portfolio.tsx (Main
           Portfolio / Portfolio albums / a public creator's Portfolio all
-          render through this one component) -- onClose just flips local
+          render through this one component) -- close() just flips local
           state back off, so the underlying page (scroll position, active
           tab, active album, layout) was never actually disturbed and needs
           no separate restore logic. When reached via Home -> Portfolio's
@@ -358,9 +393,9 @@ function PortfolioViewer({
           back, or leaving Portfolio.tsx) already lands back in Home's own
           Portfolio feed at its previous scroll position via that page's
           existing sessionStorage restore -- nothing extra needed here. */}
-      <div className="flex items-center justify-between px-4 py-3 shrink-0 z-10">
+      <div className="flex items-center justify-between px-4 py-3 shrink-0 z-10" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <button
-          onClick={onClose}
+          onClick={close}
           className="flex items-center gap-1.5 h-10 pl-2.5 pr-3.5 rounded-full bg-white/10 text-white active:bg-white/20 transition-colors"
         >
           <ArrowLeft className="w-5 h-5 shrink-0" />
