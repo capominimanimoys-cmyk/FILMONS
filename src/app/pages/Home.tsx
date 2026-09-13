@@ -274,17 +274,41 @@ export function Home() {
   const [allFeedPosts, setAllFeedPosts] = useState<Post[]>([]);
   const [followingPosts, setFollowingPosts] = useState<Post[] | null>(null);
   const [feedLoading, setFeedLoading] = useState(false);
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
+  const [feedHasMore, setFeedHasMore] = useState(true);
   const [feedError, setFeedError] = useState(false);
   const feedFetchedRef = useRef(false);
+  const feedOffsetRef = useRef(0);
+  const FEED_PAGE_SIZE = 20;
 
   const loadFeed = useCallback(() => {
     setFeedLoading(true);
     setFeedError(false);
-    postsApi.getAll(60, 0)
-      .then(setAllFeedPosts)
+    postsApi.getAll(FEED_PAGE_SIZE, 0)
+      .then(p => {
+        setAllFeedPosts(p);
+        feedOffsetRef.current = p.length;
+        setFeedHasMore(p.length === FEED_PAGE_SIZE);
+      })
       .catch(() => setFeedError(true))
       .finally(() => setFeedLoading(false));
   }, []);
+
+  // Infinite scroll -- appends the next page instead of replacing anything,
+  // triggered by the scroll handler below as the user nears the bottom of
+  // the feed's own scroll container (not the window -- see that handler).
+  const loadMoreFeed = useCallback(() => {
+    if (feedLoadingMore || !feedHasMore || feedTab === 'following') return;
+    setFeedLoadingMore(true);
+    postsApi.getAll(FEED_PAGE_SIZE, feedOffsetRef.current)
+      .then(p => {
+        setAllFeedPosts(prev => [...prev, ...p]);
+        feedOffsetRef.current += p.length;
+        setFeedHasMore(p.length === FEED_PAGE_SIZE);
+      })
+      .catch(() => {})
+      .finally(() => setFeedLoadingMore(false));
+  }, [feedLoadingMore, feedHasMore, feedTab]);
 
   // First time Portfolio is opened this session -- not on every mode switch.
   useEffect(() => {
@@ -324,6 +348,39 @@ export function Home() {
     return pool;
   }, [feedTab, allFeedPosts, followingPosts, user?.city]);
 
+  // ── Portfolio scroll position -- survives navigating away entirely (e.g.
+  // "View Portfolio" -> a creator's profile) and coming back, not just
+  // switching to Listings and back (that's already free: this feed stays
+  // mounted, never unmounted, while the toggle is on Listings -- see the
+  // JSX below). A real route change unmounts this whole page, so scroll
+  // position has to be persisted outside the component instance -- session
+  // storage, restored once real content has actually rendered to scroll to
+  // (restoring against an empty/loading feed would just clamp back to 0).
+  const PORTFOLIO_SCROLL_KEY = 'filmons_portfolio_scroll';
+  const portfolioScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRestoredRef = useRef(false);
+
+  useEffect(() => {
+    if (scrollRestoredRef.current) return;
+    if (homeMode !== 'portfolio' || feedLoading || displayedFeedPosts.length === 0) return;
+    const el = portfolioScrollRef.current;
+    if (!el) return;
+    scrollRestoredRef.current = true;
+    let saved = 0;
+    try { saved = Number(sessionStorage.getItem(PORTFOLIO_SCROLL_KEY)) || 0; } catch {}
+    if (saved > 0) el.scrollTop = saved;
+  }, [homeMode, feedLoading, displayedFeedPosts.length]);
+
+  // Also drives infinite-scroll pagination -- this feed scrolls inside its
+  // own bounded container (not the window), so "near the bottom" has to be
+  // measured against this element directly rather than a viewport-based
+  // IntersectionObserver.
+  const handlePortfolioScroll = () => {
+    const el = portfolioScrollRef.current;
+    if (!el) return;
+    try { sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(el.scrollTop)); } catch {}
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) loadMoreFeed();
+  };
 
   useEffect(() => {
     let done = false;
@@ -860,9 +917,26 @@ export function Home() {
             top of `homeMode` never reaching 'portfolio' on desktop in the
             first place). Also kept mounted-but-hidden rather than
             conditionally rendered once loading has resolved once, so its
-            own scroll position survives switching to Listings and back. */}
+            own scroll position survives switching to Listings and back
+            (navigating away entirely -- e.g. View Portfolio -- and back
+            is handled separately, see the sessionStorage restore effect
+            above).
+            `h-full` (not `min-h-full`) is what actually makes this the
+            single bounded scroll surface Portfolio mode needs -- min-height
+            only sets a floor, so content taller than the available space
+            just grew the whole page past the root's fixed viewport height
+            instead of scrolling internally (the root above is
+            `overflow-hidden`, so that excess was silently clipped, not
+            reachable by scrolling at all). Capping to the parent's actual
+            height is what makes `overflow-y-auto` here do real work --
+            this is the ONE scroll container in Portfolio mode; nothing
+            above or around it also scrolls. */}
         {!loading && (
-          <div className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} min-h-full flex flex-col overflow-y-auto`}>
+          <div
+            ref={portfolioScrollRef}
+            onScroll={handlePortfolioScroll}
+            className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
+          >
             <p className="px-4 pt-1 pb-2 text-sm text-gray-500">Discover what creators are making.</p>
             <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
               {PORTFOLIO_FILTERS.map(t => (
@@ -908,17 +982,30 @@ export function Home() {
                   </div>
                 )
               ) : (
-                displayedFeedPosts.map(p => (
-                  <div key={p.id} className="space-y-2">
-                    <PostCard post={p}/>
-                    <button
-                      onClick={() => navigate(`/host/${p.userId}`)}
-                      className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
-                    >
-                      View Portfolio
-                    </button>
-                  </div>
-                ))
+                <>
+                  {displayedFeedPosts.map(p => (
+                    <div key={p.id} className="space-y-2">
+                      <PostCard post={p}/>
+                      <button
+                        onClick={() => navigate(`/host/${p.userId}`)}
+                        className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
+                      >
+                        View Portfolio
+                      </button>
+                    </div>
+                  ))}
+                  {/* Infinite scroll footer -- handlePortfolioScroll triggers
+                      loadMoreFeed() as the container nears its own bottom
+                      (not the window's), so this just reflects that state
+                      rather than driving it. Only the For You/Nearby/
+                      category tabs paginate -- Following fetches its (much
+                      smaller) full set in one call, see loadMoreFeed. */}
+                  {feedTab !== 'following' && feedLoadingMore && (
+                    <div className="flex items-center justify-center py-6 text-gray-400">
+                      <FilmonsBrandLoader size="sm"/>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
