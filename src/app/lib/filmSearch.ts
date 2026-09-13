@@ -174,26 +174,28 @@ async function searchProfilesByTerm(term: string): Promise<SearchProfileRow[]> {
       .not('name', 'is', null)
       .neq('name', '')
       .limit(PROFILE_TEXT_LIMIT),
-    // secondary_roles/skills/gear are jsonb columns (confirmed via
-    // 20240124000000_profiles_add_missing_columns.sql: `jsonb DEFAULT
-    // '[]'::jsonb`), NOT native Postgres arrays -- they need the SAME `[...]`
-    // JSON-array-literal form `cs` uses for listings.tags below, not the
-    // `{...}` Postgres-array-literal form this was using. `{"term"}` isn't
-    // valid JSON at all (neither a JSON array nor object), so this was
-    // erroring on every single call and silently returning zero matches
-    // every time (the `res.error` below only ever warned, and `?? []`
-    // swallowed it) -- creator search never actually matched on skills/
-    // gear/secondary roles despite appearing to run a query for it. `cs`
-    // only matches a whole element exactly, not a substring, so this is a
-    // best-effort supplement to the ilike fields above, same limitation
-    // the listings tags search accepts.
+    // secondary_roles/skills/gear: the migration file
+    // (20240124000000_profiles_add_missing_columns.sql) declares these
+    // `jsonb`, which is what led to a previous "fix" here switching this to
+    // the `[...]` JSON-array-literal form -- but the LIVE database rejected
+    // that with "malformed array literal", which is Postgres's own error
+    // for parsing a value against a native array type, not jsonb. The
+    // migration file doesn't match the live schema (these columns predate
+    // it, or were created through some other untracked path, so `ADD
+    // COLUMN IF NOT EXISTS jsonb` silently no-opped against an
+    // already-existing array column instead of ever actually running).
+    // Reverted to the `{...}` Postgres-array-literal form, confirmed
+    // against live query errors rather than the migration's stated type.
+    // `cs` only matches a whole element exactly, not a substring, so this
+    // is a best-effort supplement to the ilike fields above, same
+    // limitation the listings tags search accepts.
     supabase
       .from('profiles')
       .select(PROFILE_SELECT)
       .or([
-        `secondary_roles.cs.["${term}"]`,
-        `skills.cs.["${term}"]`,
-        `gear.cs.["${term}"]`,
+        `secondary_roles.cs.{"${term}"}`,
+        `skills.cs.{"${term}"}`,
+        `gear.cs.{"${term}"}`,
       ].join(','))
       .not('name', 'is', null)
       .neq('name', '')
