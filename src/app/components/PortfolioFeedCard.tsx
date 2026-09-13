@@ -538,7 +538,6 @@ function AlbumCardMenu({
 
 export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEntry; onRemoved: () => void }) {
   const { user, showGuestPrompt } = useAuth();
-  const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [viewingItem, setViewingItem] = useState(false);
@@ -599,8 +598,18 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
           {entry.item.title && <p className="text-sm font-bold text-gray-900">{entry.item.title}</p>}
           {entry.item.description && <ClampedText text={entry.item.description} />}
           <TagRow tags={entry.item.tags ?? []} />
+          {/* Opens THIS item's own full-screen detail (ItemFocusView --
+              same portaled, chrome-hiding, transitioning overlay the
+              three-dot menu's "View Item" already uses), not the
+              creator's general /portfolio page. Since it's a same-page
+              overlay over the still-mounted feed, closing it already
+              preserves scroll position and the active For You/Following
+              tab with no extra restore logic -- the creator's own
+              Portfolio page stays reachable via the avatar/name and the
+              three-dot menu's "View portfolio" entry, unaffected by
+              this change. */}
           <button
-            onClick={() => navigate(`/portfolio/${entry.creator.id}`)}
+            onClick={() => setViewingItem(true)}
             className="flex items-center gap-0.5 text-xs font-bold text-blue-600"
           >
             View portfolio <ChevronRight className="w-3.5 h-3.5" />
