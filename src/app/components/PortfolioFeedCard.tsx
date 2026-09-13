@@ -9,6 +9,7 @@
 // the same primitive savedPostsApi/savedListingsApi already use with a
 // different item_type, not a new table.
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import {
   Heart, MessageCircle, Send, Bookmark, Play, X, MoreHorizontal,
@@ -635,36 +636,93 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
         </>
       )}
 
-      {showComments && entry.type === 'item' && (
-        <PortfolioCommentSheet itemId={entry.item.id} canModerate={isOwn} onClose={() => setShowComments(false)} />
+      {/* Portaled to document.body -- this card's own root div carries the
+          .pop-stagger-card entrance animation (a `transform`, which per the
+          CSS spec establishes a new containing block for any `position:
+          fixed` descendant, and keeps doing so even after the animation
+          finishes since `animation-fill-mode: both` leaves the final
+          non-none transform value applied). A BottomSheet/full-screen
+          overlay rendered as a normal DOM child of this card would
+          therefore be positioned/clipped relative to the CARD's own box
+          instead of the real viewport -- exactly the "menu looks attached
+          to the card" bug. Portaling to body sidesteps this entirely,
+          regardless of what any ancestor's transform/overflow/z-index does,
+          same as Portfolio.tsx's own createPortal(<ItemActionsSheet/>...)
+          pattern for its three-dot menu. */}
+      {showComments && entry.type === 'item' && createPortal(
+        <PortfolioCommentSheet itemId={entry.item.id} canModerate={isOwn} onClose={() => setShowComments(false)} />,
+        document.body,
       )}
-      {showMenu && (
+      {showMenu && createPortal(
         <CardMenu
           entry={entry} isOwn={isOwn} saved={saved}
           onToggleSave={handleToggleSave} onShare={handleShare}
           onClose={() => setShowMenu(false)} onRemoved={onRemoved}
           onViewItem={() => setViewingItem(true)}
-        />
+        />,
+        document.body,
       )}
-      {viewingItem && entry.type === 'item' && (
-        <div className="fixed inset-0 z-[70] bg-black flex flex-col">
-          <div className="px-4 py-3 shrink-0">
-            <button
-              onClick={() => setViewingItem(false)}
-              className="flex items-center gap-1.5 h-10 pl-2.5 pr-3.5 rounded-full bg-white/10 text-white active:bg-white/20 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" /> <span className="text-sm font-semibold">Close</span>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
-            <div className="w-full max-w-lg space-y-3">
-              <PortfolioMedia item={entry.item} />
-              {entry.item.title && <p className="text-sm font-bold text-white">{entry.item.title}</p>}
-              {entry.item.description && <p className="text-sm text-white/70 leading-snug">{entry.item.description}</p>}
-            </div>
-          </div>
+      {viewingItem && entry.type === 'item' && createPortal(
+        <ItemFocusView item={entry.item} onClose={() => setViewingItem(false)} />,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+// ── Full-screen focus view for a single item ("View Item") -- an immersive
+// overlay, not a route: the underlying feed is never unmounted, so scroll
+// position and the active For You/Following tab are preserved automatically
+// just by closing this rather than needing any explicit restore logic.
+// Hides the global TopBar/MobileBottomNav for the duration via the same
+// 'filmons:home-bars-hidden' window event Home.tsx's own auto-hide-on-
+// scroll already dispatches (TopBar/MobileBottomNav/Root.tsx all already
+// listen for it) -- always cleared on unmount so it can never linger past
+// this view closing. Slide-in-from-the-right / slide-out-to-the-right
+// motion mirrors this app's .page-enter-forward convention but needs its
+// own mount/unmount-timed show state (that CSS class only plays once on
+// mount and has no matching exit animation).
+function ItemFocusView({ item, onClose }: { item: PortfolioItem; onClose: () => void }) {
+  const [show, setShow] = useState(false);
+  const closedRef = useRef(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
+    window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: true } }));
+    return () => { window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: false } })); };
+  }, []);
+
+  const close = () => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    setShow(false);
+    setTimeout(onClose, 320);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black flex flex-col"
+      style={{
+        transform: show ? 'translateX(0)' : 'translateX(100%)',
+        opacity: show ? 1 : 0,
+        transition: show ? 'transform 350ms ease-out, opacity 350ms ease-out' : 'transform 280ms ease-in, opacity 280ms ease-in',
+      }}
+    >
+      <div className="px-4 py-3 shrink-0" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+        <button
+          onClick={close}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white active:bg-white/20 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
+        <div className="w-full max-w-lg space-y-3">
+          <PortfolioMedia item={item} />
+          {item.title && <p className="text-sm font-bold text-white">{item.title}</p>}
+          {item.description && <p className="text-sm text-white/70 leading-snug">{item.description}</p>}
         </div>
-      )}
+      </div>
     </div>
   );
 }

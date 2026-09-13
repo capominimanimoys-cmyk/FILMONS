@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
@@ -1211,6 +1211,7 @@ export function Portfolio() {
   const { userId: paramUserId } = useParams<{ userId?: string }>();
   const { user: me } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [profile,  setProfile]  = useState<User | null>(null);
   const [items,    setItems]    = useState<PortfolioItem[]>([]);
@@ -1482,12 +1483,25 @@ export function Portfolio() {
           <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom,transparent 30%,rgba(0,0,0,0.45) 100%)' }} />
         </div>
 
-        {paramUserId && (
+        {/* Visible whenever this page belongs to someone other than the
+            viewer -- "the user must never feel trapped inside a creator's
+            Portfolio." Prefers real browser history (a genuine previous
+            page -- Home's Portfolio feed, a creator profile, search,
+            another Portfolio item) over always hard-routing to Home;
+            location.key === 'default' is react-router's own marker for "no
+            in-app history to go back to" (e.g. this page was opened
+            directly from an external link), the same signal used for the
+            Portfolio item detail's own back button. */}
+        {paramUserId && !isOwner && (
           <button
-            onClick={() => navigate(-1)}
-            className="absolute top-4 left-4 w-9 h-9 rounded-full bg-black/40 flex items-center justify-center text-white z-10"
+            onClick={() => { if (location.key !== 'default') navigate(-1); else navigate('/'); }}
+            className="absolute top-4 left-4 flex items-center gap-2 pl-2.5 pr-3.5 h-10 rounded-full bg-black/40 text-white z-10"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span className="text-left leading-tight min-w-0">
+              <span className="block text-xs font-bold truncate max-w-[140px]">{profile.name}</span>
+              <span className="block text-[10px] text-white/70">Portfolio</span>
+            </span>
           </button>
         )}
       </div>
