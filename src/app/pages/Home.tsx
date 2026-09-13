@@ -6,13 +6,13 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { Search, Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
-import { listingsApi } from '../lib/api';
+import { listingsApi, postsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { supabase } from '../../lib/supabase';
 import { filterOutLockedOpportunities } from '../lib/entitlements';
 import { useAuth } from '../context/AuthContext';
-import { Listing } from '../types';
+import { Listing, Post } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
@@ -20,6 +20,7 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
+import { PostCard } from '../components/PostCard';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -230,6 +231,31 @@ export function Home() {
   // failure there shouldn't block the whole page over a secondary source.
   const [loadError, setLoadError] = useState(false);
   const filterRowRef = useRef<HTMLDivElement>(null);
+
+  // ── Mobile-only Listings/Portfolio toggle ──────────────────────────────────
+  // The toggle button itself only ever renders `lg:hidden` (see JSX below),
+  // so desktop has no way to change this state at all -- it stays 'listings'
+  // there permanently, which is what keeps the desktop layout completely
+  // untouched by this feature without needing a second, duplicated render
+  // path per breakpoint.
+  const [homeMode, setHomeMode] = useState<'listings' | 'portfolio'>('listings');
+  const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou');
+  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
+  const [feedLoading, setFeedLoading] = useState(false);
+
+  useEffect(() => {
+    if (homeMode !== 'portfolio') return;
+    let cancelled = false;
+    setFeedLoading(true);
+    const request = feedTab === 'following'
+      ? postsApi.getFeedPosts(user?.following ?? [])
+      : postsApi.getAll(30, 0);
+    request
+      .then(p => { if (!cancelled) setFeedPosts(p); })
+      .catch(() => { if (!cancelled) setFeedPosts([]); })
+      .finally(() => { if (!cancelled) setFeedLoading(false); });
+    return () => { cancelled = true; };
+  }, [homeMode, feedTab, user?.following]);
 
 
   useEffect(() => {
@@ -644,6 +670,31 @@ export function Home() {
         </button>
       </div>
 
+      {/* ── Listings / Portfolio toggle — mobile only. Only renders below
+           lg:, so desktop has no way to ever set homeMode to 'portfolio' --
+           that's what keeps the desktop layout below completely untouched
+           by this feature without a second, duplicated render path. */}
+      <div className="lg:hidden shrink-0 px-4 pt-2 pb-1 bg-white">
+        <div className="flex rounded-full p-1 gap-1">
+          <button
+            onClick={() => setHomeMode('listings')}
+            className={`flex-1 py-2 text-sm font-bold rounded-full transition-colors duration-200 ${
+              homeMode === 'listings' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            Listings
+          </button>
+          <button
+            onClick={() => setHomeMode('portfolio')}
+            className={`flex-1 py-2 text-sm font-bold rounded-full transition-colors duration-200 ${
+              homeMode === 'portfolio' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            Portfolio
+          </button>
+        </div>
+      </div>
+
       {/* ── Category row + deck — wrapped together so the branded loader
            covers BOTH for the entire real loading duration, not just a
            fixed window: while `loading` is true, neither the category
@@ -665,6 +716,35 @@ export function Home() {
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100">
             <FilmonsBrandLoader size="lg"/>
+          </div>
+        ) : homeMode === 'portfolio' ? (
+          // ── Portfolio Feed (mobile only -- see the toggle above) ────────
+          <div className="min-h-full flex flex-col overflow-y-auto lg:hidden">
+            <p className="px-4 pt-3 pb-1 text-sm text-gray-500">Discover what creators are making.</p>
+            <div className="shrink-0 flex gap-2 px-4 py-2 overflow-x-auto no-scrollbar">
+              {([{ id: 'foryou', label: 'For You' }, { id: 'following', label: 'Following' }] as const).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setFeedTab(t.id)}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    feedTab === t.id ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 px-4 pb-6 space-y-4">
+              {feedLoading ? (
+                <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md"/></div>
+              ) : feedPosts.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-16">
+                  {feedTab === 'following' ? "Follow creators to see their work here." : 'Nothing to show yet.'}
+                </p>
+              ) : (
+                feedPosts.map(p => <PostCard key={p.id} post={p}/>)
+              )}
+            </div>
           </div>
         ) : (
           <div className="min-h-full flex flex-col">
