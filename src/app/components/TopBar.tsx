@@ -10,6 +10,18 @@ interface TopBarProps { onMenuClick: () => void; onSearchOpen: () => void; }
 export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
   const { user } = useAuth();
   const [unread, setUnread] = useState(0);
+  // Home -> Portfolio mode auto-hide -- Home.tsx dispatches this while the
+  // user scrolls down through the Portfolio feed (and clears it on scroll-
+  // back-to-top, leaving Portfolio, or unmounting) -- same window
+  // CustomEvent bridge Root.tsx already uses for Inbox's own
+  // 'filmons:inbox-conversation-open'. Only Home ever dispatches `hidden:
+  // true`, so this never fires on any other page.
+  const [barsHidden, setBarsHidden] = useState(false);
+  useEffect(() => {
+    const handler = (e: any) => setBarsHidden(!!e.detail?.hidden);
+    window.addEventListener('filmons:home-bars-hidden', handler);
+    return () => window.removeEventListener('filmons:home-bars-hidden', handler);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -20,7 +32,15 @@ export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
   }, [user?.id]);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 lg:hidden">
+    <header
+      className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 lg:hidden"
+      style={{
+        transform: barsHidden ? 'translateY(-100%)' : 'translateY(0)',
+        opacity: barsHidden ? 0 : 1,
+        transition: 'transform 300ms ease-out, opacity 250ms ease-out',
+      }}
+    >
+      <div className={barsHidden ? 'pointer-events-none' : ''}>
       <div className="flex items-center gap-3 px-4 h-14">
         {/* Burger */}
         <button onClick={onMenuClick}
@@ -61,6 +81,7 @@ export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
             </Link>
           )}
         </div>
+      </div>
       </div>
     </header>
   );

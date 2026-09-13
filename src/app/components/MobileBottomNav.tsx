@@ -10,6 +10,17 @@ export function MobileBottomNav() {
   const { user, isAuthenticated } = useAuth();
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [dimmed, setDimmed] = useState(false);
+  // Home -> Portfolio mode auto-hide -- full slide-away (not just the dim
+  // effect below), driven by Home.tsx's own Portfolio-feed scroll handler
+  // via the same window CustomEvent bridge TopBar.tsx listens for. Only
+  // Home ever dispatches `hidden: true`, and it always clears this on
+  // leaving Portfolio mode / unmounting, so it never lingers on another page.
+  const [portfolioHidden, setPortfolioHidden] = useState(false);
+  useEffect(() => {
+    const handler = (e: any) => setPortfolioHidden(!!e.detail?.hidden);
+    window.addEventListener('filmons:home-bars-hidden', handler);
+    return () => window.removeEventListener('filmons:home-bars-hidden', handler);
+  }, []);
 
   useEffect(() => {
     if (!user) { setUnreadMsgs(0); return; }
@@ -59,8 +70,10 @@ export function MobileBottomNav() {
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
         paddingBottom: 'env(safe-area-inset-bottom)',
-        opacity: dimmed ? 0.4 : 1,
-        transition: 'opacity 220ms ease',
+        transform: portfolioHidden ? 'translateY(100%)' : 'translateY(0)',
+        opacity: portfolioHidden ? 0 : (dimmed ? 0.4 : 1),
+        transition: 'transform 300ms ease-out, opacity 250ms ease-out',
+        pointerEvents: portfolioHidden ? 'none' : 'auto',
       }}
     >
       <div className="flex items-end">
