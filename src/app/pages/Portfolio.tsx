@@ -1252,6 +1252,19 @@ export function Portfolio() {
     loadPage(targetId);
   }, [targetId]); // eslint-disable-line
 
+  // Reuses the existing Add Work flow for Home's contextual + button (Home
+  // -> Portfolio mode) instead of building a second creation flow -- Home
+  // navigates here with this nav state, we just open the same sheet the
+  // in-page "Add Work" button already opens. Guests never reach this: the
+  // effect above already redirects them to /login before targetId/isOwner
+  // resolve. Cleared via replace so Back/refresh can't re-trigger it.
+  useEffect(() => {
+    if ((location.state as any)?.autoOpenAdd && isOwner) {
+      setShowAdd(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, isOwner]); // eslint-disable-line
+
   const loadPage = async (uid: string) => {
     setLoading(true);
     try {

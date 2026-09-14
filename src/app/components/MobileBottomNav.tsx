@@ -22,6 +22,20 @@ export function MobileBottomNav() {
     return () => window.removeEventListener('filmons:home-bars-hidden', handler);
   }, []);
 
+  // Mirrors Home.tsx's homeMode -- Home is the sole source of truth (it owns
+  // the sessionStorage key and broadcasts on every change); this is just a
+  // read-only reflection so the center + button's destination/label can
+  // update the instant the Listings/Portfolio toggle is tapped, with no page
+  // refresh, without this component inventing its own independent mode state.
+  const [homeMode, setHomeMode] = useState<'listings' | 'portfolio'>(() => {
+    try { return sessionStorage.getItem('filmons_home_mode') === 'portfolio' ? 'portfolio' : 'listings'; } catch { return 'listings'; }
+  });
+  useEffect(() => {
+    const handler = (e: any) => setHomeMode(e.detail?.mode === 'portfolio' ? 'portfolio' : 'listings');
+    window.addEventListener('filmons:home-mode-changed', handler);
+    return () => window.removeEventListener('filmons:home-mode-changed', handler);
+  }, []);
+
   useEffect(() => {
     if (!user) { setUnreadMsgs(0); return; }
     const update = () => setUnreadMsgs(chatApi.getUnreadCount(user.id));
@@ -54,10 +68,22 @@ export function MobileBottomNav() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Contextual + button: only on Home itself does its action depend on the
+  // Listings/Portfolio toggle. Everywhere else it's the app's normal
+  // creation entry point (Create Listing) unchanged -- "do not let the +
+  // behavior depend on stale Home state" outside Home.
+  const isHomeRoute = location.pathname === '/';
+  const primaryToPortfolio = isHomeRoute && homeMode === 'portfolio';
+  const primaryTo = primaryToPortfolio ? '/portfolio' : '/create-listing';
+  const primaryLabel = primaryToPortfolio ? 'Add portfolio work' : 'Create listing';
+  // Portfolio.tsx reads this nav state on mount to auto-open its existing
+  // Add Work sheet -- reusing that flow instead of building a second one.
+  const primaryState = primaryToPortfolio ? { autoOpenAdd: true } : undefined;
+
   const tabs = [
     { to: '/',                                   Icon: Home,          label: 'Home',     badge: 0,          isPrimary: false },
     { to: '/search',                             Icon: Search,        label: 'Search',   badge: 0,          isPrimary: false },
-    { to: '/create-listing',                     Icon: null,          label: 'Create',   badge: 0,          isPrimary: true  },
+    { to: primaryTo,                             Icon: null,          label: 'Create',   badge: 0,          isPrimary: true  },
     { to: isAuthenticated ? '/inbox'   : '/login', Icon: MessageCircle, label: 'Messages', badge: unreadMsgs, isPrimary: false },
     { to: isAuthenticated ? '/profile' : '/login', Icon: User,          label: 'Profile',  badge: 0,          isPrimary: false },
   ] as const;
@@ -87,18 +113,20 @@ export function MobileBottomNav() {
           if (isPrimary) {
             return (
               <Link
-                key={to}
-                to={to}
+                key="primary"
+                to={primaryTo}
+                state={primaryState}
+                title={primaryLabel}
+                aria-label={primaryLabel}
                 onClick={captureSnapshot}
-                className="flex-1 flex flex-col items-center justify-center pt-1 pb-0.5"
+                className="flex-1 flex flex-col items-center justify-center pt-1.5 pb-1.5"
               >
                 <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95 mb-0.5"
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95"
                   style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
                 >
                   <Plus className="w-[18px] h-[18px] text-white" strokeWidth={2.5}/>
                 </div>
-                <span className="text-[8px] font-semibold tracking-wide text-gray-400">{label}</span>
               </Link>
             );
           }

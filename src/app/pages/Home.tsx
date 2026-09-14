@@ -276,6 +276,10 @@ export function Home() {
   const setHomeMode = (m: 'listings' | 'portfolio') => {
     setHomeModeState(m);
     try { sessionStorage.setItem(HOME_MODE_KEY, m); } catch {}
+    // Lets MobileBottomNav's contextual + button react immediately without
+    // this becoming a second source of truth for the mode -- the nav only
+    // mirrors this broadcast, it never decides the mode itself.
+    window.dispatchEvent(new CustomEvent('filmons:home-mode-changed', { detail: { mode: m } }));
   };
 
   // Persisted the same way homeMode is above -- "View Portfolio" navigates
