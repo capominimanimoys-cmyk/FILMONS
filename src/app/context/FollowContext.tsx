@@ -3,19 +3,20 @@ import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { socialApi } from '../lib/api';
 import { useAuth } from './AuthContext';
-import { logPortfolioInteraction, roleToCategory, type PortfolioInteractionAction } from '../lib/personalization';
+import { logPortfolioInteraction, roleToCategories, type PortfolioInteractionAction } from '../lib/personalization';
 
 // Backs Home -> Portfolio's personalized category chips: "creators and
 // roles they follow" is one of the ranking signals, at the SAME follow/
 // unfollow action point every Follow button in the app already goes
 // through (this context), so it's automatically wired everywhere without
 // touching each individual Follow button. The target's own primary_role
-// is mapped onto the same controlled PORTFOLIO_CATEGORIES taxonomy
-// portfolio content itself uses -- a single cheap lookup, fire-and-forget,
-// never blocks the follow/unfollow action itself.
+// is mapped onto the same controlled taxonomy portfolio content itself
+// uses (category AND subcategory, e.g. "Rapper" -> Music & Audio / Hip-Hop
+// & Rap) -- a single cheap lookup, fire-and-forget, never blocks the
+// follow/unfollow action itself.
 function logFollowInteraction(userId: string, targetId: string, action: PortfolioInteractionAction) {
   supabase.from('profiles').select('primary_role').eq('id', targetId).maybeSingle()
-    .then(({ data }) => logPortfolioInteraction(userId, roleToCategory((data as any)?.primary_role), action))
+    .then(({ data }) => logPortfolioInteraction(userId, roleToCategories((data as any)?.primary_role), action))
     .catch(() => {});
 }
 

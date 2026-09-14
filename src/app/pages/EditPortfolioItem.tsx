@@ -10,7 +10,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
-  getPortfolioItem, updatePortfolioItem, PORTFOLIO_CATEGORIES,
+  getPortfolioItem, updatePortfolioItem, PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES,
   type PortfolioItem,
 } from '../lib/portfolioApi';
 
@@ -27,6 +27,8 @@ export function EditPortfolioItem() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
+  const [subcategory, setSubcategory] = useState('');
+  const availableSubcategories = PORTFOLIO_SUBCATEGORIES[category] ?? [];
   const [tagsText, setTagsText] = useState('');
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export function EditPortfolioItem() {
       setTitle(row.title ?? '');
       setDescription(row.description ?? '');
       setCategory(row.category ?? '');
+      setSubcategory(row.subcategory ?? '');
       setTagsText((row.tags ?? []).join(', '));
     });
   }, [itemId, user?.id]);
@@ -48,7 +51,8 @@ export function EditPortfolioItem() {
     setSaving(true);
     const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean);
     const ok = await updatePortfolioItem(item.id, {
-      title: title.trim(), description: description.trim(), category, tags,
+      title: title.trim(), description: description.trim(), category,
+      subcategory: subcategory || undefined, tags,
     });
     setSaving(false);
     if (!ok) { toast.error('Could not save changes. Please try again.'); return; }
@@ -121,13 +125,26 @@ export function EditPortfolioItem() {
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-gray-500">Category</label>
           <select
-            value={category} onChange={e => setCategory(e.target.value)}
+            value={category} onChange={e => { setCategory(e.target.value); setSubcategory(''); }}
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
           >
             <option value="">Select a category</option>
             {PORTFOLIO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+
+        {availableSubcategories.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-gray-500">Subcategory</label>
+            <select
+              value={subcategory} onChange={e => setSubcategory(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
+            >
+              <option value="">Select a subcategory</option>
+              {availableSubcategories.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-gray-500">Tags</label>

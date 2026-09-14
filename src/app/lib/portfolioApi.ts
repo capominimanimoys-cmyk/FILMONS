@@ -18,6 +18,7 @@ export interface PortfolioItem {
   title:               string;
   description?:        string;
   category:            string;
+  subcategory?:        string;
   role?:               string;
   year?:               number;
   media_type:          MediaType;
@@ -125,6 +126,10 @@ export interface PortfolioComment {
   replies:     PortfolioComment[];
 }
 
+// Extended with Acting/Animation/Events on top of the original 11 -- no
+// CHECK constraint ties this column to a fixed enum (confirmed against the
+// actual migration), so this is safe to grow without a schema change.
+// Existing items tagged with the original values are unaffected.
 export const PORTFOLIO_CATEGORIES = [
   'Film & Video',
   'Photography',
@@ -136,8 +141,38 @@ export const PORTFOLIO_CATEGORIES = [
   'Commercial',
   'Editorial',
   'Documentary',
+  'Acting',
+  'Animation',
+  'Events',
   'Other',
 ];
+
+// Centralized subcategory taxonomy -- "Music | Hip-Hop & Rap | Rap |
+// Rapping | Hip-Hop Music" all normalize to one canonical subcategory
+// instead of becoming five unrelated tabs. Keyed by the real
+// PORTFOLIO_CATEGORIES values above (not shorthand like "Music"), so a
+// portfolio_items.subcategory value is always paired with a real category
+// value it actually belongs under. Not exhaustive for every field --
+// covers the categories with genuinely useful, distinct subcategories;
+// smaller categories (Modeling, Gaming, Events) don't have a curated list
+// yet and just won't offer a subcategory picker until one is added here.
+export const PORTFOLIO_SUBCATEGORIES: Record<string, string[]> = {
+  'Music & Audio': [
+    'Hip-Hop & Rap', 'R&B', 'Pop', 'Afrobeats', 'Electronic', 'Rock', 'Jazz',
+    'Classical', 'Music Videos', 'Live Performances', 'Songwriting', 'Music Production',
+  ],
+  'Film & Video': [
+    'Short Films', 'Feature Films', 'Documentaries', 'Commercials', 'Music Videos',
+    'Cinematography', 'Directing', 'Videography', 'Editing', 'Color Grading',
+    'Wedding Films', 'Corporate Video',
+  ],
+  'Photography': [
+    'Portrait', 'Fashion', 'Wedding', 'Event', 'Product', 'Commercial',
+    'Street', 'Editorial', 'Sports', 'Nature',
+  ],
+  'Acting': ['Film Acting', 'TV', 'Commercial', 'Theatre', 'Voice Acting', 'Comedy', 'Drama'],
+  'Design & Creative': ['Graphic Design', 'Branding', 'Motion Design', 'UI/UX', 'Illustration', '3D'],
+};
 
 /** Maps a WorkType to the underlying storage media_type */
 export function workTypeToMediaType(wt: WorkType): MediaType {
@@ -877,6 +912,15 @@ export async function getPortfolioFeed(opts: {
   authorIds?: string[];
   /** One of PORTFOLIO_CATEGORIES */
   category?: string;
+  /** One of PORTFOLIO_SUBCATEGORIES[category] -- items only, albums have
+   * no subcategory column. */
+  subcategory?: string;
+  /** Viewer's own city -- when set alongside `category`/`subcategory`,
+   * mildly boosts same-city creators in sort order without excluding
+   * anyone else ("prioritize local... while still including high-quality
+   * relevant content from elsewhere", per spec). Never applied to the
+   * unfiltered mixed feed, only a filtered tab. */
+  viewerCity?: string;
 } = {}): Promise<PortfolioFeedEntry[]> {
   const limit = opts.limit ?? 20;
   // Overfetch from each source before merging -- the two pools get combined
@@ -914,18 +958,23 @@ export async function getPortfolioFeed(opts: {
       (data ?? []).forEach((r: any) => excludeItemIds.add(r.item_id));
     }
 
-    // withHidden=false is the 42703 (undefined_column) fallback -- same
-    // not-yet-applied-migration protection as withHiddenFilter above, kept
-    // as its own inline builder here since this query also carries
-    // before/authorIds/category/nonPublicUserIds that a generic wrapper
-    // would otherwise have to duplicate.
-    const buildItemsQuery = (withHidden: boolean) => {
+    // withHidden/withSubcategory=false is the 42703 (undefined_column)
+    // fallback -- same not-yet-applied-migration protection as
+    // withHiddenFilter above, kept as its own inline builder here since
+    // this query also carries before/authorIds/category/nonPublicUserIds
+    // that a generic wrapper would otherwise have to duplicate. Both
+    // columns are dropped together on retry since a single error code
+    // doesn't say which one is missing -- harmless to drop a column that
+    // WAS actually fine, the query just becomes less specific for that
+    // one retry rather than failing outright.
+    const buildItemsQuery = (withHidden: boolean, withSubcategory: boolean) => {
       let q = supabase.from('portfolio_items').select('*');
       if (withHidden) q = q.eq('is_hidden', false);
       q = q.order('created_at', { ascending: false }).limit(fetchN);
       if (opts.before) q = q.lt('created_at', opts.before);
       if (opts.authorIds) q = q.in('user_id', opts.authorIds);
       if (opts.category) q = q.eq('category', opts.category);
+      if (withSubcategory && opts.subcategory) q = q.eq('subcategory', opts.subcategory);
       if (nonPublicUserIds.length) q = q.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
       return q;
     };
@@ -935,8 +984,8 @@ export async function getPortfolioFeed(opts: {
     if (opts.category) albumsQ = albumsQ.eq('category', opts.category);
     if (nonPublicUserIds.length) albumsQ = albumsQ.not('user_id', 'in', `(${nonPublicUserIds.join(',')})`);
 
-    const [itemsRes0, albumsRes] = await Promise.all([buildItemsQuery(true), albumsQ]);
-    const itemsRes = itemsRes0.error?.code === '42703' ? await buildItemsQuery(false) : itemsRes0;
+    const [itemsRes0, albumsRes] = await Promise.all([buildItemsQuery(true, true), albumsQ]);
+    const itemsRes = itemsRes0.error?.code === '42703' ? await buildItemsQuery(false, false) : itemsRes0;
     let items = ((itemsRes.data ?? []) as PortfolioItem[]).filter(i => !excludeItemIds.has(i.id));
     let albums = (albumsRes.data ?? []) as PortfolioAlbum[];
     if (!items.length && !albums.length) return [];
@@ -1016,7 +1065,24 @@ export async function getPortfolioFeed(opts: {
         };
       }),
     ];
-    entries.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    // Location boost -- only within a filtered category/subcategory tab
+    // (never the unfiltered mixed feed, which already blends everything).
+    // Implemented as a fixed time bonus added to a same-city creator's
+    // effective sort timestamp rather than a hard "local first" partition
+    // -- a well-established, simple way to blend a relevance signal into
+    // a recency-sorted feed without segregating local from non-local
+    // content ("prioritize... while still including high-quality relevant
+    // content from elsewhere", per spec). No boost at all if the viewer's
+    // city is unknown.
+    const LOCAL_BOOST_MS = 3 * 86_400_000; // effectively "3 days newer"
+    const isLocalMatch = (city: string | null) =>
+      !!opts.viewerCity && !!city && city.toLowerCase().includes(opts.viewerCity.toLowerCase());
+    const sortKey = (e: PortfolioFeedEntry) => {
+      const base = new Date(e.created_at).getTime();
+      const boostEligible = !!(opts.category || opts.subcategory);
+      return boostEligible && isLocalMatch(e.creator.city) ? base + LOCAL_BOOST_MS : base;
+    };
+    entries.sort((a, b) => sortKey(b) - sortKey(a));
     return entries.slice(0, limit);
   } catch (e) {
     console.warn('[portfolio feed] fetch error:', e);

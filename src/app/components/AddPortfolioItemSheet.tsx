@@ -11,7 +11,7 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
-  PORTFOLIO_CATEGORIES, createPortfolioItem, uploadPortfolioMedia,
+  PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia,
   readImageDimensions, readVideoDimensions, workTypeToMediaType, type WorkType, type PortfolioItem,
 } from '../lib/portfolioApi';
 
@@ -57,6 +57,8 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [title,       setTitle]       = useState('');
   const [description, setDesc]        = useState('');
   const [category,    setCategory]    = useState('');
+  const [subcategory, setSubcategory] = useState('');
+  const availableSubcategories = PORTFOLIO_SUBCATEGORIES[category] ?? [];
   const [role,        setRole]        = useState('');
   const [clientName,  setClientName]  = useState('');
   const [year,        setYear]        = useState(new Date().getFullYear().toString());
@@ -123,6 +125,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       title:        title.trim(),
       description:  description.trim() || undefined,
       category:     category || '',
+      subcategory:  subcategory || undefined,
       role:         role.trim() || undefined,
       client_name:  clientName.trim() || undefined,
       year:         year ? parseInt(year) : undefined,
@@ -290,13 +293,33 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Category</label>
                 <select
                   value={category}
-                  onChange={e => setCategory(e.target.value)}
+                  onChange={e => { setCategory(e.target.value); setSubcategory(''); }}
                   className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
                 >
                   <option value="">Select a category…</option>
                   {PORTFOLIO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
+
+              {/* Subcategory -- only offered where a curated list exists
+                  (PORTFOLIO_SUBCATEGORIES); this is the creator's own
+                  confirmation of what the work actually is ("Hip-Hop &
+                  Rap", not an AI guess from the title) -- Portfolio
+                  recommendations and search both use this directly rather
+                  than inferring it from free text. */}
+              {availableSubcategories.length > 0 && (
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Subcategory (optional)</label>
+                  <select
+                    value={subcategory}
+                    onChange={e => setSubcategory(e.target.value)}
+                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
+                  >
+                    <option value="">Select a subcategory…</option>
+                    {availableSubcategories.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              )}
 
               {/* Role + Client */}
               <div className="flex gap-3">

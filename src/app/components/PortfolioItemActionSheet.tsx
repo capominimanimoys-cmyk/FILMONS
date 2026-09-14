@@ -83,7 +83,7 @@ export function PortfolioItemActionSheet({
     setSaved(next);
     const ok = await togglePortfolioSave(user.id, item.id, 'portfolio_item', !next);
     if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
-    logPortfolioInteraction(user.id, item.category, next ? 'save' : 'unsave');
+    logPortfolioInteraction(user.id, { category: item.category, subcategory: item.subcategory }, next ? 'save' : 'unsave');
   };
 
   const handleOpenAddToAlbum = async () => {
@@ -152,7 +152,13 @@ export function PortfolioItemActionSheet({
               <button onClick={() => run(() => navigate(`/host/${creatorId}`))} className={rowClass}>
                 <User className="w-4 h-4 text-gray-400" /> View creator profile
               </button>
-              <button onClick={() => run(() => navigate(`/portfolio/${creatorId}`))} className={rowClass}>
+              <button
+                onClick={() => run(() => {
+                  if (user) logPortfolioInteraction(user.id, { category: item.category, subcategory: item.subcategory }, 'open_full_portfolio');
+                  navigate(`/portfolio/${creatorId}`);
+                })}
+                className={rowClass}
+              >
                 <ExternalLink className="w-4 h-4 text-gray-400" /> View portfolio
               </button>
               <button onClick={() => run(handleShare)} className={rowClass}>

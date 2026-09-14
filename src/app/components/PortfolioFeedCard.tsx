@@ -174,9 +174,9 @@ function CommentRow({
 // canModerate = the viewer owns the portfolio this item belongs to (item
 // owners can delete any comment on their own work, not just their own). ──
 function PortfolioCommentSheet({
-  itemId, itemCategory, canModerate, onClose,
+  itemId, itemCategory, itemSubcategory, canModerate, onClose,
 }: {
-  itemId: string; itemCategory?: string; canModerate: boolean; onClose: () => void;
+  itemId: string; itemCategory?: string; itemSubcategory?: string; canModerate: boolean; onClose: () => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
   const [comments, setComments] = useState<PortfolioComment[] | null>(null);
@@ -231,7 +231,7 @@ function PortfolioCommentSheet({
     });
     setText('');
     setReplyingTo(null);
-    logPortfolioInteraction(user.id, itemCategory, 'comment');
+    logPortfolioInteraction(user.id, itemCategory ? { category: itemCategory, subcategory: itemSubcategory } : null, 'comment');
   };
 
   const handleToggleLike = async (c: PortfolioComment) => {
@@ -587,7 +587,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
     setLikesCount(c => c + (next ? 1 : -1));
     const ok = await toggleItemLike(itemForLikes.id, user.id, !next);
     if (!ok) { setLiked(!next); setLikesCount(c => c + (next ? -1 : 1)); toast.error('Could not update like'); return; }
-    logPortfolioInteraction(user.id, itemForLikes.category, next ? 'like' : 'unlike');
+    logPortfolioInteraction(user.id, { category: itemForLikes.category, subcategory: itemForLikes.subcategory }, next ? 'like' : 'unlike');
   };
 
   const handleToggleSave = async () => {
@@ -596,8 +596,10 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
     setSaved(next);
     const ok = await togglePortfolioSave(user.id, saveTargetId, saveTargetType, !next);
     if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
-    const category = entry.type === 'item' ? entry.item.category : entry.album.category;
-    logPortfolioInteraction(user.id, category, next ? 'save' : 'unsave');
+    const target = entry.type === 'item'
+      ? { category: entry.item.category, subcategory: entry.item.subcategory }
+      : { category: entry.album.category ?? '' };
+    logPortfolioInteraction(user.id, target, next ? 'save' : 'unsave');
   };
 
   const handleShare = async () => {
@@ -677,7 +679,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
           same as Portfolio.tsx's own createPortal(<ItemActionsSheet/>...)
           pattern for its three-dot menu. */}
       {showComments && entry.type === 'item' && createPortal(
-        <PortfolioCommentSheet itemId={entry.item.id} itemCategory={entry.item.category} canModerate={isOwn} onClose={() => setShowComments(false)} />,
+        <PortfolioCommentSheet itemId={entry.item.id} itemCategory={entry.item.category} itemSubcategory={entry.item.subcategory} canModerate={isOwn} onClose={() => setShowComments(false)} />,
         document.body,
       )}
       {showMenu && createPortal(
@@ -717,7 +719,7 @@ function ItemFocusView({ item, onClose }: { item: PortfolioItem; onClose: () => 
   useEffect(() => {
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
     window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: true } }));
-    logPortfolioInteraction(user?.id, item.category, 'view');
+    logPortfolioInteraction(user?.id, { category: item.category, subcategory: item.subcategory }, 'view');
     return () => { window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: false } })); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

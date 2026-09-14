@@ -23,7 +23,7 @@ import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
 import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
-import { getPersonalizedCategories } from '../lib/personalization';
+import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { BottomSheet } from '../components/BottomSheet';
@@ -321,10 +321,19 @@ export function Home() {
   const loadFeed = useCallback((tab: PortfolioFilterId) => {
     setFeedLoading(true);
     setFeedError(false);
+    // A chip's label can be either a top-level category ("Photography") OR
+    // a subcategory ("Hip-Hop & Rap") -- resolveCategoryFilter looks it up
+    // against PORTFOLIO_SUBCATEGORIES to find which parent category it
+    // belongs under, since portfolio_items.subcategory alone isn't enough
+    // to filter by (need both columns).
+    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
     getPortfolioFeed({
       limit: FEED_PAGE_SIZE,
       authorIds: tab === 'following' ? followingIds : undefined,
-      category: (tab !== 'foryou' && tab !== 'following') ? tab : undefined,
+      category: resolved?.category,
+      subcategory: resolved?.subcategory,
+      viewerCity: user?.city,
     })
       .then(entries => {
         const cursor = entries.length ? entries[entries.length - 1].created_at : undefined;
@@ -388,11 +397,15 @@ export function Home() {
     const cached = feedCacheRef.current[feedTab];
     if (feedLoadingMore || !feedHasMore || !cached?.cursor) return;
     setFeedLoadingMore(true);
+    const isCategoryTab = feedTab !== 'foryou' && feedTab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(feedTab) : null;
     getPortfolioFeed({
       limit: FEED_PAGE_SIZE,
       before: cached.cursor,
       authorIds: feedTab === 'following' ? followingIds : undefined,
-      category: (feedTab !== 'foryou' && feedTab !== 'following') ? feedTab : undefined,
+      category: resolved?.category,
+      subcategory: resolved?.subcategory,
+      viewerCity: user?.city,
     })
       .then(more => {
         const merged = [...cached.entries, ...more];
@@ -1138,7 +1151,7 @@ export function Home() {
                 {personalizedCategories.map(cat => (
                   <button
                     key={cat}
-                    onClick={() => setFeedTab(cat)}
+                    onClick={() => { setFeedTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
                     className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                       feedTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                     }`}
@@ -1163,7 +1176,7 @@ export function Home() {
                   {PORTFOLIO_CATEGORIES.map(cat => (
                     <button
                       key={cat}
-                      onClick={() => { setFeedTab(cat); setShowMoreCategories(false); }}
+                      onClick={() => { setFeedTab(cat); setShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
                       className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
                         feedTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
                       }`}
