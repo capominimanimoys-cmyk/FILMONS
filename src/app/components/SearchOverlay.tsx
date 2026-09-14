@@ -1599,7 +1599,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   /search/category/:tab page (logged in, any tier alike),
                   carrying the current query/filters/sort along with it. */}
               {visibleUsers.length > 0 && (
-                <ResultSection label="👤 Creators" count={visibleUsers.length}
+                <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
                   footer={visibleUsers.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
                   {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
@@ -1612,7 +1612,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   specifically (hiddenEmergencyX, computed on the
                   already-capped list above), show that gate instead. */}
               {visibleRental.length > 0 && (
-                <ResultSection label="📦 Rental" count={visibleRental.length} grid
+                <ResultSection label="📦 Rental" count={Math.min(visibleRental.length, PREVIEW_LIMIT)} grid
                   footer={visibleRental.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : handleViewMoreCategory('rental')}/>
                     : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
@@ -1620,7 +1620,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </ResultSection>
               )}
               {visibleSale.length > 0 && (
-                <ResultSection label="🏷️ Sales" count={visibleSale.length} grid
+                <ResultSection label="🏷️ Sales" count={Math.min(visibleSale.length, PREVIEW_LIMIT)} grid
                   footer={visibleSale.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : handleViewMoreCategory('sale')}/>
                     : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
@@ -1628,7 +1628,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </ResultSection>
               )}
               {visibleServices.length > 0 && (
-                <ResultSection label="🛠️ Services" count={visibleServices.length}
+                <ResultSection label="🛠️ Services" count={Math.min(visibleServices.length, PREVIEW_LIMIT)}
                   footer={visibleServices.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
                     : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
@@ -1636,7 +1636,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </ResultSection>
               )}
               {visibleStudios.length > 0 && (
-                <ResultSection label="🏢 Studios" count={visibleStudios.length} grid
+                <ResultSection label="🏢 Studios" count={Math.min(visibleStudios.length, PREVIEW_LIMIT)} grid
                   footer={visibleStudios.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/>
                     : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
@@ -1644,7 +1644,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </ResultSection>
               )}
               {visibleOpportunities.length > 0 && (
-                <ResultSection label="💼 Opportunities" count={visibleOpportunities.length}
+                <ResultSection label="💼 Opportunities" count={Math.min(visibleOpportunities.length, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT)}
                   footer={canBrowseOpportunities
                     ? (visibleOpportunities.length > PREVIEW_LIMIT ? <ViewMoreButton onClick={() => handleViewMoreCategory('opportunities')}/> : undefined)
                     : (visibleOpportunities.length > OPPORTUNITY_LOCKED_LIMIT ? <OpportunityLockedNotice onClick={() => setShowOpportunityGate(true)}/> : undefined)}>
