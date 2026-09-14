@@ -3,6 +3,7 @@
  * Users swipe through a mixed feed of listings, services, studios, and creator profiles.
  */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,10 +22,11 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
-import { getPortfolioFeed, getSuggestedCreators, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
+import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { getPersonalizedCategories } from '../lib/personalization';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
+import { BottomSheet } from '../components/BottomSheet';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
 // soon for the same viewer -- short enough that an active Emergency
@@ -431,12 +433,15 @@ export function Home() {
   // same reasoning as suggestedCreators above (a ranking snapshot, not
   // paginated feed content). Guests get no personalized row at all (there's
   // no account to rank against) -- just the plain For You/Following tabs.
+  // Capped at 4 (not 6) -- "roughly 3-4 personalized creative-category
+  // tabs" plus a trailing More, not a growing horizontal list.
   const [personalizedCategories, setPersonalizedCategories] = useState<string[]>([]);
+  const [showMoreCategories, setShowMoreCategories] = useState(false);
   const personalizedFetchedRef = useRef(false);
   useEffect(() => {
     if (homeMode !== 'portfolio' || personalizedFetchedRef.current || !user?.id) return;
     personalizedFetchedRef.current = true;
-    getPersonalizedCategories(user.id, { limit: 6 }).then(setPersonalizedCategories);
+    getPersonalizedCategories(user.id, { limit: 4 }).then(setPersonalizedCategories);
   }, [homeMode, user?.id]);
 
   const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
@@ -1120,22 +1125,16 @@ export function Home() {
             </div>
             {/* Personalized category chips -- For You only, and only for a
                 signed-in user (there's no account to rank against for a
-                guest). "All" is always first and always resets to the
-                unfiltered For You feed; the rest are this specific user's
-                top-ranked PORTFOLIO_CATEGORIES values (see
-                getPersonalizedCategories), never the same fixed list for
-                everyone. Horizontally scrollable, no wrapping, so it never
-                grows past one line on mobile. */}
+                guest). No separate "All" chip -- "For You" itself already
+                is the unfiltered mixed feed, so tapping it back resets that
+                the same way. Roughly 3-4 of THIS user's own top-ranked
+                PORTFOLIO_CATEGORIES values (see getPersonalizedCategories),
+                never the same fixed list for everyone, followed by "More"
+                for every other category (including ones outside their
+                current top ranking) rather than cramming a growing list of
+                categories/subcategories into one horizontal row. */}
             {feedTab !== 'following' && user && (
               <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-                <button
-                  onClick={() => setFeedTab('foryou')}
-                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                    feedTab === 'foryou' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  All
-                </button>
                 {personalizedCategories.map(cat => (
                   <button
                     key={cat}
@@ -1147,7 +1146,34 @@ export function Home() {
                     {cat}
                   </button>
                 ))}
+                <button
+                  onClick={() => setShowMoreCategories(true)}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    !personalizedCategories.includes(feedTab) && feedTab !== 'foryou'
+                      ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  More
+                </button>
               </div>
+            )}
+            {showMoreCategories && createPortal(
+              <BottomSheet onClose={() => setShowMoreCategories(false)} title="More categories">
+                <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
+                  {PORTFOLIO_CATEGORIES.map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => { setFeedTab(cat); setShowMoreCategories(false); }}
+                      className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
+                        feedTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </BottomSheet>,
+              document.body,
             )}
             <div
               className="flex-1 px-4 pb-6 space-y-4 lg:max-w-[680px] lg:w-full lg:mx-auto"
