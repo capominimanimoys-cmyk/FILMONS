@@ -509,7 +509,7 @@ export function Home() {
   // their own). `enabled` scopes this to genuinely being in Portfolio mode
   // -- leaving Portfolio (or unmounting Home entirely) always restores both
   // bars, same as before.
-  const { onManualScroll: onPortfolioBarsScroll } = useMobileScrollChrome({ mode: 'manual', enabled: homeMode === 'portfolio' });
+  const { hidden: portfolioBarsHidden, onManualScroll: onPortfolioBarsScroll } = useMobileScrollChrome({ mode: 'manual', enabled: homeMode === 'portfolio' });
 
   const handlePortfolioScroll = () => {
     const el = portfolioScrollRef.current;
