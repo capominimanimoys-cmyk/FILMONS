@@ -1,0 +1,119 @@
+// Shared cover/avatar/identity header for both Profile.tsx (owner) and
+// HostProfile.tsx (viewer). The actual photo-upload sheets (AvatarActionSheet,
+// AvatarFullScreen, CoverActionSheet) stay owned by the page -- this
+// component only exposes onTapCover/onTapAvatar callbacks, so it doesn't
+// need to duplicate any upload logic to stay presentational.
+//
+// Deviation from the literal spec text (flagged to the user in the plan):
+// Follow/Message live in the sticky bottom bar for a viewer, not here too --
+// putting the same two actions in both places was redundant. This header's
+// viewer-mode action row is Share + 3-dot only.
+import { ShieldCheck } from 'lucide-react';
+import { AccountTypeBadge } from '../AccountTypeBadge';
+import { ReliabilityBadge } from '../ReliabilityScore';
+
+export function ProfileHeader({
+  coverPhoto, avatar, name, username, isVerified, accountType, primaryRole, bio, location, profileUrl,
+  reliabilityScore, reliabilityLevel,
+  isOwner, onTapCover, onTapAvatar, onEditProfile, onShare, onMenu,
+}: {
+  coverPhoto?: string | null;
+  avatar?: string | null;
+  name: string;
+  username?: string | null;
+  isVerified?: boolean;
+  accountType?: string;
+  primaryRole?: string;
+  bio?: string;
+  location?: string;
+  profileUrl?: string;
+  reliabilityScore?: number;
+  reliabilityLevel?: string;
+  isOwner: boolean;
+  onTapCover?: () => void;
+  onTapAvatar?: () => void;
+  onEditProfile?: () => void;
+  onShare: () => void;
+  onMenu: () => void;
+}) {
+  return (
+    <div className="relative bg-white border-b border-gray-100">
+      {/* Cover */}
+      <div
+        className={`relative h-40 overflow-hidden bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 ${isOwner ? 'cursor-pointer' : ''}`}
+        onClick={isOwner ? onTapCover : undefined}
+      >
+        {coverPhoto && <img src={coverPhoto} alt="" className="w-full h-full object-cover" />}
+      </div>
+
+      <div className="px-4 pb-4">
+        {/* Avatar overlapping cover */}
+        <div className="flex items-end justify-between -mt-10">
+          <button onClick={isOwner ? onTapAvatar : undefined} className="shrink-0" disabled={!isOwner}>
+            <div className="w-20 h-20 rounded-full border-4 border-white overflow-hidden bg-gray-200 shadow-lg">
+              {avatar
+                ? <img src={avatar} alt={name} className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center text-xl font-black text-gray-400">{name?.[0]?.toUpperCase() || '?'}</div>}
+            </div>
+          </button>
+
+          {/* Action row */}
+          <div className="flex items-center gap-1.5 pb-1">
+            {isOwner && (
+              <button onClick={onEditProfile} className="text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                Edit Profile
+              </button>
+            )}
+            <button onClick={onShare} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="Share" aria-label="Share">
+              <ShareIcon />
+            </button>
+            <button onClick={onMenu} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="More" aria-label="More">
+              <MoreIcon />
+            </button>
+          </div>
+        </div>
+
+        {/* Identity */}
+        <div className="mt-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h1 className="text-lg font-black text-gray-900">{name}</h1>
+            <AccountTypeBadge type={accountType as any} size="sm" />
+            {isVerified && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">
+                <ShieldCheck className="w-2.5 h-2.5" /> Verified
+              </span>
+            )}
+            {reliabilityScore != null && reliabilityLevel && (
+              <ReliabilityBadge score={reliabilityScore} level={reliabilityLevel} accountType={accountType} size="sm" />
+            )}
+          </div>
+          {(primaryRole) && <p className="text-xs font-semibold text-blue-600 mt-0.5">{primaryRole}</p>}
+          {location && <p className="text-xs text-gray-400 mt-0.5">{location}</p>}
+          {username && (
+            <p className="text-xs text-gray-400 mt-0.5">@{username}</p>
+          )}
+          {profileUrl && (
+            <a href={profileUrl} onClick={e => e.preventDefault()} className="text-xs text-blue-600 mt-0.5 inline-block">
+              {profileUrl.replace(/^https?:\/\//, '')}
+            </a>
+          )}
+          {bio && <p className="text-sm text-gray-700 mt-2 leading-relaxed">{bio}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
+  );
+}
+function MoreIcon() {
+  return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+  );
+}

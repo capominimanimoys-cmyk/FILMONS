@@ -679,7 +679,7 @@ export async function isItemLiked(itemId: string, userId: string): Promise<boole
   return !!data;
 }
 
-export async function toggleItemLike(itemId: string, userId: string, currentlyLiked: boolean): Promise<boolean> {
+export async function toggleItemLike(itemId: string, userId: string, currentlyLiked: boolean, creatorId?: string): Promise<boolean> {
   if (currentlyLiked) {
     const { error } = await supabase
       .from('portfolio_item_likes')
@@ -691,6 +691,7 @@ export async function toggleItemLike(itemId: string, userId: string, currentlyLi
   const { error } = await supabase
     .from('portfolio_item_likes')
     .insert({ item_id: itemId, user_id: userId });
+  if (!error && creatorId) logPortfolioEngagementEvent(creatorId, itemId, 'like', userId);
   return !error;
 }
 
@@ -780,7 +781,7 @@ export async function getItemComments(
 }
 
 export async function addItemComment(
-  itemId: string, userId: string, body: string, parentId?: string,
+  itemId: string, userId: string, body: string, parentId?: string, creatorId?: string,
 ): Promise<PortfolioComment | null> {
   const { data, error } = await supabase
     .from('portfolio_item_comments')
@@ -788,6 +789,7 @@ export async function addItemComment(
     .select()
     .single();
   if (error) { console.error('[portfolio comments] create error:', error.message); return null; }
+  if (creatorId) logPortfolioEngagementEvent(creatorId, itemId, 'comment', userId);
   // author is left null -- the caller (PortfolioCommentSheet) already knows
   // who just posted (the current user) and fills it in locally rather than
   // this doing a redundant profile fetch for a row it already knows the
@@ -868,10 +870,69 @@ export async function reportPortfolioContent(
   return true;
 }
 
-export async function incrementItemView(itemId: string): Promise<void> {
+export async function incrementItemView(itemId: string, creatorId?: string, viewerId?: string): Promise<void> {
   try {
     await supabase.rpc('increment_portfolio_item_views', { p_item_id: itemId });
   } catch { /* best-effort */ }
+  if (creatorId) logPortfolioEngagementEvent(creatorId, itemId, 'view', viewerId);
+}
+
+// ── Portfolio Interaction analytics (Profile page's "Portfolio Interaction"
+// section) ───────────────────────────────────────────────────────────────
+// Fire-and-forget: a failed insert here should never block the like/
+// comment/view/share action it's riding along with (those already
+// succeeded via their own counters/tables before this is called).
+export type PortfolioEngagementAction = 'view' | 'like' | 'comment' | 'share';
+export function logPortfolioEngagementEvent(
+  creatorId: string, itemId: string, action: PortfolioEngagementAction, viewerId?: string,
+): void {
+  supabase.from('portfolio_engagement_events').insert({
+    creator_id: creatorId, item_id: itemId, viewer_id: viewerId || null, action,
+  }).then(() => {}, () => {});
+}
+
+export interface PortfolioInteractionStats {
+  views: number; likes: number; comments: number; shares: number;
+  viewsChangePct: number | null; likesChangePct: number | null;
+  commentsChangePct: number | null; sharesChangePct: number | null;
+}
+
+function pctChange(curr: number, prev: number): number | null {
+  if (prev <= 0) return null; // no baseline to compare against -- show "New"/"—", not a divide-by-zero
+  return Math.round(((curr - prev) / prev) * 100);
+}
+
+// Last 30 days vs the 30 days before that, per action, for one creator
+// across their whole portfolio. Owner-only display (see PortfolioInteractionSection).
+export async function getPortfolioInteractionStats(creatorId: string): Promise<PortfolioInteractionStats> {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const currStart = new Date(now - 30 * dayMs).toISOString();
+  const prevStart = new Date(now - 60 * dayMs).toISOString();
+
+  const countFor = async (action: PortfolioEngagementAction, from: string, to?: string) => {
+    let q = supabase.from('portfolio_engagement_events').select('id', { count: 'exact', head: true })
+      .eq('creator_id', creatorId).eq('action', action).gte('created_at', from);
+    if (to) q = q.lt('created_at', to);
+    const { count } = await q;
+    return count ?? 0;
+  };
+
+  const actions: PortfolioEngagementAction[] = ['view', 'like', 'comment', 'share'];
+  const [currCounts, prevCounts] = await Promise.all([
+    Promise.all(actions.map(a => countFor(a, currStart))),
+    Promise.all(actions.map(a => countFor(a, prevStart, currStart))),
+  ]);
+  const curr = Object.fromEntries(actions.map((a, i) => [a, currCounts[i]])) as Record<PortfolioEngagementAction, number>;
+  const prev = Object.fromEntries(actions.map((a, i) => [a, prevCounts[i]])) as Record<PortfolioEngagementAction, number>;
+
+  return {
+    views: curr.view, likes: curr.like, comments: curr.comment, shares: curr.share,
+    viewsChangePct: pctChange(curr.view, prev.view),
+    likesChangePct: pctChange(curr.like, prev.like),
+    commentsChangePct: pctChange(curr.comment, prev.comment),
+    sharesChangePct: pctChange(curr.share, prev.share),
+  };
 }
 
 // ── Cross-creator discovery feed (Home -> Portfolio mode) ───────────────────

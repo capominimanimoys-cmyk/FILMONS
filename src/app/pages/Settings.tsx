@@ -43,7 +43,7 @@ export function Settings() {
         {
           icon: User, label: 'Account',
           sub: `${user.name} · ${user.email}`,
-          action: () => navigate('/profile?tab=about'),
+          action: () => navigate('/profile?edit=about'),
         },
         { icon: BarChart2, label: 'Professional Dashboard', sub: 'Analytics, performance, earnings', action: () => go('/dashboard') },
         { icon: Layers,    label: 'Portfolio',              sub: 'Showcase, visibility, themes',     action: () => go('/settings/portfolio') },
@@ -117,7 +117,7 @@ export function Settings() {
 
       <div className="lg:max-w-2xl lg:mx-auto">
       {/* User card — tappable → goes to About in profile */}
-      <button onClick={() => { captureSnapshot(); navigate('/profile?tab=about'); }}
+      <button onClick={() => { captureSnapshot(); navigate('/profile?edit=about'); }}
         className="bg-white mx-4 mt-4 rounded-2xl p-4 flex items-center gap-3 shadow-sm border border-gray-100 w-[calc(100%-32px)] text-left hover:bg-gray-50 transition-colors active:scale-[0.99]">
         <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
           {user.avatar

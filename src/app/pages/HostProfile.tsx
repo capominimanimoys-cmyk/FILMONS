@@ -1,34 +1,40 @@
 import { useParams, useNavigate } from 'react-router';
 import { useState, useEffect, useRef } from 'react';
-import { authApi, listingsApi, reviewsApi } from '../lib/api';
+import { authApi, listingsApi, reviewsApi, postsApi } from '../lib/api';
 import { getPortfolioItems, type PortfolioItem } from '../lib/portfolioApi';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
-import { User, Listing, Review } from '../types';
+import { User, Listing, Review, Post } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
   UserPlus, UserCheck, Share2, Package, Grid3X3, List, LayoutGrid, Globe, X,
   Video, Music, Image as ImageIcon, Sprout, Briefcase, Trophy,
-  User as UserIcon,
+  User as UserIcon, FileText,
 } from 'lucide-react';
 
 type LucideIcon = React.ComponentType<{ className?: string }>;
 import { AccountTypeBadge } from '../components/AccountTypeBadge';
 import { ReliabilityBadge } from '../components/ReliabilityScore';
 import { ListingCard } from '../components/ListingCard';
+import { PostCard } from '../components/PostCard';
 import { toast } from 'sonner';
 import { FollowersModal } from '../components/FollowersModal';
 import { supabase } from '../../lib/supabase';
+import { isServiceListing } from '../lib/filmSearch';
+import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
+import { ProfileHeader } from '../components/profile/ProfileHeader';
+import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
+import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
+import { ProfileAllTab } from '../components/profile/ProfileAllTab';
+import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
+import { ProfileStickyActionBar } from '../components/profile/ProfileStickyActionBar';
+import { RecommendationComposeSheet } from '../components/profile/RecommendationComposeSheet';
+import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
 
-type Tab = 'listings' | 'portfolio' | 'reviews' | 'about';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'portfolio', label: 'Portfolio' },
-  { id: 'listings',  label: 'Listings'  },
-  { id: 'reviews',   label: 'Reviews'   },
-  { id: 'about',     label: 'About'     },
-];
+type Tab = ProfileTab;
+const TABS = PROFILE_TABS;
 
 const PORTFOLIO_FILTERS = ['All', 'Photos', 'Videos', 'Audio', 'Completed', 'BTS'];
 
@@ -303,13 +309,18 @@ export function HostProfile() {
   const [confirmUnfollow,  setConfirmUnfollow]  = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [loading,          setLoading]          = useState(true);
-  const [tab,              setTab]              = useState<Tab>('portfolio');
+  const [tab,              setTab]              = useState<Tab>('all');
   const [listView,         setListView]         = useState(false);
   const [portfolioFilter,  setPortfolioFilter]  = useState('All');
   const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
   const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
   const [showTrustSheet,   setShowTrustSheet]   = useState(false);
+  const [showActionSheet,  setShowActionSheet]  = useState(false);
+  const [showRecommend,    setShowRecommend]    = useState(false);
+  const [recommendations,     setRecommendations]     = useState<Recommendation[]>([]);
+  const [recommendationCount, setRecommendationCount] = useState(0);
+  const [posts,            setPosts]            = useState<Post[]>([]);
 
   // Reached either via the legacy /host/:userId link or the canonical
   // /:username one — resolve whichever param is present down to a raw id,
@@ -338,6 +349,12 @@ export function HostProfile() {
     if (resolvedId) loadProfile(resolvedId);
   }, [resolvedId]); // eslint-disable-line
 
+  // The dedicated Recommendations tab needs the full list -- loadProfile
+  // above only fetches a 2-item preview for the All tab's section.
+  useEffect(() => {
+    if (tab === 'recommendations' && resolvedId) getRecommendations(resolvedId).then(setRecommendations);
+  }, [tab, resolvedId]);
+
   const loadProfile = async (uid: string) => {
     setLoading(true);
     try {
@@ -354,6 +371,9 @@ export function HostProfile() {
       const repScorePromise      = supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single();
       const followerRowsPromise  = supabase.from('follows').select('follower_id').eq('following_id', uid).limit(50);
       const followingRowsPromise = supabase.from('follows').select('following_id').eq('follower_id', uid).limit(50);
+      const recommendationsPromise      = getRecommendations(uid, { limit: 2 }).catch(() => []);
+      const recommendationCountPromise  = getRecommendationCount(uid).catch(() => 0);
+      const postsPromise                = postsApi.getUserPosts(uid).catch(() => []);
 
       // Paint the header as soon as the host resolves, without waiting on the rest.
       const hostData = await hostPromise;
@@ -371,8 +391,14 @@ export function HostProfile() {
         navigate(`/${hostData.username}`, { replace: true });
       }
 
-      const [hostListings, hostReviews, hostPortfolio, repScore, followerRows, followingRows] =
-        await Promise.all([listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followerRowsPromise, followingRowsPromise]);
+      const [hostListings, hostReviews, hostPortfolio, repScore, followerRows, followingRows, hostRecommendations, hostRecommendationCount, hostPosts] =
+        await Promise.all([
+          listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followerRowsPromise, followingRowsPromise,
+          recommendationsPromise, recommendationCountPromise, postsPromise,
+        ]);
+      setRecommendations(hostRecommendations);
+      setRecommendationCount(hostRecommendationCount);
+      setPosts(hostPosts);
 
       if (repScore.data?.reliability_level) setReliabilityLevel(repScore.data.reliability_level);
       if (repScore.data?.reliability_score != null) setReliabilityScore(repScore.data.reliability_score);
@@ -469,6 +495,7 @@ export function HostProfile() {
   const web = (host as any).website;
 
   const filteredPortfolio = portfolioItems.filter(item => matchesPortfolioFilter(item, portfolioFilter));
+  const profileUrl = `${window.location.origin}/${host.username || host.id}`;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -481,134 +508,142 @@ export function HostProfile() {
         </button>
       </div>
 
-      {/* ── Cover Photo — matches Profile.tsx ── */}
-      <div className="relative h-48 md:h-64 overflow-hidden">
-        {(host as any).coverPhoto
-          ? <img src={(host as any).coverPhoto} alt="" className="w-full h-full object-cover" />
-          : <div className="w-full h-full bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700" />
-        }
-      </div>
+      <ProfileHeader
+        coverPhoto={(host as any).coverPhoto}
+        avatar={host.avatar}
+        name={host.name}
+        username={host.username}
+        isVerified={isVerified}
+        accountType={host.accountType}
+        primaryRole={primaryRole}
+        bio={host.bio}
+        location={location}
+        profileUrl={profileUrl}
+        reliabilityScore={reliabilityScore}
+        reliabilityLevel={reliabilityLevel}
+        isOwner={false}
+        onShare={() => navigate(`/share-card?userId=${resolvedId}`)}
+        onMenu={() => setShowActionSheet(true)}
+      />
+
+      <ProfileStatsRow
+        followerCount={followerCount}
+        followingCount={followingCount}
+        portfolioCount={portfolioItems.length}
+        listingsCount={listings.length}
+        onTapFollowers={() => setShowFollowers('followers')}
+        onTapFollowing={() => setShowFollowers('following')}
+        onTapPortfolio={() => setTab('portfolio')}
+        onTapListings={() => setTab('listings')}
+      />
+
+      <ProfileTabNav tab={tab} onChange={setTab} />
 
       <div className="max-w-4xl lg:max-w-5xl mx-auto px-4">
 
-        {/* ── Profile identity card — same structure as Profile.tsx ── */}
-        <div className="relative bg-white rounded-b-2xl shadow-sm pb-4 mb-3 border border-gray-100">
-
-          {/* Avatar — matches Profile: w-24 h-24, -top-12, left-4 */}
-          <div className="absolute -top-12 left-4 z-20">
-            <div className="w-24 h-24 rounded-full border-4 border-white overflow-hidden bg-gray-200 shadow-lg">
-              {host.avatar
-                ? <img src={host.avatar} alt={host.name} className="w-full h-full object-cover"/>
-                : <div className="w-full h-full flex items-center justify-center text-2xl font-black text-gray-400">
-                    {host.name?.[0]?.toUpperCase() || '?'}
-                  </div>
-              }
-            </div>
-          </div>
-
-          {/* Action buttons row — matches Profile: justify-end, pt-3 pr-3 pl-28 */}
-          <div className="flex justify-end items-center gap-1.5 pt-3 pr-3 pl-28">
-            {/* Share */}
-            <button onClick={handleShare}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors shrink-0"
-              title="Share">
-              <Share2 className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Follow */}
-            <button onClick={handleFollowClick} disabled={isPending(host.id)}
-              className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors shrink-0 ${
-                confirmUnfollow
-                  ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                  : isFollowing(host.id)
-                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}>
-              {isPending(host.id) ? <Loader2 className="w-3 h-3 animate-spin"/>
-                : confirmUnfollow ? 'Unfollow?'
-                : isFollowing(host.id) ? <><UserCheck className="w-3 h-3"/> Following</>
-                : <><UserPlus className="w-3 h-3"/> Follow</>
-              }
-            </button>
-
-            {/* Message */}
-            <button onClick={handleMessage}
-              className="flex items-center gap-1 text-[11px] font-bold text-white bg-gray-900 hover:bg-gray-800 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
-              <MessageCircle className="w-3 h-3"/> Message
-            </button>
-          </div>
-
-          {/* Name & info — matches Profile: mt-12 px-4 */}
-          <div className="mt-12 px-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-black text-gray-900">{host.name}</h1>
-              <AccountTypeBadge type={(host as any).accountType} size="sm"/>
-              {isVerified && (
-                <span className="flex items-center gap-1 text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                  <ShieldCheck className="w-3 h-3"/> Verified
-                </span>
-              )}
-              <button onClick={() => setShowTrustSheet(true)} className="flex-shrink-0">
-                <ReliabilityBadge score={reliabilityScore} level={reliabilityLevel} accountType={host.accountType} size="sm"/>
-              </button>
-            </div>
-            {host.username && <p className="text-sm text-gray-400 mt-0.5">@{host.username}</p>}
-            {primaryRole && <p className="text-xs font-semibold text-blue-600 mt-0.5">{primaryRole}</p>}
-            {host.bio && <p className="text-sm text-gray-600 mt-1 max-w-lg leading-relaxed">{host.bio}</p>}
-
-            {/* Stats row — matches Profile pattern */}
-            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
-              {location && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5"/>{location}
-                </span>
-              )}
-              {reviews.length > 0 && (
-                <span className="flex items-center gap-1">
-                  <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400"/>
-                  {avgRating.toFixed(1)} ({reviews.length})
-                </span>
-              )}
-              <span>
-                <span className="font-semibold text-gray-700">{listings.length}</span>{' '}
-                <span className="text-gray-500">listings</span>
-              </span>
-              <button onClick={() => setShowFollowers('followers')}
-                className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followerCount ?? followerUsers.length ?? (host.followers||[]).length}{' '}
-                <span className="font-normal text-gray-500">followers</span>
-              </button>
-              <button onClick={() => setShowFollowers('following')}
-                className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followingCount ?? followingUsers.length ?? (host.following||[]).length}{' '}
-                <span className="font-normal text-gray-500">following</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Tabs ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-4 overflow-hidden">
-          <div className="flex overflow-x-auto no-scrollbar">
-            {TABS.map(({ id, label }) => (
-              <button key={id} onClick={() => setTab(id)}
-                className={`px-4 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
-                  tab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* ── Tab content ── */}
-        <div className="pb-28 space-y-3">
+        {/* pb-40 -- clears both the sticky Message/Follow/More bar and the
+            global MobileBottomNav underneath it (md:hidden, so desktop
+            doesn't need this extra clearance, but the padding is harmless
+            there either way). */}
+        <div className="pb-40 space-y-3">
 
-          {/* ─── LISTINGS ─────────────────────────────────────────────── */}
+          {/* ─── ALL — full vertical overview ────────────────────────────── */}
+          {tab === 'all' && (
+            <ProfileAllTab
+              userId={host.id}
+              isOwner={false}
+              accountType={host.accountType}
+              isVerified={isVerified}
+              bio={host.bio}
+              primaryRole={primaryRole}
+              secondaryRoles={meta.secondaryRoles || (host as any).secondaryRoles || []}
+              location={location}
+              openTo={meta.collabPrefs || meta.collab || (host as any).collabPrefs || []}
+              languages={meta.languages || (host as any).languages || []}
+              skills={meta.skills || (host as any).skills || []}
+              portfolioItems={portfolioItems}
+              onOpenPortfolioItem={() => navigate(`/portfolio/${host.id}`)}
+              onViewAllPortfolio={() => navigate(`/portfolio/${host.id}`)}
+              services={listings.filter(isServiceListing)}
+              listings={listings.filter(l => !isServiceListing(l))}
+              onViewServices={() => setTab('services')}
+              onViewListings={() => setTab('listings')}
+              gear={meta.gear || (host as any).gear || []}
+              recommendations={recommendations}
+              recommendationCount={recommendationCount}
+              onViewAllRecommendations={() => setTab('recommendations')}
+              onRecommend={me && me.id !== host.id ? () => setShowRecommend(true) : undefined}
+              socialLinks={socialLinksFromUser(host)}
+            />
+          )}
+
+          {/* ─── SERVICES ─────────────────────────────────────────────── */}
+          {tab === 'services' && (
+            <div>
+              <p className="text-xs text-gray-400 mb-3">
+                {listings.filter(isServiceListing).length} service{listings.filter(isServiceListing).length !== 1 ? 's' : ''}
+              </p>
+              {listings.filter(isServiceListing).length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <Package className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
+                  <p className="text-gray-500 font-medium">No services listed yet</p>
+                </div>
+              ) : (
+                <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {listings.filter(isServiceListing).map(l => <ListingCard key={l.id} listing={l}/>)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── ACTIVITY ─────────────────────────────────────────────── */}
+          {tab === 'activity' && (
+            <div className="max-w-2xl mx-auto space-y-4">
+              {posts.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
+                  <p className="text-gray-500 font-medium">No activity yet</p>
+                </div>
+              ) : posts.map(p => <PostCard key={p.id} post={p} />)}
+            </div>
+          )}
+
+          {/* ─── RECOMMENDATIONS ──────────────────────────────────────── */}
+          {tab === 'recommendations' && (
+            <div className="max-w-2xl mx-auto">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-400">{recommendationCount} recommendation{recommendationCount !== 1 ? 's' : ''}</p>
+                {me && me.id !== host.id && (
+                  <button onClick={() => setShowRecommend(true)} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
+                    Recommend
+                  </button>
+                )}
+              </div>
+              {recommendations.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <p className="text-gray-500 font-medium">No recommendations yet.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+                  {recommendations.map(r => (
+                    <div key={r.id} className="border-t border-gray-50 pt-3 first:border-t-0 first:pt-0">
+                      <p className="text-sm font-bold text-gray-900">{r.recommender?.name ?? 'Filmons member'}</p>
+                      <p className="text-xs text-gray-400">{[r.role_snapshot, r.recommender?.city].filter(Boolean).join(' · ')}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed mt-2">"{r.body}"</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── LISTINGS — gear rentals/sales/opportunities only, Services
+              is its own tab now ─────────────────────────────────────────── */}
           {tab === 'listings' && (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs text-gray-400">{listings.length} listing{listings.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-gray-400">{listings.filter(l => !isServiceListing(l)).length} listing{listings.filter(l => !isServiceListing(l)).length !== 1 ? 's' : ''}</p>
                 <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                   <button onClick={() => setListView(false)}
                     className={`p-1.5 rounded-lg transition-colors ${!listView ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}>
@@ -621,18 +656,18 @@ export function HostProfile() {
                 </div>
               </div>
 
-              {listings.length === 0 ? (
+              {listings.filter(l => !isServiceListing(l)).length === 0 ? (
                 <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
                   <Package className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
                   <p className="text-gray-500 font-medium">No listings yet</p>
                 </div>
               ) : listView ? (
                 <div className="space-y-2">
-                  {listings.map(l => <ListingRow key={l.id} l={l}/>)}
+                  {listings.filter(l => !isServiceListing(l)).map(l => <ListingRow key={l.id} l={l}/>)}
                 </div>
               ) : (
                 <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {listings.map(l => <ListingCard key={l.id} listing={l}/>)}
+                  {listings.filter(l => !isServiceListing(l)).map(l => <ListingCard key={l.id} listing={l}/>)}
                 </div>
               )}
             </div>
@@ -764,142 +799,6 @@ export function HostProfile() {
             </div>
           )}
 
-          {/* ─── ABOUT ────────────────────────────────────────────────── */}
-          {tab === 'about' && (
-            <div className="space-y-3">
-
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Overview</h3>
-                <p className="text-sm text-gray-700 leading-relaxed">{host.bio || 'No bio added yet.'}</p>
-                {(meta.yearsExp || (host as any).years_exp) && (
-                  <p className="text-xs text-gray-500 mt-2 font-medium">
-                    {meta.yearsExp || (host as any).years_exp} years of experience
-                  </p>
-                )}
-              </div>
-
-              {(primaryRole || (meta.secondaryRoles || []).length > 0) && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Professional Identity</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {primaryRole && (
-                      <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1 rounded-full font-semibold">{primaryRole}</span>
-                    )}
-                    {(meta.secondaryRoles || (host as any).secondaryRoles || []).map((r: string) => (
-                      <span key={r} className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full">{r}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(meta.skills || (host as any).skills || []).filter(Boolean).length > 0 && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Skills & Specialties</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {(meta.skills || (host as any).skills || []).map((s: string) => (
-                      <span key={s} className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-1 rounded-full font-medium">{s}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(meta.gear || (host as any).gear || []).filter(Boolean).length > 0 && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Gear & Tools</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {(meta.gear || (host as any).gear || []).map((g: string) => (
-                      <span key={g} className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full">{g}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {location && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Location</h3>
-                  <p className="flex items-center gap-1.5 text-sm text-gray-700">
-                    <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0"/>{location}
-                  </p>
-                </div>
-              )}
-
-              {(meta.collabPrefs || meta.collab || (host as any).collabPrefs || []).filter(Boolean).length > 0 && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Collaboration Preferences</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {(meta.collabPrefs || meta.collab || (host as any).collabPrefs || []).map((c: string) => (
-                      <span key={c} className="text-xs bg-green-50 text-green-700 border border-green-100 px-2.5 py-1 rounded-full">{c}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(web || ig || yt || tt || vm || li) && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Social & External Links</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {web && (
-                      <a href={web.startsWith('http') ? web : `https://${web}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-1.5 rounded-full font-medium hover:bg-blue-100 transition-colors">
-                        <Globe className="w-3 h-3"/> {web.replace(/https?:\/\//, '').split('/')[0]}
-                      </a>
-                    )}
-                    {ig && (
-                      <a href={`https://instagram.com/${ig.replace('@', '')}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1.5 text-xs text-white px-2.5 py-1.5 rounded-full font-medium hover:opacity-90 transition-opacity"
-                        style={{ background: 'radial-gradient(circle at 30% 107%,#fdf497 0%,#fd5949 45%,#d6249f 60%,#285AEB 90%)' }}>
-                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="white" strokeWidth="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="white"/><rect x="2" y="2" width="20" height="20" rx="6" stroke="white" strokeWidth="2" fill="none"/></svg>
-                        @{ig.replace('@', '')}
-                      </a>
-                    )}
-                    {yt && (
-                      <a href={yt.startsWith('http') ? yt : `https://youtube.com/${yt}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1.5 text-xs text-white bg-red-600 hover:bg-red-700 px-2.5 py-1.5 rounded-full font-medium transition-colors">
-                        <svg className="w-3 h-3" viewBox="0 0 24 24"><polygon points="9,7 17,12 9,17" fill="white"/></svg>
-                        YouTube
-                      </a>
-                    )}
-                    {vm && (
-                      <a href={vm.startsWith('http') ? vm : `https://vimeo.com/${vm}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1.5 text-xs text-white bg-[#1ab7ea] hover:opacity-90 px-2.5 py-1.5 rounded-full font-medium transition-opacity">
-                        Vimeo
-                      </a>
-                    )}
-                    {tt && (
-                      <a href={`https://tiktok.com/${tt.startsWith('@') ? tt : '@' + tt}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1.5 text-xs text-white bg-black hover:bg-gray-900 px-2.5 py-1.5 rounded-full font-medium transition-colors">
-                        TikTok
-                      </a>
-                    )}
-                    {li && (
-                      <a href={li.startsWith('http') ? li : `https://linkedin.com/in/${li}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1.5 text-xs text-white bg-[#0077B5] hover:opacity-90 px-2.5 py-1.5 rounded-full font-medium transition-opacity">
-                        LinkedIn
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Details</h3>
-                <div className="space-y-2 text-sm text-gray-700">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Name</span>
-                    <span className="font-medium">{host.name}</span>
-                  </div>
-                  {host.username && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Username</span>
-                      <span className="font-medium">@{host.username}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          )}
-
         </div>
       </div>
 
@@ -917,6 +816,40 @@ export function HostProfile() {
       {showTrustSheet && (
         <TrustInfoSheet trust={trust} onClose={() => setShowTrustSheet(false)}/>
       )}
+
+      {showActionSheet && (
+        <ProfileActionSheet
+          isOwner={false}
+          profileUrl={profileUrl}
+          targetUserId={host.id}
+          reporterId={me?.id}
+          onClose={() => setShowActionSheet(false)}
+        />
+      )}
+
+      {showRecommend && me && (
+        <RecommendationComposeSheet
+          recommenderId={me.id}
+          recommenderRole={(me as any).primaryRole || (me as any).profileMeta?.primaryRole}
+          recipientId={host.id}
+          recipientName={host.name}
+          onClose={() => setShowRecommend(false)}
+          onSaved={() => {
+            getRecommendations(host.id, { limit: 2 }).then(setRecommendations);
+            getRecommendationCount(host.id).then(setRecommendationCount);
+            if (tab === 'recommendations') getRecommendations(host.id).then(setRecommendations);
+          }}
+        />
+      )}
+
+      <ProfileStickyActionBar
+        isFollowing={isFollowing(host.id)}
+        isPending={isPending(host.id)}
+        confirmUnfollow={confirmUnfollow}
+        onFollow={handleFollowClick}
+        onMessage={handleMessage}
+        onMore={() => setShowActionSheet(true)}
+      />
     </div>
   );
 }

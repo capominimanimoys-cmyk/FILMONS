@@ -26,7 +26,7 @@ import {
   PortfolioFeedEntry, PortfolioItem, PortfolioComment, PortfolioFeedPreviewItem,
   toggleItemLike, isItemLiked, getItemComments, addItemComment, getAlbumItems,
   isPortfolioSaved, togglePortfolioSave, deleteAlbum,
-  reportPortfolioContent, toggleCommentLike, deleteItemComment,
+  reportPortfolioContent, toggleCommentLike, deleteItemComment, logPortfolioEngagementEvent,
 } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
 
@@ -174,9 +174,9 @@ function CommentRow({
 // canModerate = the viewer owns the portfolio this item belongs to (item
 // owners can delete any comment on their own work, not just their own). ──
 function PortfolioCommentSheet({
-  itemId, itemCategory, itemSubcategory, canModerate, onClose,
+  itemId, creatorId, itemCategory, itemSubcategory, canModerate, onClose,
 }: {
-  itemId: string; itemCategory?: string; itemSubcategory?: string; canModerate: boolean; onClose: () => void;
+  itemId: string; creatorId: string; itemCategory?: string; itemSubcategory?: string; canModerate: boolean; onClose: () => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
   const [comments, setComments] = useState<PortfolioComment[] | null>(null);
@@ -217,7 +217,7 @@ function PortfolioCommentSheet({
     const body = text.trim();
     if (!body || posting) return;
     setPosting(true);
-    const c = await addItemComment(itemId, user.id, body, replyingTo?.id);
+    const c = await addItemComment(itemId, user.id, body, replyingTo?.id, creatorId);
     setPosting(false);
     if (!c) { toast.error('Could not post comment'); return; }
     const withAuthor: PortfolioComment = { ...c, author: { id: user.id, name: user.name, username: user.username ?? null, avatar_url: user.avatar ?? null } };
@@ -585,7 +585,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
     const next = !liked;
     setLiked(next);
     setLikesCount(c => c + (next ? 1 : -1));
-    const ok = await toggleItemLike(itemForLikes.id, user.id, !next);
+    const ok = await toggleItemLike(itemForLikes.id, user.id, !next, entry.creator.id);
     if (!ok) { setLiked(!next); setLikesCount(c => c + (next ? -1 : 1)); toast.error('Could not update like'); return; }
     logPortfolioInteraction(user.id, { category: itemForLikes.category, subcategory: itemForLikes.subcategory }, next ? 'like' : 'unlike');
   };
@@ -604,6 +604,10 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
 
   const handleShare = async () => {
     const url = `${window.location.origin}/portfolio/${entry.creator.id}`;
+    // Only attributable to a specific item when this card IS one (not an
+    // album card) -- portfolio_engagement_events.item_id is NOT NULL, and
+    // there's no single item to credit an album/profile-level share to.
+    if (itemForLikes) logPortfolioEngagementEvent(entry.creator.id, itemForLikes.id, 'share', user?.id);
     if (navigator.share) { navigator.share({ url, title: entry.creator.name }).catch(() => {}); return; }
     try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };
@@ -679,7 +683,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
           same as Portfolio.tsx's own createPortal(<ItemActionsSheet/>...)
           pattern for its three-dot menu. */}
       {showComments && entry.type === 'item' && createPortal(
-        <PortfolioCommentSheet itemId={entry.item.id} itemCategory={entry.item.category} itemSubcategory={entry.item.subcategory} canModerate={isOwn} onClose={() => setShowComments(false)} />,
+        <PortfolioCommentSheet itemId={entry.item.id} creatorId={entry.creator.id} itemCategory={entry.item.category} itemSubcategory={entry.item.subcategory} canModerate={isOwn} onClose={() => setShowComments(false)} />,
         document.body,
       )}
       {showMenu && createPortal(

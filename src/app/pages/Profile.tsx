@@ -36,12 +36,18 @@ import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, type PortfolioItem } from '../lib/portfolioApi';
+import { isServiceListing } from '../lib/filmSearch';
+import { useFollowCounts } from '../lib/useFollowCounts';
+import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
+import { ProfileHeader } from '../components/profile/ProfileHeader';
+import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
+import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
+import { ProfileAllTab } from '../components/profile/ProfileAllTab';
+import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
+import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
 
 // ── Data ────────────────────────────────────────────────────────────────────
-// V1: marketplace-focused tabs only. Feed/social tabs are planned for V2.
-type Tab = 'portfolio' | 'listings' | 'reviews' | 'about' | 'liked';
-
-const TAB_IDS: Tab[] = ['portfolio', 'listings', 'reviews', 'about', 'liked'];
+type Tab = ProfileTab;
 
 // Every static top-level route segment in routes.tsx -- a username matching
 // one of these would make that page unreachable at filmons.app/<name> since
@@ -529,21 +535,20 @@ function PortfolioDetailSheet({ item, onClose }: { item: PortfolioItem; onClose:
 export function Profile() {
   const { user, isAuthenticated, updateUser } = useAuth();
   const T = useT();
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'portfolio', label: 'Portfolio' },
-    { id: 'listings',  label: T('profile.listings_tab') || 'Listings' },
-    { id: 'reviews',   label: T('profile.reviews')      || 'Reviews'  },
-    { id: 'about',     label: T('profile.about')        || 'About'    },
-    { id: 'liked',     label: 'Liked' },
-  ];
+  const TABS = PROFILE_TABS;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { getAllPosts, mergePosts, updatePost } = usePostStore();
 
+  // 'all' is the default landing tab (was 'listings') -- the All tab is now
+  // the full vertical overview, not just a bio display, so it's the right
+  // default per spec ("the All tab must work as one long vertically
+  // scrollable profile"). "Portfolio" still always navigates away to the
+  // dedicated /portfolio page rather than rendering inline (see switchTab).
   const [tab, setTab] = useState<Tab>(() => {
     const t = searchParams.get('tab') as Tab;
-    if (!t || t === 'portfolio') return 'listings';
-    return TABS.find(x => x.id === t) ? t : 'listings';
+    if (!t || t === 'portfolio') return 'all';
+    return TABS.find(x => x.id === t) ? t : 'all';
   });
 
   // Content state
@@ -603,8 +608,10 @@ export function Profile() {
   const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
   const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
-  const [followerCount,    setFollowerCount]    = useState<number | null>(null);
-  const [followingCount,   setFollowingCount]   = useState<number | null>(null);
+  // Live, realtime-synced counts (src/app/lib/useFollowCounts.ts) -- was a
+  // hand-rolled one-shot Supabase count query here before, duplicating what
+  // Portfolio.tsx/HostProfile.tsx already centralize in this hook.
+  const { followerCount, followingCount } = useFollowCounts(user?.id);
 
   // Media upload
   const avatarRef = useRef<HTMLInputElement>(null);
@@ -637,8 +644,21 @@ export function Profile() {
   const [skills,      setSkills]      = useState<string[]>([]);
   const [gear,        setGear]        = useState<string[]>([]);
   const [gearInput,   setGearInput]   = useState('');
+  const [languages,   setLanguages]   = useState<string[]>([]);
+  const [facebook,    setFacebook]    = useState('');
+  const [xHandle,     setXHandle]     = useState('');
   const [yearsExp,    setYearsExp]    = useState('');
   const [collab,      setCollab]      = useState<string[]>([]);
+
+  // Redesigned Profile page: About/Skills/Gear/Social are now read-only
+  // display sections on the All tab, all editable via the same AboutEditor
+  // form opened as a full-screen overlay (not a tab anymore) -- focusSection
+  // opens straight to the accordion matching whichever section's Edit
+  // link was tapped.
+  const [showEditProfile, setEditProfileSection] = useState<'about' | 'skills' | 'gear' | 'social' | null>(null);
+  const [showActionSheet, setShowActionSheet]     = useState(false);
+  const [recommendations,      setRecommendations]      = useState<Recommendation[]>([]);
+  const [recommendationCount,  setRecommendationCount]  = useState(0);
 
   // Auth guard
   // Sync badge prefs from settings page (localStorage bridge)
@@ -684,6 +704,17 @@ export function Profile() {
     if (t && TABS.find(x => x.id === t)) setTab(t);
   }, [searchParams.get('tab')]);
 
+  // /profile?edit=about|skills|gear|social — opens the full-screen
+  // AboutEditor overlay straight to that section, e.g. Settings' "Account"
+  // row links here instead of the old (now-removed) About tab.
+  useEffect(() => {
+    const e = searchParams.get('edit');
+    if (e === 'about' || e === 'skills' || e === 'gear' || e === 'social') {
+      setEditProfileSection(e);
+      setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
+    }
+  }, [searchParams.get('edit')]); // eslint-disable-line
+
   function initAboutForm() {
     if (!user) return;
     setDisplayName(user.name || '');
@@ -701,6 +732,9 @@ export function Profile() {
     setSecondaryRoles((user as any).secondaryRoles || meta.secondaryRoles || []);
     setSkills((user as any).skills     || meta.skills     || []);
     setGear((user as any).gear         || meta.gear       || []);
+    setLanguages((user as any).languages || meta.languages || []);
+    setFacebook((user as any).facebook || meta.facebook || '');
+    setXHandle((user as any).x         || meta.x         || '');
     setYearsExp(String((user as any).years_exp || meta.yearsExp || ''));
     setCollab((user as any).collabPrefs || meta.collab    || []);
   }
@@ -713,18 +747,22 @@ export function Profile() {
     if (!user) return;
     setLoading(true);
     try {
-      const [myPosts, myListings, myReviews, myReceivedReviews, myPortfolio] = await Promise.all([
+      const [myPosts, myListings, myReviews, myReceivedReviews, myPortfolio, myRecommendations, myRecommendationCount] = await Promise.all([
         postsApi.getUserPosts(user.id).catch(() => []),
         listingsApi.getUserListings(user.id).catch(() => []),
         reviewsApi.getUserReviews(user.id).catch(() => []),
         reviewsApi.getReceivedReviews(user.id).catch(() => []),
         getPortfolioItems(user.id).catch(() => []),
+        getRecommendations(user.id, { limit: 2 }).catch(() => []),
+        getRecommendationCount(user.id).catch(() => 0),
       ]);
       setPosts(myPosts);
       setListings(myListings);
       setReviews(myReviews);
       setReceivedReviews(myReceivedReviews);
       setPortfolioItems(myPortfolio);
+      setRecommendations(myRecommendations);
+      setRecommendationCount(myRecommendationCount);
       mergePosts(myPosts);
     } finally { setLoading(false); }
   }
@@ -819,8 +857,14 @@ export function Profile() {
   useEffect(() => {
     // Only fetch once per mount -- switching back to this tab after having
     // already loaded it shouldn't re-run the full fetch every time.
-    if (tab === 'liked' && user?.id && !savedFetchedOnce) loadSaved();
+    if (tab === 'activity' && user?.id && !savedFetchedOnce) loadSaved();
   }, [tab, user?.id]); // eslint-disable-line
+
+  // The dedicated Recommendations tab needs the full list -- load() above
+  // only fetches a 2-item preview for the All tab's section.
+  useEffect(() => {
+    if (tab === 'recommendations' && user?.id) getRecommendations(user.id).then(setRecommendations);
+  }, [tab, user?.id]);
 
   const loadTagged = async () => {
     if (!user?.id) return;
@@ -1039,9 +1083,12 @@ export function Profile() {
         secondaryRoles: secondaryRoles,
         skills:         skills,
         gear:           gear,
+        languages:      languages,
+        facebook:       facebook.trim() || undefined,
+        x:              xHandle.trim()  || undefined,
         collabPrefs:    collab,
         // Keep profileMeta for backward compat
-        profileMeta: { instagram, youtube, tiktok, primaryRole, secondaryRoles, skills, gear, yearsExp, collab },
+        profileMeta: { instagram, youtube, tiktok, primaryRole, secondaryRoles, skills, gear, languages, facebook, x: xHandle, yearsExp, collab },
       } as any);
       toast.success('Profile saved!');
     } catch (e: any) {
@@ -1086,19 +1133,6 @@ export function Profile() {
     if (showFollowers) loadFollowUsers();
   }, [showFollowers]);
 
-  // Header follower/following counts — fetched on mount so they're correct
-  // before the modal is ever opened, same `follows`-table source as above.
-  useEffect(() => {
-    if (!user?.id) return;
-    Promise.all([
-      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
-      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
-    ]).then(([fc, fg]) => {
-      setFollowerCount(fc.count ?? null);
-      setFollowingCount(fg.count ?? null);
-    });
-  }, [user?.id]);
-
   if (!user) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <FilmonsBrandLoader size="lg"/>
@@ -1117,147 +1151,91 @@ export function Profile() {
   // Received, not the reviews you've written about other people/listings.
   const avgRating = receivedReviews.length > 0
     ? receivedReviews.reduce((s, r) => s + r.rating, 0) / receivedReviews.length : 0;
+  const locationDisplay = (user as any).location || [user.city, (user as any).province].filter(Boolean).join(', ');
+  const profileUrl = `${window.location.origin}/${user.username || user.id}`;
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+      <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
 
-      {/* ── Cover ── */}
-      <div className="relative h-48 md:h-64 overflow-hidden group cursor-pointer"
-        onClick={() => setShowCoverSheet(true)}>
-        {coverImg
-          ? <img src={coverImg} alt="Cover" className="w-full h-full object-cover" />
-          : <div className="w-full h-full bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700" />
-        }
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none">
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 bg-white/90 text-gray-800 text-sm font-semibold px-4 py-2 rounded-xl shadow">
-            {uploadingCover ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-            {uploadingCover ? 'Uploading…' : 'Change cover photo'}
-          </div>
-        </div>
-        <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
-      </div>
+      <ProfileHeader
+        coverPhoto={coverImg}
+        avatar={user.avatar}
+        name={user.name}
+        username={user.username}
+        isVerified={user.isVerified}
+        accountType={user.accountType}
+        primaryRole={primaryRole}
+        bio={user.bio}
+        location={locationDisplay}
+        profileUrl={profileUrl}
+        reliabilityScore={rep && showRentalBadge ? rep.reliability_score : undefined}
+        reliabilityLevel={rep && showRentalBadge ? rep.reliability_level : undefined}
+        isOwner
+        onTapCover={() => setShowCoverSheet(true)}
+        onTapAvatar={() => setShowAvatarSheet(true)}
+        onEditProfile={() => setEditProfileSection('about')}
+        onShare={() => { captureSnapshot(); navigate('/share-card'); }}
+        onMenu={() => setShowActionSheet(true)}
+      />
 
-      <div className="max-w-4xl lg:max-w-5xl mx-auto px-4">
+      <ProfileStatsRow
+        followerCount={followerCount}
+        followingCount={followingCount}
+        portfolioCount={portfolioItems.length}
+        listingsCount={listings.length}
+        onTapFollowers={() => setShowFollowers('followers')}
+        onTapFollowing={() => setShowFollowers('following')}
+        onTapPortfolio={() => switchTab('portfolio')}
+        onTapListings={() => switchTab('listings')}
+      />
 
-        {/* ── Profile identity card ── */}
-        <div className="relative bg-white rounded-b-2xl shadow-sm pb-4 mb-3 border border-gray-100">
-          {/* Avatar — z-20 so it's always above buttons row */}
-          <div className="absolute -top-12 left-4 cursor-pointer group z-20"
-            onClick={() => setShowAvatarSheet(true)}
-            onContextMenu={e => { e.preventDefault(); if (user?.avatar) setShowAvatarFull(true); }}
-            onTouchStart={e => {
-              const t = setTimeout(() => setShowAvatarFull(true), 600);
-              const el = e.currentTarget;
-              const clear = () => { clearTimeout(t); el.removeEventListener('touchend', clear); };
-              el.addEventListener('touchend', clear, { once: true });
-            }}>
-            <div className="relative w-24 h-24">
-              <div data-animate-id="profile-avatar" className="w-24 h-24 rounded-full border-4 border-white overflow-hidden bg-gray-200 shadow-lg">
-                {user.avatar
-                  ? <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center text-2xl font-black text-gray-400">
-                      {user.name?.[0]?.toUpperCase() || '?'}
-                    </div>
-                }
-              </div>
-              <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                {uploadingAvatar
-                  ? <Loader2 className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 animate-spin" />
-                  : <Camera className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                }
-              </div>
-              {isCreatorPlus(user.accountType) && (
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-full flex items-center justify-center border-2 border-white">
-                  {/* Highest tier wins here too -- this used to hardcode
-                      "C+" for every Creator+-eligible tier, so a Business
-                      account's avatar showed a C+ corner badge instead of
-                      a Business one. */}
-                  <span className="text-[8px] text-white font-black">
-                    {(() => { const t = normalizeTier(user.accountType); return t === 'business' ? 'B' : t === 'professional' ? 'P' : 'C+'; })()}
-                  </span>
-                </div>
-              )}
-            </div>
-            <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-          </div>
+      <ProfileTabNav tab={tab} onChange={switchTab} />
 
-          {/* Buttons — right-aligned, pl-28 clears the 96px avatar + 8px gap on 375px screens */}
-          <div className="flex justify-end items-center gap-1.5 pt-3 pr-3 pl-28">
-            {/* Settings — icon only */}
-            <button onClick={() => { captureSnapshot(); navigate('/settings'); }}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors shrink-0"
-              title="Settings">
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-            {/* Share profile */}
-            <button onClick={() => navigate('/share-card')}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors shrink-0"
-              title="Share">
-              <Share2 className="w-3.5 h-3.5" />
-            </button>
-            {/* Edit profile */}
-            <button onClick={() => switchTab('about')}
-              className="flex items-center gap-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
-              <Edit3 className="w-3 h-3" />Edit profile
-            </button>
-          </div>
-
-          {/* Name & info */}
-          <div className="mt-12 px-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 data-animate-id="profile-name" className="text-xl font-black text-gray-900">{user.name}</h1>
-              <AccountTypeBadge type={user.accountType} size="sm" />
-              {user.isVerified && (
-                <span className="flex items-center gap-1 text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                  <ShieldCheck className="w-3 h-3" /> Verified
-                </span>
-              )}
-            </div>
-            {user.username && <p className="text-sm text-gray-400">@{user.username}</p>}
-            {primaryRole && (
-              <p className="text-xs font-semibold text-blue-600 mt-0.5">{primaryRole}</p>
-            )}
-            <div className="mt-1">
-              {rep && showRentalBadge && <ReliabilityBadge score={rep.reliability_score} level={rep.reliability_level} accountType={user.accountType} size="sm"/>}
-            </div>
-            {user.bio && <p className="text-sm text-gray-600 mt-1 max-w-lg leading-relaxed">{user.bio}</p>}
-            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
-              {user.city && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{user.city}</span>}
-              {receivedReviews.length > 0 && <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />{avgRating.toFixed(1)} ({receivedReviews.length})</span>}
-              <button onClick={() => switchTab('listings')}
-                className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {listings.length} <span className="font-normal text-gray-500">listings</span>
-              </button>
-              <button onClick={() => setShowFollowers('followers')}
-                className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followerCount ?? followerUsers.length} <span className="font-normal text-gray-500">{T('profile.followers')}</span>
-              </button>
-              <button onClick={() => setShowFollowers('following')}
-                className="font-semibold text-gray-700 hover:text-blue-600 transition-colors">
-                {followingCount ?? followingUsers.length} <span className="font-normal text-gray-500">{T('profile.following')}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Tab bar ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-4 overflow-hidden">
-          <div className="flex overflow-x-auto no-scrollbar">
-            {TABS.map(({ id, label }) => (
-              <button key={id} onClick={() => switchTab(id)}
-                className={`px-4 py-3.5 text-sm font-semibold whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
-                  tab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="max-w-4xl lg:max-w-5xl mx-auto">
 
         {/* ── Content ── */}
-        <div className="pb-24 space-y-4">
+        <div className="pb-24">
 
-          {/* PORTFOLIO — creator showcase */}
+          {/* ALL — full vertical overview */}
+          {tab === 'all' && (
+            <ProfileAllTab
+              userId={user.id}
+              isOwner
+              accountType={user.accountType}
+              isVerified={user.isVerified}
+              bio={user.bio}
+              primaryRole={primaryRole}
+              secondaryRoles={secondaryRoles}
+              location={locationDisplay}
+              openTo={collab}
+              languages={languages}
+              onEditAbout={() => setEditProfileSection('about')}
+              skills={skills}
+              onEditSkills={() => setEditProfileSection('skills')}
+              portfolioItems={portfolioItems}
+              onOpenPortfolioItem={item => { setPortfolioDetail(item); }}
+              onViewAllPortfolio={() => navigate('/portfolio')}
+              services={listings.filter(isServiceListing)}
+              listings={listings.filter(l => !isServiceListing(l))}
+              lockedListingIds={lockedOpportunityIds}
+              onViewServices={() => switchTab('services')}
+              onViewListings={() => switchTab('listings')}
+              gear={gear}
+              onEditGear={() => setEditProfileSection('gear')}
+              recommendations={recommendations}
+              recommendationCount={recommendationCount}
+              onViewAllRecommendations={() => switchTab('recommendations')}
+              socialLinks={socialLinksFromUser(user)}
+              onEditSocialLinks={() => setEditProfileSection('social')}
+            />
+          )}
+
+          {/* PORTFOLIO — always navigates to the dedicated /portfolio page
+              (see switchTab) -- this branch is unreachable through normal
+              navigation, kept only as a defensive fallback for a stale
+              ?tab=portfolio URL. */}
           {tab === 'portfolio' && (
             <div>
               {/* About summary */}
@@ -1374,11 +1352,6 @@ export function Profile() {
                 </div>
               )}
 
-              {/* Detail lightbox */}
-              {portfolioDetail && (
-                <PortfolioDetailSheet item={portfolioDetail} onClose={() => setPortfolioDetail(null)} />
-              )}
-
               {/* Add sheet */}
               {showAddPortfolio && (
                 <AddPortfolioItemSheet
@@ -1389,593 +1362,26 @@ export function Profile() {
             </div>
           )}
 
-          {/* ABOUT PREVIEW — kept for the sidebar inside the old grid, now unused; real about is the About tab */}
-          {(false as boolean) && tab === ('_about_preview' as Tab) && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-4">
-                <ReliabilityCard userId={user.id} accountType={user.accountType} />
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-gray-900">About</h3>
-                    <button onClick={() => switchTab('about')} className="text-xs text-blue-600 font-semibold hover:underline">Edit →</button>
-                  </div>
-
-                  {/* Bio */}
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    {user.bio || <span className="italic text-gray-400">No bio yet.</span>}
-                  </p>
-
-                  {/* Primary role */}
-                  {((user as any).primaryRole || (user as any).profileMeta?.primaryRole) && (
-                    <p className="text-xs font-semibold text-blue-600 mt-2">
-                      {(user as any).primaryRole || (user as any).profileMeta?.primaryRole}
-                    </p>
-                  )}
-
-                  {/* Location + years exp */}
-                  <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
-                    {((user as any).location || user.city) && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-gray-400"/>
-                        {(user as any).location || [user.city, user.province].filter(Boolean).join(', ')}
-                      </span>
-                    )}
-                    {((user as any).years_exp || (user as any).profileMeta?.yearsExp) && (
-                      <span>
-                        {(user as any).years_exp || (user as any).profileMeta?.yearsExp} yrs experience
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Secondary roles */}
-                  {(((user as any).secondaryRoles || (user as any).profileMeta?.secondaryRoles) || []).length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Also does</p>
-                      <div className="flex flex-wrap gap-1">
-                        {((user as any).secondaryRoles || (user as any).profileMeta?.secondaryRoles || []).slice(0, 5).map((r: string) => (
-                          <span key={r} className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{r}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Skills */}
-                  {(((user as any).skills || (user as any).profileMeta?.skills) || []).length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Skills</p>
-                      <div className="flex flex-wrap gap-1">
-                        {((user as any).skills || (user as any).profileMeta?.skills || []).slice(0, 6).map((s: string) => (
-                          <span key={s} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full font-medium">{s}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Gear */}
-                  {(((user as any).gear || (user as any).profileMeta?.gear) || []).length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Gear</p>
-                      <div className="flex flex-wrap gap-1">
-                        {((user as any).gear || (user as any).profileMeta?.gear || []).slice(0, 4).map((g: string) => (
-                          <span key={g} className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{g}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Social links — all clickable */}
-                  {(() => {
-                    const ig  = (user as any).instagram  || (user as any).profileMeta?.instagram;
-                    const yt  = (user as any).youtube    || (user as any).profileMeta?.youtube;
-                    const tt  = (user as any).tiktok     || (user as any).profileMeta?.tiktok;
-                    const vm  = (user as any).vimeo      || (user as any).profileMeta?.vimeo;
-                    const web = (user as any).website;
-                    if (!ig && !yt && !tt && !vm && !web) return null;
-                    return (
-                      <div className="mt-3 pt-3 border-t border-gray-50">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Links</p>
-                        <div className="flex flex-wrap gap-2">
-                          {web && (
-                            <a href={web.startsWith('http') ? web : `https://${web}`} target="_blank" rel="noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full font-medium hover:bg-blue-100 transition-colors">
-                              🌐 {web.replace(/https?:\/\//,'').split('/')[0]}
-                            </a>
-                          )}
-                          {ig && (
-                            <a href={`https://instagram.com/${ig.replace('@','')}`} target="_blank" rel="noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-white rounded-full px-2.5 py-1 font-medium hover:opacity-90 transition-opacity"
-                              style={{background:'radial-gradient(circle at 30% 107%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285AEB 90%)'}}>
-                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="white" strokeWidth="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="white"/><rect x="2" y="2" width="20" height="20" rx="6" stroke="white" strokeWidth="2" fill="none"/></svg>
-                              @{ig.replace('@','')}
-                            </a>
-                          )}
-                          {yt && (
-                            <a href={yt.startsWith('http') ? yt : `https://youtube.com/${yt}`} target="_blank" rel="noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-white bg-red-600 hover:bg-red-700 px-2.5 py-1 rounded-full font-medium transition-colors">
-                              <svg className="w-3 h-3" viewBox="0 0 24 24"><polygon points="9,7 17,12 9,17" fill="white"/></svg>
-                              YouTube
-                            </a>
-                          )}
-                          {tt && (
-                            <a href={`https://tiktok.com/${tt.startsWith('@') ? tt : '@'+tt}`} target="_blank" rel="noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-white bg-black hover:bg-gray-900 px-2.5 py-1 rounded-full font-medium transition-colors">
-                              <span className="text-[10px] font-black">TT</span>
-                              {tt}
-                            </a>
-                          )}
-                          {vm && (
-                            <a href={`https://vimeo.com/${vm.replace(/https?:\/\/vimeo\.com\//,'')}`} target="_blank" rel="noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-white bg-[#1AB7EA] hover:opacity-90 px-2.5 py-1 rounded-full font-medium transition-opacity">
-                              <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M19.5 8.5c-.1 2.1-1.5 5-4.4 8.6C12.2 20.9 9.8 22 7.8 22c-1.1 0-2.1-.9-2.8-2.8L4 14.4C3.4 12.5 2.8 11.5 2 11.5l-1.5 1.1-.9-1.2C.8 10.4 2 9.2 3.3 8c1.5-1.4 2.8-2.1 3.8-2.2 2-.2 3.2 1.2 3.6 4.1.5 3.1.8 5 1 5.7.6 2.6 1.2 3.9 1.8 3.9.5 0 1.3-.8 2.3-2.5 1-1.6 1.5-2.9 1.6-3.8.1-1.4-.4-2.1-1.5-2.1-.5 0-1.1.1-1.7.4.1-3.1 2.4-4.7 4.3-4.5l.9-.5z" fill="white"/></svg>
-                              Vimeo
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Collab prefs */}
-                  {(((user as any).collabPrefs || (user as any).profileMeta?.collab) || []).length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-50">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Open to</p>
-                      <div className="flex flex-wrap gap-1">
-                        {((user as any).collabPrefs || (user as any).profileMeta?.collab || []).slice(0, 3).map((c: string) => (
-                          <span key={c} className="text-[11px] bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full">{c}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-              <div className="md:col-span-2 space-y-4">
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                  <button onClick={() => setShowCompose(true)}
-                    className="w-full text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-3 text-left hover:bg-gray-100 transition-colors">
-                    What's on your mind?
-                  </button>
-                </div>
-                {/* Listings highlight grid */}
-                {showProfileLoader ? (
-                  <div className="flex items-center justify-center py-10">
-                    <FilmonsBrandLoader size="sm" label="Loading listings"/>
-                  </div>
-                ) : listings.length > 0 ? (
-                  <>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Listings</p>
-                    <div className="pop-stagger grid grid-cols-2 gap-2">
-                      {listings.slice(0, 4).map(l => <ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} locked={lockedOpportunityIds.has(l.id)} />)}
-                    </div>
-                    {listings.length > 4 && (
-                      <button onClick={() => switchTab('listings')} className="w-full mt-2 bg-white border border-gray-200 rounded-2xl py-3 text-sm font-semibold text-blue-600 hover:bg-gray-50">
-                        See all {listings.length} listings →
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-center py-6">
-                    <Package className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                    <Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create your first listing →</Link>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* POSTS — V2 */}
-          {(false as boolean) && tab === ('posts' as Tab) && (
-            <>
-              <div id="posts-section" />
-              <div className="max-w-2xl mx-auto space-y-4">
+          {/* ACTIVITY — the user's own posts. Was previously fetched
+              (postsApi.getUserPosts) but never rendered anywhere on this
+              page; this is that fetch's first live use. */}
+          {tab === 'activity' && (
+            <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <button onClick={() => setShowCompose(true)} className="w-full text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-3 text-left hover:bg-gray-100">What's on your mind?</button>
               </div>
               {showProfileLoader ? <div className="flex justify-center py-10"><FilmonsBrandLoader size="md" label="Loading posts"/></div>
                 : posts.length === 0
-                  ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No posts yet</p></div>
-                  : posts.map(p => <PostCard key={p.id} post={p} onDeleted={(id)=>{ 
+                  ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No activity yet</p></div>
+                  : posts.map(p => <PostCard key={p.id} post={p} onDeleted={(id)=>{
                     setPosts(prev=>prev.filter(x=>x.id!==id));
                     try { localStorage.removeItem(`filmons_posts_${user?.id}`); } catch {}
                   }} onLikeToggled={handleLikeToggled} />)
               }
-            </div>
-            </>
-          )}
 
-          {/* TAGGED — V2 */}
-          {(false as boolean) && tab === ('tagged' as Tab) && (
-            <div>
-              {loadingTagged ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
-                </div>
-              ) : taggedPosts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-2">
-                  <p className="text-sm font-semibold text-gray-400">No tagged posts yet</p>
-                  <p className="text-xs text-gray-300">Posts where you're tagged will appear here</p>
-                </div>
-              ) : taggedPosts.map(post => (
-                <div key={post.id} className="relative">
-                  <div className="absolute top-14 left-4 z-10 bg-purple-50 border border-purple-100 rounded-full px-2.5 py-0.5">
-                    <p className="text-[10px] font-black text-purple-600">🏷 Tagged in this post</p>
-                  </div>
-                  <PostCard post={post}/>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {(false as boolean) && tab === ('reposts' as Tab) && (
-            <div>
-              {loadingReposts ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
-                </div>
-              ) : repostedPosts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-2">
-                  <p className="text-sm font-semibold text-gray-400">No reposts yet</p>
-                  <p className="text-xs text-gray-300">Content you've reposted will appear here</p>
-                </div>
-              ) : (
-                <div className="space-y-0">
-                  {repostedPosts.map(p => {
-                    const reposters = repostersMap[p.id] ?? [];
-                    return (
-                      <div key={p.id}>
-                        {/* "Reposted by" banner */}
-                        {reposters.length > 0 && (
-                          <button
-                            onClick={() => setSheetReposters(reposters)}
-                            className="w-full flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 hover:bg-gray-100 transition-colors text-left"
-                          >
-                            <Repeat2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                            <span className="text-xs text-gray-500 truncate">
-                              <span className="font-semibold text-gray-700">Reposted by </span>
-                              {reposters.slice(0, 2).map((r: any, i: number) => (
-                                <span key={r.id}>
-                                  <span className="font-semibold text-gray-800">{r.name || r.username}</span>
-                                  {i === 0 && reposters.length > 1 ? ', ' : ''}
-                                </span>
-                              ))}
-                              {reposters.length > 2 && (
-                                <span className="text-gray-400"> +{reposters.length - 2} more</span>
-                              )}
-                            </span>
-                          </button>
-                        )}
-                        <PostCard post={p} onLikeToggled={handleLikeToggled} userRepostPostId={user?.id} />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Reposters bottom sheet */}
-              {sheetReposters && (
-                <div className="fixed inset-0 z-50 flex items-end" onClick={() => setSheetReposters(null)}>
-                  <div className="absolute inset-0 bg-black/40" />
-                  <div
-                    className="relative w-full bg-white rounded-t-2xl max-h-[70vh] flex flex-col"
-                    style={{ animation: 'slideUp 0.28s cubic-bezier(0.32,0.72,0,1)' }}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                      <h3 className="text-sm font-bold text-gray-900">
-                        Reposted by {sheetReposters.length} {sheetReposters.length === 1 ? 'person' : 'people'}
-                      </h3>
-                      <button onClick={() => setSheetReposters(null)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
-                        <X className="w-4 h-4 text-gray-500" />
-                      </button>
-                    </div>
-                    <div className="overflow-y-auto overscroll-contain py-2">
-                      {sheetReposters.map((r: any) => (
-                        <button key={r.id} onClick={() => { setSheetReposters(null); navigate(`/host/${r.id}`); }}
-                          className="flex items-center gap-3 w-full px-4 py-3 hover:bg-gray-50 transition-colors text-left">
-                          <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden shrink-0 flex items-center justify-center">
-                            {r.avatar_url
-                              ? <img src={r.avatar_url} alt="" className="w-full h-full object-cover" />
-                              : <span className="text-sm font-bold text-gray-400">{(r.name || r.username || '?')[0].toUpperCase()}</span>
-                            }
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{r.name || r.username}</p>
-                            {r.username && <p className="text-xs text-gray-400 truncate">@{r.username}</p>}
-                          </div>
-                          {r.id === user?.id && (
-                            <span className="ml-auto text-[10px] font-bold text-green-500 bg-green-50 px-2 py-0.5 rounded-full shrink-0">You</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === 'listings' && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <p className="font-bold text-gray-900">{listings.length} listing{listings.length!==1?'s':''}</p>
-                <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
-              </div>
-              {showProfileLoader
-                ? <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md" label="Loading listings"/></div>
-                : listings.length === 0
-                ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
-                : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} locked={lockedOpportunityIds.has(l.id)} />)}</div>
-              }
-            </div>
-          )}
-
-          {/* LIKED — V2 */}
-          {(false as boolean) && tab === ('liked' as Tab) && (
-            <div className="max-w-2xl mx-auto space-y-4">
-              {likedPosts.length===0
-                ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><ThumbsUp className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">Posts you like appear here</p></div>
-                : likedPosts.map(p=><PostCard key={p.id} post={p} onLikeToggled={handleLikeToggled} />)
-              }
-            </div>
-          )}
-
-          {/* SAVED — V2 */}
-          {(false as boolean) && tab === ('saved' as Tab) && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="font-bold text-gray-900 mb-3">Saved Listings</h3>
-                {savedListings.length===0
-                  ? <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100"><Bookmark className="w-8 h-8 text-gray-200 mx-auto mb-2" /><p className="text-xs text-gray-400">Save listings to see them here</p></div>
-                  : <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {savedListings.map((fav:any)=>{
-                        const d=fav.item_data||{};
-                        return (
-                          <Link key={fav.id} to={`/listing/${fav.item_id}`} className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="aspect-[4/3] bg-gray-100">{d.image&&<img src={d.image} alt="" className="w-full h-full object-cover" loading="lazy"/>}</div>
-                            <div className="p-3"><p className="text-sm font-semibold text-gray-900 truncate">{d.title||'Listing'}</p>{d.price&&<p className="text-xs text-gray-400">${d.price} CAD</p>}</div>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                }
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900 mb-3">Saved Posts</h3>
-                <div className="max-w-2xl space-y-4">
-                  {savedPosts.length===0
-                    ? <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100"><Bookmark className="w-8 h-8 text-gray-200 mx-auto mb-2" /><p className="text-xs text-gray-400">Posts you bookmark appear here</p></div>
-                    : savedPosts.map(p=><PostCard key={p.id} post={p} onLikeToggled={handleLikeToggled}/>)
-                  }
-                </div>
-              </div>
-            </div>
-          )}
-
-
-          {/* SOUNDS — V2 feature, not shown in V1 */}
-          {(false as boolean) && tab === ('sounds' as Tab) && (
-            <div className="space-y-8">
-              {/* User's public sounds */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-gray-900">
-                    {'My Sounds'}
-                  </h3>
-                  {true && (
-                    <button onClick={()=>setShowMusicUploader(true)}
-                      className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
-                      + Upload Sound
-                    </button>
-                  )}
-                </div>
-                {loadingSnds && userSounds.length === 0 ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
-                  </div>
-                ) : userSounds.length === 0 ? (
-                  <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100">
-                    <Music2 className="w-8 h-8 mx-auto mb-2 text-gray-400"/>
-                    <p className="text-sm font-semibold text-gray-500">No public sounds yet</p>
-                    <p className="text-xs text-gray-400 mt-1">Upload original audio to add it to your library</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {userSounds.map((track: any) => (
-                      <div key={track.id}
-                        className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 flex items-center gap-3">
-                        {track.artwork_url
-                          ? <img src={track.artwork_url} className="w-12 h-12 rounded-xl object-cover shrink-0"/>
-                          : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                              <Music2 className="w-5 h-5 text-gray-400"/>
-                            </div>}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-gray-900 truncate">{track.title}</p>
-                          <p className="text-xs text-gray-400 truncate">
-                            {(track.category ?? 'original_audio').replace(/_/g,' ')}
-                            {track.use_count > 0 && <span className="ml-1.5 text-blue-500">· {track.use_count.toLocaleString()} uses</span>}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Status badge */}
-                          {track.visibility === 'private' && (
-                            <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Private</span>
-                          )}
-                          {track.copyright_status === 'pending' && (
-                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Review</span>
-                          )}
-                          {track.copyright_status === 'blocked' && (
-                            <span className="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Blocked</span>
-                          )}
-                          {/* Scissors — trim segment */}
-                          <button
-                            onClick={e=>{e.stopPropagation();setTrimmingSound(track);}}
-                            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-gray-100 active:bg-gray-200"
-                            title="Trim segment">
-                            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
-                              <line x1="20" y1="4" x2="8.12" y2="15.88"/>
-                              <line x1="14.47" y1="14.48" x2="20" y2="20"/>
-                              <line x1="8.12" y1="8.12" x2="12" y2="12"/>
-                            </svg>
-                          </button>
-                          {/* Edit — pencil */}
-                          <button
-                            onClick={e=>{e.stopPropagation();setEditingSound(track);}}
-                            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-gray-100 active:bg-gray-200"
-                            title="Edit sound">
-                            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Favorite sounds (only own profile or public) */}
-              {true && (
-                <div>
-                  <h3 className="font-bold text-gray-900 mb-3">
-                    {'Saved Sounds'}
-                  </h3>
-                  {loadingSnds ? null : favSounds.length === 0 ? (
-                    <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100">
-                      <span className="text-3xl block mb-2">🔖</span>
-                      <p className="text-sm font-semibold text-gray-500">No saved sounds</p>
-                      <p className="text-xs text-gray-400 mt-1">Bookmark sounds from the music browser to find them here</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {favSounds.map((track: any) => (
-                        <div key={track.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 flex items-center gap-3">
-                          {track.artwork_url
-                            ? <img src={track.artwork_url} className="w-12 h-12 rounded-xl object-cover shrink-0"/>
-                            : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                                <Music2 className="w-5 h-5 text-gray-400"/>
-                              </div>}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-gray-900 truncate">{track.title}</p>
-                            {track.use_count > 0 && (
-                              <p className="text-xs text-blue-500">{track.use_count.toLocaleString()} uses</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Sound trim sheet */}
-          {trimmingSound && (
-            <SoundTrimSheet
-              sound={trimmingSound}
-              onClose={()=>setTrimmingSound(null)}
-              onSaved={(snippetStart, snippetEnd)=>{
-                setUserSounds(prev => prev.map(s =>
-                  s.id === trimmingSound.id ? {...s, snippet_start: snippetStart, snippet_end: snippetEnd} : s
-                ));
-                setTrimmingSound(null);
-              }}
-            />
-          )}
-
-          {/* Music Browser for uploading sounds from profile */}
-          {showMusicUploader && (
-            <MusicBrowser
-              initialTab="mysounds"
-              onSelect={() => { setShowMusicUploader(false); loadSounds(); }}
-              onClose={() => { setShowMusicUploader(false); loadSounds(); }}
-            />
-          )}
-
-          {/* Sound edit sheet */}
-          {editingSound && (
-            <SoundEditSheet
-              sound={editingSound}
-              onClose={()=>setEditingSound(null)}
-              onSaved={(updated)=>{
-                setUserSounds(prev => {
-                  const next = prev.map(s => s.id === updated.id ? updated : s);
-                  try { localStorage.setItem(`filmons_sounds_${user?.id}`, JSON.stringify({pub:next,fav:favSounds})); } catch {}
-                  return next;
-                });
-                setEditingSound(null);
-              }}
-              onDelete={(id)=>{
-                setUserSounds(prev => {
-                  const next = prev.filter(s => s.id !== id);
-                  try { localStorage.setItem(`filmons_sounds_${user?.id}`, JSON.stringify({pub:next,fav:favSounds})); } catch {}
-                  return next;
-                });
-                setEditingSound(null);
-              }}
-            />
-          )}
-
-          {/* REVIEWS */}
-          {tab === 'reviews' && (
-            <div className="max-w-2xl mx-auto space-y-4">
-              {/* Received (about me) vs Given (written by me) — these are
-                  different data sets (reviewed_user_id vs user_id) and must
-                  not be conflated into one undifferentiated list. */}
-              <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
-                {(['received','given'] as const).map(v => (
-                  <button key={v} onClick={() => setReviewsViewSynced(v)}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      reviewsView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-                    }`}>
-                    {v === 'received' ? `Received (${receivedReviews.length})` : `Given (${reviews.length})`}
-                  </button>
-                ))}
-              </div>
-
-              {(reviewsView === 'received' ? receivedReviews : reviews).length === 0
-                ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Star className="w-10 h-10 text-gray-200 mx-auto mb-3"/><p className="text-gray-500">No reviews yet</p></div>
-                : (reviewsView === 'received' ? receivedReviews : reviews).map(r=>{
-                    // A review can only open its listing when it actually
-                    // has one (older reviews may predate listing_id) and
-                    // that listing is still available -- never guess a
-                    // destination for either case, per spec.
-                    const canOpenListing = !!r.listingId && r.listingAvailable !== false;
-                    return (
-                    <div key={r.id}
-                      onClick={canOpenListing ? () => navigate(`/listing/${r.listingId}`) : undefined}
-                      className={`bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${canOpenListing ? 'cursor-pointer hover:border-gray-200 active:scale-[0.99] transition-all' : ''}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        {reviewsView === 'received' ? (
-                          <div className="flex items-center gap-2.5">
-                            <UserAvatar user={{ name: r.userName || 'Anonymous', avatar: r.userAvatar, id: r.userId }} size={28} />
-                            <p className="font-semibold text-sm text-gray-900">{r.userName || 'Anonymous'}</p>
-                          </div>
-                        ) : <span />}
-                        <div className="flex gap-0.5">{[...Array(5)].map((_,i)=><Star key={i} className={`w-3.5 h-3.5 ${i<r.rating?'text-yellow-400 fill-yellow-400':'text-gray-200'}`}/>)}</div>
-                      </div>
-                      <p className="text-sm text-gray-600">{r.comment}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <p className="text-[11px] text-gray-400">{new Date(r.createdAt).toLocaleDateString('en-CA',{month:'short',year:'numeric',day:'numeric'})}</p>
-                        {canOpenListing ? (
-                          <p className="text-[11px] font-semibold text-blue-600">{r.listingTitle ? `From: ${r.listingTitle}` : 'View related listing'}</p>
-                        ) : r.listingId ? (
-                          <p className="text-[11px] text-gray-400">Listing no longer available</p>
-                        ) : null}
-                      </div>
-                    </div>
-                    );
-                  })
-              }
-            </div>
-          )}
-
-          {/* LIKED — saved listings + liked creators */}
-          {tab === 'liked' && (
-            <div className="space-y-4">
-              {/* Liked Listings */}
+              {/* Liked Listings — folded into Activity (was its own "Liked"
+                  tab, dropped from the new tab set; the underlying
+                  /liked-listings, /liked-creators routes are unchanged). */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                   <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><Package className="w-4 h-4"/> Liked Listings</p>
@@ -2101,42 +1507,237 @@ export function Profile() {
             </div>
           )}
 
-          {/* ABOUT — tab layout */}
-          {tab === 'about' && (
-            <div className="max-w-4xl mx-auto">
-              <AboutEditor
-                user={user}
-                updateUser={updateUser}
-                location={location}
-                setLocation={setLocation}
-                displayName={displayName} setDisplayName={setDisplayName}
-                username={username} setUsername={setUsername}
-                bio={bio} setBio={setBio}
-                yearsExp={yearsExp} setYearsExp={setYearsExp}
-                website={website} setWebsite={setWebsite}
-                instagram={instagram} setInstagram={setInstagram}
-                youtube={youtube} setYoutube={setYoutube}
-                tiktok={tiktok} setTiktok={setTiktok}
-                primaryRole={primaryRole} setPrimaryRole={setPrimaryRole}
-                secondaryRoles={secondaryRoles} setSecondaryRoles={setSecondaryRoles}
-                skills={skills} setSkills={setSkills}
-                gear={gear} setGear={setGear}
-                collab={collab} setCollab={setCollab}
-                newBirthdate={newBirthdate} setNewBirthdate={setNewBirthdate}
-                editEmail={editEmail} setEditEmail={setEditEmail}
-                editPhone={editPhone} setEditPhone={setEditPhone}
-                newEmail={newEmail} setNewEmail={setNewEmail}
-                newPhone={newPhone} setNewPhone={setNewPhone}
-                otpSent={otpSent} setOtpSent={setOtpSent}
-                otpCode={otpCode} setOtpCode={setOtpCode}
-                otpVerifying={otpVerifying} setOtpVerifying={setOtpVerifying}
-                onSave={saveAbout}
-                saving={aboutSaving}
-              />
+          {tab === 'services' && (
+            <div className="px-4 py-4">
+              <div className="flex items-center justify-between mb-4">
+                <p className="font-bold text-gray-900">{listings.filter(isServiceListing).length} service{listings.filter(isServiceListing).length!==1?'s':''}</p>
+                <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
+              </div>
+              {showProfileLoader ? (
+                <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md" label="Loading services"/></div>
+              ) : listings.filter(isServiceListing).length === 0 ? (
+                <div className="text-center py-16">
+                  <p className="text-sm text-gray-400 mb-3">No services listed yet</p>
+                  <Link to="/create-listing" className="text-blue-600 font-semibold text-sm">+ Add a service</Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {listings.filter(isServiceListing).map(l => (
+                    <ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
+
+          {tab === 'listings' && (
+            <div className="px-4 py-4">
+              <div className="flex items-center justify-between mb-4">
+                <p className="font-bold text-gray-900">{listings.filter(l => !isServiceListing(l)).length} listing{listings.filter(l => !isServiceListing(l)).length!==1?'s':''}</p>
+                <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
+              </div>
+              {showProfileLoader
+                ? <div className="flex items-center justify-center py-16"><FilmonsBrandLoader size="md" label="Loading listings"/></div>
+                : listings.filter(l => !isServiceListing(l)).length === 0
+                ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Package className="w-10 h-10 text-gray-200 mx-auto mb-3" /><Link to="/create-listing" className="text-sm text-blue-600 font-semibold">Create a listing →</Link></div>
+                : <div className="pop-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{listings.filter(l => !isServiceListing(l)).map(l=><ListingCard key={l.id} listing={l} onDeleted={() => setListings(prev => prev.filter(x => x.id !== l.id))} locked={lockedOpportunityIds.has(l.id)} />)}</div>
+              }
+            </div>
+          )}
+
+          {/* Sound trim sheet */}
+          {trimmingSound && (
+            <SoundTrimSheet
+              sound={trimmingSound}
+              onClose={()=>setTrimmingSound(null)}
+              onSaved={(snippetStart, snippetEnd)=>{
+                setUserSounds(prev => prev.map(s =>
+                  s.id === trimmingSound.id ? {...s, snippet_start: snippetStart, snippet_end: snippetEnd} : s
+                ));
+                setTrimmingSound(null);
+              }}
+            />
+          )}
+
+          {/* Music Browser for uploading sounds from profile */}
+          {showMusicUploader && (
+            <MusicBrowser
+              initialTab="mysounds"
+              onSelect={() => { setShowMusicUploader(false); loadSounds(); }}
+              onClose={() => { setShowMusicUploader(false); loadSounds(); }}
+            />
+          )}
+
+          {/* Sound edit sheet */}
+          {editingSound && (
+            <SoundEditSheet
+              sound={editingSound}
+              onClose={()=>setEditingSound(null)}
+              onSaved={(updated)=>{
+                setUserSounds(prev => {
+                  const next = prev.map(s => s.id === updated.id ? updated : s);
+                  try { localStorage.setItem(`filmons_sounds_${user?.id}`, JSON.stringify({pub:next,fav:favSounds})); } catch {}
+                  return next;
+                });
+                setEditingSound(null);
+              }}
+              onDelete={(id)=>{
+                setUserSounds(prev => {
+                  const next = prev.filter(s => s.id !== id);
+                  try { localStorage.setItem(`filmons_sounds_${user?.id}`, JSON.stringify({pub:next,fav:favSounds})); } catch {}
+                  return next;
+                });
+                setEditingSound(null);
+              }}
+            />
+          )}
+
+          {/* REVIEWS */}
+          {tab === 'reviews' && (
+            <div className="max-w-2xl mx-auto space-y-4">
+              {/* Received (about me) vs Given (written by me) — these are
+                  different data sets (reviewed_user_id vs user_id) and must
+                  not be conflated into one undifferentiated list. */}
+              <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
+                {(['received','given'] as const).map(v => (
+                  <button key={v} onClick={() => setReviewsViewSynced(v)}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      reviewsView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                    }`}>
+                    {v === 'received' ? `Received (${receivedReviews.length})` : `Given (${reviews.length})`}
+                  </button>
+                ))}
+              </div>
+
+              {(reviewsView === 'received' ? receivedReviews : reviews).length === 0
+                ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><Star className="w-10 h-10 text-gray-200 mx-auto mb-3"/><p className="text-gray-500">No reviews yet</p></div>
+                : (reviewsView === 'received' ? receivedReviews : reviews).map(r=>{
+                    // A review can only open its listing when it actually
+                    // has one (older reviews may predate listing_id) and
+                    // that listing is still available -- never guess a
+                    // destination for either case, per spec.
+                    const canOpenListing = !!r.listingId && r.listingAvailable !== false;
+                    return (
+                    <div key={r.id}
+                      onClick={canOpenListing ? () => navigate(`/listing/${r.listingId}`) : undefined}
+                      className={`bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${canOpenListing ? 'cursor-pointer hover:border-gray-200 active:scale-[0.99] transition-all' : ''}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        {reviewsView === 'received' ? (
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar user={{ name: r.userName || 'Anonymous', avatar: r.userAvatar, id: r.userId }} size={28} />
+                            <p className="font-semibold text-sm text-gray-900">{r.userName || 'Anonymous'}</p>
+                          </div>
+                        ) : <span />}
+                        <div className="flex gap-0.5">{[...Array(5)].map((_,i)=><Star key={i} className={`w-3.5 h-3.5 ${i<r.rating?'text-yellow-400 fill-yellow-400':'text-gray-200'}`}/>)}</div>
+                      </div>
+                      <p className="text-sm text-gray-600">{r.comment}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-[11px] text-gray-400">{new Date(r.createdAt).toLocaleDateString('en-CA',{month:'short',year:'numeric',day:'numeric'})}</p>
+                        {canOpenListing ? (
+                          <p className="text-[11px] font-semibold text-blue-600">{r.listingTitle ? `From: ${r.listingTitle}` : 'View related listing'}</p>
+                        ) : r.listingId ? (
+                          <p className="text-[11px] text-gray-400">Listing no longer available</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    );
+                  })
+              }
+            </div>
+          )}
+
+          {tab === 'recommendations' && (
+            <div className="max-w-2xl mx-auto px-4 py-4">
+              <p className="text-sm font-bold text-gray-900 mb-3">{recommendationCount} Recommendation{recommendationCount !== 1 ? 's' : ''}</p>
+              {recommendations.length === 0 ? (
+                <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100">
+                  <p className="text-sm text-gray-500">No recommendations yet.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+                  {recommendations.map(r => (
+                    <div key={r.id} className="border-t border-gray-50 pt-3 first:border-t-0 first:pt-0">
+                      <p className="text-sm font-bold text-gray-900">{r.recommender?.name ?? 'Filmons member'}</p>
+                      <p className="text-xs text-gray-400">{[r.role_snapshot, r.recommender?.city].filter(Boolean).join(' · ')}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed mt-2">"{r.body}"</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
+
+      {/* ── Edit Profile — full-screen AboutEditor overlay, replacing the
+          old "About" tab. Opens straight to whichever accordion matches
+          the section's Edit link that triggered it (showEditProfile
+          doubles as the AboutEditor's focusSection). ── */}
+      {showEditProfile && (
+        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 h-14 bg-white/95 backdrop-blur-md border-b border-gray-100">
+            <button onClick={() => setEditProfileSection(null)} className="text-sm font-semibold text-gray-700">Close</button>
+            <p className="text-sm font-bold text-gray-900">Edit Profile</p>
+            <button onClick={saveAbout} disabled={aboutSaving} className="text-sm font-bold text-blue-600 disabled:opacity-50">
+              {aboutSaving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+          <div className="max-w-2xl mx-auto px-4 py-4">
+            <AboutEditor
+              user={user}
+              updateUser={updateUser}
+              location={location}
+              setLocation={setLocation}
+              displayName={displayName} setDisplayName={setDisplayName}
+              username={username} setUsername={setUsername}
+              bio={bio} setBio={setBio}
+              yearsExp={yearsExp} setYearsExp={setYearsExp}
+              website={website} setWebsite={setWebsite}
+              instagram={instagram} setInstagram={setInstagram}
+              youtube={youtube} setYoutube={setYoutube}
+              tiktok={tiktok} setTiktok={setTiktok}
+              primaryRole={primaryRole} setPrimaryRole={setPrimaryRole}
+              secondaryRoles={secondaryRoles} setSecondaryRoles={setSecondaryRoles}
+              skills={skills} setSkills={setSkills}
+              gear={gear} setGear={setGear}
+              languages={languages} setLanguages={setLanguages}
+              facebook={facebook} setFacebook={setFacebook}
+              x={xHandle} setX={setXHandle}
+              collab={collab} setCollab={setCollab}
+              newBirthdate={newBirthdate} setNewBirthdate={setNewBirthdate}
+              editEmail={editEmail} setEditEmail={setEditEmail}
+              editPhone={editPhone} setEditPhone={setEditPhone}
+              newEmail={newEmail} setNewEmail={setNewEmail}
+              newPhone={newPhone} setNewPhone={setNewPhone}
+              otpSent={otpSent} setOtpSent={setOtpSent}
+              otpCode={otpCode} setOtpCode={setOtpCode}
+              otpVerifying={otpVerifying} setOtpVerifying={setOtpVerifying}
+              onSave={saveAbout}
+              saving={aboutSaving}
+              focusSection={showEditProfile}
+            />
+          </div>
+        </div>
+      )}
+
+      {showActionSheet && (
+        <ProfileActionSheet
+          isOwner
+          profileUrl={profileUrl}
+          targetUserId={user.id}
+          reporterId={user.id}
+          onClose={() => setShowActionSheet(false)}
+        />
+      )}
+
+      {/* Featured Portfolio item lightbox -- tapped from the All tab's
+          carousel; rendered at page level (not nested in the dead
+          tab==='portfolio' fallback block) so it actually shows regardless
+          of which tab is active. */}
+      {portfolioDetail && (
+        <PortfolioDetailSheet item={portfolioDetail} onClose={() => setPortfolioDetail(null)} />
+      )}
 
       {/* ── Followers / Following modal ── */}
       {showFollowers && (

@@ -21,7 +21,7 @@ import {
   getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum, createAlbum,
   getPortfolioSettings, upsertPortfolioSettings, DEFAULT_PORTFOLIO_SETTINGS,
   isItemLiked, toggleItemLike, getItemComments, addItemComment,
-  incrementItemView,
+  incrementItemView, logPortfolioEngagementEvent,
   type PortfolioItem, type WorkType, type PortfolioAlbum,
   type PortfolioSettings, type PortfolioLayout, type PortfolioComment,
 } from '../lib/portfolioApi';
@@ -307,7 +307,7 @@ function PortfolioViewer({
     if (settings.allow_likes && meId) isItemLiked(item.id, meId).then(setLiked);
     if (!viewedRef.current.has(item.id)) {
       viewedRef.current.add(item.id);
-      incrementItemView(item.id);
+      incrementItemView(item.id, item.user_id, meId);
       setViewsCount(v => v + 1);
     }
   }, [item?.id]); // eslint-disable-line
@@ -317,7 +317,7 @@ function PortfolioViewer({
     const next = !liked;
     setLiked(next);
     setLikesCount(c => Math.max(0, c + (next ? 1 : -1)));
-    const ok = await toggleItemLike(item.id, meId, liked);
+    const ok = await toggleItemLike(item.id, meId, liked, item.user_id);
     if (!ok) { setLiked(!next); setLikesCount(c => Math.max(0, c + (next ? -1 : 1))); }
   };
 
@@ -331,7 +331,7 @@ function PortfolioViewer({
     const body = commentText.trim();
     if (!body) return;
     setCommentText('');
-    const created = await addItemComment(item.id, meId, body);
+    const created = await addItemComment(item.id, meId, body, undefined, item.user_id);
     if (created) setComments(prev => [...prev, created]);
   };
 
@@ -420,6 +420,7 @@ function PortfolioViewer({
           <button
             className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
             onClick={() => {
+              logPortfolioEngagementEvent(item.user_id, item.id, 'share', meId);
               if (navigator.share) {
                 navigator.share({ title: item.title, url: window.location.href }).catch(() => {});
               } else {

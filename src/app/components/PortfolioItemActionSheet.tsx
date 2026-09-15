@@ -37,7 +37,7 @@ import { logPortfolioInteraction } from '../lib/personalization';
 import {
   type PortfolioItem, type PortfolioAlbum,
   deletePortfolioItem, setItemHidden, reportPortfolioContent,
-  isPortfolioSaved, togglePortfolioSave, getAlbums,
+  isPortfolioSaved, togglePortfolioSave, getAlbums, logPortfolioEngagementEvent,
 } from '../lib/portfolioApi';
 
 const rowClass = 'flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors';
@@ -73,6 +73,7 @@ export function PortfolioItemActionSheet({
 
   const handleShare = async () => {
     const url = `${window.location.origin}/portfolio/${creatorId}`;
+    logPortfolioEngagementEvent(creatorId, item.id, 'share', user?.id);
     if (navigator.share) { navigator.share({ url, title: item.title }).catch(() => {}); return; }
     try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };

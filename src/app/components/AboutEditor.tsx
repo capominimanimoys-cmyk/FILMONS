@@ -679,7 +679,14 @@ interface Props {
   secondaryRoles: string[]; setSecondaryRoles: (v:string[])=>void;
   skills: string[]; setSkills: (v:string[])=>void;
   gear: string[]; setGear: (v:string[])=>void;
+  languages: string[]; setLanguages: (v:string[])=>void;
+  facebook: string; setFacebook: (v:string)=>void;
+  x: string; setX: (v:string)=>void;
   collab: string[]; setCollab: (v:string[])=>void;
+  /** Opens straight to one accordion instead of always defaulting to
+   * Personal Details -- used when AboutEditor is opened from a specific
+   * Profile All-tab section's Edit link (e.g. Top Skills -> 'skills'). */
+  focusSection?: 'about' | 'skills' | 'gear' | 'social';
   newBirthdate: string; setNewBirthdate: (v:string)=>void;
   editEmail: boolean; setEditEmail: (v:boolean)=>void;
   editPhone: boolean; setEditPhone: (v:boolean)=>void;
@@ -692,10 +699,12 @@ interface Props {
 }
 
 export function AboutEditor(props: Props) {
-  const { user, updateUser, onSave, saving } = props;
+  const { user, updateUser, onSave, saving, focusSection } = props;
   const [gearInput, setGearInput] = useState('');
+  const [languageInput, setLanguageInput] = useState('');
   const toggleSkill = (v: string) => props.setSkills(props.skills.includes(v) ? props.skills.filter(s=>s!==v) : [...props.skills,v]);
   const addGear = () => { const t=gearInput.trim(); if(t&&!props.gear.includes(t)){props.setGear([...props.gear,t]);setGearInput('');} };
+  const addLanguage = () => { const t=languageInput.trim(); if(t&&!props.languages.includes(t)){props.setLanguages([...props.languages,t]);setLanguageInput('');} };
 
   // ── Education local state ──────────────────────────────────────────────────
   const [edu, setEdu] = useState<EduState>(() => {
@@ -739,7 +748,7 @@ export function AboutEditor(props: Props) {
     <div className="space-y-3">
 
       {/* 1. Personal Details */}
-      <Accordion number="1" title="Personal Details" defaultOpen>
+      <Accordion number="1" title="Personal Details" defaultOpen={!focusSection || focusSection === 'about'}>
         <SField label="Email">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-800 font-semibold truncate flex-1">{user.email||'—'}</p>
@@ -827,13 +836,33 @@ export function AboutEditor(props: Props) {
       </Accordion>
 
       {/* 4. Skills & Specialties */}
-      <Accordion number="4" title="Skills & Specialties">
+      <Accordion number="4" title="Skills & Specialties" defaultOpen={focusSection === 'skills'}>
         <p className="text-xs text-gray-400">Select all that apply to your creative work</p>
         <TagPicker all={ALL_SKILLS} selected={props.skills} onToggle={toggleSkill} placeholder="Search skills…"/>
+
+        <p className="text-xs text-gray-400 mt-4">Languages you work in</p>
+        <div className="flex gap-2">
+          <SInput value={languageInput} onChange={e=>setLanguageInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addLanguage();}}}
+            placeholder="e.g. English, French…"/>
+          <button type="button" onClick={addLanguage}
+            className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0 flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5"/>Add
+          </button>
+        </div>
+        {props.languages.length>0&&(
+          <div className="flex flex-wrap gap-1.5">
+            {props.languages.map(l=>(
+              <span key={l} className="flex items-center gap-1.5 text-xs bg-gray-100 text-gray-700 px-2.5 py-1.5 rounded-full">
+                {l}<button onClick={()=>props.setLanguages(props.languages.filter(x=>x!==l))}><X className="w-3 h-3 hover:text-red-500"/></button>
+              </span>
+            ))}
+          </div>
+        )}
       </Accordion>
 
       {/* 5. Gear & Tools */}
-      <Accordion number="5" title="Gear & Tools">
+      <Accordion number="5" title="Gear & Tools" defaultOpen={focusSection === 'gear'}>
         <p className="text-xs text-gray-400">Cameras, software, audio equipment you own or use</p>
         <div className="flex gap-2">
           <SInput value={gearInput} onChange={e=>setGearInput(e.target.value)}
@@ -862,7 +891,7 @@ export function AboutEditor(props: Props) {
       </Accordion>
 
       {/* 7. Social & Links */}
-      <Accordion number="7" title="Social & External Links">
+      <Accordion number="7" title="Social & External Links" defaultOpen={focusSection === 'social'}>
         <SField label="Website">
           <SInput value={props.website} onChange={e=>props.setWebsite(e.target.value)} placeholder="https://yoursite.com"/>
           {props.website && <a href={props.website} target="_blank" rel="noreferrer" className="mt-1 flex items-center gap-1 text-xs text-blue-600 hover:underline truncate">🌐 {props.website}</a>}
@@ -937,6 +966,12 @@ export function AboutEditor(props: Props) {
             <input value={(props as any).vimeo || ''} onChange={e=>(props as any).setVimeo?.(e.target.value)} placeholder="vimeo.com/username"
               className="flex-1 bg-transparent text-sm outline-none text-gray-900 placeholder:text-gray-400"/>
           </div>
+        </SField>
+        <SField label="Facebook">
+          <SInput value={props.facebook} onChange={e=>props.setFacebook(e.target.value)} placeholder="facebook.com/yourpage"/>
+        </SField>
+        <SField label="X (Twitter)">
+          <SInput value={props.x} onChange={e=>props.setX(e.target.value)} placeholder="handle (without @)"/>
         </SField>
       </Accordion>
 
