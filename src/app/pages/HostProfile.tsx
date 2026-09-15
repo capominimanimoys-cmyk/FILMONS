@@ -30,7 +30,7 @@ import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
 import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
 import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
-import { ProfileStickyActionBar } from '../components/profile/ProfileStickyActionBar';
+import { ProfileViewerActions } from '../components/profile/ProfileViewerActions';
 import { RecommendationComposeSheet } from '../components/profile/RecommendationComposeSheet';
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
 import { toStringArray } from '../lib/normalizeList';
@@ -311,10 +311,12 @@ export function HostProfile() {
   // Same immersive scroll-to-hide chrome as Home -> Portfolios (window mode
   // -- this page has no bounded scroll container of its own). Dispatches
   // straight to the existing TopBar/MobileBottomNav/Root.tsx listeners (no
-  // changes needed there); `chromeHidden` here additionally hides this
-  // page's OWN sticky Message/Follow/More bar and collapses the extra
-  // bottom clearance reserved for it, since Root.tsx's <main> only
-  // collapses ITS OWN reserved space, not a page's separate pb-* on top.
+  // changes needed there); `chromeHidden` here ONLY additionally collapses
+  // this page's own extra clearance for the GLOBAL bottom nav, since
+  // Root.tsx's <main> only collapses its own reserved space, not a page's
+  // separate pb-* on top. Message/Follow (ProfileViewerActions, rendered
+  // in normal flow right after ProfileHeader below) are profile-specific
+  // actions, not global nav chrome -- they must never be wired to this.
   const { hidden: chromeHidden } = useMobileScrollChrome();
   const [confirmUnfollow,  setConfirmUnfollow]  = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -539,6 +541,20 @@ export function HostProfile() {
         onMessage={handleMessage}
       />
 
+      {/* Mobile-only (ProfileHeader's own Message/Follow above cover this
+          for md: and up) -- normal in-flow content, never tied to
+          chromeHidden/useMobileScrollChrome: these are profile-specific
+          actions, not global nav chrome, so they must stay visible and
+          simply scroll away naturally with the rest of the profile. */}
+      <ProfileViewerActions
+        isFollowing={isFollowing(host.id)}
+        isPending={isPending(host.id)}
+        confirmUnfollow={confirmUnfollow}
+        onFollow={handleFollowClick}
+        onMessage={handleMessage}
+        onMore={() => setShowActionSheet(true)}
+      />
+
       <ProfileStatsRow
         followerCount={followerCount}
         followingCount={followingCount}
@@ -559,12 +575,13 @@ export function HostProfile() {
       <div className="max-w-4xl lg:max-w-5xl mx-auto px-3">
 
         {/* ── Tab content ── */}
-        {/* pb-40 -- clears both the sticky Message/Follow/More bar and the
-            global MobileBottomNav underneath it (md:hidden, so desktop
-            doesn't need this extra clearance, but the padding is harmless
-            there either way). Collapses with the rest of the chrome while
-            scrolling -- see chromeHidden above. */}
-        <div className="pb-40 space-y-3" style={{ paddingBottom: chromeHidden ? 0 : undefined, transition: 'padding-bottom 280ms ease-out' }}>
+        {/* pb-24 -- clears the global MobileBottomNav (md:hidden, so
+            desktop doesn't need this extra clearance, but the padding is
+            harmless there either way). ProfileViewerActions above is
+            normal in-flow content now, not a fixed bar, so this no longer
+            needs to clear it too. Collapses with the bottom nav itself
+            while scrolling -- see chromeHidden above. */}
+        <div className="pb-24 space-y-3" style={{ paddingBottom: chromeHidden ? 0 : undefined, transition: 'padding-bottom 280ms ease-out' }}>
 
           {/* ─── ALL — full vertical overview ────────────────────────────── */}
           {tab === 'all' && (
@@ -860,15 +877,6 @@ export function HostProfile() {
         />
       )}
 
-      <ProfileStickyActionBar
-        isFollowing={isFollowing(host.id)}
-        isPending={isPending(host.id)}
-        confirmUnfollow={confirmUnfollow}
-        onFollow={handleFollowClick}
-        onMessage={handleMessage}
-        onMore={() => setShowActionSheet(true)}
-        hidden={chromeHidden}
-      />
     </div>
   );
 }
