@@ -11,12 +11,14 @@
 import { ShieldCheck, MessageCircle, UserCheck, UserPlus, Loader2 } from 'lucide-react';
 import { AccountTypeBadge } from '../AccountTypeBadge';
 import { ReliabilityBadge } from '../ReliabilityScore';
+import { ProfileStatsRow } from './ProfileStatsRow';
 
 export function ProfileHeader({
   coverPhoto, avatar, name, username, isVerified, accountType, primaryRole, bio, location,
   reliabilityScore, reliabilityLevel,
   isOwner, onTapCover, onTapAvatar, onEditProfile, onShare, onMenu,
   isFollowing, isPending, onFollow, onMessage,
+  followerCount, followingCount, interactionCount, onTapFollowers, onTapFollowing, onTapInteraction,
 }: {
   coverPhoto?: string | null;
   avatar?: string | null;
@@ -43,6 +45,16 @@ export function ProfileHeader({
   isPending?: boolean;
   onFollow?: () => void;
   onMessage?: () => void;
+  // Stats row -- rendered directly inside this header, right under the
+  // identity block, per spec ("Move these three stats directly into the
+  // Profile header area"). Shared ProfileStatsRow so Profile.tsx and
+  // HostProfile.tsx can never drift on placement/behavior.
+  followerCount: number | null;
+  followingCount: number | null;
+  interactionCount: number | null;
+  onTapFollowers: () => void;
+  onTapFollowing: () => void;
+  onTapInteraction?: () => void;
 }) {
   return (
     <div className="relative bg-white">
@@ -125,6 +137,17 @@ export function ProfileHeader({
           {bio && <p className="text-sm text-gray-700 mt-2 leading-relaxed">{bio}</p>}
         </div>
       </div>
+
+      {/* Stats -- full-bleed (outside the px-3 identity padding above), no
+          border above/below/between (see ProfileStatsRow itself). */}
+      <ProfileStatsRow
+        followerCount={followerCount}
+        followingCount={followingCount}
+        interactionCount={interactionCount}
+        onTapFollowers={onTapFollowers}
+        onTapFollowing={onTapFollowing}
+        onTapInteraction={onTapInteraction}
+      />
     </div>
   );
 }

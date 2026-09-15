@@ -41,7 +41,7 @@ import { useFollowCounts } from '../lib/useFollowCounts';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
-import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
+import { getProfileInteractionStats, type ProfileInteractionStats } from '../lib/profileEngagement';
 import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
 import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
@@ -669,6 +669,11 @@ export function Profile() {
   const [showActionSheet, setShowActionSheet]     = useState(false);
   const [recommendations,      setRecommendations]      = useState<Recommendation[]>([]);
   const [recommendationCount,  setRecommendationCount]  = useState(0);
+  // Fetched once here (not inside ProfileInteractionSection) and shared
+  // with both the header stats row and the fuller All-tab section below,
+  // so the two never show two independently-fetched (and potentially
+  // briefly inconsistent) numbers for the same metric.
+  const [interactionStats, setInteractionStats] = useState<ProfileInteractionStats | null>(null);
 
   // Auth guard
   // Sync badge prefs from settings page (localStorage bridge)
@@ -694,6 +699,7 @@ export function Profile() {
     if (user) {
       load(); initAboutForm();
       reliabilityApi.getScore(user.id).then(setRep).catch(()=>{});
+      getProfileInteractionStats(user.id).then(setInteractionStats).catch(()=>{});
       // Load badge visibility prefs
       import('../lib/settingsApi').then(({ reputationSettingsApi }) => {
         reputationSettingsApi.load(user.id).then((s: any) => {
@@ -1187,17 +1193,11 @@ export function Profile() {
         onEditProfile={() => setEditProfileSection('about')}
         onShare={() => { captureSnapshot(); navigate('/share-card'); }}
         onMenu={() => setShowActionSheet(true)}
-      />
-
-      <ProfileStatsRow
         followerCount={followerCount}
         followingCount={followingCount}
-        portfolioCount={portfolioItems.length}
-        listingsCount={listings.length}
+        interactionCount={interactionStats?.total ?? null}
         onTapFollowers={() => setShowFollowers('followers')}
         onTapFollowing={() => setShowFollowers('following')}
-        onTapPortfolio={() => switchTab('portfolio')}
-        onTapListings={() => switchTab('listings')}
       />
 
       <ProfileTabNav tab={tab} onChange={switchTab} />
@@ -1242,6 +1242,7 @@ export function Profile() {
               onViewAllRecommendations={() => switchTab('recommendations')}
               socialLinks={socialLinksFromUser(user)}
               onEditSocialLinks={() => setEditProfileSection('social')}
+              interactionStats={interactionStats}
             />
           )}
 

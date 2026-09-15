@@ -1,7 +1,8 @@
 // Owner-only (per spec: "Detailed analytics should only be visible to the
-// profile owner"). Replaces the earlier, narrower "Portfolio Interaction"
-// (views/likes/comments/shares on portfolio items only) -- Profile
-// Interaction is broader: every meaningful engagement with the creator
+// profile owner"). Fuller detail (with 30-day trend) than the header's own
+// Profile Interaction stat -- Profile Interaction is broader than the
+// earlier "Portfolio Interaction" (views/likes/comments/shares on
+// portfolio items only): every meaningful engagement with the creator
 // across FILMONS (follow, message, portfolio saves, View Portfolio clicks,
 // Service/Listing opens and saves, profile shares, recommendations,
 // social-link clicks), regardless of which surface it happened on (Home,
@@ -9,18 +10,13 @@
 // src/app/lib/profileEngagement.ts. Passive profile-page views are
 // deliberately excluded and tracked separately (profile_views table) for
 // a future private Creator Analytics page, not shown here.
-import { useEffect, useState } from 'react';
-import { getProfileInteractionStats, type ProfileInteractionStats } from '../../lib/profileEngagement';
+//
+// `stats` is fetched once by the page (Profile.tsx) and shared with the
+// header's stats row too, rather than this section doing its own second
+// fetch of the same number.
+import { type ProfileInteractionStats } from '../../lib/profileEngagement';
 
-export function ProfileInteractionSection({ userId, onViewAnalytics }: { userId: string; onViewAnalytics?: () => void }) {
-  const [stats, setStats] = useState<ProfileInteractionStats | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getProfileInteractionStats(userId).then(s => { if (!cancelled) setStats(s); });
-    return () => { cancelled = true; };
-  }, [userId]);
-
+export function ProfileInteractionSection({ stats, onViewAnalytics }: { stats: ProfileInteractionStats | null; onViewAnalytics?: () => void }) {
   return (
     <section className="bg-white rounded-2xl border border-gray-100 p-4">
       <p className="text-sm font-black text-gray-900 mb-3">Profile Interaction</p>

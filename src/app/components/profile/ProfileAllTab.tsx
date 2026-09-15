@@ -15,6 +15,7 @@ import { MyGearSection } from './MyGearSection';
 import { RecommendationsSection } from './RecommendationsSection';
 import { ProfileInteractionSection } from './ProfileInteractionSection';
 import { SocialLinksSection, type SocialLinksData } from './SocialLinksSection';
+import type { ProfileInteractionStats } from '../../lib/profileEngagement';
 
 export function ProfileAllTab({
   userId, isOwner, viewerId, accountType, isVerified,
@@ -25,6 +26,7 @@ export function ProfileAllTab({
   gear, onEditGear,
   recommendations, recommendationCount, onViewAllRecommendations, onRecommend,
   socialLinks, onEditSocialLinks,
+  interactionStats,
 }: {
   userId: string;
   isOwner: boolean;
@@ -60,6 +62,9 @@ export function ProfileAllTab({
   onRecommend?: () => void;
   socialLinks: SocialLinksData;
   onEditSocialLinks?: () => void;
+  /** Fetched once by the page and shared with the header's own Profile
+   * Interaction stat -- see ProfileInteractionSection's own comment. */
+  interactionStats: ProfileInteractionStats | null;
 }) {
   // No horizontal padding here on purpose -- the page-level wrapper
   // (Profile.tsx / HostProfile.tsx) owns the single horizontal gutter for
@@ -99,7 +104,7 @@ export function ProfileAllTab({
         onViewAll={onViewAllRecommendations} onRecommend={onRecommend}
       />
 
-      {isOwner && <ProfileInteractionSection userId={userId} />}
+      {isOwner && <ProfileInteractionSection stats={interactionStats} />}
 
       <SocialLinksSection links={socialLinks} isOwner={isOwner} onEdit={onEditSocialLinks} creatorId={userId} actorId={viewerId} />
     </div>

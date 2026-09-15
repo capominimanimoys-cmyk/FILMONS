@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
-import { logProfileEngagement, logProfileView } from '../lib/profileEngagement';
+import { logProfileEngagement, logProfileView, getProfileInteractionStats, type ProfileInteractionStats } from '../lib/profileEngagement';
 import { User, Listing, Review, Post } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
@@ -27,7 +27,6 @@ import { supabase } from '../../lib/supabase';
 import { isServiceListing } from '../lib/listingHelpers';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
-import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
 import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
 import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
@@ -333,6 +332,10 @@ export function HostProfile() {
   const [showRecommend,    setShowRecommend]    = useState(false);
   const [recommendations,     setRecommendations]     = useState<Recommendation[]>([]);
   const [recommendationCount, setRecommendationCount] = useState(0);
+  // Fetched once here and shared with both the header stats row and the
+  // fuller All-tab section, so the two never show two independently-
+  // fetched numbers for the same metric.
+  const [interactionStats, setInteractionStats] = useState<ProfileInteractionStats | null>(null);
   const [posts,            setPosts]            = useState<Post[]>([]);
 
   // Reached either via the legacy /host/:userId link or the canonical
@@ -400,7 +403,10 @@ export function HostProfile() {
       // Passive impression -- deliberately NOT part of Profile Interaction
       // (see profile_engagement.ts's comment). Own dedup window so a
       // refresh/rerender of this same page load doesn't double-count.
-      if (hostData?.id) logProfileView(hostData.id, me?.id);
+      if (hostData?.id) {
+        logProfileView(hostData.id, me?.id);
+        getProfileInteractionStats(hostData.id).then(setInteractionStats).catch(() => {});
+      }
       // Landed here via the legacy /host/:id link but this profile has a
       // username -- silently upgrade the address bar to the clean canonical
       // URL, same as OAuthCallback-style post-auth redirects elsewhere.
@@ -551,6 +557,11 @@ export function HostProfile() {
         isPending={isPending(host.id)}
         onFollow={handleFollowClick}
         onMessage={handleMessage}
+        followerCount={followerCount}
+        followingCount={followingCount}
+        interactionCount={interactionStats?.total ?? null}
+        onTapFollowers={() => setShowFollowers('followers')}
+        onTapFollowing={() => setShowFollowers('following')}
       />
 
       {/* Mobile-only (ProfileHeader's own Message/Follow above cover this
@@ -565,17 +576,6 @@ export function HostProfile() {
         onFollow={handleFollowClick}
         onMessage={handleMessage}
         onMore={() => setShowActionSheet(true)}
-      />
-
-      <ProfileStatsRow
-        followerCount={followerCount}
-        followingCount={followingCount}
-        portfolioCount={portfolioItems.length}
-        listingsCount={listings.length}
-        onTapFollowers={() => setShowFollowers('followers')}
-        onTapFollowing={() => setShowFollowers('following')}
-        onTapPortfolio={() => setTab('portfolio')}
-        onTapListings={() => setTab('listings')}
       />
 
       <ProfileTabNav tab={tab} onChange={setTab} />
@@ -623,6 +623,7 @@ export function HostProfile() {
               onViewAllRecommendations={() => setTab('recommendations')}
               onRecommend={me && me.id !== host.id ? () => setShowRecommend(true) : undefined}
               socialLinks={socialLinksFromUser(host)}
+              interactionStats={interactionStats}
             />
           )}
 
