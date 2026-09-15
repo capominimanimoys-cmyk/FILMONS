@@ -24,6 +24,7 @@ import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
 import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
+import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { BottomSheet } from '../components/BottomSheet';
@@ -502,48 +503,21 @@ export function Home() {
   // measured against this element directly rather than a viewport-based
   // IntersectionObserver.
   //
-  // Also drives the auto-hide header/bottom-nav behavior below: a
-  // meaningful downward scroll hides both bars, and a meaningful UPWARD
-  // scroll brings them back immediately (not only at the very top) --
-  // same symmetric deadzone-based direction check MobileBottomNav.tsx's
-  // own dimming effect already uses elsewhere in this app. TOP_THRESHOLD
-  // is just a floor: always visible within a few px of the very top,
-  // regardless of direction (covers a fresh load/tab switch landing at
-  // scrollTop 0 with no prior delta to compare against).
-  const TOP_THRESHOLD = 12;
-  const HIDE_SCROLL_DELTA = 10;
-  const REVEAL_SCROLL_DELTA = 10;
-  const lastPortfolioScrollTopRef = useRef(0);
-  const [portfolioBarsHidden, setPortfolioBarsHidden] = useState(false);
+  // Auto-hide header/bottom-nav -- extracted into useMobileScrollChrome.ts
+  // (shared with Profile.tsx/HostProfile.tsx, which use it in 'window' mode
+  // instead of 'manual' since they have no bounded scroll container of
+  // their own). `enabled` scopes this to genuinely being in Portfolio mode
+  // -- leaving Portfolio (or unmounting Home entirely) always restores both
+  // bars, same as before.
+  const { onManualScroll: onPortfolioBarsScroll } = useMobileScrollChrome({ mode: 'manual', enabled: homeMode === 'portfolio' });
 
   const handlePortfolioScroll = () => {
     const el = portfolioScrollRef.current;
     if (!el) return;
     try { sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(el.scrollTop)); } catch {}
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) loadMoreFeed();
-
-    const top = el.scrollTop;
-    const last = lastPortfolioScrollTopRef.current;
-    if (top <= TOP_THRESHOLD) setPortfolioBarsHidden(false);
-    else if (top > last + HIDE_SCROLL_DELTA) setPortfolioBarsHidden(true);
-    else if (top < last - REVEAL_SCROLL_DELTA) setPortfolioBarsHidden(false);
-    lastPortfolioScrollTopRef.current = top;
+    onPortfolioBarsScroll(el.scrollTop);
   };
-
-  // Bridges to the global TopBar/MobileBottomNav (rendered by Root.tsx,
-  // outside this page) -- same window CustomEvent pattern Root.tsx already
-  // uses for Inbox's 'filmons:inbox-conversation-open'. Only ever true
-  // while genuinely in Portfolio mode; leaving Portfolio (or unmounting
-  // Home entirely, e.g. navigating away) always restores both bars so
-  // they never stay hidden on an unrelated page.
-  useEffect(() => {
-    const hidden = homeMode === 'portfolio' && portfolioBarsHidden;
-    window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden } }));
-  }, [homeMode, portfolioBarsHidden]);
-  useEffect(() => {
-    return () => { window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: false } })); };
-  }, []);
-  useEffect(() => { if (homeMode !== 'portfolio') setPortfolioBarsHidden(false); }, [homeMode]);
 
   useEffect(() => {
     let done = false;

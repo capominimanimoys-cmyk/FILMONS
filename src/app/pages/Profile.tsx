@@ -38,6 +38,7 @@ import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, type PortfolioItem } from '../lib/portfolioApi';
 import { isServiceListing } from '../lib/listingHelpers';
 import { useFollowCounts } from '../lib/useFollowCounts';
+import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
 import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
@@ -613,6 +614,14 @@ export function Profile() {
   // hand-rolled one-shot Supabase count query here before, duplicating what
   // Portfolio.tsx/HostProfile.tsx already centralize in this hook.
   const { followerCount, followingCount } = useFollowCounts(user?.id);
+  // Same immersive scroll-to-hide chrome as Home -> Portfolios (window mode
+  // -- this page has no bounded scroll container of its own, unlike
+  // Home's Portfolio feed). Dispatches straight to the existing
+  // TopBar/MobileBottomNav/Root.tsx listeners (no changes needed there);
+  // `chromeHidden` here additionally collapses this page's OWN bottom-nav
+  // clearance below, since Root.tsx's <main> only collapses ITS OWN
+  // reserved space, not a page's separate pb-* on top of it.
+  const { hidden: chromeHidden } = useMobileScrollChrome();
 
   // Media upload
   const avatarRef = useRef<HTMLInputElement>(null);
@@ -1199,7 +1208,7 @@ export function Profile() {
       <div className="max-w-4xl lg:max-w-5xl mx-auto px-3">
 
         {/* ── Content ── */}
-        <div className="pb-24">
+        <div className="pb-24" style={{ paddingBottom: chromeHidden ? 0 : undefined, transition: 'padding-bottom 280ms ease-out' }}>
 
           {/* ALL — full vertical overview */}
           {tab === 'all' && (

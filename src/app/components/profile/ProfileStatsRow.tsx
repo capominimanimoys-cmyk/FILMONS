@@ -24,7 +24,7 @@ export function ProfileStatsRow({
   );
 
   return (
-    <div className="flex items-stretch bg-white border-y border-gray-100 divide-x divide-gray-100">
+    <div className="flex items-stretch bg-white">
       <Stat value={followerCount}  label="Followers"       onClick={onTapFollowers} />
       <Stat value={followingCount} label="Following"       onClick={onTapFollowing} />
       <Stat value={portfolioCount} label="Portfolio Works" onClick={onTapPortfolio} />

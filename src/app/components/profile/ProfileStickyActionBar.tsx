@@ -7,7 +7,7 @@
 import { Loader2, MessageCircle, UserCheck, UserPlus, MoreHorizontal } from 'lucide-react';
 
 export function ProfileStickyActionBar({
-  isFollowing, isPending, confirmUnfollow, onFollow, onMessage, onMore,
+  isFollowing, isPending, confirmUnfollow, onFollow, onMessage, onMore, hidden,
 }: {
   isFollowing: boolean;
   isPending: boolean;
@@ -15,11 +15,23 @@ export function ProfileStickyActionBar({
   onFollow: () => void;
   onMessage: () => void;
   onMore: () => void;
+  /** Slides away with the rest of the chrome (TopBar/MobileBottomNav) on a
+   * meaningful scroll down -- see useMobileScrollChrome.ts. This bar is
+   * anchored just above the bottom nav by a fixed `bottom` offset, not
+   * re-parented into it, so it needs the same translateY/opacity treatment
+   * itself rather than automatically following the nav off-screen. */
+  hidden?: boolean;
 }) {
   return (
     <div
       className="fixed left-0 right-0 z-30 md:hidden bg-white/95 backdrop-blur-md px-4 py-2.5 flex items-center gap-2"
-      style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
+      style={{
+        bottom: 'calc(56px + env(safe-area-inset-bottom))',
+        transform: hidden ? 'translateY(100%)' : 'translateY(0)',
+        opacity: hidden ? 0 : 1,
+        transition: 'transform 280ms ease-out, opacity 250ms ease-out',
+        pointerEvents: hidden ? 'none' : 'auto',
+      }}
     >
       <button
         onClick={onMessage}

@@ -6,6 +6,7 @@ import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
+import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { User, Listing, Review, Post } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
@@ -307,6 +308,14 @@ export function HostProfile() {
   const [reliabilityScore, setReliabilityScore] = useState<number>(0);
   const { isFollowing, isPending, follow, unfollow } = useFollow();
   const { followerCount, followingCount } = useFollowCounts(resolvedId ?? undefined);
+  // Same immersive scroll-to-hide chrome as Home -> Portfolios (window mode
+  // -- this page has no bounded scroll container of its own). Dispatches
+  // straight to the existing TopBar/MobileBottomNav/Root.tsx listeners (no
+  // changes needed there); `chromeHidden` here additionally hides this
+  // page's OWN sticky Message/Follow/More bar and collapses the extra
+  // bottom clearance reserved for it, since Root.tsx's <main> only
+  // collapses ITS OWN reserved space, not a page's separate pb-* on top.
+  const { hidden: chromeHidden } = useMobileScrollChrome();
   const [confirmUnfollow,  setConfirmUnfollow]  = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [loading,          setLoading]          = useState(true);
@@ -553,8 +562,9 @@ export function HostProfile() {
         {/* pb-40 -- clears both the sticky Message/Follow/More bar and the
             global MobileBottomNav underneath it (md:hidden, so desktop
             doesn't need this extra clearance, but the padding is harmless
-            there either way). */}
-        <div className="pb-40 space-y-3">
+            there either way). Collapses with the rest of the chrome while
+            scrolling -- see chromeHidden above. */}
+        <div className="pb-40 space-y-3" style={{ paddingBottom: chromeHidden ? 0 : undefined, transition: 'padding-bottom 280ms ease-out' }}>
 
           {/* ─── ALL — full vertical overview ────────────────────────────── */}
           {tab === 'all' && (
@@ -857,6 +867,7 @@ export function HostProfile() {
         onFollow={handleFollowClick}
         onMessage={handleMessage}
         onMore={() => setShowActionSheet(true)}
+        hidden={chromeHidden}
       />
     </div>
   );
