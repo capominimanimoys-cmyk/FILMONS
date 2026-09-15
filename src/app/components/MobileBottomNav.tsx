@@ -102,7 +102,12 @@ export function MobileBottomNav() {
         pointerEvents: portfolioHidden ? 'none' : 'auto',
       }}
     >
-      <div className="flex items-end">
+      {/* h-14 (56px) -- fixed, not just intrinsic content height. Without
+          this the row's natural height shifts by a couple px depending on
+          which tab is active (active icons render larger), which is what
+          made ProfileStickyActionBar's hardcoded 56px offset drift out of
+          alignment with the real nav instead of sitting flush against it. */}
+      <div className="flex items-end h-14">
         {tabs.map(({ to, Icon, label, badge, isPrimary }) => {
           // Home tab: only exact match
           const isHome   = to === '/';
