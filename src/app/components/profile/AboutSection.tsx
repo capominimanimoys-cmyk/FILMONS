@@ -5,6 +5,18 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
+// secondaryRoles/openTo/languages come from the free-form profile_meta
+// jsonb blob (see AboutEditor/Profile.tsx/HostProfile.tsx) -- nothing
+// enforces it actually holds an array at the DB level, so an older record
+// with e.g. a comma-string instead of a real array here would crash
+// `.join()` ("x.join is not a function"). Normalize defensively instead of
+// trusting the prop's declared type.
+function toList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  if (typeof v === 'string' && v.trim()) return v.split(',').map(s => s.trim()).filter(Boolean);
+  return [];
+}
+
 export function AboutSection({
   bio, primaryRole, secondaryRoles, location, openTo, languages, isOwner, onEdit,
 }: {
@@ -21,7 +33,11 @@ export function AboutSection({
   const longBio = (bio?.length ?? 0) > 180;
   const shownBio = expanded || !longBio ? bio : `${bio!.slice(0, 180)}…`;
 
-  const hasAnything = bio || primaryRole || (secondaryRoles?.length) || location || (openTo?.length) || (languages?.length);
+  const secondaryRolesList = toList(secondaryRoles);
+  const openToList = toList(openTo);
+  const languagesList = toList(languages);
+
+  const hasAnything = bio || primaryRole || secondaryRolesList.length || location || openToList.length || languagesList.length;
   if (!hasAnything && !isOwner) return null;
 
   return (
@@ -52,10 +68,10 @@ export function AboutSection({
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-1">
             {primaryRole && <Field label="Primary Role" value={primaryRole} />}
-            {!!secondaryRoles?.length && <Field label="Also Works As" value={secondaryRoles.join(', ')} />}
+            {!!secondaryRolesList.length && <Field label="Also Works As" value={secondaryRolesList.join(', ')} />}
             {location && <Field label="Location" value={location} />}
-            {!!openTo?.length && <Field label="Open To" value={openTo.join(', ')} />}
-            {!!languages?.length && <Field label="Languages" value={languages.join(', ')} />}
+            {!!openToList.length && <Field label="Open To" value={openToList.join(', ')} />}
+            {!!languagesList.length && <Field label="Languages" value={languagesList.join(', ')} />}
           </div>
         </div>
       )}

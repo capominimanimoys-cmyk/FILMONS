@@ -32,6 +32,7 @@ import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
 import { ProfileStickyActionBar } from '../components/profile/ProfileStickyActionBar';
 import { RecommendationComposeSheet } from '../components/profile/RecommendationComposeSheet';
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
+import { toStringArray } from '../lib/normalizeList';
 
 type Tab = ProfileTab;
 const TABS = PROFILE_TABS;
@@ -557,11 +558,11 @@ export function HostProfile() {
               isVerified={isVerified}
               bio={host.bio}
               primaryRole={primaryRole}
-              secondaryRoles={meta.secondaryRoles || (host as any).secondaryRoles || []}
+              secondaryRoles={toStringArray(meta.secondaryRoles || (host as any).secondaryRoles)}
               location={location}
-              openTo={meta.collabPrefs || meta.collab || (host as any).collabPrefs || []}
-              languages={meta.languages || (host as any).languages || []}
-              skills={meta.skills || (host as any).skills || []}
+              openTo={toStringArray(meta.collabPrefs || meta.collab || (host as any).collabPrefs)}
+              languages={toStringArray(meta.languages || (host as any).languages)}
+              skills={toStringArray(meta.skills || (host as any).skills)}
               portfolioItems={portfolioItems}
               onOpenPortfolioItem={() => navigate(`/portfolio/${host.id}`)}
               onViewAllPortfolio={() => navigate(`/portfolio/${host.id}`)}
@@ -569,7 +570,7 @@ export function HostProfile() {
               listings={listings.filter(l => !isServiceListing(l))}
               onViewServices={() => setTab('services')}
               onViewListings={() => setTab('listings')}
-              gear={meta.gear || (host as any).gear || []}
+              gear={toStringArray(meta.gear || (host as any).gear)}
               recommendations={recommendations}
               recommendationCount={recommendationCount}
               onViewAllRecommendations={() => setTab('recommendations')}

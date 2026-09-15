@@ -45,6 +45,7 @@ import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/prof
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
 import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
+import { toStringArray } from '../lib/normalizeList';
 
 // ── Data ────────────────────────────────────────────────────────────────────
 type Tab = ProfileTab;
@@ -729,14 +730,14 @@ export function Profile() {
     setTiktok((user as any).tiktok      || meta.tiktok     || '');
     setLocation((user as any).location  || user.city ? `${user.city}${user.province ? ', ' + user.province : ''}` : '');
     setPrimaryRole((user as any).primaryRole    || meta.primaryRole    || '');
-    setSecondaryRoles((user as any).secondaryRoles || meta.secondaryRoles || []);
-    setSkills((user as any).skills     || meta.skills     || []);
-    setGear((user as any).gear         || meta.gear       || []);
-    setLanguages((user as any).languages || meta.languages || []);
+    setSecondaryRoles(toStringArray((user as any).secondaryRoles || meta.secondaryRoles));
+    setSkills(toStringArray((user as any).skills || meta.skills));
+    setGear(toStringArray((user as any).gear || meta.gear));
+    setLanguages(toStringArray((user as any).languages || meta.languages));
     setFacebook((user as any).facebook || meta.facebook || '');
     setXHandle((user as any).x         || meta.x         || '');
     setYearsExp(String((user as any).years_exp || meta.yearsExp || ''));
-    setCollab((user as any).collabPrefs || meta.collab    || []);
+    setCollab(toStringArray((user as any).collabPrefs || meta.collab));
   }
 
   const [portfolioItems,   setPortfolioItems]   = useState<PortfolioItem[]>([]);
