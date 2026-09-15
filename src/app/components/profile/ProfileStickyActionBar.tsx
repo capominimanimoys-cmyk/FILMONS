@@ -18,7 +18,7 @@ export function ProfileStickyActionBar({
 }) {
   return (
     <div
-      className="fixed left-0 right-0 z-30 md:hidden border-t border-gray-100 bg-white/95 backdrop-blur-md px-4 py-2.5 flex items-center gap-2"
+      className="fixed left-0 right-0 z-30 md:hidden bg-white/95 backdrop-blur-md px-4 py-2.5 flex items-center gap-2"
       style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
     >
       <button

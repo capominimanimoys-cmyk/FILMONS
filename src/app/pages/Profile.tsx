@@ -656,7 +656,7 @@ export function Profile() {
   // form opened as a full-screen overlay (not a tab anymore) -- focusSection
   // opens straight to the accordion matching whichever section's Edit
   // link was tapped.
-  const [showEditProfile, setEditProfileSection] = useState<'about' | 'skills' | 'gear' | 'social' | null>(null);
+  const [showEditProfile, setEditProfileSection] = useState<'about' | 'bio' | 'skills' | 'gear' | 'social' | null>(null);
   const [showActionSheet, setShowActionSheet]     = useState(false);
   const [recommendations,      setRecommendations]      = useState<Recommendation[]>([]);
   const [recommendationCount,  setRecommendationCount]  = useState(0);
@@ -1170,7 +1170,6 @@ export function Profile() {
         primaryRole={primaryRole}
         bio={user.bio}
         location={locationDisplay}
-        profileUrl={profileUrl}
         reliabilityScore={rep && showRentalBadge ? rep.reliability_score : undefined}
         reliabilityLevel={rep && showRentalBadge ? rep.reliability_level : undefined}
         isOwner
@@ -1215,7 +1214,7 @@ export function Profile() {
               location={locationDisplay}
               openTo={collab}
               languages={languages}
-              onEditAbout={() => setEditProfileSection('about')}
+              onEditAbout={() => setEditProfileSection('bio')}
               skills={skills}
               onEditSkills={() => setEditProfileSection('skills')}
               portfolioItems={portfolioItems}

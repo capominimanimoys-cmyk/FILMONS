@@ -11,9 +11,15 @@ import { Pencil } from 'lucide-react';
 // with e.g. a comma-string instead of a real array here would crash
 // `.join()` ("x.join is not a function"). Normalize defensively instead of
 // trusting the prop's declared type.
+// "null"/"undefined" as literal text (not the JS values) show up when
+// something upstream stringified a genuinely-empty value before it got
+// here, and would otherwise survive as a garbage "Also Works As: null" row
+// instead of being treated as empty.
+const EMPTY_TOKENS = new Set(['null', 'undefined']);
+const isRealValue = (s: string) => !!s && !EMPTY_TOKENS.has(s.toLowerCase());
 function toList(v: unknown): string[] {
-  if (Array.isArray(v)) return v.filter(Boolean);
-  if (typeof v === 'string' && v.trim()) return v.split(',').map(s => s.trim()).filter(Boolean);
+  if (Array.isArray(v)) return v.map(x => String(x ?? '').trim()).filter(isRealValue);
+  if (typeof v === 'string' && v.trim()) return v.split(',').map(s => s.trim()).filter(isRealValue);
   return [];
 }
 
@@ -30,14 +36,17 @@ export function AboutSection({
   onEdit?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const longBio = (bio?.length ?? 0) > 180;
-  const shownBio = expanded || !longBio ? bio : `${bio!.slice(0, 180)}…`;
+  // Empty means null/undefined/""/whitespace-only, all treated identically.
+  const trimmedBio = (bio ?? '').trim();
+  const hasBio = trimmedBio.length > 0;
+  const longBio = trimmedBio.length > 180;
+  const shownBio = expanded || !longBio ? trimmedBio : `${trimmedBio.slice(0, 180)}…`;
 
   const secondaryRolesList = toList(secondaryRoles);
   const openToList = toList(openTo);
   const languagesList = toList(languages);
 
-  const hasAnything = bio || primaryRole || secondaryRolesList.length || location || openToList.length || languagesList.length;
+  const hasAnything = hasBio || primaryRole || secondaryRolesList.length || location || openToList.length || languagesList.length;
   if (!hasAnything && !isOwner) return null;
 
   return (
@@ -51,24 +60,29 @@ export function AboutSection({
         )}
       </div>
 
-      {!hasAnything ? (
-        <p className="text-xs text-gray-400">Tell people what you create — add a bio to your profile.</p>
-      ) : (
-        <div className="space-y-3">
-          {bio && (
-            <div>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{shownBio}</p>
-              {longBio && (
-                <button onClick={() => setExpanded(v => !v)} className="text-xs font-semibold text-gray-500 hover:underline mt-0.5">
-                  {expanded ? 'See less' : 'See more'}
-                </button>
-              )}
-            </div>
-          )}
+      <div className="space-y-3">
+        {hasBio ? (
+          <div>
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{shownBio}</p>
+            {longBio && (
+              <button onClick={() => setExpanded(v => !v)} className="text-xs font-semibold text-gray-500 hover:underline mt-0.5">
+                {expanded ? 'See less' : 'See more'}
+              </button>
+            )}
+          </div>
+        ) : isOwner ? (
+          // Owner + empty bio -> "+ Add bio", opens straight to the Bio
+          // field (AboutEditor's Overview accordion); viewer + empty bio ->
+          // nothing here at all, not even a placeholder.
+          <button onClick={onEdit} className="text-sm font-semibold text-blue-600 hover:underline">
+            + Add bio
+          </button>
+        ) : null}
 
-          {/* Single column on narrow phones -- two cramped columns there
-              made every value truncate. sm: and up (tablet-width+) is where
-              there's actually room for two. */}
+        {(!!primaryRole || !!secondaryRolesList.length || !!location || !!openToList.length || !!languagesList.length) && (
+          // Single column on narrow phones -- two cramped columns there
+          // made every value truncate. sm: and up (tablet-width+) is where
+          // there's actually room for two.
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 pt-1">
             {primaryRole && <Field label="Primary Role" value={primaryRole} />}
             {!!secondaryRolesList.length && <Field label="Also Works As" value={secondaryRolesList.join(', ')} />}
@@ -76,8 +90,8 @@ export function AboutSection({
             {!!openToList.length && <Field label="Open To" value={openToList.join(', ')} />}
             {!!languagesList.length && <Field label="Languages" value={languagesList.join(', ')} />}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }

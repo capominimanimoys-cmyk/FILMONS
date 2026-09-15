@@ -519,12 +519,15 @@ export function HostProfile() {
         primaryRole={primaryRole}
         bio={host.bio}
         location={location}
-        profileUrl={profileUrl}
         reliabilityScore={reliabilityScore}
         reliabilityLevel={reliabilityLevel}
         isOwner={false}
         onShare={() => navigate(`/share-card?userId=${resolvedId}`)}
         onMenu={() => setShowActionSheet(true)}
+        isFollowing={isFollowing(host.id)}
+        isPending={isPending(host.id)}
+        onFollow={handleFollowClick}
+        onMessage={handleMessage}
       />
 
       <ProfileStatsRow

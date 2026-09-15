@@ -686,7 +686,7 @@ interface Props {
   /** Opens straight to one accordion instead of always defaulting to
    * Personal Details -- used when AboutEditor is opened from a specific
    * Profile All-tab section's Edit link (e.g. Top Skills -> 'skills'). */
-  focusSection?: 'about' | 'skills' | 'gear' | 'social';
+  focusSection?: 'about' | 'bio' | 'skills' | 'gear' | 'social';
   newBirthdate: string; setNewBirthdate: (v:string)=>void;
   editEmail: boolean; setEditEmail: (v:boolean)=>void;
   editPhone: boolean; setEditPhone: (v:boolean)=>void;
@@ -803,8 +803,8 @@ export function AboutEditor(props: Props) {
         </SField>
       </Accordion>
 
-      {/* 2. Overview */}
-      <Accordion number="2" title="Overview">
+      {/* 2. Overview -- Bio lives here, not in Personal Details */}
+      <Accordion number="2" title="Overview" defaultOpen={focusSection === 'bio'}>
         <SField label="Display name"><SInput value={props.displayName} onChange={e=>props.setDisplayName(e.target.value)} placeholder="Your full name"/></SField>
         <SField label="Username">
           <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 bg-white focus-within:border-blue-400">

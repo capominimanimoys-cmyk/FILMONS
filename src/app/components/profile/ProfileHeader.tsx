@@ -8,14 +8,15 @@
 // Follow/Message live in the sticky bottom bar for a viewer, not here too --
 // putting the same two actions in both places was redundant. This header's
 // viewer-mode action row is Share + 3-dot only.
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, MessageCircle, UserCheck, UserPlus, Loader2 } from 'lucide-react';
 import { AccountTypeBadge } from '../AccountTypeBadge';
 import { ReliabilityBadge } from '../ReliabilityScore';
 
 export function ProfileHeader({
-  coverPhoto, avatar, name, username, isVerified, accountType, primaryRole, bio, location, profileUrl,
+  coverPhoto, avatar, name, username, isVerified, accountType, primaryRole, bio, location,
   reliabilityScore, reliabilityLevel,
   isOwner, onTapCover, onTapAvatar, onEditProfile, onShare, onMenu,
+  isFollowing, isPending, onFollow, onMessage,
 }: {
   coverPhoto?: string | null;
   avatar?: string | null;
@@ -26,7 +27,6 @@ export function ProfileHeader({
   primaryRole?: string;
   bio?: string;
   location?: string;
-  profileUrl?: string;
   reliabilityScore?: number;
   reliabilityLevel?: string;
   isOwner: boolean;
@@ -35,6 +35,14 @@ export function ProfileHeader({
   onEditProfile?: () => void;
   onShare: () => void;
   onMenu: () => void;
+  /** Viewer-mode only. ProfileStickyActionBar already covers Follow/Message
+   * on mobile (md:hidden) -- these render Follow/Message here too, but only
+   * at md: and up, so desktop (which never shows the mobile sticky bar)
+   * isn't left with no way to follow or message at all. */
+  isFollowing?: boolean;
+  isPending?: boolean;
+  onFollow?: () => void;
+  onMessage?: () => void;
 }) {
   return (
     <div className="relative bg-white border-b border-gray-100">
@@ -68,6 +76,24 @@ export function ProfileHeader({
                 Edit Profile
               </button>
             )}
+            {!isOwner && onMessage && (
+              <button onClick={onMessage} className="hidden md:flex items-center gap-1.5 text-xs font-bold text-white bg-gray-900 hover:bg-gray-800 px-3 py-1.5 rounded-lg transition-colors">
+                <MessageCircle className="w-3.5 h-3.5" /> Message
+              </button>
+            )}
+            {!isOwner && onFollow && (
+              <button
+                onClick={onFollow}
+                disabled={isPending}
+                className={`hidden md:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                  isFollowing ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : isFollowing ? <><UserCheck className="w-3.5 h-3.5" /> Following</>
+                  : <><UserPlus className="w-3.5 h-3.5" /> Follow</>}
+              </button>
+            )}
             <button onClick={onShare} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="Share" aria-label="Share">
               <ShareIcon />
             </button>
@@ -95,11 +121,6 @@ export function ProfileHeader({
           {location && <p className="text-xs text-gray-400 mt-0.5">{location}</p>}
           {username && (
             <p className="text-xs text-gray-400 mt-0.5">@{username}</p>
-          )}
-          {profileUrl && (
-            <a href={profileUrl} onClick={e => e.preventDefault()} className="text-xs text-blue-600 mt-0.5 inline-block">
-              {profileUrl.replace(/^https?:\/\//, '')}
-            </a>
           )}
           {bio && <p className="text-sm text-gray-700 mt-2 leading-relaxed">{bio}</p>}
         </div>
