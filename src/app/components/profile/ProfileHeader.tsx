@@ -45,7 +45,7 @@ export function ProfileHeader({
   onMessage?: () => void;
 }) {
   return (
-    <div className="relative bg-white border-b border-gray-100">
+    <div className="relative bg-white">
       {/* Cover */}
       <div
         className={`relative h-40 overflow-hidden bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 ${isOwner ? 'cursor-pointer' : ''}`}
