@@ -47,8 +47,12 @@ export function ProfileHeader({
       </div>
 
       <div className="px-4 pb-4">
-        {/* Avatar overlapping cover */}
-        <div className="flex items-end justify-between -mt-10">
+        {/* Avatar overlapping cover -- relative z-10 is required here: the
+            cover div above is `position: relative`, and CSS always paints
+            positioned elements above static ones regardless of DOM order,
+            so without this the (static) avatar row rendered BEHIND the
+            cover photo even though it comes later in the markup. */}
+        <div className="relative z-10 flex items-end justify-between -mt-10">
           <button onClick={isOwner ? onTapAvatar : undefined} className="shrink-0" disabled={!isOwner}>
             <div className="w-20 h-20 rounded-full border-4 border-white overflow-hidden bg-gray-200 shadow-lg">
               {avatar
