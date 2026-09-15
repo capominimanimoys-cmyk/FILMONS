@@ -1194,7 +1194,10 @@ export function Profile() {
 
       <ProfileTabNav tab={tab} onChange={switchTab} />
 
-      <div className="max-w-4xl lg:max-w-5xl mx-auto">
+      {/* px-3 -- the single horizontal gutter for every tab's content
+          below; individual tab bodies must not add their own px-* on top
+          of this or every card ends up needlessly narrow on mobile. */}
+      <div className="max-w-4xl lg:max-w-5xl mx-auto px-3">
 
         {/* ── Content ── */}
         <div className="pb-24">
@@ -1367,7 +1370,7 @@ export function Profile() {
               (postsApi.getUserPosts) but never rendered anywhere on this
               page; this is that fetch's first live use. */}
           {tab === 'activity' && (
-            <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+            <div className="md:max-w-2xl md:mx-auto py-4 space-y-4">
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <button onClick={() => setShowCompose(true)} className="w-full text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-3 text-left hover:bg-gray-100">What's on your mind?</button>
               </div>
@@ -1509,7 +1512,7 @@ export function Profile() {
           )}
 
           {tab === 'services' && (
-            <div className="px-4 py-4">
+            <div className="py-4">
               <div className="flex items-center justify-between mb-4">
                 <p className="font-bold text-gray-900">{listings.filter(isServiceListing).length} service{listings.filter(isServiceListing).length!==1?'s':''}</p>
                 <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
@@ -1532,7 +1535,7 @@ export function Profile() {
           )}
 
           {tab === 'listings' && (
-            <div className="px-4 py-4">
+            <div className="py-4">
               <div className="flex items-center justify-between mb-4">
                 <p className="font-bold text-gray-900">{listings.filter(l => !isServiceListing(l)).length} listing{listings.filter(l => !isServiceListing(l)).length!==1?'s':''}</p>
                 <Link to="/create-listing" className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl">+ New</Link>
@@ -1595,7 +1598,7 @@ export function Profile() {
 
           {/* REVIEWS */}
           {tab === 'reviews' && (
-            <div className="max-w-2xl mx-auto space-y-4">
+            <div className="md:max-w-2xl md:mx-auto space-y-4">
               {/* Received (about me) vs Given (written by me) — these are
                   different data sets (reviewed_user_id vs user_id) and must
                   not be conflated into one undifferentiated list. */}
@@ -1648,7 +1651,7 @@ export function Profile() {
           )}
 
           {tab === 'recommendations' && (
-            <div className="max-w-2xl mx-auto px-4 py-4">
+            <div className="md:max-w-2xl md:mx-auto py-4">
               <p className="text-sm font-bold text-gray-900 mb-3">{recommendationCount} Recommendation{recommendationCount !== 1 ? 's' : ''}</p>
               {recommendations.length === 0 ? (
                 <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100">

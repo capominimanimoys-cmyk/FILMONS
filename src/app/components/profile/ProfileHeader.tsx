@@ -46,7 +46,7 @@ export function ProfileHeader({
         {coverPhoto && <img src={coverPhoto} alt="" className="w-full h-full object-cover" />}
       </div>
 
-      <div className="px-4 pb-4">
+      <div className="px-3 pb-4">
         {/* Avatar overlapping cover -- relative z-10 is required here: the
             cover div above is `position: relative`, and CSS always paints
             positioned elements above static ones regardless of DOM order,

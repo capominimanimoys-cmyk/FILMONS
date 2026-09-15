@@ -18,7 +18,7 @@ export const PROFILE_TABS: { id: ProfileTab; label: string }[] = [
 export function ProfileTabNav({ tab, onChange, sticky = true }: { tab: ProfileTab; onChange: (t: ProfileTab) => void; sticky?: boolean }) {
   return (
     <div className={`${sticky ? 'sticky top-0 z-20' : ''} bg-white border-b border-gray-100`}>
-      <div className="flex gap-5 overflow-x-auto no-scrollbar px-4">
+      <div className="flex gap-5 overflow-x-auto no-scrollbar px-3">
         {PROFILE_TABS.map(t => (
           <button
             key={t.id}

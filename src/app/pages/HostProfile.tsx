@@ -540,7 +540,11 @@ export function HostProfile() {
 
       <ProfileTabNav tab={tab} onChange={setTab} />
 
-      <div className="max-w-4xl lg:max-w-5xl mx-auto px-4">
+      {/* px-3 -- the single horizontal gutter for every tab's content
+          below (ProfileAllTab and the other tab bodies carry no px-* of
+          their own, on purpose -- stacking two gutters needlessly narrowed
+          every card on mobile). */}
+      <div className="max-w-4xl lg:max-w-5xl mx-auto px-3">
 
         {/* ── Tab content ── */}
         {/* pb-40 -- clears both the sticky Message/Follow/More bar and the
@@ -600,7 +604,7 @@ export function HostProfile() {
 
           {/* ─── ACTIVITY ─────────────────────────────────────────────── */}
           {tab === 'activity' && (
-            <div className="max-w-2xl mx-auto space-y-4">
+            <div className="md:max-w-2xl md:mx-auto space-y-4">
               {posts.length === 0 ? (
                 <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
                   <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
@@ -612,7 +616,7 @@ export function HostProfile() {
 
           {/* ─── RECOMMENDATIONS ──────────────────────────────────────── */}
           {tab === 'recommendations' && (
-            <div className="max-w-2xl mx-auto">
+            <div className="md:max-w-2xl md:mx-auto">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs text-gray-400">{recommendationCount} recommendation{recommendationCount !== 1 ? 's' : ''}</p>
                 {me && me.id !== host.id && (

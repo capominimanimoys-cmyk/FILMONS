@@ -66,7 +66,10 @@ export function AboutSection({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-1">
+          {/* Single column on narrow phones -- two cramped columns there
+              made every value truncate. sm: and up (tablet-width+) is where
+              there's actually room for two. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 pt-1">
             {primaryRole && <Field label="Primary Role" value={primaryRole} />}
             {!!secondaryRolesList.length && <Field label="Also Works As" value={secondaryRolesList.join(', ')} />}
             {location && <Field label="Location" value={location} />}

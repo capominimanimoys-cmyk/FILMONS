@@ -56,8 +56,12 @@ export function ProfileAllTab({
   socialLinks: SocialLinksData;
   onEditSocialLinks?: () => void;
 }) {
+  // No horizontal padding here on purpose -- the page-level wrapper
+  // (Profile.tsx / HostProfile.tsx) owns the single horizontal gutter for
+  // its whole content column; adding another px-* here would stack two
+  // gutters and needlessly narrow every card on mobile.
   return (
-    <div className="px-4 py-4 space-y-3">
+    <div className="py-4 space-y-3">
       <AboutSection
         bio={bio} primaryRole={primaryRole} secondaryRoles={secondaryRoles}
         location={location} openTo={openTo} languages={languages}
