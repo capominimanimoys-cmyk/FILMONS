@@ -16,7 +16,7 @@ export function MyGearSection({ gear, isOwner, onEdit }: { gear: string[]; isOwn
   return (
     <section className="bg-white rounded-2xl border border-gray-100 p-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-black text-gray-900 flex items-center gap-1.5"><Camera className="w-4 h-4 text-gray-400" /> My Gear</p>
+        <p className="text-sm font-black text-gray-900 flex items-center gap-1.5"><Camera className="w-4 h-4 text-gray-400" /> My Gear/Tools</p>
         {isOwner && (
           <button onClick={onEdit} className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline">
             <Pencil className="w-3 h-3" /> Edit
@@ -25,7 +25,7 @@ export function MyGearSection({ gear, isOwner, onEdit }: { gear: string[]; isOwn
       </div>
 
       {!gear.length ? (
-        <p className="text-xs text-gray-400">No gear listed yet.</p>
+        <p className="text-xs text-gray-400">No gear or tools listed yet.</p>
       ) : (
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
           {visible.map(g => (

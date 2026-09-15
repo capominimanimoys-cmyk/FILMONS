@@ -1,6 +1,6 @@
 // The "All" tab body -- one vertical stack, in the exact order the spec's
 // "MOBILE BEHAVIOR" section lays out: About, Creator Level, Top Skills,
-// Featured Portfolio, Services, Listings, My Gear, Recommendations,
+// Featured Portfolio, Services, Listings, My Gear/Tools, Recommendations,
 // Portfolio Interaction, Social Links. Shared by Profile.tsx (owner) and
 // HostProfile.tsx (viewer) so the layout never drifts between the two.
 import { Listing } from '../../types';
