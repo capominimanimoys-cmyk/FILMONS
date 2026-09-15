@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
+import { logProfileEngagement, logProfileView } from '../lib/profileEngagement';
 import { User, Listing, Review, Post } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
@@ -396,6 +397,10 @@ export function HostProfile() {
       }
       setHost(hostData);
       setLoading(false);
+      // Passive impression -- deliberately NOT part of Profile Interaction
+      // (see profile_engagement.ts's comment). Own dedup window so a
+      // refresh/rerender of this same page load doesn't double-count.
+      if (hostData?.id) logProfileView(hostData.id, me?.id);
       // Landed here via the legacy /host/:id link but this profile has a
       // username -- silently upgrade the address bar to the clean canonical
       // URL, same as OAuthCallback-style post-auth redirects elsewhere.
@@ -472,6 +477,13 @@ export function HostProfile() {
 
   const handleMessage = () => {
     if (!me) { navigate('/login'); return; }
+    // Profile Interaction: logged at the moment the viewer taps Message on
+    // the profile -- the clearest profile-attributable signal, without
+    // hooking into Inbox.tsx's more involved conversation-resolution logic
+    // (?with= there finds-or-creates depending on prior history). Dedup
+    // (profileEngagement.ts) keeps repeated taps this session from
+    // inflating the count.
+    if (host?.id) logProfileEngagement(host.id, 'message', me.id);
     navigate(`/inbox?with=${host?.id}`);
   };
 
@@ -588,6 +600,7 @@ export function HostProfile() {
             <ProfileAllTab
               userId={host.id}
               isOwner={false}
+              viewerId={me?.id}
               accountType={host.accountType}
               isVerified={isVerified}
               bio={host.bio}

@@ -2,6 +2,7 @@ import { Listing, User, Review, Post, Comment, Conversation, ChatMessage } from 
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
+import { logProfileEngagement } from './profileEngagement';
 import { toast } from 'sonner';
 
 // Runs a listings query that filters out paused/removed listings, but
@@ -2479,6 +2480,13 @@ export const savedListingsApi = {
           item_type:  'listing',
           item_data:  listingData || {},
         }, { onConflict: 'user_id,item_id' });
+        // Profile Interaction: "Save a Service/Listing", attributed to the
+        // listing's OWNER regardless of which page this save happened on
+        // (this is the one function every save-toggle in the app already
+        // funnels through). listingData's shape varies by caller (mapped
+        // camelCase Listing vs a raw row), so check both.
+        const ownerId = listingData?.userId || listingData?.user_id;
+        if (ownerId && ownerId !== userId) logProfileEngagement(ownerId, 'listing_save', userId, listingId);
       }
     } catch (e) { console.warn('[favorites] DB write failed:', e); }
 

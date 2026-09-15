@@ -13,11 +13,11 @@ import { FeaturedPortfolioSection } from './FeaturedPortfolioSection';
 import { ListingsRowSection } from './ListingsRowSection';
 import { MyGearSection } from './MyGearSection';
 import { RecommendationsSection } from './RecommendationsSection';
-import { PortfolioInteractionSection } from './PortfolioInteractionSection';
+import { ProfileInteractionSection } from './ProfileInteractionSection';
 import { SocialLinksSection, type SocialLinksData } from './SocialLinksSection';
 
 export function ProfileAllTab({
-  userId, isOwner, accountType, isVerified,
+  userId, isOwner, viewerId, accountType, isVerified,
   bio, primaryRole, secondaryRoles, location, openTo, languages, onEditAbout,
   skills, onEditSkills,
   portfolioItems, onOpenPortfolioItem, onViewAllPortfolio,
@@ -28,6 +28,11 @@ export function ProfileAllTab({
 }: {
   userId: string;
   isOwner: boolean;
+  /** The CURRENT viewer's id -- distinct from `userId` (the profile owner
+   * being displayed). Only used to attribute Profile Interaction events
+   * (e.g. social-link clicks) to whoever actually performed them; omit for
+   * a guest viewer. */
+  viewerId?: string;
   accountType?: string;
   isVerified?: boolean;
   bio?: string;
@@ -94,9 +99,9 @@ export function ProfileAllTab({
         onViewAll={onViewAllRecommendations} onRecommend={onRecommend}
       />
 
-      {isOwner && <PortfolioInteractionSection userId={userId} />}
+      {isOwner && <ProfileInteractionSection userId={userId} />}
 
-      <SocialLinksSection links={socialLinks} isOwner={isOwner} onEdit={onEditSocialLinks} />
+      <SocialLinksSection links={socialLinks} isOwner={isOwner} onEdit={onEditSocialLinks} creatorId={userId} actorId={viewerId} />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { BottomSheet } from '../BottomSheet';
 import { createOrUpdateRecommendation } from '../../lib/recommendationsApi';
+import { logProfileEngagement } from '../../lib/profileEngagement';
 
 export function RecommendationComposeSheet({
   recommenderId, recommenderRole, recipientId, recipientName, existingBody, existingRelationship, onClose, onSaved,
@@ -28,6 +29,7 @@ export function RecommendationComposeSheet({
     });
     setSaving(false);
     if (!ok) { toast.error('Could not save your recommendation'); return; }
+    logProfileEngagement(recipientId, 'recommendation_submitted', recommenderId);
     toast.success('Recommendation posted');
     onSaved();
     onClose();

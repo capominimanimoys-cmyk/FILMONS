@@ -1215,6 +1215,7 @@ export function Profile() {
             <ProfileAllTab
               userId={user.id}
               isOwner
+              viewerId={user.id}
               accountType={user.accountType}
               isVerified={user.isVerified}
               bio={user.bio}

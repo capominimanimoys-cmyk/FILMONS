@@ -34,6 +34,7 @@ import { useAuth } from '../context/AuthContext';
 import { BottomSheet, SheetCancel } from './BottomSheet';
 import { AddToAlbumSheet } from './AddToAlbumSheet';
 import { logPortfolioInteraction } from '../lib/personalization';
+import { logProfileEngagement } from '../lib/profileEngagement';
 import {
   type PortfolioItem, type PortfolioAlbum,
   deletePortfolioItem, setItemHidden, reportPortfolioContent,
@@ -82,7 +83,7 @@ export function PortfolioItemActionSheet({
     if (!user) { showGuestPrompt('Create your Filmons account to save portfolio work.', 'Sign up to save'); return; }
     const next = !saved;
     setSaved(next);
-    const ok = await togglePortfolioSave(user.id, item.id, 'portfolio_item', !next);
+    const ok = await togglePortfolioSave(user.id, item.id, 'portfolio_item', !next, creatorId);
     if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
     logPortfolioInteraction(user.id, { category: item.category, subcategory: item.subcategory }, next ? 'save' : 'unsave');
   };
@@ -156,6 +157,7 @@ export function PortfolioItemActionSheet({
               <button
                 onClick={() => run(() => {
                   if (user) logPortfolioInteraction(user.id, { category: item.category, subcategory: item.subcategory }, 'open_full_portfolio');
+                  logProfileEngagement(creatorId, 'view_portfolio_click', user?.id);
                   navigate(`/portfolio/${creatorId}`);
                 })}
                 className={rowClass}

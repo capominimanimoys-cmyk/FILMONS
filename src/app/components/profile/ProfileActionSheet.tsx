@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Share2, Settings, Flag } from 'lucide-react';
 import { BottomSheet, SheetCancel } from '../BottomSheet';
 import { reportPortfolioContent } from '../../lib/portfolioApi';
+import { logProfileEngagement } from '../../lib/profileEngagement';
 
 const rowClass = 'flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors';
 
@@ -25,6 +26,10 @@ export function ProfileActionSheet({
   const run = (fn: () => void) => { onClose(); fn(); };
 
   const handleShare = async () => {
+    // Profile Interaction: only a VIEWER sharing someone else's profile
+    // counts -- the owner sharing their own profile isn't engagement with
+    // themselves.
+    if (!isOwner) logProfileEngagement(targetUserId, 'profile_share', reporterId);
     if (navigator.share) { navigator.share({ url: profileUrl }).catch(() => {}); return; }
     try { await navigator.clipboard.writeText(profileUrl); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };

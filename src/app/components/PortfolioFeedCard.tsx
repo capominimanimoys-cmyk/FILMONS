@@ -29,6 +29,7 @@ import {
   reportPortfolioContent, toggleCommentLike, deleteItemComment, logPortfolioEngagementEvent,
 } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
+import { logProfileEngagement } from '../lib/profileEngagement';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -532,7 +533,7 @@ function AlbumCardMenu({
             <button onClick={() => run(() => navigate(`/host/${entry.creator.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <User className="w-4 h-4 text-gray-400" /> View creator profile
             </button>
-            <button onClick={() => run(() => navigate(`/portfolio/${entry.creator.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+            <button onClick={() => run(() => { logProfileEngagement(entry.creator.id, 'view_portfolio_click', user?.id); navigate(`/portfolio/${entry.creator.id}`); })} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <ExternalLink className="w-4 h-4 text-gray-400" /> View portfolio
             </button>
             <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
@@ -594,7 +595,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
     if (!user) { showGuestPrompt('Create your Filmons account to save portfolio work.', 'Sign up to save'); return; }
     const next = !saved;
     setSaved(next);
-    const ok = await togglePortfolioSave(user.id, saveTargetId, saveTargetType, !next);
+    const ok = await togglePortfolioSave(user.id, saveTargetId, saveTargetType, !next, entry.creator.id);
     if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
     const target = entry.type === 'item'
       ? { category: entry.item.category, subcategory: entry.item.subcategory }
@@ -645,7 +646,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
               media/title above is what opens the specific item's own
               detail view instead. */}
           <button
-            onClick={() => navigate(`/portfolio/${entry.creator.id}`)}
+            onClick={() => { logProfileEngagement(entry.creator.id, 'view_portfolio_click', user?.id); navigate(`/portfolio/${entry.creator.id}`); }}
             className="flex items-center gap-0.5 text-xs font-bold text-blue-600"
           >
             View portfolio <ChevronRight className="w-3.5 h-3.5" />

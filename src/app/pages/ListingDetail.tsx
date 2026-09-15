@@ -12,6 +12,7 @@ import { boostApi } from '../lib/boostApi';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { isCreatorPlus, isProfessional } from '../lib/reliabilityApi';
 import { playTransition } from '../lib/smartAnimate';
+import { logProfileEngagement } from '../lib/profileEngagement';
 
 // ── Lightbox ──────────────────────────────────────────────────────────────
 function Lightbox({ items, startIndex, onClose }: {
@@ -116,6 +117,20 @@ export function ListingDetail() {
   const [emergencyBlocked, setEmergencyBlocked] = useState(false);
 
   useEffect(() => { if (id) loadListing(id); }, [id]);
+
+  // Profile Interaction: opening a Service/Listing counts toward its
+  // owner's total regardless of which discovery surface sent the viewer
+  // here (Home, Search, the owner's own Profile, a shared link, ...) --
+  // this page is the one place every path to viewing a listing converges,
+  // so logging here (rather than at every possible originating click)
+  // covers all of them without missing any. Never counts the owner
+  // viewing their own listing. logProfileEngagement's own session dedup
+  // (src/app/lib/profileEngagement.ts) keeps a refresh/rerender from
+  // inflating this.
+  useEffect(() => {
+    if (!listing || listing.userId === user?.id) return;
+    logProfileEngagement(listing.userId, listing.listingType === 'service' ? 'service_open' : 'listing_open', user?.id, listing.id);
+  }, [listing?.id, listing?.userId, user?.id]); // eslint-disable-line
 
   // Plays the FLIP transition (smartAnimate.ts) captured by ListingCard's
   // handleClick just before it navigated here -- a no-op if the page was

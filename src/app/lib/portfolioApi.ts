@@ -5,6 +5,7 @@
  */
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { logProfileEngagement } from './profileEngagement';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link';
 
@@ -840,7 +841,7 @@ export async function isPortfolioSaved(userId: string, targetId: string, targetT
 }
 
 export async function togglePortfolioSave(
-  userId: string, targetId: string, targetType: PortfolioSaveTargetType, currentlySaved: boolean,
+  userId: string, targetId: string, targetType: PortfolioSaveTargetType, currentlySaved: boolean, creatorId?: string,
 ): Promise<boolean> {
   if (currentlySaved) {
     const { error } = await supabase.from('favorites').delete()
@@ -851,6 +852,7 @@ export async function togglePortfolioSave(
     { user_id: userId, item_id: targetId, item_type: targetType, item_data: {} },
     { onConflict: 'user_id,item_id' },
   );
+  if (!error && creatorId) logProfileEngagement(creatorId, 'portfolio_save', userId, targetId);
   return !error;
 }
 

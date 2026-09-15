@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { socialApi } from '../lib/api';
 import { useAuth } from './AuthContext';
 import { logPortfolioInteraction, roleToCategories, type PortfolioInteractionAction } from '../lib/personalization';
+import { logProfileEngagement } from '../lib/profileEngagement';
 
 // Backs Home -> Portfolio's personalized category chips: "creators and
 // roles they follow" is one of the ranking signals, at the SAME follow/
@@ -104,7 +105,10 @@ export function FollowProvider({ children }: { children: ReactNode }) {
     setFollowingIds(prev => new Set(prev).add(targetId));
     try {
       await socialApi.follow(targetId);
-      if (userId) logFollowInteraction(userId, targetId, 'follow_creator');
+      if (userId) {
+        logFollowInteraction(userId, targetId, 'follow_creator');
+        logProfileEngagement(targetId, 'follow', userId);
+      }
     } catch (e: any) {
       setFollowingIds(prev => {
         const next = new Set(prev);
