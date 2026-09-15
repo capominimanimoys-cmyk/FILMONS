@@ -15,6 +15,9 @@ import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { emergencyApi, EMERGENCY_PLANS, type EmergencyPlan } from '../lib/emergencyApi';
+import { entitlementsApi, getEntitlement, getServiceListingUsage, type LimitReachedInfo } from '../lib/entitlements';
+import { normalizeTier } from '../lib/reliabilityApi';
+import { ServiceLimitUpgrade } from '../components/ServiceLimitUpgrade';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type ListingKind =
@@ -1200,13 +1203,27 @@ function Step9({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
 }
 
 // ── Step 10 — Review & Publish ─────────────────────────────────────────────────
-function Step10({ form, set, onPublish, onSaveDraft, isSubmitting }: {
+function Step10({ form, set, onPublish, onSaveDraft, isSubmitting, limitReached, onUpgrade, onManageServices, onDismissLimit }: {
   form: FormState;
   set: (f: Partial<FormState>) => void;
   onPublish: () => void;
   onSaveDraft: () => void;
   isSubmitting: boolean;
+  limitReached: LimitReachedInfo | null;
+  onUpgrade: (plan: 'professional' | 'business') => void;
+  onManageServices: () => void;
+  onDismissLimit: () => void;
 }) {
+  // Draft/wizard state is completely untouched -- this replaces only what
+  // renders, so dismissing returns straight back to this same review step.
+  if (limitReached) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <ServiceLimitUpgrade limitReached={limitReached} onUpgrade={onUpgrade} onManage={onManageServices} onMaybeLater={onDismissLimit} />
+      </div>
+    );
+  }
+
   const allImages=[...form.existingImages,...form.imagePreviews];
   const cover=allImages[0]||null;
   const kindInfo = LISTING_KINDS.find(k=>k.kind===form.kind);
@@ -1383,6 +1400,7 @@ export function CreateListing() {
   const [step, setStep] = useState(1);
   const [form, setFormRaw] = useState<FormState>(defaultForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [limitReached, setLimitReached] = useState<LimitReachedInfo | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
@@ -1607,6 +1625,23 @@ export function CreateListing() {
     if (!user) return;
     if (!form.title.trim()||!form.city.trim()) { toast.error('Title and city are required'); return; }
 
+    // Service listings have a real, server-enforced posting cap (Guest/
+    // Creator/Creator+ = 1 concurrent active Service, Professional/Business
+    // = unlimited). This is a fast client-side pre-check purely to avoid
+    // wasting an image/video upload on a publish that's about to be
+    // rejected -- the actual enforcement is server-side, in
+    // fn_publish_service_listing via publish-service-listing (see the
+    // isService branch below), which stays authoritative regardless of
+    // what this check finds.
+    const isService = form.kind !== 'equipment-rental' && form.kind !== 'equipment-sale';
+    if (isService) {
+      const limit = getEntitlement(user.accountType).services;
+      if (limit !== null) {
+        const used = await getServiceListingUsage(user.id);
+        if (used >= limit) { setLimitReached({ plan: normalizeTier(user.accountType), limit }); return; }
+      }
+    }
+
     setIsSubmitting(true);
 
     // Upload new images/videos *before* the try/catch below — a failure here
@@ -1637,6 +1672,46 @@ export function CreateListing() {
         setIsSubmitting(false);
         return;
       }
+    }
+
+    // Service listings never take the direct-insert/fallback path below --
+    // that path would bypass the server-side entitlement check entirely
+    // (fn_publish_service_listing does the actual insert itself, via the
+    // service role, so there's no separate "direct insert" step for this
+    // branch). Everything else (gear rent/sale) is completely untouched.
+    if (isService) {
+      try {
+        const payload = buildPayload();
+        const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+        const result = await entitlementsApi.publishServiceListing(user.id, {
+          ...payload,
+          id: newId,
+          images: imageUrls,
+          videos: videoUrls,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          is_active: true,
+        });
+        if ('limitReached' in result) { setLimitReached(result.limitReached); setIsSubmitting(false); return; }
+
+        localStorage.removeItem(DRAFT_KEY);
+        invalidateListingsCache();
+        toast.success('Listing published!', { description: 'Your listing is now live on the marketplace.' });
+        fetch(`https://${projectId}.supabase.co/functions/v1/notify-event`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          body: JSON.stringify({ type: 'followed_creator_posted', creatorId: user.id, creatorName: user.name, listingId: result.listing.id, listingTitle: payload.title }),
+        }).catch(() => {});
+        await finishPublish(result.listing.id);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
     }
 
     try {
@@ -1718,6 +1793,19 @@ export function CreateListing() {
     }
   };
 
+  const handleUpgrade = async (plan: 'professional' | 'business') => {
+    if (!user) return;
+    try {
+      const origin = window.location.origin;
+      const { url } = await entitlementsApi.startSubscriptionCheckout(
+        user.id, plan, `${origin}/create-listing?sub_success=1&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`, `${origin}/create-listing`,
+      );
+      window.location.href = url;
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not start checkout');
+    }
+  };
+
   const handleSaveDraft = () => {
     try {
       const { imageFiles, videoFiles, ...serializable } = form;
@@ -1741,7 +1829,8 @@ export function CreateListing() {
       case 7:  return <Step7 form={form} set={set}/>;
       case 8:  return <Step8 form={form} set={set}/>;
       case 9:  return <Step9 form={form} set={set}/>;
-      case 10: return <Step10 form={form} set={set} onPublish={handlePublish} onSaveDraft={handleSaveDraft} isSubmitting={isSubmitting}/>;
+      case 10: return <Step10 form={form} set={set} onPublish={handlePublish} onSaveDraft={handleSaveDraft} isSubmitting={isSubmitting}
+        limitReached={limitReached} onUpgrade={handleUpgrade} onManageServices={() => navigate('/my-listings')} onDismissLimit={() => setLimitReached(null)}/>;
       default: return null;
     }
   };

@@ -200,6 +200,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Deploy publish-service-listing
+        run: supabase functions deploy publish-service-listing --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Deploy subscription-charge
         run: supabase functions deploy subscription-charge --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:

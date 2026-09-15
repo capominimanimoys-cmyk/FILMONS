@@ -20,6 +20,12 @@ export interface TierEntitlement {
   // below matters now -- viewing is unrestricted, applying is what's
   // limited (weekly).
   opportunityQueueDaily: number | null;
+  // Concurrent ACTIVE Service listings (listing_type = 'service') allowed
+  // at once -- a permanent slot cap, not a resettable weekly/monthly quota
+  // like posts/applications above (pausing/deleting a Service frees a slot
+  // immediately). null = unlimited. Enforced by fn_publish_service_listing
+  // via publish-service-listing/index.ts.
+  services: number | null;
   // Reset cadence for posts/applications specifically. Creator, Creator+
   // and Professional all reset weekly (Monday 00:00 through Sunday 23:59,
   // server/UTC time -- this app has no per-user timezone to key off yet);
@@ -35,10 +41,10 @@ export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
   // Wallet.tsx's isCreatorPlus gate client-side, isCreatorPlus() below
   // server-side), so a plain Creator has no Wallet to pay into and is
   // blocked from applying entirely, not just rate-limited.
-  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 2,    window: 'week'  },
-  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 5,    window: 'week'  },
-  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, opportunityQueueDaily: null, window: 'week'  },
-  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, opportunityQueueDaily: null, window: 'month' },
+  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 2,    services: 1,    window: 'week'  },
+  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   opportunityQueueDaily: 5,    services: 1,    window: 'week'  },
+  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, opportunityQueueDaily: null, services: null, window: 'week'  },
+  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, opportunityQueueDaily: null, services: null, window: 'month' },
 };
 
 // Guest (no account at all) isn't part of AccountTier -- same daily cap as

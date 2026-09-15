@@ -11,6 +11,7 @@ export interface TierEntitlement {
   applications: number | null; // Opportunity applications per `window`; null = unlimited
   priceCents: number;          // CAD, per month (billing cadence -- unrelated to `window`); 0 = free
   swipesPerDay: number | null; // Home deck Like+Pass swipes per calendar day; null = unlimited
+  services: number | null;     // Concurrent ACTIVE Service listings allowed at once; null = unlimited
   // Reset cadence for posts/applications specifically -- must match
   // supabase/functions/_shared/entitlements.ts's `window` field exactly,
   // or this file's usage/reset display would disagree with what the
@@ -24,10 +25,10 @@ export const ENTITLEMENTS: Record<AccountTier, TierEntitlement> = {
   // receiving a payout, and Wallet access only starts at Creator+ (see
   // Wallet.tsx's isCreatorPlus gate), so a plain Creator has no Wallet to
   // pay into and is blocked from applying at all, not just rate-limited.
-  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
-  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   window: 'week'  },
-  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, window: 'week'  },
-  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, window: 'month' },
+  creator:      { posts: 0,    applications: 0,    priceCents: 0,    swipesPerDay: 25,   services: 1,    window: 'week'  },
+  creator_plus: { posts: 1,    applications: 2,    priceCents: 0,    swipesPerDay: 25,   services: 1,    window: 'week'  },
+  professional: { posts: 5,    applications: 5,    priceCents: 999,  swipesPerDay: null, services: null, window: 'week'  },
+  business:     { posts: null, applications: null, priceCents: 1999, swipesPerDay: null, services: null, window: 'month' },
 };
 
 export function getEntitlement(accountType?: string): TierEntitlement {
@@ -139,6 +140,15 @@ export async function getOpportunityUsage(userId: string, accountType?: string):
   return { posts: posts || 0, applications: applications || 0 };
 }
 
+// Real COUNT read (currently-active Service listings, no time window --
+// see TierEntitlement.services) -- display only, never used to enforce
+// anything; the write path is server-enforced via publish-service-listing.
+export async function getServiceListingUsage(userId: string): Promise<number> {
+  const { count } = await supabase.from('listings').select('id', { count: 'exact', head: true })
+    .eq('user_id', userId).eq('listing_type', 'service').eq('is_active', true);
+  return count || 0;
+}
+
 async function callFn(name: string, body: Record<string, unknown>) {
   const res = await fetch(`https://${projectId}.supabase.co/functions/v1/${name}`, {
     method: 'POST',
@@ -183,6 +193,15 @@ export const entitlementsApi = {
     if (!ok) {
       if (status === 403 && data.error === 'limit_reached') return { limitReached: { plan: data.plan, limit: data.limit } };
       throw new Error(data.error || 'Could not publish opportunity');
+    }
+    return { listing: data.listing };
+  },
+
+  publishServiceListing: async (userId: string, row: Record<string, unknown>): Promise<{ listing: any } | { limitReached: LimitReachedInfo }> => {
+    const { ok, status, data } = await callFn('publish-service-listing', { userId, row });
+    if (!ok) {
+      if (status === 403 && data.error === 'limit_reached') return { limitReached: { plan: data.plan, limit: data.limit } };
+      throw new Error(data.error || 'Could not publish service listing');
     }
     return { listing: data.listing };
   },

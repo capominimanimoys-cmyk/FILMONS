@@ -36,7 +36,7 @@ import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, type PortfolioItem } from '../lib/portfolioApi';
-import { isServiceListing } from '../lib/filmSearch';
+import { isServiceListing } from '../lib/listingHelpers';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
 import { ProfileHeader } from '../components/profile/ProfileHeader';

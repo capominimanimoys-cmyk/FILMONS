@@ -22,7 +22,7 @@ import { PostCard } from '../components/PostCard';
 import { toast } from 'sonner';
 import { FollowersModal } from '../components/FollowersModal';
 import { supabase } from '../../lib/supabase';
-import { isServiceListing } from '../lib/filmSearch';
+import { isServiceListing } from '../lib/listingHelpers';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
 import { ProfileStatsRow } from '../components/profile/ProfileStatsRow';
