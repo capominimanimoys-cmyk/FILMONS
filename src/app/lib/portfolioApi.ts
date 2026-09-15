@@ -892,9 +892,20 @@ export function logPortfolioEngagementEvent(
 }
 
 export interface PortfolioInteractionStats {
+  // Per-action counts/trends are kept for analytics/future features (per
+  // spec: "continue tracking the individual event types in the backend")
+  // -- the Profile UI itself only ever shows `total`/`totalChangePct`
+  // below, never these four separately.
   views: number; likes: number; comments: number; shares: number;
   viewsChangePct: number | null; likesChangePct: number | null;
   commentsChangePct: number | null; sharesChangePct: number | null;
+  // The Profile UI's one combined metric: views+likes+comments+shares
+  // (saves excluded on purpose, per spec). totalChangePct compares the
+  // COMBINED current-30-days sum against the COMBINED previous-30-days
+  // sum -- not an average of four separately-computed percentages, which
+  // would weight a tiny metric's swing the same as a large one's.
+  total: number;
+  totalChangePct: number | null;
 }
 
 function pctChange(curr: number, prev: number): number | null {
@@ -926,12 +937,19 @@ export async function getPortfolioInteractionStats(creatorId: string): Promise<P
   const curr = Object.fromEntries(actions.map((a, i) => [a, currCounts[i]])) as Record<PortfolioEngagementAction, number>;
   const prev = Object.fromEntries(actions.map((a, i) => [a, prevCounts[i]])) as Record<PortfolioEngagementAction, number>;
 
+  // Combined sum, not four separately-computed percentages averaged
+  // together -- saves are deliberately excluded from this total.
+  const currTotal = curr.view + curr.like + curr.comment + curr.share;
+  const prevTotal = prev.view + prev.like + prev.comment + prev.share;
+
   return {
     views: curr.view, likes: curr.like, comments: curr.comment, shares: curr.share,
     viewsChangePct: pctChange(curr.view, prev.view),
     likesChangePct: pctChange(curr.like, prev.like),
     commentsChangePct: pctChange(curr.comment, prev.comment),
     sharesChangePct: pctChange(curr.share, prev.share),
+    total: currTotal,
+    totalChangePct: pctChange(currTotal, prevTotal),
   };
 }
 
