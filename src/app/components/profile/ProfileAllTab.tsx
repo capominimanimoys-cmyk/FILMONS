@@ -101,7 +101,7 @@ export function ProfileAllTab({
       <EducationSection education={education} isOwner={isOwner} onEdit={onEditEducation} />
 
       <FeaturedPortfolioSection
-        items={portfolioItems} isOwner={isOwner}
+        userId={userId} items={portfolioItems} isOwner={isOwner}
         onOpenItem={onOpenPortfolioItem} onViewAll={onViewAllPortfolio}
       />
 
