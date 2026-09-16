@@ -12,6 +12,11 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { boostApi } from '../lib/boostApi';
 import * as notifs from '../lib/notifications';
 import { captureSnapshot } from '../lib/smartAnimate';
+import { UserAvatar } from './AccountTypeBadge';
+import { TrustBadge } from './trust/TrustBadge';
+import { TrustDetailsSheet } from './trust/TrustDetailsSheet';
+import { TrustProfileOverlay } from './trust/TrustProfileOverlay';
+import { getTrustLevelCached, type TrustLevel } from '../lib/trustApi';
 
 interface ListingCardProps {
   listing: Listing & { distance?: number };
@@ -404,6 +409,25 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
   const isEmergency = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
   const isOwn = !!user?.id && user.id === listing.userId;
 
+  // Trust represents the person/business behind the LISTING, not the
+  // listing itself (per spec) -- fetched per-card (deduped/cached, see
+  // getTrustLevelCached) since this card mounts inside many independent
+  // list/grid pages with no shared batching point of their own.
+  const [ownerTrustLevel, setOwnerTrustLevel] = useState<TrustLevel | undefined>();
+  const [showTrustDetails, setShowTrustDetails] = useState(false);
+  const [trustProfileOpen, setTrustProfileOpen] = useState(false);
+  const [trustProfileClosing, setTrustProfileClosing] = useState(false);
+  const closeTrustProfile = () => {
+    setTrustProfileClosing(true);
+    setTimeout(() => { setTrustProfileOpen(false); setTrustProfileClosing(false); }, 260);
+  };
+  useEffect(() => {
+    if (!listing.userId) return;
+    let cancelled = false;
+    getTrustLevelCached(listing.userId).then(level => { if (!cancelled) setOwnerTrustLevel(level); });
+    return () => { cancelled = true; };
+  }, [listing.userId]);
+
   // Real, honest funnel event — logged once per listing per session, not
   // fabricated. `source` reflects the listing's actual boost state.
   useEffect(() => {
@@ -686,8 +710,32 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
               <span className="font-normal text-gray-500 text-xs"> CAD{priceUnit}</span>
             </p>
           )}
+
+          {listing.userId && listing.userName && (
+            <button
+              onClick={e => { e.stopPropagation(); setShowTrustDetails(true); }}
+              className="flex items-center gap-1.5 mt-1.5 min-w-0"
+            >
+              <UserAvatar user={{ id: listing.userId, name: listing.userName, avatar: listing.userAvatar }} size={16} />
+              <span className="text-xs text-gray-600 font-medium truncate">{listing.userName}</span>
+              {ownerTrustLevel && <TrustBadge level={ownerTrustLevel} size="sm" />}
+            </button>
+          )}
         </div>
       </div>
+
+      {showTrustDetails && listing.userId && createPortal(
+        <TrustDetailsSheet
+          userId={listing.userId}
+          onClose={() => setShowTrustDetails(false)}
+          onViewFullProfile={() => { setShowTrustDetails(false); setTrustProfileOpen(true); }}
+        />,
+        document.body,
+      )}
+      {(trustProfileOpen || trustProfileClosing) && listing.userId && createPortal(
+        <TrustProfileOverlay userId={listing.userId} closing={trustProfileClosing} onClose={closeTrustProfile} />,
+        document.body,
+      )}
     </>
   );
 }

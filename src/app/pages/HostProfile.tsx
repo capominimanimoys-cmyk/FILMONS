@@ -26,7 +26,6 @@ import { getRecommendations, getRecommendationCount, type Recommendation } from 
 import { ProfileHeader } from '../components/profile/ProfileHeader';
 import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
-import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
 import { ProfileViewerActions } from '../components/profile/ProfileViewerActions';
 import { RecommendationComposeSheet } from '../components/profile/RecommendationComposeSheet';
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
@@ -125,7 +124,6 @@ export function HostProfile() {
   const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
   const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
-  const [showActionSheet,  setShowActionSheet]  = useState(false);
   const [showRecommend,    setShowRecommend]    = useState(false);
   const [recommendations,     setRecommendations]     = useState<Recommendation[]>([]);
   const [recommendationCount, setRecommendationCount] = useState(0);
@@ -336,7 +334,6 @@ export function HostProfile() {
   const web = (host as any).website;
 
   const filteredPortfolio = portfolioItems.filter(item => matchesPortfolioFilter(item, portfolioFilter));
-  const profileUrl = `${window.location.origin}/${host.username || host.id}`;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -363,7 +360,6 @@ export function HostProfile() {
         onTapTrustBadge={() => setShowTrustDetails(true)}
         isOwner={false}
         onShare={() => navigate(`/share-card?userId=${resolvedId}`)}
-        onMenu={() => setShowActionSheet(true)}
         isFollowing={isFollowing(host.id)}
         isPending={isPending(host.id)}
         onFollow={handleFollowClick}
@@ -689,15 +685,6 @@ export function HostProfile() {
         <TrustProfileOverlay userId={host.id} closing={trustProfileClosing} onClose={closeTrustProfile} />
       )}
 
-      {showActionSheet && (
-        <ProfileActionSheet
-          isOwner={false}
-          profileUrl={profileUrl}
-          targetUserId={host.id}
-          reporterId={me?.id}
-          onClose={() => setShowActionSheet(false)}
-        />
-      )}
 
       {showRecommend && me && (
         <RecommendationComposeSheet

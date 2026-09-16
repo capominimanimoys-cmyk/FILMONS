@@ -112,3 +112,32 @@ export async function getTrustLevelsBatch(userIds: string[]): Promise<Map<string
   for (const row of data ?? []) map.set(row.user_id, (row.filmons_trust_level as TrustLevel) ?? 'new');
   return map;
 }
+
+// Module-level cache + in-flight dedup for single-card consumers that don't
+// have a parent-level batching point of their own (e.g. ListingCard, which
+// renders inside many independent list/grid pages -- Search, Category
+// results, Home's swipe deck, Profile's listings tab, saved listings...).
+// Threading a batched fetch through every one of those parents would be a
+// much larger, riskier change than letting the card resolve its own trust
+// level, deduped across however many cards for the SAME owner are mounted
+// at once on a given page.
+const trustLevelCache = new Map<string, TrustLevel>();
+const trustLevelInFlight = new Map<string, Promise<TrustLevel>>();
+
+export async function getTrustLevelCached(userId: string): Promise<TrustLevel> {
+  const cached = trustLevelCache.get(userId);
+  if (cached) return cached;
+  const inFlight = trustLevelInFlight.get(userId);
+  if (inFlight) return inFlight;
+
+  const promise = supabase.from('reputation_scores').select('filmons_trust_level').eq('user_id', userId).maybeSingle()
+    .then(({ data }) => {
+      const level = (data?.filmons_trust_level as TrustLevel) ?? 'new';
+      trustLevelCache.set(userId, level);
+      trustLevelInFlight.delete(userId);
+      return level;
+    })
+    .catch(() => { trustLevelInFlight.delete(userId); return 'new' as TrustLevel; });
+  trustLevelInFlight.set(userId, promise);
+  return promise;
+}

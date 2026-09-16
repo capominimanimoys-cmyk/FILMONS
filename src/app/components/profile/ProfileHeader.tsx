@@ -42,7 +42,11 @@ export function ProfileHeader({
   onTapAvatar?: () => void;
   onEditProfile?: () => void;
   onShare: () => void;
-  onMenu: () => void;
+  /** Owner-mode only now -- HostProfile.tsx (viewer) no longer passes this,
+   * so the 3-dot button next to Share simply doesn't render there (it
+   * duplicated the header's own Share action with a second, different
+   * share mechanism). Profile.tsx (owner) still passes it for its own menu. */
+  onMenu?: () => void;
   /** Viewer-mode only. ProfileStickyActionBar already covers Follow/Message
    * on mobile (md:hidden) -- these render Follow/Message here too, but only
    * at md: and up, so desktop (which never shows the mobile sticky bar)
@@ -132,9 +136,11 @@ export function ProfileHeader({
             <button onClick={onShare} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="Share" aria-label="Share">
               <ShareIcon />
             </button>
-            <button onClick={onMenu} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="More" aria-label="More">
-              <MoreIcon />
-            </button>
+            {onMenu && (
+              <button onClick={onMenu} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="More" aria-label="More">
+                <MoreIcon />
+              </button>
+            )}
           </div>
         </div>
 
