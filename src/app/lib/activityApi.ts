@@ -1,15 +1,21 @@
 // Connect -> Activity: real network-activity events (see
-// supabase/migrations/20240502000000_activity_events.sql). Never a generic
-// posts feed -- every entry is a typed, resource-linked event, and every
+// supabase/migrations/20240502000000_activity_events.sql,
+// 20240503000000_activity_events_add_post.sql). Every entry is a typed,
+// resource-linked event (never a raw dump of a source table), and every
 // read re-verifies the underlying resource is STILL public right now, not
 // just at the moment it was logged (a later hide/delete/privacy change on
 // the resource makes its Activity entry disappear without touching this
-// table).
+// table). `posts` is one of several source tables an event can point at
+// (alongside portfolio_items/portfolio_albums/listings/connections/
+// recommendations) -- this is unrelated to, and doesn't change, Connect ->
+// Portfolio, which still reads exclusively from portfolio_items/
+// portfolio_albums per its own spec.
 import { supabase } from '../../lib/supabase';
 
 export type ActivityType =
   | 'portfolio_published' | 'portfolio_album_published' | 'service_published'
-  | 'opportunity_published' | 'listing_published' | 'connection_created' | 'recommendation_received';
+  | 'opportunity_published' | 'listing_published' | 'connection_created'
+  | 'recommendation_received' | 'post_published';
 
 export interface ActivityActor {
   id: string; name: string; username: string | null; avatar_url: string | null; is_verified: boolean;
@@ -66,8 +72,9 @@ async function filterVisible(rows: any[]): Promise<any[]> {
   const listingIds = rows.filter(r => r.target_type === 'listing').map(r => r.target_id);
   const connectionIds = rows.filter(r => r.target_type === 'connection').map(r => r.target_id);
   const recommendationIds = rows.filter(r => r.target_type === 'recommendation').map(r => r.target_id);
+  const postIds = rows.filter(r => r.target_type === 'post').map(r => r.target_id);
 
-  const [itemRows, albumRows, albumItemCounts, listingRows, connectionRows, recommendationRows] = await Promise.all([
+  const [itemRows, albumRows, albumItemCounts, listingRows, connectionRows, recommendationRows, postRows] = await Promise.all([
     portfolioItemIds.length
       ? supabase.from('portfolio_items').select('id, user_id, is_hidden').in('id', portfolioItemIds).then(r => r.data ?? [])
       : Promise.resolve([]),
@@ -86,6 +93,9 @@ async function filterVisible(rows: any[]): Promise<any[]> {
     recommendationIds.length
       ? supabase.from('recommendations').select('id').in('id', recommendationIds).then(r => r.data ?? [])
       : Promise.resolve([]),
+    postIds.length
+      ? supabase.from('posts').select('id, visibility').in('id', postIds).then(r => r.data ?? [])
+      : Promise.resolve([]),
   ]);
 
   // Portfolio items/albums also depend on the OWNER's creator-level
@@ -103,9 +113,16 @@ async function filterVisible(rows: any[]): Promise<any[]> {
   const listingMap = new Map(listingRows.map((r: any) => [r.id, r]));
   const connectionMap = new Map(connectionRows.map((r: any) => [r.id, r]));
   const recommendationIdSet = new Set(recommendationRows.map((r: any) => r.id));
+  const postMap = new Map((postRows as any[]).map(r => [r.id, r]));
 
   return rows.filter(r => {
     switch (r.target_type) {
+      case 'post': {
+        const post = postMap.get(r.target_id);
+        // postsApi.create() always writes visibility:'public' today, but
+        // fall back to public for any older row that predates the column.
+        return !!post && (post.visibility ?? 'public') === 'public';
+      }
       case 'portfolio_item': {
         const item = itemMap.get(r.target_id);
         return !!item && !item.is_hidden && !nonPublicOwners.has(item.user_id);
@@ -196,5 +213,6 @@ export function getActivitySentence(entry: Pick<ActivityEntry, 'activityType' | 
     case 'listing_published': return 'posted a new listing';
     case 'connection_created': return entry.otherUser ? `completed a professional connection with ${entry.otherUser.name}` : 'made a new professional connection';
     case 'recommendation_received': return 'received a new professional recommendation';
+    case 'post_published': return 'shared a new post';
   }
 }

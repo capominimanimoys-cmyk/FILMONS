@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { BadgeCheck, Image as ImageIcon, Briefcase, Users, Star } from 'lucide-react';
+import { BadgeCheck, Image as ImageIcon, Briefcase, Users, Star, FileText } from 'lucide-react';
 import { TrustBadge } from './trust/TrustBadge';
 import { TrustDetailsSheet } from './trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from './trust/TrustProfileOverlay';
@@ -29,7 +29,7 @@ function timeAgo(iso: string): string {
 
 const PREVIEW_ICON: Record<string, typeof ImageIcon> = {
   portfolio_item: ImageIcon, portfolio_album: ImageIcon,
-  listing: Briefcase, connection: Users, recommendation: Star,
+  listing: Briefcase, connection: Users, recommendation: Star, post: FileText,
 };
 
 export function ActivityFeedCard({ entry, trustLevel }: { entry: ActivityEntry; trustLevel?: TrustLevel }) {
@@ -51,6 +51,9 @@ export function ActivityFeedCard({ entry, trustLevel }: { entry: ActivityEntry; 
         return;
       case 'listing':
         navigate(`/listing/${entry.targetId}`);
+        return;
+      case 'post':
+        navigate(`/post/${entry.targetId}`);
         return;
       case 'connection':
         if (entry.otherUser) navigate(`/host/${entry.otherUser.id}`);

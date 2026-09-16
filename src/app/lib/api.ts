@@ -1696,6 +1696,11 @@ export const postsApi = {
 
     if (!data) throw new Error('No data returned from post insert');
 
+    logActivityEvent({
+      actorId: currentUser.id, activityType: 'post_published',
+      targetType: 'post', targetId: String(data.id), title: (data.content || content || '').slice(0, 80) || null,
+    });
+
     return {
       id:              String(data.id),
       userId:          currentUser.id,
