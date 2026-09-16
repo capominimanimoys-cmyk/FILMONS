@@ -24,6 +24,7 @@ import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
 import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
+import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
@@ -207,6 +208,23 @@ function writeCompleted(filter: FilterId, done: boolean): void {
   try { done ? sessionStorage.setItem(completedKey(filter), 'true') : sessionStorage.removeItem(completedKey(filter)); } catch {}
 }
 
+// Connect -> Activity's real feed (network events: portfolio publishes,
+// new services, connections formed, recommendations received, paid
+// opportunities posted -- see spec) is a separate, later phase. This is an
+// honest placeholder, not a fabricated feed -- per this session's standing
+// rule against hardcoded example data, and per spec's own instruction that
+// Activity must only ever show real FILMONS events.
+function ConnectActivityPlaceholder() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 py-20 text-center">
+      <p className="text-sm font-bold text-gray-700">Activity is coming soon</p>
+      <p className="text-xs text-gray-400 max-w-[240px]">
+        You'll see what people in your professional network are doing on Filmons here -- new portfolio work, services, connections, and more.
+      </p>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function Home() {
   const navigate = useNavigate();
@@ -281,6 +299,25 @@ export function Home() {
     // this becoming a second source of truth for the mode -- the nav only
     // mirrors this broadcast, it never decides the mode itself.
     window.dispatchEvent(new CustomEvent('filmons:home-mode-changed', { detail: { mode: m } }));
+  };
+
+  // Connect's own secondary switch: Portfolio | Activity. Only meaningful
+  // while homeMode === 'portfolio' (i.e. the top-level Connect tab is
+  // active) -- kept as a separate piece of state/event rather than folded
+  // into homeMode's own type so MobileBottomNav's existing homeMode
+  // contract doesn't change shape for a feature it doesn't otherwise care
+  // about. "Activity" here is the real network-activity feed (see spec);
+  // this phase wires the navigation shell for it -- the real event feed
+  // itself is a separate, later phase, so its body below is an honest
+  // "coming soon" placeholder rather than fabricated data.
+  const CONNECT_MODE_KEY = 'filmons_connect_mode';
+  const [connectMode, setConnectModeState] = useState<'portfolio' | 'activity'>(() => {
+    try { return sessionStorage.getItem(CONNECT_MODE_KEY) === 'activity' ? 'activity' : 'portfolio'; } catch { return 'portfolio'; }
+  });
+  const setConnectMode = (m: 'portfolio' | 'activity') => {
+    setConnectModeState(m);
+    try { sessionStorage.setItem(CONNECT_MODE_KEY, m); } catch {}
+    window.dispatchEvent(new CustomEvent('filmons:connect-mode-changed', { detail: { mode: m } }));
   };
 
   // Persisted the same way homeMode is above -- "View Portfolio" navigates
@@ -430,6 +467,20 @@ export function Home() {
   // (rather than using feedEntries directly everywhere below) since the
   // scroll-restore effect and render loop both already reference it.
   const displayedFeedEntries = feedEntries;
+
+  // Trust Badges on Connect -> Portfolio cards -- batched per unique creator
+  // id rather than one query per card (a feed page can repeat the same
+  // creator, and pagination only ever adds new entries). Merges into the
+  // existing map instead of replacing it so loading the next page never
+  // flickers already-resolved badges back to blank.
+  const [feedTrustLevels, setFeedTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
+  useEffect(() => {
+    const unresolved = [...new Set(displayedFeedEntries.map(e => e.creator.id))].filter(id => !feedTrustLevels.has(id));
+    if (!unresolved.length) return;
+    getTrustLevelsBatch(unresolved).then(levels => {
+      setFeedTrustLevels(prev => new Map([...prev, ...levels]));
+    }).catch(() => {});
+  }, [displayedFeedEntries]); // eslint-disable-line
 
   // "People You May Know" -- fetched once per Home mount (not once per tab
   // switch/load-more) since recommendations don't need to track pagination
@@ -935,10 +986,13 @@ export function Home() {
       }}
     >
 
-      {/* ── Listings / Portfolio toggle — mobile only. Only renders below
+      {/* ── Marketplace / Connect toggle — mobile only. Only renders below
            lg:, so desktop has no way to ever set homeMode to 'portfolio' --
            that's what keeps the desktop layout below completely untouched
-           by this feature without a second, duplicated render path. */}
+           by this feature without a second, duplicated render path.
+           Internal state/values stay 'listings'/'portfolio' (unchanged) --
+           this is a display-label rename only, per spec ("do not rename
+           backend tables or existing listing/portfolio data models"). */}
       <div className="lg:hidden shrink-0 px-4 pt-2 pb-1 bg-white">
         <div role="tablist" aria-label="Home mode" className="flex rounded-full p-1 gap-1">
           <button
@@ -949,7 +1003,7 @@ export function Home() {
               homeMode === 'listings' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700'
             }`}
           >
-            Listings
+            Marketplace
           </button>
           <button
             role="tab"
@@ -959,10 +1013,42 @@ export function Home() {
               homeMode === 'portfolio' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700'
             }`}
           >
-            Portfolio
+            Connect
           </button>
         </div>
       </div>
+
+      {/* ── Connect's own secondary switch: Portfolio | Activity — only
+           shown once Connect itself is the active top-level tab. Sits
+           inside the same white header band as the tab above rather than
+           inside the scrollable feed container, so it's always visible the
+           instant Connect is opened regardless of prior scroll position. */}
+      {homeMode === 'portfolio' && (
+        <div className="lg:hidden shrink-0 px-4 pb-2 bg-white">
+          <div role="tablist" aria-label="Connect mode" className="flex gap-4 border-b border-gray-100">
+            <button
+              role="tab"
+              aria-selected={connectMode === 'portfolio'}
+              onClick={() => setConnectMode('portfolio')}
+              className={`pb-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
+                connectMode === 'portfolio' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent'
+              }`}
+            >
+              Portfolio
+            </button>
+            <button
+              role="tab"
+              aria-selected={connectMode === 'activity'}
+              onClick={() => setConnectMode('activity')}
+              className={`pb-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
+                connectMode === 'activity' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent'
+              }`}
+            >
+              Activity
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Category row + deck — wrapped together so the branded loader
            covers BOTH for the entire real loading duration, not just a
@@ -1087,6 +1173,10 @@ export function Home() {
             onScroll={handlePortfolioScroll}
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
+            {connectMode === 'activity' ? (
+              <ConnectActivityPlaceholder />
+            ) : (
+              <>
             {/* Top-level: For You vs Following -- "Following answers 'what
                 are people I follow creating', For You answers 'what does
                 Filmons think I'll like'" (per spec). Any feedTab value
@@ -1227,7 +1317,7 @@ export function Home() {
                         onSeeAll={() => navigate('/search/category/creators')}
                       />
                     ) : (
-                      <PortfolioFeedCard key={`${item.entry.type}-${item.entry.id}`} entry={item.entry} onRemoved={() => removeFeedEntry(item.entry)}/>
+                      <PortfolioFeedCard key={`${item.entry.type}-${item.entry.id}`} entry={item.entry} onRemoved={() => removeFeedEntry(item.entry)} trustLevel={feedTrustLevels.get(item.entry.creator.id)}/>
                     ))}
                   </div>
                   {/* Infinite scroll footer -- handlePortfolioScroll triggers
@@ -1244,6 +1334,8 @@ export function Home() {
                 </>
               )}
             </div>
+              </>
+            )}
           </div>
         )}
       </div>

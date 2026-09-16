@@ -30,6 +30,10 @@ import {
 } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
 import { logProfileEngagement } from '../lib/profileEngagement';
+import { TrustBadge } from './trust/TrustBadge';
+import { TrustDetailsSheet } from './trust/TrustDetailsSheet';
+import { TrustProfileOverlay } from './trust/TrustProfileOverlay';
+import type { TrustLevel } from '../lib/trustApi';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -396,11 +400,18 @@ function TagRow({ tags }: { tags: string[] }) {
 }
 
 function CreatorHeader({
-  entry, isOwn, onOpenMenu,
-}: { entry: PortfolioFeedEntry; isOwn: boolean; onOpenMenu: () => void }) {
+  entry, isOwn, onOpenMenu, trustLevel,
+}: { entry: PortfolioFeedEntry; isOwn: boolean; onOpenMenu: () => void; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
   const { user, showGuestPrompt } = useAuth();
   const { isFollowing, isPending, follow, unfollow } = useFollow();
+  const [showTrustDetails, setShowTrustDetails] = useState(false);
+  const [trustProfileOpen, setTrustProfileOpen] = useState(false);
+  const [trustProfileClosing, setTrustProfileClosing] = useState(false);
+  const closeTrustProfile = () => {
+    setTrustProfileClosing(true);
+    setTimeout(() => { setTrustProfileOpen(false); setTrustProfileClosing(false); }, 260);
+  };
   const c = entry.creator;
   const subline = [c.username ? `@${c.username}` : null, c.city].filter(Boolean).join(' · ');
   const following = isFollowing(c.id);
@@ -413,7 +424,15 @@ function CreatorHeader({
 
   return (
     <div className="flex items-center gap-2.5 w-full">
-      <button onClick={() => navigate(`/host/${c.id}`)} className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
+      {/* A `<div role="button">`, not a real <button> -- a nested TrustBadge
+          button below needs its own independent tap target, and a <button>
+          can't legally contain another <button> (browsers silently break
+          the DOM structure, not just an a11y nitpick). */}
+      <div
+        role="button" tabIndex={0} onClick={() => navigate(`/host/${c.id}`)}
+        onKeyDown={e => { if (e.key === 'Enter') navigate(`/host/${c.id}`); }}
+        className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+      >
         <UserAvatar user={{ id: c.id, name: c.name, avatar: c.avatar_url }} size={40} />
         <div className="min-w-0">
           <div className="flex items-center gap-1">
@@ -421,8 +440,13 @@ function CreatorHeader({
             {c.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
           </div>
           {subline && <p className="text-xs text-gray-400 truncate">{subline}</p>}
+          {trustLevel && (
+            <div className="mt-0.5" onClick={e => e.stopPropagation()}>
+              <TrustBadge level={trustLevel} size="sm" onClick={() => setShowTrustDetails(true)} />
+            </div>
+          )}
         </div>
-      </button>
+      </div>
       <span className="text-[11px] text-gray-400 shrink-0">{timeAgo(entry.created_at)}</span>
       {!isOwn && (
         <button
@@ -441,6 +465,19 @@ function CreatorHeader({
       >
         <MoreHorizontal className="w-4 h-4" />
       </button>
+
+      {showTrustDetails && createPortal(
+        <TrustDetailsSheet
+          userId={c.id}
+          onClose={() => setShowTrustDetails(false)}
+          onViewFullProfile={() => { setShowTrustDetails(false); setTrustProfileOpen(true); }}
+        />,
+        document.body,
+      )}
+      {(trustProfileOpen || trustProfileClosing) && createPortal(
+        <TrustProfileOverlay userId={c.id} closing={trustProfileClosing} onClose={closeTrustProfile} />,
+        document.body,
+      )}
     </div>
   );
 }
@@ -565,7 +602,7 @@ function AlbumCardMenu({
   );
 }
 
-export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEntry; onRemoved: () => void }) {
+export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: PortfolioFeedEntry; onRemoved: () => void; trustLevel?: TrustLevel }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
@@ -625,7 +662,7 @@ export function PortfolioFeedCard({ entry, onRemoved }: { entry: PortfolioFeedEn
 
   return (
     <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3.5 space-y-2.5">
-      <CreatorHeader entry={entry} isOwn={isOwn} onOpenMenu={() => setShowMenu(true)} />
+      <CreatorHeader entry={entry} isOwn={isOwn} onOpenMenu={() => setShowMenu(true)} trustLevel={trustLevel} />
 
       {entry.type === 'item' ? (
         <>
