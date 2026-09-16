@@ -15,6 +15,13 @@ export interface EduEntry {
   school: string;
   schoolCity?: string;
   schoolProvince?: string;
+  /** Free-text location, editable directly -- schoolCity/schoolProvince
+   * stay as SchoolFinder's auto-fill for a matched Canadian school, but not
+   * every education/training type has an entry in that list (a
+   * Certification issuer, an online platform, a mentor), so this is the
+   * general fallback field the editor actually shows. Prefer this over the
+   * city/province pair wherever a single "Location" string is displayed. */
+  location?: string;
   degree: string;
   field: string;
   startYear: string;
@@ -67,10 +74,17 @@ export function blankEduEntry(): EduEntry {
   return {
     id: Math.random().toString(36).slice(2),
     type: '',
-    school: '', schoolCity: '', schoolProvince: '',
+    school: '', schoolCity: '', schoolProvince: '', location: '',
     degree: '', field: '', startYear: '', endYear: '',
     current: false, description: '', showOnProfile: true,
   };
+}
+
+// Single display string for an entry's location -- prefers the editable
+// `location` field, falling back to SchoolFinder's city/province pair for
+// older entries saved before `location` existed.
+export function eduEntryLocation(e: Pick<EduEntry, 'location' | 'schoolCity' | 'schoolProvince'>): string {
+  return e.location?.trim() || [e.schoolCity, e.schoolProvince].filter(Boolean).join(', ');
 }
 
 // Read helper mirroring how AboutEditor initializes `edu` from a possibly

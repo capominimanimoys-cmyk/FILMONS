@@ -6,7 +6,7 @@ import { ProfessionPicker } from './ProfessionPicker';
 import { BottomSheet } from './BottomSheet';
 import {
   EduEntry, EduState, EDUCATION_TYPES, EDUCATION_TYPE_LABEL, EDUCATION_TYPE_EMOJI,
-  EDUCATION_TYPE_META, blankEduEntry, parseEducation,
+  EDUCATION_TYPE_META, blankEduEntry, parseEducation, eduEntryLocation,
 } from '../lib/education';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,6 +181,14 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'Acting School':'🎭', 'University':'🎓', 'University (Online)':'💻', 'College':'🏫',
   'Trade School':'🔧',
 };
+
+// Newest first -- "Currently studying" covers up to 6 years out for a
+// program that hasn't finished yet, same upper bound the old End Year
+// number input used.
+const EDU_YEAR_OPTIONS: number[] = Array.from(
+  { length: new Date().getFullYear() + 6 - 1950 + 1 },
+  (_, i) => new Date().getFullYear() + 6 - i,
+);
 
 // ── School Finder ────────────────────────────────────────────────────────────
 function SchoolFinder({ value, onChange }: {
@@ -976,9 +984,7 @@ export function AboutEditor(props: Props) {
                   </div>
                   <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
                     {e.type && <span>{EDUCATION_TYPE_LABEL[e.type]}</span>}
-                    {(e.schoolCity || e.schoolProvince) && (
-                      <span>· {[e.schoolCity, e.schoolProvince].filter(Boolean).join(', ')}</span>
-                    )}
+                    {eduEntryLocation(e) && <span>· {eduEntryLocation(e)}</span>}
                   </p>
                   {(e.degree || e.field) && (
                     <p className="text-xs text-blue-600 font-medium mt-0.5">{[e.degree, e.field].filter(Boolean).join(' · ')}</p>
@@ -1071,13 +1077,19 @@ export function AboutEditor(props: Props) {
 
             <div className="grid grid-cols-2 gap-3">
               <SField label="Start Year">
-                <SInput type="number" min={1950} max={new Date().getFullYear()} value={newEntry.startYear}
-                  onChange={e => setNewEntry(p => ({...p, startYear: e.target.value}))} placeholder="2018"/>
+                <select value={newEntry.startYear} onChange={e => setNewEntry(p => ({...p, startYear: e.target.value}))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400 bg-white">
+                  <option value="">Select year…</option>
+                  {EDU_YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
               </SField>
               <SField label="End Year">
-                <SInput type="number" min={1950} max={new Date().getFullYear() + 6} value={newEntry.endYear}
-                  onChange={e => setNewEntry(p => ({...p, endYear: e.target.value}))}
-                  placeholder="2022" disabled={newEntry.current}/>
+                <select value={newEntry.endYear} onChange={e => setNewEntry(p => ({...p, endYear: e.target.value}))}
+                  disabled={newEntry.current}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400 bg-white disabled:bg-gray-50 disabled:text-gray-400">
+                  <option value="">Select year…</option>
+                  {EDU_YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
               </SField>
             </div>
             {yearsInvalid && (
@@ -1093,7 +1105,8 @@ export function AboutEditor(props: Props) {
             </label>
 
             <SField label="Location">
-              <p className="text-xs text-gray-400">{[newEntry.schoolCity, newEntry.schoolProvince].filter(Boolean).join(', ') || 'Set automatically from the school/organization above'}</p>
+              <SInput value={newEntry.location ?? ''} onChange={e => setNewEntry(p => ({...p, location: e.target.value}))}
+                placeholder={newEntry.schoolCity ? `${newEntry.schoolCity}, ${newEntry.schoolProvince}` : 'e.g. Vancouver, BC'}/>
             </SField>
 
             <SField label="Description (optional)">

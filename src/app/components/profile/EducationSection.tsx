@@ -4,7 +4,7 @@
 // never merged into Skills.
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
-import { EduEntry, parseEducation, EDUCATION_TYPE_LABEL, EDUCATION_TYPE_EMOJI } from '../../lib/education';
+import { EduEntry, parseEducation, EDUCATION_TYPE_LABEL, EDUCATION_TYPE_EMOJI, eduEntryLocation } from '../../lib/education';
 
 const PREVIEW_COUNT = 3;
 
@@ -18,9 +18,7 @@ function EntryRow({ e }: { e: EduEntry }) {
         <p className="text-sm font-bold text-gray-900">{e.school}</p>
         <p className="text-[11px] text-gray-400 flex items-center gap-1 flex-wrap">
           {e.type && <span>{EDUCATION_TYPE_LABEL[e.type]}</span>}
-          {(e.schoolCity || e.schoolProvince) && (
-            <span>· {[e.schoolCity, e.schoolProvince].filter(Boolean).join(', ')}</span>
-          )}
+          {eduEntryLocation(e) && <span>· {eduEntryLocation(e)}</span>}
         </p>
         {(e.degree || e.field) && (
           <p className="text-xs text-blue-600 font-medium mt-0.5">{[e.degree, e.field].filter(Boolean).join(' · ')}</p>
