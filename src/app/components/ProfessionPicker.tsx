@@ -6,7 +6,9 @@
  * and a dark/light variant.
  */
 import { useState, useRef, useEffect } from 'react';
+import { Search, Check, ChevronDown } from 'lucide-react';
 import { Icon } from './Icon';
+import { BottomSheet } from './BottomSheet';
 
 // ── Profession catalogue ──────────────────────────────────────────────────────
 export const PROFESSIONS: { cat: string; items: string[] }[] = [
@@ -80,6 +82,15 @@ export interface ProfessionPickerProps {
   dbSuggestions?:    string[];
   /** Called whenever a role is selected — use to persist to DB */
   onTagSelected?:    (role: string, type: 'primary_role' | 'secondary_role') => void;
+  /** Opt-in: renders both pickers as a tap-to-open BottomSheet (search +
+   * full grouped list, radio/check-style rows) instead of the always-
+   * visible inline autocomplete below. BottomSheet's own responsive CSS
+   * already renders as a centered modal on desktop, so this one flag
+   * covers both breakpoints. Defaults to false/unset so the other existing
+   * callers (Onboarding, GoogleSignup, CategoryResults' filter panel) are
+   * completely unaffected -- only a caller that explicitly opts in (Edit
+   * Profile) gets the new sheet-based picker. */
+  useSheetOnMobile?: boolean;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -92,6 +103,7 @@ export function ProfessionPicker({
   primaryOnly    = false,
   dbSuggestions  = [],
   onTagSelected,
+  useSheetOnMobile = false,
 }: ProfessionPickerProps) {
   const dark = variant === 'dark';
 
@@ -156,6 +168,132 @@ export function ProfessionPicker({
   const rowHoverCls = dark
     ? 'w-full text-left flex items-start gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors border-b border-white/5 last:border-0'
     : 'w-full text-left flex items-start gap-3 px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0';
+
+  // "Large selector" mode -- opt-in (see useSheetOnMobile's own comment).
+  // A trigger row (shows the current selection, chevron rotates open/
+  // closed) opens a BottomSheet containing a search box + the full
+  // grouped catalogue (radio dots for the single-select Primary, check
+  // marks for the multi-select Secondary), instead of the always-visible
+  // inline autocomplete below. BottomSheet's own responsive CSS already
+  // renders as a centered modal on desktop, so this covers both.
+  if (useSheetOnMobile) {
+    const triggerCls = dark
+      ? 'w-full flex items-center justify-between gap-2 pl-9 pr-4 py-3.5 text-sm rounded-2xl bg-white/10 border border-white/20 text-left'
+      : 'w-full flex items-center justify-between gap-2 pl-9 pr-4 py-3 text-sm rounded-xl bg-gray-50 border border-gray-200 text-left';
+
+    const sheetRows = (query: string, exclude: string[]) => {
+      if (query.trim()) return searchProfessions(query, exclude, dbSuggestions);
+      return PROFESSIONS.flatMap(({ cat, items }) => items.filter(i => !exclude.includes(i)).map(item => ({ item, cat })));
+    };
+
+    return (
+      <div className="space-y-5">
+        {/* ── Primary Profession ── */}
+        <div>
+          <span className={labelCls}>Primary Profession <span className={dark ? 'text-white/20 normal-case font-normal' : 'text-gray-400 normal-case font-normal'}>(required, pick one)</span></span>
+          <div className="relative">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none w-4 h-4 ${dark ? 'text-white/40' : 'text-gray-400'}`} />
+            <button type="button" onClick={() => setPrimaryOpen(true)} className={triggerCls}>
+              <span className={primaryRole ? (dark ? 'text-white font-semibold' : 'text-gray-900 font-semibold') : (dark ? 'text-white/40' : 'text-gray-400')}>
+                {primaryRole || 'Select your primary profession…'}
+              </span>
+              <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-200 ${primaryOpen ? 'rotate-180' : ''} ${dark ? 'text-white/40' : 'text-gray-400'}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Secondary Professions ── */}
+        {!primaryOnly && (
+          <div>
+            <span className={labelCls}>Secondary Professions <span className={dark ? 'text-white/20 normal-case font-normal' : 'text-gray-400 normal-case font-normal'}>(optional, multiple)</span></span>
+            {secondaryRoles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                {secondaryRoles.map(r => (
+                  <span key={r} className={chipCls}>
+                    {r}
+                    <button type="button" onClick={() => removeSecondary(r)} className={dark ? 'text-white/40 hover:text-red-400 transition-colors' : 'text-blue-400 hover:text-red-500 transition-colors'}>
+                      <Icon name="close" size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none w-4 h-4 ${dark ? 'text-white/40' : 'text-gray-400'}`} />
+              <button type="button" onClick={() => setSecondaryOpen(true)} className={triggerCls}>
+                <span className={dark ? 'text-white/40' : 'text-gray-400'}>Add another profession…</span>
+                <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-200 ${secondaryOpen ? 'rotate-180' : ''} ${dark ? 'text-white/40' : 'text-gray-400'}`} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {primaryOpen && (
+          <BottomSheet title="Primary Role" onClose={() => { setPrimaryOpen(false); setPrimaryQ(''); }}>
+            <div className="px-4 pt-3 pb-2 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+                <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                <input autoFocus value={primaryQ} onChange={e => setPrimaryQ(e.target.value)} placeholder="Search roles…"
+                  className="flex-1 bg-transparent text-sm outline-none text-gray-900 placeholder:text-gray-400" />
+              </div>
+            </div>
+            <div className="pb-2">
+              {sheetRows(primaryQ, secondaryRoles).map(({ item, cat }) => (
+                <button key={item} type="button" onClick={() => selectPrimary(item)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                  <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${primaryRole === item ? 'border-blue-600' : 'border-gray-300'}`}>
+                    {primaryRole === item && <span className="w-2 h-2 rounded-full bg-blue-600" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-800">{item}</span>
+                    <span className="block text-xs text-gray-400">{cat}</span>
+                  </span>
+                </button>
+              ))}
+              {primaryQ.trim() && !ALL_PROFESSIONS.some(p => p.toLowerCase() === primaryQ.trim().toLowerCase()) && (
+                <button type="button" onClick={() => selectPrimary(primaryQ.trim())} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                  <Icon name="plus" size={14} className="text-blue-500 shrink-0" />
+                  <span className="text-sm font-semibold text-blue-600">Add &ldquo;{primaryQ.trim()}&rdquo;</span>
+                </button>
+              )}
+            </div>
+          </BottomSheet>
+        )}
+
+        {secondaryOpen && (
+          <BottomSheet title="Also Works As" onClose={() => { setSecondaryOpen(false); setSecondaryQ(''); }}>
+            <div className="px-4 pt-3 pb-2 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+                <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                <input autoFocus value={secondaryQ} onChange={e => setSecondaryQ(e.target.value)} placeholder="Search roles…"
+                  className="flex-1 bg-transparent text-sm outline-none text-gray-900 placeholder:text-gray-400" />
+              </div>
+            </div>
+            <div className="pb-2">
+              {sheetRows(secondaryQ, [primaryRole, ...secondaryRoles]).map(({ item, cat }) => (
+                <button key={item} type="button" onClick={() => addSecondary(item)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                  <span className="w-4 h-4 rounded border-2 border-gray-300 shrink-0 flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-transparent" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-800">{item}</span>
+                    <span className="block text-xs text-gray-400">{cat}</span>
+                  </span>
+                </button>
+              ))}
+              {secondaryQ.trim() && !ALL_PROFESSIONS.some(p => p.toLowerCase() === secondaryQ.trim().toLowerCase()) && (
+                <button type="button" onClick={() => addSecondary(secondaryQ.trim())} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                  <Icon name="plus" size={14} className="text-blue-500 shrink-0" />
+                  <span className="text-sm font-semibold text-blue-600">Add &ldquo;{secondaryQ.trim()}&rdquo;</span>
+                </button>
+              )}
+            </div>
+          </BottomSheet>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

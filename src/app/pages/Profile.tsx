@@ -667,6 +667,18 @@ export function Profile() {
   // link was tapped.
   const [showEditProfile, setEditProfileSection] = useState<'about' | 'bio' | 'skills' | 'gear' | 'social' | null>(null);
   const [showActionSheet, setShowActionSheet]     = useState(false);
+  // Native-feeling push/pop transition for the Edit Profile overlay
+  // (push-page-enter/exit, styles/motion.css) -- same delayed-unmount
+  // pattern BottomSheet.tsx uses: closing plays the reverse animation
+  // first, then actually clears showEditProfile once it's finished, so the
+  // overlay never just vanishes mid-slide. The Profile page underneath is
+  // never unmounted while this is open, so its scroll position/loaded
+  // data/active tab are already preserved for free.
+  const [editProfileClosing, setEditProfileClosing] = useState(false);
+  const closeEditProfile = () => {
+    setEditProfileClosing(true);
+    setTimeout(() => { setEditProfileSection(null); setEditProfileClosing(false); }, 320);
+  };
   const [recommendations,      setRecommendations]      = useState<Recommendation[]>([]);
   const [recommendationCount,  setRecommendationCount]  = useState(0);
   // Fetched once here (not inside ProfileInteractionSection) and shared
@@ -1688,10 +1700,10 @@ export function Profile() {
           old "About" tab. Opens straight to whichever accordion matches
           the section's Edit link that triggered it (showEditProfile
           doubles as the AboutEditor's focusSection). ── */}
-      {showEditProfile && (
-        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+      {(showEditProfile || editProfileClosing) && (
+        <div className={`fixed inset-0 z-50 bg-white overflow-y-auto ${editProfileClosing ? 'push-page-exit' : 'push-page-enter'}`}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 h-14 bg-white/95 backdrop-blur-md border-b border-gray-100">
-            <button onClick={() => setEditProfileSection(null)} className="text-sm font-semibold text-gray-700">Close</button>
+            <button onClick={closeEditProfile} className="text-sm font-semibold text-gray-700">Close</button>
             <p className="text-sm font-bold text-gray-900">Edit Profile</p>
             <button onClick={saveAbout} disabled={aboutSaving} className="text-sm font-bold text-blue-600 disabled:opacity-50">
               {aboutSaving ? 'Saving…' : 'Save'}

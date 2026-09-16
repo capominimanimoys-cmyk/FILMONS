@@ -276,9 +276,10 @@ function SchoolFinder({ value, onChange }: {
         )}
       </div>
 
-      {/* Suggestions dropdown */}
+      {/* Suggestions dropdown -- slides open from the input (dropdown-pop-in,
+          styles/motion.css) instead of appearing instantly. */}
       {results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+        <div className="dropdown-pop-in absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
           {results.map((s, i) => (
             <button key={i} type="button" onMouseDown={() => pick(s)}
               className="w-full text-left px-4 py-2.5 hover:bg-blue-50 flex items-center gap-3
@@ -518,9 +519,10 @@ function LocationSearch({ value, onChange }: { value: string; onChange: (v: stri
         </button>
       </div>
 
-      {/* Suggestions dropdown */}
+      {/* Suggestions dropdown -- slides open from the input (dropdown-pop-in,
+          styles/motion.css) instead of appearing instantly. */}
       {results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+        <div className="dropdown-pop-in absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
           {results.map((r, i) => {
             const label = r.address?.city || r.address?.town
               ? formatNominatim(r)
@@ -832,6 +834,7 @@ export function AboutEditor(props: Props) {
           secondaryRoles={props.secondaryRoles}
           onSecondaryChange={props.setSecondaryRoles}
           variant="light"
+          useSheetOnMobile
         />
       </Accordion>
 
