@@ -301,20 +301,22 @@ export function Home() {
     window.dispatchEvent(new CustomEvent('filmons:home-mode-changed', { detail: { mode: m } }));
   };
 
-  // Connect's own secondary switch: Portfolio | Activity. Only meaningful
-  // while homeMode === 'portfolio' (i.e. the top-level Connect tab is
-  // active) -- kept as a separate piece of state/event rather than folded
-  // into homeMode's own type so MobileBottomNav's existing homeMode
+  // Connect's own secondary switch: All | Portfolio | Activity. Only
+  // meaningful while homeMode === 'portfolio' (i.e. the top-level Connect
+  // tab is active) -- kept as a separate piece of state/event rather than
+  // folded into homeMode's own type so MobileBottomNav's existing homeMode
   // contract doesn't change shape for a feature it doesn't otherwise care
-  // about. "Activity" here is the real network-activity feed (see spec);
-  // this phase wires the navigation shell for it -- the real event feed
-  // itself is a separate, later phase, so its body below is an honest
-  // "coming soon" placeholder rather than fabricated data.
+  // about. "All" is a merged, chronologically-interleaved view of both
+  // Portfolio and Activity content -- the default landing tab.
   const CONNECT_MODE_KEY = 'filmons_connect_mode';
-  const [connectMode, setConnectModeState] = useState<'portfolio' | 'activity'>(() => {
-    try { return sessionStorage.getItem(CONNECT_MODE_KEY) === 'activity' ? 'activity' : 'portfolio'; } catch { return 'portfolio'; }
+  type ConnectMode = 'all' | 'portfolio' | 'activity';
+  const [connectMode, setConnectModeState] = useState<ConnectMode>(() => {
+    try {
+      const v = sessionStorage.getItem(CONNECT_MODE_KEY);
+      return v === 'activity' || v === 'portfolio' ? v : 'all';
+    } catch { return 'all'; }
   });
-  const setConnectMode = (m: 'portfolio' | 'activity') => {
+  const setConnectMode = (m: ConnectMode) => {
     setConnectModeState(m);
     try { sessionStorage.setItem(CONNECT_MODE_KEY, m); } catch {}
     window.dispatchEvent(new CustomEvent('filmons:connect-mode-changed', { detail: { mode: m } }));
@@ -546,6 +548,104 @@ export function Home() {
     }).catch(() => {});
   }, [activityEntries]); // eslint-disable-line
 
+  // ── Connect -> All -- a merged, chronologically-interleaved view of both
+  // Portfolio and Activity content, the default landing tab. Each source
+  // keeps its OWN cursor/hasMore (in refs, since advancing them shouldn't
+  // itself trigger a render) so "load more" only re-queries whichever
+  // source(s) still have further pages, then re-merges the combined result.
+  // This is a reasonable, common trade-off for merging independently-
+  // paginated sources -- not a perfectly gapless single cursor -- flagged
+  // here rather than silently treated as equivalent to either feed alone.
+  type AllFeedItem = { kind: 'portfolio'; entry: PortfolioFeedEntry } | { kind: 'activity'; entry: ActivityEntry };
+  const ALL_BATCH_SIZE = 10;
+  const [allItems, setAllItems] = useState<AllFeedItem[]>([]);
+  const [allLoading, setAllLoading] = useState(false);
+  const [allLoadingMore, setAllLoadingMore] = useState(false);
+  const [allHasMore, setAllHasMore] = useState(true);
+  const [allError, setAllError] = useState(false);
+  const allPortfolioCursorRef = useRef<string | undefined>(undefined);
+  const allActivityCursorRef = useRef<string | undefined>(undefined);
+  const allPortfolioHasMoreRef = useRef(true);
+  const allActivityHasMoreRef = useRef(true);
+  const allFetchedOnceRef = useRef(false);
+
+  const mergeAllItems = (portfolioEntries: PortfolioFeedEntry[], activityEntries: ActivityEntry[]): AllFeedItem[] => {
+    const items: AllFeedItem[] = [
+      ...portfolioEntries.map(entry => ({ kind: 'portfolio' as const, entry })),
+      ...activityEntries.map(entry => ({ kind: 'activity' as const, entry })),
+    ];
+    items.sort((a, b) => {
+      const ta = new Date(a.kind === 'portfolio' ? a.entry.created_at : a.entry.createdAt).getTime();
+      const tb = new Date(b.kind === 'portfolio' ? b.entry.created_at : b.entry.createdAt).getTime();
+      return tb - ta;
+    });
+    return items;
+  };
+
+  const loadAll = useCallback(() => {
+    setAllLoading(true);
+    setAllError(false);
+    Promise.all([
+      getPortfolioFeed({ limit: ALL_BATCH_SIZE, viewerCity: user?.city }),
+      getActivityFeed({ tab: 'foryou', viewerId: user?.id, limit: ALL_BATCH_SIZE }),
+    ])
+      .then(([portfolioEntries, { entries: activityEntries, cursor: activityCursor }]) => {
+        allPortfolioCursorRef.current = portfolioEntries.length ? portfolioEntries[portfolioEntries.length - 1].created_at : undefined;
+        allActivityCursorRef.current = activityCursor;
+        allPortfolioHasMoreRef.current = portfolioEntries.length === ALL_BATCH_SIZE;
+        allActivityHasMoreRef.current = activityEntries.length === ALL_BATCH_SIZE;
+        setAllItems(mergeAllItems(portfolioEntries, activityEntries));
+        setAllHasMore(allPortfolioHasMoreRef.current || allActivityHasMoreRef.current);
+      })
+      .catch(() => setAllError(true))
+      .finally(() => setAllLoading(false));
+  }, [user?.id, user?.city]);
+
+  useEffect(() => {
+    if (homeMode !== 'portfolio' || connectMode !== 'all' || allFetchedOnceRef.current) return;
+    allFetchedOnceRef.current = true;
+    loadAll();
+  }, [homeMode, connectMode, loadAll]);
+
+  const retryAll = () => { allFetchedOnceRef.current = true; loadAll(); };
+
+  const loadMoreAll = useCallback(() => {
+    if (allLoadingMore || !allHasMore) return;
+    setAllLoadingMore(true);
+    Promise.all([
+      allPortfolioHasMoreRef.current
+        ? getPortfolioFeed({ limit: ALL_BATCH_SIZE, before: allPortfolioCursorRef.current, viewerCity: user?.city })
+        : Promise.resolve([] as PortfolioFeedEntry[]),
+      allActivityHasMoreRef.current
+        ? getActivityFeed({ tab: 'foryou', viewerId: user?.id, before: allActivityCursorRef.current, limit: ALL_BATCH_SIZE })
+        : Promise.resolve({ entries: [] as ActivityEntry[], cursor: undefined }),
+    ])
+      .then(([morePortfolio, { entries: moreActivity, cursor: newActivityCursor }]) => {
+        if (morePortfolio.length) allPortfolioCursorRef.current = morePortfolio[morePortfolio.length - 1].created_at;
+        if (newActivityCursor) allActivityCursorRef.current = newActivityCursor;
+        allPortfolioHasMoreRef.current = morePortfolio.length === ALL_BATCH_SIZE;
+        allActivityHasMoreRef.current = moreActivity.length === ALL_BATCH_SIZE;
+        setAllItems(prev => {
+          const existingPortfolio = prev.filter((i): i is { kind: 'portfolio'; entry: PortfolioFeedEntry } => i.kind === 'portfolio').map(i => i.entry);
+          const existingActivity = prev.filter((i): i is { kind: 'activity'; entry: ActivityEntry } => i.kind === 'activity').map(i => i.entry);
+          return mergeAllItems([...existingPortfolio, ...morePortfolio], [...existingActivity, ...moreActivity]);
+        });
+        setAllHasMore(allPortfolioHasMoreRef.current || allActivityHasMoreRef.current);
+      })
+      .catch(() => {})
+      .finally(() => setAllLoadingMore(false));
+  }, [allLoadingMore, allHasMore, user?.id, user?.city]);
+
+  const [allTrustLevels, setAllTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
+  useEffect(() => {
+    const ids = allItems.map(i => i.kind === 'portfolio' ? i.entry.creator.id : i.entry.actor.id);
+    const unresolved = [...new Set(ids)].filter(id => !allTrustLevels.has(id));
+    if (!unresolved.length) return;
+    getTrustLevelsBatch(unresolved).then(levels => {
+      setAllTrustLevels(prev => new Map([...prev, ...levels]));
+    }).catch(() => {});
+  }, [allItems]); // eslint-disable-line
+
   // No client-side filtering left now that Nearby is gone -- every tab's
   // filtering (category, or authorIds for Following) already happens
   // server-side in loadFeed/loadMoreFeed above. Kept as its own name
@@ -656,7 +756,9 @@ export function Home() {
     if (!el) return;
     try { sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(el.scrollTop)); } catch {}
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
-      if (connectMode === 'activity') loadMoreActivity(); else loadMoreFeed();
+      if (connectMode === 'all') loadMoreAll();
+      else if (connectMode === 'activity') loadMoreActivity();
+      else loadMoreFeed();
     }
     onPortfolioBarsScroll(el.scrollTop);
   };
@@ -1109,14 +1211,26 @@ export function Home() {
         </div>
       </div>
 
-      {/* ── Connect's own secondary switch: Portfolio | Activity — only
-           shown once Connect itself is the active top-level tab. Sits
+      {/* ── Connect's own secondary switch: All | Portfolio | Activity —
+           only shown once Connect itself is the active top-level tab. Sits
            inside the same white header band as the tab above rather than
            inside the scrollable feed container, so it's always visible the
-           instant Connect is opened regardless of prior scroll position. */}
+           instant Connect is opened regardless of prior scroll position.
+           "All" is the default landing tab -- a merged, chronologically-
+           interleaved view of both Portfolio and Activity content. */}
       {homeMode === 'portfolio' && (
         <div className="lg:hidden shrink-0 px-4 pb-2 bg-white">
           <div role="tablist" aria-label="Connect mode" className="flex gap-4 border-b border-gray-100">
+            <button
+              role="tab"
+              aria-selected={connectMode === 'all'}
+              onClick={() => setConnectMode('all')}
+              className={`pb-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
+                connectMode === 'all' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent'
+              }`}
+            >
+              All
+            </button>
             <button
               role="tab"
               aria-selected={connectMode === 'portfolio'}
@@ -1264,7 +1378,57 @@ export function Home() {
             onScroll={handlePortfolioScroll}
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
-            {connectMode === 'activity' ? (
+            {connectMode === 'all' ? (
+              <div
+                className="flex-1 px-4 py-4 space-y-3 lg:max-w-[680px] lg:w-full lg:mx-auto"
+                style={{
+                  paddingBottom: portfolioBarsHidden ? 'env(safe-area-inset-bottom)' : undefined,
+                  transition: 'padding-bottom 280ms ease-out',
+                }}
+              >
+                {allError ? (
+                  <div className="flex flex-col items-center gap-3 py-16 text-center">
+                    <p className="text-sm text-gray-500">Couldn't load Connect.</p>
+                    <button onClick={retryAll} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+                  </div>
+                ) : allLoading ? (
+                  <div className="space-y-3">
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="animate-pulse flex items-center gap-2.5 p-3.5 bg-white rounded-2xl border border-gray-100">
+                        <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"/>
+                        <div className="flex-1 space-y-1.5"><div className="h-3 w-32 bg-gray-200 rounded"/><div className="h-2.5 w-44 bg-gray-100 rounded"/></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : allItems.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-center">
+                    <p className="text-sm font-bold text-gray-700">Discover creators on Filmons</p>
+                    <p className="text-xs text-gray-400 max-w-[220px]">Portfolio work and network activity will appear here.</p>
+                    <button onClick={() => navigate('/search')} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Explore Creators</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-3 pop-stagger-card">
+                      {allItems.map(item => item.kind === 'portfolio' ? (
+                        <PortfolioFeedCard
+                          key={`portfolio-${item.entry.type}-${item.entry.id}`}
+                          entry={item.entry}
+                          onRemoved={() => setAllItems(prev => prev.filter(i => !(i.kind === 'portfolio' && i.entry.type === item.entry.type && i.entry.id === item.entry.id)))}
+                          trustLevel={allTrustLevels.get(item.entry.creator.id)}
+                        />
+                      ) : (
+                        <ActivityFeedCard key={`activity-${item.entry.id}`} entry={item.entry} trustLevel={allTrustLevels.get(item.entry.actor.id)} />
+                      ))}
+                    </div>
+                    {allLoadingMore && (
+                      <div className="flex items-center justify-center py-6 text-gray-400">
+                        <FilmonsBrandLoader size="sm"/>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : connectMode === 'activity' ? (
               <>
                 {/* Activity's own For You/Following -- deliberately separate
                     state from Portfolio's feedTab above (see the state

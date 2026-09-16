@@ -36,14 +36,17 @@ export function MobileBottomNav() {
     return () => window.removeEventListener('filmons:home-mode-changed', handler);
   }, []);
 
-  // Mirrors Home.tsx's connectMode (Connect -> Portfolio | Activity), same
-  // read-only reflection pattern as homeMode above -- only relevant while
-  // homeMode is 'portfolio' (i.e. the Connect tab is active).
-  const [connectMode, setConnectMode] = useState<'portfolio' | 'activity'>(() => {
-    try { return sessionStorage.getItem('filmons_connect_mode') === 'activity' ? 'activity' : 'portfolio'; } catch { return 'portfolio'; }
+  // Mirrors Home.tsx's connectMode (Connect -> All | Portfolio | Activity),
+  // same read-only reflection pattern as homeMode above -- only relevant
+  // while homeMode is 'portfolio' (i.e. the Connect tab is active).
+  const [connectMode, setConnectMode] = useState<'all' | 'portfolio' | 'activity'>(() => {
+    try {
+      const v = sessionStorage.getItem('filmons_connect_mode');
+      return v === 'activity' || v === 'portfolio' ? v : 'all';
+    } catch { return 'all'; }
   });
   useEffect(() => {
-    const handler = (e: any) => setConnectMode(e.detail?.mode === 'activity' ? 'activity' : 'portfolio');
+    const handler = (e: any) => setConnectMode(e.detail?.mode === 'activity' || e.detail?.mode === 'portfolio' ? e.detail.mode : 'all');
     window.addEventListener('filmons:connect-mode-changed', handler);
     return () => window.removeEventListener('filmons:connect-mode-changed', handler);
   }, []);
@@ -85,7 +88,10 @@ export function MobileBottomNav() {
   // creation entry point (Create Listing) unchanged -- "do not let the +
   // behavior depend on stale Home state" outside Home.
   const isHomeRoute = location.pathname === '/';
-  const primaryToPortfolio = isHomeRoute && homeMode === 'portfolio' && connectMode === 'portfolio';
+  // "All" defaults to the same create action as Portfolio -- there's no
+  // single obvious "create" for a merged Portfolio+Activity view, and
+  // Add Portfolio Work is Connect's most common create action.
+  const primaryToPortfolio = isHomeRoute && homeMode === 'portfolio' && connectMode !== 'activity';
   // Connect -> Activity has no manual "create" action -- Activity entries
   // are only ever generated from real FILMONS events, never authored
   // directly (per spec). Rather than invent a fake action, the + button is
