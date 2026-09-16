@@ -43,7 +43,7 @@ export async function logActivityEvent(params: {
   category?: string | null; subcategory?: string | null; title?: string | null;
 }): Promise<void> {
   try {
-    await supabase.from('activity_events').insert({
+    const { error } = await supabase.from('activity_events').insert({
       actor_id: params.actorId,
       activity_type: params.activityType,
       target_type: params.targetType,
@@ -52,7 +52,14 @@ export async function logActivityEvent(params: {
       subcategory: params.subcategory ?? null,
       title: params.title ?? null,
     });
-  } catch { /* best-effort -- never blocks the publish flow it's attached to */ }
+    // Logged, not swallowed -- this insert failing (e.g. a CHECK constraint
+    // rejecting an activity_type value the DB hasn't been migrated to allow
+    // yet) previously left zero trace anywhere, which is exactly what made
+    // "the event just never shows up" impossible to diagnose from the UI.
+    if (error) console.warn(`[activityApi] logActivityEvent(${params.activityType}) failed:`, error.message);
+  } catch (e) {
+    console.warn(`[activityApi] logActivityEvent(${params.activityType}) threw:`, e);
+  }
 }
 
 const PAGE_FETCH_MULTIPLIER = 2; // over-fetch to absorb rows filtered out by the visibility recheck
@@ -74,27 +81,45 @@ async function filterVisible(rows: any[]): Promise<any[]> {
   const recommendationIds = rows.filter(r => r.target_type === 'recommendation').map(r => r.target_id);
   const postIds = rows.filter(r => r.target_type === 'post').map(r => r.target_id);
 
+  // Every branch logs its own error instead of silently collapsing to []
+  // via `?? []` -- a query failing (e.g. an unexpected/renamed column) used
+  // to be indistinguishable from "the resource genuinely isn't public",
+  // which made a real bug here look identical to correct privacy filtering.
+  const checked = (label: string) => (r: { data: any[] | null; error: any }) => {
+    if (r.error) console.warn(`[activityApi] filterVisible(${label}) query failed:`, r.error.message);
+    return r.data ?? [];
+  };
+
   const [itemRows, albumRows, albumItemCounts, listingRows, connectionRows, recommendationRows, postRows] = await Promise.all([
     portfolioItemIds.length
-      ? supabase.from('portfolio_items').select('id, user_id, is_hidden').in('id', portfolioItemIds).then(r => r.data ?? [])
+      ? supabase.from('portfolio_items').select('id, user_id, is_hidden').in('id', portfolioItemIds).then(checked('portfolio_items'))
       : Promise.resolve([]),
     albumIds.length
-      ? supabase.from('portfolio_albums').select('id, user_id, visibility').in('id', albumIds).then(r => r.data ?? [])
+      ? supabase.from('portfolio_albums').select('id, user_id, visibility').in('id', albumIds).then(checked('portfolio_albums'))
       : Promise.resolve([]),
     albumIds.length
-      ? supabase.from('portfolio_album_items').select('album_id').in('album_id', albumIds).then(r => r.data ?? [])
+      ? supabase.from('portfolio_album_items').select('album_id').in('album_id', albumIds).then(checked('portfolio_album_items'))
       : Promise.resolve([]),
     listingIds.length
-      ? supabase.from('listings').select('id, is_active, moderation_status').in('id', listingIds).then(r => r.data ?? [])
+      ? supabase.from('listings').select('id, is_active, moderation_status').in('id', listingIds).then(checked('listings'))
       : Promise.resolve([]),
     connectionIds.length
-      ? supabase.from('professional_connections').select('id, status').in('id', connectionIds).then(r => r.data ?? [])
+      ? supabase.from('professional_connections').select('id, status').in('id', connectionIds).then(checked('professional_connections'))
       : Promise.resolve([]),
     recommendationIds.length
-      ? supabase.from('recommendations').select('id').in('id', recommendationIds).then(r => r.data ?? [])
+      ? supabase.from('recommendations').select('id').in('id', recommendationIds).then(checked('recommendations'))
       : Promise.resolve([]),
+    // `id` only -- NOT `visibility`. `posts` is an untracked, live-only
+    // table (no CREATE TABLE in this repo's migration history), so a
+    // `visibility` column can't be confirmed to actually exist; selecting
+    // an unknown column errors the whole query, which previously zeroed
+    // out postMap and silently dropped every post_published event. An
+    // existence check alone still satisfies "a deleted post's Activity
+    // entry disappears" -- postsApi.create() has no private-post option
+    // today (it unconditionally writes visibility:'public'), so there is
+    // no real privacy gate being skipped by dropping this column.
     postIds.length
-      ? supabase.from('posts').select('id, visibility').in('id', postIds).then(r => r.data ?? [])
+      ? supabase.from('posts').select('id').in('id', postIds).then(checked('posts'))
       : Promise.resolve([]),
   ]);
 
@@ -117,12 +142,8 @@ async function filterVisible(rows: any[]): Promise<any[]> {
 
   return rows.filter(r => {
     switch (r.target_type) {
-      case 'post': {
-        const post = postMap.get(r.target_id);
-        // postsApi.create() always writes visibility:'public' today, but
-        // fall back to public for any older row that predates the column.
-        return !!post && (post.visibility ?? 'public') === 'public';
-      }
+      case 'post':
+        return postMap.has(r.target_id); // existence check only -- see the query comment above
       case 'portfolio_item': {
         const item = itemMap.get(r.target_id);
         return !!item && !item.is_hidden && !nonPublicOwners.has(item.user_id);
@@ -174,6 +195,7 @@ export async function getActivityFeed(params: {
   }
 
   const { data, error } = await q;
+  if (error) console.warn('[activityApi] getActivityFeed query failed:', error.message);
   if (error || !data?.length) return { entries: [] };
 
   const visible = (await filterVisible(data)).slice(0, limit);
