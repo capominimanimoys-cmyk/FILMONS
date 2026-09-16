@@ -556,18 +556,37 @@ export function Home() {
   // This is a reasonable, common trade-off for merging independently-
   // paginated sources -- not a perfectly gapless single cursor -- flagged
   // here rather than silently treated as equivalent to either feed alone.
+  //
+  // Category chips: same behavior as Portfolio/Activity -- reuses the SAME
+  // shared `personalizedCategories` and resolveCategoryFilter(), its own
+  // independently-preserved selected chip (allTab, separate from feedTab/
+  // activityTab), and its own "More" sheet. Selecting a category filters
+  // BOTH underlying sources (getPortfolioFeed + getActivityFeed) by it.
   type AllFeedItem = { kind: 'portfolio'; entry: PortfolioFeedEntry } | { kind: 'activity'; entry: ActivityEntry };
   const ALL_BATCH_SIZE = 10;
+  const ALL_TAB_KEY = 'filmons_all_feed_tab';
+  const [allTab, setAllTabState] = useState<PortfolioFilterId>(() => {
+    try { return sessionStorage.getItem(ALL_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
+  });
+  const setAllTab = (tab: PortfolioFilterId) => {
+    setAllTabState(tab);
+    try { sessionStorage.setItem(ALL_TAB_KEY, tab); } catch {}
+  };
+  const [allShowMoreCategories, setAllShowMoreCategories] = useState(false);
   const [allItems, setAllItems] = useState<AllFeedItem[]>([]);
   const [allLoading, setAllLoading] = useState(false);
   const [allLoadingMore, setAllLoadingMore] = useState(false);
   const [allHasMore, setAllHasMore] = useState(true);
   const [allError, setAllError] = useState(false);
-  const allPortfolioCursorRef = useRef<string | undefined>(undefined);
-  const allActivityCursorRef = useRef<string | undefined>(undefined);
-  const allPortfolioHasMoreRef = useRef(true);
-  const allActivityHasMoreRef = useRef(true);
-  const allFetchedOnceRef = useRef(false);
+  // Cached per tab, same pattern as feedCacheRef/activityCacheRef -- each
+  // entry tracks BOTH sources' own cursor/hasMore, since a merged feed
+  // needs two independent pagination fronts, not one.
+  interface AllCacheEntry {
+    items: AllFeedItem[];
+    portfolioCursor?: string; activityCursor?: string;
+    portfolioHasMore: boolean; activityHasMore: boolean;
+  }
+  const allCacheRef = useRef<Partial<Record<PortfolioFilterId, AllCacheEntry>>>({});
 
   const mergeAllItems = (portfolioEntries: PortfolioFeedEntry[], activityEntries: ActivityEntry[]): AllFeedItem[] => {
     const items: AllFeedItem[] = [
@@ -582,59 +601,71 @@ export function Home() {
     return items;
   };
 
-  const loadAll = useCallback(() => {
+  const loadAll = useCallback((tab: PortfolioFilterId) => {
     setAllLoading(true);
     setAllError(false);
+    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
     Promise.all([
-      getPortfolioFeed({ limit: ALL_BATCH_SIZE, viewerCity: user?.city }),
-      getActivityFeed({ tab: 'foryou', viewerId: user?.id, limit: ALL_BATCH_SIZE }),
+      getPortfolioFeed({ limit: ALL_BATCH_SIZE, category: resolved?.category, subcategory: resolved?.subcategory, viewerCity: user?.city }),
+      getActivityFeed({ tab: 'foryou', viewerId: user?.id, category: resolved?.category, subcategory: resolved?.subcategory, limit: ALL_BATCH_SIZE }),
     ])
       .then(([portfolioEntries, { entries: activityEntries, cursor: activityCursor }]) => {
-        allPortfolioCursorRef.current = portfolioEntries.length ? portfolioEntries[portfolioEntries.length - 1].created_at : undefined;
-        allActivityCursorRef.current = activityCursor;
-        allPortfolioHasMoreRef.current = portfolioEntries.length === ALL_BATCH_SIZE;
-        allActivityHasMoreRef.current = activityEntries.length === ALL_BATCH_SIZE;
-        setAllItems(mergeAllItems(portfolioEntries, activityEntries));
-        setAllHasMore(allPortfolioHasMoreRef.current || allActivityHasMoreRef.current);
+        const entry: AllCacheEntry = {
+          items: mergeAllItems(portfolioEntries, activityEntries),
+          portfolioCursor: portfolioEntries.length ? portfolioEntries[portfolioEntries.length - 1].created_at : undefined,
+          activityCursor,
+          portfolioHasMore: portfolioEntries.length === ALL_BATCH_SIZE,
+          activityHasMore: activityEntries.length === ALL_BATCH_SIZE,
+        };
+        allCacheRef.current[tab] = entry;
+        setAllItems(entry.items);
+        setAllHasMore(entry.portfolioHasMore || entry.activityHasMore);
       })
       .catch(() => setAllError(true))
       .finally(() => setAllLoading(false));
   }, [user?.id, user?.city]);
 
   useEffect(() => {
-    if (homeMode !== 'portfolio' || connectMode !== 'all' || allFetchedOnceRef.current) return;
-    allFetchedOnceRef.current = true;
-    loadAll();
-  }, [homeMode, connectMode, loadAll]);
+    if (homeMode !== 'portfolio' || connectMode !== 'all') return;
+    const cached = allCacheRef.current[allTab];
+    if (cached) { setAllItems(cached.items); setAllHasMore(cached.portfolioHasMore || cached.activityHasMore); setAllError(false); return; }
+    loadAll(allTab);
+  }, [homeMode, connectMode, allTab, loadAll]);
 
-  const retryAll = () => { allFetchedOnceRef.current = true; loadAll(); };
+  const retryAll = () => { delete allCacheRef.current[allTab]; loadAll(allTab); };
 
   const loadMoreAll = useCallback(() => {
-    if (allLoadingMore || !allHasMore) return;
+    const cached = allCacheRef.current[allTab];
+    if (allLoadingMore || !allHasMore || !cached) return;
     setAllLoadingMore(true);
+    const isCategoryTab = allTab !== 'foryou' && allTab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(allTab) : null;
     Promise.all([
-      allPortfolioHasMoreRef.current
-        ? getPortfolioFeed({ limit: ALL_BATCH_SIZE, before: allPortfolioCursorRef.current, viewerCity: user?.city })
+      cached.portfolioHasMore
+        ? getPortfolioFeed({ limit: ALL_BATCH_SIZE, before: cached.portfolioCursor, category: resolved?.category, subcategory: resolved?.subcategory, viewerCity: user?.city })
         : Promise.resolve([] as PortfolioFeedEntry[]),
-      allActivityHasMoreRef.current
-        ? getActivityFeed({ tab: 'foryou', viewerId: user?.id, before: allActivityCursorRef.current, limit: ALL_BATCH_SIZE })
+      cached.activityHasMore
+        ? getActivityFeed({ tab: 'foryou', viewerId: user?.id, before: cached.activityCursor, category: resolved?.category, subcategory: resolved?.subcategory, limit: ALL_BATCH_SIZE })
         : Promise.resolve({ entries: [] as ActivityEntry[], cursor: undefined }),
     ])
       .then(([morePortfolio, { entries: moreActivity, cursor: newActivityCursor }]) => {
-        if (morePortfolio.length) allPortfolioCursorRef.current = morePortfolio[morePortfolio.length - 1].created_at;
-        if (newActivityCursor) allActivityCursorRef.current = newActivityCursor;
-        allPortfolioHasMoreRef.current = morePortfolio.length === ALL_BATCH_SIZE;
-        allActivityHasMoreRef.current = moreActivity.length === ALL_BATCH_SIZE;
-        setAllItems(prev => {
-          const existingPortfolio = prev.filter((i): i is { kind: 'portfolio'; entry: PortfolioFeedEntry } => i.kind === 'portfolio').map(i => i.entry);
-          const existingActivity = prev.filter((i): i is { kind: 'activity'; entry: ActivityEntry } => i.kind === 'activity').map(i => i.entry);
-          return mergeAllItems([...existingPortfolio, ...morePortfolio], [...existingActivity, ...moreActivity]);
-        });
-        setAllHasMore(allPortfolioHasMoreRef.current || allActivityHasMoreRef.current);
+        const existingPortfolio = cached.items.filter((i): i is { kind: 'portfolio'; entry: PortfolioFeedEntry } => i.kind === 'portfolio').map(i => i.entry);
+        const existingActivity = cached.items.filter((i): i is { kind: 'activity'; entry: ActivityEntry } => i.kind === 'activity').map(i => i.entry);
+        const updated: AllCacheEntry = {
+          items: mergeAllItems([...existingPortfolio, ...morePortfolio], [...existingActivity, ...moreActivity]),
+          portfolioCursor: morePortfolio.length ? morePortfolio[morePortfolio.length - 1].created_at : cached.portfolioCursor,
+          activityCursor: newActivityCursor ?? cached.activityCursor,
+          portfolioHasMore: morePortfolio.length === ALL_BATCH_SIZE,
+          activityHasMore: moreActivity.length === ALL_BATCH_SIZE,
+        };
+        allCacheRef.current[allTab] = updated;
+        setAllItems(updated.items);
+        setAllHasMore(updated.portfolioHasMore || updated.activityHasMore);
       })
       .catch(() => {})
       .finally(() => setAllLoadingMore(false));
-  }, [allLoadingMore, allHasMore, user?.id, user?.city]);
+  }, [allTab, allLoadingMore, allHasMore, user?.id, user?.city]);
 
   const [allTrustLevels, setAllTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
   useEffect(() => {
@@ -1379,6 +1410,52 @@ export function Home() {
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
             {connectMode === 'all' ? (
+              <>
+                {/* Same personalized category chip behavior as Portfolio/
+                    Activity -- own selected value (allTab), same shared
+                    personalizedCategories/resolveCategoryFilter/"More" sheet. */}
+                {user && (
+                  <div className="shrink-0 flex gap-2 px-4 pt-1 pb-3 overflow-x-auto no-scrollbar">
+                    {personalizedCategories.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => { setAllTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
+                        className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                          allTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setAllShowMoreCategories(true)}
+                      className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                        !personalizedCategories.includes(allTab) && allTab !== 'foryou'
+                          ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      More
+                    </button>
+                  </div>
+                )}
+                {allShowMoreCategories && createPortal(
+                  <BottomSheet onClose={() => setAllShowMoreCategories(false)} title="More categories">
+                    <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
+                      {PORTFOLIO_CATEGORIES.map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => { setAllTab(cat); setAllShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
+                          className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
+                            allTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </BottomSheet>,
+                  document.body,
+                )}
               <div
                 className="flex-1 px-4 py-4 space-y-3 lg:max-w-[680px] lg:w-full lg:mx-auto"
                 style={{
@@ -1428,6 +1505,7 @@ export function Home() {
                   </>
                 )}
               </div>
+              </>
             ) : connectMode === 'activity' ? (
               <>
                 {/* Activity's own For You/Following -- deliberately separate
