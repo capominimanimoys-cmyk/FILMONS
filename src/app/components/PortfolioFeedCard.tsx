@@ -61,7 +61,17 @@ function timeAgo(iso: string): string {
 // image/video instead of just letterboxing it -- when the box's rendered
 // ratio is unclamped (the common case), contain and cover are pixel-
 // identical anyway, since the box already matches the media's own ratio.
-const MEDIA_MAX_HEIGHT = 'max-h-[75vh] lg:max-h-[750px]';
+// No mobile cap -- a 75vh cap sounds generous but a tall/portrait video
+// (9:16 is now a normal, expected upload) easily computes taller than 75vh
+// of a typical phone viewport at full card width, so the cap was kicking
+// in and clamping the BOX shorter than the media's real aspect ratio would
+// call for -- object-contain then had to shrink the media to fit that
+// too-short box, pillarboxing it smaller than intended instead of the card
+// actually taking on the media's shape. Width is already bounded by the
+// card itself (w-full), so height stays reasonable on mobile without a
+// separate vh cap; lg: keeps a fixed-pixel ceiling since a much wider
+// desktop card would otherwise turn a tall ratio into an excessively tall box.
+const MEDIA_MAX_HEIGHT = 'lg:max-h-[750px]';
 
 function PortfolioMedia({ item, capHeight = true }: { item: PortfolioItem; capHeight?: boolean }) {
   const [playing, setPlaying] = useState(false);
