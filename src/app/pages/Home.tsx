@@ -468,25 +468,31 @@ export function Home() {
   // chronological feed of the network's real activity, excluding the
   // viewer's own; Following never falls back to For You when empty, per spec.
   const ACTIVITY_TAB_KEY = 'filmons_activity_feed_tab';
-  const [activityTab, setActivityTabState] = useState<'foryou' | 'following'>(() => {
-    try { return sessionStorage.getItem(ACTIVITY_TAB_KEY) === 'following' ? 'following' : 'foryou'; } catch { return 'foryou'; }
+  const [activityTab, setActivityTabState] = useState<PortfolioFilterId>(() => {
+    try { return sessionStorage.getItem(ACTIVITY_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
   });
-  const setActivityTab = (tab: 'foryou' | 'following') => {
+  const setActivityTab = (tab: PortfolioFilterId) => {
     setActivityTabState(tab);
     try { sessionStorage.setItem(ACTIVITY_TAB_KEY, tab); } catch {}
   };
+  const [activityShowMoreCategories, setActivityShowMoreCategories] = useState(false);
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityLoadingMore, setActivityLoadingMore] = useState(false);
   const [activityHasMore, setActivityHasMore] = useState(true);
   const [activityError, setActivityError] = useState(false);
   const ACTIVITY_PAGE_SIZE = 20;
-  const activityCacheRef = useRef<Partial<Record<'foryou' | 'following', { entries: ActivityEntry[]; cursor?: string; hasMore: boolean }>>>({});
+  const activityCacheRef = useRef<Partial<Record<PortfolioFilterId, { entries: ActivityEntry[]; cursor?: string; hasMore: boolean }>>>({});
 
-  const loadActivity = useCallback((tab: 'foryou' | 'following') => {
+  const loadActivity = useCallback((tab: PortfolioFilterId) => {
     setActivityLoading(true);
     setActivityError(false);
-    getActivityFeed({ tab, viewerId: user?.id, followingIds, limit: ACTIVITY_PAGE_SIZE })
+    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
+    getActivityFeed({
+      tab: tab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
+      category: resolved?.category, subcategory: resolved?.subcategory, limit: ACTIVITY_PAGE_SIZE,
+    })
       .then(({ entries, cursor }) => {
         const hasMore = entries.length === ACTIVITY_PAGE_SIZE;
         activityCacheRef.current[tab] = { entries, cursor, hasMore };
@@ -514,7 +520,12 @@ export function Home() {
     const cached = activityCacheRef.current[activityTab];
     if (activityLoadingMore || !activityHasMore || !cached?.cursor) return;
     setActivityLoadingMore(true);
-    getActivityFeed({ tab: activityTab, viewerId: user?.id, followingIds, before: cached.cursor, limit: ACTIVITY_PAGE_SIZE })
+    const isCategoryTab = activityTab !== 'foryou' && activityTab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(activityTab) : null;
+    getActivityFeed({
+      tab: activityTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
+      before: cached.cursor, category: resolved?.category, subcategory: resolved?.subcategory, limit: ACTIVITY_PAGE_SIZE,
+    })
       .then(({ entries: more, cursor }) => {
         const merged = [...cached.entries, ...more];
         const hasMore = more.length === ACTIVITY_PAGE_SIZE;
@@ -576,15 +587,19 @@ export function Home() {
   // same reasoning as suggestedCreators above (a ranking snapshot, not
   // paginated feed content). Guests get no personalized row at all (there's
   // no account to rank against) -- just the plain For You/Following tabs.
-  // Capped at 4 (not 6) -- "roughly 3-4 personalized creative-category
-  // tabs" plus a trailing More, not a growing horizontal list.
+  // Shared personalized category profile for BOTH Connect -> Portfolio and
+  // Connect -> Activity (per spec: "Portfolio and Activity should use the
+  // same personalized category profile") -- fetched once here, consumed by
+  // both feeds' own chip rows below, each preserving its own selected chip
+  // independently (feedTab vs activityTab). 6 chips (spec: "roughly 5-7"),
+  // plus a trailing More for every other category.
   const [personalizedCategories, setPersonalizedCategories] = useState<string[]>([]);
   const [showMoreCategories, setShowMoreCategories] = useState(false);
   const personalizedFetchedRef = useRef(false);
   useEffect(() => {
     if (homeMode !== 'portfolio' || personalizedFetchedRef.current || !user?.id) return;
     personalizedFetchedRef.current = true;
-    getPersonalizedCategories(user.id, { limit: 4 }).then(setPersonalizedCategories);
+    getPersonalizedCategories(user.id, { limit: 6 }).then(setPersonalizedCategories);
   }, [homeMode, user?.id]);
 
   const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
@@ -1258,10 +1273,10 @@ export function Home() {
                 <div className="shrink-0 px-4 pt-1 pb-2">
                   <div role="tablist" aria-label="Activity mode" className="flex gap-2">
                     <button
-                      role="tab" aria-selected={activityTab === 'foryou'}
+                      role="tab" aria-selected={activityTab !== 'following'}
                       onClick={() => setActivityTab('foryou')}
                       className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                        activityTab === 'foryou' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                        activityTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                       }`}
                     >
                       For You
@@ -1277,6 +1292,54 @@ export function Home() {
                     </button>
                   </div>
                 </div>
+
+                {/* Same personalized category profile as Portfolio (per
+                    spec) -- filters by the CREATIVE CATEGORY of the
+                    underlying resource (a portfolio item/listing's
+                    category), never by activity type. Own selected value
+                    (activityTab), independent from Portfolio's feedTab. */}
+                {activityTab !== 'following' && user && (
+                  <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
+                    {personalizedCategories.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => { setActivityTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
+                        className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                          activityTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setActivityShowMoreCategories(true)}
+                      className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                        !personalizedCategories.includes(activityTab) && activityTab !== 'foryou'
+                          ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      More
+                    </button>
+                  </div>
+                )}
+                {activityShowMoreCategories && createPortal(
+                  <BottomSheet onClose={() => setActivityShowMoreCategories(false)} title="More categories">
+                    <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
+                      {PORTFOLIO_CATEGORIES.map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => { setActivityTab(cat); setActivityShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
+                          className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
+                            activityTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </BottomSheet>,
+                  document.body,
+                )}
 
                 <div
                   className="flex-1 px-4 pb-6 space-y-3 lg:max-w-[680px] lg:w-full lg:mx-auto"

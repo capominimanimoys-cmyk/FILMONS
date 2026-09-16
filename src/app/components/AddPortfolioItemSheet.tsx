@@ -149,7 +149,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       logActivityEvent({
         actorId: user.id, activityType: 'portfolio_published',
         targetType: 'portfolio_item', targetId: item.id,
-        category: item.category || null, title: item.title || null,
+        category: item.category || null, subcategory: (item as any).subcategory || null, title: item.title || null,
       });
     }
     toast.success('Added to portfolio!');

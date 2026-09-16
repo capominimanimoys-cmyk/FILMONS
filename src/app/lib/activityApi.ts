@@ -34,7 +34,7 @@ export interface ActivityEntry {
 // from either party's client.
 export async function logActivityEvent(params: {
   actorId: string; activityType: ActivityType; targetType: string; targetId: string;
-  category?: string | null; title?: string | null;
+  category?: string | null; subcategory?: string | null; title?: string | null;
 }): Promise<void> {
   try {
     await supabase.from('activity_events').insert({
@@ -43,6 +43,7 @@ export async function logActivityEvent(params: {
       target_type: params.targetType,
       target_id: params.targetId,
       category: params.category ?? null,
+      subcategory: params.subcategory ?? null,
       title: params.title ?? null,
     });
   } catch { /* best-effort -- never blocks the publish flow it's attached to */ }
@@ -135,10 +136,18 @@ export async function getActivityFeed(params: {
   followingIds?: string[];
   before?: string;
   limit?: number;
+  /** Filters by the creative CATEGORY of the underlying resource, never by
+   * activity type (per spec: category chips are a creative-interest filter,
+   * not a "show me connection_created events" filter). Same taxonomy/
+   * resolution as Portfolio's category chips (resolveCategoryFilter). */
+  category?: string;
+  subcategory?: string;
 }): Promise<{ entries: ActivityEntry[]; cursor?: string }> {
   const limit = params.limit ?? 20;
   let q = supabase.from('activity_events').select('*').order('created_at', { ascending: false }).limit(limit * PAGE_FETCH_MULTIPLIER);
   if (params.before) q = q.lt('created_at', params.before);
+  if (params.category) q = q.eq('category', params.category);
+  if (params.subcategory) q = q.eq('subcategory', params.subcategory);
 
   if (params.tab === 'following') {
     if (!params.followingIds?.length) return { entries: [] }; // no fallback to For You -- proper empty state instead, per spec
