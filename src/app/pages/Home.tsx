@@ -25,6 +25,8 @@ import { ListingCard } from '../components/ListingCard';
 import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
+import { getActivityFeed, type ActivityEntry } from '../lib/activityApi';
+import { ActivityFeedCard } from '../components/ActivityFeedCard';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
@@ -208,16 +210,14 @@ function writeCompleted(filter: FilterId, done: boolean): void {
   try { done ? sessionStorage.setItem(completedKey(filter), 'true') : sessionStorage.removeItem(completedKey(filter)); } catch {}
 }
 
-// Connect -> Activity's real feed (network events: portfolio publishes,
-// new services, connections formed, recommendations received, paid
-// opportunities posted -- see spec) is a separate, later phase. This is an
-// honest placeholder, not a fabricated feed -- per this session's standing
-// rule against hardcoded example data, and per spec's own instruction that
-// Activity must only ever show real FILMONS events.
+// Activity's "For You" empty state -- shown when there's genuinely no
+// recent network activity to surface yet (a new/quiet network), not a
+// "feature coming soon" placeholder. Activity events are only ever real
+// FILMONS occurrences (see activityApi.ts) -- never fabricated to fill this.
 function ConnectActivityPlaceholder() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 py-20 text-center">
-      <p className="text-sm font-bold text-gray-700">Activity is coming soon</p>
+      <p className="text-sm font-bold text-gray-700">No activity yet</p>
       <p className="text-xs text-gray-400 max-w-[240px]">
         You'll see what people in your professional network are doing on Filmons here -- new portfolio work, services, connections, and more.
       </p>
@@ -461,6 +461,80 @@ export function Home() {
       .finally(() => setFeedLoadingMore(false));
   }, [feedTab, feedLoadingMore, feedHasMore, followingIds]);
 
+  // ── Connect -> Activity feed -- own For You/Following selection, kept
+  // separate from Portfolio's `feedTab` per spec ("each tab should preserve
+  // its own selected category/tab"). No personalization/category chips yet
+  // (that's a later phase) -- For You here is a straightforward reverse-
+  // chronological feed of the network's real activity, excluding the
+  // viewer's own; Following never falls back to For You when empty, per spec.
+  const ACTIVITY_TAB_KEY = 'filmons_activity_feed_tab';
+  const [activityTab, setActivityTabState] = useState<'foryou' | 'following'>(() => {
+    try { return sessionStorage.getItem(ACTIVITY_TAB_KEY) === 'following' ? 'following' : 'foryou'; } catch { return 'foryou'; }
+  });
+  const setActivityTab = (tab: 'foryou' | 'following') => {
+    setActivityTabState(tab);
+    try { sessionStorage.setItem(ACTIVITY_TAB_KEY, tab); } catch {}
+  };
+  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoadingMore, setActivityLoadingMore] = useState(false);
+  const [activityHasMore, setActivityHasMore] = useState(true);
+  const [activityError, setActivityError] = useState(false);
+  const ACTIVITY_PAGE_SIZE = 20;
+  const activityCacheRef = useRef<Partial<Record<'foryou' | 'following', { entries: ActivityEntry[]; cursor?: string; hasMore: boolean }>>>({});
+
+  const loadActivity = useCallback((tab: 'foryou' | 'following') => {
+    setActivityLoading(true);
+    setActivityError(false);
+    getActivityFeed({ tab, viewerId: user?.id, followingIds, limit: ACTIVITY_PAGE_SIZE })
+      .then(({ entries, cursor }) => {
+        const hasMore = entries.length === ACTIVITY_PAGE_SIZE;
+        activityCacheRef.current[tab] = { entries, cursor, hasMore };
+        setActivityEntries(entries);
+        setActivityHasMore(hasMore);
+      })
+      .catch(() => setActivityError(true))
+      .finally(() => setActivityLoading(false));
+  }, [user?.id, followingIds]);
+
+  useEffect(() => {
+    if (homeMode !== 'portfolio' || connectMode !== 'activity') return;
+    if (activityTab === 'following' && !followingIds.length) {
+      setActivityEntries([]); setActivityHasMore(false); setActivityLoading(false); setActivityError(false);
+      return;
+    }
+    const cached = activityCacheRef.current[activityTab];
+    if (cached) { setActivityEntries(cached.entries); setActivityHasMore(cached.hasMore); setActivityError(false); return; }
+    loadActivity(activityTab);
+  }, [homeMode, connectMode, activityTab, loadActivity, followingIds]);
+
+  const retryActivity = () => { delete activityCacheRef.current[activityTab]; loadActivity(activityTab); };
+
+  const loadMoreActivity = useCallback(() => {
+    const cached = activityCacheRef.current[activityTab];
+    if (activityLoadingMore || !activityHasMore || !cached?.cursor) return;
+    setActivityLoadingMore(true);
+    getActivityFeed({ tab: activityTab, viewerId: user?.id, followingIds, before: cached.cursor, limit: ACTIVITY_PAGE_SIZE })
+      .then(({ entries: more, cursor }) => {
+        const merged = [...cached.entries, ...more];
+        const hasMore = more.length === ACTIVITY_PAGE_SIZE;
+        activityCacheRef.current[activityTab] = { entries: merged, cursor: cursor ?? cached.cursor, hasMore };
+        setActivityEntries(merged);
+        setActivityHasMore(hasMore);
+      })
+      .catch(() => {})
+      .finally(() => setActivityLoadingMore(false));
+  }, [activityTab, activityLoadingMore, activityHasMore, user?.id, followingIds]);
+
+  const [activityTrustLevels, setActivityTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
+  useEffect(() => {
+    const unresolved = [...new Set(activityEntries.map(e => e.actor.id))].filter(id => !activityTrustLevels.has(id));
+    if (!unresolved.length) return;
+    getTrustLevelsBatch(unresolved).then(levels => {
+      setActivityTrustLevels(prev => new Map([...prev, ...levels]));
+    }).catch(() => {});
+  }, [activityEntries]); // eslint-disable-line
+
   // No client-side filtering left now that Nearby is gone -- every tab's
   // filtering (category, or authorIds for Following) already happens
   // server-side in loadFeed/loadMoreFeed above. Kept as its own name
@@ -566,7 +640,9 @@ export function Home() {
     const el = portfolioScrollRef.current;
     if (!el) return;
     try { sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(el.scrollTop)); } catch {}
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) loadMoreFeed();
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
+      if (connectMode === 'activity') loadMoreActivity(); else loadMoreFeed();
+    }
     onPortfolioBarsScroll(el.scrollTop);
   };
 
@@ -1174,7 +1250,77 @@ export function Home() {
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
             {connectMode === 'activity' ? (
-              <ConnectActivityPlaceholder />
+              <>
+                {/* Activity's own For You/Following -- deliberately separate
+                    state from Portfolio's feedTab above (see the state
+                    declaration's comment): switching back to Portfolio
+                    restores whatever category/tab it had, and vice versa. */}
+                <div className="shrink-0 px-4 pt-1 pb-2">
+                  <div role="tablist" aria-label="Activity mode" className="flex gap-2">
+                    <button
+                      role="tab" aria-selected={activityTab === 'foryou'}
+                      onClick={() => setActivityTab('foryou')}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                        activityTab === 'foryou' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      For You
+                    </button>
+                    <button
+                      role="tab" aria-selected={activityTab === 'following'}
+                      onClick={() => setActivityTab('following')}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                        activityTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      Following
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="flex-1 px-4 pb-6 space-y-3 lg:max-w-[680px] lg:w-full lg:mx-auto"
+                  style={{
+                    paddingBottom: portfolioBarsHidden ? 'env(safe-area-inset-bottom)' : undefined,
+                    transition: 'padding-bottom 280ms ease-out',
+                  }}
+                >
+                  {activityError ? (
+                    <div className="flex flex-col items-center gap-3 py-16 text-center">
+                      <p className="text-sm text-gray-500">Couldn't load activity.</p>
+                      <button onClick={retryActivity} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+                    </div>
+                  ) : activityLoading ? (
+                    <div className="space-y-3">
+                      {[0, 1, 2].map(i => (
+                        <div key={i} className="animate-pulse flex items-center gap-2.5 p-3.5 bg-white rounded-2xl border border-gray-100">
+                          <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"/>
+                          <div className="flex-1 space-y-1.5"><div className="h-3 w-32 bg-gray-200 rounded"/><div className="h-2.5 w-44 bg-gray-100 rounded"/></div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : activityEntries.length === 0 ? (
+                    activityTab === 'following' ? (
+                      <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their activity here.</p>
+                    ) : (
+                      <ConnectActivityPlaceholder />
+                    )
+                  ) : (
+                    <>
+                      <div className="space-y-3 pop-stagger-card">
+                        {activityEntries.map(entry => (
+                          <ActivityFeedCard key={entry.id} entry={entry} trustLevel={activityTrustLevels.get(entry.actor.id)} />
+                        ))}
+                      </div>
+                      {activityLoadingMore && (
+                        <div className="flex items-center justify-center py-6 text-gray-400">
+                          <FilmonsBrandLoader size="sm"/>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </>
             ) : (
               <>
             {/* Top-level: For You vs Following -- "Following answers 'what

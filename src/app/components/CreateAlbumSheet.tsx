@@ -6,6 +6,7 @@ import {
   createAlbum, addItemToAlbum, uploadPortfolioMedia,
   type PortfolioAlbum, type PortfolioItem,
 } from '../lib/portfolioApi';
+import { logActivityEvent } from '../lib/activityApi';
 
 type Step       = 'details' | 'items';
 type Visibility = 'public' | 'followers' | 'private';
@@ -68,6 +69,13 @@ export function CreateAlbumSheet({ existingItems, onCreated, onClose }: Props) {
     // Add selected items
     for (const itemId of selectedIds) {
       await addItemToAlbum(album.id, itemId);
+    }
+
+    if (visibility === 'public' && selectedIds.size > 0) {
+      logActivityEvent({
+        actorId: user.id, activityType: 'portfolio_album_published',
+        targetType: 'portfolio_album', targetId: album.id, title: album.title || null,
+      });
     }
 
     setSaving(false);

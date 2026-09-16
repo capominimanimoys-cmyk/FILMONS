@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
 import { logProfileEngagement } from './profileEngagement';
+import { logActivityEvent, type ActivityType } from './activityApi';
 import { toast } from 'sonner';
 
 // Runs a listings query that filters out paused/removed listings, but
@@ -1075,6 +1076,14 @@ export const listingsApi = {
 
         if (!error && data) {
           toast.success('✅ Listing saved to database!');
+          const activityType: ActivityType =
+            newListing.listingType === 'opportunity' ? 'opportunity_published'
+            : newListing.listingType === 'service' ? 'service_published'
+            : 'listing_published';
+          logActivityEvent({
+            actorId: currentUser.id, activityType, targetType: 'listing', targetId: data.id,
+            category: newListing.serviceCategory || null, title: newListing.title || null,
+          });
           return { ...newListing, id: data.id };
         }
         // Show the exact Supabase error in the UI

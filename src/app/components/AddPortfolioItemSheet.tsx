@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { logActivityEvent } from '../lib/activityApi';
 import {
   PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia,
   readImageDimensions, readVideoDimensions, workTypeToMediaType, type WorkType, type PortfolioItem,
@@ -143,6 +144,13 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     if (!item) {
       toast.error('Could not save — run the portfolio_items migration in Supabase');
       return;
+    }
+    if (!(item as any).is_hidden) {
+      logActivityEvent({
+        actorId: user.id, activityType: 'portfolio_published',
+        targetType: 'portfolio_item', targetId: item.id,
+        category: item.category || null, title: item.title || null,
+      });
     }
     toast.success('Added to portfolio!');
     onAdded(item);
