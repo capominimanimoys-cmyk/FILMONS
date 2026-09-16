@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, X, Check, Plus, Loader2, MapPin, ChevronDown } from 'lucide-react';
+import { Search, X, Check, Plus, Loader2, MapPin, ChevronDown, MoreVertical, Pencil, Trash2, ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { ProfessionPicker } from './ProfessionPicker';
+import { BottomSheet } from './BottomSheet';
+import {
+  EduEntry, EduState, EDUCATION_TYPES, EDUCATION_TYPE_LABEL, EDUCATION_TYPE_EMOJI,
+  EDUCATION_TYPE_META, blankEduEntry, parseEducation,
+} from '../lib/education';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA
@@ -45,22 +50,6 @@ export const CA_CITIES = [
   "St. John's, NL",'Charlottetown, PE',
   'Yellowknife, NT','Whitehorse, YT','Iqaluit, NU',
 ];
-
-// ── Education ────────────────────────────────────────────────────────────────
-interface EduEntry {
-  id: string;
-  school: string;
-  schoolCity?: string;
-  schoolProvince?: string;
-  degree: string;
-  field: string;
-  startYear: string;
-  endYear: string;
-  current: boolean;
-  description: string;
-  showOnProfile: boolean;
-}
-interface EduState { entries: EduEntry[]; training: string[]; }
 
 interface CanadianSchool {
   name: string;
@@ -187,35 +176,11 @@ const CA_SCHOOLS: CanadianSchool[] = [
   { name:'Canadian Business College',        city:'Toronto',        province:'ON', category:'Trade School' },
 ];
 
-const TRAINING_SUGGESTIONS = [
-  'Adobe Certified Professional','Unreal Engine Certification','DaVinci Resolve Certification',
-  'Google Analytics Certification','Meta Blueprint Certification',
-  'Film Workshop','Cinematography Bootcamp','Music Production Masterclass',
-  'Photography Bootcamp','Color Grading Masterclass','VFX Online Course',
-  'Sound Design Workshop','Screenwriting Masterclass','Motion Graphics Course',
-  'Online Course','Mentorship Program','Industry Internship','Film Festival Program',
-];
-
-const DEGREE_OPTIONS = [
-  'Bachelor\'s Degree','Master\'s Degree','Diploma','Certificate',
-  'Associate Degree','Honours Degree','Doctorate / PhD','Professional Certification',
-  'Vocational Training','High School Diploma','Self-taught',
-];
-
 const CATEGORY_EMOJI: Record<string, string> = {
   'Film School':'🎬', 'Art School':'🎨', 'Design School':'✏️', 'Music School':'🎵',
   'Acting School':'🎭', 'University':'🎓', 'University (Online)':'💻', 'College':'🏫',
   'Trade School':'🔧',
 };
-
-function blankEntry(): EduEntry {
-  return {
-    id: Math.random().toString(36).slice(2),
-    school:'', schoolCity:'', schoolProvince:'',
-    degree:'', field:'', startYear:'', endYear:'',
-    current:false, description:'', showOnProfile: true,
-  };
-}
 
 // ── School Finder ────────────────────────────────────────────────────────────
 function SchoolFinder({ value, onChange }: {
@@ -688,7 +653,7 @@ interface Props {
   /** Opens straight to one accordion instead of always defaulting to
    * Personal Details -- used when AboutEditor is opened from a specific
    * Profile All-tab section's Edit link (e.g. Top Skills -> 'skills'). */
-  focusSection?: 'about' | 'bio' | 'skills' | 'gear' | 'social';
+  focusSection?: 'about' | 'bio' | 'skills' | 'gear' | 'social' | 'education';
   newBirthdate: string; setNewBirthdate: (v:string)=>void;
   editEmail: boolean; setEditEmail: (v:boolean)=>void;
   editPhone: boolean; setEditPhone: (v:boolean)=>void;
@@ -710,40 +675,52 @@ export function AboutEditor(props: Props) {
 
   // ── Education local state ──────────────────────────────────────────────────
   const [edu, setEdu] = useState<EduState>(() => {
-    const raw = (user as any).education;
-    if (raw && typeof raw === 'object' && Array.isArray(raw.entries)) return raw as EduState;
-    return { entries: [], training: [] };
+    return parseEducation((user as any).education);
   });
-  const [addingEdu, setAddingEdu] = useState(false);
-  const [newEntry,  setNewEntry]  = useState<EduEntry>(() => blankEntry());
-  const [trainingInput, setTrainingInput] = useState('');
+  const [eduEditorOpen, setEduEditorOpen] = useState(false);   // full-screen add/edit page mounted
+  const [eduEditorClosing, setEduEditorClosing] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null); // null while adding
+  const [newEntry,  setNewEntry]  = useState<EduEntry>(() => blankEduEntry());
+  const [eduTypeSheetOpen, setEduTypeSheetOpen] = useState(false);
+  const [openEduMenuId, setOpenEduMenuId] = useState<string | null>(null);
 
   const saveEdu = async (next: EduState) => {
     setEdu(next);
     await updateUser({ education: next } as any).catch(() => {});
   };
 
+  const openAddEntry = () => {
+    setEditingEntryId(null);
+    setNewEntry(blankEduEntry());
+    setEduEditorOpen(true);
+  };
+  const openEditEntry = (e: EduEntry) => {
+    setEditingEntryId(e.id);
+    setNewEntry({ ...e });
+    setOpenEduMenuId(null);
+    setEduEditorOpen(true);
+  };
+  const closeEduEditor = () => {
+    setEduEditorClosing(true);
+    setTimeout(() => { setEduEditorOpen(false); setEduEditorClosing(false); }, 260);
+  };
+
+  const yearsInvalid = !!newEntry.startYear && !!newEntry.endYear && !newEntry.current
+    && Number(newEntry.endYear) < Number(newEntry.startYear);
+
   const commitEntry = async () => {
-    if (!newEntry.school.trim()) return;
-    const next = { ...edu, entries: [...edu.entries, { ...newEntry, id: newEntry.id || blankEntry().id }] };
+    if (!newEntry.type || !newEntry.school.trim() || yearsInvalid) return;
+    const entry = { ...newEntry, id: newEntry.id || blankEduEntry().id };
+    const next = editingEntryId
+      ? { ...edu, entries: edu.entries.map(e => e.id === editingEntryId ? entry : e) }
+      : { ...edu, entries: [...edu.entries, entry] };
     await saveEdu(next);
-    setNewEntry(blankEntry()); setAddingEdu(false);
+    closeEduEditor();
   };
 
   const deleteEntry = async (id: string) => {
+    setOpenEduMenuId(null);
     await saveEdu({ ...edu, entries: edu.entries.filter(e => e.id !== id) });
-  };
-
-  const toggleTraining = async (tag: string) => {
-    const has = edu.training.includes(tag);
-    await saveEdu({ ...edu, training: has ? edu.training.filter(t => t !== tag) : [...edu.training, tag] });
-  };
-
-  const addCustomTraining = async () => {
-    const t = trainingInput.trim();
-    if (!t || edu.training.includes(t)) return;
-    await saveEdu({ ...edu, training: [...edu.training, t] });
-    setTrainingInput('');
   };
 
   return (
@@ -979,24 +956,30 @@ export function AboutEditor(props: Props) {
       </Accordion>
 
       {/* 8. Education & Training */}
-      <Accordion number="8" title="Education & Training">
-        <p className="text-xs text-gray-400">Optional — educational background and professional development</p>
+      <Accordion number="8" title="Education & Training" defaultOpen={focusSection === 'education'}>
+        <p className="text-xs text-gray-400">Optional — school, film/art/music training, certifications, workshops, mentorships, or self-directed study. However you learned your craft.</p>
 
-        {/* Saved education entries */}
+        {/* Saved education entries — compact cards with 3-dot Edit/Delete menu */}
         <div className="space-y-2">
           {edu.entries.map(e => (
-            <div key={e.id} className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+            <div key={e.id} className="relative bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
               <div className="flex items-start gap-3">
+                <div className="shrink-0 w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-sm mt-0.5">
+                  {EDUCATION_TYPE_EMOJI[e.type] || '🎓'}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-bold text-gray-900">{e.school}</p>
-                    {(e.schoolCity || e.schoolProvince) && (
-                      <span className="text-[11px] text-gray-400">{[e.schoolCity, e.schoolProvince].filter(Boolean).join(', ')}</span>
-                    )}
                     {!e.showOnProfile && (
                       <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Private</span>
                     )}
                   </div>
+                  <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                    {e.type && <span>{EDUCATION_TYPE_LABEL[e.type]}</span>}
+                    {(e.schoolCity || e.schoolProvince) && (
+                      <span>· {[e.schoolCity, e.schoolProvince].filter(Boolean).join(', ')}</span>
+                    )}
+                  </p>
                   {(e.degree || e.field) && (
                     <p className="text-xs text-blue-600 font-medium mt-0.5">{[e.degree, e.field].filter(Boolean).join(' · ')}</p>
                   )}
@@ -1009,21 +992,60 @@ export function AboutEditor(props: Props) {
                     <p className="text-xs text-gray-500 mt-1 line-clamp-2">{e.description}</p>
                   )}
                 </div>
-                <button type="button" onClick={() => deleteEntry(e.id)}
-                  className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors mt-0.5">
-                  <X className="w-3.5 h-3.5"/>
+                <button type="button" onClick={() => setOpenEduMenuId(id => id === e.id ? null : e.id)}
+                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 transition-colors">
+                  <MoreVertical className="w-4 h-4"/>
                 </button>
               </div>
+
+              {openEduMenuId === e.id && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setOpenEduMenuId(null)}/>
+                  <div className="absolute right-3 top-11 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-36 dropdown-pop-in">
+                    <button type="button" onClick={() => openEditEntry(e)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                      <Pencil className="w-3.5 h-3.5"/> Edit
+                    </button>
+                    <button type="button" onClick={() => deleteEntry(e.id)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50">
+                      <Trash2 className="w-3.5 h-3.5"/> Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
 
-        {/* Add entry form */}
-        {addingEdu ? (
-          <div className="border border-blue-200 rounded-xl bg-blue-50/30 p-4 space-y-4">
-            <p className="text-xs font-black text-blue-700 uppercase tracking-widest">New Education Entry</p>
+        <button type="button" onClick={openAddEntry}
+          className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-xs font-bold text-gray-400
+                     hover:border-blue-300 hover:text-blue-500 transition-colors flex items-center justify-center gap-2">
+          <Plus className="w-3.5 h-3.5"/> Add Education or Training
+        </button>
+      </Accordion>
 
-            <SField label="School / Institution">
+      {/* Full-screen Add/Edit Education entry page */}
+      {(eduEditorOpen || eduEditorClosing) && (
+        <div className={`fixed inset-0 z-[80] bg-white flex flex-col ${eduEditorClosing ? 'push-page-exit' : 'push-page-enter'}`}>
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 shrink-0">
+            <button type="button" onClick={closeEduEditor} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-50 -ml-1.5">
+              <ChevronLeft className="w-5 h-5 text-gray-600"/>
+            </button>
+            <p className="text-sm font-bold text-gray-900">{editingEntryId ? 'Edit Entry' : 'Add Education or Training'}</p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            <SField label="Type *">
+              <button type="button" onClick={() => setEduTypeSheetOpen(true)}
+                className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+                <span className={newEntry.type ? 'text-gray-900 font-medium' : 'text-gray-400'}>
+                  {newEntry.type ? `${EDUCATION_TYPE_EMOJI[newEntry.type]} ${EDUCATION_TYPE_LABEL[newEntry.type]}` : 'Select type…'}
+                </span>
+                <ChevronDown className="w-4 h-4 text-gray-400"/>
+              </button>
+            </SField>
+
+            <SField label={`${(newEntry.type && EDUCATION_TYPE_META[newEntry.type]?.orgLabel) || 'School / Organization'} *`}>
               <SchoolFinder
                 value={newEntry.school}
                 onChange={(name, city, province) =>
@@ -1037,19 +1059,15 @@ export function AboutEditor(props: Props) {
               )}
             </SField>
 
-            <div className="grid grid-cols-2 gap-3">
-              <SField label="Degree / Diploma">
-                <select value={newEntry.degree} onChange={e => setNewEntry(p => ({...p, degree: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400 bg-white">
-                  <option value="">Select…</option>
-                  {DEGREE_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </SField>
-              <SField label="Field of Study">
-                <SInput value={newEntry.field} onChange={e => setNewEntry(p => ({...p, field: e.target.value}))}
-                  placeholder="e.g. Film Production"/>
-              </SField>
-            </div>
+            <SField label="Program / Field of Study">
+              <SInput value={newEntry.field} onChange={e => setNewEntry(p => ({...p, field: e.target.value}))}
+                placeholder="e.g. Film Production"/>
+            </SField>
+
+            <SField label={`${(newEntry.type && EDUCATION_TYPE_META[newEntry.type]?.credentialLabel) || 'Degree / Credential'} (optional)`}>
+              <SInput value={newEntry.degree} onChange={e => setNewEntry(p => ({...p, degree: e.target.value}))}
+                placeholder="e.g. Bachelor's Degree, Certificate…"/>
+            </SField>
 
             <div className="grid grid-cols-2 gap-3">
               <SField label="Start Year">
@@ -1062,15 +1080,21 @@ export function AboutEditor(props: Props) {
                   placeholder="2022" disabled={newEntry.current}/>
               </SField>
             </div>
+            {yearsInvalid && (
+              <p className="text-[11px] text-red-500 -mt-2">End year can't be before start year.</p>
+            )}
 
-            {/* Currently studying toggle */}
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <div onClick={() => setNewEntry(p => ({...p, current: !p.current, endYear: !p.current ? '' : p.endYear}))}
                 className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${newEntry.current ? 'bg-blue-600' : 'bg-gray-200'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${newEntry.current ? 'translate-x-4' : ''}`}/>
               </div>
-              <span className="text-xs text-gray-700 font-medium">Currently studying here</span>
+              <span className="text-xs text-gray-700 font-medium">Currently studying / training here</span>
             </label>
+
+            <SField label="Location">
+              <p className="text-xs text-gray-400">{[newEntry.schoolCity, newEntry.schoolProvince].filter(Boolean).join(', ') || 'Set automatically from the school/organization above'}</p>
+            </SField>
 
             <SField label="Description (optional)">
               <textarea value={newEntry.description}
@@ -1082,7 +1106,6 @@ export function AboutEditor(props: Props) {
               <p className="text-[11px] text-gray-400 text-right">{newEntry.description.length}/300</p>
             </SField>
 
-            {/* Show on profile toggle */}
             <label className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-xl cursor-pointer select-none">
               <div>
                 <p className="text-xs font-semibold text-gray-700">Show on profile</p>
@@ -1093,70 +1116,33 @@ export function AboutEditor(props: Props) {
                 <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${newEntry.showOnProfile ? 'translate-x-4' : ''}`}/>
               </div>
             </label>
-
-            <div className="flex gap-2 pt-1">
-              <button type="button" onClick={commitEntry} disabled={!newEntry.school.trim()}
-                className="flex-1 py-2.5 bg-blue-600 disabled:opacity-40 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition-colors">
-                Save Entry
-              </button>
-              <button type="button" onClick={() => { setAddingEdu(false); setNewEntry(blankEntry()); }}
-                className="px-4 py-2.5 bg-white border border-gray-200 text-xs font-bold text-gray-600 rounded-xl hover:bg-gray-50 transition-colors">
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setAddingEdu(true)}
-            className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-xs font-bold text-gray-400
-                       hover:border-blue-300 hover:text-blue-500 transition-colors flex items-center justify-center gap-2">
-            <Plus className="w-3.5 h-3.5"/> Add Education
-          </button>
-        )}
-
-        {/* Additional Training */}
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs font-bold text-gray-700 mb-1">Additional Training</p>
-          <p className="text-[11px] text-gray-400 mb-3">Workshops, bootcamps, masterclasses, certifications, online courses</p>
-
-          {/* Preset suggestions */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {TRAINING_SUGGESTIONS.map(tag => {
-              const on = edu.training.includes(tag);
-              return (
-                <button key={tag} type="button" onClick={() => toggleTraining(tag)}
-                  className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-all flex items-center gap-1 ${
-                    on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-                  }`}>
-                  {on && <Check className="w-2.5 h-2.5"/>}{tag}
-                </button>
-              );
-            })}
           </div>
 
-          {/* Custom training input */}
-          <div className="flex gap-2">
-            <SInput value={trainingInput} onChange={e => setTrainingInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTraining(); }}}
-              placeholder="Add custom certification or training…"/>
-            <button type="button" onClick={addCustomTraining}
-              className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0 flex items-center gap-1">
-              <Plus className="w-3.5 h-3.5"/>Add
+          <div className="px-4 py-3 border-t border-gray-100 shrink-0">
+            <button type="button" onClick={commitEntry} disabled={!newEntry.type || !newEntry.school.trim() || yearsInvalid}
+              className="w-full py-3 bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors">
+              {editingEntryId ? 'Save Changes' : 'Save Entry'}
             </button>
           </div>
-
-          {/* Custom training tags */}
-          {edu.training.filter(t => !TRAINING_SUGGESTIONS.includes(t)).length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {edu.training.filter(t => !TRAINING_SUGGESTIONS.includes(t)).map(t => (
-                <span key={t} className="flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full">
-                  {t}
-                  <button type="button" onClick={() => toggleTraining(t)}><X className="w-2.5 h-2.5 hover:text-red-500"/></button>
-                </span>
-              ))}
-            </div>
-          )}
         </div>
-      </Accordion>
+      )}
+
+      {/* Type selector — bottom sheet on mobile, reusing the shared BottomSheet pattern */}
+      {eduTypeSheetOpen && (
+        <BottomSheet title="Education / Training Type" onClose={() => setEduTypeSheetOpen(false)}>
+          <div className="py-2">
+            {EDUCATION_TYPES.map(t => (
+              <button key={t.value} type="button"
+                onClick={() => { setNewEntry(p => ({ ...p, type: t.value })); setEduTypeSheetOpen(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left">
+                <span className="text-lg">{t.emoji}</span>
+                <span className="flex-1 text-sm font-medium text-gray-900">{t.label}</span>
+                {newEntry.type === t.value && <Check className="w-4 h-4 text-blue-600"/>}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* 9. Collaboration */}
       <Accordion number="9" title="Collaboration Preferences">

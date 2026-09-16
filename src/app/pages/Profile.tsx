@@ -41,6 +41,11 @@ import { useFollowCounts } from '../lib/useFollowCounts';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
+import { CreatorVerificationBanner } from '../components/profile/CreatorVerificationBanner';
+import { normalizeVerificationStatus } from '../lib/verification';
+import { getTrustProfile, type TrustProfile } from '../lib/trustApi';
+import { TrustDetailsSheet } from '../components/trust/TrustDetailsSheet';
+import { TrustProfileOverlay } from '../components/trust/TrustProfileOverlay';
 import { getProfileInteractionStats, type ProfileInteractionStats } from '../lib/profileEngagement';
 import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
@@ -597,6 +602,14 @@ export function Profile() {
   const [showCompose,      setShowCompose]      = useState(false);
   const [showAvatarSheet,  setShowAvatarSheet]  = useState(false);
   const [rep,              setRep]              = useState<ReputationScore | null>(null);
+  const [trust, setTrust] = useState<TrustProfile | null>(null);
+  const [showTrustDetails, setShowTrustDetails] = useState(false);
+  const [trustProfileOpen, setTrustProfileOpen] = useState(false);
+  const [trustProfileClosing, setTrustProfileClosing] = useState(false);
+  const closeTrustProfile = () => {
+    setTrustProfileClosing(true);
+    setTimeout(() => { setTrustProfileOpen(false); setTrustProfileClosing(false); }, 260);
+  };
   const [showRentalBadge,  setShowRentalBadge]  = useState<boolean>(() => {
     try { const p = JSON.parse(localStorage.getItem('fm_badge_prefs') || '{}'); return p.show_rental_badge ?? true; }
     catch { return true; }
@@ -665,7 +678,7 @@ export function Profile() {
   // form opened as a full-screen overlay (not a tab anymore) -- focusSection
   // opens straight to the accordion matching whichever section's Edit
   // link was tapped.
-  const [showEditProfile, setEditProfileSection] = useState<'about' | 'bio' | 'skills' | 'gear' | 'social' | null>(null);
+  const [showEditProfile, setEditProfileSection] = useState<'about' | 'bio' | 'skills' | 'gear' | 'social' | 'education' | null>(null);
   const [showActionSheet, setShowActionSheet]     = useState(false);
   // Native-feeling push/pop transition for the Edit Profile overlay
   // (push-page-enter/exit, styles/motion.css) -- same delayed-unmount
@@ -711,6 +724,7 @@ export function Profile() {
     if (user) {
       load(); initAboutForm();
       reliabilityApi.getScore(user.id).then(setRep).catch(()=>{});
+      getTrustProfile(user.id).then(setTrust).catch(()=>{});
       getProfileInteractionStats(user.id).then(setInteractionStats).catch(()=>{});
       // Load badge visibility prefs
       import('../lib/settingsApi').then(({ reputationSettingsApi }) => {
@@ -1187,6 +1201,19 @@ export function Profile() {
       <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
       <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
 
+      {/* Private, owner-only -- Profile.tsx only ever renders the logged-in
+          user's own profile, so no separate isOwnProfile check is needed
+          here (see HostProfile.tsx for the viewer-side page, which never
+          imports this component at all). Scoped to plain "creator" so
+          Creator+/Professional/Business accounts are unaffected. */}
+      {user.accountType === 'creator' && !user.isVerified && (
+        <CreatorVerificationBanner
+          status={normalizeVerificationStatus(user.verificationStatus, user.isVerified)}
+          onVerify={() => navigate('/verification')}
+          onLearnMore={() => navigate('/settings/verification')}
+        />
+      )}
+
       <ProfileHeader
         coverPhoto={coverImg}
         avatar={user.avatar}
@@ -1197,8 +1224,8 @@ export function Profile() {
         primaryRole={primaryRole}
         bio={user.bio}
         location={locationDisplay}
-        reliabilityScore={rep && showRentalBadge ? rep.reliability_score : undefined}
-        reliabilityLevel={rep && showRentalBadge ? rep.reliability_level : undefined}
+        trustLevel={trust?.trustLevel}
+        onTapTrustBadge={() => setShowTrustDetails(true)}
         isOwner
         onTapCover={() => setShowCoverSheet(true)}
         onTapAvatar={() => setShowAvatarSheet(true)}
@@ -1230,6 +1257,7 @@ export function Profile() {
               viewerId={user.id}
               accountType={user.accountType}
               isVerified={user.isVerified}
+              verificationStatus={user.verificationStatus}
               bio={user.bio}
               primaryRole={primaryRole}
               secondaryRoles={secondaryRoles}
@@ -1239,6 +1267,8 @@ export function Profile() {
               onEditAbout={() => setEditProfileSection('bio')}
               skills={skills}
               onEditSkills={() => setEditProfileSection('skills')}
+              education={(user as any).education}
+              onEditEducation={() => setEditProfileSection('education')}
               portfolioItems={portfolioItems}
               onOpenPortfolioItem={item => { setPortfolioDetail(item); }}
               onViewAllPortfolio={() => navigate('/portfolio')}
@@ -1255,6 +1285,8 @@ export function Profile() {
               socialLinks={socialLinksFromUser(user)}
               onEditSocialLinks={() => setEditProfileSection('social')}
               interactionStats={interactionStats}
+              trust={trust}
+              onOpenTrustDetails={() => setShowTrustDetails(true)}
             />
           )}
 
@@ -1695,6 +1727,17 @@ export function Profile() {
 
         </div>
       </div>
+
+      {showTrustDetails && (
+        <TrustDetailsSheet
+          userId={user.id}
+          onClose={() => setShowTrustDetails(false)}
+          onViewFullProfile={() => { setShowTrustDetails(false); setTrustProfileOpen(true); }}
+        />
+      )}
+      {(trustProfileOpen || trustProfileClosing) && (
+        <TrustProfileOverlay userId={user.id} closing={trustProfileClosing} onClose={closeTrustProfile} />
+      )}
 
       {/* ── Edit Profile — full-screen AboutEditor overlay, replacing the
           old "About" tab. Opens straight to whichever accordion matches

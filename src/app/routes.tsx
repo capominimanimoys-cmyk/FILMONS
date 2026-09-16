@@ -32,6 +32,7 @@ import { Notifications } from './pages/Notifications';
 import { NotificationSettings }  from './pages/NotificationSettings';
 import { MessageSettings }        from './pages/MessageSettings';
 import { VerificationSettings }   from './pages/VerificationSettings';
+import { MyConnections }          from './pages/MyConnections';
 import { PrivacySettings }        from './pages/PrivacySettings';
 import { ReviewsSettings }        from './pages/ReviewsSettings';
 import { DeviceSettings }         from './pages/DeviceSettings';
@@ -130,6 +131,7 @@ export const router = createBrowserRouter([
       { path: 'profile', Component: Profile },
       { path: 'share-card', Component: ShareCard },
       { path: 'verification', Component: Verification },
+      { path: 'connections', Component: MyConnections },
       { path: 'refund-policy', Component: RefundPolicy },
       { path: 'privacy-policy', Component: PrivacyPolicy },
       { path: 'terms-conditions', Component: TermsConditions },

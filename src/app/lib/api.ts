@@ -178,6 +178,13 @@ function profileRowToUser(data: Record<string, any>): User {
     phone:                data.phone,
     province:             data.province,
     primaryRole:          data.primary_role,
+    // Written by updateUser({education}) to a real top-level column (see
+    // updateUser's payload builder) but this mapper never read it back --
+    // the owner's own session never noticed (AuthContext optimistically
+    // merges whatever was just saved into local state without a re-fetch
+    // through this function), but any OTHER viewer fetching this profile
+    // via getUserById/getUserByUsername got nothing back for it at all.
+    education:            data.education,
     following:            parsePgArray(data.following),
     followers:            parsePgArray(data.followers),
     profileMeta:          meta,

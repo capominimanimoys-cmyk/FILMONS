@@ -7,12 +7,18 @@ import {
   Lock, Check, User, FileText, Shield, CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isCreatorPlus, isProfessional, isBusiness, reliabilityApi, ReputationScore, getCompositeTier, scoreColor } from '../lib/reliabilityApi';
+import { isCreatorPlus, isProfessional, isBusiness } from '../lib/reliabilityApi';
 import { reputationSettingsApi } from '../lib/settingsApi';
-import { ReliabilityCard } from '../components/ReliabilityScore';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { consumeSettingsReturnTo } from '../lib/settingsReturnTo';
+import { Users, Star, Briefcase } from 'lucide-react';
+import { getTrustProfile, type TrustProfile } from '../lib/trustApi';
+import { ReliabilityScoreHeader } from '../components/trust/ReliabilityScoreHeader';
+import { ReliabilityComponentCard } from '../components/trust/ReliabilityComponentCard';
+import { ConnectionStrengthDetails } from '../components/trust/ConnectionStrengthDetails';
+import { TransactionProgress } from '../components/trust/TransactionProgress';
+import { TrustLevelProgression } from '../components/trust/TrustLevelProgression';
 
 type VStatus = 'verified' | 'pending' | 'under_review' | 'not_started' | 'rejected';
 
@@ -40,6 +46,49 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
       className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${on ? 'bg-blue-600' : 'bg-gray-200'}`}>
       <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${on ? 'left-5.5' : 'left-0.5'}`}/>
     </button>
+  );
+}
+
+// ── FILMONS Reliability dashboard -- the private, full-calculation view ──────
+function TrustDashboard({ trust, onVerifyIdentity }: { trust: TrustProfile | null; onVerifyIdentity: () => void }) {
+  if (!trust) return null;
+  return (
+    <div className="space-y-3">
+      <ReliabilityScoreHeader score={trust.reliabilityScore} level={trust.trustLevel} />
+
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-1">YOUR RELIABILITY</p>
+
+      <ReliabilityComponentCard
+        icon={Users} label="Connections" value={trust.connectionScore} max={45}
+        sub={`${trust.validConnections} professional connections`}
+      >
+        <ConnectionStrengthDetails trust={trust} />
+      </ReliabilityComponentCard>
+
+      <ReliabilityComponentCard
+        icon={Star} label="Recommendations" value={trust.recommendationScore} max={20}
+        sub={`${trust.validRecommendations} / 50 recommendations`}
+      />
+
+      <ReliabilityComponentCard
+        icon={Briefcase} label="Successful Transactions" value={trust.transactionScore} max={20}
+      >
+        <TransactionProgress trust={trust} />
+      </ReliabilityComponentCard>
+
+      <ReliabilityComponentCard
+        icon={ShieldCheck} label="Identity Verification" value={trust.identityScore} max={15}
+        sub={trust.identityVerified ? '✓ Identity Verified' : undefined}
+      >
+        {!trust.identityVerified && (
+          <button onClick={onVerifyIdentity} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors">
+            Verify identity
+          </button>
+        )}
+      </ReliabilityComponentCard>
+
+      <TrustLevelProgression score={trust.reliabilityScore} level={trust.trustLevel} />
+    </div>
   );
 }
 
@@ -98,8 +147,8 @@ export function VerificationSettings() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const plus = isCreatorPlus(user?.accountType);
-  const [rep, setRep] = useState<ReputationScore | null>(null);
-  useEffect(() => { if (user?.id) reliabilityApi.getScore(user.id).then(setRep).catch(()=>{}); }, [user?.id]);
+  const [trust, setTrust] = useState<TrustProfile | null>(null);
+  useEffect(() => { if (user?.id) getTrustProfile(user.id).then(setTrust).catch(()=>{}); }, [user?.id]);
 
   // Badge visibility
   const [showRentalBadge,  setShowRentalBadge]  = useState(true);
@@ -157,8 +206,7 @@ export function VerificationSettings() {
 
           {/* ─── Trust level — always at top ─── */}
           <div className="mx-4">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 px-1">MY TRUST LEVEL</p>
-            <ReliabilityCard userId={user!.id} accountType={user!.accountType} repData={rep ?? undefined}/>
+            <TrustDashboard trust={trust} onVerifyIdentity={() => { captureSnapshot(); navigate('/verification'); }} />
           </div>
 
           {/* ─── 1. Upgrade to Creator+ — mirrors Creator+ identity card structure ─── */}
@@ -320,8 +368,7 @@ export function VerificationSettings() {
 
         {/* ─── Trust level — always at top ─── */}
         <div className="mx-4">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 px-1">MY TRUST LEVEL</p>
-          <ReliabilityCard userId={user!.id} accountType={user!.accountType} repData={rep ?? undefined}/>
+          <TrustDashboard trust={trust} onVerifyIdentity={() => { captureSnapshot(); navigate('/verification'); }} />
         </div>
 
         {/* ─── 1. Verified Identity Status Card ─── */}

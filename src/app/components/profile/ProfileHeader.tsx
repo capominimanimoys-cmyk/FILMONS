@@ -8,16 +8,19 @@
 // Follow/Message live in the sticky bottom bar for a viewer, not here too --
 // putting the same two actions in both places was redundant. This header's
 // viewer-mode action row is Share + 3-dot only.
-import { ShieldCheck, MessageCircle, UserCheck, UserPlus, Loader2 } from 'lucide-react';
+import { ShieldCheck, CircleAlert, MessageCircle, UserCheck, UserPlus, Loader2, UserRoundPlus, Clock } from 'lucide-react';
 import { AccountTypeBadge } from '../AccountTypeBadge';
-import { ReliabilityBadge } from '../ReliabilityScore';
+import { TrustBadge } from '../trust/TrustBadge';
+import type { TrustLevel } from '../../lib/trustApi';
+import type { ConnectionStatus } from '../../lib/connectionsApi';
 import { ProfileStatsRow } from './ProfileStatsRow';
 
 export function ProfileHeader({
   coverPhoto, avatar, name, username, isVerified, accountType, primaryRole, bio, location,
-  reliabilityScore, reliabilityLevel,
+  trustLevel, onTapTrustBadge,
   isOwner, onTapCover, onTapAvatar, onEditProfile, onShare, onMenu,
   isFollowing, isPending, onFollow, onMessage,
+  connectionStatus, onConnect,
   followerCount, followingCount, interactionCount, onTapFollowers, onTapFollowing, onTapInteraction,
 }: {
   coverPhoto?: string | null;
@@ -29,8 +32,11 @@ export function ProfileHeader({
   primaryRole?: string;
   bio?: string;
   location?: string;
-  reliabilityScore?: number;
-  reliabilityLevel?: string;
+  /** The unified FILMONS Trust Badge -- see trustApi.ts. Only the level is
+   * ever shown here (never the underlying score/breakdown), per spec: "The
+   * Profile header should show the Trust Level, not the entire calculation." */
+  trustLevel?: TrustLevel | string | null;
+  onTapTrustBadge?: () => void;
   isOwner: boolean;
   onTapCover?: () => void;
   onTapAvatar?: () => void;
@@ -45,6 +51,10 @@ export function ProfileHeader({
   isPending?: boolean;
   onFollow?: () => void;
   onMessage?: () => void;
+  /** Viewer-mode only -- a real accepted Professional Connection, distinct
+   * from Follow. Omit (leave undefined) to hide the Connect button entirely. */
+  connectionStatus?: ConnectionStatus;
+  onConnect?: () => void;
   // Stats row -- rendered directly inside this header, right under the
   // identity block, per spec ("Move these three stats directly into the
   // Profile header area"). Shared ProfileStatsRow so Profile.tsx and
@@ -106,6 +116,19 @@ export function ProfileHeader({
                   : <><UserPlus className="w-3.5 h-3.5" /> Follow</>}
               </button>
             )}
+            {!isOwner && onConnect && connectionStatus && connectionStatus !== 'connected' && (
+              <button
+                onClick={onConnect}
+                disabled={connectionStatus === 'pending_sent'}
+                className={`hidden md:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                  connectionStatus === 'pending_sent' ? 'bg-gray-100 text-gray-400 cursor-default' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {connectionStatus === 'pending_sent' ? <><Clock className="w-3.5 h-3.5" /> Pending</>
+                  : connectionStatus === 'pending_received' ? <><UserRoundPlus className="w-3.5 h-3.5" /> Respond</>
+                  : <><UserRoundPlus className="w-3.5 h-3.5" /> Connect</>}
+              </button>
+            )}
             <button onClick={onShare} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors" title="Share" aria-label="Share">
               <ShareIcon />
             </button>
@@ -125,14 +148,27 @@ export function ProfileHeader({
                 <ShieldCheck className="w-2.5 h-2.5" /> Verified
               </span>
             )}
-            {reliabilityScore != null && reliabilityLevel && (
-              <ReliabilityBadge score={reliabilityScore} level={reliabilityLevel} accountType={accountType} size="sm" />
+            {/* Owner-only: a Creator's unverified status is account-management
+                info, never shown on the public profile (isOwner is always
+                false on HostProfile.tsx, the only place a non-owner views
+                this header). Scoped to plain "creator" so Creator+/
+                Professional/Business (which have their own trust signals)
+                are unaffected. */}
+            {isOwner && !isVerified && accountType === 'creator' && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                <CircleAlert className="w-2.5 h-2.5" /> Not verified
+              </span>
             )}
           </div>
           {(primaryRole) && <p className="text-xs font-semibold text-blue-600 mt-0.5">{primaryRole}</p>}
           {location && <p className="text-xs text-gray-400 mt-0.5">{location}</p>}
           {username && (
             <p className="text-xs text-gray-400 mt-0.5">@{username}</p>
+          )}
+          {trustLevel && (
+            <div className="mt-1.5">
+              <TrustBadge level={trustLevel} size="sm" onClick={onTapTrustBadge} />
+            </div>
           )}
           {bio && <p className="text-sm text-gray-700 mt-2 leading-relaxed">{bio}</p>}
         </div>

@@ -12,13 +12,10 @@ import { User, Listing, Review, Post } from '../types';
 import {
   ArrowLeft, Star, MapPin, ShieldCheck, MessageCircle, Loader2,
   UserPlus, UserCheck, Share2, Package, Grid3X3, List, LayoutGrid, Globe, X,
-  Video, Music, Image as ImageIcon, Sprout, Briefcase, Trophy,
+  Video, Music, Image as ImageIcon,
   User as UserIcon, FileText,
 } from 'lucide-react';
-
-type LucideIcon = React.ComponentType<{ className?: string }>;
 import { AccountTypeBadge } from '../components/AccountTypeBadge';
-import { ReliabilityBadge } from '../components/ReliabilityScore';
 import { ListingCard } from '../components/ListingCard';
 import { PostCard } from '../components/PostCard';
 import { toast } from 'sonner';
@@ -34,6 +31,10 @@ import { ProfileViewerActions } from '../components/profile/ProfileViewerActions
 import { RecommendationComposeSheet } from '../components/profile/RecommendationComposeSheet';
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
 import { toStringArray } from '../lib/normalizeList';
+import { getTrustProfile, type TrustProfile } from '../lib/trustApi';
+import { TrustDetailsSheet } from '../components/trust/TrustDetailsSheet';
+import { TrustProfileOverlay } from '../components/trust/TrustProfileOverlay';
+import { getConnectionStatus, sendConnectionRequest, respondToConnectionRequest, type ConnectionStatus } from '../lib/connectionsApi';
 
 type Tab = ProfileTab;
 const TABS = PROFILE_TABS;
@@ -48,216 +49,6 @@ function matchesPortfolioFilter(item: PortfolioItem, filter: string): boolean {
   if (filter === 'Completed') return (item.category ?? '').toLowerCase().includes('film') || (item.category ?? '').toLowerCase().includes('production');
   if (filter === 'BTS')       return (item.category ?? '').toLowerCase().includes('behind') || (item.title ?? '').toLowerCase().includes('bts');
   return true;
-}
-
-// ── Trust Level System ────────────────────────────────────────────────────────
-type TrustLevel = 1 | 2 | 3 | 4;
-
-interface TrustResult {
-  level: TrustLevel;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  badgeCls: string;   // Tailwind classes for the pill
-  barCls: string;     // Tailwind class for progress bar fill
-  nextHint?: string;
-  signals: { label: string; met: boolean }[];
-}
-
-const TRUST_LEVELS: { level: TrustLevel; label: string; icon: LucideIcon }[] = [
-  { level: 1, label: 'New Member',   icon: Sprout },
-  { level: 2, label: 'Community',    icon: Briefcase },
-  { level: 3, label: 'Trusted',      icon: ShieldCheck },
-  { level: 4, label: 'Top Creator',  icon: Trophy },
-];
-
-const RELIABILITY_LEVEL_MAP: Record<string, TrustLevel> = {
-  new_user:         1,
-  building_trust:   2,
-  reliable_creator: 3,
-  trusted_creator:  3,
-  elite_creator:    4,
-};
-
-function computeTrustLevel(
-  host: User,
-  listings: Listing[],
-  reviews: Review[],
-  portfolioItems: PortfolioItem[],
-  reliabilityLevel = 'new_user',
-): TrustResult {
-  const hasAvatar    = !!(host.avatar);
-  const hasBio       = (host.bio ?? '').trim().length > 10;
-  const isVerified   = !!host.isVerified;
-  const hasListing   = listings.length >= 1;
-  const hasReview    = reviews.length >= 1;
-  const hasManyRev   = reviews.length >= 5;
-  const avgRating    = reviews.length > 0
-    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
-  const highRating   = avgRating >= 4.5;
-  const hasPortfolio = portfolioItems.length >= 1;
-  const accountType  = (host as any).accountType as string | undefined;
-  const isPro        = ['creator_plus', 'professional', 'business'].includes(accountType ?? '');
-  const hasFollowers = ((host.followers ?? []).length) >= 5;
-
-  const signals: TrustResult['signals'] = [
-    { label: 'Profile photo added',       met: hasAvatar },
-    { label: 'Bio written',               met: hasBio },
-    { label: 'At least 1 listing',        met: hasListing },
-    { label: 'Filmons Verified',           met: isVerified },
-    { label: 'Portfolio work added',      met: hasPortfolio },
-    { label: 'Received a review',         met: hasReview },
-    { label: '5+ reviews',                met: hasManyRev },
-    { label: '4.5★ average rating',       met: highRating && hasManyRev },
-    { label: 'Pro / Business account',    met: isPro },
-    { label: '5+ followers',              met: hasFollowers },
-  ];
-
-  let level: TrustLevel = 1;
-  if (hasAvatar && hasBio && hasListing) level = 2;
-  if (level >= 2 && isVerified && hasReview) level = 3;
-  if (level >= 3 && highRating && hasManyRev && (hasPortfolio || isPro)) level = 4;
-  // Never show lower than what the DB reliability_level says
-  const dbFloor = RELIABILITY_LEVEL_MAP[reliabilityLevel] ?? 1;
-  if (dbFloor > level) level = dbFloor;
-
-  type Config = Omit<TrustResult, 'level' | 'signals'>;
-  const configs: Record<TrustLevel, Config> = {
-    1: {
-      label: 'New Member',
-      description: 'Just getting started. Complete your profile to build trust with clients.',
-      icon: Sprout,
-      badgeCls: 'bg-gray-100 text-gray-500 border-gray-200',
-      barCls:   'bg-gray-400',
-      nextHint: 'Add a photo, bio, and your first listing to reach Community level.',
-    },
-    2: {
-      label: 'Community',
-      description: 'Active member with a complete profile and at least one listing.',
-      icon: Briefcase,
-      badgeCls: 'bg-blue-50 text-blue-600 border-blue-200',
-      barCls:   'bg-blue-500',
-      nextHint: 'Get Filmons Verified and receive your first review to reach Trusted.',
-    },
-    3: {
-      label: 'Trusted',
-      description: 'Filmons Verified with real client reviews. Clients can book with confidence.',
-      icon: ShieldCheck,
-      badgeCls: 'bg-green-50 text-green-700 border-green-200',
-      barCls:   'bg-green-500',
-      nextHint: 'Maintain 4.5+ stars across 5+ reviews to reach Top Creator.',
-    },
-    4: {
-      label: 'Top Creator',
-      description: 'Elite verified professional with outstanding reviews and a strong portfolio.',
-      icon: Trophy,
-      badgeCls: 'bg-amber-50 text-amber-700 border-amber-200',
-      barCls:   'bg-amber-400',
-    },
-  };
-
-  return { level, signals, ...configs[level] };
-}
-
-// ── Trust Info Sheet (bottom sheet) ──────────────────────────────────────────
-function TrustInfoSheet({ trust, onClose }: { trust: TrustResult; onClose: () => void }) {
-  return (
-    <>
-      <div className="fixed inset-0 z-[105] bg-black/40" onClick={onClose}/>
-      <div
-        className="fixed inset-x-0 bottom-0 z-[110] bg-white rounded-t-3xl shadow-2xl flex flex-col"
-        style={{ maxHeight: '85vh', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-10 h-1 rounded-full bg-gray-200"/>
-        </div>
-
-        {/* Header */}
-        <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-100">
-          <p className="text-sm font-black text-gray-900">Trust & Safety</p>
-          <button onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 active:bg-gray-200">
-            <X className="w-4 h-4 text-gray-600"/>
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-8">
-
-          {/* Level hero card */}
-          <div className={`mt-5 p-5 rounded-2xl border ${trust.badgeCls}`}>
-            {(() => { const Icon = trust.icon; return <Icon className="w-10 h-10"/>; })()}
-            <p className="text-lg font-black text-gray-900 mt-2">{trust.label}</p>
-            <p className="text-sm text-gray-600 mt-1 leading-relaxed">{trust.description}</p>
-          </div>
-
-          {/* Progress bar */}
-          <div className="mt-5">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Trust Level</p>
-              <p className="text-[10px] text-gray-400">{trust.level} of 4</p>
-            </div>
-            <div className="flex gap-1.5">
-              {([1, 2, 3, 4] as TrustLevel[]).map(l => (
-                <div key={l}
-                  className={`flex-1 h-2 rounded-full transition-colors ${l <= trust.level ? trust.barCls : 'bg-gray-100'}`}/>
-              ))}
-            </div>
-            {trust.nextHint && (
-              <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">{trust.nextHint}</p>
-            )}
-          </div>
-
-          {/* Signals checklist */}
-          <div className="mt-6">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Trust Signals</p>
-            <div className="space-y-3">
-              {trust.signals.map(s => (
-                <div key={s.label} className="flex items-center gap-3">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${s.met ? 'bg-green-500' : 'bg-gray-100'}`}>
-                    {s.met
-                      ? <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                      : <div className="w-2 h-2 rounded-full bg-gray-300"/>
-                    }
-                  </div>
-                  <span className={`text-sm ${s.met ? 'text-gray-800 font-medium' : 'text-gray-400'}`}>{s.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Level ladder */}
-          <div className="mt-6">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Level Ladder</p>
-            <div className="space-y-2">
-              {TRUST_LEVELS.map(({ level: l, label, icon: LevelIcon }) => (
-                <div key={l} className={`flex items-center gap-3 p-3.5 rounded-xl border transition-colors ${
-                  l === trust.level
-                    ? `${trust.badgeCls.split(' ')[0]} ${trust.badgeCls.split(' ')[2]}`
-                    : 'bg-white border-gray-100'
-                }`}>
-                  <LevelIcon className="w-5 h-5 shrink-0"/>
-                  <span className={`text-sm flex-1 ${l === trust.level ? 'font-bold text-gray-900' : l < trust.level ? 'text-gray-400 line-through' : 'text-gray-500'}`}>
-                    {label}
-                  </span>
-                  {l === trust.level && (
-                    <span className="text-[10px] font-black text-gray-500 shrink-0">Current</span>
-                  )}
-                  {l < trust.level && (
-                    <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
-                    </svg>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </>
-  );
 }
 
 function Stars({ rating }: { rating: number }) {
@@ -304,8 +95,15 @@ export function HostProfile() {
   const [listings,         setListings]         = useState<Listing[]>([]);
   const [reviews,          setReviews]          = useState<Review[]>([]);
   const [portfolioItems,   setPortfolioItems]   = useState<PortfolioItem[]>([]);
-  const [reliabilityLevel, setReliabilityLevel] = useState<string>('new_user');
-  const [reliabilityScore, setReliabilityScore] = useState<number>(0);
+  const [trust, setTrust] = useState<TrustProfile | null>(null);
+  const [showTrustDetails, setShowTrustDetails] = useState(false);
+  const [trustProfileOpen, setTrustProfileOpen] = useState(false);
+  const [trustProfileClosing, setTrustProfileClosing] = useState(false);
+  const closeTrustProfile = () => {
+    setTrustProfileClosing(true);
+    setTimeout(() => { setTrustProfileOpen(false); setTrustProfileClosing(false); }, 260);
+  };
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('none');
   const { isFollowing, isPending, follow, unfollow } = useFollow();
   const { followerCount, followingCount } = useFollowCounts(resolvedId ?? undefined);
   // Same immersive scroll-to-hide chrome as Home -> Portfolios (window mode
@@ -327,7 +125,6 @@ export function HostProfile() {
   const [showFollowers,    setShowFollowers]    = useState<'followers'|'following'|null>(null);
   const [followerUsers,    setFollowerUsers]    = useState<any[]>([]);
   const [followingUsers,   setFollowingUsers]   = useState<any[]>([]);
-  const [showTrustSheet,   setShowTrustSheet]   = useState(false);
   const [showActionSheet,  setShowActionSheet]  = useState(false);
   const [showRecommend,    setShowRecommend]    = useState(false);
   const [recommendations,     setRecommendations]     = useState<Recommendation[]>([]);
@@ -406,6 +203,8 @@ export function HostProfile() {
       if (hostData?.id) {
         logProfileView(hostData.id, me?.id);
         getProfileInteractionStats(hostData.id).then(setInteractionStats).catch(() => {});
+        getTrustProfile(hostData.id).then(setTrust).catch(() => {});
+        if (me?.id) getConnectionStatus(me.id, hostData.id).then(setConnectionStatus).catch(() => {});
       }
       // Landed here via the legacy /host/:id link but this profile has a
       // username -- silently upgrade the address bar to the clean canonical
@@ -423,8 +222,6 @@ export function HostProfile() {
       setRecommendationCount(hostRecommendationCount);
       setPosts(hostPosts);
 
-      if (repScore.data?.reliability_level) setReliabilityLevel(repScore.data.reliability_level);
-      if (repScore.data?.reliability_score != null) setReliabilityScore(repScore.data.reliability_score);
       setListings(hostListings);
       setReviews(hostReviews);
       setPortfolioItems(hostPortfolio);
@@ -497,6 +294,21 @@ export function HostProfile() {
     navigate(`/share-card?userId=${resolvedId}`);
   };
 
+  // A real, accepted Professional Connection -- distinct from Follow. Tapping
+  // "Connect" sends a request; tapping again while pending_received accepts it.
+  const handleConnect = async () => {
+    if (!me || !host) { navigate('/login'); return; }
+    if (connectionStatus === 'pending_received') {
+      const ok = await respondToConnectionRequest(me.id, host.id, true);
+      if (ok) { setConnectionStatus('connected'); toast.success(`You're now connected with ${host.name}.`); }
+      return;
+    }
+    if (connectionStatus === 'none') {
+      const ok = await sendConnectionRequest(me.id, host.id);
+      if (ok) { setConnectionStatus('pending_sent'); toast.success('Connection request sent.'); }
+    }
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -514,7 +326,6 @@ export function HostProfile() {
   const meta        = (host as any).profileMeta || {};
   const avgRating   = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
   const isVerified  = host.isVerified;
-  const trust       = computeTrustLevel(host, listings, reviews, portfolioItems, reliabilityLevel);
   const primaryRole = meta.primaryRole || (host as any).primaryRole || '';
   const location    = (host as any).location || [host.city, (host as any).province].filter(Boolean).join(', ');
   const ig  = meta.instagram  || (host as any).instagram;
@@ -548,8 +359,8 @@ export function HostProfile() {
         primaryRole={primaryRole}
         bio={host.bio}
         location={location}
-        reliabilityScore={reliabilityScore}
-        reliabilityLevel={reliabilityLevel}
+        trustLevel={trust?.trustLevel}
+        onTapTrustBadge={() => setShowTrustDetails(true)}
         isOwner={false}
         onShare={() => navigate(`/share-card?userId=${resolvedId}`)}
         onMenu={() => setShowActionSheet(true)}
@@ -557,6 +368,8 @@ export function HostProfile() {
         isPending={isPending(host.id)}
         onFollow={handleFollowClick}
         onMessage={handleMessage}
+        connectionStatus={me && me.id !== host.id ? connectionStatus : undefined}
+        onConnect={handleConnect}
         followerCount={followerCount}
         followingCount={followingCount}
         interactionCount={interactionStats?.total ?? null}
@@ -610,6 +423,7 @@ export function HostProfile() {
               openTo={toStringArray(meta.collabPrefs || meta.collab || (host as any).collabPrefs)}
               languages={toStringArray(meta.languages || (host as any).languages)}
               skills={toStringArray(meta.skills || (host as any).skills)}
+              education={(host as any).education}
               portfolioItems={portfolioItems}
               onOpenPortfolioItem={() => navigate(`/portfolio/${host.id}`)}
               onViewAllPortfolio={() => navigate(`/portfolio/${host.id}`)}
@@ -624,6 +438,8 @@ export function HostProfile() {
               onRecommend={me && me.id !== host.id ? () => setShowRecommend(true) : undefined}
               socialLinks={socialLinksFromUser(host)}
               interactionStats={interactionStats}
+              trust={trust}
+              onOpenTrustDetails={() => setShowTrustDetails(true)}
             />
           )}
 
@@ -862,8 +678,15 @@ export function HostProfile() {
         />
       )}
 
-      {showTrustSheet && (
-        <TrustInfoSheet trust={trust} onClose={() => setShowTrustSheet(false)}/>
+      {showTrustDetails && (
+        <TrustDetailsSheet
+          userId={host.id}
+          onClose={() => setShowTrustDetails(false)}
+          onViewFullProfile={() => { setShowTrustDetails(false); setTrustProfileOpen(true); }}
+        />
+      )}
+      {(trustProfileOpen || trustProfileClosing) && (
+        <TrustProfileOverlay userId={host.id} closing={trustProfileClosing} onClose={closeTrustProfile} />
       )}
 
       {showActionSheet && (

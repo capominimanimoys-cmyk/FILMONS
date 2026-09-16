@@ -1,14 +1,16 @@
 // The "All" tab body -- one vertical stack, in the exact order the spec's
-// "MOBILE BEHAVIOR" section lays out: About, Creator Level, Top Skills,
-// Featured Portfolio, Services, Listings, My Gear/Tools, Recommendations,
-// Portfolio Interaction, Social Links. Shared by Profile.tsx (owner) and
-// HostProfile.tsx (viewer) so the layout never drifts between the two.
+// "MOBILE BEHAVIOR" section lays out: About, Trust & Verification, Top
+// Skills, Featured Portfolio, Services, Listings, My Gear/Tools,
+// Recommendations, Portfolio Interaction, Social Links. Shared by
+// Profile.tsx (owner) and HostProfile.tsx (viewer) so the layout never
+// drifts between the two.
 import { Listing } from '../../types';
 import { PortfolioItem } from '../../lib/portfolioApi';
 import { Recommendation } from '../../lib/recommendationsApi';
 import { AboutSection } from './AboutSection';
-import { CreatorLevelSection } from './CreatorLevelSection';
+import { TrustVerificationSection } from './TrustVerificationSection';
 import { TopSkillsSection } from './TopSkillsSection';
+import { EducationSection } from './EducationSection';
 import { FeaturedPortfolioSection } from './FeaturedPortfolioSection';
 import { ListingsRowSection } from './ListingsRowSection';
 import { MyGearSection } from './MyGearSection';
@@ -16,17 +18,20 @@ import { RecommendationsSection } from './RecommendationsSection';
 import { ProfileInteractionSection } from './ProfileInteractionSection';
 import { SocialLinksSection, type SocialLinksData } from './SocialLinksSection';
 import type { ProfileInteractionStats } from '../../lib/profileEngagement';
+import type { TrustProfile } from '../../lib/trustApi';
 
 export function ProfileAllTab({
-  userId, isOwner, viewerId, accountType, isVerified,
+  userId, isOwner, viewerId, accountType, isVerified, verificationStatus,
   bio, primaryRole, secondaryRoles, location, openTo, languages, onEditAbout,
   skills, onEditSkills,
+  education, onEditEducation,
   portfolioItems, onOpenPortfolioItem, onViewAllPortfolio,
   services, listings, lockedListingIds, onViewServices, onViewListings,
   gear, onEditGear,
   recommendations, recommendationCount, onViewAllRecommendations, onRecommend,
   socialLinks, onEditSocialLinks,
   interactionStats,
+  trust, onOpenTrustDetails,
 }: {
   userId: string;
   isOwner: boolean;
@@ -37,6 +42,8 @@ export function ProfileAllTab({
   viewerId?: string;
   accountType?: string;
   isVerified?: boolean;
+  /** Owner-only -- see TrustVerificationSection's own isOwner-gating comment. */
+  verificationStatus?: string;
   bio?: string;
   primaryRole?: string;
   secondaryRoles?: string[];
@@ -46,6 +53,8 @@ export function ProfileAllTab({
   onEditAbout?: () => void;
   skills: string[];
   onEditSkills?: () => void;
+  education?: unknown;
+  onEditEducation?: () => void;
   portfolioItems: PortfolioItem[];
   onOpenPortfolioItem: (item: PortfolioItem) => void;
   onViewAllPortfolio: () => void;
@@ -65,6 +74,10 @@ export function ProfileAllTab({
   /** Fetched once by the page and shared with the header's own Profile
    * Interaction stat -- see ProfileInteractionSection's own comment. */
   interactionStats: ProfileInteractionStats | null;
+  /** Fetched once by the page (getTrustProfile) and shared with the header's
+   * compact TrustBadge -- see TrustVerificationSection's own comment. */
+  trust: TrustProfile | null;
+  onOpenTrustDetails: () => void;
 }) {
   // No horizontal padding here on purpose -- the page-level wrapper
   // (Profile.tsx / HostProfile.tsx) owns the single horizontal gutter for
@@ -78,9 +91,14 @@ export function ProfileAllTab({
         isOwner={isOwner} onEdit={onEditAbout}
       />
 
-      <CreatorLevelSection userId={userId} accountType={accountType} isVerified={isVerified} />
+      <TrustVerificationSection
+        trust={trust} isOwner={isOwner} accountType={accountType} isVerified={isVerified}
+        verificationStatus={verificationStatus} onOpenDetails={onOpenTrustDetails}
+      />
 
       <TopSkillsSection skills={skills} isOwner={isOwner} onEdit={onEditSkills} />
+
+      <EducationSection education={education} isOwner={isOwner} onEdit={onEditEducation} />
 
       <FeaturedPortfolioSection
         items={portfolioItems} isOwner={isOwner}
