@@ -44,13 +44,13 @@ export function PostActivityCard({ entry, trustLevel }: { entry: ActivityEntry; 
         <button onClick={() => navigate(`/host/${actor.id}`)} className="shrink-0">
           <UserAvatar user={{ id: actor.id, name: actor.name, avatar: actor.avatar_url }} size={40} />
         </button>
-        <div className="min-w-0 flex-1">
-          <button onClick={() => navigate(`/host/${actor.id}`)} className="flex items-center gap-1">
-            <p className="text-sm font-bold text-gray-900">{actor.name}</p>
+        <div className="min-w-0 flex-1 text-left">
+          <button onClick={() => navigate(`/host/${actor.id}`)} className="flex items-center gap-1 text-left w-full">
+            <p className="text-sm font-bold text-gray-900 text-left">{actor.name}</p>
             {actor.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
             {trustLevel && <span className="ml-1"><TrustBadge level={trustLevel} size="sm" onClick={() => setShowTrustDetails(true)} /></span>}
           </button>
-          <p className="text-xs text-gray-400 mt-0.5">{getActivitySentence(entry)} · {timeAgo(entry.createdAt)}</p>
+          <p className="text-xs text-gray-400 mt-0.5 text-left">{getActivitySentence(entry)} · {timeAgo(entry.createdAt)}</p>
         </div>
         <button className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
           <MoreHorizontal className="w-4 h-4" />

@@ -17,6 +17,7 @@
 // while (open || closing) so the exit animation can play before onClose
 // actually unmounts it.
 import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export function EditProfileFieldPanel({ title, onClose, children, footer, closing }: {
@@ -61,7 +62,17 @@ export function EditProfileFieldPanel({ title, onClose, children, footer, closin
     setTimeout(onClose, 300);
   };
 
-  return (
+  // Portaled to document.body -- every caller (AboutEditor's accordions,
+  // ProfessionPicker) sits inside Profile.tsx's own push-page-enter/exit
+  // overlay, whose `transform` (kept applied after the animation finishes
+  // by animation-fill-mode: both) establishes a CSS containing block for
+  // any `position: fixed` descendant. Rendered as a normal DOM child there,
+  // this panel's "fixed inset-0" would be sized/positioned relative to
+  // THAT overlay's own box instead of the real viewport -- exactly the bug
+  // where the panel only covered the content area below the header instead
+  // of the whole screen. Portaling sidesteps the transformed ancestor
+  // entirely, same fix already used for card-level menus/sheets elsewhere.
+  return createPortal((
     <>
       {/* Desktop-only dimmed, non-interactive backdrop -- mobile's page
           already covers the full viewport so no separate scrim is needed
@@ -95,5 +106,5 @@ export function EditProfileFieldPanel({ title, onClose, children, footer, closin
         )}
       </div>
     </>
-  );
+  ), document.body);
 }

@@ -64,12 +64,12 @@ const CA_SCHOOLS: CanadianSchool[] = [
   { name:'Vancouver Film School',            city:'Vancouver',      province:'BC', category:'Film School' },
   { name:'Toronto Film School',              city:'Toronto',        province:'ON', category:'Film School' },
   { name:'Canadian Film Centre',             city:'Toronto',        province:'ON', category:'Film School' },
-  { name:'Ryerson University – Film',        city:'Toronto',        province:'ON', category:'Film School' },
-  { name:'York University – Film',           city:'Toronto',        province:'ON', category:'Film School' },
-  { name:'Concordia University – Cinema',    city:'Montreal',       province:'QC', category:'Film School' },
-  { name:'Capilano University – Film',       city:'North Vancouver',province:'BC', category:'Film School' },
-  { name:'Humber College – Film & Media',   city:'Toronto',        province:'ON', category:'Film School' },
-  { name:'Sheridan College – Animation',     city:'Oakville',       province:'ON', category:'Film School' },
+  { name:'Ryerson University, Film',        city:'Toronto',        province:'ON', category:'Film School' },
+  { name:'York University, Film',           city:'Toronto',        province:'ON', category:'Film School' },
+  { name:'Concordia University, Cinema',    city:'Montreal',       province:'QC', category:'Film School' },
+  { name:'Capilano University, Film',       city:'North Vancouver',province:'BC', category:'Film School' },
+  { name:'Humber College, Film & Media',   city:'Toronto',        province:'ON', category:'Film School' },
+  { name:'Sheridan College, Animation',     city:'Oakville',       province:'ON', category:'Film School' },
   { name:'Trebas Institute',                 city:'Toronto',        province:'ON', category:'Film School' },
   { name:'Centre for Arts and Technology',   city:'Kelowna',        province:'BC', category:'Film School' },
   // ── Art & Design ─────────────────────────────────────────────────────────
@@ -77,29 +77,29 @@ const CA_SCHOOLS: CanadianSchool[] = [
   { name:'Emily Carr University of Art + Design', city:'Vancouver', province:'BC', category:'Art School' },
   { name:'NSCAD University',                 city:'Halifax',        province:'NS', category:'Art School' },
   { name:'Alberta University of the Arts',   city:'Calgary',        province:'AB', category:'Art School' },
-  { name:'Concordia University – Fine Arts', city:'Montreal',       province:'QC', category:'Art School' },
-  { name:'Université du Québec – Design',    city:'Montreal',       province:'QC', category:'Art School' },
-  { name:'George Brown College – Design',    city:'Toronto',        province:'ON', category:'Design School' },
-  { name:'Seneca College – Graphic Design',  city:'Toronto',        province:'ON', category:'Design School' },
-  { name:'Algonquin College – Graphic Design',city:'Ottawa',        province:'ON', category:'Design School' },
-  { name:'BCIT – Digital Design',            city:'Burnaby',        province:'BC', category:'Design School' },
-  { name:'Red River College – Creative Communications',city:'Winnipeg',province:'MB',category:'Design School'},
+  { name:'Concordia University, Fine Arts', city:'Montreal',       province:'QC', category:'Art School' },
+  { name:'Université du Québec, Design',    city:'Montreal',       province:'QC', category:'Art School' },
+  { name:'George Brown College, Design',    city:'Toronto',        province:'ON', category:'Design School' },
+  { name:'Seneca College, Graphic Design',  city:'Toronto',        province:'ON', category:'Design School' },
+  { name:'Algonquin College, Graphic Design',city:'Ottawa',        province:'ON', category:'Design School' },
+  { name:'BCIT, Digital Design',            city:'Burnaby',        province:'BC', category:'Design School' },
+  { name:'Red River College, Creative Communications',city:'Winnipeg',province:'MB',category:'Design School'},
   // ── Music ────────────────────────────────────────────────────────────────
   { name:'Royal Conservatory of Music',      city:'Toronto',        province:'ON', category:'Music School' },
-  { name:'Schulich School of Music – McGill',city:'Montreal',       province:'QC', category:'Music School' },
-  { name:'Humber College – Music',           city:'Toronto',        province:'ON', category:'Music School' },
+  { name:'Schulich School of Music, McGill',city:'Montreal',       province:'QC', category:'Music School' },
+  { name:'Humber College, Music',           city:'Toronto',        province:'ON', category:'Music School' },
   { name:'Berklee Online (Canada)',           city:'Online',         province:'CA', category:'Music School' },
-  { name:'MacEwan University – Music',       city:'Edmonton',       province:'AB', category:'Music School' },
-  { name:'Wilfrid Laurier – Music',          city:'Waterloo',       province:'ON', category:'Music School' },
-  { name:'Grant MacEwan – Music',            city:'Edmonton',       province:'AB', category:'Music School' },
+  { name:'MacEwan University, Music',       city:'Edmonton',       province:'AB', category:'Music School' },
+  { name:'Wilfrid Laurier, Music',          city:'Waterloo',       province:'ON', category:'Music School' },
+  { name:'Grant MacEwan, Music',            city:'Edmonton',       province:'AB', category:'Music School' },
   // ── Acting & Theatre ─────────────────────────────────────────────────────
   { name:'National Theatre School of Canada',city:'Montreal',       province:'QC', category:'Acting School' },
-  { name:'Studio 58 – Langara College',      city:'Vancouver',      province:'BC', category:'Acting School' },
-  { name:'George Brown College – Acting',    city:'Toronto',        province:'ON', category:'Acting School' },
-  { name:'Ryerson University – Acting',      city:'Toronto',        province:'ON', category:'Acting School' },
-  { name:'York University – Theatre',        city:'Toronto',        province:'ON', category:'Acting School' },
+  { name:'Studio 58, Langara College',      city:'Vancouver',      province:'BC', category:'Acting School' },
+  { name:'George Brown College, Acting',    city:'Toronto',        province:'ON', category:'Acting School' },
+  { name:'Ryerson University, Acting',      city:'Toronto',        province:'ON', category:'Acting School' },
+  { name:'York University, Theatre',        city:'Toronto',        province:'ON', category:'Acting School' },
   { name:'Soulpepper Academy',               city:'Toronto',        province:'ON', category:'Acting School' },
-  { name:'Vancouver Film School – Acting',   city:'Vancouver',      province:'BC', category:'Acting School' },
+  { name:'Vancouver Film School, Acting',   city:'Vancouver',      province:'BC', category:'Acting School' },
   // ── Universities ─────────────────────────────────────────────────────────
   { name:'University of Toronto',            city:'Toronto',        province:'ON', category:'University' },
   { name:'University of British Columbia',   city:'Vancouver',      province:'BC', category:'University' },
@@ -330,7 +330,7 @@ function TagPicker({ all, selected, onToggle, single, placeholder }: {
             </button>
           );
         })}
-        {q && visible.length === 0 && <p className="text-xs text-gray-400 py-1">No matches — add below</p>}
+        {q && visible.length === 0 && <p className="text-xs text-gray-400 py-1">No matches, add below</p>}
       </div>
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
@@ -789,7 +789,7 @@ export function AboutEditor(props: Props) {
       <Accordion number="1" title="Personal Details" defaultOpen={!focusSection || focusSection === 'about'}>
         <SField label="Email">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-800 font-semibold truncate flex-1">{user.email||'—'}</p>
+            <p className="text-sm text-gray-800 font-semibold truncate flex-1">{user.email||'Not set'}</p>
             <button onClick={()=>{props.setEditEmail(!props.editEmail);props.setOtpSent(false);props.setOtpCode('');props.setNewEmail(user.email||'');}}
               className="text-xs text-blue-600 font-semibold ml-3 shrink-0 hover:underline">{props.editEmail?'Cancel':'Change'}</button>
           </div>
@@ -990,7 +990,7 @@ export function AboutEditor(props: Props) {
 
       {/* 8. Education & Training */}
       <Accordion number="8" title="Education & Training" defaultOpen={focusSection === 'education'}>
-        <p className="text-xs text-gray-400">Optional — school, film/art/music training, certifications, workshops, mentorships, or self-directed study. However you learned your craft.</p>
+        <p className="text-xs text-gray-400">Optional: school, film/art/music training, certifications, workshops, mentorships, or self-directed study. However you learned your craft.</p>
 
         {/* Saved education entries — compact cards with 3-dot Edit/Delete menu */}
         <div className="space-y-2">
@@ -1016,7 +1016,7 @@ export function AboutEditor(props: Props) {
                   )}
                   {(e.startYear || e.endYear || e.current) && (
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      {e.startYear}{e.startYear && (e.endYear || e.current) ? ' – ' : ''}{e.current ? 'Present' : e.endYear}
+                      {e.startYear}{e.startYear && (e.endYear || e.current) ? ' to ' : ''}{e.current ? 'Present' : e.endYear}
                     </p>
                   )}
                   {e.description && (
