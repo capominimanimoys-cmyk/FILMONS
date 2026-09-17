@@ -1269,6 +1269,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 <p className="text-[11px] text-gray-400 leading-tight">
                   {(localPost as any).userRole && <span className="capitalize">{(localPost as any).userRole} · </span>}
                   {timeAgo(localPost.createdAt)}
+                  {localPost.updatedAt && new Date(localPost.updatedAt).getTime() - new Date(localPost.createdAt).getTime() > 60_000 && ' · Edited'}
                 </p>
               </button>
             </div>

@@ -35,7 +35,7 @@ function VisibilitySheet({
   onClose: () => void;
 }) {
   const opts: { key: 'public' | 'followers' | 'private'; icon: React.ReactNode; label: string; sub: string }[] = [
-    { key: 'public',    icon: <Globe className="w-5 h-5 text-gray-500"/>,  label: 'Public',    sub: 'Anyone can see this post' },
+    { key: 'public',    icon: <Globe className="w-5 h-5 text-gray-500"/>,  label: 'Anyone',    sub: 'Anyone can see this post' },
     { key: 'followers', icon: <Users className="w-5 h-5 text-gray-500"/>,  label: 'Followers', sub: 'Only your followers' },
     { key: 'private',   icon: <Lock  className="w-5 h-5 text-gray-500"/>,  label: 'Only me',   sub: 'Only you can see this' },
   ];
@@ -122,7 +122,8 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
         updates.audio_id = null;
       }
 
-      if (Object.keys(updates).length) {
+      const changed = Object.keys(updates).length > 0;
+      if (changed) {
         await postsApi.update(post.id, updates);
       }
 
@@ -135,6 +136,9 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
         visibility,
         audioTitle:   hasAudio ? post.audioTitle : undefined,
         audioId:      hasAudio ? post.audioId    : undefined,
+        // Only stamp "Edited" when something actually changed -- opening
+        // Edit and tapping Done with no changes shouldn't mark the post.
+        updatedAt:    changed ? new Date().toISOString() : post.updatedAt,
       } as any;
       (updated as any).location   = location;
       (updated as any).visibility = visibility;
@@ -158,7 +162,7 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
     : visibility === 'followers'
     ? <Users className="w-3.5 h-3.5"/>
     : <Globe className="w-3.5 h-3.5"/>;
-  const visibilityLabel = visibility === 'private' ? 'Only me' : visibility === 'followers' ? 'Followers' : 'Public';
+  const visibilityLabel = visibility === 'private' ? 'Only me' : visibility === 'followers' ? 'Followers' : 'Anyone';
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col"

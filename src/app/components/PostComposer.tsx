@@ -688,7 +688,7 @@ function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollab
               detectMentionAtCursor(el.value, el.selectionStart);
             }}
             onInput={autoResize}
-            placeholder="Write a caption…"
+            placeholder="What do you want to share?"
             maxLength={2200}
             rows={3}
             className="w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 resize-none outline-none leading-relaxed"
@@ -2655,6 +2655,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [showListingBrowser, setShowListingBrowser] = useState(false);
   const [showPortfolioBrowser, setShowPortfolioBrowser] = useState(false);
   const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem|null>(null);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [textOverlays,       setTextOverlays]       = useState<TextLayer[]>([]);
   const [showTextEditor,     setShowTextEditor]     = useState(false);
   const [textLayers,         setTextLayers]         = useState<TextLayer[]>([]);
@@ -3193,10 +3194,21 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
     </div>
   );
 
+  // "If the creator starts a post and tries to leave before publishing" --
+  // only meaningful CONTENT counts (attachments included), not e.g. an
+  // audience/settings change with nothing to actually say yet.
+  const hasUnsavedContent = () =>
+    !!(caption.trim() || textContent.trim() || photos.length || videoUrl || audioUrl
+      || selectedListings?.length || selectedPortfolioItem || tags.length || collabs.length);
+
   const goBack = ()=>{
     const flow:FlowStep[]=['typeSelect','gallery','edit','caption','advanced','share'];
     const idx=flow.indexOf(step);
-    if(idx<=0){onClose();return;}
+    if(idx<=0){
+      if (hasUnsavedContent()) { setShowExitConfirm(true); return; }
+      onClose();
+      return;
+    }
     setStep(flow[idx-1]);
   };
 
@@ -3325,10 +3337,62 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
         />
       )}
 
-      <div className={`fixed inset-0 z-50 bg-white flex flex-col ${closing ? 'create-post-exit' : 'create-post-enter'}`}>
+      {/* Exit confirm -- only shown when there's real unsaved content
+          (see hasUnsavedContent), never on an empty/untouched composer. */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[97] flex items-end justify-center lg:items-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowExitConfirm(false)} />
+          <div className="relative w-full lg:max-w-xs bg-white rounded-t-3xl lg:rounded-3xl p-6 pb-8 lg:pb-6 z-10">
+            <div className="text-center mb-5">
+              <p className="font-bold text-gray-900 text-base">Save this post as a draft?</p>
+              <p className="text-sm text-gray-500 mt-1">You can finish it later from your drafts.</p>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <button
+                onClick={async () => { setShowExitConfirm(false); await saveDraftNow(); onClose(); }}
+                className="w-full py-3.5 rounded-2xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-colors"
+              >
+                Save draft
+              </button>
+              <button
+                onClick={() => { setShowExitConfirm(false); onClose(); }}
+                className="w-full py-3.5 rounded-2xl bg-red-50 text-red-600 font-bold text-sm hover:bg-red-100 transition-colors"
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="w-full py-3 text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Continue editing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop-only backdrop -- mobile's full-screen page needs no scrim
+          behind it. Clicking it attempts the same "keep unsaved content
+          safe" exit path as the header button, not an unconditional close. */}
+      <div
+        className="hidden lg:block fixed inset-0 z-40 bg-black/50"
+        onClick={() => { if (hasUnsavedContent()) setShowExitConfirm(true); else onClose(); }}
+      />
+
+      {/* Desktop: centered ~640px modal instead of a full-page takeover
+          (per spec -- "use a centered Create Post modal rather than
+          stretching the composer across the entire page"). Sized with
+          top/bottom/margin-left rather than a translate() transform so it
+          doesn't fight create-post-enter/exit's own translateX animation
+          on the same property. Mobile is untouched -- still the full
+          fixed inset-0 page with its right-to-left slide. */}
+      <div
+        className={`fixed inset-0 lg:inset-auto lg:top-[5vh] lg:bottom-[5vh] lg:left-1/2 lg:-ml-[320px] lg:w-[640px] lg:max-w-[92vw] lg:rounded-3xl lg:shadow-2xl lg:overflow-hidden bg-white flex flex-col z-50 ${closing ? 'create-post-exit' : 'create-post-enter'}`}
+        onClick={e => e.stopPropagation()}
+      >
 
         {/* ── Header ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b border-gray-100 shrink-0">
+        <div className="flex items-center justify-between px-4 pt-12 lg:pt-4 pb-3 border-b border-gray-100 shrink-0">
           <button onClick={goBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
             {step==='typeSelect' ? <X className="w-5 h-5 text-gray-700"/> : <ChevronLeft className="w-5 h-5 text-gray-700"/>}
           </button>
@@ -3706,9 +3770,9 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4 pt-3 pb-1">Visibility</p>
                 {([
-                  {id:'public',    icon:<Globe className="w-4 h-4"/>,    label:'Public',     sub:'Anyone on Filmons'},
+                  {id:'public',    icon:<Globe className="w-4 h-4"/>,    label:'Anyone',     sub:'Visible to everyone on FILMONS'},
                   {id:'followers', icon:<Users className="w-4 h-4"/>,    label:'Followers',  sub:'People who follow you'},
-                  {id:'private',   icon:<Lock className="w-4 h-4"/>,     label:'Private',    sub:'Only you'},
+                  {id:'private',   icon:<Lock className="w-4 h-4"/>,     label:'Only me',    sub:'Only you'},
                 ] as {id:Visibility;icon:React.ReactNode;label:string;sub:string}[]).map(opt=>(
                   <button key={opt.id} onClick={()=>setVis(opt.id)}
                     className="w-full flex items-center gap-3 px-4 py-3 text-left">
@@ -3773,7 +3837,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
                 </div>
               </div>
               <div className="text-xs text-gray-400 text-center">
-                {visibility==='public'?'Visible to everyone':'Visible to ' + visibility} · {allowComments?'Comments on':'Comments off'}
+                {visibility==='public'?'Visible to everyone':visibility==='followers'?'Visible to followers':'Visible to only you'} · {allowComments?'Comments on':'Comments off'}
               </div>
               <button onClick={publish}
                 className="w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-900/20">
