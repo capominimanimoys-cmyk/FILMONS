@@ -51,6 +51,7 @@ import { getProfileInteractionStats, type ProfileInteractionStats } from '../lib
 import { ProfileTabNav, PROFILE_TABS, type ProfileTab } from '../components/profile/ProfileTabNav';
 import { ProfileAllTab } from '../components/profile/ProfileAllTab';
 import { ProfileActionSheet } from '../components/profile/ProfileActionSheet';
+import { ProfilePreviewCard } from '../components/profile/ProfilePreviewCard';
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
 import { toStringArray } from '../lib/normalizeList';
 
@@ -1747,7 +1748,13 @@ export function Profile() {
       {/* ── Edit Profile — full-screen AboutEditor overlay, replacing the
           old "About" tab. Opens straight to whichever accordion matches
           the section's Edit link that triggered it (showEditProfile
-          doubles as the AboutEditor's focusSection). ── */}
+          doubles as the AboutEditor's focusSection).
+          Mobile: single column, unchanged. Desktop: two columns -- the
+          same AboutEditor on the left, a live "Profile Preview" card on
+          the right that reads straight off this page's own in-progress
+          edit state (updates as you type, before Save is pressed) --
+          per spec, larger screens keep the profile context visible
+          instead of using the mobile full-screen-only flow. ── */}
       {(showEditProfile || editProfileClosing) && (
         <div className={`fixed inset-0 z-50 bg-white overflow-y-auto ${editProfileClosing ? 'push-page-exit' : 'push-page-enter'}`}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 h-14 bg-white/95 backdrop-blur-md border-b border-gray-100">
@@ -1757,7 +1764,7 @@ export function Profile() {
               {aboutSaving ? 'Saving…' : 'Save'}
             </button>
           </div>
-          <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-4 lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 lg:items-start">
             <AboutEditor
               user={user}
               updateUser={updateUser}
@@ -1791,6 +1798,9 @@ export function Profile() {
               saving={aboutSaving}
               focusSection={showEditProfile}
             />
+            <div className="hidden lg:block">
+              <ProfilePreviewCard avatar={user.avatar} name={displayName} primaryRole={primaryRole} location={location} />
+            </div>
           </div>
         </div>
       )}
