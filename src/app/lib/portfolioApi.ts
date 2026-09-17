@@ -293,7 +293,7 @@ export async function toggleFeatured(id: string, current: boolean): Promise<bool
 // ── Upload media to Supabase Storage ─────────────────────────────────────────
 // Uses the same bucket as avatar uploads (make-ec8fe879-photos) because it is
 // guaranteed to exist and have public access configured by the edge function.
-const PORTFOLIO_BUCKET = 'make-ec8fe879-photos';
+export const PORTFOLIO_BUCKET = 'make-ec8fe879-photos';
 
 // Supabase JS's storage .upload() doesn't expose XHR progress events, so
 // real "Uploading… 42%" feedback needs a raw XHR call against the same
@@ -372,9 +372,20 @@ function extractVideoFrame(file: File): Promise<string> {
 
     const captureFrame = () => {
       try {
+        // Preserve the video's native aspect ratio -- clamping width/height
+        // independently (the old `min(videoWidth,720)` / `min(videoHeight,720)`
+        // logic) squashed any non-square video into a distorted square JPEG,
+        // since drawImage then stretched the full frame into that wrong-shaped
+        // canvas. Scale both dimensions by the SAME factor instead, so the
+        // captured poster's pixels match the source frame's real proportions
+        // (readVideoDimensions computes the matching item.aspect_ratio
+        // separately, and PortfolioMedia boxes both by that same ratio).
+        const vw = video.videoWidth || 1280;
+        const vh = video.videoHeight || 720;
+        const scale = Math.min(1, 1280 / Math.max(vw, vh));
         const canvas = document.createElement('canvas');
-        canvas.width  = Math.min(video.videoWidth  || 720, 720);
-        canvas.height = Math.min(video.videoHeight || 720, 720);
+        canvas.width  = Math.round(vw * scale);
+        canvas.height = Math.round(vh * scale);
         canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
         finish(canvas.toDataURL('image/jpeg', 0.8));
       } catch { finish(''); }
@@ -971,11 +982,11 @@ export interface PortfolioFeedCreator {
   primary_role: string | null; city: string | null; is_verified: boolean;
 }
 export interface PortfolioFeedPreviewItem {
-  id: string; media_type: MediaType; url: string | null;
+  id: string; media_type: MediaType; url: string | null; aspect_ratio: number | null;
 }
 export type PortfolioFeedEntry =
   | { type: 'item'; id: string; created_at: string; creator: PortfolioFeedCreator; item: PortfolioItem }
-  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; itemCount: number; previewItems: PortfolioFeedPreviewItem[] };
+  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; coverAspectRatio: number | null; itemCount: number; previewItems: PortfolioFeedPreviewItem[] };
 
 // Capped rather than truly exhaustive -- covers realistic recent activity
 // without a full table scan every feed load. An item added long ago to an
@@ -1091,7 +1102,7 @@ export async function getPortfolioFeed(opts: {
     if (albums.length) {
       const { data } = await supabase
         .from('portfolio_album_items')
-        .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url)')
+        .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url, aspect_ratio, width, height)')
         .in('album_id', albums.map(a => a.id))
         .order('album_id', { ascending: true })
         .order('sort_order', { ascending: true });
@@ -1101,7 +1112,10 @@ export async function getPortfolioFeed(opts: {
         if (!it) return;
         const list = previewByAlbum.get(r.album_id) ?? [];
         if (list.length < 3) {
-          list.push({ id: it.id, media_type: it.media_type, url: it.thumbnail_url || it.media_url || null });
+          list.push({
+            id: it.id, media_type: it.media_type, url: it.thumbnail_url || it.media_url || null,
+            aspect_ratio: it.aspect_ratio ?? (it.width && it.height ? it.width / it.height : null),
+          });
           previewByAlbum.set(r.album_id, list);
         }
       });
@@ -1118,10 +1132,13 @@ export async function getPortfolioFeed(opts: {
     // order -- looked up separately from previewByAlbum below rather than
     // assumed to already be in that slice.
     const coverLookupIds = albums.filter(a => !a.cover_url && a.cover_item_id).map(a => a.cover_item_id!);
-    const coverItemMap = new Map<string, string | null>();
+    const coverItemMap = new Map<string, { url: string | null; aspect_ratio: number | null }>();
     if (coverLookupIds.length) {
-      const { data } = await supabase.from('portfolio_items').select('id, thumbnail_url, media_url').in('id', coverLookupIds);
-      (data ?? []).forEach((r: any) => coverItemMap.set(r.id, r.thumbnail_url || r.media_url || null));
+      const { data } = await supabase.from('portfolio_items').select('id, thumbnail_url, media_url, aspect_ratio, width, height').in('id', coverLookupIds);
+      (data ?? []).forEach((r: any) => coverItemMap.set(r.id, {
+        url: r.thumbnail_url || r.media_url || null,
+        aspect_ratio: r.aspect_ratio ?? (r.width && r.height ? r.width / r.height : null),
+      }));
     }
 
     const creatorFor = (userId: string): PortfolioFeedCreator => {
@@ -1137,10 +1154,16 @@ export async function getPortfolioFeed(opts: {
       ...items.map(item => ({ type: 'item' as const, id: item.id, created_at: item.created_at, creator: creatorFor(item.user_id), item })),
       ...albums.map(album => {
         const preview = previewByAlbum.get(album.id) ?? [];
+        const coverItem = album.cover_item_id ? coverItemMap.get(album.cover_item_id) : undefined;
         return {
           type: 'album' as const, id: album.id, created_at: album.created_at, creator: creatorFor(album.user_id),
           album,
-          coverUrl: album.cover_url || (album.cover_item_id ? coverItemMap.get(album.cover_item_id) : null) || preview[0]?.url || null,
+          coverUrl: album.cover_url || coverItem?.url || preview[0]?.url || null,
+          // Explicit album.cover_url carries no dimension metadata of its
+          // own (it's just a stored image URL, not tied to a portfolio_item
+          // row) -- fall back to the resolved cover item's real ratio, then
+          // the first preview item's, rather than guessing.
+          coverAspectRatio: coverItem?.aspect_ratio ?? preview[0]?.aspect_ratio ?? null,
           itemCount: itemCountByAlbum.get(album.id) ?? 0,
           previewItems: preview,
         };

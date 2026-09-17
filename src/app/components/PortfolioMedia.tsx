@@ -16,12 +16,23 @@ import { PortfolioItem } from '../lib/portfolioApi';
 
 const MEDIA_MAX_HEIGHT = 'lg:max-h-[750px]';
 
+// Single source of truth for a portfolio item's aspect ratio -- every
+// place that renders this item's media/cover/thumbnail (feed card, grid,
+// detail overlay, edit preview, upload preview, album cover) must call
+// this instead of re-deriving its own ratio, so they can never disagree.
+export function getPortfolioMediaAspectRatio(item: Pick<PortfolioItem, 'aspect_ratio' | 'width' | 'height' | 'media_type'>): number {
+  if (item.aspect_ratio) return item.aspect_ratio;
+  if (item.width && item.height) return item.width / item.height;
+  return item.media_type === 'video' ? 16 / 9 : 4 / 5;
+}
+
 export function PortfolioMedia({ item, capHeight = true }: { item: PortfolioItem; capHeight?: boolean }) {
   const [playing, setPlaying] = useState(false);
   const maxHeightClass = capHeight ? MEDIA_MAX_HEIGHT : '';
+  const ratio = getPortfolioMediaAspectRatio(item);
   if (item.media_type === 'video') {
     return (
-      <div className={`relative w-full bg-black rounded-2xl overflow-hidden mx-auto ${maxHeightClass}`} style={{ aspectRatio: item.aspect_ratio || 16 / 9 }}>
+      <div className={`relative w-full bg-black rounded-2xl overflow-hidden mx-auto ${maxHeightClass}`} style={{ aspectRatio: ratio }}>
         {playing ? (
           <video src={item.media_url} controls autoPlay muted className="w-full h-full object-contain" />
         ) : (
@@ -48,7 +59,7 @@ export function PortfolioMedia({ item, capHeight = true }: { item: PortfolioItem
   }
   // image / link -- link items still usually carry a preview thumbnail
   return (
-    <div className={`w-full rounded-2xl overflow-hidden bg-gray-100 mx-auto ${maxHeightClass}`} style={{ aspectRatio: item.aspect_ratio || 4 / 5 }}>
+    <div className={`w-full rounded-2xl overflow-hidden bg-gray-100 mx-auto ${maxHeightClass}`} style={{ aspectRatio: ratio }}>
       {(item.media_url || item.thumbnail_url)
         ? <img src={item.media_url || item.thumbnail_url} alt="" className="w-full h-full object-contain" />
         : <div className="w-full h-full flex items-center justify-center text-4xl opacity-30">🎨</div>}

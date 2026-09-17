@@ -13,6 +13,7 @@ import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
 import { HireFlowSheet } from '../components/HireFlowSheet';
 import { AddToAlbumSheet } from '../components/AddToAlbumSheet';
 import { PortfolioItemActionSheet } from '../components/PortfolioItemActionSheet';
+import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 import { AlbumActionsSheet, type EditAlbumSection } from '../components/AlbumActionsSheet';
 import { EditAlbumScreen } from '../components/EditAlbumScreen';
 import FilmonsLoader from '../components/FilmonsLoader';
@@ -717,10 +718,18 @@ function ItemCard({
   const openMenu = (e: React.MouseEvent) => { e.stopPropagation(); setMenuOpen(true); };
   const closeMenu = () => setMenuOpen(false);
 
+  // The grid tile follows the item's OWN media ratio -- same source of
+  // truth as the feed card (PortfolioMedia) -- rather than a fixed
+  // aspect-square/aspect-video crop, so a portrait upload isn't cropped
+  // into a square just because it's shown in a grid. (Audio/link items
+  // have no intrinsic media ratio, so the helper's media_type fallback
+  // still gives them a sane, non-collapsing box.)
+  const ratio = getPortfolioMediaAspectRatio(item);
+
   return (
     <div
       className={`relative rounded-2xl bg-gray-100 cursor-pointer group ${className} ${selectMode && selected ? 'ring-2 ring-blue-500' : ''}`}
-      style={style}
+      style={{ ...style, aspectRatio: ratio }}
       onClick={selectMode ? onSelectToggle : onTap}
     >
       {/* Media — clipped inside its own overflow-hidden layer */}
@@ -730,7 +739,7 @@ function ItemCard({
             <AudioTilePlayer src={item.media_url} />
           </div>
         ) : thumb && !isLink ? (
-          <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
+          <img src={thumb} alt={item.title} className="w-full h-full object-contain" />
         ) : (
           <div
             className="w-full h-full flex items-center justify-center min-h-[100px]"
@@ -821,13 +830,13 @@ function ItemCard({
 // ── Layouts ───────────────────────────────────────────────────────────────────
 function GridLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onAddToAlbum, selectMode, selectedIds, onToggleSelect }: CardProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 items-start">
       {items.map((item, i) => (
         <ItemCard
           key={item.id}
           item={item}
           isOwner={isOwner}
-          className="aspect-square"
+          className="w-full"
           onTap={() => onTap(item, i)}
           onToggle={() => onToggle(item)}
           onDelete={() => onDelete(item.id)}
@@ -850,7 +859,7 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, o
         <ItemCard
           item={first}
           isOwner={isOwner}
-          className="aspect-video w-full"
+          className="w-full"
           onTap={() => onTap(first, 0)}
           onToggle={() => onToggle(first)}
           onDelete={() => onDelete(first.id)}
@@ -862,13 +871,13 @@ function CinematicLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, o
         />
       )}
       {rest.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-start">
           {rest.map((item, i) => (
             <ItemCard
               key={item.id}
               item={item}
               isOwner={isOwner}
-              className="aspect-square"
+              className="w-full"
               onTap={() => onTap(item, i + 1)}
               onToggle={() => onToggle(item)}
               onDelete={() => onDelete(item.id)}

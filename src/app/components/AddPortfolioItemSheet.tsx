@@ -403,10 +403,13 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
               />
 
-              {/* Preview */}
+              {/* Preview -- follows the real dimensions read off the picked
+                  file (imgAr, captured in handleFile) rather than a fixed
+                  16:9 box, so this matches what the published item will
+                  actually look like instead of a misleading crop. */}
               {filePreview && (
-                <div className="relative w-full aspect-video bg-gray-100 rounded-2xl overflow-hidden">
-                  <img src={filePreview} alt="" className="w-full h-full object-cover" />
+                <div className="relative w-full bg-gray-100 rounded-2xl overflow-hidden" style={{ aspectRatio: imgAr || 16 / 9 }}>
+                  <img src={filePreview} alt="" className="w-full h-full object-contain" />
                   <button
                     onClick={() => { setFilePreview(''); setMediaUrl(''); setThumbUrl(''); setFileName(''); }}
                     className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center"

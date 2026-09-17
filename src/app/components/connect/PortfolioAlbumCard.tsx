@@ -22,7 +22,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
 }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
-  const { album, creator, coverUrl, itemCount } = entry;
+  const { album, creator, coverUrl, coverAspectRatio, itemCount } = entry;
 
   const [saved, setSaved] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
@@ -73,8 +73,8 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
 
       <p className="text-sm text-gray-800 mt-3">Published a new Portfolio album</p>
 
-      <button onClick={openAlbum} className="relative block w-full mt-3 rounded-2xl overflow-hidden bg-gray-100 aspect-video">
-        {coverUrl ? <img src={coverUrl} alt="" className="w-full h-full object-cover" /> : (
+      <button onClick={openAlbum} className="relative block w-full mt-3 rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: coverAspectRatio || 4 / 5 }}>
+        {coverUrl ? <img src={coverUrl} alt="" className="w-full h-full object-contain" /> : (
           <div className="w-full h-full flex items-center justify-center text-4xl opacity-30">🎬</div>
         )}
         <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1 text-xs font-bold text-white bg-black/60 px-2.5 py-1 rounded-full">

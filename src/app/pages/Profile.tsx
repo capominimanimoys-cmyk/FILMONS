@@ -36,6 +36,7 @@ import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, type PortfolioItem } from '../lib/portfolioApi';
+import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 import { isServiceListing } from '../lib/listingHelpers';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
@@ -418,11 +419,13 @@ function PortfolioCard({ item, userId, onTap, onToggleFeatured, onDelete }: {
   const isLink  = item.media_type === 'link';
 
   return (
-    <div className="relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer aspect-square group"
+    <div className="relative rounded-2xl overflow-hidden bg-gray-100 cursor-pointer group"
+      style={{ aspectRatio: getPortfolioMediaAspectRatio(item) }}
       onClick={onTap}>
-      {/* Thumbnail */}
+      {/* Thumbnail -- follows the item's own media ratio, same source of
+          truth as the feed card, instead of a fixed square crop. */}
       {thumb && !isAudio && !isLink ? (
-        <img src={thumb} alt={item.title} className="w-full h-full object-cover" />
+        <img src={thumb} alt={item.title} className="w-full h-full object-contain" />
       ) : (
         <div className="w-full h-full flex items-center justify-center"
           style={{ background: isAudio ? 'linear-gradient(135deg,#1e1040,#312e81)' : 'linear-gradient(135deg,#f0f4ff,#e0e7ff)' }}>
@@ -504,7 +507,9 @@ function PortfolioDetailSheet({ item, onClose }: { item: PortfolioItem; onClose:
           <video src={item.media_url} controls playsInline className="w-full max-h-64 bg-black object-contain" />
         )}
         {!isVideo && !isAudio && !isLink && (item.thumbnail_url || item.media_url) && (
-          <img src={item.thumbnail_url || item.media_url} alt={item.title} className="w-full max-h-72 object-cover" />
+          <div className="w-full max-h-72 bg-gray-100 mx-auto overflow-hidden" style={{ aspectRatio: getPortfolioMediaAspectRatio(item) }}>
+            <img src={item.thumbnail_url || item.media_url} alt={item.title} className="w-full h-full object-contain" />
+          </div>
         )}
         {isAudio && item.media_url && (
           <div className="px-4 py-6 flex flex-col items-center gap-3"
@@ -1368,7 +1373,7 @@ export function Profile() {
               {portfolioItems.filter(i => i.is_featured).length > 0 && (
                 <div className="mb-5">
                   <p className="flex items-center gap-1 text-[10px] font-black text-amber-500 uppercase tracking-widest mb-2.5"><Star className="w-3 h-3 fill-amber-400 text-amber-400"/> Featured Work</p>
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-2.5 items-start">
                     {portfolioItems.filter(i => i.is_featured).map(item => (
                       <PortfolioCard key={item.id} item={item} userId={user.id}
                         onTap={() => setPortfolioDetail(item)}
@@ -1392,7 +1397,7 @@ export function Profile() {
                   {portfolioItems.filter(i => i.is_featured).length > 0 && (
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2.5">All Work</p>
                   )}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 items-start">
                     {portfolioItems.filter(i => !i.is_featured).map(item => (
                       <PortfolioCard key={item.id} item={item} userId={user.id}
                         onTap={() => setPortfolioDetail(item)}

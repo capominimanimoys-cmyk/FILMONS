@@ -3,7 +3,7 @@ import { X, ChevronLeft, Upload, Globe, Lock, Users, Loader2, Check } from 'luci
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
-  createAlbum, addItemToAlbum, uploadPortfolioMedia,
+  createAlbum, addItemToAlbum, uploadPortfolioMedia, readImageDimensions,
   type PortfolioAlbum, type PortfolioItem,
 } from '../lib/portfolioApi';
 import { logActivityEvent } from '../lib/activityApi';
@@ -33,6 +33,7 @@ export function CreateAlbumSheet({ existingItems, onCreated, onClose }: Props) {
   const [visibility,  setVisibility]  = useState<Visibility>('public');
   const [coverPreview,setCoverPreview]= useState('');
   const [coverUrl,    setCoverUrl]    = useState('');
+  const [coverRatio,  setCoverRatio]  = useState<number | undefined>(undefined);
   const [uploading,   setUploading]   = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [saving,      setSaving]      = useState(false);
@@ -40,6 +41,7 @@ export function CreateAlbumSheet({ existingItems, onCreated, onClose }: Props) {
   const handleCoverFile = async (file: File) => {
     if (!file.type.startsWith('image/')) { toast.error('Images only'); return; }
     setCoverPreview(URL.createObjectURL(file));
+    readImageDimensions(file).then(d => setCoverRatio(d.aspect_ratio));
     setUploading(true);
     const result = await uploadPortfolioMedia(user!.id, file);
     setUploading(false);
@@ -145,15 +147,15 @@ export function CreateAlbumSheet({ existingItems, onCreated, onClose }: Props) {
             <div>
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Cover Photo</label>
               {coverPreview ? (
-                <div className="relative w-full aspect-video rounded-2xl overflow-hidden">
-                  <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
+                <div className="relative w-full rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: coverRatio || 16 / 9 }}>
+                  <img src={coverPreview} alt="Cover" className="w-full h-full object-contain" />
                   {uploading && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                       <Loader2 className="w-6 h-6 animate-spin text-white" />
                     </div>
                   )}
                   <button
-                    onClick={() => { setCoverPreview(''); setCoverUrl(''); }}
+                    onClick={() => { setCoverPreview(''); setCoverUrl(''); setCoverRatio(undefined); }}
                     className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center"
                   >
                     <X className="w-3.5 h-3.5 text-white" />

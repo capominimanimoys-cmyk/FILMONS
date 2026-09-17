@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router';
 import { useState, useEffect, useRef } from 'react';
 import { authApi, listingsApi, reviewsApi, postsApi } from '../lib/api';
 import { getPortfolioItems, type PortfolioItem } from '../lib/portfolioApi';
+import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
@@ -560,15 +561,16 @@ export function HostProfile() {
                   <p className="text-gray-500 font-medium">No portfolio items yet</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2 items-start">
                   {portfolioItems.slice(0, 6).map(item => (
                     <div
                       key={item.id}
-                      className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 shadow-sm cursor-pointer"
+                      className="relative rounded-2xl overflow-hidden bg-gray-100 shadow-sm cursor-pointer"
+                      style={{ aspectRatio: getPortfolioMediaAspectRatio(item) }}
                       onClick={() => navigate(`/portfolio/${host!.id}`)}
                     >
                       {(item.thumbnail_url || item.media_url) ? (
-                        <img src={item.thumbnail_url || item.media_url!} alt={item.title} className="w-full h-full object-cover"/>
+                        <img src={item.thumbnail_url || item.media_url!} alt={item.title} className="w-full h-full object-contain"/>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           {item.media_type === 'video' ? <Video className="w-8 h-8 text-gray-300"/> : item.media_type === 'audio' ? <Music className="w-8 h-8 text-gray-300"/> : <ImageIcon className="w-8 h-8 text-gray-300"/>}

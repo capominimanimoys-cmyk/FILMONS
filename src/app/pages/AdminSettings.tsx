@@ -20,6 +20,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { adminFn } from '../lib/adminAuth';
 import { toast } from 'sonner';
+import { backfillPortfolioMediaDimensions, type BackfillResult } from '../lib/portfolioMediaBackfill';
 
 const CATEGORIES = [
   { id: 'general', label: 'General', icon: SettingsIcon },
@@ -120,6 +121,26 @@ export function AdminSettings() {
 
   const [stripeStatus, setStripeStatus] = useState<'checking' | 'connected' | 'error'>('checking');
 
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<{ scanned: number; total: number } | null>(null);
+  const [backfillResult, setBackfillResult] = useState<BackfillResult | null>(null);
+
+  const runMediaBackfill = async () => {
+    if (backfillRunning) return;
+    setBackfillRunning(true);
+    setBackfillResult(null);
+    setBackfillProgress({ scanned: 0, total: 0 });
+    try {
+      const result = await backfillPortfolioMediaDimensions((scanned, total) => setBackfillProgress({ scanned, total }));
+      setBackfillResult(result);
+      toast.success(`Backfill complete — ${result.dimensionsFixed} fixed, ${result.thumbnailsRegenerated} thumbnails regenerated`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Backfill failed');
+    } finally {
+      setBackfillRunning(false);
+    }
+  };
+
   useEffect(() => {
     supabase.from('support_contact').select('id, name, role, email, phone, active').eq('active', true).limit(1).maybeSingle()
       .then(({ data }) => { setContact(data); setContactDraft(data); })
@@ -218,6 +239,39 @@ export function AdminSettings() {
                     </div>
                   </div>
                 ) : <p className="text-sm text-gray-400">No support contact configured.</p>}
+              </SettingsGroup>
+
+              <SettingsGroup title="Data Maintenance" description="One-time repair passes. Safe to re-run — each pass only touches rows that still need fixing.">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Portfolio media ratios</p>
+                    <p className="text-xs text-gray-400 mt-0.5 max-w-md">
+                      Re-measures every portfolio item's original media to fill in missing width/height/aspect_ratio,
+                      and regenerates any video poster that was captured with the old distorted-square bug. Existing
+                      media is never cropped or altered — only stored metadata and generated thumbnails.
+                    </p>
+                    {backfillRunning && backfillProgress && (
+                      <p className="text-xs text-blue-600 font-semibold mt-2 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Scanning… {backfillProgress.scanned}{backfillProgress.total ? ` / ${backfillProgress.total}` : ''}
+                      </p>
+                    )}
+                    {!backfillRunning && backfillResult && (
+                      <p className="text-xs text-green-600 font-semibold mt-2">
+                        Done — {backfillResult.scanned} scanned, {backfillResult.dimensionsFixed} dimensions fixed,{' '}
+                        {backfillResult.thumbnailsRegenerated} thumbnails regenerated
+                        {backfillResult.errors > 0 ? `, ${backfillResult.errors} errors` : ''}.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={runMediaBackfill}
+                    disabled={backfillRunning}
+                    className="shrink-0 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {backfillRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    {backfillRunning ? 'Running…' : 'Run Backfill'}
+                  </button>
+                </div>
               </SettingsGroup>
             </>
           )}

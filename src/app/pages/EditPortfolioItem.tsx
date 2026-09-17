@@ -13,6 +13,7 @@ import {
   getPortfolioItem, updatePortfolioItem, PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES,
   type PortfolioItem,
 } from '../lib/portfolioApi';
+import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 
 export function EditPortfolioItem() {
   const { itemId } = useParams<{ itemId: string }>();
@@ -98,8 +99,8 @@ export function EditPortfolioItem() {
 
       <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5 max-w-lg w-full mx-auto">
         {(item.thumbnail_url || item.media_url) && (
-          <div className="w-full rounded-2xl overflow-hidden bg-gray-100 aspect-video">
-            <img src={item.thumbnail_url || item.media_url} alt="" className="w-full h-full object-cover" />
+          <div className="w-full rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: getPortfolioMediaAspectRatio(item) }}>
+            <img src={item.thumbnail_url || item.media_url} alt="" className="w-full h-full object-contain" />
           </div>
         )}
 

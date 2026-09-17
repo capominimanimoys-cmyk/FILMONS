@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabase';
 import { AddPortfolioItemSheet } from './AddPortfolioItemSheet';
 import { ItemActionsSheet } from './ItemActionsSheet';
 import { BottomSheet, SheetAction } from './BottomSheet';
+import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
 import type { EditAlbumSection } from './AlbumActionsSheet';
 
 type Visibility = 'public' | 'followers' | 'private';
@@ -187,7 +188,12 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
     onClose();
   };
 
-  const resolvedCover = coverUrl || items.find(i => i.id === coverItemId)?.thumbnail_url || items.find(i => i.id === coverItemId)?.media_url;
+  const resolvedCoverItem = items.find(i => i.id === coverItemId);
+  const resolvedCover = coverUrl || resolvedCoverItem?.thumbnail_url || resolvedCoverItem?.media_url;
+  // A custom-uploaded cover (coverUrl) isn't tied to a portfolio_item row,
+  // so it has no captured aspect_ratio -- fall back to a sensible default
+  // rather than distorting it into a fixed 16:9 box like the old code did.
+  const resolvedCoverRatio = resolvedCoverItem ? getPortfolioMediaAspectRatio(resolvedCoverItem) : 4 / 5;
 
   // ── Cover ──────────────────────────────────────────────────────────────────
   const handleSetCoverFromItem = async (item: PortfolioItem) => {
@@ -354,9 +360,9 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
           {/* Cover */}
           <div>
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Cover</label>
-            <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-gray-100">
+            <div className="relative w-full rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: resolvedCoverRatio }}>
               {resolvedCover ? (
-                <img src={resolvedCover} alt="Cover" className="w-full h-full object-cover" />
+                <img src={resolvedCover} alt="Cover" className="w-full h-full object-contain" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center"><FolderOpen className="w-10 h-10 text-gray-300" /></div>
               )}
