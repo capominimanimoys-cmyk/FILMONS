@@ -1083,6 +1083,12 @@ export const listingsApi = {
           logActivityEvent({
             actorId: currentUser.id, activityType, targetType: 'listing', targetId: data.id,
             category: newListing.serviceCategory || null, title: newListing.title || null,
+            metadata: {
+              price: newListing.price, city: newListing.city, listingMode: newListing.listingMode,
+              serviceCategory: newListing.serviceCategory, tags: newListing.tags,
+              workArrangement: newListing.opportunity?.workArrangement,
+              paid: newListing.opportunity?.paid, compensationType: newListing.opportunity?.compensationType,
+            },
           });
           return { ...newListing, id: data.id };
         }

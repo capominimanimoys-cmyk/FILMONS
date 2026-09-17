@@ -21,6 +21,22 @@ export interface ActivityActor {
   id: string; name: string; username: string | null; avatar_url: string | null; is_verified: boolean;
 }
 
+// Extra cached display fields for card types richer than title/category
+// alone can support (the Service/Opportunity cards' price/location/tags).
+// Deliberately NOT used for portfolio_published/portfolio_album_published
+// -- those cards fetch the live PortfolioItem/PortfolioAlbum instead, since
+// likes/comments/description must stay live, not frozen at publish time.
+export interface ActivityMetadata {
+  price?: number;
+  city?: string;
+  listingMode?: string;
+  serviceCategory?: string;
+  workArrangement?: string;
+  paid?: boolean;
+  compensationType?: string;
+  tags?: string[];
+}
+
 export interface ActivityEntry {
   id: string;
   activityType: ActivityType;
@@ -30,6 +46,7 @@ export interface ActivityEntry {
   targetId: string | null;
   category: string | null;
   title: string | null;
+  metadata: ActivityMetadata | null;
   createdAt: string;
 }
 
@@ -41,6 +58,7 @@ export interface ActivityEntry {
 export async function logActivityEvent(params: {
   actorId: string; activityType: ActivityType; targetType: string; targetId: string;
   category?: string | null; subcategory?: string | null; title?: string | null;
+  metadata?: ActivityMetadata | null;
 }): Promise<void> {
   try {
     const { error } = await supabase.from('activity_events').insert({
@@ -51,6 +69,7 @@ export async function logActivityEvent(params: {
       category: params.category ?? null,
       subcategory: params.subcategory ?? null,
       title: params.title ?? null,
+      metadata: params.metadata ?? null,
     });
     // Logged, not swallowed -- this insert failing (e.g. a CHECK constraint
     // rejecting an activity_type value the DB hasn't been migrated to allow
@@ -218,6 +237,7 @@ export async function getActivityFeed(params: {
         targetId: r.target_id,
         category: r.category,
         title: r.title,
+        metadata: r.metadata ?? null,
         createdAt: r.created_at,
       };
     })
