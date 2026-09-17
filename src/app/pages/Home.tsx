@@ -22,15 +22,12 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
-import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
+import { getSuggestedCreators, PORTFOLIO_CATEGORIES, type SuggestedCreator } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
-import { getActivityFeed, type ActivityEntry } from '../lib/activityApi';
 import { getConnectFeed, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
-import { ActivityFeedCard } from '../components/ActivityFeedCard';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
-import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { BottomSheet } from '../components/BottomSheet';
 
@@ -303,424 +300,69 @@ export function Home() {
     window.dispatchEvent(new CustomEvent('filmons:home-mode-changed', { detail: { mode: m } }));
   };
 
-  // Connect's own secondary switch: All | Portfolio | Activity. Only
-  // meaningful while homeMode === 'portfolio' (i.e. the top-level Connect
-  // tab is active) -- kept as a separate piece of state/event rather than
-  // folded into homeMode's own type so MobileBottomNav's existing homeMode
-  // contract doesn't change shape for a feature it doesn't otherwise care
-  // about. "All" is a merged, chronologically-interleaved view of both
-  // Portfolio and Activity content -- the default landing tab.
-  const CONNECT_MODE_KEY = 'filmons_connect_mode';
-  type ConnectMode = 'all' | 'portfolio' | 'activity';
-  const [connectMode, setConnectModeState] = useState<ConnectMode>(() => {
-    try {
-      const v = sessionStorage.getItem(CONNECT_MODE_KEY);
-      return v === 'activity' || v === 'portfolio' ? v : 'all';
-    } catch { return 'all'; }
-  });
-  const setConnectMode = (m: ConnectMode) => {
-    setConnectModeState(m);
-    try { sessionStorage.setItem(CONNECT_MODE_KEY, m); } catch {}
-    window.dispatchEvent(new CustomEvent('filmons:connect-mode-changed', { detail: { mode: m } }));
-  };
-
-  // Persisted the same way homeMode is above -- "View Portfolio" navigates
-  // to a real route (the creator's /portfolio/:id page), which unmounts
-  // Home entirely; without this, pressing Back would remount Home with
-  // feedTab reset to its initial 'foryou' regardless of whether the user
-  // had actually been on Following or a specific personalized category,
-  // which is exactly the "don't send the user back to the top" gap this
-  // closes. Scroll position already had its own sessionStorage restore
-  // (PORTFOLIO_SCROLL_KEY below); this is the matching piece for which
-  // TAB that scroll position belongs to.
-  const FEED_TAB_KEY = 'filmons_portfolio_feed_tab';
-  const [feedTab, setFeedTabState] = useState<PortfolioFilterId>(() => {
-    try { return sessionStorage.getItem(FEED_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
-  });
-  const setFeedTab = (tab: PortfolioFilterId) => {
-    setFeedTabState(tab);
-    try { sessionStorage.setItem(FEED_TAB_KEY, tab); } catch {}
-  };
-  const [feedEntries, setFeedEntries] = useState<PortfolioFeedEntry[]>([]);
-  const [feedLoading, setFeedLoading] = useState(false);
-  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
-  const [feedHasMore, setFeedHasMore] = useState(true);
-  const [feedError, setFeedError] = useState(false);
-  const FEED_PAGE_SIZE = 20;
-  // Cached per tab -- switching tabs (or leaving Portfolio for Listings and
-  // coming back to the same tab) restores instantly from here instead of
-  // refetching; only a genuinely new tab or "Try again" hits the network.
-  const feedCacheRef = useRef<Partial<Record<PortfolioFilterId, { entries: PortfolioFeedEntry[]; cursor?: string; hasMore: boolean }>>>({});
-
   // The real, live follow list -- NOT user.following. That's a raw
   // profiles.following array column that NOTHING in this codebase ever
   // writes to (the actual Follow button, via FollowContext/socialApi, only
   // ever inserts/deletes rows in the `follows` table) -- reading it here
-  // was the root cause of a followed creator's Portfolio content never
-  // appearing in this tab: the "Following" filter was built from a column
-  // that's permanently stale from account creation, completely
-  // disconnected from real follow state. FollowContext's followingIds is
-  // the same live, realtime-synced Set every Follow button in the app
-  // already reads from.
+  // was the root cause of a followed creator's content never appearing in
+  // Following. FollowContext's followingIds is the same live, realtime-
+  // synced Set every Follow button in the app already reads from.
   const { followingIds } = useFollow();
 
-  const loadFeed = useCallback((tab: PortfolioFilterId) => {
-    setFeedLoading(true);
-    setFeedError(false);
-    // A chip's label can be either a top-level category ("Photography") OR
-    // a subcategory ("Hip-Hop & Rap") -- resolveCategoryFilter looks it up
-    // against PORTFOLIO_SUBCATEGORIES to find which parent category it
-    // belongs under, since portfolio_items.subcategory alone isn't enough
-    // to filter by (need both columns).
-    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
-    getPortfolioFeed({
-      limit: FEED_PAGE_SIZE,
-      authorIds: tab === 'following' ? followingIds : undefined,
-      category: resolved?.category,
-      subcategory: resolved?.subcategory,
-      viewerCity: user?.city,
-    })
-      .then(entries => {
-        const cursor = entries.length ? entries[entries.length - 1].created_at : undefined;
-        const hasMore = entries.length === FEED_PAGE_SIZE;
-        feedCacheRef.current[tab] = { entries, cursor, hasMore };
-        setFeedEntries(entries);
-        setFeedHasMore(hasMore);
-      })
-      .catch(() => setFeedError(true))
-      .finally(() => setFeedLoading(false));
-  }, [followingIds]);
-
-  // Follow/unfollow anywhere in the app changes FollowContext's live
-  // followingIds -- any cached "following" page must be invalidated so it
-  // can never serve results from before the change (per spec: "follow
-  // succeeds -> invalidate -> refetch"). Tracked via a ref rather than a
-  // separate effect specifically so the invalidation always happens BEFORE
-  // the tab-switch effect below reads the cache in the same pass -- two
-  // separate effects run in declaration order, which would otherwise let
-  // the tab-switch effect serve one stale paint from the old cache before
-  // a second effect corrected it on the next tick.
-  const lastFollowingIdsRef = useRef(followingIds);
-  if (lastFollowingIdsRef.current !== followingIds) {
-    lastFollowingIdsRef.current = followingIds;
-    delete feedCacheRef.current.following;
-  }
-
-  // Fires on first entry into Portfolio mode AND whenever the tab changes --
-  // each tab is a genuinely different query (different category/authorIds),
-  // unlike switching Listings<->Portfolio, which never refetches anything.
-  useEffect(() => {
-    if (homeMode !== 'portfolio') return;
-    if (feedTab === 'following' && !followingIds.length) {
-      setFeedEntries([]); setFeedHasMore(false); setFeedLoading(false); setFeedError(false);
-      return;
-    }
-    const cached = feedCacheRef.current[feedTab];
-    if (cached) { setFeedEntries(cached.entries); setFeedHasMore(cached.hasMore); setFeedError(false); return; }
-    loadFeed(feedTab);
-  }, [homeMode, feedTab, loadFeed, followingIds]);
-
-  const retryFeed = () => { delete feedCacheRef.current[feedTab]; loadFeed(feedTab); };
-
-  // Deleting an item/album from the card's own menu (see PortfolioFeedCard's
-  // CardMenu) needs to disappear from the feed immediately -- updates both
-  // the live state AND the per-tab cache, since switching tabs and back
-  // would otherwise restore the stale cached array (with the deleted entry
-  // still in it) instead of refetching, same mount-preservation trade-off
-  // the cache exists for in the first place.
-  const removeFeedEntry = (removed: PortfolioFeedEntry) => {
-    const filterOut = (list: PortfolioFeedEntry[]) => list.filter(e => !(e.type === removed.type && e.id === removed.id));
-    setFeedEntries(filterOut);
-    const cached = feedCacheRef.current[feedTab];
-    if (cached) feedCacheRef.current[feedTab] = { ...cached, entries: filterOut(cached.entries) };
-  };
-
-  // Infinite scroll -- appends the next page instead of replacing anything,
-  // triggered by the scroll handler below as the user nears the bottom of
-  // the feed's own scroll container (not the window -- see that handler).
-  const loadMoreFeed = useCallback(() => {
-    const cached = feedCacheRef.current[feedTab];
-    if (feedLoadingMore || !feedHasMore || !cached?.cursor) return;
-    setFeedLoadingMore(true);
-    const isCategoryTab = feedTab !== 'foryou' && feedTab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(feedTab) : null;
-    getPortfolioFeed({
-      limit: FEED_PAGE_SIZE,
-      before: cached.cursor,
-      authorIds: feedTab === 'following' ? followingIds : undefined,
-      category: resolved?.category,
-      subcategory: resolved?.subcategory,
-      viewerCity: user?.city,
-    })
-      .then(more => {
-        const merged = [...cached.entries, ...more];
-        const cursor = more.length ? more[more.length - 1].created_at : cached.cursor;
-        const hasMore = more.length === FEED_PAGE_SIZE;
-        feedCacheRef.current[feedTab] = { entries: merged, cursor, hasMore };
-        setFeedEntries(merged);
-        setFeedHasMore(hasMore);
-      })
-      .catch(() => {})
-      .finally(() => setFeedLoadingMore(false));
-  }, [feedTab, feedLoadingMore, feedHasMore, followingIds]);
-
-  // ── Connect -> Activity feed -- own For You/Following selection, kept
-  // separate from Portfolio's `feedTab` per spec ("each tab should preserve
-  // its own selected category/tab"). No personalization/category chips yet
-  // (that's a later phase) -- For You here is a straightforward reverse-
-  // chronological feed of the network's real activity, excluding the
-  // viewer's own; Following never falls back to For You when empty, per spec.
-  const ACTIVITY_TAB_KEY = 'filmons_activity_feed_tab';
-  const [activityTab, setActivityTabState] = useState<PortfolioFilterId>(() => {
-    try { return sessionStorage.getItem(ACTIVITY_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
+  // ── Connect feed -- ONE unified feed, shared by mobile AND desktop.
+  // Portfolio and Activity are no longer separate tabs/categories on either
+  // breakpoint -- both content types appear together naturally in the same
+  // scroll, per spec ("Portfolio and Activity should now describe what
+  // KIND of content is in the feed, not navigation choices the user has to
+  // make"). Reuses connectFeed.ts's getConnectFeed(), which normalizes
+  // portfolio_items/portfolio_albums/activity_events into one
+  // ConnectFeedItem model at the service layer and explicitly excludes
+  // portfolio_published/portfolio_album_published Activity events from its
+  // activity-half of the merge (that content already arrives, richer and
+  // live, via getPortfolioFeed) -- this is also what fixes a real
+  // duplication bug the old separate All-tab implementation had (it fed
+  // getActivityFeed's UNFILTERED portfolio_published events alongside the
+  // real portfolio_items, double-showing every publish).
+  const CONNECT_TAB_KEY = 'filmons_connect_tab';
+  const CONNECT_SORT_KEY = 'filmons_connect_sort';
+  const [connectTab, setConnectTabState] = useState<PortfolioFilterId>(() => {
+    try { return sessionStorage.getItem(CONNECT_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
   });
-  const setActivityTab = (tab: PortfolioFilterId) => {
-    setActivityTabState(tab);
-    try { sessionStorage.setItem(ACTIVITY_TAB_KEY, tab); } catch {}
+  const setConnectTab = (tab: PortfolioFilterId) => {
+    setConnectTabState(tab);
+    try { sessionStorage.setItem(CONNECT_TAB_KEY, tab); } catch {}
   };
-  const [activityShowMoreCategories, setActivityShowMoreCategories] = useState(false);
-  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [activityLoadingMore, setActivityLoadingMore] = useState(false);
-  const [activityHasMore, setActivityHasMore] = useState(true);
-  const [activityError, setActivityError] = useState(false);
-  const ACTIVITY_PAGE_SIZE = 20;
-  const activityCacheRef = useRef<Partial<Record<PortfolioFilterId, { entries: ActivityEntry[]; cursor?: string; hasMore: boolean }>>>({});
-
-  const loadActivity = useCallback((tab: PortfolioFilterId) => {
-    setActivityLoading(true);
-    setActivityError(false);
-    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
-    getActivityFeed({
-      tab: tab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
-      category: resolved?.category, subcategory: resolved?.subcategory, limit: ACTIVITY_PAGE_SIZE,
-    })
-      .then(({ entries, cursor }) => {
-        const hasMore = entries.length === ACTIVITY_PAGE_SIZE;
-        activityCacheRef.current[tab] = { entries, cursor, hasMore };
-        setActivityEntries(entries);
-        setActivityHasMore(hasMore);
-      })
-      .catch(() => setActivityError(true))
-      .finally(() => setActivityLoading(false));
-  }, [user?.id, followingIds]);
-
-  useEffect(() => {
-    if (homeMode !== 'portfolio' || connectMode !== 'activity') return;
-    if (activityTab === 'following' && !followingIds.length) {
-      setActivityEntries([]); setActivityHasMore(false); setActivityLoading(false); setActivityError(false);
-      return;
-    }
-    const cached = activityCacheRef.current[activityTab];
-    if (cached) { setActivityEntries(cached.entries); setActivityHasMore(cached.hasMore); setActivityError(false); return; }
-    loadActivity(activityTab);
-  }, [homeMode, connectMode, activityTab, loadActivity, followingIds]);
-
-  const retryActivity = () => { delete activityCacheRef.current[activityTab]; loadActivity(activityTab); };
-
-  const loadMoreActivity = useCallback(() => {
-    const cached = activityCacheRef.current[activityTab];
-    if (activityLoadingMore || !activityHasMore || !cached?.cursor) return;
-    setActivityLoadingMore(true);
-    const isCategoryTab = activityTab !== 'foryou' && activityTab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(activityTab) : null;
-    getActivityFeed({
-      tab: activityTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
-      before: cached.cursor, category: resolved?.category, subcategory: resolved?.subcategory, limit: ACTIVITY_PAGE_SIZE,
-    })
-      .then(({ entries: more, cursor }) => {
-        const merged = [...cached.entries, ...more];
-        const hasMore = more.length === ACTIVITY_PAGE_SIZE;
-        activityCacheRef.current[activityTab] = { entries: merged, cursor: cursor ?? cached.cursor, hasMore };
-        setActivityEntries(merged);
-        setActivityHasMore(hasMore);
-      })
-      .catch(() => {})
-      .finally(() => setActivityLoadingMore(false));
-  }, [activityTab, activityLoadingMore, activityHasMore, user?.id, followingIds]);
-
-  const [activityTrustLevels, setActivityTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
-  useEffect(() => {
-    const unresolved = [...new Set(activityEntries.map(e => e.actor.id))].filter(id => !activityTrustLevels.has(id));
-    if (!unresolved.length) return;
-    getTrustLevelsBatch(unresolved).then(levels => {
-      setActivityTrustLevels(prev => new Map([...prev, ...levels]));
-    }).catch(() => {});
-  }, [activityEntries]); // eslint-disable-line
-
-  // ── Connect -> All -- a merged, chronologically-interleaved view of both
-  // Portfolio and Activity content, the default landing tab. Each source
-  // keeps its OWN cursor/hasMore (in refs, since advancing them shouldn't
-  // itself trigger a render) so "load more" only re-queries whichever
-  // source(s) still have further pages, then re-merges the combined result.
-  // This is a reasonable, common trade-off for merging independently-
-  // paginated sources -- not a perfectly gapless single cursor -- flagged
-  // here rather than silently treated as equivalent to either feed alone.
-  //
-  // Category chips: same behavior as Portfolio/Activity -- reuses the SAME
-  // shared `personalizedCategories` and resolveCategoryFilter(), its own
-  // independently-preserved selected chip (allTab, separate from feedTab/
-  // activityTab), and its own "More" sheet. Selecting a category filters
-  // BOTH underlying sources (getPortfolioFeed + getActivityFeed) by it.
-  type AllFeedItem = { kind: 'portfolio'; entry: PortfolioFeedEntry } | { kind: 'activity'; entry: ActivityEntry };
-  const ALL_BATCH_SIZE = 10;
-  const ALL_TAB_KEY = 'filmons_all_feed_tab';
-  const [allTab, setAllTabState] = useState<PortfolioFilterId>(() => {
-    try { return sessionStorage.getItem(ALL_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
+  // "Most relevant"/"Most recent" sort has a chooser only on desktop (per
+  // the desktop Connect spec) -- mobile always uses the default 'relevant'
+  // with no UI to change it, per the mobile Connect mockup (no sort control
+  // shown there). One shared state either way -- desktop's dropdown just
+  // happens to be the only UI that ever calls setConnectSort.
+  const [connectSort, setConnectSortState] = useState<ConnectSort>(() => {
+    try { return sessionStorage.getItem(CONNECT_SORT_KEY) === 'recent' ? 'recent' : 'relevant'; } catch { return 'relevant'; }
   });
-  const setAllTab = (tab: PortfolioFilterId) => {
-    setAllTabState(tab);
-    try { sessionStorage.setItem(ALL_TAB_KEY, tab); } catch {}
-  };
-  const [allShowMoreCategories, setAllShowMoreCategories] = useState(false);
-  const [allItems, setAllItems] = useState<AllFeedItem[]>([]);
-  const [allLoading, setAllLoading] = useState(false);
-  const [allLoadingMore, setAllLoadingMore] = useState(false);
-  const [allHasMore, setAllHasMore] = useState(true);
-  const [allError, setAllError] = useState(false);
-  // Cached per tab, same pattern as feedCacheRef/activityCacheRef -- each
-  // entry tracks BOTH sources' own cursor/hasMore, since a merged feed
-  // needs two independent pagination fronts, not one.
-  interface AllCacheEntry {
-    items: AllFeedItem[];
-    portfolioCursor?: string; activityCursor?: string;
-    portfolioHasMore: boolean; activityHasMore: boolean;
-  }
-  const allCacheRef = useRef<Partial<Record<PortfolioFilterId, AllCacheEntry>>>({});
-
-  const mergeAllItems = (portfolioEntries: PortfolioFeedEntry[], activityEntries: ActivityEntry[]): AllFeedItem[] => {
-    const items: AllFeedItem[] = [
-      ...portfolioEntries.map(entry => ({ kind: 'portfolio' as const, entry })),
-      ...activityEntries.map(entry => ({ kind: 'activity' as const, entry })),
-    ];
-    items.sort((a, b) => {
-      const ta = new Date(a.kind === 'portfolio' ? a.entry.created_at : a.entry.createdAt).getTime();
-      const tb = new Date(b.kind === 'portfolio' ? b.entry.created_at : b.entry.createdAt).getTime();
-      return tb - ta;
-    });
-    return items;
-  };
-
-  const loadAll = useCallback((tab: PortfolioFilterId) => {
-    setAllLoading(true);
-    setAllError(false);
-    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
-    Promise.all([
-      getPortfolioFeed({ limit: ALL_BATCH_SIZE, category: resolved?.category, subcategory: resolved?.subcategory, viewerCity: user?.city }),
-      getActivityFeed({ tab: 'foryou', viewerId: user?.id, category: resolved?.category, subcategory: resolved?.subcategory, limit: ALL_BATCH_SIZE }),
-    ])
-      .then(([portfolioEntries, { entries: activityEntries, cursor: activityCursor }]) => {
-        const entry: AllCacheEntry = {
-          items: mergeAllItems(portfolioEntries, activityEntries),
-          portfolioCursor: portfolioEntries.length ? portfolioEntries[portfolioEntries.length - 1].created_at : undefined,
-          activityCursor,
-          portfolioHasMore: portfolioEntries.length === ALL_BATCH_SIZE,
-          activityHasMore: activityEntries.length === ALL_BATCH_SIZE,
-        };
-        allCacheRef.current[tab] = entry;
-        setAllItems(entry.items);
-        setAllHasMore(entry.portfolioHasMore || entry.activityHasMore);
-      })
-      .catch(() => setAllError(true))
-      .finally(() => setAllLoading(false));
-  }, [user?.id, user?.city]);
-
-  useEffect(() => {
-    if (homeMode !== 'portfolio' || connectMode !== 'all') return;
-    const cached = allCacheRef.current[allTab];
-    if (cached) { setAllItems(cached.items); setAllHasMore(cached.portfolioHasMore || cached.activityHasMore); setAllError(false); return; }
-    loadAll(allTab);
-  }, [homeMode, connectMode, allTab, loadAll]);
-
-  const retryAll = () => { delete allCacheRef.current[allTab]; loadAll(allTab); };
-
-  const loadMoreAll = useCallback(() => {
-    const cached = allCacheRef.current[allTab];
-    if (allLoadingMore || !allHasMore || !cached) return;
-    setAllLoadingMore(true);
-    const isCategoryTab = allTab !== 'foryou' && allTab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(allTab) : null;
-    Promise.all([
-      cached.portfolioHasMore
-        ? getPortfolioFeed({ limit: ALL_BATCH_SIZE, before: cached.portfolioCursor, category: resolved?.category, subcategory: resolved?.subcategory, viewerCity: user?.city })
-        : Promise.resolve([] as PortfolioFeedEntry[]),
-      cached.activityHasMore
-        ? getActivityFeed({ tab: 'foryou', viewerId: user?.id, before: cached.activityCursor, category: resolved?.category, subcategory: resolved?.subcategory, limit: ALL_BATCH_SIZE })
-        : Promise.resolve({ entries: [] as ActivityEntry[], cursor: undefined }),
-    ])
-      .then(([morePortfolio, { entries: moreActivity, cursor: newActivityCursor }]) => {
-        const existingPortfolio = cached.items.filter((i): i is { kind: 'portfolio'; entry: PortfolioFeedEntry } => i.kind === 'portfolio').map(i => i.entry);
-        const existingActivity = cached.items.filter((i): i is { kind: 'activity'; entry: ActivityEntry } => i.kind === 'activity').map(i => i.entry);
-        const updated: AllCacheEntry = {
-          items: mergeAllItems([...existingPortfolio, ...morePortfolio], [...existingActivity, ...moreActivity]),
-          portfolioCursor: morePortfolio.length ? morePortfolio[morePortfolio.length - 1].created_at : cached.portfolioCursor,
-          activityCursor: newActivityCursor ?? cached.activityCursor,
-          portfolioHasMore: morePortfolio.length === ALL_BATCH_SIZE,
-          activityHasMore: moreActivity.length === ALL_BATCH_SIZE,
-        };
-        allCacheRef.current[allTab] = updated;
-        setAllItems(updated.items);
-        setAllHasMore(updated.portfolioHasMore || updated.activityHasMore);
-      })
-      .catch(() => {})
-      .finally(() => setAllLoadingMore(false));
-  }, [allTab, allLoadingMore, allHasMore, user?.id, user?.city]);
-
-  const [allTrustLevels, setAllTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
-  useEffect(() => {
-    const ids = allItems.map(i => i.kind === 'portfolio' ? i.entry.creator.id : i.entry.actor.id);
-    const unresolved = [...new Set(ids)].filter(id => !allTrustLevels.has(id));
-    if (!unresolved.length) return;
-    getTrustLevelsBatch(unresolved).then(levels => {
-      setAllTrustLevels(prev => new Map([...prev, ...levels]));
-    }).catch(() => {});
-  }, [allItems]); // eslint-disable-line
-
-  // ── Desktop Connect feed -- a SEPARATE, desktop-only unified feed
-  // (For You/Following + category chips + Most relevant/Most recent sort,
-  // no Portfolio/Activity/All sub-tabs), per the desktop Connect redesign
-  // spec. Reuses connectFeed.ts's getConnectFeed (same underlying
-  // getPortfolioFeed/getActivityFeed sources as mobile's "All" above, one
-  // feed model) -- kept intentionally separate from mobile's own
-  // All/Portfolio/Activity state above, since mobile's Connect UI was left
-  // unchanged (explicit product decision to scope this redesign to desktop
-  // only, not to unify the two breakpoints' navigation models).
-  const DESKTOP_CONNECT_TAB_KEY = 'filmons_desktop_connect_tab';
-  const DESKTOP_CONNECT_SORT_KEY = 'filmons_desktop_connect_sort';
-  const [desktopConnectTab, setDesktopConnectTabState] = useState<PortfolioFilterId>(() => {
-    try { return sessionStorage.getItem(DESKTOP_CONNECT_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
-  });
-  const setDesktopConnectTab = (tab: PortfolioFilterId) => {
-    setDesktopConnectTabState(tab);
-    try { sessionStorage.setItem(DESKTOP_CONNECT_TAB_KEY, tab); } catch {}
-  };
-  const [desktopConnectSort, setDesktopConnectSortState] = useState<ConnectSort>(() => {
-    try { return sessionStorage.getItem(DESKTOP_CONNECT_SORT_KEY) === 'recent' ? 'recent' : 'relevant'; } catch { return 'relevant'; }
-  });
-  const setDesktopConnectSort = (sort: ConnectSort) => {
-    setDesktopConnectSortState(sort);
-    try { sessionStorage.setItem(DESKTOP_CONNECT_SORT_KEY, sort); } catch {}
+  const setConnectSort = (sort: ConnectSort) => {
+    setConnectSortState(sort);
+    try { sessionStorage.setItem(CONNECT_SORT_KEY, sort); } catch {}
   };
   const [desktopSortMenuOpen, setDesktopSortMenuOpen] = useState(false);
-  const [desktopShowMoreCategories, setDesktopShowMoreCategories] = useState(false);
-  const [desktopConnectItems, setDesktopConnectItems] = useState<ConnectFeedItem[]>([]);
-  const [desktopConnectTrustLevels, setDesktopConnectTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
-  const [desktopConnectLoading, setDesktopConnectLoading] = useState(false);
-  const [desktopConnectLoadingMore, setDesktopConnectLoadingMore] = useState(false);
-  const [desktopConnectHasMore, setDesktopConnectHasMore] = useState(true);
-  const [desktopConnectError, setDesktopConnectError] = useState(false);
-  interface DesktopConnectCacheEntry {
+  const [showMoreCategories, setShowMoreCategories] = useState(false);
+  const [connectItems, setConnectItems] = useState<ConnectFeedItem[]>([]);
+  const [connectTrustLevels, setConnectTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectLoadingMore, setConnectLoadingMore] = useState(false);
+  const [connectHasMore, setConnectHasMore] = useState(true);
+  const [connectError, setConnectError] = useState(false);
+  interface ConnectCacheEntry {
     items: ConnectFeedItem[]; cursor: ConnectFeedCursor; portfolioHasMore: boolean; activityHasMore: boolean;
   }
-  const desktopConnectCacheRef = useRef<Partial<Record<string, DesktopConnectCacheEntry>>>({});
-  const desktopConnectCacheKey = `${desktopConnectTab}::${desktopConnectSort}`;
+  const connectCacheRef = useRef<Partial<Record<string, ConnectCacheEntry>>>({});
+  // Keyed by tab+sort -- switching either invalidates the cache slot,
+  // matching feedCacheRef's old per-tab pattern one level deeper.
+  const connectCacheKey = `${connectTab}::${connectSort}`;
 
-  const loadDesktopConnect = useCallback((cacheKey: string, tab: PortfolioFilterId, sort: ConnectSort) => {
-    setDesktopConnectLoading(true);
-    setDesktopConnectError(false);
+  const loadConnect = useCallback((cacheKey: string, tab: PortfolioFilterId, sort: ConnectSort) => {
+    setConnectLoading(true);
+    setConnectError(false);
     const isCategoryTab = tab !== 'foryou' && tab !== 'following';
     const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
     getConnectFeed({
@@ -728,76 +370,55 @@ export function Home() {
       category: resolved?.category, subcategory: resolved?.subcategory, sort,
     })
       .then(page => {
-        desktopConnectCacheRef.current[cacheKey] = {
+        connectCacheRef.current[cacheKey] = {
           items: page.items, cursor: page.cursor, portfolioHasMore: page.portfolioHasMore, activityHasMore: page.activityHasMore,
         };
-        setDesktopConnectItems(page.items);
-        setDesktopConnectTrustLevels(page.trustLevels);
-        setDesktopConnectHasMore(page.portfolioHasMore || page.activityHasMore);
+        setConnectItems(page.items);
+        setConnectTrustLevels(page.trustLevels);
+        setConnectHasMore(page.portfolioHasMore || page.activityHasMore);
       })
-      .catch(() => setDesktopConnectError(true))
-      .finally(() => setDesktopConnectLoading(false));
+      .catch(() => setConnectError(true))
+      .finally(() => setConnectLoading(false));
   }, [user?.id, followingIds]);
 
   useEffect(() => {
     if (homeMode !== 'portfolio') return;
-    const cached = desktopConnectCacheRef.current[desktopConnectCacheKey];
+    const cached = connectCacheRef.current[connectCacheKey];
     if (cached) {
-      setDesktopConnectItems(cached.items);
-      setDesktopConnectHasMore(cached.portfolioHasMore || cached.activityHasMore);
-      setDesktopConnectError(false);
+      setConnectItems(cached.items);
+      setConnectHasMore(cached.portfolioHasMore || cached.activityHasMore);
+      setConnectError(false);
       return;
     }
-    loadDesktopConnect(desktopConnectCacheKey, desktopConnectTab, desktopConnectSort);
-  }, [homeMode, desktopConnectCacheKey, desktopConnectTab, desktopConnectSort, loadDesktopConnect]);
+    loadConnect(connectCacheKey, connectTab, connectSort);
+  }, [homeMode, connectCacheKey, connectTab, connectSort, loadConnect]);
 
-  const retryDesktopConnect = () => { delete desktopConnectCacheRef.current[desktopConnectCacheKey]; loadDesktopConnect(desktopConnectCacheKey, desktopConnectTab, desktopConnectSort); };
+  const retryConnect = () => { delete connectCacheRef.current[connectCacheKey]; loadConnect(connectCacheKey, connectTab, connectSort); };
 
-  const loadMoreDesktopConnect = useCallback(() => {
-    const cached = desktopConnectCacheRef.current[desktopConnectCacheKey];
-    if (desktopConnectLoadingMore || !desktopConnectHasMore || !cached) return;
-    setDesktopConnectLoadingMore(true);
-    const isCategoryTab = desktopConnectTab !== 'foryou' && desktopConnectTab !== 'following';
-    const resolved = isCategoryTab ? resolveCategoryFilter(desktopConnectTab) : null;
+  const loadMoreConnect = useCallback(() => {
+    const cached = connectCacheRef.current[connectCacheKey];
+    if (connectLoadingMore || !connectHasMore || !cached) return;
+    setConnectLoadingMore(true);
+    const isCategoryTab = connectTab !== 'foryou' && connectTab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(connectTab) : null;
     getConnectFeed({
-      tab: desktopConnectTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
-      category: resolved?.category, subcategory: resolved?.subcategory, sort: desktopConnectSort,
-      before: cached.cursor, trustLevels: desktopConnectTrustLevels,
+      tab: connectTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
+      category: resolved?.category, subcategory: resolved?.subcategory, sort: connectSort,
+      before: cached.cursor, trustLevels: connectTrustLevels,
     })
       .then(page => {
-        const updated: DesktopConnectCacheEntry = {
+        const updated: ConnectCacheEntry = {
           items: [...cached.items, ...page.items], cursor: page.cursor,
           portfolioHasMore: page.portfolioHasMore, activityHasMore: page.activityHasMore,
         };
-        desktopConnectCacheRef.current[desktopConnectCacheKey] = updated;
-        setDesktopConnectItems(updated.items);
-        setDesktopConnectTrustLevels(page.trustLevels);
-        setDesktopConnectHasMore(updated.portfolioHasMore || updated.activityHasMore);
+        connectCacheRef.current[connectCacheKey] = updated;
+        setConnectItems(updated.items);
+        setConnectTrustLevels(page.trustLevels);
+        setConnectHasMore(updated.portfolioHasMore || updated.activityHasMore);
       })
       .catch(() => {})
-      .finally(() => setDesktopConnectLoadingMore(false));
-  }, [desktopConnectCacheKey, desktopConnectTab, desktopConnectSort, desktopConnectLoadingMore, desktopConnectHasMore, user?.id, followingIds, desktopConnectTrustLevels]);
-
-  // No client-side filtering left now that Nearby is gone -- every tab's
-  // filtering (category, or authorIds for Following) already happens
-  // server-side in loadFeed/loadMoreFeed above. Kept as its own name
-  // (rather than using feedEntries directly everywhere below) since the
-  // scroll-restore effect and render loop both already reference it.
-  const displayedFeedEntries = feedEntries;
-
-  // Trust Badges on Connect -> Portfolio cards -- batched per unique creator
-  // id rather than one query per card (a feed page can repeat the same
-  // creator, and pagination only ever adds new entries). Merges into the
-  // existing map instead of replacing it so loading the next page never
-  // flickers already-resolved badges back to blank.
-  const [feedTrustLevels, setFeedTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
-  useEffect(() => {
-    const unresolved = [...new Set(displayedFeedEntries.map(e => e.creator.id))].filter(id => !feedTrustLevels.has(id));
-    if (!unresolved.length) return;
-    getTrustLevelsBatch(unresolved).then(levels => {
-      setFeedTrustLevels(prev => new Map([...prev, ...levels]));
-    }).catch(() => {});
-  }, [displayedFeedEntries]); // eslint-disable-line
+      .finally(() => setConnectLoadingMore(false));
+  }, [connectCacheKey, connectTab, connectSort, connectLoadingMore, connectHasMore, user?.id, followingIds, connectTrustLevels]);
 
   // "People You May Know" -- fetched once per Home mount (not once per tab
   // switch/load-more) since recommendations don't need to track pagination
@@ -805,7 +426,7 @@ export function Home() {
   // account to personalize against or follow with. Inserted into the
   // rendered list below at a fixed position (after the 4th entry) purely at
   // render time, not stored in feed state -- keeps it out of
-  // feedCacheRef/feedEntries entirely so it can never get paginated,
+  // connectCacheRef/connectItems entirely so it can never get paginated,
   // deleted, or cached as if it were real feed content.
   const [suggestedCreators, setSuggestedCreators] = useState<SuggestedCreator[]>([]);
   const suggestedFetchedRef = useRef(false);
@@ -815,18 +436,13 @@ export function Home() {
     getSuggestedCreators(user.id, { limit: 10 }).then(setSuggestedCreators);
   }, [homeMode, user?.id]);
 
-  // Personalized "For You" category chips -- fetched once per Home mount,
-  // same reasoning as suggestedCreators above (a ranking snapshot, not
-  // paginated feed content). Guests get no personalized row at all (there's
-  // no account to rank against) -- just the plain For You/Following tabs.
-  // Shared personalized category profile for BOTH Connect -> Portfolio and
-  // Connect -> Activity (per spec: "Portfolio and Activity should use the
-  // same personalized category profile") -- fetched once here, consumed by
-  // both feeds' own chip rows below, each preserving its own selected chip
-  // independently (feedTab vs activityTab). 6 chips (spec: "roughly 5-7"),
-  // plus a trailing More for every other category.
+  // Personalized creative-interest category chips -- fetched once per Home
+  // mount (a ranking snapshot, not paginated feed content). Guests get no
+  // personalized row at all (there's no account to rank against) -- just
+  // the plain For You/Following tabs. One shared profile for the single
+  // unified Connect feed (mobile and desktop both), 6 chips (spec:
+  // "roughly 5-7"), plus a trailing More for every other category.
   const [personalizedCategories, setPersonalizedCategories] = useState<string[]>([]);
-  const [showMoreCategories, setShowMoreCategories] = useState(false);
   const personalizedFetchedRef = useRef(false);
   useEffect(() => {
     if (homeMode !== 'portfolio' || personalizedFetchedRef.current || !user?.id) return;
@@ -835,9 +451,9 @@ export function Home() {
   }, [homeMode, user?.id]);
 
   const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
-  const feedRenderItems = useMemo(() => {
-    type RenderItem = { kind: 'entry'; entry: PortfolioFeedEntry } | { kind: 'suggested' };
-    const list: RenderItem[] = displayedFeedEntries.map(entry => ({ kind: 'entry' as const, entry }));
+  const connectRenderItems = useMemo(() => {
+    type RenderItem = ConnectFeedItem | { kind: 'suggested' };
+    const list: RenderItem[] = [...connectItems];
     // Never the very first thing in the feed, and only once (not
     // re-inserted every few entries) -- simplest way to satisfy "avoid
     // repeating it too often" without tracking freshness/impressions.
@@ -845,12 +461,12 @@ export function Home() {
       list.splice(PEOPLE_YOU_MAY_KNOW_INDEX, 0, { kind: 'suggested' as const });
     }
     return list;
-  }, [displayedFeedEntries, suggestedCreators]);
+  }, [connectItems, suggestedCreators]);
 
-  // ── Portfolio scroll position -- survives navigating away entirely (e.g.
+  // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
-  // switching to Listings and back (that's already free: this feed stays
-  // mounted, never unmounted, while the toggle is on Listings -- see the
+  // switching to Marketplace and back (that's already free: this feed stays
+  // mounted, never unmounted, while the toggle is on Marketplace -- see the
   // JSX below). A real route change unmounts this whole page, so scroll
   // position has to be persisted outside the component instance -- session
   // storage, restored once real content has actually rendered to scroll to
@@ -861,14 +477,14 @@ export function Home() {
 
   useEffect(() => {
     if (scrollRestoredRef.current) return;
-    if (homeMode !== 'portfolio' || feedLoading || displayedFeedEntries.length === 0) return;
+    if (homeMode !== 'portfolio' || connectLoading || connectItems.length === 0) return;
     const el = portfolioScrollRef.current;
     if (!el) return;
     scrollRestoredRef.current = true;
     let saved = 0;
     try { saved = Number(sessionStorage.getItem(PORTFOLIO_SCROLL_KEY)) || 0; } catch {}
     if (saved > 0) el.scrollTop = saved;
-  }, [homeMode, feedLoading, displayedFeedEntries.length]);
+  }, [homeMode, connectLoading, connectItems.length]);
 
   // Also drives infinite-scroll pagination -- this feed scrolls inside its
   // own bounded container (not the window), so "near the bottom" has to be
@@ -887,11 +503,7 @@ export function Home() {
     const el = portfolioScrollRef.current;
     if (!el) return;
     try { sessionStorage.setItem(PORTFOLIO_SCROLL_KEY, String(el.scrollTop)); } catch {}
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
-      if (connectMode === 'all') loadMoreAll();
-      else if (connectMode === 'activity') loadMoreActivity();
-      else loadMoreFeed();
-    }
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) loadMoreConnect();
     onPortfolioBarsScroll(el.scrollTop);
   };
 
@@ -1370,50 +982,6 @@ export function Home() {
         </button>
       </div>
 
-      {/* ── Connect's own secondary switch: All | Portfolio | Activity —
-           only shown once Connect itself is the active top-level tab. Sits
-           inside the same white header band as the tab above rather than
-           inside the scrollable feed container, so it's always visible the
-           instant Connect is opened regardless of prior scroll position.
-           "All" is the default landing tab -- a merged, chronologically-
-           interleaved view of both Portfolio and Activity content. */}
-      {homeMode === 'portfolio' && (
-        <div className="lg:hidden shrink-0 px-4 pb-2 bg-white">
-          <div role="tablist" aria-label="Connect mode" className="flex gap-4 border-b border-gray-100">
-            <button
-              role="tab"
-              aria-selected={connectMode === 'all'}
-              onClick={() => setConnectMode('all')}
-              className={`pb-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
-                connectMode === 'all' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent'
-              }`}
-            >
-              All
-            </button>
-            <button
-              role="tab"
-              aria-selected={connectMode === 'portfolio'}
-              onClick={() => setConnectMode('portfolio')}
-              className={`pb-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
-                connectMode === 'portfolio' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent'
-              }`}
-            >
-              Portfolio
-            </button>
-            <button
-              role="tab"
-              aria-selected={connectMode === 'activity'}
-              onClick={() => setConnectMode('activity')}
-              className={`pb-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
-                connectMode === 'activity' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent'
-              }`}
-            >
-              Activity
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── Category row + deck — wrapped together so the branded loader
            covers BOTH for the entire real loading duration, not just a
            fixed window: while `loading` is true, neither the category
@@ -1543,28 +1111,54 @@ export function Home() {
             onScroll={handlePortfolioScroll}
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
-            {connectMode === 'all' ? (
-              <>
-                {/* Same personalized category chip behavior as Portfolio/
-                    Activity -- own selected value (allTab), same shared
-                    personalizedCategories/resolveCategoryFilter/"More" sheet. */}
-                {user && (
-                  <div className="shrink-0 flex gap-2 px-4 pt-1 pb-3 overflow-x-auto no-scrollbar">
+            <>
+                {/* For You / Following -- operate on the ENTIRE unified
+                    feed now, not a per-content-type selection. Any
+                    connectTab value other than 'following' counts as For
+                    You, including a specific category selected below. */}
+                <div className="shrink-0 px-4 pt-1 pb-2">
+                  <div role="tablist" aria-label="Connect mode" className="flex gap-2">
+                    <button
+                      role="tab" aria-selected={connectTab !== 'following'}
+                      onClick={() => setConnectTab('foryou')}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                        connectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      For You
+                    </button>
+                    <button
+                      role="tab" aria-selected={connectTab === 'following'}
+                      onClick={() => setConnectTab('following')}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                        connectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      }`}
+                    >
+                      Following
+                    </button>
+                  </div>
+                </div>
+
+                {/* Creative-interest categories -- content TYPE (Portfolio/
+                    Activity/Services/...) is never a filter option here,
+                    only the creative field is. */}
+                {connectTab !== 'following' && user && (
+                  <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
                     {personalizedCategories.map(cat => (
                       <button
                         key={cat}
-                        onClick={() => { setAllTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
+                        onClick={() => { setConnectTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
                         className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                          allTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                          connectTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                         }`}
                       >
                         {cat}
                       </button>
                     ))}
                     <button
-                      onClick={() => setAllShowMoreCategories(true)}
+                      onClick={() => setShowMoreCategories(true)}
                       className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                        !personalizedCategories.includes(allTab) && allTab !== 'foryou'
+                        !personalizedCategories.includes(connectTab) && connectTab !== 'foryou'
                           ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                       }`}
                     >
@@ -1572,15 +1166,15 @@ export function Home() {
                     </button>
                   </div>
                 )}
-                {allShowMoreCategories && createPortal(
-                  <BottomSheet onClose={() => setAllShowMoreCategories(false)} title="More categories">
+                {showMoreCategories && createPortal(
+                  <BottomSheet onClose={() => setShowMoreCategories(false)} title="More categories">
                     <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
                       {PORTFOLIO_CATEGORIES.map(cat => (
                         <button
                           key={cat}
-                          onClick={() => { setAllTab(cat); setAllShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
+                          onClick={() => { setConnectTab(cat); setShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
                           className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
-                            allTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
+                            connectTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
                           }`}
                         >
                           {cat}
@@ -1597,12 +1191,12 @@ export function Home() {
                   transition: 'padding-bottom 280ms ease-out',
                 }}
               >
-                {allError ? (
+                {connectError ? (
                   <div className="flex flex-col items-center gap-3 py-16 text-center">
                     <p className="text-sm text-gray-500">Couldn't load Connect.</p>
-                    <button onClick={retryAll} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+                    <button onClick={retryConnect} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
                   </div>
-                ) : allLoading ? (
+                ) : connectLoading ? (
                   <div className="space-y-3">
                     {[0, 1, 2].map(i => (
                       <div key={i} className="animate-pulse flex items-center gap-2.5 p-3.5 bg-white rounded-2xl border border-gray-100">
@@ -1611,27 +1205,33 @@ export function Home() {
                       </div>
                     ))}
                   </div>
-                ) : allItems.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 py-16 text-center">
-                    <p className="text-sm font-bold text-gray-700">Discover creators on Filmons</p>
-                    <p className="text-xs text-gray-400 max-w-[220px]">Portfolio work and network activity will appear here.</p>
-                    <button onClick={() => navigate('/search')} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Explore Creators</button>
-                  </div>
+                ) : connectItems.length === 0 ? (
+                  connectTab === 'following' ? (
+                    <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their activity here.</p>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 py-16 text-center">
+                      <p className="text-sm font-bold text-gray-700">Discover creators on Filmons</p>
+                      <p className="text-xs text-gray-400 max-w-[220px]">Portfolio work and professional activity will appear here.</p>
+                      <button onClick={() => navigate('/search')} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Explore Creators</button>
+                    </div>
+                  )
                 ) : (
                   <>
                     <div className="space-y-3 pop-stagger-card">
-                      {allItems.map(item => item.kind === 'portfolio' ? (
-                        <PortfolioFeedCard
-                          key={`portfolio-${item.entry.type}-${item.entry.id}`}
-                          entry={item.entry}
-                          onRemoved={() => setAllItems(prev => prev.filter(i => !(i.kind === 'portfolio' && i.entry.type === item.entry.type && i.entry.id === item.entry.id)))}
-                          trustLevel={allTrustLevels.get(item.entry.creator.id)}
+                      {connectRenderItems.map(item => item.kind === 'suggested' ? (
+                        <PeopleYouMayKnowRow
+                          key="people-you-may-know"
+                          creators={suggestedCreators}
+                          onSeeAll={() => navigate('/search/category/creators')}
                         />
                       ) : (
-                        <ActivityFeedCard key={`activity-${item.entry.id}`} entry={item.entry} trustLevel={allTrustLevels.get(item.entry.actor.id)} />
+                        <ConnectFeedCard
+                          key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
+                          item={item} trustLevels={connectTrustLevels}
+                        />
                       ))}
                     </div>
-                    {allLoadingMore && (
+                    {connectLoadingMore && (
                       <div className="flex items-center justify-center py-6 text-gray-400">
                         <FilmonsBrandLoader size="sm"/>
                       </div>
@@ -1640,287 +1240,6 @@ export function Home() {
                 )}
               </div>
               </>
-            ) : connectMode === 'activity' ? (
-              <>
-                {/* Activity's own For You/Following -- deliberately separate
-                    state from Portfolio's feedTab above (see the state
-                    declaration's comment): switching back to Portfolio
-                    restores whatever category/tab it had, and vice versa. */}
-                <div className="shrink-0 px-4 pt-1 pb-2">
-                  <div role="tablist" aria-label="Activity mode" className="flex gap-2">
-                    <button
-                      role="tab" aria-selected={activityTab !== 'following'}
-                      onClick={() => setActivityTab('foryou')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                        activityTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                      }`}
-                    >
-                      For You
-                    </button>
-                    <button
-                      role="tab" aria-selected={activityTab === 'following'}
-                      onClick={() => setActivityTab('following')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                        activityTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                      }`}
-                    >
-                      Following
-                    </button>
-                  </div>
-                </div>
-
-                {/* Same personalized category profile as Portfolio (per
-                    spec) -- filters by the CREATIVE CATEGORY of the
-                    underlying resource (a portfolio item/listing's
-                    category), never by activity type. Own selected value
-                    (activityTab), independent from Portfolio's feedTab. */}
-                {activityTab !== 'following' && user && (
-                  <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-                    {personalizedCategories.map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => { setActivityTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
-                        className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                          activityTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setActivityShowMoreCategories(true)}
-                      className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                        !personalizedCategories.includes(activityTab) && activityTab !== 'foryou'
-                          ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                      }`}
-                    >
-                      More
-                    </button>
-                  </div>
-                )}
-                {activityShowMoreCategories && createPortal(
-                  <BottomSheet onClose={() => setActivityShowMoreCategories(false)} title="More categories">
-                    <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
-                      {PORTFOLIO_CATEGORIES.map(cat => (
-                        <button
-                          key={cat}
-                          onClick={() => { setActivityTab(cat); setActivityShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
-                          className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
-                            activityTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </BottomSheet>,
-                  document.body,
-                )}
-
-                <div
-                  className="flex-1 px-4 pb-6 space-y-3 lg:max-w-[680px] lg:w-full lg:mx-auto"
-                  style={{
-                    paddingBottom: portfolioBarsHidden ? 'env(safe-area-inset-bottom)' : undefined,
-                    transition: 'padding-bottom 280ms ease-out',
-                  }}
-                >
-                  {activityError ? (
-                    <div className="flex flex-col items-center gap-3 py-16 text-center">
-                      <p className="text-sm text-gray-500">Couldn't load activity.</p>
-                      <button onClick={retryActivity} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
-                    </div>
-                  ) : activityLoading ? (
-                    <div className="space-y-3">
-                      {[0, 1, 2].map(i => (
-                        <div key={i} className="animate-pulse flex items-center gap-2.5 p-3.5 bg-white rounded-2xl border border-gray-100">
-                          <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"/>
-                          <div className="flex-1 space-y-1.5"><div className="h-3 w-32 bg-gray-200 rounded"/><div className="h-2.5 w-44 bg-gray-100 rounded"/></div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : activityEntries.length === 0 ? (
-                    activityTab === 'following' ? (
-                      <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their activity here.</p>
-                    ) : (
-                      <ConnectActivityPlaceholder />
-                    )
-                  ) : (
-                    <>
-                      <div className="space-y-3 pop-stagger-card">
-                        {activityEntries.map(entry => (
-                          <ActivityFeedCard key={entry.id} entry={entry} trustLevel={activityTrustLevels.get(entry.actor.id)} />
-                        ))}
-                      </div>
-                      {activityLoadingMore && (
-                        <div className="flex items-center justify-center py-6 text-gray-400">
-                          <FilmonsBrandLoader size="sm"/>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-            {/* Top-level: For You vs Following -- "Following answers 'what
-                are people I follow creating', For You answers 'what does
-                Filmons think I'll like'" (per spec). Any feedTab value
-                other than 'following' counts as For You, including a
-                specific category selected from the row below. */}
-            <div className="shrink-0 px-4 pt-1 pb-2">
-              <div role="tablist" aria-label="Portfolio mode" className="flex gap-2">
-                <button
-                  role="tab" aria-selected={feedTab !== 'following'}
-                  onClick={() => setFeedTab('foryou')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                    feedTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  For You
-                </button>
-                <button
-                  role="tab" aria-selected={feedTab === 'following'}
-                  onClick={() => setFeedTab('following')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                    feedTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  Following
-                </button>
-              </div>
-            </div>
-            {/* Personalized category chips -- For You only, and only for a
-                signed-in user (there's no account to rank against for a
-                guest). No separate "All" chip -- "For You" itself already
-                is the unfiltered mixed feed, so tapping it back resets that
-                the same way. Roughly 3-4 of THIS user's own top-ranked
-                PORTFOLIO_CATEGORIES values (see getPersonalizedCategories),
-                never the same fixed list for everyone, followed by "More"
-                for every other category (including ones outside their
-                current top ranking) rather than cramming a growing list of
-                categories/subcategories into one horizontal row. */}
-            {feedTab !== 'following' && user && (
-              <div className="shrink-0 flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-                {personalizedCategories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => { setFeedTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
-                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                      feedTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setShowMoreCategories(true)}
-                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                    !personalizedCategories.includes(feedTab) && feedTab !== 'foryou'
-                      ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  More
-                </button>
-              </div>
-            )}
-            {showMoreCategories && createPortal(
-              <BottomSheet onClose={() => setShowMoreCategories(false)} title="More categories">
-                <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
-                  {PORTFOLIO_CATEGORIES.map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => { setFeedTab(cat); setShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
-                      className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
-                        feedTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </BottomSheet>,
-              document.body,
-            )}
-            <div
-              className="flex-1 px-4 pb-6 space-y-4 lg:max-w-[680px] lg:w-full lg:mx-auto"
-              style={{
-                // Full-screen mode: the fixed bottom nav is off-canvas and
-                // Root.tsx's <main> no longer reserves its clearance either
-                // (see the root container's own style above), so the only
-                // thing left to keep the last card off the physical bottom
-                // edge is the safe-area itself -- not the normal 24px (pb-6)
-                // sized for the nav's own height.
-                paddingBottom: portfolioBarsHidden ? 'env(safe-area-inset-bottom)' : undefined,
-                transition: 'padding-bottom 280ms ease-out',
-              }}
-            >
-              {feedError ? (
-                <div className="flex flex-col items-center gap-3 py-16 text-center">
-                  <p className="text-sm text-gray-500">Couldn't load portfolio posts.</p>
-                  <button onClick={retryFeed} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
-                </div>
-              ) : feedLoading ? (
-                <div className="space-y-4">
-                  {[0, 1].map(i => (
-                    <div key={i} className="animate-pulse space-y-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"/>
-                        <div className="flex-1 space-y-1.5"><div className="h-3 w-24 bg-gray-200 rounded"/><div className="h-2.5 w-32 bg-gray-100 rounded"/></div>
-                      </div>
-                      <div className="w-full aspect-square bg-gray-200 rounded-2xl"/>
-                      <div className="h-3 w-3/4 bg-gray-200 rounded"/>
-                      <div className="h-2.5 w-full bg-gray-100 rounded"/>
-                    </div>
-                  ))}
-                </div>
-              ) : displayedFeedEntries.length === 0 ? (
-                feedTab === 'following' ? (
-                  <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their work here.</p>
-                ) : (
-                  <div className="flex flex-col items-center gap-2 py-16 text-center">
-                    <p className="text-sm font-bold text-gray-700">Discover creators on Filmons</p>
-                    <p className="text-xs text-gray-400 max-w-[220px]">Portfolio projects from creators will appear here.</p>
-                    <button onClick={() => navigate('/search')} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Explore Creators</button>
-                  </div>
-                )
-              ) : (
-                <>
-                  {/* pop-stagger-card -- CSS-animation-on-mount entrance
-                      (opacity+scale+Y pop, first few cards staggered). This
-                      whole panel is kept mounted (never unmounted) when the
-                      user switches to Listings and back -- but toggling the
-                      wrapper between `hidden` and `block` naturally restarts
-                      each child's CSS animation on becoming visible again
-                      (browsers drop animation state while display:none), so
-                      switching Listings -> Portfolio replays this pop-in for
-                      free, with no extra JS state and no remount/refetch. */}
-                  <div className="space-y-4 pop-stagger-card">
-                    {feedRenderItems.map(item => item.kind === 'suggested' ? (
-                      <PeopleYouMayKnowRow
-                        key="people-you-may-know"
-                        creators={suggestedCreators}
-                        onSeeAll={() => navigate('/search/category/creators')}
-                      />
-                    ) : (
-                      <PortfolioFeedCard key={`${item.entry.type}-${item.entry.id}`} entry={item.entry} onRemoved={() => removeFeedEntry(item.entry)} trustLevel={feedTrustLevels.get(item.entry.creator.id)}/>
-                    ))}
-                  </div>
-                  {/* Infinite scroll footer -- handlePortfolioScroll triggers
-                      loadMoreFeed() as the container nears its own bottom
-                      (not the window's), so this just reflects that state
-                      rather than driving it. Every tab (including Following)
-                      paginates the same way now that getPortfolioFeed()
-                      supports authorIds + a cursor together. */}
-                  {feedLoadingMore && (
-                    <div className="flex items-center justify-center py-6 text-gray-400">
-                      <FilmonsBrandLoader size="sm"/>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-              </>
-            )}
           </div>
         )}
       </div>
@@ -1939,19 +1258,19 @@ export function Home() {
             <div className="flex items-center justify-between mb-4">
               <div role="tablist" aria-label="Connect feed" className="flex gap-2">
                 <button
-                  role="tab" aria-selected={desktopConnectTab !== 'following'}
-                  onClick={() => setDesktopConnectTab('foryou')}
+                  role="tab" aria-selected={connectTab !== 'following'}
+                  onClick={() => setConnectTab('foryou')}
                   className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
-                    desktopConnectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                    connectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                   }`}
                 >
                   For You
                 </button>
                 <button
-                  role="tab" aria-selected={desktopConnectTab === 'following'}
-                  onClick={() => setDesktopConnectTab('following')}
+                  role="tab" aria-selected={connectTab === 'following'}
+                  onClick={() => setConnectTab('following')}
                   className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
-                    desktopConnectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                    connectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                   }`}
                 >
                   Following
@@ -1963,7 +1282,7 @@ export function Home() {
                   onClick={() => setDesktopSortMenuOpen(v => !v)}
                   className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-full px-3.5 py-1.5 hover:border-gray-300 transition-colors"
                 >
-                  {desktopConnectSort === 'relevant' ? 'Most relevant' : 'Most recent'}
+                  {connectSort === 'relevant' ? 'Most relevant' : 'Most recent'}
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform ${desktopSortMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {desktopSortMenuOpen && (
@@ -1973,8 +1292,8 @@ export function Home() {
                       {(['relevant', 'recent'] as const).map(s => (
                         <button
                           key={s}
-                          onClick={() => { setDesktopConnectSort(s); setDesktopSortMenuOpen(false); }}
-                          className={`w-full text-left px-3.5 py-2 text-sm font-semibold hover:bg-gray-50 ${desktopConnectSort === s ? 'text-blue-600' : 'text-gray-700'}`}
+                          onClick={() => { setConnectSort(s); setDesktopSortMenuOpen(false); }}
+                          className={`w-full text-left px-3.5 py-2 text-sm font-semibold hover:bg-gray-50 ${connectSort === s ? 'text-blue-600' : 'text-gray-700'}`}
                         >
                           {s === 'relevant' ? 'Most relevant' : 'Most recent'}
                         </button>
@@ -1987,23 +1306,23 @@ export function Home() {
 
             {/* Same personalized category system as Portfolio/Activity/All
                 (shared personalizedCategories/resolveCategoryFilter). */}
-            {desktopConnectTab !== 'following' && user && (
+            {connectTab !== 'following' && user && (
               <div className="flex gap-2 pb-4 overflow-x-auto no-scrollbar">
                 {personalizedCategories.map(cat => (
                   <button
                     key={cat}
-                    onClick={() => { setDesktopConnectTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
+                    onClick={() => { setConnectTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
                     className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                      desktopConnectTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                      connectTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                     }`}
                   >
                     {cat}
                   </button>
                 ))}
                 <button
-                  onClick={() => setDesktopShowMoreCategories(true)}
+                  onClick={() => setShowMoreCategories(true)}
                   className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                    !personalizedCategories.includes(desktopConnectTab) && desktopConnectTab !== 'foryou'
+                    !personalizedCategories.includes(connectTab) && connectTab !== 'foryou'
                       ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                   }`}
                 >
@@ -2011,15 +1330,15 @@ export function Home() {
                 </button>
               </div>
             )}
-            {desktopShowMoreCategories && createPortal(
-              <BottomSheet onClose={() => setDesktopShowMoreCategories(false)} title="More categories">
+            {showMoreCategories && createPortal(
+              <BottomSheet onClose={() => setShowMoreCategories(false)} title="More categories">
                 <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
                   {PORTFOLIO_CATEGORIES.map(cat => (
                     <button
                       key={cat}
-                      onClick={() => { setDesktopConnectTab(cat); setDesktopShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
+                      onClick={() => { setConnectTab(cat); setShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
                       className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
-                        desktopConnectTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
+                        connectTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
                       }`}
                     >
                       {cat}
@@ -2030,12 +1349,12 @@ export function Home() {
               document.body,
             )}
 
-            {desktopConnectError ? (
+            {connectError ? (
               <div className="flex flex-col items-center gap-3 py-16 text-center">
                 <p className="text-sm text-gray-500">Couldn't load Connect.</p>
-                <button onClick={retryDesktopConnect} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+                <button onClick={retryConnect} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
               </div>
-            ) : desktopConnectLoading ? (
+            ) : connectLoading ? (
               <div className="space-y-3">
                 {[0, 1, 2].map(i => (
                   <div key={i} className="animate-pulse bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
@@ -2047,8 +1366,8 @@ export function Home() {
                   </div>
                 ))}
               </div>
-            ) : desktopConnectItems.length === 0 ? (
-              desktopConnectTab === 'following' ? (
+            ) : connectItems.length === 0 ? (
+              connectTab === 'following' ? (
                 <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their activity here.</p>
               ) : (
                 <div className="flex flex-col items-center gap-2 py-16 text-center">
@@ -2060,19 +1379,19 @@ export function Home() {
             ) : (
               <>
                 <div className="space-y-4">
-                  {desktopConnectItems.map(item => (
+                  {connectItems.map(item => (
                     <ConnectFeedCard
                       key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
-                      item={item} trustLevels={desktopConnectTrustLevels}
+                      item={item} trustLevels={connectTrustLevels}
                     />
                   ))}
                 </div>
-                {desktopConnectHasMore && (
+                {connectHasMore && (
                   <div className="flex justify-center py-6">
-                    {desktopConnectLoadingMore ? (
+                    {connectLoadingMore ? (
                       <FilmonsBrandLoader size="sm"/>
                     ) : (
-                      <button onClick={loadMoreDesktopConnect} className="px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 transition-colors">
+                      <button onClick={loadMoreConnect} className="px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 transition-colors">
                         Load more
                       </button>
                     )}

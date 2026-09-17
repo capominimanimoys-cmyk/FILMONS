@@ -1,20 +1,14 @@
-// Desktop Connect's unified feed -- reuses the SAME two data sources
-// mobile Home's "All" tab already merges (getPortfolioFeed +
-// getActivityFeed), so there is exactly one underlying feed model, per
-// spec ("Portfolio content and professional Activity should appear
-// together naturally inside one Connect feed"). portfolio_published/
-// portfolio_album_published Activity events are excluded from the
-// activity-events half of the merge (filtered out below) since the same
-// content already arrives, richer and live, via getPortfolioFeed --
-// including them from both sources would double-count every portfolio
-// publish.
-//
-// Known trade-off: this duplicates mobile Home.tsx's own inline merge/
-// pagination logic rather than sharing one implementation. Deliberate --
-// mobile's Connect (All/Portfolio/Activity three-tab) was kept unchanged
-// per an explicit product decision to scope this redesign to desktop only,
-// so refactoring mobile onto this shared module was out of scope. Flagged
-// as a real trade-off, not silently treated as a non-issue.
+// Connect's unified feed -- the single shared data/merge layer for BOTH
+// mobile and desktop Connect (Home.tsx uses this directly for both
+// breakpoints; there is exactly one feed model, one cache, one pagination
+// implementation, per spec: "Portfolio content and professional Activity
+// should appear together naturally inside one Connect feed," and mobile
+// must no longer have its own separate Portfolio/Activity tab split).
+// portfolio_published/portfolio_album_published Activity events are
+// excluded from the activity-events half of the merge (filtered out below)
+// since the same content already arrives, richer and live, via
+// getPortfolioFeed -- including them from both sources would double-count
+// every portfolio publish.
 import { getPortfolioFeed, type PortfolioFeedEntry } from './portfolioApi';
 import { getActivityFeed, type ActivityEntry } from './activityApi';
 import { getTrustLevelsBatch, type TrustLevel } from './trustApi';

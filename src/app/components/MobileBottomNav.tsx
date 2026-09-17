@@ -36,21 +36,6 @@ export function MobileBottomNav() {
     return () => window.removeEventListener('filmons:home-mode-changed', handler);
   }, []);
 
-  // Mirrors Home.tsx's connectMode (Connect -> All | Portfolio | Activity),
-  // same read-only reflection pattern as homeMode above -- only relevant
-  // while homeMode is 'portfolio' (i.e. the Connect tab is active).
-  const [connectMode, setConnectMode] = useState<'all' | 'portfolio' | 'activity'>(() => {
-    try {
-      const v = sessionStorage.getItem('filmons_connect_mode');
-      return v === 'activity' || v === 'portfolio' ? v : 'all';
-    } catch { return 'all'; }
-  });
-  useEffect(() => {
-    const handler = (e: any) => setConnectMode(e.detail?.mode === 'activity' || e.detail?.mode === 'portfolio' ? e.detail.mode : 'all');
-    window.addEventListener('filmons:connect-mode-changed', handler);
-    return () => window.removeEventListener('filmons:connect-mode-changed', handler);
-  }, []);
-
   useEffect(() => {
     if (!user) { setUnreadMsgs(0); return; }
     const update = () => setUnreadMsgs(chatApi.getUnreadCount(user.id));
@@ -88,17 +73,12 @@ export function MobileBottomNav() {
   // creation entry point (Create Listing) unchanged -- "do not let the +
   // behavior depend on stale Home state" outside Home.
   const isHomeRoute = location.pathname === '/';
-  // "All" defaults to the same create action as Portfolio -- there's no
-  // single obvious "create" for a merged Portfolio+Activity view, and
-  // Add Portfolio Work is Connect's most common create action.
-  const primaryToPortfolio = isHomeRoute && homeMode === 'portfolio' && connectMode !== 'activity';
-  // Connect -> Activity has no manual "create" action -- Activity entries
-  // are only ever generated from real FILMONS events, never authored
-  // directly (per spec). Rather than invent a fake action, the + button is
-  // simply disabled while Activity is the active sub-tab.
-  const primaryDisabled = isHomeRoute && homeMode === 'portfolio' && connectMode === 'activity';
+  // Connect is now one unified feed (no more Portfolio/Activity sub-modes),
+  // so the + button's Connect-mode action is simply always Add Portfolio
+  // Work -- the feed's most common create action.
+  const primaryToPortfolio = isHomeRoute && homeMode === 'portfolio';
   const primaryTo = primaryToPortfolio ? '/portfolio' : '/create-listing';
-  const primaryLabel = primaryDisabled ? 'Create' : primaryToPortfolio ? 'Add portfolio work' : 'Create listing';
+  const primaryLabel = primaryToPortfolio ? 'Add portfolio work' : 'Create listing';
   // Portfolio.tsx reads this nav state on mount to auto-open its existing
   // Add Work sheet -- reusing that flow instead of building a second one.
   const primaryState = primaryToPortfolio ? { autoOpenAdd: true } : undefined;
@@ -139,16 +119,6 @@ export function MobileBottomNav() {
           );
 
           if (isPrimary) {
-            if (primaryDisabled) {
-              return (
-                <div key="primary" title="Activity is generated automatically" aria-disabled="true"
-                  className="flex-1 flex flex-col items-center justify-center pt-1.5 pb-1.5">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-200">
-                    <Plus className="w-[18px] h-[18px] text-gray-400" strokeWidth={2.5}/>
-                  </div>
-                </div>
-              );
-            }
             return (
               <Link
                 key="primary"
