@@ -1088,6 +1088,7 @@ export const listingsApi = {
               serviceCategory: newListing.serviceCategory, tags: newListing.tags,
               workArrangement: newListing.opportunity?.workArrangement,
               paid: newListing.opportunity?.paid, compensationType: newListing.opportunity?.compensationType,
+              descriptionExcerpt: (newListing.description || '').slice(0, 160) || undefined,
             },
           });
           return { ...newListing, id: data.id };

@@ -35,6 +35,9 @@ export interface ActivityMetadata {
   paid?: boolean;
   compensationType?: string;
   tags?: string[];
+  /** Short excerpt only (not the full description) -- enough for a feed
+   * card preview without caching an unbounded amount of listing text. */
+  descriptionExcerpt?: string;
 }
 
 export interface ActivityEntry {

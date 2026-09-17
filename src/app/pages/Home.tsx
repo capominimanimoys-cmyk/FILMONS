@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap } from 'lucide-react';
+import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
@@ -26,6 +26,8 @@ import { getPortfolioFeed, getSuggestedCreators, PORTFOLIO_CATEGORIES, type Port
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { getActivityFeed, type ActivityEntry } from '../lib/activityApi';
+import { getConnectFeed, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
+import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
 import { ActivityFeedCard } from '../components/ActivityFeedCard';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PortfolioFeedCard } from '../components/PortfolioFeedCard';
@@ -677,6 +679,105 @@ export function Home() {
     }).catch(() => {});
   }, [allItems]); // eslint-disable-line
 
+  // ── Desktop Connect feed -- a SEPARATE, desktop-only unified feed
+  // (For You/Following + category chips + Most relevant/Most recent sort,
+  // no Portfolio/Activity/All sub-tabs), per the desktop Connect redesign
+  // spec. Reuses connectFeed.ts's getConnectFeed (same underlying
+  // getPortfolioFeed/getActivityFeed sources as mobile's "All" above, one
+  // feed model) -- kept intentionally separate from mobile's own
+  // All/Portfolio/Activity state above, since mobile's Connect UI was left
+  // unchanged (explicit product decision to scope this redesign to desktop
+  // only, not to unify the two breakpoints' navigation models).
+  const DESKTOP_CONNECT_TAB_KEY = 'filmons_desktop_connect_tab';
+  const DESKTOP_CONNECT_SORT_KEY = 'filmons_desktop_connect_sort';
+  const [desktopConnectTab, setDesktopConnectTabState] = useState<PortfolioFilterId>(() => {
+    try { return sessionStorage.getItem(DESKTOP_CONNECT_TAB_KEY) || 'foryou'; } catch { return 'foryou'; }
+  });
+  const setDesktopConnectTab = (tab: PortfolioFilterId) => {
+    setDesktopConnectTabState(tab);
+    try { sessionStorage.setItem(DESKTOP_CONNECT_TAB_KEY, tab); } catch {}
+  };
+  const [desktopConnectSort, setDesktopConnectSortState] = useState<ConnectSort>(() => {
+    try { return sessionStorage.getItem(DESKTOP_CONNECT_SORT_KEY) === 'recent' ? 'recent' : 'relevant'; } catch { return 'relevant'; }
+  });
+  const setDesktopConnectSort = (sort: ConnectSort) => {
+    setDesktopConnectSortState(sort);
+    try { sessionStorage.setItem(DESKTOP_CONNECT_SORT_KEY, sort); } catch {}
+  };
+  const [desktopSortMenuOpen, setDesktopSortMenuOpen] = useState(false);
+  const [desktopShowMoreCategories, setDesktopShowMoreCategories] = useState(false);
+  const [desktopConnectItems, setDesktopConnectItems] = useState<ConnectFeedItem[]>([]);
+  const [desktopConnectTrustLevels, setDesktopConnectTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
+  const [desktopConnectLoading, setDesktopConnectLoading] = useState(false);
+  const [desktopConnectLoadingMore, setDesktopConnectLoadingMore] = useState(false);
+  const [desktopConnectHasMore, setDesktopConnectHasMore] = useState(true);
+  const [desktopConnectError, setDesktopConnectError] = useState(false);
+  interface DesktopConnectCacheEntry {
+    items: ConnectFeedItem[]; cursor: ConnectFeedCursor; portfolioHasMore: boolean; activityHasMore: boolean;
+  }
+  const desktopConnectCacheRef = useRef<Partial<Record<string, DesktopConnectCacheEntry>>>({});
+  const desktopConnectCacheKey = `${desktopConnectTab}::${desktopConnectSort}`;
+
+  const loadDesktopConnect = useCallback((cacheKey: string, tab: PortfolioFilterId, sort: ConnectSort) => {
+    setDesktopConnectLoading(true);
+    setDesktopConnectError(false);
+    const isCategoryTab = tab !== 'foryou' && tab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
+    getConnectFeed({
+      tab: tab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
+      category: resolved?.category, subcategory: resolved?.subcategory, sort,
+    })
+      .then(page => {
+        desktopConnectCacheRef.current[cacheKey] = {
+          items: page.items, cursor: page.cursor, portfolioHasMore: page.portfolioHasMore, activityHasMore: page.activityHasMore,
+        };
+        setDesktopConnectItems(page.items);
+        setDesktopConnectTrustLevels(page.trustLevels);
+        setDesktopConnectHasMore(page.portfolioHasMore || page.activityHasMore);
+      })
+      .catch(() => setDesktopConnectError(true))
+      .finally(() => setDesktopConnectLoading(false));
+  }, [user?.id, followingIds]);
+
+  useEffect(() => {
+    if (homeMode !== 'portfolio') return;
+    const cached = desktopConnectCacheRef.current[desktopConnectCacheKey];
+    if (cached) {
+      setDesktopConnectItems(cached.items);
+      setDesktopConnectHasMore(cached.portfolioHasMore || cached.activityHasMore);
+      setDesktopConnectError(false);
+      return;
+    }
+    loadDesktopConnect(desktopConnectCacheKey, desktopConnectTab, desktopConnectSort);
+  }, [homeMode, desktopConnectCacheKey, desktopConnectTab, desktopConnectSort, loadDesktopConnect]);
+
+  const retryDesktopConnect = () => { delete desktopConnectCacheRef.current[desktopConnectCacheKey]; loadDesktopConnect(desktopConnectCacheKey, desktopConnectTab, desktopConnectSort); };
+
+  const loadMoreDesktopConnect = useCallback(() => {
+    const cached = desktopConnectCacheRef.current[desktopConnectCacheKey];
+    if (desktopConnectLoadingMore || !desktopConnectHasMore || !cached) return;
+    setDesktopConnectLoadingMore(true);
+    const isCategoryTab = desktopConnectTab !== 'foryou' && desktopConnectTab !== 'following';
+    const resolved = isCategoryTab ? resolveCategoryFilter(desktopConnectTab) : null;
+    getConnectFeed({
+      tab: desktopConnectTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
+      category: resolved?.category, subcategory: resolved?.subcategory, sort: desktopConnectSort,
+      before: cached.cursor, trustLevels: desktopConnectTrustLevels,
+    })
+      .then(page => {
+        const updated: DesktopConnectCacheEntry = {
+          items: [...cached.items, ...page.items], cursor: page.cursor,
+          portfolioHasMore: page.portfolioHasMore, activityHasMore: page.activityHasMore,
+        };
+        desktopConnectCacheRef.current[desktopConnectCacheKey] = updated;
+        setDesktopConnectItems(updated.items);
+        setDesktopConnectTrustLevels(page.trustLevels);
+        setDesktopConnectHasMore(updated.portfolioHasMore || updated.activityHasMore);
+      })
+      .catch(() => {})
+      .finally(() => setDesktopConnectLoadingMore(false));
+  }, [desktopConnectCacheKey, desktopConnectTab, desktopConnectSort, desktopConnectLoadingMore, desktopConnectHasMore, user?.id, followingIds, desktopConnectTrustLevels]);
+
   // No client-side filtering left now that Nearby is gone -- every tab's
   // filtering (category, or authorIds for Following) already happens
   // server-side in loadFeed/loadMoreFeed above. Kept as its own name
@@ -1210,10 +1311,13 @@ export function Home() {
       }}
     >
 
-      {/* ── Marketplace / Connect toggle — mobile only. Only renders below
-           lg:, so desktop has no way to ever set homeMode to 'portfolio' --
-           that's what keeps the desktop layout below completely untouched
-           by this feature without a second, duplicated render path.
+      {/* ── Marketplace / Connect toggle — mobile version. The existing
+           Listings content div below already conditionally hides itself
+           whenever homeMode !== 'portfolio' (`loading || homeMode !==
+           'portfolio' ? 'block' : 'hidden'`), regardless of breakpoint --
+           that pre-existing logic is what makes it safe to also drive
+           homeMode from a desktop-visible control (right below) without
+           touching the swipe-deck rendering at all.
            Internal state/values stay 'listings'/'portfolio' (unchanged) --
            this is a display-label rename only, per spec ("do not rename
            backend tables or existing listing/portfolio data models"). */}
@@ -1240,6 +1344,30 @@ export function Home() {
             Connect
           </button>
         </div>
+      </div>
+
+      {/* ── Desktop Marketplace / Connect switch -- same homeMode state,
+           separate desktop-only markup (underline-tab style rather than
+           mobile's pill toggle). This is what makes Connect reachable on
+           desktop at all; the swipe-deck below already hides correctly
+           once homeMode leaves 'listings' (see comment above). */}
+      <div className="hidden lg:flex items-center gap-6 px-8 pt-5 pb-3 bg-white border-b border-gray-100">
+        <button
+          onClick={() => setHomeMode('listings')}
+          className={`text-base font-bold pb-2 border-b-2 transition-colors ${
+            homeMode === 'listings' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent hover:text-gray-600'
+          }`}
+        >
+          Marketplace
+        </button>
+        <button
+          onClick={() => setHomeMode('portfolio')}
+          className={`text-base font-bold pb-2 border-b-2 transition-colors ${
+            homeMode === 'portfolio' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent hover:text-gray-600'
+          }`}
+        >
+          Connect
+        </button>
       </div>
 
       {/* ── Connect's own secondary switch: All | Portfolio | Activity —
@@ -1790,6 +1918,165 @@ export function Home() {
           </div>
         )}
       </div>
+
+      {/* ── Desktop Connect feed -- unified (no Portfolio/Activity/All
+           sub-tabs), per the desktop Connect redesign spec. Center column
+           only in this pass -- the right sidebar (Connection Requests/
+           People You May Know/Opportunities For You) is a later phase; no
+           "Your Network" column between the global sidebar and the feed,
+           per spec. Normal page scroll (not the mobile bounded/immersive
+           scroll container above -- that machinery is mobile-chrome-hiding
+           specific and doesn't apply here). */}
+      {homeMode === 'portfolio' && (
+        <div className="hidden lg:block bg-gray-100 min-h-screen">
+          <div className="max-w-[900px] mx-auto px-8 py-5">
+            <div className="flex items-center justify-between mb-4">
+              <div role="tablist" aria-label="Connect feed" className="flex gap-2">
+                <button
+                  role="tab" aria-selected={desktopConnectTab !== 'following'}
+                  onClick={() => setDesktopConnectTab('foryou')}
+                  className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                    desktopConnectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  For You
+                </button>
+                <button
+                  role="tab" aria-selected={desktopConnectTab === 'following'}
+                  onClick={() => setDesktopConnectTab('following')}
+                  className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                    desktopConnectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  Following
+                </button>
+              </div>
+
+              <div className="relative">
+                <button
+                  onClick={() => setDesktopSortMenuOpen(v => !v)}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-full px-3.5 py-1.5 hover:border-gray-300 transition-colors"
+                >
+                  {desktopConnectSort === 'relevant' ? 'Most relevant' : 'Most recent'}
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${desktopSortMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {desktopSortMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setDesktopSortMenuOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1.5 z-20 bg-white rounded-xl shadow-lg border border-gray-100 py-1 w-44 dropdown-pop-in">
+                      {(['relevant', 'recent'] as const).map(s => (
+                        <button
+                          key={s}
+                          onClick={() => { setDesktopConnectSort(s); setDesktopSortMenuOpen(false); }}
+                          className={`w-full text-left px-3.5 py-2 text-sm font-semibold hover:bg-gray-50 ${desktopConnectSort === s ? 'text-blue-600' : 'text-gray-700'}`}
+                        >
+                          {s === 'relevant' ? 'Most relevant' : 'Most recent'}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Same personalized category system as Portfolio/Activity/All
+                (shared personalizedCategories/resolveCategoryFilter). */}
+            {desktopConnectTab !== 'following' && user && (
+              <div className="flex gap-2 pb-4 overflow-x-auto no-scrollbar">
+                {personalizedCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => { setDesktopConnectTab(cat); logPortfolioInteraction(user?.id, resolveCategoryFilter(cat), 'category_selected'); }}
+                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                      desktopConnectTab === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setDesktopShowMoreCategories(true)}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    !personalizedCategories.includes(desktopConnectTab) && desktopConnectTab !== 'foryou'
+                      ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  More
+                </button>
+              </div>
+            )}
+            {desktopShowMoreCategories && createPortal(
+              <BottomSheet onClose={() => setDesktopShowMoreCategories(false)} title="More categories">
+                <div className="px-2 py-1" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
+                  {PORTFOLIO_CATEGORIES.map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => { setDesktopConnectTab(cat); setDesktopShowMoreCategories(false); logPortfolioInteraction(user?.id, { category: cat }, 'category_selected'); }}
+                      className={`flex items-center justify-between w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${
+                        desktopConnectTab === cat ? 'text-blue-600 font-bold bg-blue-50' : 'text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </BottomSheet>,
+              document.body,
+            )}
+
+            {desktopConnectError ? (
+              <div className="flex flex-col items-center gap-3 py-16 text-center">
+                <p className="text-sm text-gray-500">Couldn't load Connect.</p>
+                <button onClick={retryDesktopConnect} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Try again</button>
+              </div>
+            ) : desktopConnectLoading ? (
+              <div className="space-y-3">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="animate-pulse bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-gray-200 shrink-0"/>
+                      <div className="flex-1 space-y-1.5"><div className="h-3 w-32 bg-gray-200 rounded"/><div className="h-2.5 w-44 bg-gray-100 rounded"/></div>
+                    </div>
+                    <div className="w-full aspect-video bg-gray-200 rounded-2xl"/>
+                  </div>
+                ))}
+              </div>
+            ) : desktopConnectItems.length === 0 ? (
+              desktopConnectTab === 'following' ? (
+                <p className="text-center text-sm text-gray-400 py-16">Follow creators to see their activity here.</p>
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-16 text-center">
+                  <p className="text-sm font-bold text-gray-700">Discover creators on Filmons</p>
+                  <p className="text-xs text-gray-400 max-w-[260px]">Portfolio work and professional activity from your network will appear here.</p>
+                  <button onClick={() => navigate('/search')} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">Explore Creators</button>
+                </div>
+              )
+            ) : (
+              <>
+                <div className="space-y-4">
+                  {desktopConnectItems.map(item => (
+                    <ConnectFeedCard
+                      key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
+                      item={item} trustLevels={desktopConnectTrustLevels}
+                    />
+                  ))}
+                </div>
+                {desktopConnectHasMore && (
+                  <div className="flex justify-center py-6">
+                    {desktopConnectLoadingMore ? (
+                      <FilmonsBrandLoader size="sm"/>
+                    ) : (
+                      <button onClick={loadMoreDesktopConnect} className="px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-gray-300 transition-colors">
+                        Load more
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Emergency category upgrade prompt — shown whenever a direct
            entry point (or the tab, before it's hidden) is attempted by an
