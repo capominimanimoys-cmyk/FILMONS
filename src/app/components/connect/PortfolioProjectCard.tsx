@@ -8,11 +8,12 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
 import { PortfolioMedia } from '../PortfolioMedia';
+import { PortfolioItemFocusView } from '../PortfolioItemFocusView';
 import { PortfolioCommentSheet, timeAgo } from '../PortfolioCommentSheet';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
@@ -34,6 +35,7 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
   const [likesCount, setLikesCount] = useState(item.likes_count ?? 0);
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [showItemDetail, setShowItemDetail] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
   const [trustProfileClosing, setTrustProfileClosing] = useState(false);
@@ -69,7 +71,13 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
     try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };
 
-  const openItem = () => navigate(`/portfolio/${creator.id}`); // opens the creator's Portfolio, same convention as elsewhere
+  // Three distinct destinations, per spec: media/title -> item detail
+  // overlay (this page, no navigation); "View in Portfolio" -> the
+  // creator's full public Portfolio (creator.id is the actual owner's id
+  // regardless of who's viewing, so this never routes to the VIEWER's own
+  // /portfolio unless they really are the owner); avatar/name -> Profile.
+  const openItemDetail = () => setShowItemDetail(true);
+  const openInPortfolio = () => navigate(`/portfolio/${creator.id}`);
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -96,21 +104,29 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         </button>
       </div>
 
-      <p className="text-sm text-gray-800 mt-3">Added a new portfolio project</p>
-      {item.description && <p className="text-sm text-gray-600 mt-1.5 leading-relaxed line-clamp-3">{item.description}</p>}
+      {/* No "Added a new portfolio project" line -- the card (media, title,
+          category) already makes that obvious; "View in Portfolio" below
+          is the useful action instead, per spec. */}
+      {item.description && <p className="text-sm text-gray-600 mt-3 leading-relaxed line-clamp-3">{item.description}</p>}
 
-      <button onClick={openItem} className="block w-full mt-3">
+      <button onClick={openItemDetail} className="block w-full mt-3">
         <PortfolioMedia item={item} />
       </button>
 
       <div className="mt-3">
-        <p className="text-sm font-bold text-gray-900">{item.title}</p>
+        <button onClick={openItemDetail} className="text-sm font-bold text-gray-900 hover:underline text-left">{item.title}</button>
         <div className="flex flex-wrap gap-1.5 mt-1.5">
           {[item.category, item.subcategory, creator.city].filter(Boolean).map(tag => (
             <span key={tag} className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">{tag}</span>
           ))}
         </div>
       </div>
+
+      {/* Lightweight action, not a big CTA -- shouldn't compete with the
+          media/identity above it. */}
+      <button onClick={openInPortfolio} className="flex items-center gap-1 mt-3 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
+        View in Portfolio <ArrowRight className="w-3.5 h-3.5" />
+      </button>
 
       <div className="flex items-center gap-5 mt-4 pt-3 border-t border-gray-50">
         <button onClick={handleToggleLike} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
@@ -127,6 +143,10 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         </button>
       </div>
 
+      {showItemDetail && createPortal(
+        <PortfolioItemFocusView item={item} onClose={() => setShowItemDetail(false)} />,
+        document.body,
+      )}
       {showComments && createPortal(
         <PortfolioCommentSheet
           itemId={item.id} creatorId={creator.id} itemCategory={item.category} itemSubcategory={item.subcategory}
