@@ -28,10 +28,12 @@ import { CollaboratorSheet } from './CollaboratorSheet';
 import { ListingTagger, type ListingPin } from './ListingTagger';
 import { inviteCollaborator } from '../lib/collabApi';
 import { ListingBrowser } from './ListingBrowser';
+import { PortfolioBrowser } from './PortfolioBrowser';
 import { AudioPostComposer } from './AudioPostComposer';
 import * as notifs from '../lib/notifications';
 import { toast } from 'sonner';
 import type { PostType, Visibility } from '../types';
+import type { PortfolioItem } from '../lib/portfolioApi';
 
 type PostKind   = PostType | 'reel' | 'story';
 type FlowStep   = 'typeSelect' | 'gallery' | 'edit' | 'caption' | 'advanced' | 'share';
@@ -514,7 +516,7 @@ function TagPeopleSheet({ photo, editedPhoto, tagPins, setTagPins, collabs, setC
 }
 
 // ── RichCaptionBox ────────────────────────────────────────────────────────────
-function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollabs, mentionedUsers, setMentionedUsers, photos, editedPhotos, isPhoto, isCreatorPlus, selectedListings, setSelectedListings, onOpenListingBrowser, onOpenListingTagger, listingPins, onOpenCollabSheet, onOpenTrimSheet, publishedPostId, tagPins, setTagPins }: any) {
+function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollabs, mentionedUsers, setMentionedUsers, photos, editedPhotos, isPhoto, isCreatorPlus, selectedListings, setSelectedListings, onOpenListingBrowser, onOpenListingTagger, listingPins, onOpenCollabSheet, onOpenTrimSheet, publishedPostId, tagPins, setTagPins, selectedPortfolioItem, setSelectedPortfolioItem, onOpenPortfolioBrowser }: any) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showTagPeople,setShowTagPeople]= useState(false);
   const [pendingPin,   setPendingPin]   = useState<{x:number;y:number}|null>(null);
@@ -832,6 +834,42 @@ function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollab
               </div>
               <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
             </button>
+
+            {/* Attached Portfolio -- stores only the real portfolio_item_id
+                (see selectedPortfolioItem), never a copy of the item's
+                data, per spec ("Don't duplicate the Portfolio project's
+                data inside the Post"). */}
+            {selectedPortfolioItem && (
+              <div className="px-4 pt-2 pb-1">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Attached Portfolio</p>
+                <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                    {selectedPortfolioItem.thumbnail_url && (
+                      <img src={selectedPortfolioItem.thumbnail_url} className="w-full h-full object-cover" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{selectedPortfolioItem.title}</p>
+                    <p className="text-xs text-gray-400 truncate">{[selectedPortfolioItem.category, selectedPortfolioItem.subcategory].filter(Boolean).join(' · ')}</p>
+                  </div>
+                  <button onClick={()=>setSelectedPortfolioItem(null)}
+                    className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                    <X className="w-3.5 h-3.5 text-gray-600"/>
+                  </button>
+                </div>
+              </div>
+            )}
+            <button onClick={onOpenPortfolioBrowser}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors">
+              <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                <Image className="w-4 h-4 text-gray-500"/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">{selectedPortfolioItem ? 'Change Portfolio Work' : 'Attach Portfolio Work'}</p>
+                <p className="text-xs text-gray-400">{selectedPortfolioItem ? selectedPortfolioItem.title : 'Show off a project from your Portfolio'}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+            </button>
           </div>
         ) : (
           <div className="w-full flex items-center gap-3 px-4 py-3.5">
@@ -1109,7 +1147,7 @@ const CANADA_LOCATIONS_GEO = [
 // Alias without geo for simple use
 const CANADA_LOCATIONS = CANADA_LOCATIONS_GEO;
 
-function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,textAlign,kind,ratio,audioTitle,audioArtist,caption,setCaption,tags,setTags,collabs,setCollabs,mentionedUsers,setMentionedUsers,location,setLoc,credits,setCredits,selectedMusic,setSelectedMusic,onOpenMusicBrowser,onOpenTrimSheet,selectedListings,setSelectedListings,onOpenListingBrowser,onOpenListingTagger,listingPins,tagPins,setTagPins,isCreatorPlus,onOpenCollabSheet,publishedPostId,ic,isPhoto,isVideo }: any) {
+function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,textAlign,kind,ratio,audioTitle,audioArtist,caption,setCaption,tags,setTags,collabs,setCollabs,mentionedUsers,setMentionedUsers,location,setLoc,credits,setCredits,selectedMusic,setSelectedMusic,onOpenMusicBrowser,onOpenTrimSheet,selectedListings,setSelectedListings,onOpenListingBrowser,onOpenListingTagger,listingPins,tagPins,setTagPins,isCreatorPlus,onOpenCollabSheet,publishedPostId,ic,isPhoto,isVideo,selectedPortfolioItem,setSelectedPortfolioItem,onOpenPortfolioBrowser }: any) {
   const [showLocSheet, setShowLocSheet] = useState(false);
   const [locSearch,    setLocSearch]    = useState('');
   const [locResults,   setLocResults]   = useState<LocationResult[]>([]);
@@ -1226,6 +1264,9 @@ function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,
         listingPins={listingPins}
         tagPins={tagPins}
         setTagPins={setTagPins}
+        selectedPortfolioItem={selectedPortfolioItem}
+        setSelectedPortfolioItem={setSelectedPortfolioItem}
+        onOpenPortfolioBrowser={onOpenPortfolioBrowser}
         onOpenCollabSheet={onOpenCollabSheet}
         onOpenTrimSheet={onOpenTrimSheet}
         publishedPostId={publishedPostId}
@@ -2476,8 +2517,17 @@ function EditMediaStep({
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudio}:{
+export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudio,initialAction,closing}:{
   onClose:()=>void; onPost?:(p?:any)=>void; currentUser?:any; mode?:'post'|'story'|'reel'; initialAudio?:any;
+  /** Lets a shortcut (Home -> Connect's "Photo/Video / Portfolio / Listing"
+   * row, or Profile's equivalent) jump straight into the relevant action
+   * instead of landing on the type-select screen -- per spec, these
+   * shortcuts must open the SAME composer, not a separate flow. */
+  initialAction?: 'photo'|'portfolio'|'listing';
+  /** Controlled exit-animation flag -- see the same contract as
+   * EditProfileFieldPanel/TrustProfileOverlay's `closing` prop. Omit for
+   * the composer's own header Close/Back to just call onClose directly. */
+  closing?: boolean;
 }) {
   const {user:authUser}=useAuth();
   const user=currentUser||authUser;
@@ -2603,6 +2653,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [showTrimSheet,     setShowTrimSheet]    = useState(false);
   const [publishedPostId,   setPublishedPostId]  = useState<string|null>(null);
   const [showListingBrowser, setShowListingBrowser] = useState(false);
+  const [showPortfolioBrowser, setShowPortfolioBrowser] = useState(false);
+  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem|null>(null);
   const [textOverlays,       setTextOverlays]       = useState<TextLayer[]>([]);
   const [showTextEditor,     setShowTextEditor]     = useState(false);
   const [textLayers,         setTextLayers]         = useState<TextLayer[]>([]);
@@ -2621,6 +2673,16 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
       });
     }
   }, [initialAudio?.title]); // eslint-disable-line
+
+  // Shortcut entry points -- jump straight past typeSelect instead of
+  // making the creator re-choose an action they already picked from
+  // Connect's/Profile's composer trigger row.
+  useEffect(() => {
+    if (initialAction === 'photo') { setKind('photo'); setStep('gallery'); requestGallery('image/*,video/*'); }
+    else if (initialAction === 'portfolio') { setShowPortfolioBrowser(true); }
+    else if (initialAction === 'listing') { setShowListingBrowser(true); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [publishedPost,      setPublishedPost]      = useState<any|null>(null);
   const [tagPins,            setTagPins]            = useState<any[]>([]);
   const [showListingTagger,  setShowListingTagger]  = useState(false);
@@ -3002,6 +3064,10 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           listingImage: firstListing?.images?.[0],
           listingPins:  listingPins?.length ? listingPins : undefined,
           tagPins:      tagPins?.length ? tagPins : undefined,
+          portfolioItemId:       selectedPortfolioItem?.id,
+          portfolioItemTitle:    selectedPortfolioItem?.title,
+          portfolioItemCategory: selectedPortfolioItem?.category,
+          portfolioItemThumb:    selectedPortfolioItem?.thumbnail_url,
         }
       );
 
@@ -3079,6 +3145,22 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
             });
           });
         }
+
+        // Notify mentioned users -- de-duped by id (and never self), so
+        // repeating "@MayaChen" multiple times in one post only pings her
+        // once. notifs.push() itself also de-dupes by type+fromUserId+
+        // postId within 24h as a second safety net.
+        const uniqueMentionIds = [...new Set(mentionIds)].filter((id: string) => id !== user.id);
+        uniqueMentionIds.forEach(uid => {
+          notifs.push(uid, {
+            type:           'post_mention' as any,
+            fromUserId:     user.id,
+            fromUserName:   user.name || user.username || '',
+            fromUserAvatar: user.avatar || undefined,
+            postId:         newPost.id,
+            postContent:    (caption || textContent || '').slice(0, 100) || undefined,
+          });
+        });
       } else {
         throw new Error('Post creation failed');
       }
@@ -3190,6 +3272,15 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
         />
       )}
 
+      {/* Portfolio Browser -- "Select Portfolio Work" */}
+      {showPortfolioBrowser && (
+        <PortfolioBrowser
+          selectedId={selectedPortfolioItem?.id}
+          onSelect={(item)=>{ setSelectedPortfolioItem(item); setShowPortfolioBrowser(false); }}
+          onClose={()=>setShowPortfolioBrowser(false)}
+        />
+      )}
+
       {/* Audio Post Composer — dedicated flow for standalone audio posts */}
       {showAudioComposer && (
         <AudioPostComposer
@@ -3234,7 +3325,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
         />
       )}
 
-      <div className="fixed inset-0 z-50 bg-white flex flex-col">
+      <div className={`fixed inset-0 z-50 bg-white flex flex-col ${closing ? 'create-post-exit' : 'create-post-enter'}`}>
 
         {/* ── Header ──────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b border-gray-100 shrink-0">
@@ -3597,6 +3688,9 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
               listingPins={listingPins}
               tagPins={tagPins}
               setTagPins={setTagPins}
+              selectedPortfolioItem={selectedPortfolioItem}
+              setSelectedPortfolioItem={setSelectedPortfolioItem}
+              onOpenPortfolioBrowser={()=>setShowPortfolioBrowser(true)}
               isCreatorPlus={isCreatorPlus}
               onOpenCollabSheet={()=>setShowCollabSheet(true)}
               publishedPostId={publishedPostId}

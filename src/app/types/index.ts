@@ -113,6 +113,13 @@ export interface Post {
   viewsCount?: number;
   link?: string;
 
+  // Portfolio attachment -- real portfolio_item_id only, title/category/
+  // thumb cached for display (same pattern as the listing* fields below).
+  portfolioItemId?: string;
+  portfolioItemTitle?: string;
+  portfolioItemCategory?: string;
+  portfolioItemThumb?: string;
+
   // Engagement
   likes: string[];
   likesCount?: number;
@@ -385,7 +392,7 @@ export type NotificationType =
   | 'comment_received' | 'comment_reply' | 'comment_like'
   | 'comment_mention'  | 'comment_pinned' | 'comment_deleted'
   // Likes, Reposts & Posts
-  | 'new_post' | 'content_like' | 'content_repost'
+  | 'new_post' | 'content_like' | 'content_repost' | 'post_mention'
   // Network / Followers
   | 'new_follower' | 'follow_request' | 'follow_accepted'
   | 'connection_request' | 'connection_accepted'

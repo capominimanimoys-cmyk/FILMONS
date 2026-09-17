@@ -367,6 +367,23 @@ img.reveal {
 .push-page-enter { animation: push-page-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .push-page-exit  { animation: push-page-exit  320ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* ── 16a2. Create Post page transition ────────────────────────────────────
+   Same idea and easing as push-page-enter/exit above, but with the exact
+   timing/opacity curve the Create Post spec calls for (350-400ms,
+   opacity .95->1) -- kept as its own class rather than changing the
+   numbers on the shared push-page-* classes, which several other overlays
+   already rely on. */
+@keyframes create-post-enter {
+  from { opacity: 0.95; transform: translateX(100%); }
+  to   { opacity: 1;    transform: translateX(0); }
+}
+@keyframes create-post-exit {
+  from { opacity: 1;    transform: translateX(0); }
+  to   { opacity: 0.95; transform: translateX(100%); }
+}
+.create-post-enter { animation: create-post-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.create-post-exit  { animation: create-post-exit  380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
 /* ── 16b. Inline dropdown/results panel pop ──────────────────────────────
    ProfessionPicker's desktop suggestion panel, LocationSearch's results
    panel -- "slides open from its trigger" per spec, not an instant

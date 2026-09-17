@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, Music, Repeat2, Flag,
   EyeOff, BarChart, User as UserIcon, AlertTriangle,
   Bell, BellOff, UserMinus, Archive, Edit2, Globe, Eye,
-  Copy, Clock, Tag, Smile, ThumbsDown, MapPin,
+  Copy, Clock, Tag, Smile, ThumbsDown, MapPin, ArrowRight,
 } from 'lucide-react';
 import { Post, Comment } from '../types';
 import { postsApi, commentsApi, authApi, savedPostsApi } from '../lib/api';
@@ -1689,6 +1689,27 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </div>
             )}
 
+            {/* Attached Portfolio -- real portfolio_item_id, resolved to
+                the creator's own Portfolio (never the viewer's), per spec. */}
+            {localPost.portfolioItemId && (
+              <button
+                onClick={()=>navigate(`/portfolio/${localPost.userId}`)}
+                className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mt-2 text-left hover:bg-gray-100 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                  {localPost.portfolioItemThumb && (
+                    <img src={localPost.portfolioItemThumb} className="w-full h-full object-cover" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{localPost.portfolioItemTitle}</p>
+                  {localPost.portfolioItemCategory && <p className="text-xs text-gray-400 truncate">{localPost.portfolioItemCategory}</p>}
+                  <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
+                    View in Portfolio <ArrowRight className="w-3 h-3" />
+                  </span>
+                </div>
+              </button>
+            )}
 
           </div>
 

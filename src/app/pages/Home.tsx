@@ -27,6 +27,8 @@ import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteracti
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { getConnectFeed, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
+import { CreatePostTrigger } from '../components/CreatePostTrigger';
+import { PostComposer } from '../components/PostComposer';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { BottomSheet } from '../components/BottomSheet';
@@ -308,6 +310,18 @@ export function Home() {
   // Following. FollowContext's followingIds is the same live, realtime-
   // synced Set every Follow button in the app already reads from.
   const { followingIds } = useFollow();
+
+  // Create Post -- one shared composer, reachable from the trigger row
+  // above the Connect feed (both breakpoints) and from Profile's All/
+  // Activity tabs. See CreatePostTrigger.tsx / PostComposer.tsx.
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeClosing, setComposeClosing] = useState(false);
+  const [composeAction, setComposeAction] = useState<'photo'|'portfolio'|'listing'|undefined>(undefined);
+  const openCompose = (action?: 'photo'|'portfolio'|'listing') => { setComposeAction(action); setShowCompose(true); };
+  const closeCompose = () => {
+    setComposeClosing(true);
+    setTimeout(() => { setShowCompose(false); setComposeClosing(false); setComposeAction(undefined); }, 380);
+  };
 
   // ── Connect feed -- ONE unified feed, shared by mobile AND desktop.
   // Portfolio and Activity are no longer separate tabs/categories on either
@@ -1191,6 +1205,9 @@ export function Home() {
                   transition: 'padding-bottom 280ms ease-out',
                 }}
               >
+                {user && (
+                  <CreatePostTrigger avatar={user.avatar} name={user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
+                )}
                 {connectError ? (
                   <div className="flex flex-col items-center gap-3 py-16 text-center">
                     <p className="text-sm text-gray-500">Couldn't load Connect.</p>
@@ -1303,6 +1320,12 @@ export function Home() {
                 )}
               </div>
             </div>
+
+            {user && (
+              <div className="mb-4">
+                <CreatePostTrigger avatar={user.avatar} name={user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
+              </div>
+            )}
 
             {/* Same personalized category system as Portfolio/Activity/All
                 (shared personalizedCategories/resolveCategoryFilter). */}
@@ -1427,6 +1450,24 @@ export function Home() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Create Post -- an attached FILMONS page, not a modal (per
+          spec): PostComposer renders its own fixed inset-0 full-screen
+          overlay with the slide transition, so Home stays mounted
+          underneath and its scroll position/tab/category are preserved
+          automatically. ── */}
+      {(showCompose || composeClosing) && (
+        <PostComposer
+          closing={composeClosing}
+          initialAction={composeAction}
+          onClose={closeCompose}
+          // No optimistic prepend into connectItems -- a freshly published
+          // post already appears via its own post_published activity_events
+          // row (fires synchronously in postsApi.create), so a plain
+          // in-memory refetch (not a page reload) is enough to surface it.
+          onPost={() => { retryConnect(); }}
+        />
       )}
 
     </div>

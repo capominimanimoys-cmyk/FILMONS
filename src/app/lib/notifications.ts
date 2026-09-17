@@ -26,6 +26,7 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'comment_pinned':      return 'Your comment was pinned';
     case 'comment_deleted':     return 'Your comment was removed';
     case 'new_post':            return `${actorName} shared a new post`;
+    case 'post_mention':        return `${actorName} mentioned you in a post`;
     case 'content_like':        return `${actorName} liked your post`;
     case 'like':                return `${actorName} liked your post`;
     case 'content_repost':      return `${actorName} reposted your content`;

@@ -5,8 +5,8 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { X, Search, MapPin, Tag, Check } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { listingsApi } from '../lib/api';
 import type { Listing } from '../types';
 
 interface ListingBrowserProps {
@@ -21,29 +21,6 @@ const CATEGORIES = [
   { id:'service', label:'Services'  },
 ];
 
-// Map a raw DB/cache row to a Listing
-function mapListing(l: any): Listing {
-  return {
-    ...l,
-    userId:          l.user_id      ?? l.userId,
-    createdAt:       l.created_at   ?? l.createdAt,
-    listingType:     l.listing_type ?? l.listingType ?? 'gear',
-    listingMode:     l.listing_mode ?? l.listingMode,
-    serviceCategory: l.service_category ?? l.serviceCategory,
-    pricingPackages: l.pricing_packages  ?? l.pricingPackages,
-    images: Array.isArray(l.images) ? l.images : l.image ? [l.image] : [],
-  } as Listing;
-}
-
-// Load from localStorage cache instantly
-function loadCached(): Listing[] {
-  try {
-    const raw = localStorage.getItem('filmons_listings');
-    if (!raw) return [];
-    const all: Listing[] = JSON.parse(raw);
-    return all.map(mapListing);
-  } catch { return []; }
-}
 
 function ListingCard({ listing, selected, onSelect }: {
   listing: Listing; selected: boolean; onSelect: () => void;
@@ -89,31 +66,22 @@ function ListingCard({ listing, selected, onSelect }: {
 export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowserProps) {
   const { user } = useAuth();
 
-  // Load cache instantly — no loading state if cache exists
-  const [listings, setListings] = useState<Listing[]>(() => loadCached());
-  const [refreshing, setRefreshing] = useState(listings.length === 0);
+  // Attaching a listing to a post should only ever offer the POSTER's own
+  // listings -- deliberately not the shared site-wide `filmons_listings`
+  // cache every other listings surface (Inbox/HostDashboard/EditListing/
+  // Checkout/ListingTagger) reads and writes; scoping this to one query
+  // via listingsApi.getUserListings avoids corrupting that shared cache
+  // with a filtered subset.
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [refreshing, setRefreshing] = useState(true);
   const [query,    setQuery]    = useState('');
   const [category, setCategory] = useState('all');
 
-  // Background refresh from Supabase
   useEffect(() => {
-    if (!user) return;
-    setRefreshing(true);
     if (!user) { setRefreshing(false); return; }
-    supabase
-      .from('listings')
-      .select('id, title, price, city, listing_type, listing_mode, service_category, pricing_packages, images, image, user_id, created_at')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (data?.length) {
-          const mapped = data.map(mapListing);
-          setListings(mapped);
-          // Update cache
-          try {
-            localStorage.setItem('filmons_listings', JSON.stringify(data));
-          } catch {}
-        }
-      })
+    setRefreshing(true);
+    listingsApi.getUserListings(user.id)
+      .then(setListings)
       .finally(() => setRefreshing(false));
   }, [user?.id]);
 

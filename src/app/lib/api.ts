@@ -1454,6 +1454,11 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     listingPins:     row.listing_pins     || undefined,
     tagPins:         row.tag_pins         || undefined,
     location:        row.location         || undefined,
+    // Portfolio attachment metadata for PostCard's Portfolio section
+    portfolioItemId:       row.portfolio_item_id       || undefined,
+    portfolioItemTitle:    row.portfolio_item_title    || undefined,
+    portfolioItemCategory: row.portfolio_item_category || undefined,
+    portfolioItemThumb:    row.portfolio_item_thumb    || undefined,
   } as Post;
 }
 
@@ -1624,6 +1629,14 @@ export const postsApi = {
       listingCity?:   string;
       listingImage?:  string;
       listingPins?:   any[];
+      // Portfolio attachment -- stores only the real portfolio_item_id
+      // (never a copy of the item's data); title/category/thumb are
+      // cached purely for display so the post card doesn't need a live
+      // join, same pattern as the listing_* columns above.
+      portfolioItemId?:       string;
+      portfolioItemTitle?:    string;
+      portfolioItemCategory?: string;
+      portfolioItemThumb?:    string;
     },
   ): Promise<Post> => {
     const currentUser = authApi.getCurrentUser();
@@ -1689,6 +1702,10 @@ export const postsApi = {
     if (extraMeta?.listingCity)  insertPayload.listing_city  = extraMeta.listingCity;
     if (extraMeta?.listingImage) insertPayload.listing_image = extraMeta.listingImage;
     if (extraMeta?.listingPins)  insertPayload.listing_pins  = extraMeta.listingPins;
+    if (extraMeta?.portfolioItemId)       insertPayload.portfolio_item_id       = extraMeta.portfolioItemId;
+    if (extraMeta?.portfolioItemTitle)    insertPayload.portfolio_item_title    = extraMeta.portfolioItemTitle;
+    if (extraMeta?.portfolioItemCategory) insertPayload.portfolio_item_category = extraMeta.portfolioItemCategory;
+    if (extraMeta?.portfolioItemThumb)    insertPayload.portfolio_item_thumb    = extraMeta.portfolioItemThumb;
 
     const { data, error } = await supabase
       .from('posts')

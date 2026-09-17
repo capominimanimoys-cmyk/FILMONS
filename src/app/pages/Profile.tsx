@@ -31,6 +31,7 @@ import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScor
 import { reliabilityApi, ReputationScore, isCreatorPlus, normalizeTier } from '../lib/reliabilityApi';
 import { AvatarActionSheet, AvatarFullScreen } from '../components/AvatarActionSheet';
 import { PostComposer } from '../components/PostComposer';
+import { CreatePostTrigger } from '../components/CreatePostTrigger';
 import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
@@ -606,6 +607,13 @@ export function Profile() {
   const [loading,       setLoading]       = useState(true);
   const showProfileLoader = useMinVisibleLoading(loading);
   const [showCompose,      setShowCompose]      = useState(false);
+  const [composeClosing,   setComposeClosing]   = useState(false);
+  const [composeAction,    setComposeAction]    = useState<'photo'|'portfolio'|'listing'|undefined>(undefined);
+  const openCompose = (action?: 'photo'|'portfolio'|'listing') => { setComposeAction(action); setShowCompose(true); };
+  const closeCompose = () => {
+    setComposeClosing(true);
+    setTimeout(() => { setShowCompose(false); setComposeClosing(false); setComposeAction(undefined); }, 380);
+  };
   const [showAvatarSheet,  setShowAvatarSheet]  = useState(false);
   const [rep,              setRep]              = useState<ReputationScore | null>(null);
   const [trust, setTrust] = useState<TrustProfile | null>(null);
@@ -1257,7 +1265,11 @@ export function Profile() {
 
           {/* ALL — full vertical overview */}
           {tab === 'all' && (
-            <ProfileAllTab
+            <>
+              <div className="pt-3">
+                <CreatePostTrigger avatar={user.avatar} name={displayName || user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
+              </div>
+              <ProfileAllTab
               userId={user.id}
               isOwner
               viewerId={user.id}
@@ -1293,7 +1305,8 @@ export function Profile() {
               interactionStats={interactionStats}
               trust={trust}
               onOpenTrustDetails={() => setTrustProfileOpen(true)}
-            />
+              />
+            </>
           )}
 
           {/* PORTFOLIO — always navigates to the dedicated /portfolio page
@@ -1431,9 +1444,7 @@ export function Profile() {
               page; this is that fetch's first live use. */}
           {tab === 'activity' && (
             <div className="md:max-w-2xl md:mx-auto py-4 space-y-4">
-              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                <button onClick={() => setShowCompose(true)} className="w-full text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-3 text-left hover:bg-gray-100">What's on your mind?</button>
-              </div>
+              <CreatePostTrigger avatar={user.avatar} name={displayName || user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
               {showProfileLoader ? <div className="flex justify-center py-10"><FilmonsBrandLoader size="md" label="Loading posts"/></div>
                 : posts.length === 0
                   ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No activity yet</p></div>
@@ -1866,19 +1877,26 @@ export function Profile() {
         />
       )}
 
-      {/* Compose modal */}
-      {showCompose && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <p className="font-bold text-gray-900">Create post</p>
-              <button onClick={()=>setShowCompose(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"><X className="w-4 h-4"/></button>
-            </div>
-            <div className="p-4">
-              <PostComposer onPost={post=>{setPosts(prev=>[post,...prev]);mergePosts([post]);setShowCompose(false);}} />
-            </div>
-          </div>
-        </div>
+      {/* ── Create Post -- an attached FILMONS page, not a modal (per spec):
+          PostComposer already renders its own fixed inset-0 full-screen
+          overlay, so no extra modal wrapper is needed here -- the old
+          centered-modal wrapper was actually a bug (it also never passed
+          PostComposer an onClose, so the composer's own Back/success-close
+          had nothing to call). Controlled `closing` gives it the same
+          slide-out-to-the-right exit as its slide-in entrance. Profile
+          itself stays mounted underneath throughout, so scroll position
+          and the active tab are preserved automatically. ── */}
+      {(showCompose || composeClosing) && (
+        <PostComposer
+          closing={composeClosing}
+          initialAction={composeAction}
+          onClose={closeCompose}
+          // Only updates the local posts list -- closing is driven by the
+          // composer's own success screen (its Done button already calls
+          // onClose) so the creator actually gets to see "Post published"
+          // instead of it being yanked away the instant publish resolves.
+          onPost={post => { setPosts(prev => [post, ...prev]); mergePosts([post]); }}
+        />
       )}
     </div>
   );
