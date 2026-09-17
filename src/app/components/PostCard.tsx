@@ -1608,8 +1608,8 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             {/* Like */}
             <style>{`@keyframes hrtBounce{0%{transform:scale(1)}25%{transform:scale(1.4)}50%{transform:scale(0.9)}75%{transform:scale(1.15)}100%{transform:scale(1)}}`}</style>
             <button onClick={handleLike} disabled={liking}
-              className={`flex items-center gap-1 px-2 py-2 rounded-full transition-colors active:scale-90 ${isLiked?'text-red-500':'text-gray-700 hover:text-red-400'}`}>
-              <Heart className={`w-6 h-6 ${isLiked ? 'fill-red-500' : ''}`}
+              className={`flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors active:scale-90 ${isLiked?'text-red-500':'text-gray-700 hover:text-red-400'}`}>
+              <Heart className={`w-5 h-5 ${isLiked ? 'fill-red-500' : ''}`}
                 style={isLiked ? { animation: 'hrtBounce 0.4s ease' } : undefined}/>
               {(localPost.likesCount??0)>0 && (
                 <button
@@ -1621,26 +1621,26 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </button>
             {/* Comment */}
             <button onClick={()=>setShowComments(true)}
-              className="flex items-center gap-1 px-2 py-2 rounded-full text-gray-700 hover:text-blue-500 transition-all active:scale-90">
-              <MessageCircle className="w-6 h-6"/>
+              className="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-gray-700 hover:text-blue-500 transition-all active:scale-90">
+              <MessageCircle className="w-5 h-5"/>
               {((localPost.totalCommentsCount ?? commentCount) > 0) && <span className="text-[13px] font-semibold min-w-[12px]">{localPost.totalCommentsCount ?? commentCount}</span>}
             </button>
             {/* Repost */}
             <button
               onClick={()=>{ if(!user){toast.error('Sign in to repost');return;} dispatchMenuOpen(); setShowRepostMenu(v=>!v); }}
-              className={`flex items-center gap-1 px-2 py-2 rounded-full transition-all active:scale-90 ${hasReposted?'text-green-500':'text-gray-700 hover:text-green-500'}`}>
-              <Repeat2 className={`w-6 h-6 ${hasReposted?'text-green-500':''}`}/>
+              className={`flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-all active:scale-90 ${hasReposted?'text-green-500':'text-gray-700 hover:text-green-500'}`}>
+              <Repeat2 className={`w-5 h-5 ${hasReposted?'text-green-500':''}`}/>
               {(localPost.repostCount??0)>0 && <span className="text-[13px] font-semibold min-w-[12px]">{localPost.repostCount}</span>}
             </button>
             {/* Share */}
             <button onClick={()=>setShowShareModal(true)}
-              className="flex items-center gap-1 px-2 py-2 rounded-full text-gray-700 hover:text-blue-500 transition-all active:scale-90">
-              <Send className="w-6 h-6"/>
+              className="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-gray-700 hover:text-blue-500 transition-all active:scale-90">
+              <Send className="w-5 h-5"/>
             </button>
             {/* Save — right aligned */}
             <button onClick={handleSave}
-              className={`ml-auto px-2 py-2 rounded-full transition-all active:scale-90 ${saved?'text-blue-500':'text-gray-700 hover:text-blue-400'}`}>
-              <Bookmark className={`w-6 h-6 ${saved?'fill-blue-500':''}`}/>
+              className={`ml-auto px-1.5 py-1.5 rounded-full transition-all active:scale-90 ${saved?'text-blue-500':'text-gray-700 hover:text-blue-400'}`}>
+              <Bookmark className={`w-5 h-5 ${saved?'fill-blue-500':''}`}/>
             </button>
           </div>
 

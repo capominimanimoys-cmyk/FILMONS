@@ -52,7 +52,11 @@ export function TrustVerificationSection({ trust, isOwner, accountType, isVerifi
       <p className="text-3xl font-black text-gray-900 mt-1.5">
         {trust?.reliabilityScore ?? 0}<span className="text-base font-bold text-gray-300"> / 100</span>
       </p>
-      <p className="text-xs text-gray-400 mt-1">Your FILMONS reputation score</p>
+      {/* "Your" only makes sense read on one's own profile -- on a
+          viewer's HostProfile this would misleadingly describe the
+          VIEWER's score instead of the creator being viewed, so it's
+          owner-only rather than shown everywhere. */}
+      {isOwner && <p className="text-xs text-gray-400 mt-1">Your FILMONS reputation score</p>}
 
       <button onClick={onOpenDetails} className="text-xs font-bold text-blue-600 hover:underline mt-3">
         View details →

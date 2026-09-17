@@ -73,15 +73,18 @@ export function MobileBottomNav() {
   // creation entry point (Create Listing) unchanged -- "do not let the +
   // behavior depend on stale Home state" outside Home.
   const isHomeRoute = location.pathname === '/';
-  // Connect is now one unified feed (no more Portfolio/Activity sub-modes),
-  // so the + button's Connect-mode action is simply always Add Portfolio
-  // Work -- the feed's most common create action.
-  const primaryToPortfolio = isHomeRoute && homeMode === 'portfolio';
-  const primaryTo = primaryToPortfolio ? '/portfolio' : '/create-listing';
-  const primaryLabel = primaryToPortfolio ? 'Add portfolio work' : 'Create listing';
-  // Portfolio.tsx reads this nav state on mount to auto-open its existing
-  // Add Work sheet -- reusing that flow instead of building a second one.
-  const primaryState = primaryToPortfolio ? { autoOpenAdd: true } : undefined;
+  // Connect (homeMode 'portfolio', despite the name) is the social/
+  // professional feed now, so its + action is Create Post, not Add
+  // Portfolio Work -- per spec, Portfolio creation stays reachable from
+  // Portfolio/Profile surfaces, just no longer from this button. Since
+  // Connect only ever renders on Home itself, "opening" Create Post here
+  // means firing an event for the already-mounted Home.tsx to handle
+  // (its own shared PostComposer instance), not a route navigation --
+  // `to="/"` is a same-route no-op Link, kept only so this stays a real
+  // link element consistent with the other tabs.
+  const primaryOpensCreatePost = isHomeRoute && homeMode === 'portfolio';
+  const primaryTo = primaryOpensCreatePost ? '/' : '/create-listing';
+  const primaryLabel = primaryOpensCreatePost ? 'Create post' : 'Create listing';
 
   const tabs = [
     { to: '/',                                   Icon: Home,          label: 'Home',     badge: 0,          isPrimary: false },
@@ -123,10 +126,9 @@ export function MobileBottomNav() {
               <Link
                 key="primary"
                 to={primaryTo}
-                state={primaryState}
                 title={primaryLabel}
                 aria-label={primaryLabel}
-                onClick={captureSnapshot}
+                onClick={() => { captureSnapshot(); if (primaryOpensCreatePost) window.dispatchEvent(new CustomEvent('filmons:open-create-post')); }}
                 className="flex-1 flex flex-col items-center justify-center pt-1.5 pb-1.5"
               >
                 <div

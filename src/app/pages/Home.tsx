@@ -322,6 +322,16 @@ export function Home() {
     setComposeClosing(true);
     setTimeout(() => { setShowCompose(false); setComposeClosing(false); setComposeAction(undefined); }, 380);
   };
+  // MobileBottomNav's contextual + button (Connect -> Create Post) can't
+  // navigate into this already-mounted composer the way it navigates to
+  // /create-listing for Marketplace -- it fires this event instead, and
+  // only Home actually decides whether to act on it (re-checking homeMode
+  // itself rather than trusting the nav's own mirrored copy).
+  useEffect(() => {
+    const handler = () => { if (homeMode === 'portfolio') openCompose(); };
+    window.addEventListener('filmons:open-create-post', handler);
+    return () => window.removeEventListener('filmons:open-create-post', handler);
+  }, [homeMode]);
 
   // ── Connect feed -- ONE unified feed, shared by mobile AND desktop.
   // Portfolio and Activity are no longer separate tabs/categories on either
