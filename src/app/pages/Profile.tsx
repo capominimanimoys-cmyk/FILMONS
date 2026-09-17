@@ -1291,7 +1291,7 @@ export function Profile() {
               onEditSocialLinks={() => setEditProfileSection('social')}
               interactionStats={interactionStats}
               trust={trust}
-              onOpenTrustDetails={() => setShowTrustDetails(true)}
+              onOpenTrustDetails={() => setTrustProfileOpen(true)}
             />
           )}
 

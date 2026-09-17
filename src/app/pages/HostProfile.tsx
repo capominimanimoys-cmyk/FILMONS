@@ -436,7 +436,7 @@ export function HostProfile() {
               socialLinks={socialLinksFromUser(host)}
               interactionStats={interactionStats}
               trust={trust}
-              onOpenTrustDetails={() => setShowTrustDetails(true)}
+              onOpenTrustDetails={() => setTrustProfileOpen(true)}
             />
           )}
 
