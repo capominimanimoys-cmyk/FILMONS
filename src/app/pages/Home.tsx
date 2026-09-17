@@ -1431,7 +1431,13 @@ export function Home() {
            SwipeStack's own pull-to-reveal gesture (drag down on the card,
            spring back on release) is what surfaces the compact Like/See
            listing/Pass row, not scrolling. ── */}
-      <div className="relative flex-1 min-h-0 overflow-visible lg:flex-none lg:min-h-[60vh] lg:h-auto">
+      {/* lg:hidden when Connect is active -- this wrapper's OWN
+          `lg:min-h-[60vh]` reserved space (for the swipe deck) was still
+          rendering even though its children already correctly hide
+          themselves on homeMode!=='listings', leaving an empty ~60vh gap
+          at the top of the desktop Connect feed. Mobile is unaffected --
+          these are all `lg:`-prefixed utilities. */}
+      <div className={`relative flex-1 min-h-0 overflow-visible lg:flex-none lg:h-auto ${homeMode === 'portfolio' ? 'lg:hidden' : 'lg:min-h-[60vh]'}`}>
         {/* Listings content -- kept MOUNTED (hidden via CSS, never removed
             from the tree) when Portfolio is active, not conditionally
             rendered. SwipeStack owns real state (current card index,
