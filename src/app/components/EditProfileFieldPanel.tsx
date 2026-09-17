@@ -1,0 +1,99 @@
+// Shared "one level deeper into Edit Profile" host for fields that need
+// selection or multi-entry editing (Primary/Secondary Role, Education &
+// Training, Tools, Languages) -- one responsive component instead of a
+// bottom sheet that stops halfway on mobile:
+//
+//   Mobile  (< lg): full-screen page, 100% of the viewport, slides UP from
+//                   the bottom and slides back DOWN on close.
+//   Desktop (>= lg): a right-side panel (480-600px), slides IN from the
+//                   right with the Edit Profile page behind it dimmed and
+//                   non-interactive, slides back OUT on close.
+//
+// Same component for both breakpoints (per spec: "Use the same component
+// for Secondary Role, Tools and Languages, changing only the content"),
+// same way BottomSheet already covers mobile-sheet vs desktop-modal from
+// one implementation. Mounted/unmounted by the caller (AboutEditor /
+// ProfessionPicker) exactly like PortfolioItemFocusView -- kept mounted
+// while (open || closing) so the exit animation can play before onClose
+// actually unmounts it.
+import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { X } from 'lucide-react';
+
+export function EditProfileFieldPanel({ title, onClose, children, footer, closing }: {
+  title: string;
+  /** Self-contained mode (no `closing` prop): call this to actually unmount
+   * -- the panel plays its own exit animation first, then calls this.
+   * Controlled mode (`closing` passed): this is instead the "start
+   * closing" trigger (same contract as TrustProfileOverlay/
+   * PortfolioItemFocusView's `closing`+`onClose` pair) -- the parent owns
+   * the exit timing, e.g. so a save action can close the panel the same
+   * way the X button does. Use controlled mode when something other than
+   * the panel's own header can trigger a close (AboutEditor's Education
+   * editor closes itself after a successful Save). */
+  onClose: () => void;
+  children: ReactNode;
+  /** Right-aligned action area (e.g. a Save/Done button), sticky at the
+   * bottom -- optional, since some fields (e.g. a pure picker list) commit
+   * on tap and need no explicit save step. */
+  footer?: ReactNode;
+  closing?: boolean;
+}) {
+  const controlled = closing !== undefined;
+  // Entrance is local to this component in BOTH modes -- without the rAF
+  // delay the panel would render already in its final on-screen position
+  // on first paint, with nothing for the transition to animate from.
+  const [entered, setEntered] = useState(false);
+  const [internalClosing, setInternalClosing] = useState(false);
+  const closedRef = useRef(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
+  }, []);
+
+  const isClosing = controlled ? !!closing : internalClosing;
+  const show = entered && !isClosing;
+
+  const close = () => {
+    if (controlled) { onClose(); return; }
+    if (closedRef.current) return;
+    closedRef.current = true;
+    setInternalClosing(true);
+    setTimeout(onClose, 300);
+  };
+
+  return (
+    <>
+      {/* Desktop-only dimmed, non-interactive backdrop -- mobile's page
+          already covers the full viewport so no separate scrim is needed
+          there (matches Edit Profile's own overlay, which has none either). */}
+      <div
+        className="hidden lg:block fixed inset-0 z-[85] bg-black/30 transition-opacity duration-300"
+        style={{ opacity: show ? 1 : 0, pointerEvents: show ? 'auto' : 'none' }}
+        onClick={close}
+      />
+      <div
+        className={`fixed inset-0 lg:inset-y-0 lg:left-auto lg:right-0 z-[86] bg-white flex flex-col lg:w-[560px] lg:max-w-[90vw] lg:shadow-2xl transform transition-transform duration-300 ease-out ${
+          show ? 'translate-y-0 lg:translate-x-0' : 'translate-y-full lg:translate-y-0 lg:translate-x-full'
+        }`}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex items-center justify-between gap-3 px-4 py-3.5 border-b border-gray-100 shrink-0" style={{ paddingTop: 'max(0.875rem, env(safe-area-inset-top))' }}>
+          <p className="text-base font-black text-gray-900">{title}</p>
+          <button onClick={close} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 shrink-0">
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {children}
+        </div>
+
+        {footer && (
+          <div className="shrink-0 px-4 py-3 border-t border-gray-100 flex justify-end">
+            {footer}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

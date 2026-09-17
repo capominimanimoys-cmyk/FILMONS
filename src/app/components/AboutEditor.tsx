@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, X, Check, Plus, Loader2, MapPin, ChevronDown, MoreVertical, Pencil, Trash2, ChevronLeft } from 'lucide-react';
+import { Search, X, Check, Plus, Loader2, MapPin, ChevronDown, ChevronRight, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { ProfessionPicker } from './ProfessionPicker';
 import { BottomSheet } from './BottomSheet';
+import { EditProfileFieldPanel } from './EditProfileFieldPanel';
 import {
   EduEntry, EduState, EDUCATION_TYPES, EDUCATION_TYPE_LABEL, EDUCATION_TYPE_EMOJI,
   EDUCATION_TYPE_META, blankEduEntry, parseEducation, eduEntryLocation,
@@ -636,6 +637,56 @@ function Accordion({ title, number, children, defaultOpen }: {
   );
 }
 
+// A tappable "field row" -- shows the current summary and a chevron,
+// opens an EditProfileFieldPanel (full page on mobile, right panel on
+// desktop) instead of expanding inline, for fields where selection/
+// multi-entry editing needs real room (Tools, Languages) rather than a
+// modal/dropdown squeezed into the accordion body.
+function FieldRow({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="w-full flex items-center justify-between gap-3 border border-gray-200 rounded-2xl bg-white px-4 py-3.5 text-left hover:bg-gray-50 transition-colors">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-gray-800">{label}</p>
+        <p className="text-xs text-gray-400 truncate mt-0.5">{value}</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+    </button>
+  );
+}
+
+// Shared content for a chip-managed free-text list (Tools, Languages) --
+// hosted inside an EditProfileFieldPanel instead of inline in the
+// accordion body.
+function ChipListEditor({ items, onChange, input, setInput, placeholder }: {
+  items: string[]; onChange: (v: string[]) => void;
+  input: string; setInput: (v: string) => void; placeholder: string;
+}) {
+  const add = () => { const t = input.trim(); if (t && !items.includes(t)) { onChange([...items, t]); setInput(''); } };
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex gap-2">
+        <SInput value={input} onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder={placeholder} autoFocus />
+        <button type="button" onClick={add}
+          className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0 flex items-center gap-1">
+          <Plus className="w-3.5 h-3.5" />Add
+        </button>
+      </div>
+      {items.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map(v => (
+            <span key={v} className="flex items-center gap-1.5 text-xs bg-gray-100 text-gray-700 px-2.5 py-1.5 rounded-full">
+              {v}<button onClick={() => onChange(items.filter(x => x !== v))}><X className="w-3 h-3 hover:text-red-500" /></button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ABOUT EDITOR MAIN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -677,9 +728,9 @@ export function AboutEditor(props: Props) {
   const { user, updateUser, onSave, saving, focusSection } = props;
   const [gearInput, setGearInput] = useState('');
   const [languageInput, setLanguageInput] = useState('');
+  const [gearPanelOpen, setGearPanelOpen] = useState(false);
+  const [languagesPanelOpen, setLanguagesPanelOpen] = useState(false);
   const toggleSkill = (v: string) => props.setSkills(props.skills.includes(v) ? props.skills.filter(s=>s!==v) : [...props.skills,v]);
-  const addGear = () => { const t=gearInput.trim(); if(t&&!props.gear.includes(t)){props.setGear([...props.gear,t]);setGearInput('');} };
-  const addLanguage = () => { const t=languageInput.trim(); if(t&&!props.languages.includes(t)){props.setLanguages([...props.languages,t]);setLanguageInput('');} };
 
   // ── Education local state ──────────────────────────────────────────────────
   const [edu, setEdu] = useState<EduState>(() => {
@@ -829,47 +880,21 @@ export function AboutEditor(props: Props) {
         <TagPicker all={ALL_SKILLS} selected={props.skills} onToggle={toggleSkill} placeholder="Search skills…"/>
 
         <p className="text-xs text-gray-400 mt-4">Languages you work in</p>
-        <div className="flex gap-2">
-          <SInput value={languageInput} onChange={e=>setLanguageInput(e.target.value)}
-            onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addLanguage();}}}
-            placeholder="e.g. English, French…"/>
-          <button type="button" onClick={addLanguage}
-            className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0 flex items-center gap-1">
-            <Plus className="w-3.5 h-3.5"/>Add
-          </button>
-        </div>
-        {props.languages.length>0&&(
-          <div className="flex flex-wrap gap-1.5">
-            {props.languages.map(l=>(
-              <span key={l} className="flex items-center gap-1.5 text-xs bg-gray-100 text-gray-700 px-2.5 py-1.5 rounded-full">
-                {l}<button onClick={()=>props.setLanguages(props.languages.filter(x=>x!==l))}><X className="w-3 h-3 hover:text-red-500"/></button>
-              </span>
-            ))}
-          </div>
-        )}
+        <FieldRow
+          label="Languages"
+          value={props.languages.length ? props.languages.join(', ') : 'Add languages you work in'}
+          onClick={() => setLanguagesPanelOpen(true)}
+        />
       </Accordion>
 
       {/* 5. Gear & Tools */}
       <Accordion number="5" title="Gear & Tools" defaultOpen={focusSection === 'gear'}>
         <p className="text-xs text-gray-400">Cameras, software, audio equipment you own or use</p>
-        <div className="flex gap-2">
-          <SInput value={gearInput} onChange={e=>setGearInput(e.target.value)}
-            onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addGear();}}}
-            placeholder="e.g. Sony FX3, DaVinci Resolve…"/>
-          <button type="button" onClick={addGear}
-            className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0 flex items-center gap-1">
-            <Plus className="w-3.5 h-3.5"/>Add
-          </button>
-        </div>
-        {props.gear.length>0&&(
-          <div className="flex flex-wrap gap-1.5">
-            {props.gear.map(g=>(
-              <span key={g} className="flex items-center gap-1.5 text-xs bg-gray-100 text-gray-700 px-2.5 py-1.5 rounded-full">
-                {g}<button onClick={()=>props.setGear(props.gear.filter(x=>x!==g))}><X className="w-3 h-3 hover:text-red-500"/></button>
-              </span>
-            ))}
-          </div>
-        )}
+        <FieldRow
+          label="Tools"
+          value={props.gear.length ? props.gear.join(', ') : 'Add cameras, software, equipment…'}
+          onClick={() => setGearPanelOpen(true)}
+        />
       </Accordion>
 
       {/* 6. Location */}
@@ -1030,17 +1055,25 @@ export function AboutEditor(props: Props) {
         </button>
       </Accordion>
 
-      {/* Full-screen Add/Edit Education entry page */}
+      {/* Add/Edit Education entry -- full page on mobile, right panel on
+          desktop, via the same shared EditProfileFieldPanel every other
+          selection/multi-entry field in this editor uses. Controlled
+          mode (closing=eduEditorClosing) since commitEntry closes this
+          itself after a successful save, not just the panel's own header
+          button. */}
       {(eduEditorOpen || eduEditorClosing) && (
-        <div className={`fixed inset-0 z-[80] bg-white flex flex-col ${eduEditorClosing ? 'push-page-exit' : 'push-page-enter'}`}>
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 shrink-0">
-            <button type="button" onClick={closeEduEditor} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-50 -ml-1.5">
-              <ChevronLeft className="w-5 h-5 text-gray-600"/>
+        <EditProfileFieldPanel
+          title={editingEntryId ? 'Edit Entry' : 'Add Education or Training'}
+          closing={eduEditorClosing}
+          onClose={closeEduEditor}
+          footer={
+            <button type="button" onClick={commitEntry} disabled={!newEntry.type || !newEntry.school.trim() || yearsInvalid}
+              className="w-full py-3 bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors">
+              {editingEntryId ? 'Save Changes' : 'Save Entry'}
             </button>
-            <p className="text-sm font-bold text-gray-900">{editingEntryId ? 'Edit Entry' : 'Add Education or Training'}</p>
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          }
+        >
+          <div className="px-4 py-4 space-y-4">
             <SField label="Type *">
               <button type="button" onClick={() => setEduTypeSheetOpen(true)}
                 className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white">
@@ -1130,14 +1163,7 @@ export function AboutEditor(props: Props) {
               </div>
             </label>
           </div>
-
-          <div className="px-4 py-3 border-t border-gray-100 shrink-0">
-            <button type="button" onClick={commitEntry} disabled={!newEntry.type || !newEntry.school.trim() || yearsInvalid}
-              className="w-full py-3 bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors">
-              {editingEntryId ? 'Save Changes' : 'Save Entry'}
-            </button>
-          </div>
-        </div>
+        </EditProfileFieldPanel>
       )}
 
       {/* Type selector — bottom sheet on mobile, reusing the shared BottomSheet pattern */}
@@ -1155,6 +1181,26 @@ export function AboutEditor(props: Props) {
             ))}
           </div>
         </BottomSheet>
+      )}
+
+      {gearPanelOpen && (
+        <EditProfileFieldPanel title="Tools" onClose={() => setGearPanelOpen(false)}>
+          <ChipListEditor
+            items={props.gear} onChange={props.setGear}
+            input={gearInput} setInput={setGearInput}
+            placeholder="e.g. Sony FX3, DaVinci Resolve…"
+          />
+        </EditProfileFieldPanel>
+      )}
+
+      {languagesPanelOpen && (
+        <EditProfileFieldPanel title="Languages" onClose={() => setLanguagesPanelOpen(false)}>
+          <ChipListEditor
+            items={props.languages} onChange={props.setLanguages}
+            input={languageInput} setInput={setLanguageInput}
+            placeholder="e.g. English, French…"
+          />
+        </EditProfileFieldPanel>
       )}
 
       {/* 9. Collaboration */}

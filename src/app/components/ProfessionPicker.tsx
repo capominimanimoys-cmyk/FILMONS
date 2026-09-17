@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, Check, ChevronDown } from 'lucide-react';
 import { Icon } from './Icon';
-import { BottomSheet } from './BottomSheet';
+import { EditProfileFieldPanel } from './EditProfileFieldPanel';
 
 // ── Profession catalogue ──────────────────────────────────────────────────────
 export const PROFESSIONS: { cat: string; items: string[] }[] = [
@@ -82,14 +82,14 @@ export interface ProfessionPickerProps {
   dbSuggestions?:    string[];
   /** Called whenever a role is selected — use to persist to DB */
   onTagSelected?:    (role: string, type: 'primary_role' | 'secondary_role') => void;
-  /** Opt-in: renders both pickers as a tap-to-open BottomSheet (search +
-   * full grouped list, radio/check-style rows) instead of the always-
-   * visible inline autocomplete below. BottomSheet's own responsive CSS
-   * already renders as a centered modal on desktop, so this one flag
-   * covers both breakpoints. Defaults to false/unset so the other existing
-   * callers (Onboarding, GoogleSignup, CategoryResults' filter panel) are
+  /** Opt-in: renders both pickers as a tap-to-open EditProfileFieldPanel
+   * (search + full grouped list, radio/check-style rows) instead of the
+   * always-visible inline autocomplete below -- a full-screen page on
+   * mobile, a right-side panel on desktop, never a sheet that stops
+   * halfway. Defaults to false/unset so the other existing callers
+   * (Onboarding, GoogleSignup, CategoryResults' filter panel) are
    * completely unaffected -- only a caller that explicitly opts in (Edit
-   * Profile) gets the new sheet-based picker. */
+   * Profile) gets the new panel-based picker. */
   useSheetOnMobile?: boolean;
 }
 
@@ -171,11 +171,10 @@ export function ProfessionPicker({
 
   // "Large selector" mode -- opt-in (see useSheetOnMobile's own comment).
   // A trigger row (shows the current selection, chevron rotates open/
-  // closed) opens a BottomSheet containing a search box + the full
-  // grouped catalogue (radio dots for the single-select Primary, check
-  // marks for the multi-select Secondary), instead of the always-visible
-  // inline autocomplete below. BottomSheet's own responsive CSS already
-  // renders as a centered modal on desktop, so this covers both.
+  // closed) opens an EditProfileFieldPanel containing a search box + the
+  // full grouped catalogue (radio dots for the single-select Primary,
+  // check marks for the multi-select Secondary), instead of the always-
+  // visible inline autocomplete below.
   if (useSheetOnMobile) {
     const triggerCls = dark
       ? 'w-full flex items-center justify-between gap-2 pl-9 pr-4 py-3.5 text-sm rounded-2xl bg-white/10 border border-white/20 text-left'
@@ -229,7 +228,7 @@ export function ProfessionPicker({
         )}
 
         {primaryOpen && (
-          <BottomSheet title="Primary Role" onClose={() => { setPrimaryOpen(false); setPrimaryQ(''); }}>
+          <EditProfileFieldPanel title="Primary Role" onClose={() => { setPrimaryOpen(false); setPrimaryQ(''); }}>
             <div className="px-4 pt-3 pb-2 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
                 <Search className="w-4 h-4 text-gray-400 shrink-0" />
@@ -257,11 +256,11 @@ export function ProfessionPicker({
                 </button>
               )}
             </div>
-          </BottomSheet>
+          </EditProfileFieldPanel>
         )}
 
         {secondaryOpen && (
-          <BottomSheet title="Also Works As" onClose={() => { setSecondaryOpen(false); setSecondaryQ(''); }}>
+          <EditProfileFieldPanel title="Also Works As" onClose={() => { setSecondaryOpen(false); setSecondaryQ(''); }}>
             <div className="px-4 pt-3 pb-2 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
                 <Search className="w-4 h-4 text-gray-400 shrink-0" />
@@ -289,7 +288,7 @@ export function ProfessionPicker({
                 </button>
               )}
             </div>
-          </BottomSheet>
+          </EditProfileFieldPanel>
         )}
       </div>
     );
