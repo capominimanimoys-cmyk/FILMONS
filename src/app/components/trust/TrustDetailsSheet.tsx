@@ -43,9 +43,13 @@ export function TrustDetailsSheet({ userId, onClose, onViewFullProfile }: {
       </div>
 
       <div className="border-t border-gray-100 divide-y divide-gray-50">
-        <Row icon={Users} label="Professional Connections" value={trust?.validConnections ?? 0} />
-        <Row icon={Star} label="Recommendations" value={trust?.validRecommendations ?? 0} />
-        <Row icon={Briefcase} label="Successful Transactions" value={completedTransactions} />
+        {/* Zero-value rows are hidden entirely (icon + spacing included),
+            not just zeroed out -- an empty "0 Connections" row reads as a
+            negative signal for a New creator, when the point of this sheet
+            is to show evidence of trust that exists, not what doesn't. */}
+        {!!trust?.validConnections && <Row icon={Users} label="Professional Connections" value={trust.validConnections} />}
+        {!!trust?.validRecommendations && <Row icon={Star} label="Recommendations" value={trust.validRecommendations} />}
+        {!!completedTransactions && <Row icon={Briefcase} label="Successful Transactions" value={completedTransactions} />}
         {/* Only shown when true -- publicly exposing "Not verified" here
             would leak account-management info that must stay owner-only
             (see the Profile "Not verified" banner's own privacy rule). */}
@@ -57,6 +61,9 @@ export function TrustDetailsSheet({ userId, onClose, onViewFullProfile }: {
             </div>
             <p className="text-xs font-bold text-emerald-600">✓ Verified</p>
           </div>
+        )}
+        {!trust?.validConnections && !trust?.validRecommendations && !completedTransactions && !trust?.identityVerified && (
+          <p className="text-xs text-gray-400 text-center py-6">No trust evidence yet.</p>
         )}
       </div>
 

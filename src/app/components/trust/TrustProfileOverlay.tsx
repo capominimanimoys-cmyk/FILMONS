@@ -53,43 +53,52 @@ export function TrustProfileOverlay({ userId, closing, onClose }: {
             </div>
           )}
 
-          <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
-              <Users className="w-4 h-4 text-gray-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-gray-500">Professional Connections</p>
-              <p className="text-lg font-black text-gray-900">{trust?.validConnections ?? 0} connections</p>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
-              <Star className="w-4 h-4 text-gray-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-gray-500">Recommendations</p>
-              <p className="text-lg font-black text-gray-900">{trust?.validRecommendations ?? 0} received</p>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5">
-            <div className="flex items-center gap-3 mb-2">
+          {/* Each row (icon + spacing included) is hidden entirely when its
+              value is zero, not shown as "0" -- an empty stat reads as a
+              negative signal, not evidence of trust. */}
+          {!!trust?.validConnections && (
+            <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
-                <Briefcase className="w-4 h-4 text-gray-500" />
+                <Users className="w-4 h-4 text-gray-500" />
               </div>
-              <p className="text-xs font-semibold text-gray-500">Successful Activity</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-gray-500">Professional Connections</p>
+                <p className="text-lg font-black text-gray-900">{trust.validConnections} connections</p>
+              </div>
             </div>
-            {activity.length ? (
+          )}
+
+          {!!trust?.validRecommendations && (
+            <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                <Star className="w-4 h-4 text-gray-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-gray-500">Recommendations</p>
+                <p className="text-lg font-black text-gray-900">{trust.validRecommendations} received</p>
+              </div>
+            </div>
+          )}
+
+          {activity.length > 0 && (
+            <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                  <Briefcase className="w-4 h-4 text-gray-500" />
+                </div>
+                <p className="text-xs font-semibold text-gray-500">Successful Activity</p>
+              </div>
               <div className="space-y-1 pl-12">
                 {activity.map(a => (
                   <p key={a.label} className="text-sm text-gray-800"><span className="font-black">{a.value}</span> {a.label}</p>
                 ))}
               </div>
-            ) : (
-              <p className="text-xs text-gray-400 pl-12">No completed activity yet.</p>
-            )}
-          </div>
+            </div>
+          )}
+
+          {!trust?.validConnections && !trust?.validRecommendations && !activity.length && !trust?.identityVerified && (
+            <p className="text-xs text-gray-400 text-center py-6">No trust evidence yet.</p>
+          )}
         </div>
       </div>
     </div>
