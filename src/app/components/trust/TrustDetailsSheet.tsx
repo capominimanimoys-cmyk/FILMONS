@@ -38,7 +38,7 @@ export function TrustDetailsSheet({ userId, onClose, onViewFullProfile }: {
         <p className="text-[11px] text-gray-400 mt-2">FILMONS Trust Badge</p>
         <p className="text-xs text-gray-500 mt-3 leading-relaxed max-w-[280px] mx-auto">
           This creator has built {trust && trust.reliabilityScore >= 40 ? 'a strong' : 'their'} reputation on FILMONS through
-          professional connections, recommendations, completed work, and verification.
+          connections, recommendations, completed work, and verification.
         </p>
       </div>
 
@@ -47,7 +47,7 @@ export function TrustDetailsSheet({ userId, onClose, onViewFullProfile }: {
             not just zeroed out -- an empty "0 Connections" row reads as a
             negative signal for a New creator, when the point of this sheet
             is to show evidence of trust that exists, not what doesn't. */}
-        {!!trust?.validConnections && <Row icon={Users} label="Professional Connections" value={trust.validConnections} />}
+        {!!trust?.validConnections && <Row icon={Users} label="Connections" value={trust.validConnections} />}
         {!!trust?.validRecommendations && <Row icon={Star} label="Recommendations" value={trust.validRecommendations} />}
         {!!completedTransactions && <Row icon={Briefcase} label="Successful Transactions" value={completedTransactions} />}
         {/* Only shown when true -- publicly exposing "Not verified" here

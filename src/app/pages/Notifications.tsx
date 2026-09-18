@@ -4,7 +4,7 @@ import {
   Bell, Heart, MessageCircle, UserPlus, DollarSign,
   Check, Trash2, X, BellOff, UserCheck, Inbox, ArrowRight, Repeat2,
   ShoppingBag, Zap, Trophy, AtSign, Shield, Star,
-  Rocket, Wrench, PartyPopper, Eye, ChevronRight,
+  Rocket, Wrench, PartyPopper, Eye, ChevronRight, Loader2,
   CalendarDays, CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,8 @@ import { useNotifications } from '../context/NotificationsContext';
 import { Notification, User } from '../types';
 import { authApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { respondToConnectionRequest } from '../lib/connectionsApi';
+import { toast } from 'sonner';
 
 // ── Time helper ───────────────────────────────────────────────────────────────
 function timeAgo(d: string) {
@@ -320,6 +322,32 @@ function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate, pop
   const preview  = primary.messageContent || primary.commentContent;
   const isMsg    = MESSAGE_TYPES_ROW.includes(primary.type);
 
+  // Inline Accept/Ignore for an incoming connection request -- calls the
+  // SAME respondToConnectionRequest() every other Accept/Ignore surface
+  // uses (Home's compact module, Profile -> Connections), per spec
+  // "every button calls the same backend action." Ignore stays silent
+  // (no notification to the sender), Accept gets a brief "Accepting..." ->
+  // "Connected" hold before the row collapses away.
+  const [connState, setConnState] = useState<'idle' | 'accepting' | 'accepted'>('idle');
+  const isConnectionRequest = primary.type === 'connection_request';
+
+  const handleAcceptConnection = async (e: MouseEvent) => {
+    e.stopPropagation();
+    if (connState !== 'idle') return;
+    setConnState('accepting');
+    const ok = await respondToConnectionRequest(currentUser.id, primary.fromUserId, true);
+    if (!ok) { setConnState('idle'); toast.error('Something went wrong. Try again.'); return; }
+    setConnState('accepted');
+    group.items.forEach(n => onRead(n.id));
+    setTimeout(() => group.items.forEach(n => onRemove(n.id)), 1100);
+  };
+  const handleIgnoreConnection = async (e: MouseEvent) => {
+    e.stopPropagation();
+    if (connState !== 'idle') return;
+    group.items.forEach(n => onRemove(n.id));
+    await respondToConnectionRequest(currentUser.id, primary.fromUserId, false);
+  };
+
   const actorText = count === 1
     ? (primary.fromUserName || 'Someone')
     : count === 2
@@ -445,7 +473,30 @@ function GroupedNotifRow({ group, currentUser, onRead, onRemove, onNavigate, pop
           {(primary.type === 'new_follower' || primary.type === 'connection_accepted') && primary.fromUserId !== currentUser.id && (
             <FollowBackBtn targetUserId={primary.fromUserId} />
           )}
-          {(primary.type === 'connection_request' || primary.type === 'follow_request') && (
+          {isConnectionRequest && connState !== 'accepted' && (
+            <>
+              <button
+                onClick={handleIgnoreConnection}
+                disabled={connState === 'accepting'}
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full px-2.5 py-0.5 transition-colors disabled:opacity-50"
+              >
+                Ignore
+              </button>
+              <button
+                onClick={handleAcceptConnection}
+                disabled={connState === 'accepting'}
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-full px-2.5 py-0.5 transition-colors disabled:opacity-80"
+              >
+                {connState === 'accepting' ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Accepting…</> : 'Accept'}
+              </button>
+            </>
+          )}
+          {isConnectionRequest && connState === 'accepted' && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-2.5 py-0.5">
+              <Check className="w-2.5 h-2.5" /> Connected
+            </span>
+          )}
+          {primary.type === 'follow_request' && (
             <button
               onClick={e => { e.stopPropagation(); handleClick(); }}
               className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-full px-2.5 py-0.5 transition-colors"

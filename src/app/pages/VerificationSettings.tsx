@@ -60,7 +60,7 @@ function TrustDashboard({ trust, onVerifyIdentity }: { trust: TrustProfile | nul
 
       <ReliabilityComponentCard
         icon={Users} label="Connections" value={trust.connectionScore} max={45}
-        sub={`${trust.validConnections} professional connections`}
+        sub={`${trust.validConnections} connections`}
       >
         <ConnectionStrengthDetails trust={trust} />
       </ReliabilityComponentCard>

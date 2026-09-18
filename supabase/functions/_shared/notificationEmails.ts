@@ -84,12 +84,14 @@ const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
 const TEMPLATE_PAYOUT_SETTINGS_ACCESSED = 'template_lwifwd7';
 const TEMPLATE_GUEST_SUPPORT_ADMIN     = 'template_ecla4ki';
 const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_qr9tadk';
-// Placeholders until created in the EmailJS dashboard from
-// new-post-portfolio-template.html / connection-request-template.html /
-// connection-response-template.html and the real ids are swapped in.
-const TEMPLATE_NEW_POST_PORTFOLIO      = 'template_np_placeholder';
-const TEMPLATE_CONNECTION_REQUEST      = 'template_cr_placeholder';
-const TEMPLATE_CONNECTION_RESPONSE     = 'template_cx_placeholder';
+// Created in the EmailJS dashboard from new-post-portfolio-template.html /
+// connection-request-template.html / connection-response-template.html.
+// TEMPLATE_CONNECTION_RESPONSE covers both outcomes of sendConnectionResponseEmail
+// (status_label/status_emoji switch on p.accepted) -- accepted is the "you're
+// now connected" email, declined the quiet private one, same template.
+const TEMPLATE_NEW_POST_PORTFOLIO      = 'template_ogrjn58';
+const TEMPLATE_CONNECTION_REQUEST      = 'template_kcau8u1';
+const TEMPLATE_CONNECTION_RESPONSE     = 'template_x5sh4rt';
 // Same template sent to both host and renter -- audience-specific
 // wording is handled by the `recipient_role` param, not a second template.
 const TEMPLATE_BOOKING_REMINDER        = 'template_9ah6jeq';

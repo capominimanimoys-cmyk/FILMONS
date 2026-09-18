@@ -42,6 +42,11 @@ import { isServiceListing } from '../lib/listingHelpers';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getRecommendations, getRecommendationCount, type Recommendation } from '../lib/recommendationsApi';
+import {
+  listConnections, getConnectionCount, listPendingReceived, respondToConnectionRequest,
+  type ConnectionSummary,
+} from '../lib/connectionsApi';
+import * as notifs from '../lib/notifications';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
 import { CreatorVerificationBanner } from '../components/profile/CreatorVerificationBanner';
 import { normalizeVerificationStatus } from '../lib/verification';
@@ -708,6 +713,9 @@ export function Profile() {
   };
   const [recommendations,      setRecommendations]      = useState<Recommendation[]>([]);
   const [recommendationCount,  setRecommendationCount]  = useState(0);
+  const [connections,          setConnections]          = useState<ConnectionSummary[]>([]);
+  const [connectionCount,      setConnectionCount]      = useState(0);
+  const [pendingConnections,   setPendingConnections]   = useState<ConnectionSummary[]>([]);
   // Fetched once here (not inside ProfileInteractionSection) and shared
   // with both the header stats row and the fuller All-tab section below,
   // so the two never show two independently-fetched (and potentially
@@ -803,7 +811,11 @@ export function Profile() {
     if (!user) return;
     setLoading(true);
     try {
-      const [myPosts, myListings, myReviews, myReceivedReviews, myPortfolio, myRecommendations, myRecommendationCount] = await Promise.all([
+      const [
+        myPosts, myListings, myReviews, myReceivedReviews, myPortfolio,
+        myRecommendations, myRecommendationCount,
+        myConnections, myConnectionCount, myPendingConnections,
+      ] = await Promise.all([
         postsApi.getUserPosts(user.id).catch(() => []),
         listingsApi.getUserListings(user.id).catch(() => []),
         reviewsApi.getUserReviews(user.id).catch(() => []),
@@ -811,6 +823,9 @@ export function Profile() {
         getPortfolioItems(user.id).catch(() => []),
         getRecommendations(user.id, { limit: 2 }).catch(() => []),
         getRecommendationCount(user.id).catch(() => 0),
+        listConnections(user.id, { limit: 8 }).catch(() => []),
+        getConnectionCount(user.id).catch(() => 0),
+        listPendingReceived(user.id).catch(() => []),
       ]);
       setPosts(myPosts);
       setListings(myListings);
@@ -819,6 +834,9 @@ export function Profile() {
       setPortfolioItems(myPortfolio);
       setRecommendations(myRecommendations);
       setRecommendationCount(myRecommendationCount);
+      setConnections(myConnections);
+      setConnectionCount(myConnectionCount);
+      setPendingConnections(myPendingConnections.slice(0, 2));
       mergePosts(myPosts);
     } finally { setLoading(false); }
   }
@@ -1155,6 +1173,30 @@ export function Profile() {
 
   const handleLikeToggled = (p: Post) => updatePost(p.id, p);
 
+  // Same respondToConnectionRequest() action Notifications/Home's compact
+  // module call -- accepting here immediately updates the connections
+  // preview/count and drops the request from every surface reading
+  // pendingConnections (single source of truth: professional_connections).
+  const acceptConnectionRequest = async (otherId: string): Promise<boolean> => {
+    if (!user) return false;
+    const ok = await respondToConnectionRequest(user.id, otherId, true);
+    if (!ok) return false;
+    const invite = pendingConnections.find(p => p.otherUser.id === otherId);
+    setPendingConnections(prev => prev.filter(p => p.otherUser.id !== otherId));
+    setConnectionCount(prev => prev + 1);
+    if (invite) setConnections(prev => [{ ...invite, createdAt: new Date().toISOString() }, ...prev]);
+    notifs.push(otherId, {
+      type: 'connection_accepted' as any,
+      fromUserId: user.id, fromUserName: user.name || user.username || '', fromUserAvatar: user.avatar || undefined,
+    });
+    return true;
+  };
+  const ignoreConnectionRequest = async (otherId: string) => {
+    if (!user) return;
+    setPendingConnections(prev => prev.filter(p => p.otherUser.id !== otherId));
+    await respondToConnectionRequest(user.id, otherId, false);
+  };
+
   // Load follower/following user objects from the `follows` table — the
   // authoritative source. profiles.followers/following are legacy array
   // columns that follow/unfollow never writes to anymore, so they drift
@@ -1297,6 +1339,13 @@ export function Profile() {
               onViewListings={() => switchTab('listings')}
               gear={gear}
               onEditGear={() => setEditProfileSection('gear')}
+              connections={connections}
+              connectionCount={connectionCount}
+              onViewAllConnections={() => navigate('/connections')}
+              pendingConnectionRequests={pendingConnections}
+              onAcceptConnectionRequest={acceptConnectionRequest}
+              onIgnoreConnectionRequest={ignoreConnectionRequest}
+              onViewAllConnectionRequests={() => navigate('/connections')}
               recommendations={recommendations}
               recommendationCount={recommendationCount}
               onViewAllRecommendations={() => switchTab('recommendations')}
@@ -1305,6 +1354,13 @@ export function Profile() {
               interactionStats={interactionStats}
               trust={trust}
               onOpenTrustDetails={() => setTrustProfileOpen(true)}
+              posts={posts}
+              onViewAllPosts={() => switchTab('activity')}
+              onPostDeleted={(id) => {
+                setPosts(prev => prev.filter(x => x.id !== id));
+                try { localStorage.removeItem(`filmons_posts_${user?.id}`); } catch {}
+              }}
+              onPostLikeToggled={handleLikeToggled}
               />
             </>
           )}

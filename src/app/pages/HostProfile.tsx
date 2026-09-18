@@ -37,7 +37,8 @@ import { TrustProfileOverlay } from '../components/trust/TrustProfileOverlay';
 import {
   getConnectionStatus, sendConnectionRequest, respondToConnectionRequest, removeConnection,
   getMutualConnectionCount, getConnectionDegree, getPendingNote,
-  type ConnectionStatus, type ConnectionDegree,
+  listConnections, getConnectionCount,
+  type ConnectionStatus, type ConnectionDegree, type ConnectionSummary,
 } from '../lib/connectionsApi';
 import { ConnectFlowSheet } from '../components/ConnectFlowSheet';
 import { ConnectionActionsSheet } from '../components/ConnectionActionsSheet';
@@ -141,6 +142,9 @@ export function HostProfile() {
   // fetched numbers for the same metric.
   const [interactionStats, setInteractionStats] = useState<ProfileInteractionStats | null>(null);
   const [posts,            setPosts]            = useState<Post[]>([]);
+  const [connections,      setConnections]      = useState<ConnectionSummary[]>([]);
+  const [connectionCount,  setConnectionCount]  = useState(0);
+  const [mutualConnectionCount, setMutualConnectionCount] = useState<number | undefined>(undefined);
 
   // Reached either via the legacy /host/:userId link or the canonical
   // /:username one — resolve whichever param is present down to a raw id,
@@ -212,6 +216,11 @@ export function HostProfile() {
         getProfileInteractionStats(hostData.id).then(setInteractionStats).catch(() => {});
         getTrustProfile(hostData.id).then(setTrust).catch(() => {});
         if (me?.id) getConnectionStatus(me.id, hostData.id).then(setConnectionStatus).catch(() => {});
+        listConnections(hostData.id, { limit: 8 }).then(setConnections).catch(() => {});
+        getConnectionCount(hostData.id).then(setConnectionCount).catch(() => {});
+        if (me?.id && me.id !== hostData.id) {
+          getMutualConnectionCount(me.id, hostData.id).then(setMutualConnectionCount).catch(() => {});
+        }
       }
       // Landed here via the legacy /host/:id link but this profile has a
       // username -- silently upgrade the address bar to the clean canonical
@@ -508,6 +517,10 @@ export function HostProfile() {
               onViewServices={() => setTab('services')}
               onViewListings={() => setTab('listings')}
               gear={toStringArray(meta.gear || (host as any).gear)}
+              connections={connections}
+              connectionCount={connectionCount}
+              onViewAllConnections={() => navigate(`/connections?user=${host.id}`)}
+              connectionMutualCount={mutualConnectionCount}
               recommendations={recommendations}
               recommendationCount={recommendationCount}
               onViewAllRecommendations={() => setTab('recommendations')}
@@ -516,6 +529,8 @@ export function HostProfile() {
               interactionStats={interactionStats}
               trust={trust}
               onOpenTrustDetails={() => setTrustProfileOpen(true)}
+              posts={posts}
+              onViewAllPosts={() => setTab('activity')}
             />
           )}
 

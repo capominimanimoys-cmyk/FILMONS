@@ -1,33 +1,39 @@
-// The "All" tab body -- one vertical stack, in the exact order the spec's
-// "MOBILE BEHAVIOR" section lays out: About, Trust & Verification, Top
-// Skills, Featured Portfolio, Services, Listings, My Gear/Tools,
-// Recommendations, Portfolio Interaction, Social Links. Shared by
-// Profile.tsx (owner) and HostProfile.tsx (viewer) so the layout never
-// drifts between the two.
-import { Listing } from '../../types';
+// The "All" tab body -- one vertical stack: About, Trust & Verification,
+// Posts, Top Skills, Featured Portfolio, Services, Listings, My Gear/
+// Tools, Connections, Recommendations, Portfolio Interaction, Social
+// Links. Shared by Profile.tsx (owner) and HostProfile.tsx (viewer) so
+// the layout never drifts between the two.
+import { Listing, Post } from '../../types';
 import { PortfolioItem } from '../../lib/portfolioApi';
 import { Recommendation } from '../../lib/recommendationsApi';
 import { AboutSection } from './AboutSection';
 import { TrustVerificationSection } from './TrustVerificationSection';
+import { PostsPreviewSection } from './PostsPreviewSection';
 import { TopSkillsSection } from './TopSkillsSection';
 import { EducationSection } from './EducationSection';
 import { FeaturedPortfolioSection } from './FeaturedPortfolioSection';
 import { ListingsRowSection } from './ListingsRowSection';
 import { MyGearSection } from './MyGearSection';
+import { ConnectionsSection } from './ConnectionsSection';
 import { RecommendationsSection } from './RecommendationsSection';
 import { ProfileInteractionSection } from './ProfileInteractionSection';
 import { SocialLinksSection, type SocialLinksData } from './SocialLinksSection';
 import type { ProfileInteractionStats } from '../../lib/profileEngagement';
 import type { TrustProfile } from '../../lib/trustApi';
+import type { ConnectionSummary } from '../../lib/connectionsApi';
 
 export function ProfileAllTab({
   userId, isOwner, viewerId, accountType, isVerified, verificationStatus,
   bio, primaryRole, secondaryRoles, location, openTo, languages, onEditAbout,
+  posts, onViewAllPosts, onPostDeleted, onPostLikeToggled,
   skills, onEditSkills,
   education, onEditEducation,
   portfolioItems, onOpenPortfolioItem, onViewAllPortfolio,
   services, listings, lockedListingIds, onViewServices, onViewListings,
   gear, onEditGear,
+  connections, connectionCount, onViewAllConnections,
+  pendingConnectionRequests, onAcceptConnectionRequest, onIgnoreConnectionRequest, onViewAllConnectionRequests,
+  connectionMutualCount,
   recommendations, recommendationCount, onViewAllRecommendations, onRecommend,
   socialLinks, onEditSocialLinks,
   interactionStats,
@@ -51,6 +57,11 @@ export function ProfileAllTab({
   openTo?: string[];
   languages?: string[];
   onEditAbout?: () => void;
+  /** Latest posts, already fetched by the page -- see PostsPreviewSection. */
+  posts: Post[];
+  onViewAllPosts: () => void;
+  onPostDeleted?: (id: string) => void;
+  onPostLikeToggled?: (updated: Post) => void;
   skills: string[];
   onEditSkills?: () => void;
   education?: unknown;
@@ -65,6 +76,18 @@ export function ProfileAllTab({
   onViewListings: () => void;
   gear: string[];
   onEditGear?: () => void;
+  /** Preview of mutual FILMONS connections (distinct from Followers/
+   * Following) -- see ConnectionsSection. */
+  connections: ConnectionSummary[];
+  connectionCount: number;
+  onViewAllConnections: () => void;
+  /** Owner-only: received invitations, already capped by the page. */
+  pendingConnectionRequests?: ConnectionSummary[];
+  onAcceptConnectionRequest?: (otherId: string) => Promise<boolean>;
+  onIgnoreConnectionRequest?: (otherId: string) => void;
+  onViewAllConnectionRequests?: () => void;
+  /** Viewer-only: mutual connection count with the profile owner. */
+  connectionMutualCount?: number;
   recommendations: Recommendation[];
   recommendationCount: number;
   onViewAllRecommendations: () => void;
@@ -96,6 +119,11 @@ export function ProfileAllTab({
         verificationStatus={verificationStatus} onOpenDetails={onOpenTrustDetails}
       />
 
+      <PostsPreviewSection
+        posts={posts} isOwner={isOwner} onViewAll={onViewAllPosts}
+        onDeleted={onPostDeleted} onLikeToggled={onPostLikeToggled}
+      />
+
       <TopSkillsSection skills={skills} isOwner={isOwner} onEdit={onEditSkills} />
 
       <EducationSection education={education} isOwner={isOwner} onEdit={onEditEducation} />
@@ -116,6 +144,16 @@ export function ProfileAllTab({
       />
 
       <MyGearSection gear={gear} isOwner={isOwner} onEdit={onEditGear} />
+
+      <ConnectionsSection
+        connections={connections} count={connectionCount} isOwner={isOwner}
+        onViewAll={onViewAllConnections}
+        pendingRequests={pendingConnectionRequests}
+        onAcceptRequest={onAcceptConnectionRequest}
+        onIgnoreRequest={onIgnoreConnectionRequest}
+        onViewAllRequests={onViewAllConnectionRequests}
+        mutualCount={connectionMutualCount}
+      />
 
       <RecommendationsSection
         recommendations={recommendations} count={recommendationCount} isOwner={isOwner}

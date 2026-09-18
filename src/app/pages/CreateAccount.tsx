@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, Loader2, Phone } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
@@ -419,17 +419,9 @@ export function CreateAccount() {
             Continue with Google
           </button>
 
-          {/* Phone */}
-          <button
-            onClick={() => {
-              if (!agreedToTerms) { toast.error('Please agree to the Terms of Service and Privacy Policy to continue.'); return; }
-              navigate('/signup/phone');
-            }}
-            className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl bg-white/10 border border-white/15 text-white text-sm font-bold hover:bg-white/15 active:scale-[0.98] transition-all min-h-[44px]"
-          >
-            <Phone className="w-4 h-4 shrink-0" />
-            Continue with Phone Number
-          </button>
+          {/* Phone signup temporarily removed from this entry point --
+              /signup/phone and SignupPhone.tsx are left intact, just not
+              linked from here for now. */}
         </motion.div>
 
         <motion.p variants={popItem} className="text-center text-white/35 text-sm mt-4">

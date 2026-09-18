@@ -23,7 +23,7 @@ export function TrustProfileOverlay({ userId, closing, onClose }: {
     : 0;
 
   const metrics = [
-    { label: 'Professional Connections', value: trust?.validConnections ?? 0, Icon: Users },
+    { label: 'Connections', value: trust?.validConnections ?? 0, Icon: Users },
     { label: 'Recommendations', value: trust?.validRecommendations ?? 0, Icon: Star },
     { label: 'Successful Transactions', value: completedTransactions, Icon: Briefcase },
   ];

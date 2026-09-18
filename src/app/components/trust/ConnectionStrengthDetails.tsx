@@ -22,7 +22,7 @@ export function ConnectionStrengthDetails({ trust }: { trust: TrustProfile }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-500">{trust.validConnections} valid professional connections</p>
+      <p className="text-xs text-gray-500">{trust.validConnections} valid connections</p>
 
       <div>
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Connection Strength</p>
