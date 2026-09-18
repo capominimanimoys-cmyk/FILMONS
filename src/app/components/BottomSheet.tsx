@@ -9,7 +9,7 @@ import { X } from 'lucide-react';
 // this component from the parent (`{open && <BottomSheet ...>}`) rather
 // than passing an `open` prop — `close()` delays the real `onClose` call
 // until the exit animation finishes.
-export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92 }: {
+export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92, zIndex = 70 }: {
   title?: string;
   onClose: () => void;
   children: ReactNode;
@@ -17,6 +17,11 @@ export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92
   /** Caps the sheet's own height (vh) below the default 92 -- e.g. the
    * Portfolio comments sheet wants ~85vh rather than nearly full-screen. */
   maxHeightVh?: number;
+  /** Override the default z-70 for a caller that needs to sit above
+   * something else already in the z-70+ range (e.g. a confirm sheet
+   * opened from inside an EditProfileFieldPanel, whose own z-index scales
+   * with its `depth`). Leave at the default everywhere else. */
+  zIndex?: number;
 }) {
   const [show, setShow] = useState(false);
   const [dragY, setDragY] = useState(0);
@@ -63,13 +68,14 @@ export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92
   return createPortal((
     <>
       <div
-        className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm"
-        style={{ opacity: show ? 1 : 0, transition: 'opacity 240ms ease' }}
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+        style={{ zIndex, opacity: show ? 1 : 0, transition: 'opacity 240ms ease' }}
         onClick={close}
       />
       <div
-        className="fixed inset-x-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl flex flex-col md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:bottom-4 md:w-full md:max-w-lg md:rounded-3xl"
+        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-2xl flex flex-col md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:bottom-4 md:w-full md:max-w-lg md:rounded-3xl"
         style={{
+          zIndex,
           maxHeight: `${maxHeightVh}vh`,
           transform: show ? `translateY(${dragY}px)` : 'translateY(100%)',
           transition: dragging.current ? 'none' : 'transform 280ms cubic-bezier(0.32,0.72,0,1)',

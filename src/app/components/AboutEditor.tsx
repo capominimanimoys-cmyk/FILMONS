@@ -736,10 +736,21 @@ export function AboutEditor(props: Props) {
   const [edu, setEdu] = useState<EduState>(() => {
     return parseEducation((user as any).education);
   });
+  // Education & Training is now its own pushed page (not an inline
+  // accordion) -- Edit Profile -> Education & Training (list, depth 0) ->
+  // Add/Edit Education (editor, depth 1) -> Education/Training Type
+  // (selector, depth 2), each a full-screen EditProfileFieldPanel that
+  // slides in front of the last, per spec.
+  const [eduListOpen, setEduListOpen] = useState(focusSection === 'education');
   const [eduEditorOpen, setEduEditorOpen] = useState(false);   // full-screen add/edit page mounted
   const [eduEditorClosing, setEduEditorClosing] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null); // null while adding
   const [newEntry,  setNewEntry]  = useState<EduEntry>(() => blankEduEntry());
+  // Snapshot taken when the editor opens -- compared against newEntry to
+  // decide whether Back needs a "Discard changes?" confirm instead of
+  // silently losing edits.
+  const [eduEntrySnapshot, setEduEntrySnapshot] = useState('');
+  const [showEduDiscardConfirm, setShowEduDiscardConfirm] = useState(false);
   const [eduTypeSheetOpen, setEduTypeSheetOpen] = useState(false);
   const [openEduMenuId, setOpenEduMenuId] = useState<string | null>(null);
 
@@ -750,18 +761,33 @@ export function AboutEditor(props: Props) {
 
   const openAddEntry = () => {
     setEditingEntryId(null);
-    setNewEntry(blankEduEntry());
+    const blank = blankEduEntry();
+    setNewEntry(blank);
+    setEduEntrySnapshot(JSON.stringify(blank));
     setEduEditorOpen(true);
   };
   const openEditEntry = (e: EduEntry) => {
     setEditingEntryId(e.id);
     setNewEntry({ ...e });
+    setEduEntrySnapshot(JSON.stringify(e));
     setOpenEduMenuId(null);
     setEduEditorOpen(true);
   };
   const closeEduEditor = () => {
     setEduEditorClosing(true);
     setTimeout(() => { setEduEditorOpen(false); setEduEditorClosing(false); }, 260);
+  };
+  // Back-button entry point (vs. commitEntry's own close after a save) --
+  // intercepts with a "Discard changes?" sheet when the form no longer
+  // matches the snapshot taken at open time, per spec ("do not silently
+  // lose edits").
+  const requestCloseEduEditor = () => {
+    if (JSON.stringify(newEntry) !== eduEntrySnapshot) { setShowEduDiscardConfirm(true); return; }
+    closeEduEditor();
+  };
+  const discardEduEditor = () => {
+    setShowEduDiscardConfirm(false);
+    closeEduEditor();
   };
 
   const yearsInvalid = !!newEntry.startYear && !!newEntry.endYear && !newEntry.current
@@ -780,6 +806,14 @@ export function AboutEditor(props: Props) {
   const deleteEntry = async (id: string) => {
     setOpenEduMenuId(null);
     await saveEdu({ ...edu, entries: edu.entries.filter(e => e.id !== id) });
+  };
+  // Same delete, but from inside the editor itself (its own "Delete
+  // education" action) -- also closes the editor since there's nothing
+  // left to edit.
+  const deleteEntryFromEditor = async () => {
+    if (!editingEntryId) return;
+    await deleteEntry(editingEntryId);
+    closeEduEditor();
   };
 
   return (
@@ -988,72 +1022,87 @@ export function AboutEditor(props: Props) {
         </SField>
       </Accordion>
 
-      {/* 8. Education & Training */}
-      <Accordion number="8" title="Education & Training" defaultOpen={focusSection === 'education'}>
-        <p className="text-xs text-gray-400">Optional: school, film/art/music training, certifications, workshops, mentorships, or self-directed study. However you learned your craft.</p>
+      {/* 8. Education & Training -- a pushed full-screen page (native
+          iOS-style navigation), not an inline accordion: this row just
+          opens it, per spec ("do NOT open a modal/dropdown/accordion"). */}
+      <FieldRow
+        label="Education & Training"
+        value={edu.entries.length ? `${edu.entries.length} ${edu.entries.length === 1 ? 'entry' : 'entries'}` : 'Add your education and training'}
+        onClick={() => setEduListOpen(true)}
+      />
 
-        {/* Saved education entries — compact cards with 3-dot Edit/Delete menu */}
-        <div className="space-y-2">
-          {edu.entries.map(e => (
-            <div key={e.id} className="relative bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-              <div className="flex items-start gap-3">
-                <div className="shrink-0 w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-sm mt-0.5">
-                  {EDUCATION_TYPE_EMOJI[e.type] || '🎓'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-bold text-gray-900">{e.school}</p>
-                    {!e.showOnProfile && (
-                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Private</span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                    {e.type && <span>{EDUCATION_TYPE_LABEL[e.type]}</span>}
-                    {eduEntryLocation(e) && <span>· {eduEntryLocation(e)}</span>}
-                  </p>
-                  {(e.degree || e.field) && (
-                    <p className="text-xs text-blue-600 font-medium mt-0.5">{[e.degree, e.field].filter(Boolean).join(' · ')}</p>
-                  )}
-                  {(e.startYear || e.endYear || e.current) && (
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      {e.startYear}{e.startYear && (e.endYear || e.current) ? ' to ' : ''}{e.current ? 'Present' : e.endYear}
-                    </p>
-                  )}
-                  {e.description && (
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{e.description}</p>
-                  )}
-                </div>
-                <button type="button" onClick={() => setOpenEduMenuId(id => id === e.id ? null : e.id)}
-                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 transition-colors">
-                  <MoreVertical className="w-4 h-4"/>
-                </button>
-              </div>
+      {eduListOpen && (
+        <EditProfileFieldPanel title="Education & Training" onClose={() => setEduListOpen(false)} depth={0}>
+          <div className="p-4 space-y-4">
+            <p className="text-xs text-gray-400">Optional: school, film/art/music training, certifications, workshops, mentorships, or self-directed study. However you learned your craft.</p>
 
-              {openEduMenuId === e.id && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setOpenEduMenuId(null)}/>
-                  <div className="absolute right-3 top-11 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-36 dropdown-pop-in">
-                    <button type="button" onClick={() => openEditEntry(e)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                      <Pencil className="w-3.5 h-3.5"/> Edit
-                    </button>
-                    <button type="button" onClick={() => deleteEntry(e.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50">
-                      <Trash2 className="w-3.5 h-3.5"/> Delete
+            <button type="button" onClick={openAddEntry}
+              className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-xs font-bold text-gray-400
+                         hover:border-blue-300 hover:text-blue-500 transition-colors flex items-center justify-center gap-2">
+              <Plus className="w-3.5 h-3.5"/> Add education or training
+            </button>
+
+            {/* Saved education entries — compact cards with 3-dot Edit/Delete menu */}
+            <div className="space-y-2">
+              {edu.entries.map(e => (
+                <div key={e.id} className="relative bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-sm mt-0.5">
+                      {EDUCATION_TYPE_EMOJI[e.type] || '🎓'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-bold text-gray-900">{e.school}</p>
+                        {!e.showOnProfile && (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Private</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                        {e.type && <span>{EDUCATION_TYPE_LABEL[e.type]}</span>}
+                        {eduEntryLocation(e) && <span>· {eduEntryLocation(e)}</span>}
+                      </p>
+                      {(e.degree || e.field) && (
+                        <p className="text-xs text-blue-600 font-medium mt-0.5">{[e.degree, e.field].filter(Boolean).join(' · ')}</p>
+                      )}
+                      {(e.startYear || e.endYear || e.current) && (
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          {e.startYear}{e.startYear && (e.endYear || e.current) ? ' to ' : ''}{e.current ? 'Present' : e.endYear}
+                        </p>
+                      )}
+                      {e.description && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{e.description}</p>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setOpenEduMenuId(id => id === e.id ? null : e.id)}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 transition-colors">
+                      <MoreVertical className="w-4 h-4"/>
                     </button>
                   </div>
-                </>
+
+                  {openEduMenuId === e.id && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setOpenEduMenuId(null)}/>
+                      <div className="absolute right-3 top-11 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-36 dropdown-pop-in">
+                        <button type="button" onClick={() => openEditEntry(e)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                          <Pencil className="w-3.5 h-3.5"/> Edit
+                        </button>
+                        <button type="button" onClick={() => deleteEntry(e.id)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50">
+                          <Trash2 className="w-3.5 h-3.5"/> Delete
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {!edu.entries.length && (
+                <p className="text-xs text-gray-400 text-center py-6">No education or training added yet.</p>
               )}
             </div>
-          ))}
-        </div>
-
-        <button type="button" onClick={openAddEntry}
-          className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-xs font-bold text-gray-400
-                     hover:border-blue-300 hover:text-blue-500 transition-colors flex items-center justify-center gap-2">
-          <Plus className="w-3.5 h-3.5"/> Add Education or Training
-        </button>
-      </Accordion>
+          </div>
+        </EditProfileFieldPanel>
+      )}
 
       {/* Add/Edit Education entry -- full page on mobile, right panel on
           desktop, via the same shared EditProfileFieldPanel every other
@@ -1063,14 +1112,23 @@ export function AboutEditor(props: Props) {
           button. */}
       {(eduEditorOpen || eduEditorClosing) && (
         <EditProfileFieldPanel
-          title={editingEntryId ? 'Edit Entry' : 'Add Education or Training'}
+          title={editingEntryId ? 'Edit education' : 'Add education or training'}
           closing={eduEditorClosing}
-          onClose={closeEduEditor}
+          onClose={requestCloseEduEditor}
+          depth={1}
           footer={
-            <button type="button" onClick={commitEntry} disabled={!newEntry.type || !newEntry.school.trim() || yearsInvalid}
-              className="w-full py-3 bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors">
-              {editingEntryId ? 'Save Changes' : 'Save Entry'}
-            </button>
+            <div className="space-y-2">
+              <button type="button" onClick={commitEntry} disabled={!newEntry.type || !newEntry.school.trim() || yearsInvalid}
+                className="w-full py-3 bg-blue-600 disabled:opacity-40 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors">
+                {editingEntryId ? 'Save Changes' : 'Save Entry'}
+              </button>
+              {editingEntryId && (
+                <button type="button" onClick={deleteEntryFromEditor}
+                  className="w-full py-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl hover:bg-red-100 transition-colors">
+                  Delete education
+                </button>
+              )}
+            </div>
           }
         >
           <div className="px-4 py-4 space-y-4">
@@ -1166,9 +1224,15 @@ export function AboutEditor(props: Props) {
         </EditProfileFieldPanel>
       )}
 
-      {/* Type selector — bottom sheet on mobile, reusing the shared BottomSheet pattern */}
+      {/* Education/Training Type -- its own full-screen pushed page (depth
+          2, in front of the Add/Edit Education editor), not a bottom sheet:
+          per spec, a contextual selector like this must slide in front of
+          and fully cover the page that opened it, never appear behind or
+          as a dropdown/small modal. Selecting an option saves it to
+          newEntry and returns immediately (no separate confirm step) --
+          every other field on the editor stays exactly as the user left it. */}
       {eduTypeSheetOpen && (
-        <BottomSheet title="Education / Training Type" onClose={() => setEduTypeSheetOpen(false)}>
+        <EditProfileFieldPanel title="Education/Training Type" onClose={() => setEduTypeSheetOpen(false)} depth={2}>
           <div className="py-2">
             {EDUCATION_TYPES.map(t => (
               <button key={t.value} type="button"
@@ -1179,6 +1243,29 @@ export function AboutEditor(props: Props) {
                 {newEntry.type === t.value && <Check className="w-4 h-4 text-blue-600"/>}
               </button>
             ))}
+          </div>
+        </EditProfileFieldPanel>
+      )}
+
+      {/* Discard changes? -- shown instead of closing when the Add/Edit
+          Education editor has unsaved edits. Needs a z-index above the
+          depth-1 editor panel it's opened from (see BottomSheet's zIndex
+          prop), the same class of bug already fixed for the Type page. */}
+      {showEduDiscardConfirm && (
+        <BottomSheet onClose={() => setShowEduDiscardConfirm(false)} zIndex={95}>
+          <div className="px-5 pt-2 pb-1 text-center">
+            <p className="text-sm font-black text-gray-900">Discard changes?</p>
+            <p className="text-xs text-gray-400 mt-1">Your changes haven't been saved.</p>
+          </div>
+          <div className="px-4 pt-3 pb-2 space-y-2">
+            <button type="button" onClick={() => setShowEduDiscardConfirm(false)}
+              className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">
+              Keep editing
+            </button>
+            <button type="button" onClick={discardEduEditor}
+              className="w-full py-3 rounded-2xl bg-red-50 text-red-600 text-sm font-bold">
+              Discard changes
+            </button>
           </div>
         </BottomSheet>
       )}
