@@ -43,6 +43,45 @@ function timeAgo(dateString?: string | null): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Long captions show a truncated preview with an inline "...more" that
+// expands in place (never navigates away), per spec. #hashtags stay part
+// of the caption's own flow (never moved below media) and get FILMONS
+// accent styling; there's no hashtag search page yet, so tapping one goes
+// to general Search rather than a dead link.
+const CAPTION_TRUNCATE_LENGTH = 240;
+const HASHTAG_RX = /(#\w+)/g;
+
+function CaptionText({ text, className, expanded, onExpand, onHashtagTap }: {
+  text: string;
+  className: string;
+  expanded: boolean;
+  onExpand: () => void;
+  onHashtagTap: () => void;
+}) {
+  const isLong = text.length > CAPTION_TRUNCATE_LENGTH;
+  const shown = isLong && !expanded ? text.slice(0, CAPTION_TRUNCATE_LENGTH).trimEnd() : text;
+
+  // .split() with a capturing global regex interleaves the captured
+  // matches into the result array at odd indices -- checking that instead
+  // of re-testing the (stateful, lastIndex-tracking) global regex per part.
+  const renderPart = (part: string, i: number) =>
+    i % 2 === 1
+      ? <button key={i} onClick={e => { e.stopPropagation(); onHashtagTap(); }} className="text-blue-600 font-semibold hover:underline">{part}</button>
+      : <span key={i}>{part}</span>;
+
+  return (
+    <p className={className}>
+      {shown.split(HASHTAG_RX).map(renderPart)}
+      {isLong && !expanded && (
+        <>
+          {'… '}
+          <button onClick={e => { e.stopPropagation(); onExpand(); }} className="text-gray-400 font-semibold hover:text-gray-600">more</button>
+        </>
+      )}
+    </p>
+  );
+}
+
 // ── Bottom Sheet — slides up from bottom with transition ─────────────────────
 function BottomSheet({ open, onClose, children }: {
   open: boolean;
@@ -106,14 +145,33 @@ function VideoPlayer({ src }: { src: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [playing, setPlaying] = useState(false);
+  // Real aspect ratio, not a hardcoded 16:9 -- posts don't store video
+  // width/height, so this reads the browser's own decoded dimensions once
+  // metadata loads (onLoadedMetadata fires before any frame paints, so
+  // there's no visible reflow). 4:5 is the starting guess only until then
+  // -- closer to a typical portrait post than 16:9 would be, minimizing
+  // the jump for the common case while metadata is still loading.
+  const [ratio, setRatio] = useState(4 / 5);
   const toggle = () => {
     if (!ref.current) return;
     if (playing) { ref.current.pause(); setPlaying(false); }
     else { ref.current.play(); setPlaying(true); }
   };
   return (
-    <div className="relative bg-black aspect-video overflow-hidden group cursor-pointer" onClick={toggle}>
-      <video ref={ref} src={src} muted={muted} loop playsInline className="w-full h-full object-contain" onEnded={() => setPlaying(false)} />
+    <div
+      className="relative bg-black overflow-hidden group cursor-pointer mx-auto"
+      style={{ aspectRatio: ratio, maxHeight: '80vh', width: ratio < 1 ? `min(100%, calc(80vh * ${ratio}))` : '100%' }}
+      onClick={toggle}
+    >
+      <video
+        ref={ref} src={src} muted={muted} loop playsInline
+        className="w-full h-full object-contain"
+        onLoadedMetadata={e => {
+          const v = e.currentTarget;
+          if (v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight);
+        }}
+        onEnded={() => setPlaying(false)}
+      />
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
           <div className="w-14 h-14 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
@@ -244,6 +302,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   });
   const [showMenu, setShowMenu] = useState(false);
   const [audioPlaying,   setAudioPlaying]   = useState(false);
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   const [showListingTags, setShowListingTags] = useState(false);
   const [activeListing,   setActiveListing]   = useState<any|null>(null);
   const [tagOverlay,      setTagOverlay]      = useState<'people'|'listings'|null>(null);
@@ -794,6 +853,20 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // Photo grid for regular posts: strip any audio-extension URLs that the server
   // accidentally placed into the images array (they'd render as broken image cells).
   const photoImages = safeImages.filter(u => !RX_AUDIO.test(u));
+
+  // Caption typography variant -- text carrying a text-only post reads much
+  // bigger/bolder than a caption riding alongside real visual media, per
+  // spec. hasVisualMedia checked before hasAttachment since a post can
+  // have both a portfolio/listing attachment AND photos/video (the media
+  // wins for sizing purposes -- it's still visually a media post).
+  const hasVisualMedia = hasVideos || photoImages.length > 0 || hasGifs || isStandaloneAudio;
+  const hasAttachment  = !hasVisualMedia && (!!localPost.portfolioItemId || !!localPost.listingId || !!localPost.link);
+  const captionVariant: 'with-media' | 'with-attachment' | 'text-only' =
+    hasVisualMedia ? 'with-media' : hasAttachment ? 'with-attachment' : 'text-only';
+  const captionSizeClass =
+    captionVariant === 'with-media'      ? 'text-[15px] lg:text-[16px] leading-relaxed' :
+    captionVariant === 'with-attachment' ? 'text-[17px] lg:text-[19px] leading-snug font-medium' :
+                                            'text-[19px] lg:text-[21px] leading-snug font-semibold';
 
   // Cover art for audio posts. Exclude audio-extension URLs from cover candidates.
   // Latched so the cover never disappears once found.
@@ -1392,7 +1465,59 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             );
           })()}
 
-          {/* ══ 2. MEDIA ══ */}
+          {/* ══ 2. CAPTION ══ -- always above media/attachment, never below
+              (per spec). No duplicated creator name inside the caption --
+              PostHeader above already identifies them. Sizing follows
+              captionVariant (bigger for an attachment/text-only post,
+              normal alongside real visual media). */}
+          {(localPost.content || localPost.link || taggedUsers.length > 0 || (localPost as any).credits?.length > 0) && (
+            <div className="px-3 pt-1 pb-2">
+              {localPost.content && (
+                <CaptionText
+                  text={localPost.content}
+                  className={`text-gray-900 ${captionSizeClass}`}
+                  expanded={captionExpanded}
+                  onExpand={() => setCaptionExpanded(true)}
+                  onHashtagTap={() => navigate('/search')}
+                />
+              )}
+
+              {/* Link */}
+              {localPost.link && (
+                <a href={String(localPost.link).startsWith('http')?String(localPost.link):`https://${localPost.link}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-blue-600 text-[12px] mt-1">
+                  <Link2 className="w-3 h-3"/>{String(localPost.link).replace(/^https?:\/\//,'')}
+                </a>
+              )}
+
+              {/* Tagged users */}
+              {taggedUsers.length>0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {taggedUsers.map(u=>(
+                    <button key={u.id} onClick={()=>navigate(`/host/${u.id}`)}
+                      className="text-blue-600 text-[12px] font-semibold">
+                      @{u.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Credits */}
+              {(localPost as any).credits?.length>0 && (
+                <div className="mt-1.5 space-y-0.5">
+                  {(localPost as any).credits.map((credit:any,i:number)=>(
+                    <p key={i} className="text-[11px] text-gray-500">
+                      <span className="text-gray-400">{credit.role} </span>
+                      <button onClick={()=>navigate(`/host/${credit.userId}`)} className="font-semibold text-blue-600">@{credit.name}</button>
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ 3. MEDIA / ATTACHMENT ══ */}
 
           {/* ── Standalone audio post: SoundCloud-style card ── */}
           {isStandaloneAudio && (
@@ -1412,9 +1537,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           )}
 
           {hasVideos && (
-            <div className="overflow-hidden">
+            <div className="px-3">
               {safeVideos.map((v,i)=>(
-                <div key={i} className="relative bg-black cursor-pointer" onClick={()=>navigate(`/reels/${localPost.id}`)}>
+                <div key={i} className="relative bg-black cursor-pointer rounded-2xl overflow-hidden" onClick={()=>navigate(`/reels/${localPost.id}`)}>
                   <VideoPlayer src={v}/>
                   {/* Marketplace icon on video */}
                   {((localPost as any).listingPins?.length>0 || (localPost as any).listingId) && !showListingTags && (
@@ -1434,7 +1559,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           )}
 
           {photoImages.length > 0 && !isStandaloneAudio && (
-            <div className={`relative overflow-hidden grid gap-px ${photoImages.length===1?'grid-cols-1':photoImages.length===2?'grid-cols-2':photoImages.length===3?'grid-cols-3':'grid-cols-2'}`}
+            <div className={`relative overflow-hidden grid gap-px mx-3 rounded-2xl ${photoImages.length===1?'grid-cols-1':photoImages.length===2?'grid-cols-2':photoImages.length===3?'grid-cols-3':'grid-cols-2'}`}
               onDoubleClick={handleDoubleTapLike}
               onTouchEnd={handleDoubleTapLike}>
               {/* Double-tap heart overlay */}
@@ -1587,6 +1712,31 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </div>
           )}
 
+          {/* Attached Portfolio -- real portfolio_item_id, resolved to the
+              creator's own Portfolio (never the viewer's), per spec. Part
+              of the content section (not the caption) -- a structured
+              attachment card, not raw text. */}
+          {localPost.portfolioItemId && (
+            <button
+              onClick={()=>navigate(`/portfolio/${localPost.userId}`)}
+              className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
+              style={{ width: 'calc(100% - 1.5rem)' }}
+            >
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {localPost.portfolioItemThumb && (
+                  <img src={localPost.portfolioItemThumb} className="w-full h-full object-cover" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{localPost.portfolioItemTitle}</p>
+                {localPost.portfolioItemCategory && <p className="text-xs text-gray-400 truncate">{localPost.portfolioItemCategory}</p>}
+                <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
+                  View in Portfolio <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+            </button>
+          )}
+
           {/* Repost embedded */}
           {localPost.repostOf && (
             <div className="mx-3 mt-2 border border-gray-200 rounded-xl overflow-hidden cursor-pointer"
@@ -1604,7 +1754,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </div>
           )}
 
-          {/* ══ 3. ACTIONS ══ */}
+          {/* ══ 4. ACTIONS ══ */}
           <div className="flex items-center px-1 pt-0.5 pb-0.5">
             {/* Like */}
             <style>{`@keyframes hrtBounce{0%{transform:scale(1)}25%{transform:scale(1.4)}50%{transform:scale(0.9)}75%{transform:scale(1.15)}100%{transform:scale(1)}}`}</style>
@@ -1647,72 +1797,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
 
 
-
-          {/* ══ 5. CAPTION + CREDITS + LISTING ══ */}
-          <div className="px-3 pt-2 pb-1">
-            {localPost.content && (
-              <p className="text-[13px] text-gray-900 leading-relaxed">
-                <span className="font-black mr-1.5">{localPost.userName}</span>
-                {localPost.content}
-              </p>
-            )}
-
-            {/* Link */}
-            {localPost.link && (
-              <a href={String(localPost.link).startsWith('http')?String(localPost.link):`https://${localPost.link}`}
-                target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-blue-600 text-[12px] mt-1">
-                <Link2 className="w-3 h-3"/>{String(localPost.link).replace(/^https?:\/\//,'')}
-              </a>
-            )}
-
-            {/* Tagged users */}
-            {taggedUsers.length>0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {taggedUsers.map(u=>(
-                  <button key={u.id} onClick={()=>navigate(`/host/${u.id}`)}
-                    className="text-blue-600 text-[12px] font-semibold">
-                    @{u.name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Credits */}
-            {(localPost as any).credits?.length>0 && (
-              <div className="mt-1.5 space-y-0.5">
-                {(localPost as any).credits.map((credit:any,i:number)=>(
-                  <p key={i} className="text-[11px] text-gray-500">
-                    <span className="text-gray-400">{credit.role} </span>
-                    <button onClick={()=>navigate(`/host/${credit.userId}`)} className="font-semibold text-blue-600">@{credit.name}</button>
-                  </p>
-                ))}
-              </div>
-            )}
-
-            {/* Attached Portfolio -- real portfolio_item_id, resolved to
-                the creator's own Portfolio (never the viewer's), per spec. */}
-            {localPost.portfolioItemId && (
-              <button
-                onClick={()=>navigate(`/portfolio/${localPost.userId}`)}
-                className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mt-2 text-left hover:bg-gray-100 transition-colors"
-              >
-                <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
-                  {localPost.portfolioItemThumb && (
-                    <img src={localPost.portfolioItemThumb} className="w-full h-full object-cover" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900 truncate">{localPost.portfolioItemTitle}</p>
-                  {localPost.portfolioItemCategory && <p className="text-xs text-gray-400 truncate">{localPost.portfolioItemCategory}</p>}
-                  <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
-                    View in Portfolio <ArrowRight className="w-3 h-3" />
-                  </span>
-                </div>
-              </button>
-            )}
-
-          </div>
 
         </div>
 
