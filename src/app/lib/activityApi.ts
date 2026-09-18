@@ -95,7 +95,7 @@ async function fetchProfilesAndTrust(ids: string[]): Promise<Map<string, Activit
 
 // Re-verifies every referenced resource is still public. Returns the
 // subset of `rows` that pass, in the same order.
-async function filterVisible(rows: any[]): Promise<any[]> {
+async function filterVisible(rows: any[], viewerId?: string): Promise<any[]> {
   const portfolioItemIds = rows.filter(r => r.target_type === 'portfolio_item').map(r => r.target_id);
   const albumIds = rows.filter(r => r.target_type === 'portfolio_album').map(r => r.target_id);
   const listingIds = rows.filter(r => r.target_type === 'listing').map(r => r.target_id);
@@ -131,17 +131,13 @@ async function filterVisible(rows: any[]): Promise<any[]> {
     recommendationIds.length
       ? supabase.from('recommendations').select('id').in('id', recommendationIds).then(checked('recommendations'))
       : Promise.resolve([]),
-    // `id` only -- NOT `visibility`. `posts` is an untracked, live-only
-    // table (no CREATE TABLE in this repo's migration history), so a
-    // `visibility` column can't be confirmed to actually exist; selecting
-    // an unknown column errors the whole query, which previously zeroed
-    // out postMap and silently dropped every post_published event. An
-    // existence check alone still satisfies "a deleted post's Activity
-    // entry disappears" -- postsApi.create() has no private-post option
-    // today (it unconditionally writes visibility:'public'), so there is
-    // no real privacy gate being skipped by dropping this column.
+    // postsApi.create() now actually respects the composer's audience
+    // choice (previously hardcoded to 'public' -- see api.ts), so a
+    // 'connections'/'private' post can genuinely exist here. Select
+    // user_id/visibility too so the switch below can gate on it instead of
+    // treating every existing post as safe to surface.
     postIds.length
-      ? supabase.from('posts').select('id').in('id', postIds).then(checked('posts'))
+      ? supabase.from('posts').select('id, user_id, visibility').in('id', postIds).then(checked('posts'))
       : Promise.resolve([]),
   ]);
 
@@ -162,10 +158,29 @@ async function filterVisible(rows: any[]): Promise<any[]> {
   const recommendationIdSet = new Set(recommendationRows.map((r: any) => r.id));
   const postMap = new Map((postRows as any[]).map(r => [r.id, r]));
 
+  // Only needed when a 'connections'-visibility post is actually in play --
+  // same accepted-connections lookup filterPostsByVisibility() uses in
+  // api.ts, kept local here since this file has its own viewer scoping.
+  const restrictedPostAuthors = [...new Set(
+    (postRows as any[]).filter(r => r.visibility === 'connections' && r.user_id !== viewerId).map(r => r.user_id),
+  )];
+  let viewerConnections = new Set<string>();
+  if (viewerId && restrictedPostAuthors.length) {
+    const { data: connRows } = await supabase.from('professional_connections')
+      .select('user_a_id, user_b_id').eq('status', 'accepted')
+      .or(`user_a_id.eq.${viewerId},user_b_id.eq.${viewerId}`);
+    viewerConnections = new Set((connRows ?? []).map((r: any) => r.user_a_id === viewerId ? r.user_b_id : r.user_a_id));
+  }
+
   return rows.filter(r => {
     switch (r.target_type) {
-      case 'post':
-        return postMap.has(r.target_id); // existence check only -- see the query comment above
+      case 'post': {
+        const post = postMap.get(r.target_id);
+        if (!post) return false;
+        if (post.visibility === 'private') return post.user_id === viewerId;
+        if (post.visibility === 'connections') return post.user_id === viewerId || viewerConnections.has(post.user_id);
+        return true;
+      }
       case 'portfolio_item': {
         const item = itemMap.get(r.target_id);
         return !!item && !item.is_hidden && !nonPublicOwners.has(item.user_id);
@@ -220,7 +235,7 @@ export async function getActivityFeed(params: {
   if (error) console.warn('[activityApi] getActivityFeed query failed:', error.message);
   if (error || !data?.length) return { entries: [] };
 
-  const visible = (await filterVisible(data)).slice(0, limit);
+  const visible = (await filterVisible(data, params.viewerId)).slice(0, limit);
   if (!visible.length) return { entries: [], cursor: data[data.length - 1]?.created_at };
 
   const actorIds = [...new Set(visible.map(r => r.actor_id))];

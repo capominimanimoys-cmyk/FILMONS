@@ -74,7 +74,7 @@ export interface Comment {
 }
 
 export type PostType = 'photo' | 'video' | 'audio' | 'text' | 'mixed';
-export type Visibility = 'public' | 'followers' | 'private';
+export type Visibility = 'public' | 'followers' | 'private' | 'connections';
 
 export interface Post {
   id: string;

@@ -1,4 +1,4 @@
-import { Listing, User, Review, Post, Comment, Conversation, ChatMessage } from '../types';
+import { Listing, User, Review, Post, Comment, Conversation, ChatMessage, Visibility } from '../types';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
@@ -1454,12 +1454,43 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     listingPins:     row.listing_pins     || undefined,
     tagPins:         row.tag_pins         || undefined,
     location:        row.location         || undefined,
+    visibility:      (row.visibility as Visibility) || 'public',
     // Portfolio attachment metadata for PostCard's Portfolio section
     portfolioItemId:       row.portfolio_item_id       || undefined,
     portfolioItemTitle:    row.portfolio_item_title    || undefined,
     portfolioItemCategory: row.portfolio_item_category || undefined,
     portfolioItemThumb:    row.portfolio_item_thumb    || undefined,
   } as Post;
+}
+
+// This app has no real Supabase Auth session to hang RLS off of (see the
+// project's own standing note: auth.uid() is always null here), so "server-
+// side" enforcement for post audience means "enforced in the same
+// data-fetching function every caller already goes through," the same
+// pattern already used for entitlements/locked-opportunity filtering
+// elsewhere -- never left to the UI to hide a post it already has in memory.
+// 'public'/undefined posts skip straight through with no extra query.
+async function filterPostsByVisibility(posts: Post[], viewerId?: string): Promise<Post[]> {
+  const restricted = posts.filter(p => p.visibility === 'private' || p.visibility === 'connections');
+  if (!restricted.length) return posts;
+  if (!viewerId) return posts.filter(p => p.visibility !== 'private' && p.visibility !== 'connections');
+
+  const connectionAuthorIds = [...new Set(
+    restricted.filter(p => p.visibility === 'connections' && p.userId !== viewerId).map(p => p.userId),
+  )];
+  let viewerConnections = new Set<string>();
+  if (connectionAuthorIds.length) {
+    const { data } = await supabase
+      .from('professional_connections').select('user_a_id, user_b_id')
+      .eq('status', 'accepted').or(`user_a_id.eq.${viewerId},user_b_id.eq.${viewerId}`);
+    viewerConnections = new Set((data ?? []).map((r: any) => r.user_a_id === viewerId ? r.user_b_id : r.user_a_id));
+  }
+
+  return posts.filter(p => {
+    if (p.visibility === 'private') return p.userId === viewerId;
+    if (p.visibility === 'connections') return p.userId === viewerId || viewerConnections.has(p.userId);
+    return true;
+  });
 }
 
 // ============================================
@@ -1489,10 +1520,11 @@ export const postsApi = {
       // Batch-fetch liked post IDs from post_likes
       const postIds = rows.map((r:any) => r.id);
       const likedIds = currentUser ? await fetchLikedPostIds(postIds, currentUser.id) : new Set<string>();
-      return rows.map((row:any) => {
+      const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
         return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type}, currentUser?.id, likedIds);
       });
+      return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
       console.error('[getAll] error:', e);
       // Fallback to edge function
@@ -1535,7 +1567,7 @@ export const postsApi = {
       const likedIds = currentUser
         ? await fetchLikedPostIds(allRows.map(r => r.id), currentUser.id)
         : new Set<string>();
-      return allRows.map((row: any) => {
+      const mapped = allRows.map((row: any) => {
         const prof = (row.profiles as any) || {};
         return rowToPostClient({
           ...row,
@@ -1545,6 +1577,10 @@ export const postsApi = {
           _paccount: prof.account_type,
         }, currentUser?.id, likedIds);
       });
+      // Viewing someone ELSE's profile is exactly where 'connections'/
+      // 'private' visibility matters most -- a non-connection browsing
+      // userId's Activity tab must not see their connections-only posts.
+      return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
       console.error('[getUserPosts] error:', e);
       try {
@@ -1583,7 +1619,7 @@ export const postsApi = {
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      return (data || []).map((row: any) => {
+      const mapped = (data || []).map((row: any) => {
         const prof = (row.profiles as any) || {};
         return rowToPostClient({
           ...row,
@@ -1593,6 +1629,7 @@ export const postsApi = {
           _paccount:  prof.account_type,
         }, currentUser?.id);
       });
+      return filterPostsByVisibility(mapped, currentUser?.id);
     } catch {
       const { posts } = await call<any>('/posts/feed', {
         method: 'POST',
@@ -1637,6 +1674,7 @@ export const postsApi = {
       portfolioItemTitle?:    string;
       portfolioItemCategory?: string;
       portfolioItemThumb?:    string;
+      visibility?: Visibility;
     },
   ): Promise<Post> => {
     const currentUser = authApi.getCurrentUser();
@@ -1682,7 +1720,10 @@ export const postsApi = {
     if (audios?.[0])                  insertPayload.audio_url   = audios[0];
     if (Array.isArray(taggedUserIds) && taggedUserIds.length) insertPayload.tags = taggedUserIds;
     if (content)                      insertPayload.caption     = content;
-    insertPayload.visibility          = 'public';
+    // Was previously hardcoded to 'public' regardless of what the composer
+    // sent -- the audience picker was cosmetic, every post published as
+    // public no matter what the creator chose. Now actually respects it.
+    insertPayload.visibility          = extraMeta?.visibility || 'public';
     insertPayload.allow_comments      = allowComments !== false;
     insertPayload.allow_download      = allowDownload !== false;
 
