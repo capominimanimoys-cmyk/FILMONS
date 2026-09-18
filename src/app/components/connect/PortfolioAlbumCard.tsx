@@ -110,14 +110,10 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         <p className="text-sm font-bold text-gray-900">{album.title}</p>
       </div>
 
-      {/* "View album" opens THIS album's items; ViewPortfolioLink is the
-          separate, wider action -> the creator's whole Portfolio. Both
-          matter here: one satisfies "I want to see the rest of this
-          collection," the other "I want to see everything this person
-          makes." */}
+      {/* No separate "View album" button -- the cover image itself already
+          opens the album (see the button wrapping it above). This link is
+          the wider action -> the creator's whole Portfolio. */}
       <ViewPortfolioLink creatorId={creator.id} creatorFirstName={creator.name.split(' ')[0]} isOwn={isOwn} className="mt-3" />
-
-      <button onClick={openAlbum} className="text-sm font-semibold text-blue-600 hover:underline mt-3 block">View album →</button>
 
       <div className="flex items-center gap-5 mt-3 pt-3 border-t border-gray-50">
         <button onClick={handleToggleLike} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
