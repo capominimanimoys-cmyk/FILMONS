@@ -6,17 +6,32 @@ import { useState, useRef } from 'react';
 import {
   X, ChevronLeft, Upload, Link as LinkIcon, Star, Play, Music2,
   Image as ImageIcon, Loader2, Film, Aperture, Layers, FileText,
-  Video, Clapperboard,
+  Video, Clapperboard, Trash2, RefreshCw, ChevronUp, ChevronDown, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { logActivityEvent } from '../lib/activityApi';
 import {
   PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia,
-  readImageDimensions, readVideoDimensions, workTypeToMediaType, type WorkType, type PortfolioItem,
+  readImageDimensions, readVideoDimensions, workTypeToMediaType, createAlbum, updateAlbum, addItemToAlbum,
+  type WorkType, type PortfolioItem, type MediaType,
 } from '../lib/portfolioApi';
 
-type Step = 'type' | 'details' | 'media';
+type Step = 'type' | 'details' | 'media' | 'album';
+
+interface AlbumDraftItem {
+  id:           string; // local key, not a DB id
+  file:         File;
+  previewUrl?:  string; // local object URL, created once at selection time
+  status:       'pending' | 'uploading' | 'done' | 'error';
+  progress:     number;
+  mediaType:    MediaType;
+  url?:         string;
+  thumbnailUrl?:string;
+  width?:       number;
+  height?:      number;
+  aspect_ratio?:number;
+}
 
 interface WorkTypeOption {
   id:     WorkType;
@@ -74,6 +89,161 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [imgWidth,    setImgWidth]    = useState<number | undefined>(undefined);
   const [imgHeight,   setImgHeight]   = useState<number | undefined>(undefined);
   const [imgAr,       setImgAr]       = useState<number | undefined>(undefined);
+
+  // Album mode -- entered automatically when 2+ files are picked at once
+  // ("1 media = Work, 2+ media = Album", per spec). Reuses the title/
+  // description/category/etc. already collected in the Details step as
+  // the album's own metadata -- the creator never has to re-enter it.
+  const [albumItems,   setAlbumItems]   = useState<AlbumDraftItem[]>([]);
+  const [coverId,      setCoverId]      = useState<string | undefined>(undefined);
+  const [publishingAlbum, setPublishingAlbum] = useState(false);
+  const [showContinueAsWork, setShowContinueAsWork] = useState(false);
+
+  const mediaTypeOf = (file: File): MediaType =>
+    file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'image';
+
+  const uploadAlbumItem = async (draft: AlbumDraftItem) => {
+    setAlbumItems(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'uploading', progress: 0 } : d));
+    const dims = draft.mediaType === 'video' ? await readVideoDimensions(draft.file)
+      : draft.mediaType === 'image' ? await readImageDimensions(draft.file) : null;
+    const result = await uploadPortfolioMedia(user!.id, draft.file, pct =>
+      setAlbumItems(prev => prev.map(d => d.id === draft.id ? { ...d, progress: pct } : d)));
+    if (!result) {
+      setAlbumItems(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'error' } : d));
+      return;
+    }
+    setAlbumItems(prev => prev.map(d => d.id === draft.id ? {
+      ...d, status: 'done', url: result.url, thumbnailUrl: result.thumbnailUrl || result.url,
+      width: dims?.width, height: dims?.height, aspect_ratio: dims?.aspect_ratio,
+    } : d));
+  };
+
+  const handleFiles = (fileList: FileList) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+    if (files.length === 1) { handleFile(files[0]); return; }
+    const drafts: AlbumDraftItem[] = files.map(f => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file: f, status: 'pending', progress: 0, mediaType: mediaTypeOf(f),
+      previewUrl: f.type.startsWith('audio/') ? undefined : URL.createObjectURL(f),
+    }));
+    setAlbumItems(prev => [...prev, ...drafts]);
+    setStep('album');
+    drafts.forEach(d => uploadAlbumItem(d));
+  };
+
+  const removeAlbumItem = (id: string) => {
+    setAlbumItems(prev => {
+      const removed = prev.find(d => d.id === id);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      const next = prev.filter(d => d.id !== id);
+      if (next.length === 1) setShowContinueAsWork(true);
+      return next;
+    });
+    if (coverId === id) setCoverId(undefined);
+  };
+
+  const moveAlbumItem = (id: string, dir: -1 | 1) => {
+    setAlbumItems(prev => {
+      const idx = prev.findIndex(d => d.id === id);
+      const swapWith = idx + dir;
+      if (idx === -1 || swapWith < 0 || swapWith >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+      return next;
+    });
+  };
+
+  // "Only one item remains -- continue as a Portfolio Work instead?" --
+  // hands the one remaining (already-uploaded) file's data over to the
+  // ORIGINAL single-item state/publish path rather than a second
+  // publish implementation, so it behaves exactly like picking one file
+  // from the start.
+  const continueAsWork = () => {
+    const remaining = albumItems[0];
+    setShowContinueAsWork(false);
+    if (!remaining) { setStep('media'); return; }
+    if (remaining.status === 'done') {
+      setMediaUrl(remaining.url || '');
+      setThumbUrl(remaining.thumbnailUrl || '');
+      setFilePreview(remaining.thumbnailUrl || remaining.url || '');
+      setImgWidth(remaining.width);
+      setImgHeight(remaining.height);
+      setImgAr(remaining.aspect_ratio);
+      setFileName(remaining.file.name);
+    } else {
+      // Still uploading/failed -- fall back to letting the single-item
+      // flow upload it fresh rather than publishing incomplete data.
+      handleFile(remaining.file);
+    }
+    setAlbumItems([]);
+    setStep('media');
+  };
+
+  const addMoreToAlbum = () => {
+    setShowContinueAsWork(false);
+    fileRef.current?.click();
+  };
+
+  const publishAlbum = async () => {
+    if (!user) return;
+    if (!title.trim()) { toast.error('Add a title'); return; }
+    if (albumItems.some(d => d.status === 'uploading' || d.status === 'pending')) {
+      toast.error('Wait for uploads to finish');
+      return;
+    }
+    const doneItems = albumItems.filter(d => d.status === 'done');
+    if (doneItems.length < 2) { toast.error('Remove or retry the failed item(s) first'); return; }
+
+    setPublishingAlbum(true);
+    const album = await createAlbum(user.id, {
+      title: title.trim(), description: description.trim() || undefined, visibility: 'public',
+    });
+    if (!album) {
+      setPublishingAlbum(false);
+      toast.error('Could not create album — run migration 20240127 in Supabase');
+      return;
+    }
+
+    const createdItems: PortfolioItem[] = [];
+    for (const d of doneItems) {
+      const item = await createPortfolioItem(user.id, {
+        work_type:    workType,
+        title:        title.trim(),
+        description:  description.trim() || undefined,
+        category:     category || '',
+        subcategory:  subcategory || undefined,
+        role:         role.trim() || undefined,
+        client_name:  clientName.trim() || undefined,
+        year:         year ? parseInt(year) : undefined,
+        media_type:   d.mediaType,
+        media_url:    d.url,
+        thumbnail_url:d.thumbnailUrl,
+        is_featured:  false,
+        width:        d.width,
+        height:       d.height,
+        aspect_ratio: d.aspect_ratio,
+      });
+      if (item) { createdItems.push(item); await addItemToAlbum(album.id, item.id); }
+    }
+
+    const coverDraftIdx = doneItems.findIndex(d => d.id === coverId);
+    const coverItem = createdItems[coverDraftIdx >= 0 ? coverDraftIdx : 0];
+    await updateAlbum(album.id, {
+      category: category || undefined, location: undefined, cover_item_id: coverItem?.id,
+    });
+
+    if (createdItems.length) {
+      logActivityEvent({
+        actorId: user.id, activityType: 'portfolio_album_published',
+        targetType: 'portfolio_album', targetId: album.id, title: album.title || null,
+      });
+    }
+
+    setPublishingAlbum(false);
+    toast.success(`Album published with ${createdItems.length} item${createdItems.length === 1 ? '' : 's'}!`);
+    onClose();
+  };
 
   // ── File upload ───────────────────────────────────────────────────────────
   const handleFile = async (file: File) => {
@@ -161,12 +331,14 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     if (step === 'type')    onClose();
     if (step === 'details') setStep('type');
     if (step === 'media')   setStep('details');
+    if (step === 'album')   { setAlbumItems([]); setStep('media'); }
   };
 
   const STEP_LABELS: Record<Step, string> = {
     type:    'Choose Type',
     details: 'Details',
     media:   'Add Media',
+    album:   'New Album',
   };
 
   const selectedType = WORK_TYPES.find(t => t.id === workType);
@@ -220,6 +392,11 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
           {step === 'media' && (
             <button onClick={publish} disabled={saving} className="text-sm font-black text-blue-600 disabled:text-gray-300">
               {saving ? 'Saving…' : 'Publish'}
+            </button>
+          )}
+          {step === 'album' && (
+            <button onClick={publishAlbum} disabled={publishingAlbum} className="text-sm font-black text-blue-600 disabled:text-gray-300">
+              {publishingAlbum ? 'Publishing…' : 'Publish'}
             </button>
           )}
           {step === 'type' && <div className="w-9" />}
@@ -399,8 +576,9 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 ref={fileRef}
                 type="file"
                 accept={accept}
+                multiple
                 className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+                onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = ''; }}
               />
 
               {/* Preview -- follows the real dimensions read off the picked
@@ -461,7 +639,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                     <p className="text-xs text-gray-400 mt-0.5">
                       {workType === 'audio' ? 'Audio files (MP3, WAV, OGG)' :
                        workType === 'video' || workType === 'reel' ? 'Video files (MP4, MOV)' :
-                       'Images, Videos, Audio'}
+                       'Images, Videos, Audio'} · select multiple for an album
                     </p>
                   </div>
                 </button>
@@ -498,6 +676,103 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
               >
                 {saving ? 'Publishing…' : 'Publish to Portfolio'}
               </button>
+            </div>
+          )}
+
+          {/* ── STEP: ALBUM -- 2+ media selected at once ── */}
+          {step === 'album' && (
+            <div className="px-4 pt-4 pb-8 space-y-4">
+              <p className="text-xs text-gray-400">
+                {albumItems.length} item{albumItems.length === 1 ? '' : 's'} selected. Reorder with the arrows, pick a cover, then publish.
+              </p>
+
+              {/* Per-item upload progress */}
+              <div className="space-y-2">
+                {albumItems.map((d, i) => (
+                  <div key={d.id} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-2xl p-2.5">
+                    <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                      {(d.thumbnailUrl || d.previewUrl) && d.mediaType !== 'audio' ? (
+                        <img src={d.thumbnailUrl || d.previewUrl} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          {d.mediaType === 'audio' ? <Music2 className="w-5 h-5 text-gray-400" /> : d.mediaType === 'video' ? <Play className="w-5 h-5 text-gray-400" /> : <ImageIcon className="w-5 h-5 text-gray-400" />}
+                        </div>
+                      )}
+                      {coverId === d.id && (
+                        <span className="absolute bottom-0.5 left-0.5 bg-amber-400 text-white text-[8px] font-black px-1 py-0.5 rounded">COVER</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-700 truncate">{d.file.name}</p>
+                      {d.status === 'pending' && <p className="text-[11px] text-gray-400">Waiting…</p>}
+                      {d.status === 'uploading' && (
+                        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mt-1">
+                          <div className="h-full bg-blue-500 rounded-full transition-all duration-150" style={{ width: `${d.progress}%` }} />
+                        </div>
+                      )}
+                      {d.status === 'done' && (
+                        <button onClick={() => setCoverId(d.id)} className="text-[11px] font-bold text-blue-600 flex items-center gap-1 mt-0.5">
+                          {coverId === d.id ? <><Check className="w-3 h-3" /> Cover</> : 'Set as cover'}
+                        </button>
+                      )}
+                      {d.status === 'error' && <p className="text-[11px] text-red-500 font-semibold">Upload failed</p>}
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button onClick={() => moveAlbumItem(d.id, -1)} disabled={i === 0} className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30">
+                        <ChevronUp className="w-3.5 h-3.5 text-gray-500" />
+                      </button>
+                      <button onClick={() => moveAlbumItem(d.id, 1)} disabled={i === albumItems.length - 1} className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30">
+                        <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                      </button>
+                    </div>
+                    {d.status === 'error' ? (
+                      <button onClick={() => uploadAlbumItem(d)} className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                        <RefreshCw className="w-3.5 h-3.5 text-blue-500" />
+                      </button>
+                    ) : null}
+                    <button onClick={() => removeAlbumItem(d.id)} className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center shrink-0">
+                      <Trash2 className="w-3.5 h-3.5 text-gray-400" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-blue-600"
+                style={{ background: '#eff6ff', border: '1.5px dashed #93c5fd' }}
+              >
+                <Upload className="w-4 h-4" /> Add More Media
+              </button>
+
+              <button
+                onClick={publishAlbum}
+                disabled={publishingAlbum || albumItems.some(d => d.status !== 'done')}
+                className="w-full py-4 rounded-2xl font-black text-white text-sm transition-all active:scale-[0.98] disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
+              >
+                {publishingAlbum ? 'Publishing…' : `Publish Album (${albumItems.length} items)`}
+              </button>
+            </div>
+          )}
+
+          {/* ── Only one item remains -- offer to continue as a single Work ── */}
+          {showContinueAsWork && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-8">
+              <div className="bg-white rounded-2xl w-full max-w-xs shadow-xl overflow-hidden">
+                <div className="px-5 py-5 text-center border-b border-gray-100">
+                  <p className="font-bold text-gray-900 text-base">Only one item remains</p>
+                  <p className="text-sm text-gray-500 mt-1">Albums require multiple media. Continue as a Portfolio Work instead?</p>
+                </div>
+                <button onClick={addMoreToAlbum}
+                  className="w-full py-3.5 text-sm font-bold text-blue-600 border-b border-gray-100 hover:bg-blue-50">
+                  Add More Media
+                </button>
+                <button onClick={continueAsWork}
+                  className="w-full py-3.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                  Continue as Work
+                </button>
+              </div>
             </div>
           )}
 
