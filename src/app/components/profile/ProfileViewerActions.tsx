@@ -11,10 +11,12 @@
 // md:hidden -- desktop already has Message/Follow inline in ProfileHeader's
 // own action row (added alongside this), so this is mobile-only to avoid
 // showing the same two actions twice on wider screens.
-import { Loader2, MessageCircle, UserCheck, UserPlus, MoreHorizontal } from 'lucide-react';
+import { Loader2, MessageCircle, UserCheck, UserPlus, UserRoundPlus, Clock, MoreHorizontal } from 'lucide-react';
+import type { ConnectionStatus } from '../../lib/connectionsApi';
 
 export function ProfileViewerActions({
   isFollowing, isPending, confirmUnfollow, onFollow, onMessage, onMore,
+  connectionStatus, onConnect,
 }: {
   isFollowing: boolean;
   isPending: boolean;
@@ -22,9 +24,29 @@ export function ProfileViewerActions({
   onFollow: () => void;
   onMessage: () => void;
   onMore: () => void;
+  /** Mobile's own copy of ProfileHeader's Connect button -- that one is
+   * desktop-only (hidden md:flex), so without this Connect never appeared
+   * on mobile at all despite being the primary networking action. */
+  connectionStatus?: ConnectionStatus;
+  onConnect?: () => void;
 }) {
   return (
     <div className="md:hidden bg-white px-4 py-2.5 flex items-center gap-2">
+      {onConnect && connectionStatus && (
+        <button
+          onClick={onConnect}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-colors ${
+            connectionStatus === 'connected' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : connectionStatus === 'pending_sent' ? 'bg-gray-100 text-gray-500'
+              : 'bg-blue-600 text-white'
+          }`}
+        >
+          {connectionStatus === 'connected' ? <><UserCheck className="w-4 h-4" /> Connected</>
+            : connectionStatus === 'pending_sent' ? <><Clock className="w-4 h-4" /> Pending</>
+            : connectionStatus === 'pending_received' ? <><UserRoundPlus className="w-4 h-4" /> Respond</>
+            : <><UserRoundPlus className="w-4 h-4" /> Connect</>}
+        </button>
+      )}
       <button
         onClick={onMessage}
         className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-bold active:opacity-80"

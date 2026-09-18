@@ -34,7 +34,14 @@ import { toStringArray } from '../lib/normalizeList';
 import { getTrustProfile, type TrustProfile } from '../lib/trustApi';
 import { TrustDetailsSheet } from '../components/trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../components/trust/TrustProfileOverlay';
-import { getConnectionStatus, sendConnectionRequest, respondToConnectionRequest, type ConnectionStatus } from '../lib/connectionsApi';
+import {
+  getConnectionStatus, sendConnectionRequest, respondToConnectionRequest, removeConnection,
+  getMutualConnectionCount, getConnectionDegree, getPendingNote,
+  type ConnectionStatus, type ConnectionDegree,
+} from '../lib/connectionsApi';
+import { ConnectFlowSheet } from '../components/ConnectFlowSheet';
+import { ConnectionActionsSheet } from '../components/ConnectionActionsSheet';
+import * as notifs from '../lib/notifications';
 
 type Tab = ProfileTab;
 const TABS = PROFILE_TABS;
@@ -293,19 +300,80 @@ export function HostProfile() {
     navigate(`/share-card?userId=${resolvedId}`);
   };
 
-  // A real, accepted Professional Connection -- distinct from Follow. Tapping
-  // "Connect" sends a request; tapping again while pending_received accepts it.
+  // A real, accepted Professional Connection -- distinct from Follow. The
+  // button itself never mutates anything directly anymore -- every status
+  // opens a sheet (Connect-with-a-note, or the relevant relationship
+  // actions) so a single mis-tap can't send/accept/remove a connection.
+  const [showConnectFlow, setShowConnectFlow] = useState(false);
+  const [showConnectionActions, setShowConnectionActions] = useState(false);
+  const [connectionMutualCount, setConnectionMutualCount] = useState(0);
+  const [connectionDegree, setConnectionDegree] = useState<ConnectionDegree>(3);
+  const [connectionNote, setConnectionNote] = useState<string | null>(null);
+
   const handleConnect = async () => {
     if (!me || !host) { navigate('/login'); return; }
-    if (connectionStatus === 'pending_received') {
-      const ok = await respondToConnectionRequest(me.id, host.id, true);
-      if (ok) { setConnectionStatus('connected'); toast.success(`You're now connected with ${host.name}.`); }
-      return;
-    }
-    if (connectionStatus === 'none') {
-      const ok = await sendConnectionRequest(me.id, host.id);
-      if (ok) { setConnectionStatus('pending_sent'); toast.success('Connection request sent.'); }
-    }
+    if (connectionStatus === 'none') { setShowConnectFlow(true); return; }
+    // Any other status -- fetch the network context the sheet needs, then show it.
+    const [mutual, degree, note] = await Promise.all([
+      getMutualConnectionCount(me.id, host.id),
+      getConnectionDegree(me.id, host.id),
+      connectionStatus === 'pending_received' ? getPendingNote(me.id, host.id) : Promise.resolve(null),
+    ]);
+    setConnectionMutualCount(mutual);
+    setConnectionDegree(degree);
+    setConnectionNote(note);
+    setShowConnectionActions(true);
+  };
+
+  const sendConnect = async (note?: string) => {
+    if (!me || !host) return;
+    setShowConnectFlow(false);
+    const ok = await sendConnectionRequest(me.id, host.id, note);
+    if (!ok) { toast.error('Could not send connection request'); return; }
+    setConnectionStatus('pending_sent');
+    toast.success('Connection request sent.');
+    notifs.push(host.id, {
+      type: 'connection_request' as any,
+      fromUserId: me.id, fromUserName: me.name || me.username || '', fromUserAvatar: me.avatar || undefined,
+    });
+  };
+
+  const withdrawConnect = async () => {
+    if (!me || !host) return;
+    setShowConnectionActions(false);
+    const ok = await removeConnection(me.id, host.id);
+    if (ok) { setConnectionStatus('none'); toast.success('Request withdrawn.'); }
+  };
+
+  const acceptConnect = async () => {
+    if (!me || !host) return;
+    setShowConnectionActions(false);
+    const ok = await respondToConnectionRequest(me.id, host.id, true);
+    if (!ok) { toast.error('Could not accept request'); return; }
+    setConnectionStatus('connected');
+    toast.success(`You're now connected with ${host.name}.`);
+    notifs.push(host.id, {
+      type: 'connection_accepted' as any,
+      fromUserId: me.id, fromUserName: me.name || me.username || '', fromUserAvatar: me.avatar || undefined,
+    });
+  };
+
+  const ignoreConnect = async () => {
+    if (!me || !host) return;
+    setShowConnectionActions(false);
+    // Ignoring is private -- the sender is never told, per spec ("Never
+    // publicly show Maya ignored Gabriel's request"). declined just stops
+    // it from showing as pending on either side.
+    const ok = await respondToConnectionRequest(me.id, host.id, false);
+    if (ok) setConnectionStatus('none');
+  };
+
+  const [showRemoveConnectionConfirm, setShowRemoveConnectionConfirm] = useState(false);
+  const removeConnectionConfirmed = async () => {
+    if (!me || !host) return;
+    setShowRemoveConnectionConfirm(false);
+    const ok = await removeConnection(me.id, host.id);
+    if (ok) { setConnectionStatus('none'); toast.success('Connection removed.'); }
   };
 
   if (loading) return (
@@ -386,6 +454,8 @@ export function HostProfile() {
         onFollow={handleFollowClick}
         onMessage={handleMessage}
         onMore={() => setShowActionSheet(true)}
+        connectionStatus={me && me.id !== host.id ? connectionStatus : undefined}
+        onConnect={handleConnect}
       />
 
       <ProfileTabNav tab={tab} onChange={setTab} />
@@ -687,6 +757,52 @@ export function HostProfile() {
         <TrustProfileOverlay userId={host.id} closing={trustProfileClosing} onClose={closeTrustProfile} />
       )}
 
+      {showConnectFlow && (
+        <ConnectFlowSheet
+          name={host.name}
+          avatar={host.avatar}
+          onSend={sendConnect}
+          onClose={() => setShowConnectFlow(false)}
+        />
+      )}
+
+      {showConnectionActions && (
+        <ConnectionActionsSheet
+          status={connectionStatus as 'connected' | 'pending_sent' | 'pending_received'}
+          name={host.name}
+          avatar={host.avatar}
+          degree={connectionDegree}
+          mutualCount={connectionMutualCount}
+          note={connectionNote}
+          isFollowing={isFollowing(host.id)}
+          onMessage={() => { setShowConnectionActions(false); handleMessage(); }}
+          onToggleFollow={() => { setShowConnectionActions(false); handleFollowClick(); }}
+          onRemoveConnection={() => { setShowConnectionActions(false); setShowRemoveConnectionConfirm(true); }}
+          onWithdraw={withdrawConnect}
+          onAccept={acceptConnect}
+          onIgnore={ignoreConnect}
+          onClose={() => setShowConnectionActions(false)}
+        />
+      )}
+
+      {showRemoveConnectionConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-8">
+          <div className="bg-white rounded-2xl w-full max-w-xs shadow-xl overflow-hidden">
+            <div className="px-5 py-5 text-center border-b border-gray-100">
+              <p className="font-bold text-gray-900 text-base">Remove connection?</p>
+              <p className="text-sm text-gray-500 mt-1">{host.name} will no longer be a Professional Connection. Messages and recommendations aren't affected.</p>
+            </div>
+            <button onClick={removeConnectionConfirmed}
+              className="w-full py-3.5 text-sm font-bold text-red-500 border-b border-gray-100 hover:bg-red-50">
+              Remove
+            </button>
+            <button onClick={() => setShowRemoveConnectionConfirm(false)}
+              className="w-full py-3.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showRecommend && me && (
         <RecommendationComposeSheet

@@ -120,15 +120,22 @@ export function ProfileHeader({
                   : <><UserPlus className="w-3.5 h-3.5" /> Follow</>}
               </button>
             )}
-            {!isOwner && onConnect && connectionStatus && connectionStatus !== 'connected' && (
+            {/* Connect is the primary professional networking action, per
+                spec -- visible (and tappable) in every state including
+                Connected, not hidden away once accepted. Desktop-only here
+                (hidden md:flex) since mobile gets its own copy of this same
+                button in ProfileViewerActions, ordered first there. */}
+            {!isOwner && onConnect && connectionStatus && (
               <button
                 onClick={onConnect}
-                disabled={connectionStatus === 'pending_sent'}
                 className={`hidden md:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
-                  connectionStatus === 'pending_sent' ? 'bg-gray-100 text-gray-400 cursor-default' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                  connectionStatus === 'connected' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                    : connectionStatus === 'pending_sent' ? 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                {connectionStatus === 'pending_sent' ? <><Clock className="w-3.5 h-3.5" /> Pending</>
+                {connectionStatus === 'connected' ? <><UserCheck className="w-3.5 h-3.5" /> Connected</>
+                  : connectionStatus === 'pending_sent' ? <><Clock className="w-3.5 h-3.5" /> Pending</>
                   : connectionStatus === 'pending_received' ? <><UserRoundPlus className="w-3.5 h-3.5" /> Respond</>
                   : <><UserRoundPlus className="w-3.5 h-3.5" /> Connect</>}
               </button>

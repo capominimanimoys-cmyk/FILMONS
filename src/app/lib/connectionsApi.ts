@@ -19,6 +19,8 @@ export interface ConnectionSummary {
     account_type: string | null; is_verified: boolean;
   };
   createdAt: string;
+  /** Only meaningful on a pending-received row (an invitation's note). */
+  note?: string | null;
 }
 
 function orderedPair(idA: string, idB: string): [string, string] {
@@ -38,11 +40,11 @@ export async function getConnectionStatus(meId: string, otherId: string): Promis
   return data.requested_by === meId ? 'pending_sent' : 'pending_received';
 }
 
-export async function sendConnectionRequest(meId: string, otherId: string): Promise<boolean> {
+export async function sendConnectionRequest(meId: string, otherId: string, note?: string): Promise<boolean> {
   if (meId === otherId) return false;
   const [a, b] = orderedPair(meId, otherId);
   const { error } = await supabase.from('professional_connections')
-    .upsert({ user_a_id: a, user_b_id: b, requested_by: meId, status: 'pending', responded_at: null },
+    .upsert({ user_a_id: a, user_b_id: b, requested_by: meId, status: 'pending', responded_at: null, note: note?.trim() || null },
       { onConflict: 'user_a_id,user_b_id' });
   if (error) { console.error('[connections] request error:', error.message); return false; }
   return true;
@@ -102,7 +104,7 @@ export async function listConnections(userId: string, opts: { limit?: number } =
 // Pending requests `userId` has RECEIVED (for an accept/decline inbox).
 export async function listPendingReceived(userId: string): Promise<ConnectionSummary[]> {
   const { data, error } = await supabase.from('professional_connections')
-    .select('id, user_a_id, user_b_id, created_at, requested_by')
+    .select('id, user_a_id, user_b_id, created_at, requested_by, note')
     .eq('status', 'pending').neq('requested_by', userId)
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
     .order('created_at', { ascending: false });
@@ -117,7 +119,42 @@ export async function listPendingReceived(userId: string): Promise<ConnectionSum
     .map((r: any) => {
       const otherId = r.user_a_id === userId ? r.user_b_id : r.user_a_id;
       const otherUser = profileMap.get(otherId);
-      return otherUser ? { id: r.id, otherUser, createdAt: r.created_at } : null;
+      return otherUser ? { id: r.id, otherUser, createdAt: r.created_at, note: r.note } : null;
     })
     .filter((r): r is ConnectionSummary => r !== null);
+}
+
+// The note attached to the pending request BETWEEN meId and otherId, from
+// whichever side sent it -- used to show "Hi Maya, I saw your..." on the
+// recipient's side of the Connect flow without needing the full inbox.
+export async function getPendingNote(meId: string, otherId: string): Promise<string | null> {
+  const [a, b] = orderedPair(meId, otherId);
+  const { data } = await supabase.from('professional_connections')
+    .select('note').eq('user_a_id', a).eq('user_b_id', b).eq('status', 'pending').maybeSingle();
+  return data?.note ?? null;
+}
+
+// Count of people BOTH meId and otherId are accepted-connected to -- pure
+// network context (never fed into the Reliability Score). Two small
+// queries + a client-side set intersection rather than a DB function,
+// consistent with how the rest of this app avoids Postgres functions it
+// can't test against the live database from here.
+export async function getMutualConnectionCount(meId: string, otherId: string): Promise<number> {
+  if (meId === otherId) return 0;
+  const [mine, theirs] = await Promise.all([listConnections(meId), listConnections(otherId)]);
+  const mineIds = new Set(mine.map(c => c.otherUser.id));
+  return theirs.filter(c => mineIds.has(c.otherUser.id)).length;
+}
+
+export type ConnectionDegree = 1 | 2 | 3;
+
+// LinkedIn-style network degree -- 1st (directly connected), 2nd (share a
+// mutual connection), 3rd+ (wider network). Display/context only, per
+// spec -- never used in the Reliability Score.
+export async function getConnectionDegree(meId: string, otherId: string): Promise<ConnectionDegree> {
+  if (meId === otherId) return 1;
+  const status = await getConnectionStatus(meId, otherId);
+  if (status === 'connected') return 1;
+  const mutual = await getMutualConnectionCount(meId, otherId);
+  return mutual > 0 ? 2 : 3;
 }
