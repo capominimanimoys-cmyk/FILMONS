@@ -1223,6 +1223,19 @@ export async function getSuggestedCreators(
     const { data: myFollowingRows } = await supabase.from('follows').select('following_id').eq('follower_id', userId);
     const alreadyFollowing = new Set((myFollowingRows ?? []).map((r: any) => r.following_id));
 
+    // Exclude anyone already a Professional Connection or with a pending
+    // request either direction -- the card's primary action is Connect,
+    // so someone already connected/pending isn't a useful suggestion here
+    // (per spec: never recommend already-connected or pending users).
+    const { data: connectionRows } = await supabase
+      .from('professional_connections')
+      .select('user_a_id, user_b_id')
+      .in('status', ['accepted', 'pending'])
+      .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+    const alreadyConnectedOrPending = new Set(
+      (connectionRows ?? []).map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id),
+    );
+
     const { data: candidateRows } = await supabase
       .from('profiles')
       .select('id, name, username, avatar_url, primary_role, city, is_verified')
@@ -1230,7 +1243,8 @@ export async function getSuggestedCreators(
       .not('primary_role', 'is', null)
       .order('is_verified', { ascending: false })
       .limit(limit * 6);
-    const candidates = (candidateRows ?? []).filter((c: any) => c.id !== userId && !alreadyFollowing.has(c.id));
+    const candidates = (candidateRows ?? []).filter((c: any) =>
+      c.id !== userId && !alreadyFollowing.has(c.id) && !alreadyConnectedOrPending.has(c.id));
     if (!candidates.length) return [];
     const candidateIds = candidates.map((c: any) => c.id);
 

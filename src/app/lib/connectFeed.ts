@@ -70,6 +70,28 @@ export interface ConnectFeedPage {
   activityHasMore: boolean;
 }
 
+// "Portfolio You May Like" -- a lightweight discovery module inserted a
+// few entries into the same unified feed (see Home.tsx), not a full
+// ranking engine. Pulls from the same public-portfolio pool "For You"
+// already uses, filtered to whatever the viewer isn't already seeing in
+// their main feed (excludeIds) and never the viewer's own work. Reuses
+// getPortfolioFeed's own ordering (recency-merged) rather than a second
+// scoring model -- a real, working first pass, not the final word on
+// personalized ranking.
+export async function getRecommendedPortfolio(opts: {
+  viewerId: string;
+  category?: string;
+  excludeIds?: Set<string>;
+  limit?: number;
+}): Promise<PortfolioFeedEntry[]> {
+  const limit = opts.limit ?? 8;
+  const entries = await getPortfolioFeed({ limit: limit * 3, category: opts.category });
+  const exclude = opts.excludeIds ?? new Set<string>();
+  return entries
+    .filter(e => e.creator.id !== opts.viewerId && !exclude.has(e.id))
+    .slice(0, limit);
+}
+
 export async function getConnectFeed(opts: {
   tab: 'foryou' | 'following';
   viewerId?: string;

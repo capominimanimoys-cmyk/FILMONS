@@ -22,15 +22,16 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { EmergencyPreviewGate } from '../components/EmergencyLockedState';
 import { ListingCard } from '../components/ListingCard';
-import { getSuggestedCreators, PORTFOLIO_CATEGORIES, type SuggestedCreator } from '../lib/portfolioApi';
+import { getSuggestedCreators, PORTFOLIO_CATEGORIES, type SuggestedCreator, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
-import { getConnectFeed, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
+import { getConnectFeed, getRecommendedPortfolio, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
 import { PostComposer } from '../components/PostComposer';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
+import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
 import { BottomSheet } from '../components/BottomSheet';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
@@ -460,6 +461,30 @@ export function Home() {
     getSuggestedCreators(user.id, { limit: 10 }).then(setSuggestedCreators);
   }, [homeMode, user?.id]);
 
+  // "Portfolio You May Like" -- same one-per-mount fetch pattern as People
+  // You May Know above, kept out of connectCacheRef/connectItems for the
+  // same reason (a discovery module, not paginated feed content). Excludes
+  // whatever's already loaded in the main feed so the same work doesn't
+  // show twice on the same screen.
+  const [recommendedPortfolio, setRecommendedPortfolio] = useState<PortfolioFeedEntry[]>([]);
+  const recommendedPortfolioFetchedRef = useRef(false);
+  useEffect(() => {
+    if (homeMode !== 'portfolio' || recommendedPortfolioFetchedRef.current || !user?.id) return;
+    if (!connectItems.length) return; // wait for the main feed's first page so excludeIds is meaningful
+    recommendedPortfolioFetchedRef.current = true;
+    const excludeIds = new Set(
+      connectItems.filter(i => i.kind === 'portfolio').map(i => (i as any).entry.id),
+    );
+    getRecommendedPortfolio({ viewerId: user.id, excludeIds, limit: 8 }).then(async entries => {
+      setRecommendedPortfolio(entries);
+      const ids = [...new Set(entries.map(e => e.creator.id))].filter(id => !connectTrustLevels.has(id));
+      if (ids.length) {
+        const levels = await getTrustLevelsBatch(ids);
+        setConnectTrustLevels(prev => new Map([...prev, ...levels]));
+      }
+    });
+  }, [homeMode, user?.id, connectItems.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Personalized creative-interest category chips -- fetched once per Home
   // mount (a ranking snapshot, not paginated feed content). Guests get no
   // personalized row at all (there's no account to rank against) -- just
@@ -475,8 +500,9 @@ export function Home() {
   }, [homeMode, user?.id]);
 
   const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
+  const PORTFOLIO_SUGGESTION_INDEX = 12;
   const connectRenderItems = useMemo(() => {
-    type RenderItem = ConnectFeedItem | { kind: 'suggested' };
+    type RenderItem = ConnectFeedItem | { kind: 'suggested' } | { kind: 'portfolio-suggested' };
     const list: RenderItem[] = [...connectItems];
     // Never the very first thing in the feed, and only once (not
     // re-inserted every few entries) -- simplest way to satisfy "avoid
@@ -484,8 +510,14 @@ export function Home() {
     if (suggestedCreators.length > 0 && list.length > PEOPLE_YOU_MAY_KNOW_INDEX) {
       list.splice(PEOPLE_YOU_MAY_KNOW_INDEX, 0, { kind: 'suggested' as const });
     }
+    // Further down than People You May Know so the two discovery breaks
+    // don't land back-to-back -- matches the spec's own mockup ("Post Post
+    // Post / People you may know / Post Post / Portfolio you may like").
+    if (recommendedPortfolio.length > 0 && list.length > PORTFOLIO_SUGGESTION_INDEX) {
+      list.splice(PORTFOLIO_SUGGESTION_INDEX, 0, { kind: 'portfolio-suggested' as const });
+    }
     return list;
-  }, [connectItems, suggestedCreators]);
+  }, [connectItems, suggestedCreators, recommendedPortfolio]);
 
   // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -1251,6 +1283,12 @@ export function Home() {
                           creators={suggestedCreators}
                           onSeeAll={() => navigate('/search/category/creators')}
                         />
+                      ) : item.kind === 'portfolio-suggested' ? (
+                        <PortfolioYouMayLikeRow
+                          key="portfolio-you-may-like"
+                          entries={recommendedPortfolio}
+                          trustLevels={connectTrustLevels}
+                        />
                       ) : (
                         <ConnectFeedCard
                           key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
@@ -1412,7 +1450,27 @@ export function Home() {
             ) : (
               <>
                 <div className="space-y-4">
-                  {connectItems.map(item => (
+                  {/* Desktop doesn't have a dedicated right rail for these
+                      discovery modules yet -- shown inline in the center
+                      feed instead, matching the spec's own fallback for
+                      narrower desktop widths ("remove/collapse the right
+                      rail and allow recommended-account modules to appear
+                      inside the feed like mobile"). Reuses connectRenderItems
+                      (the same spliced list mobile uses) instead of the raw
+                      connectItems, so both breakpoints share one source. */}
+                  {connectRenderItems.map(item => item.kind === 'suggested' ? (
+                    <PeopleYouMayKnowRow
+                      key="people-you-may-know"
+                      creators={suggestedCreators}
+                      onSeeAll={() => navigate('/search/category/creators')}
+                    />
+                  ) : item.kind === 'portfolio-suggested' ? (
+                    <PortfolioYouMayLikeRow
+                      key="portfolio-you-may-like"
+                      entries={recommendedPortfolio}
+                      trustLevels={connectTrustLevels}
+                    />
+                  ) : (
                     <ConnectFeedCard
                       key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
                       item={item} trustLevels={connectTrustLevels}
