@@ -1737,6 +1737,35 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </button>
           )}
 
+          {/* Attached Listing -- was previously ONLY reachable via the
+              shoppable-tag icon overlaid on photo/video media, so a post
+              with a linked listing but no visual media (a text + listing
+              post, e.g. from Create Post's Listing toolbar item) rendered
+              the attachment nowhere at all. Same structured-card treatment
+              as the Portfolio attachment above. */}
+          {localPost.listingId && (
+            <button
+              onClick={()=>navigate(`/listing/${localPost.listingId}`)}
+              className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
+              style={{ width: 'calc(100% - 1.5rem)' }}
+            >
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {localPost.listingImage && (
+                  <img src={localPost.listingImage} className="w-full h-full object-cover" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{localPost.listingTitle}</p>
+                <p className="text-xs text-gray-400 truncate">
+                  {[localPost.listingPrice != null ? `$${localPost.listingPrice}${localPost.listingMode==='rent'?'/day':''}` : null, localPost.listingCity].filter(Boolean).join(' · ')}
+                </p>
+                <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
+                  View Listing <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+            </button>
+          )}
+
           {/* Repost embedded */}
           {localPost.repostOf && (
             <div className="mx-3 mt-2 border border-gray-200 rounded-xl overflow-hidden cursor-pointer"
