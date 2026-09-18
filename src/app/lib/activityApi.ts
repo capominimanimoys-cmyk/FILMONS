@@ -134,10 +134,16 @@ async function filterVisible(rows: any[], viewerId?: string): Promise<any[]> {
     // postsApi.create() now actually respects the composer's audience
     // choice (previously hardcoded to 'public' -- see api.ts), so a
     // 'connections'/'private' post can genuinely exist here. Select
-    // user_id/visibility too so the switch below can gate on it instead of
-    // treating every existing post as safe to surface.
+    // author_id/visibility too so the switch below can gate on it instead
+    // of treating every existing post as safe to surface. `posts` uses
+    // author_id (NOT user_id like portfolio_items/portfolio_albums below) --
+    // selecting the wrong column here silently broke this entire branch:
+    // an unknown-column error made `checked('posts')` swallow it and
+    // return [], so postMap was always empty and EVERY post_published
+    // event got filtered out regardless of visibility, not just non-public
+    // ones. That's the actual reason posts stopped appearing in Connect.
     postIds.length
-      ? supabase.from('posts').select('id, user_id, visibility').in('id', postIds).then(checked('posts'))
+      ? supabase.from('posts').select('id, author_id, visibility').in('id', postIds).then(checked('posts'))
       : Promise.resolve([]),
   ]);
 
@@ -162,7 +168,7 @@ async function filterVisible(rows: any[], viewerId?: string): Promise<any[]> {
   // same accepted-connections lookup filterPostsByVisibility() uses in
   // api.ts, kept local here since this file has its own viewer scoping.
   const restrictedPostAuthors = [...new Set(
-    (postRows as any[]).filter(r => r.visibility === 'connections' && r.user_id !== viewerId).map(r => r.user_id),
+    (postRows as any[]).filter(r => r.visibility === 'connections' && r.author_id !== viewerId).map(r => r.author_id),
   )];
   let viewerConnections = new Set<string>();
   if (viewerId && restrictedPostAuthors.length) {
@@ -177,8 +183,8 @@ async function filterVisible(rows: any[], viewerId?: string): Promise<any[]> {
       case 'post': {
         const post = postMap.get(r.target_id);
         if (!post) return false;
-        if (post.visibility === 'private') return post.user_id === viewerId;
-        if (post.visibility === 'connections') return post.user_id === viewerId || viewerConnections.has(post.user_id);
+        if (post.visibility === 'private') return post.author_id === viewerId;
+        if (post.visibility === 'connections') return post.author_id === viewerId || viewerConnections.has(post.author_id);
         return true;
       }
       case 'portfolio_item': {
