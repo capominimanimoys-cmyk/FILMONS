@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 // Shared slide-up sheet — same backdrop-fade/slide/safe-area/delayed-close
@@ -51,7 +52,15 @@ export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92
     setDragY(0);
   };
 
-  return (
+  // Portaled to document.body -- a caller nested inside any transformed
+  // ancestor (e.g. Profile.tsx's push-page overlay, or EditProfileFieldPanel
+  // itself) would otherwise have this sheet's `position:fixed` trapped to
+  // that ancestor's box instead of the real viewport, AND its stacking
+  // context capped below whatever else is portaled straight to body (this
+  // was exactly the bug where the Education/Training Type sheet rendered
+  // behind the Add/Edit Education panel) -- same fix EditProfileFieldPanel
+  // already uses, for the same reason.
+  return createPortal((
     <>
       <div
         className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm"
@@ -91,7 +100,7 @@ export function BottomSheet({ title, onClose, children, footer, maxHeightVh = 92
         )}
       </div>
     </>
-  );
+  ), document.body);
 }
 
 export function SheetAction({
