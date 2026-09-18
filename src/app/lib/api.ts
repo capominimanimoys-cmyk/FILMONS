@@ -1761,7 +1761,13 @@ export const postsApi = {
 
     if (!data) throw new Error('No data returned from post insert');
 
-    logActivityEvent({
+    // Awaited (not fire-and-forget like most logActivityEvent call sites) --
+    // the composer calls onPost()/refetches Connect immediately after this
+    // function resolves, and an un-awaited insert here was racing that
+    // refetch: the activity_events row could still be in flight when
+    // Connect's own SELECT ran, so a freshly published post sometimes
+    // didn't appear on the very first load after "Your post is live."
+    await logActivityEvent({
       actorId: currentUser.id, activityType: 'post_published',
       targetType: 'post', targetId: String(data.id), title: (data.content || content || '').slice(0, 80) || null,
     });
