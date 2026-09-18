@@ -31,6 +31,7 @@ import { ListingBrowser } from './ListingBrowser';
 import { PortfolioBrowser } from './PortfolioBrowser';
 import { AudioPostComposer } from './AudioPostComposer';
 import * as notifs from '../lib/notifications';
+import { notifyEvent } from '../lib/notifyEvent';
 import { toast } from 'sonner';
 import type { PostType, Visibility } from '../types';
 import type { PortfolioItem } from '../lib/portfolioApi';
@@ -3129,6 +3130,18 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
         onPost?.(newPost);
         setPub(false);
         setPublishedPost(newPost);  // Show success screen
+
+        // Email mutual follows ("friends" -- people the poster follows who
+        // also follow them back) about the new post. The edge function
+        // computes the mutual-follow list itself server-side rather than
+        // trusting one from the client.
+        if (newPost?.id) {
+          notifyEvent({
+            type: 'new_post_portfolio', creatorId: user.id, creatorName: user.name || user.username || '',
+            contentType: 'post', title: (caption || textContent || '').slice(0, 80) || undefined,
+            contentUrl: `https://filmons.app/post/${newPost.id}`,
+          });
+        }
 
         // Notify followers — fire-and-forget, cap at 100 to avoid Supabase overload
         const followers: string[] = (user as any).followers || [];

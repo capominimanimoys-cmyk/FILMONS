@@ -84,6 +84,12 @@ const TEMPLATE_PAYOUT_METHOD_UPDATED   = 'template_05ilw6m';
 const TEMPLATE_PAYOUT_SETTINGS_ACCESSED = 'template_lwifwd7';
 const TEMPLATE_GUEST_SUPPORT_ADMIN     = 'template_ecla4ki';
 const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_qr9tadk';
+// Placeholders until created in the EmailJS dashboard from
+// new-post-portfolio-template.html / connection-request-template.html /
+// connection-response-template.html and the real ids are swapped in.
+const TEMPLATE_NEW_POST_PORTFOLIO      = 'template_np_placeholder';
+const TEMPLATE_CONNECTION_REQUEST      = 'template_cr_placeholder';
+const TEMPLATE_CONNECTION_RESPONSE     = 'template_cx_placeholder';
 // Same template sent to both host and renter -- audience-specific
 // wording is handled by the `recipient_role` param, not a second template.
 const TEMPLATE_BOOKING_REMINDER        = 'template_9ah6jeq';
@@ -478,6 +484,59 @@ export function sendFollowedCreatorPostedEmail(p: {
     from_name: p.fromName,
     listing_title: p.listingTitle,
     listing_url: `https://filmons.app/listing/${p.listingId}`,
+  });
+}
+
+// Sent to mutual follows (people the creator follows who also follow them
+// back -- "friends", per how this was requested) when they publish a new
+// Post or Portfolio item. Same template covers both content types via
+// content_type_label/content_url, rather than two near-identical templates.
+export function sendNewPostOrPortfolioEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; contentType: 'post' | 'portfolio';
+  title?: string | null; contentUrl: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_NEW_POST_PORTFOLIO, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    content_type_label: p.contentType === 'post' ? 'a new post' : 'new portfolio work',
+    content_title: p.title || '',
+    content_url: p.contentUrl,
+    settings_url: 'https://filmons.app/settings/notifications',
+  });
+}
+
+// Sent to the RECIPIENT of a new Connect request (the professional
+// networking relationship, distinct from Follow -- see
+// professional_connections / connectionsApi.ts).
+export function sendConnectionRequestEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; note?: string | null; profileId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CONNECTION_REQUEST, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    note: p.note || '',
+    profile_url: `https://filmons.app/host/${p.profileId}`,
+    settings_url: 'https://filmons.app/settings/notifications',
+  });
+}
+
+// Sent to the ORIGINAL SENDER once their Connect request is accepted or
+// declined -- private to the two parties involved (never shown publicly
+// on either profile, per the Connect flow's own privacy rule; a private
+// email to the person who asked isn't the same as broadcasting it).
+export function sendConnectionResponseEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null;
+  fromName: string; accepted: boolean; profileId: string;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_CONNECTION_RESPONSE, {
+    to_name: p.toName || 'there',
+    from_name: p.fromName,
+    status_label: p.accepted ? 'accepted' : 'declined',
+    status_emoji: p.accepted ? '🤝' : '',
+    profile_url: `https://filmons.app/host/${p.profileId}`,
+    settings_url: 'https://filmons.app/settings/notifications',
   });
 }
 

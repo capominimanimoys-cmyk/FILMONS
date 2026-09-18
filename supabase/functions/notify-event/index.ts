@@ -24,7 +24,11 @@ async function selectMany(table: string, filter: string) {
   return Array.isArray(rows) ? rows : [];
 }
 
-import { sendListingLikedEmail, sendCreatorLikedEmail, sendFollowedCreatorPostedEmail, sendSupportCaseAdminEmail, sendSupportCaseReplyAdminEmail } from '../_shared/notificationEmails.ts';
+import {
+  sendListingLikedEmail, sendCreatorLikedEmail, sendFollowedCreatorPostedEmail,
+  sendSupportCaseAdminEmail, sendSupportCaseReplyAdminEmail,
+  sendNewPostOrPortfolioEmail, sendConnectionRequestEmail, sendConnectionResponseEmail,
+} from '../_shared/notificationEmails.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -99,6 +103,52 @@ Deno.serve(async (req) => {
         category: supportCase?.category || 'general', message: message || '(no message)',
         submittedAt: new Date().toISOString(),
       });
+      return json({ sent: true });
+    }
+
+    if (type === 'new_post_portfolio') {
+      const { creatorId, creatorName, contentType, title, contentUrl } = body;
+      if (!creatorId || !contentUrl) return json({ error: 'Missing fields' }, 400);
+      // "Friends" = mutual follows -- people the creator follows who also
+      // follow them back, computed server-side rather than trusting a list
+      // from the client. Capped at 50, same fan-out ceiling every other
+      // per-event email in this function already uses.
+      const [following, followers] = await Promise.all([
+        selectMany('follows', `follower_id=eq.${creatorId}&select=following_id&limit=500`),
+        selectMany('follows', `following_id=eq.${creatorId}&select=follower_id&limit=500`),
+      ]);
+      const followingIds = new Set(following.map((f: any) => f.following_id));
+      const mutualIds = [...new Set(followers.map((f: any) => f.follower_id))]
+        .filter((id: string) => followingIds.has(id) && id !== creatorId)
+        .slice(0, 50);
+      let sent = 0;
+      for (const mutualId of mutualIds) {
+        const mutual = await selectOne('profiles', `id=eq.${mutualId}`);
+        if (!mutual?.email) continue;
+        await sendNewPostOrPortfolioEmail({
+          toEmail: mutual.email, toName: mutual.name, fromName: creatorName || 'A creator you follow',
+          contentType: contentType === 'portfolio' ? 'portfolio' : 'post', title, contentUrl,
+        });
+        sent++;
+      }
+      return json({ sent, of: mutualIds.length });
+    }
+
+    if (type === 'connection_request') {
+      const { toUserId, fromUserId, fromName, note } = body;
+      if (!toUserId || !fromUserId) return json({ error: 'Missing fields' }, 400);
+      const toUser = await selectOne('profiles', `id=eq.${toUserId}`);
+      if (!toUser?.email) return json({ sent: false, reason: 'no_email' });
+      await sendConnectionRequestEmail({ toEmail: toUser.email, toName: toUser.name, fromName: fromName || 'Someone', note, profileId: fromUserId });
+      return json({ sent: true });
+    }
+
+    if (type === 'connection_response') {
+      const { toUserId, fromUserId, fromName, accepted } = body;
+      if (!toUserId || !fromUserId) return json({ error: 'Missing fields' }, 400);
+      const toUser = await selectOne('profiles', `id=eq.${toUserId}`);
+      if (!toUser?.email) return json({ sent: false, reason: 'no_email' });
+      await sendConnectionResponseEmail({ toEmail: toUser.email, toName: toUser.name, fromName: fromName || 'Someone', accepted: !!accepted, profileId: fromUserId });
       return json({ sent: true });
     }
 

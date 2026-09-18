@@ -42,6 +42,7 @@ import {
 import { ConnectFlowSheet } from '../components/ConnectFlowSheet';
 import { ConnectionActionsSheet } from '../components/ConnectionActionsSheet';
 import * as notifs from '../lib/notifications';
+import { notifyEvent } from '../lib/notifyEvent';
 
 type Tab = ProfileTab;
 const TABS = PROFILE_TABS;
@@ -336,6 +337,7 @@ export function HostProfile() {
       type: 'connection_request' as any,
       fromUserId: me.id, fromUserName: me.name || me.username || '', fromUserAvatar: me.avatar || undefined,
     });
+    notifyEvent({ type: 'connection_request', toUserId: host.id, fromUserId: me.id, fromName: me.name || me.username || '', note });
   };
 
   const withdrawConnect = async () => {
@@ -356,16 +358,23 @@ export function HostProfile() {
       type: 'connection_accepted' as any,
       fromUserId: me.id, fromUserName: me.name || me.username || '', fromUserAvatar: me.avatar || undefined,
     });
+    notifyEvent({ type: 'connection_response', toUserId: host.id, fromUserId: me.id, fromName: me.name || me.username || '', accepted: true });
   };
 
   const ignoreConnect = async () => {
     if (!me || !host) return;
     setShowConnectionActions(false);
-    // Ignoring is private -- the sender is never told, per spec ("Never
-    // publicly show Maya ignored Gabriel's request"). declined just stops
-    // it from showing as pending on either side.
+    // Ignoring stays silent in-app -- no notifs.push(), the sender is never
+    // shown "declined" anywhere visible, per spec ("Never publicly show
+    // Maya ignored Gabriel's request"). A private decline EMAIL to the
+    // requester themselves isn't the same as broadcasting it, and was
+    // explicitly asked for separately -- it's the one place this flow
+    // notifies the sender about a decline at all.
     const ok = await respondToConnectionRequest(me.id, host.id, false);
-    if (ok) setConnectionStatus('none');
+    if (ok) {
+      setConnectionStatus('none');
+      notifyEvent({ type: 'connection_response', toUserId: host.id, fromUserId: me.id, fromName: me.name || me.username || '', accepted: false });
+    }
   };
 
   const [showRemoveConnectionConfirm, setShowRemoveConnectionConfirm] = useState(false);

@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { logActivityEvent } from '../lib/activityApi';
+import { notifyEvent } from '../lib/notifyEvent';
 import {
   PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia,
   readImageDimensions, readVideoDimensions, workTypeToMediaType, createAlbum, updateAlbum, addItemToAlbum,
@@ -238,6 +239,10 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
         actorId: user.id, activityType: 'portfolio_album_published',
         targetType: 'portfolio_album', targetId: album.id, title: album.title || null,
       });
+      notifyEvent({
+        type: 'new_post_portfolio', creatorId: user.id, creatorName: user.name || user.username || '',
+        contentType: 'portfolio', title: album.title, contentUrl: `https://filmons.app/portfolio/${user.id}`,
+      });
     }
 
     setPublishingAlbum(false);
@@ -320,6 +325,10 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
         actorId: user.id, activityType: 'portfolio_published',
         targetType: 'portfolio_item', targetId: item.id,
         category: item.category || null, subcategory: (item as any).subcategory || null, title: item.title || null,
+      });
+      notifyEvent({
+        type: 'new_post_portfolio', creatorId: user.id, creatorName: user.name || user.username || '',
+        contentType: 'portfolio', title: item.title, contentUrl: `https://filmons.app/portfolio/${user.id}`,
       });
     }
     toast.success('Added to portfolio!');
