@@ -24,7 +24,7 @@ import { PortfolioItemActionSheet } from './PortfolioItemActionSheet';
 import { toast } from 'sonner';
 import {
   PortfolioFeedEntry, PortfolioItem, PortfolioFeedPreviewItem,
-  toggleItemLike, isItemLiked, getAlbumItems,
+  toggleItemLike, isItemLiked, toggleAlbumLike, isAlbumLiked, getAlbumItems,
   isPortfolioSaved, togglePortfolioSave, deleteAlbum,
   reportPortfolioContent, logPortfolioEngagementEvent,
 } from '../lib/portfolioApi';
@@ -307,32 +307,39 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
   const [viewingItem, setViewingItem] = useState(false);
   const isOwn = !!user && user.id === entry.creator.id;
 
-  const itemForLikes = entry.type === 'item' ? entry.item : null;
+  // Engagement belongs to whichever entity the card actually represents --
+  // an item's own like/comment for an item card, the ALBUM's own (not any
+  // one member item's) for an album card. Was previously a documented
+  // no-op for albums (always 0, tapping Like/Comment did nothing).
   const [liked, setLiked] = useState(false);
-  const [likesCount, setLikesCount] = useState(itemForLikes?.likes_count ?? 0);
-  const [commentsCount] = useState(itemForLikes?.comments_count ?? 0);
+  const [likesCount, setLikesCount] = useState(entry.type === 'item' ? (entry.item.likes_count ?? 0) : (entry.album.likes_count ?? 0));
+  const [commentsCount] = useState(entry.type === 'item' ? (entry.item.comments_count ?? 0) : (entry.album.comments_count ?? 0));
   const [saved, setSaved] = useState(false);
 
   const saveTargetId = entry.type === 'item' ? entry.item.id : entry.album.id;
   const saveTargetType = entry.type === 'item' ? 'portfolio_item' as const : 'portfolio_album' as const;
 
   useEffect(() => {
-    if (itemForLikes && user) isItemLiked(itemForLikes.id, user.id).then(setLiked);
-  }, [itemForLikes?.id, user?.id]);
+    if (!user) return;
+    if (entry.type === 'item') isItemLiked(entry.item.id, user.id).then(setLiked);
+    else isAlbumLiked(entry.album.id, user.id).then(setLiked);
+  }, [entry.type === 'item' ? entry.item.id : entry.album.id, user?.id]); // eslint-disable-line
 
   useEffect(() => {
     if (user) isPortfolioSaved(user.id, saveTargetId, saveTargetType).then(setSaved);
   }, [saveTargetId, saveTargetType, user?.id]);
 
   const handleToggleLike = async () => {
-    if (!itemForLikes) return; // album cards don't carry their own like -- likes are per-item
     if (!user) { showGuestPrompt('Create your Filmons account to like portfolio work.', 'Sign up to like posts'); return; }
     const next = !liked;
     setLiked(next);
     setLikesCount(c => c + (next ? 1 : -1));
-    const ok = await toggleItemLike(itemForLikes.id, user.id, !next, entry.creator.id);
+    const ok = entry.type === 'item'
+      ? await toggleItemLike(entry.item.id, user.id, !next, entry.creator.id)
+      : await toggleAlbumLike(entry.album.id, user.id, !next);
     if (!ok) { setLiked(!next); setLikesCount(c => c + (next ? -1 : 1)); toast.error('Could not update like'); return; }
-    logPortfolioInteraction(user.id, { category: itemForLikes.category, subcategory: itemForLikes.subcategory }, next ? 'like' : 'unlike');
+    const target = entry.type === 'item' ? { category: entry.item.category, subcategory: entry.item.subcategory } : { category: entry.album.category ?? '' };
+    logPortfolioInteraction(user.id, target, next ? 'like' : 'unlike');
   };
 
   const handleToggleSave = async () => {
@@ -426,8 +433,12 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
           regardless of what any ancestor's transform/overflow/z-index does,
           same as Portfolio.tsx's own createPortal(<ItemActionsSheet/>...)
           pattern for its three-dot menu. */}
-      {showComments && entry.type === 'item' && createPortal(
-        <PortfolioCommentSheet itemId={entry.item.id} creatorId={entry.creator.id} itemCategory={entry.item.category} itemSubcategory={entry.item.subcategory} canModerate={isOwn} onClose={() => setShowComments(false)} />,
+      {showComments && createPortal(
+        entry.type === 'item' ? (
+          <PortfolioCommentSheet itemId={entry.item.id} creatorId={entry.creator.id} itemCategory={entry.item.category} itemSubcategory={entry.item.subcategory} canModerate={isOwn} onClose={() => setShowComments(false)} />
+        ) : (
+          <PortfolioCommentSheet itemId={entry.album.id} targetType="album" creatorId={entry.creator.id} itemCategory={(entry.album as any).category} canModerate={isOwn} onClose={() => setShowComments(false)} />
+        ),
         document.body,
       )}
       {showMenu && createPortal(

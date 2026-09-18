@@ -17,7 +17,8 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
 import {
-  PortfolioComment, getItemComments, addItemComment, toggleCommentLike, deleteItemComment,
+  PortfolioComment, getItemComments, getAlbumComments, addItemComment, addAlbumComment,
+  toggleCommentLike, deleteItemComment,
 } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
 
@@ -90,9 +91,13 @@ function CommentRow({
 }
 
 export function PortfolioCommentSheet({
-  itemId, creatorId, itemCategory, itemSubcategory, canModerate, onClose,
+  itemId, targetType = 'item', creatorId, itemCategory, itemSubcategory, canModerate, onClose,
 }: {
-  itemId: string; creatorId: string; itemCategory?: string; itemSubcategory?: string; canModerate: boolean; onClose: () => void;
+  /** The item OR album id -- prop name kept as `itemId` for every existing
+   * caller, `targetType` says which table column it actually maps to. */
+  itemId: string;
+  targetType?: 'item' | 'album';
+  creatorId: string; itemCategory?: string; itemSubcategory?: string; canModerate: boolean; onClose: () => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
   const [comments, setComments] = useState<PortfolioComment[] | null>(null);
@@ -104,10 +109,13 @@ export function PortfolioCommentSheet({
   const [replyingTo, setReplyingTo] = useState<PortfolioComment | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const fetchComments = targetType === 'album' ? getAlbumComments : getItemComments;
+  const createComment = targetType === 'album' ? addAlbumComment : addItemComment;
+
   const countAll = (list: PortfolioComment[]) => list.reduce((n, c) => n + 1 + c.replies.length, 0);
 
   useEffect(() => {
-    getItemComments(itemId, { viewerId: user?.id }).then(({ comments: c, hasMore: hm }) => {
+    fetchComments(itemId, { viewerId: user?.id }).then(({ comments: c, hasMore: hm }) => {
       setComments(c);
       setHasMore(hm);
       setCount(countAll(c));
@@ -118,7 +126,7 @@ export function PortfolioCommentSheet({
     if (!comments?.length || loadingMore) return;
     setLoadingMore(true);
     const oldestCursor = comments[0].created_at;
-    const { comments: more, hasMore: hm } = await getItemComments(itemId, { before: oldestCursor, viewerId: user?.id });
+    const { comments: more, hasMore: hm } = await fetchComments(itemId, { before: oldestCursor, viewerId: user?.id });
     setLoadingMore(false);
     setHasMore(hm);
     setComments(prev => {
@@ -133,7 +141,7 @@ export function PortfolioCommentSheet({
     const body = text.trim();
     if (!body || posting) return;
     setPosting(true);
-    const c = await addItemComment(itemId, user.id, body, replyingTo?.id, creatorId);
+    const c = await createComment(itemId, user.id, body, replyingTo?.id, creatorId);
     setPosting(false);
     if (!c) { toast.error('Could not post comment'); return; }
     const withAuthor: PortfolioComment = { ...c, author: { id: user.id, name: user.name, username: user.username ?? null, avatar_url: user.avatar ?? null } };

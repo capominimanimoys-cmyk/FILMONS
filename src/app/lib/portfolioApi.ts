@@ -59,6 +59,8 @@ export interface PortfolioAlbum {
   cover_item_id?:    string;
   cover_url?:        string;  // uploaded cover image URL (DB column, see migration 20240128)
   visibility:        'public' | 'followers' | 'private';
+  likes_count?:      number;
+  comments_count?:   number;
   sort_order:        number;
   created_at:        string;
   item_count?:       number;  // client-side computed
@@ -713,6 +715,29 @@ export async function toggleItemLike(itemId: string, userId: string, currentlyLi
   return !error;
 }
 
+// Album-level like -- Albums previously had none at all (see the
+// migration's header comment). Separate table from portfolio_item_likes
+// (nothing has a foreign key into that one, but a clean dedicated table is
+// simpler than making its item_id nullable).
+export async function isAlbumLiked(albumId: string, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('portfolio_album_likes')
+    .select('album_id')
+    .eq('album_id', albumId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return !!data;
+}
+
+export async function toggleAlbumLike(albumId: string, userId: string, currentlyLiked: boolean): Promise<boolean> {
+  if (currentlyLiked) {
+    const { error } = await supabase.from('portfolio_album_likes').delete().eq('album_id', albumId).eq('user_id', userId);
+    return !error;
+  }
+  const { error } = await supabase.from('portfolio_album_likes').insert({ album_id: albumId, user_id: userId });
+  return !error;
+}
+
 const COMMENT_PAGE_SIZE = 20;
 
 // portfolio_item_comments.user_id has no declared FK to profiles (unlike
@@ -730,12 +755,33 @@ export async function getItemComments(
   itemId: string,
   opts: { limit?: number; before?: string; viewerId?: string } = {},
 ): Promise<{ comments: PortfolioComment[]; hasMore: boolean }> {
+  return getPortfolioComments({ itemId }, opts);
+}
+
+// Comments belong to EITHER an item or an Album -- Albums previously had
+// no comments of their own at all (per spec: "Engagement belongs to the
+// Album itself, not individual preview tiles"). Reuses the exact same
+// portfolio_item_comments table/portfolio_comment_likes join (which has a
+// real foreign key to it) via a nullable album_id column, rather than a
+// second parallel comments+likes system.
+export async function getAlbumComments(
+  albumId: string,
+  opts: { limit?: number; before?: string; viewerId?: string } = {},
+): Promise<{ comments: PortfolioComment[]; hasMore: boolean }> {
+  return getPortfolioComments({ albumId }, opts);
+}
+
+async function getPortfolioComments(
+  target: { itemId: string } | { albumId: string },
+  opts: { limit?: number; before?: string; viewerId?: string } = {},
+): Promise<{ comments: PortfolioComment[]; hasMore: boolean }> {
   const limit = opts.limit ?? COMMENT_PAGE_SIZE;
   try {
     let topQ = supabase
       .from('portfolio_item_comments')
-      .select('*')
-      .eq('item_id', itemId)
+      .select('*');
+    topQ = 'itemId' in target ? topQ.eq('item_id', target.itemId) : topQ.eq('album_id', target.albumId);
+    topQ = topQ
       .is('parent_id', null)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -801,13 +847,30 @@ export async function getItemComments(
 export async function addItemComment(
   itemId: string, userId: string, body: string, parentId?: string, creatorId?: string,
 ): Promise<PortfolioComment | null> {
+  return addPortfolioComment({ itemId }, userId, body, parentId, creatorId);
+}
+
+export async function addAlbumComment(
+  albumId: string, userId: string, body: string, parentId?: string, creatorId?: string,
+): Promise<PortfolioComment | null> {
+  return addPortfolioComment({ albumId }, userId, body, parentId, creatorId);
+}
+
+async function addPortfolioComment(
+  target: { itemId: string } | { albumId: string },
+  userId: string, body: string, parentId?: string, creatorId?: string,
+): Promise<PortfolioComment | null> {
   const { data, error } = await supabase
     .from('portfolio_item_comments')
-    .insert({ item_id: itemId, user_id: userId, body, parent_id: parentId ?? null })
+    .insert({
+      item_id: 'itemId' in target ? target.itemId : null,
+      album_id: 'albumId' in target ? target.albumId : null,
+      user_id: userId, body, parent_id: parentId ?? null,
+    })
     .select()
     .single();
   if (error) { console.error('[portfolio comments] create error:', error.message); return null; }
-  if (creatorId) logPortfolioEngagementEvent(creatorId, itemId, 'comment', userId);
+  if (creatorId && 'itemId' in target) logPortfolioEngagementEvent(creatorId, target.itemId, 'comment', userId);
   // author is left null -- the caller (PortfolioCommentSheet) already knows
   // who just posted (the current user) and fills it in locally rather than
   // this doing a redundant profile fetch for a row it already knows the

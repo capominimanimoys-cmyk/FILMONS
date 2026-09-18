@@ -4,15 +4,15 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Bookmark, BadgeCheck, Layers, MoreHorizontal } from 'lucide-react';
+import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
-import { timeAgo } from '../PortfolioCommentSheet';
+import { PortfolioCommentSheet, timeAgo } from '../PortfolioCommentSheet';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
-import { togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../../lib/portfolioApi';
+import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import type { TrustLevel } from '../../lib/trustApi';
@@ -27,6 +27,9 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const isOwn = !!user && user.id === creator.id;
 
   const [saved, setSaved] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(album.likes_count ?? 0);
+  const [showComments, setShowComments] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
   const [trustProfileClosing, setTrustProfileClosing] = useState(false);
@@ -36,6 +39,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   };
 
   useEffect(() => { if (user) isPortfolioSaved(user.id, album.id, 'portfolio_album').then(setSaved); }, [album.id, user?.id]);
+  useEffect(() => { if (user) isAlbumLiked(album.id, user.id).then(setLiked); }, [album.id, user?.id]);
 
   const handleToggleSave = async () => {
     if (!user) { showGuestPrompt('Create your Filmons account to save portfolio work.', 'Sign up to save'); return; }
@@ -44,6 +48,24 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
     const ok = await togglePortfolioSave(user.id, album.id, 'portfolio_album', !next, creator.id);
     if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
     logPortfolioInteraction(user.id, { category: (album as any).category ?? '' }, next ? 'save' : 'unsave');
+  };
+
+  // Engagement belongs to the Album itself, not its individual preview
+  // tiles -- new portfolio_album_likes/comments (see migration), not the
+  // per-item like/comment system.
+  const handleToggleLike = async () => {
+    if (!user) { showGuestPrompt('Create your Filmons account to like portfolio work.', 'Sign up to like posts'); return; }
+    const next = !liked;
+    setLiked(next);
+    setLikesCount(c => c + (next ? 1 : -1));
+    const ok = await toggleAlbumLike(album.id, user.id, !next);
+    if (!ok) { setLiked(!next); setLikesCount(c => c + (next ? -1 : 1)); toast.error('Could not update like'); return; }
+    logPortfolioInteraction(user.id, { category: (album as any).category ?? '' }, next ? 'like' : 'unlike');
+  };
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/portfolio/${creator.id}`;
+    try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };
 
   const openAlbum = () => navigate(`/portfolio/${creator.id}`);
@@ -95,13 +117,30 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
           makes." */}
       <ViewPortfolioLink creatorId={creator.id} creatorFirstName={creator.name.split(' ')[0]} isOwn={isOwn} className="mt-3" />
 
+      <button onClick={openAlbum} className="text-sm font-semibold text-blue-600 hover:underline mt-3 block">View album →</button>
+
       <div className="flex items-center gap-5 mt-3 pt-3 border-t border-gray-50">
-        <button onClick={openAlbum} className="text-sm font-semibold text-blue-600 hover:underline">View album →</button>
+        <button onClick={handleToggleLike} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <Heart className={`w-5 h-5 ${liked ? 'text-red-500 fill-red-500' : 'text-gray-400'}`} /> Like{likesCount > 0 ? ` · ${likesCount}` : ''}
+        </button>
+        <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <MessageCircle className="w-5 h-5 text-gray-400" /> Comment{(album.comments_count ?? 0) > 0 ? ` · ${album.comments_count}` : ''}
+        </button>
+        <button onClick={handleShare} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <Send className="w-5 h-5 text-gray-400" /> Share
+        </button>
         <button onClick={handleToggleSave} className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Bookmark className={`w-5 h-5 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-400'}`} /> Save
         </button>
       </div>
 
+      {showComments && createPortal(
+        <PortfolioCommentSheet
+          itemId={album.id} targetType="album" creatorId={creator.id} itemCategory={(album as any).category}
+          canModerate={isOwn} onClose={() => setShowComments(false)}
+        />,
+        document.body,
+      )}
       {showTrustDetails && createPortal(
         <TrustDetailsSheet
           userId={creator.id}
