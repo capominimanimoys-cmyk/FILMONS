@@ -17,9 +17,31 @@
 // affinity already converge on exactly that for a creator whose own
 // portfolio matches their own stated skills/roles.
 import { useEffect, useState } from 'react';
-import { Play, Eye, Heart, MessageCircle } from 'lucide-react';
+import {
+  Play, Eye, Heart, MessageCircle, Plus,
+  ChartNoAxesColumnIncreasing, Users, BriefcaseBusiness, ShieldCheck,
+} from 'lucide-react';
 import { PortfolioItem } from '../../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter } from '../../lib/personalization';
+
+const BENEFITS = [
+  {
+    Icon: ChartNoAxesColumnIncreasing, label: 'Profile interactions',
+    desc: 'Give people more reasons to discover and interact with your profile.',
+  },
+  {
+    Icon: Users, label: 'More connections',
+    desc: 'Show your work and connect with creators and professionals interested in what you do.',
+  },
+  {
+    Icon: BriefcaseBusiness, label: 'More earning opportunities',
+    desc: 'Increase your chances of being hired for services or selected for opportunities.',
+  },
+  {
+    Icon: ShieldCheck, label: 'Build rental trust',
+    desc: 'Help potential renters understand who you are and feel more confident renting from you.',
+  },
+];
 
 function formatCount(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K`;
@@ -57,7 +79,7 @@ function Card({ item, onTap }: { item: PortfolioItem; onTap: () => void }) {
 }
 
 export function FeaturedPortfolioSection({
-  userId, items, isOwner, onOpenItem, onViewAll,
+  userId, items, isOwner, onOpenItem, onViewAll, onAddWork,
 }: {
   /** The PROFILE OWNER's id -- personalized categories are generated for
    * them (what their own portfolio/skills/role span), not the viewer. */
@@ -66,6 +88,9 @@ export function FeaturedPortfolioSection({
   isOwner: boolean;
   onOpenItem: (item: PortfolioItem) => void;
   onViewAll: () => void;
+  /** Owner-only -- opens the existing Add Portfolio Work flow from the
+   * empty state's CTA. */
+  onAddWork?: () => void;
 }) {
   const [categories, setCategories] = useState<string[]>([]);
   const [selected, setSelected] = useState('All');
@@ -82,6 +107,51 @@ export function FeaturedPortfolioSection({
         const { category, subcategory } = resolveCategoryFilter(selected);
         return subcategory ? item.subcategory === subcategory : item.category === category;
       });
+
+  // Empty AND owner: the portfolio-as-foundation growth message replaces
+  // the categories/carousel entirely (no empty category tabs) -- per spec,
+  // this is deliberately private/owner-only. A visitor to an empty profile
+  // just sees the plain one-liner below, never the growth pitch.
+  if (!items.length && isOwner) {
+    return (
+      <section className="bg-white rounded-2xl border border-gray-100 p-4">
+        <p className="text-sm font-black text-gray-900 mb-4">Portfolio</p>
+        <div className="flex flex-col items-center text-center">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-3">
+            <Plus className="w-8 h-8 text-blue-600" />
+          </div>
+          <p className="text-base font-black text-gray-900 mb-1.5">Build your portfolio</p>
+          <p className="text-xs text-gray-500 leading-relaxed max-w-xs mb-4">
+            Add your work to your portfolio to increase your profile interactions, make more
+            professional connections, create more opportunities to earn from services and
+            opportunities, and build trust with people who may rent from you.
+          </p>
+
+          <div className="w-full space-y-2.5 mb-4">
+            {BENEFITS.map(b => (
+              <div key={b.label} className="flex items-start gap-2.5 text-left">
+                <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                  <b.Icon className="w-4 h-4 text-gray-500" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-gray-900">{b.label}</p>
+                  <p className="text-[11px] text-gray-400 leading-snug">{b.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={onAddWork}
+            className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-black active:opacity-80 transition-opacity"
+          >
+            + Add portfolio work
+          </button>
+          <p className="text-[11px] text-gray-400 mt-2">Show the Filmons community what you can do.</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="bg-white rounded-2xl border border-gray-100 p-4">
@@ -109,9 +179,7 @@ export function FeaturedPortfolioSection({
       )}
 
       {!items.length ? (
-        <p className="text-xs text-gray-400">
-          {isOwner ? "You haven't added any portfolio work yet." : 'No portfolio work yet.'}
-        </p>
+        <p className="text-xs text-gray-400">No portfolio work yet.</p>
       ) : !visibleItems.length ? (
         <p className="text-xs text-gray-400">No portfolio work in this category yet.</p>
       ) : (

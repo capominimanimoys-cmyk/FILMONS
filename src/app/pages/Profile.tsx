@@ -1332,6 +1332,7 @@ export function Profile() {
               portfolioItems={portfolioItems}
               onOpenPortfolioItem={item => { setPortfolioDetail(item); }}
               onViewAllPortfolio={() => navigate('/portfolio')}
+              onAddPortfolioWork={() => setShowAddPortfolio(true)}
               services={listings.filter(isServiceListing)}
               listings={listings.filter(l => !isServiceListing(l))}
               lockedListingIds={lockedOpportunityIds}
@@ -1485,13 +1486,6 @@ export function Profile() {
                 </div>
               )}
 
-              {/* Add sheet */}
-              {showAddPortfolio && (
-                <AddPortfolioItemSheet
-                  onClose={() => setShowAddPortfolio(false)}
-                  onAdded={item => setPortfolioItems(prev => [item, ...prev])}
-                />
-              )}
             </div>
           )}
 
@@ -1888,6 +1882,16 @@ export function Profile() {
           of which tab is active. */}
       {portfolioDetail && (
         <PortfolioDetailSheet item={portfolioDetail} onClose={() => setPortfolioDetail(null)} />
+      )}
+
+      {/* Add Portfolio Work -- rendered at page level (not nested in the
+          dead tab==='portfolio' fallback block) so the All tab's empty-state
+          CTA can open it too, not just the dedicated Portfolio tab's. */}
+      {showAddPortfolio && (
+        <AddPortfolioItemSheet
+          onClose={() => setShowAddPortfolio(false)}
+          onAdded={item => setPortfolioItems(prev => [item, ...prev])}
+        />
       )}
 
       {/* ── Followers / Following modal ── */}

@@ -28,7 +28,7 @@ export function ProfileAllTab({
   posts, onViewAllPosts, onPostDeleted, onPostLikeToggled,
   skills, onEditSkills,
   education, onEditEducation,
-  portfolioItems, onOpenPortfolioItem, onViewAllPortfolio,
+  portfolioItems, onOpenPortfolioItem, onViewAllPortfolio, onAddPortfolioWork,
   services, listings, lockedListingIds, onViewServices, onViewListings,
   gear, onEditGear,
   connections, connectionCount, onViewAllConnections,
@@ -69,6 +69,8 @@ export function ProfileAllTab({
   portfolioItems: PortfolioItem[];
   onOpenPortfolioItem: (item: PortfolioItem) => void;
   onViewAllPortfolio: () => void;
+  /** Owner-only -- opens Add Portfolio Work from the empty state's CTA. */
+  onAddPortfolioWork?: () => void;
   services: Listing[];
   listings: Listing[];
   lockedListingIds?: Set<string>;
@@ -130,7 +132,7 @@ export function ProfileAllTab({
 
       <FeaturedPortfolioSection
         userId={userId} items={portfolioItems} isOwner={isOwner}
-        onOpenItem={onOpenPortfolioItem} onViewAll={onViewAllPortfolio}
+        onOpenItem={onOpenPortfolioItem} onViewAll={onViewAllPortfolio} onAddWork={onAddPortfolioWork}
       />
 
       <ListingsRowSection
