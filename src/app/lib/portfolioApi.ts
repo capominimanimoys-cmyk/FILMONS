@@ -8,7 +8,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { logProfileEngagement } from './profileEngagement';
 import { toStringArray } from './normalizeList';
 
-export type MediaType = 'image' | 'video' | 'audio' | 'link';
+export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text';
 
 /** Creative work classification (first-step selection in Add Work flow) */
 export type WorkType = 'photo' | 'video' | 'reel' | 'audio' | 'project' | 'case_study' | 'bts' | 'link';
@@ -32,6 +32,11 @@ export interface PortfolioItem {
   tags?:               string[];
   tools?:              string[];
   client_name?:        string;
+  /** Item-level audience -- distinct from the account-wide
+   * portfolio_settings.visibility gate. Missing/undefined defaults to
+   * 'public', same convention as posts.visibility. */
+  visibility?:         'public' | 'followers' | 'private';
+  location?:           string;
   views_count?:        number;
   saves_count?:        number;
   likes_count?:        number;
@@ -1079,7 +1084,15 @@ export async function getPortfolioFeed(opts: {
 
     const [itemsRes0, albumsRes] = await Promise.all([buildItemsQuery(true, true), albumsQ]);
     const itemsRes = itemsRes0.error?.code === '42703' ? await buildItemsQuery(false, false) : itemsRes0;
-    let items = ((itemsRes.data ?? []) as PortfolioItem[]).filter(i => !excludeItemIds.has(i.id));
+    // Item-level visibility -- filtered client-side (not a WHERE clause)
+    // so this keeps working even before the visibility column migration is
+    // applied (an item with no visibility value at all defaults to public,
+    // same "missing = public" convention as portfolio_settings above).
+    // Only public portfolio content is eligible for this discovery feed,
+    // per spec -- a private/followers item simply never appears here.
+    let items = ((itemsRes.data ?? []) as PortfolioItem[])
+      .filter(i => !excludeItemIds.has(i.id))
+      .filter(i => !(i as any).visibility || (i as any).visibility === 'public');
     let albums = (albumsRes.data ?? []) as PortfolioAlbum[];
     if (!items.length && !albums.length) return [];
 

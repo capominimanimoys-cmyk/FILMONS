@@ -7,6 +7,7 @@ import {
   X, ChevronLeft, Upload, Link as LinkIcon, Star, Play, Music2,
   Image as ImageIcon, Loader2, Film, Aperture, Layers, FileText,
   Video, Clapperboard, Trash2, RefreshCw, ChevronUp, ChevronDown, Check,
+  Globe, Users, Lock, MapPin, Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -18,7 +19,17 @@ import {
   type WorkType, type PortfolioItem, type MediaType,
 } from '../lib/portfolioApi';
 
-type Step = 'type' | 'details' | 'media' | 'album';
+// 'details' and 'media' used to be two separate full-screen steps, caption
+// collected entirely before media ever appeared -- merged into one
+// 'compose' step so caption always renders ABOVE the media picker on the
+// same screen, per spec ("never place the caption underneath the media").
+type Step = 'type' | 'compose' | 'album';
+
+const VIS_OPTIONS: { key: 'public' | 'followers' | 'private'; label: string; sub: string; Icon: any }[] = [
+  { key: 'public',    label: 'Public',    sub: 'Anyone can see this',        Icon: Globe },
+  { key: 'followers', label: 'Followers', sub: 'Only your followers',        Icon: Users },
+  { key: 'private',   label: 'Only me',   sub: 'Only you can see this',      Icon: Lock },
+];
 
 interface AlbumDraftItem {
   id:           string; // local key, not a DB id
@@ -80,6 +91,12 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [clientName,  setClientName]  = useState('');
   const [year,        setYear]        = useState(new Date().getFullYear().toString());
   const [isFeatured,  setIsFeatured]  = useState(false);
+  const [visibility,  setVisibility]  = useState<'public' | 'followers' | 'private'>('public');
+  const [showVisSheet,setShowVisSheet]= useState(false);
+  const [location,    setLocation]    = useState('');
+  const [tags,        setTags]        = useState<string[]>([]);
+  const [tagInput,    setTagInput]    = useState('');
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   // Media
   const [mediaUrl,    setMediaUrl]    = useState('');
@@ -163,7 +180,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const continueAsWork = () => {
     const remaining = albumItems[0];
     setShowContinueAsWork(false);
-    if (!remaining) { setStep('media'); return; }
+    if (!remaining) { setStep('compose'); return; }
     if (remaining.status === 'done') {
       setMediaUrl(remaining.url || '');
       setThumbUrl(remaining.thumbnailUrl || '');
@@ -178,7 +195,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       handleFile(remaining.file);
     }
     setAlbumItems([]);
-    setStep('media');
+    setStep('compose');
   };
 
   const addMoreToAlbum = () => {
@@ -198,7 +215,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
 
     setPublishingAlbum(true);
     const album = await createAlbum(user.id, {
-      title: title.trim(), description: description.trim() || undefined, visibility: 'public',
+      title: title.trim(), description: description.trim() || undefined, visibility,
     });
     if (!album) {
       setPublishingAlbum(false);
@@ -224,6 +241,9 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
         width:        d.width,
         height:       d.height,
         aspect_ratio: d.aspect_ratio,
+        visibility,
+        location:     location.trim() || undefined,
+        tags:         tags.length ? tags : undefined,
       });
       if (item) { createdItems.push(item); await addItemToAlbum(album.id, item.id); }
     }
@@ -231,7 +251,8 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     const coverDraftIdx = doneItems.findIndex(d => d.id === coverId);
     const coverItem = createdItems[coverDraftIdx >= 0 ? coverDraftIdx : 0];
     await updateAlbum(album.id, {
-      category: category || undefined, location: undefined, cover_item_id: coverItem?.id,
+      category: category || undefined, location: location.trim() || undefined,
+      tags: tags.length ? tags : undefined, cover_item_id: coverItem?.id,
     });
 
     if (createdItems.length) {
@@ -288,12 +309,15 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const publish = async () => {
     if (!user) return;
     if (!title.trim()) { toast.error('Add a title'); return; }
-    if (workType !== 'link' && !mediaUrl && !externalLink) {
-      toast.error('Add media or a link');
+    // Text-only Portfolio Posts are allowed, per spec -- media/link is no
+    // longer required as long as there's a description to carry the post.
+    if (workType !== 'link' && !mediaUrl && !externalLink && !description.trim()) {
+      toast.error('Add media, a link, or a description');
       return;
     }
 
-    const mediaType = workType === 'link' || externalLink ? 'link' : workTypeToMediaType(workType);
+    const mediaType = workType === 'link' || externalLink ? 'link'
+      : (!mediaUrl ? 'text' : workTypeToMediaType(workType));
 
     setSaving(true);
     const item = await createPortfolioItem(user.id, {
@@ -313,6 +337,9 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       width:        imgWidth,
       height:       imgHeight,
       aspect_ratio: imgAr,
+      visibility,
+      location:     location.trim() || undefined,
+      tags:         tags.length ? tags : undefined,
     });
     setSaving(false);
 
@@ -338,16 +365,23 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
 
   const back = () => {
     if (step === 'type')    onClose();
-    if (step === 'details') setStep('type');
-    if (step === 'media')   setStep('details');
-    if (step === 'album')   { setAlbumItems([]); setStep('media'); }
+    if (step === 'compose') setStep('type');
+    if (step === 'album')   { setAlbumItems([]); setStep('compose'); }
   };
 
   const STEP_LABELS: Record<Step, string> = {
     type:    'Choose Type',
-    details: 'Details',
-    media:   'Add Media',
+    compose: 'Create Portfolio Post',
     album:   'New Album',
+  };
+
+  const isTextOnly = !filePreview && !mediaUrl && !externalLink;
+  const canPublish = title.trim().length > 0 && (workType === 'link' ? !!externalLink : (!!mediaUrl || !!externalLink || !!description.trim()));
+
+  const addTag = () => {
+    const t = tagInput.trim().replace(/^#/, '');
+    if (t && !tags.includes(t)) setTags(p => [...p, t]);
+    setTagInput('');
   };
 
   const selectedType = WORK_TYPES.find(t => t.id === workType);
@@ -390,17 +424,9 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
               : <ChevronLeft className="w-4 h-4 text-gray-600" />}
           </button>
           <p className="text-sm font-black text-gray-900">{STEP_LABELS[step]}</p>
-          {step === 'details' && (
-            <button
-              onClick={() => { if (!title.trim()) { toast.error('Add a title'); return; } setStep('media'); }}
-              className="text-sm font-black text-blue-600"
-            >
-              Next
-            </button>
-          )}
-          {step === 'media' && (
-            <button onClick={publish} disabled={saving} className="text-sm font-black text-blue-600 disabled:text-gray-300">
-              {saving ? 'Saving…' : 'Publish'}
+          {step === 'compose' && (
+            <button onClick={publish} disabled={saving || !canPublish} className="text-sm font-black text-blue-600 disabled:text-gray-300">
+              {saving ? 'Publishing…' : 'Post'}
             </button>
           )}
           {step === 'album' && (
@@ -421,7 +447,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
               {WORK_TYPES.map(wt => (
                 <button
                   key={wt.id}
-                  onClick={() => { setWorkType(wt.id); setStep('details'); }}
+                  onClick={() => { setWorkType(wt.id); setStep('compose'); }}
                   className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98] bg-gray-50 border border-gray-100 hover:border-gray-200"
                 >
                   <div
@@ -442,8 +468,10 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
             </div>
           )}
 
-          {/* ── STEP: DETAILS ── */}
-          {step === 'details' && selectedType && (
+          {/* ── STEP: COMPOSE -- caption always above media, one screen,
+              per spec. 'details' and 'media' used to be two separate
+              full-screen steps; merged into this one. ── */}
+          {step === 'compose' && selectedType && (
             <div className="px-4 pt-4 pb-8 space-y-4">
               {/* Type chip */}
               <div className="flex items-center gap-2">
@@ -454,133 +482,49 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   <span style={{ color: selectedType.color }}><selectedType.Icon className="w-4 h-4" /></span>
                 </div>
                 <span className="text-sm font-black text-gray-900">{selectedType.label}</span>
-                <button onClick={() => setStep('type')} className="text-xs text-gray-400 underline ml-auto">Change</button>
-              </div>
-
-              {/* Title */}
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Title *</label>
-                <input
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. Nike Campaign Shoot"
-                  maxLength={80}
-                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Description</label>
-                <textarea
-                  value={description}
-                  onChange={e => setDesc(e.target.value)}
-                  placeholder="Brief description of this work…"
-                  rows={3}
-                  maxLength={400}
-                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none"
-                />
-              </div>
-
-              {/* Category */}
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Category</label>
-                <select
-                  value={category}
-                  onChange={e => { setCategory(e.target.value); setSubcategory(''); }}
-                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
-                >
-                  <option value="">Select a category…</option>
-                  {PORTFOLIO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              {/* Subcategory -- only offered where a curated list exists
-                  (PORTFOLIO_SUBCATEGORIES); this is the creator's own
-                  confirmation of what the work actually is ("Hip-Hop &
-                  Rap", not an AI guess from the title) -- Portfolio
-                  recommendations and search both use this directly rather
-                  than inferring it from free text. */}
-              {availableSubcategories.length > 0 && (
-                <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Subcategory (optional)</label>
-                  <select
-                    value={subcategory}
-                    onChange={e => setSubcategory(e.target.value)}
-                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
-                  >
-                    <option value="">Select a subcategory…</option>
-                    {availableSubcategories.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {/* Role + Client */}
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">My Role</label>
-                  <input
-                    value={role}
-                    onChange={e => setRole(e.target.value)}
-                    placeholder="e.g. Director"
-                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Client / Brand</label>
-                  <input
-                    value={clientName}
-                    onChange={e => setClientName(e.target.value)}
-                    placeholder="e.g. Nike"
-                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-                  />
-                </div>
-              </div>
-
-              {/* Year */}
-              <div className="w-28">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Year</label>
-                <input
-                  value={year}
-                  onChange={e => setYear(e.target.value)}
-                  placeholder="2026"
-                  maxLength={4}
-                  className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-                />
-              </div>
-
-              {/* Feature toggle */}
-              <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3.5">
-                <div className="flex items-center gap-2">
-                  <Star className={`w-4 h-4 ${isFeatured ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} />
-                  <div>
-                    <p className="text-sm font-black text-gray-900">Feature this work</p>
-                    <p className="text-[11px] text-gray-400">Shown first on your portfolio</p>
-                  </div>
-                </div>
+                <button onClick={() => setStep('type')} className="text-xs text-gray-400 underline">Change</button>
+                {/* Visibility -- item-level audience, defaults Public. Only
+                    public Portfolio content is eligible for public
+                    discovery/feed distribution, per spec. */}
                 <button
-                  onClick={() => setIsFeatured(v => !v)}
-                  className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${isFeatured ? 'bg-amber-400' : 'bg-gray-200'}`}
+                  onClick={() => setShowVisSheet(true)}
+                  className="ml-auto flex items-center gap-1 text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full"
                 >
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${isFeatured ? 'left-[22px]' : 'left-0.5'}`} />
+                  {visibility === 'public' ? <Globe className="w-3 h-3" /> : visibility === 'followers' ? <Users className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                  {VIS_OPTIONS.find(o => o.key === visibility)?.label}
                 </button>
               </div>
 
-              <button
-                onClick={() => { if (!title.trim()) { toast.error('Add a title'); return; } setStep('media'); }}
-                className="w-full py-4 rounded-2xl font-black text-white text-sm transition-all active:scale-[0.98]"
-                style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
-              >
-                Add Media →
-              </button>
-            </div>
-          )}
+              {/* Title -- still required (used as every card's primary
+                  label app-wide), kept compact so the caption below reads
+                  as the main event. */}
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="Title — e.g. Nike Campaign Shoot"
+                maxLength={80}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+              />
 
-          {/* ── STEP: MEDIA ── */}
-          {step === 'media' && (
-            <div className="px-4 pt-4 pb-8 space-y-4">
-              <p className="text-xs text-gray-400">Upload your work or paste an external link.</p>
+              {/* Caption -- ABOVE media, always. Larger type when there's
+                  no media/link yet (text-only Portfolio Post), per spec's
+                  three typography modes -- shrinks back to normal the
+                  moment media is attached. */}
+              <div>
+                <p className="text-xs font-bold text-gray-500 mb-1.5">Share your work…</p>
+                <textarea
+                  value={description}
+                  onChange={e => setDesc(e.target.value)}
+                  placeholder="Tell the story behind it, your process, tools, or what inspired you…"
+                  rows={isTextOnly ? 5 : 3}
+                  maxLength={400}
+                  className={`w-full border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none transition-all ${
+                    isTextOnly ? 'text-lg font-semibold leading-snug' : 'text-sm leading-relaxed'
+                  }`}
+                />
+              </div>
 
+              {/* Media */}
               <input
                 ref={fileRef}
                 type="file"
@@ -632,33 +576,29 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 </div>
               )}
 
-              {/* Upload button (not for link-only type) */}
+              {/* Add content -- Photos / Video / File, per spec. All three
+                  open the same picker (already scoped to the chosen work
+                  type's accept list and already supports selecting
+                  multiple at once for an auto-Album) rather than three
+                  separate upload paths that would have to stay in sync. */}
               {!mediaUrl && workType !== 'link' && (
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading}
-                  className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-60"
-                  style={{ background: '#f9fafb', border: '1.5px dashed #d1d5db' }}
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
-                    <Upload className="w-5 h-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-black text-gray-900">Upload File</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {workType === 'audio' ? 'Audio files (MP3, WAV, OGG)' :
-                       workType === 'video' || workType === 'reel' ? 'Video files (MP4, MOV)' :
-                       'Images, Videos, Audio'} · select multiple for an album
-                    </p>
-                  </div>
-                </button>
-              )}
-
-              {!mediaUrl && workType !== 'link' && (
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-px bg-gray-100" />
-                  <span className="text-xs text-gray-400 font-semibold">or</span>
-                  <div className="flex-1 h-px bg-gray-100" />
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Add Photos', Icon: ImageIcon },
+                    { label: 'Add Video', Icon: Video },
+                    { label: 'Add File', Icon: Upload },
+                  ].map(o => (
+                    <button
+                      key={o.label}
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading}
+                      className="flex flex-col items-center gap-1.5 py-3.5 rounded-2xl transition-all active:scale-[0.98] disabled:opacity-60"
+                      style={{ background: '#f9fafb', border: '1.5px dashed #d1d5db' }}
+                    >
+                      <o.Icon className="w-4.5 h-4.5 text-blue-500" />
+                      <span className="text-[11px] font-bold text-gray-700">{o.label}</span>
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -677,14 +617,144 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                 <p className="text-[11px] text-gray-400 mt-1.5">YouTube · Vimeo · Behance · IMDb · Website</p>
               </div>
 
+              {/* Add Topics -- portfolio_items.tags, not previously exposed
+                  in this flow. */}
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5 block">
+                  <Hash className="w-3 h-3" /> Topics
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                    placeholder="e.g. BTS, Cinematography"
+                    className="flex-1 border border-gray-200 rounded-2xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                  />
+                  <button onClick={addTag} className="px-4 rounded-2xl bg-gray-100 text-sm font-bold text-gray-600">Add</button>
+                </div>
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {tags.map(t => (
+                      <button key={t} onClick={() => setTags(p => p.filter(x => x !== t))}
+                        className="flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
+                        #{t}<X className="w-3 h-3 opacity-60" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* More options -- Category/Role/Client/Year/Location/Feature,
+                  collapsed by default so the main publishing screen stays
+                  clean, per spec. */}
               <button
-                onClick={publish}
-                disabled={saving || uploading || (workType !== 'link' && !mediaUrl && !externalLink) || (workType === 'link' && !externalLink)}
-                className="w-full py-4 rounded-2xl font-black text-white text-sm transition-all active:scale-[0.98] disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
+                onClick={() => setShowMoreOptions(v => !v)}
+                className="flex items-center gap-1 text-xs font-bold text-gray-500"
               >
-                {saving ? 'Publishing…' : 'Publish to Portfolio'}
+                More options {showMoreOptions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
+
+              {showMoreOptions && (
+                <div className="space-y-4 pt-1">
+                  {/* Category */}
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Category</label>
+                    <select
+                      value={category}
+                      onChange={e => { setCategory(e.target.value); setSubcategory(''); }}
+                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
+                    >
+                      <option value="">Select a category…</option>
+                      {PORTFOLIO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Subcategory -- only offered where a curated list exists
+                      (PORTFOLIO_SUBCATEGORIES); this is the creator's own
+                      confirmation of what the work actually is ("Hip-Hop &
+                      Rap", not an AI guess from the title) -- Portfolio
+                      recommendations and search both use this directly
+                      rather than inferring it from free text. */}
+                  {availableSubcategories.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Subcategory (optional)</label>
+                      <select
+                        value={subcategory}
+                        onChange={e => setSubcategory(e.target.value)}
+                        className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-400 bg-gray-50"
+                      >
+                        <option value="">Select a subcategory…</option>
+                        {availableSubcategories.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Role + Client */}
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">My Role</label>
+                      <input
+                        value={role}
+                        onChange={e => setRole(e.target.value)}
+                        placeholder="e.g. Director"
+                        className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Client / Brand</label>
+                      <input
+                        value={clientName}
+                        onChange={e => setClientName(e.target.value)}
+                        placeholder="e.g. Nike"
+                        className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Year + Location */}
+                  <div className="flex gap-3">
+                    <div className="w-28">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Year</label>
+                      <input
+                        value={year}
+                        onChange={e => setYear(e.target.value)}
+                        placeholder="2026"
+                        maxLength={4}
+                        className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5 block">
+                        <MapPin className="w-3 h-3" /> Location
+                      </label>
+                      <input
+                        value={location}
+                        onChange={e => setLocation(e.target.value)}
+                        placeholder="e.g. Vancouver, BC"
+                        className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Feature toggle */}
+                  <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <Star className={`w-4 h-4 ${isFeatured ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} />
+                      <div>
+                        <p className="text-sm font-black text-gray-900">Feature this work</p>
+                        <p className="text-[11px] text-gray-400">Shown first on your portfolio</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setIsFeatured(v => !v)}
+                      className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${isFeatured ? 'bg-amber-400' : 'bg-gray-200'}`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${isFeatured ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -781,6 +851,28 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   className="w-full py-3.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                   Continue as Work
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Visibility sheet -- same 3-option shape as CreateAlbumSheet's
+              own visibility picker, for consistency. */}
+          {showVisSheet && (
+            <div className="fixed inset-0 z-[70] flex items-end" onClick={() => setShowVisSheet(false)}>
+              <div className="w-full bg-white rounded-t-2xl shadow-xl pb-6 pt-3" onClick={e => e.stopPropagation()}>
+                <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+                <p className="text-center font-bold text-gray-900 text-sm mb-2">Who can see this?</p>
+                {VIS_OPTIONS.map(o => (
+                  <button key={o.key} onClick={() => { setVisibility(o.key); setShowVisSheet(false); }}
+                    className="flex items-center gap-3 w-full px-5 py-3.5 hover:bg-gray-50">
+                    <o.Icon className="w-5 h-5 text-gray-500" />
+                    <div className="flex-1 text-left">
+                      <p className="text-sm font-semibold text-gray-900">{o.label}</p>
+                      <p className="text-xs text-gray-400">{o.sub}</p>
+                    </div>
+                    {visibility === o.key && <Check className="w-4 h-4 text-blue-500" />}
+                  </button>
+                ))}
               </div>
             </div>
           )}

@@ -30,6 +30,10 @@ export function PortfolioMedia({ item, capHeight = true }: { item: PortfolioItem
   const [playing, setPlaying] = useState(false);
   const maxHeightClass = capHeight ? MEDIA_MAX_HEIGHT : '';
   const ratio = getPortfolioMediaAspectRatio(item);
+  // Text-only Portfolio Posts have no media box at all -- the caption
+  // carries the whole card, per spec ("do not leave a huge empty media
+  // area... the post ends naturally after the text and engagement row").
+  if (item.media_type === 'text') return null;
   if (item.media_type === 'video') {
     return (
       <div className={`relative w-full bg-black rounded-2xl overflow-hidden mx-auto ${maxHeightClass}`} style={{ aspectRatio: ratio }}>

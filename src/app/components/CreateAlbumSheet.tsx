@@ -136,6 +136,33 @@ export function CreateAlbumSheet({ existingItems, onCreated, onClose }: Props) {
         {step === 'details' && (
           <div className="flex-1 overflow-y-auto px-4 pt-4 pb-8 space-y-4">
 
+            {/* Title -- caption fields come first, above the cover picker,
+                per spec ("caption always above media/attachment," applied
+                to the creation screen too, not just the final card). */}
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Title *</label>
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="e.g. Nike Campaign"
+                maxLength={60}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Description</label>
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="What's this album about?"
+                rows={3}
+                maxLength={300}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none"
+              />
+            </div>
+
             {/* Cover image */}
             <input
               ref={fileRef}
@@ -176,31 +203,6 @@ export function CreateAlbumSheet({ existingItems, onCreated, onClose }: Props) {
                   </div>
                 </button>
               )}
-            </div>
-
-            {/* Title */}
-            <div>
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Title *</label>
-              <input
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Nike Campaign"
-                maxLength={60}
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-              />
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Description</label>
-              <textarea
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="What's this album about?"
-                rows={3}
-                maxLength={300}
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none"
-              />
             </div>
 
             {/* Visibility */}
