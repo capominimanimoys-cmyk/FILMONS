@@ -37,6 +37,7 @@ import type { TrustLevel } from '../lib/trustApi';
 import { PortfolioMedia } from './PortfolioMedia';
 import { PortfolioItemFocusView } from './PortfolioItemFocusView';
 import { PortfolioCommentSheet, timeAgo } from './PortfolioCommentSheet';
+import { ViewPortfolioLink } from './connect/ViewPortfolioLink';
 
 function timeAgoShort(iso: string): string { return timeAgo(iso); }
 function EngagementRow({
@@ -362,13 +363,20 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
 
       {entry.type === 'item' ? (
         <>
-          {/* Tapping the media/title opens THIS item's own full-screen
-              detail (ItemFocusView) -- not the creator's page. Video keeps
-              its own established tap-to-play-inline behavior unchanged
+          {/* Caption (title/description) ABOVE media, never below -- same
+              hierarchy as every other Connect card now. */}
+          {entry.item.title && (
+            <p onClick={() => setViewingItem(true)} className="text-sm font-bold text-gray-900 cursor-pointer">{entry.item.title}</p>
+          )}
+          {entry.item.description && <ClampedText text={entry.item.description} />}
+
+          {/* Tapping the media opens THIS item's own full-screen detail
+              (ItemFocusView) -- not the creator's page. Video keeps its own
+              established tap-to-play-inline behavior unchanged
               (PortfolioMedia's own internal button), so the click-to-open-
               detail wrapper only applies to non-video media -- otherwise a
               single tap would both start playback AND open the detail view
-              at once. "View portfolio" below is the ONLY thing that
+              at once. ViewPortfolioLink below is the ONLY thing that
               navigates to the creator's general Portfolio page. */}
           <div
             onClick={entry.item.media_type !== 'video' ? () => setViewingItem(true) : undefined}
@@ -376,24 +384,15 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
           >
             <PortfolioMedia item={entry.item} />
           </div>
+          <TagRow tags={entry.item.tags ?? []} />
+          <ViewPortfolioLink
+            creatorId={entry.creator.id} creatorFirstName={entry.creator.name.split(' ')[0]} isOwn={isOwn}
+            onNavigate={() => logProfileEngagement(entry.creator.id, 'view_portfolio_click', user?.id)}
+          />
           <EngagementRow
             liked={liked} likesCount={likesCount} commentsCount={commentsCount} saved={saved}
             onToggleLike={handleToggleLike} onOpenComments={() => setShowComments(true)} onShare={handleShare} onToggleSave={handleToggleSave}
           />
-          {entry.item.title && (
-            <p onClick={() => setViewingItem(true)} className="text-sm font-bold text-gray-900 cursor-pointer">{entry.item.title}</p>
-          )}
-          {entry.item.description && <ClampedText text={entry.item.description} />}
-          <TagRow tags={entry.item.tags ?? []} />
-          {/* Always the creator's general Portfolio page -- clicking the
-              media/title above is what opens the specific item's own
-              detail view instead. */}
-          <button
-            onClick={() => { logProfileEngagement(entry.creator.id, 'view_portfolio_click', user?.id); navigate(`/portfolio/${entry.creator.id}`); }}
-            className="flex items-center gap-0.5 text-xs font-bold text-blue-600"
-          >
-            View portfolio <ChevronRight className="w-3.5 h-3.5" />
-          </button>
         </>
       ) : (
         <>
@@ -405,11 +404,12 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
             </p>
           )}
           <AlbumMedia entry={entry} />
+          <TagRow tags={entry.album.tags ?? []} />
+          <ViewPortfolioLink creatorId={entry.creator.id} creatorFirstName={entry.creator.name.split(' ')[0]} isOwn={isOwn} />
           <EngagementRow
             liked={liked} likesCount={likesCount} commentsCount={commentsCount} saved={saved}
             onToggleLike={handleToggleLike} onOpenComments={() => setShowComments(true)} onShare={handleShare} onToggleSave={handleToggleSave}
           />
-          <TagRow tags={entry.album.tags ?? []} />
         </>
       )}
 

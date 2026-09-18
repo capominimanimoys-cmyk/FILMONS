@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, ArrowRight } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -18,6 +18,7 @@ import { PortfolioCommentSheet, timeAgo } from '../PortfolioCommentSheet';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
+import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
@@ -71,13 +72,13 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
     try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };
 
-  // Three distinct destinations, per spec: media/title -> item detail
-  // overlay (this page, no navigation); "View in Portfolio" -> the
-  // creator's full public Portfolio (creator.id is the actual owner's id
-  // regardless of who's viewing, so this never routes to the VIEWER's own
-  // /portfolio unless they really are the owner); avatar/name -> Profile.
+  // Two distinct destinations, per spec: media/title -> item detail
+  // overlay (this page, no navigation); avatar/name -> Profile. The
+  // "View [Name]'s Portfolio" action (ViewPortfolioLink) is its own third
+  // destination -- creator.id is the actual owner's id regardless of who's
+  // viewing, so it never routes to the VIEWER's own /portfolio unless they
+  // really are the owner.
   const openItemDetail = () => setShowItemDetail(true);
-  const openInPortfolio = () => navigate(`/portfolio/${creator.id}`);
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -126,10 +127,9 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
       </div>
 
       {/* Lightweight action, not a big CTA -- shouldn't compete with the
-          media/identity above it. */}
-      <button onClick={openInPortfolio} className="flex items-center gap-1 mt-3 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
-        View in Portfolio <ArrowRight className="w-3.5 h-3.5" />
-      </button>
+          media/identity above it. Converts "saw one piece of work" into
+          "discovered the whole Portfolio." */}
+      <ViewPortfolioLink creatorId={creator.id} creatorFirstName={creator.name.split(' ')[0]} isOwn={isOwn} className="mt-3" />
 
       <div className="flex items-center gap-5 mt-4 pt-3 border-t border-gray-50">
         <button onClick={handleToggleLike} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">

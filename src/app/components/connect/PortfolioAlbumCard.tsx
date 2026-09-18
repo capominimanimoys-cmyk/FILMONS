@@ -14,6 +14,7 @@ import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
+import { ViewPortfolioLink } from './ViewPortfolioLink';
 import type { TrustLevel } from '../../lib/trustApi';
 
 export function PortfolioAlbumCard({ entry, trustLevel }: {
@@ -23,6 +24,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
   const { album, creator, coverUrl, coverAspectRatio, itemCount } = entry;
+  const isOwn = !!user && user.id === creator.id;
 
   const [saved, setSaved] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
@@ -86,7 +88,14 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         <p className="text-sm font-bold text-gray-900">{album.title}</p>
       </div>
 
-      <div className="flex items-center gap-5 mt-4 pt-3 border-t border-gray-50">
+      {/* "View album" opens THIS album's items; ViewPortfolioLink is the
+          separate, wider action -> the creator's whole Portfolio. Both
+          matter here: one satisfies "I want to see the rest of this
+          collection," the other "I want to see everything this person
+          makes." */}
+      <ViewPortfolioLink creatorId={creator.id} creatorFirstName={creator.name.split(' ')[0]} isOwn={isOwn} className="mt-3" />
+
+      <div className="flex items-center gap-5 mt-3 pt-3 border-t border-gray-50">
         <button onClick={openAlbum} className="text-sm font-semibold text-blue-600 hover:underline">View album →</button>
         <button onClick={handleToggleSave} className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Bookmark className={`w-5 h-5 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-400'}`} /> Save
