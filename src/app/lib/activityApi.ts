@@ -20,6 +20,12 @@ export type ActivityType =
 
 export interface ActivityActor {
   id: string; name: string; username: string | null; avatar_url: string | null; is_verified: boolean;
+  /** Only populated where a card actually needs it (ConnectionActivityCard's
+   * account-type pill + role/location columns) -- other actor fetches don't
+   * pay for these extra columns. */
+  account_type?: string | null;
+  primary_role?: string | null;
+  city?: string | null;
 }
 
 // Extra cached display fields for card types richer than title/category
@@ -59,6 +65,11 @@ export interface ActivityEntry {
    * post_published entry too if the batch fetch is still in flight or
    * failed for that particular post. */
   post?: Post;
+  /** Real, persisted count (activity_events.like_count) -- see
+   * toggleActivityEventLike/isActivityEventLiked. Currently only surfaced
+   * by ConnectionActivityCard; other card types don't render a Like
+   * affordance yet. */
+  likeCount: number;
 }
 
 // Fire-and-forget -- called from the single convergence point each event
@@ -97,7 +108,7 @@ const PAGE_FETCH_MULTIPLIER = 2; // over-fetch to absorb rows filtered out by th
 async function fetchProfilesAndTrust(ids: string[]): Promise<Map<string, ActivityActor>> {
   if (!ids.length) return new Map();
   const { data } = await supabase.from('profiles')
-    .select('id, name, username, avatar_url, is_verified').in('id', ids);
+    .select('id, name, username, avatar_url, is_verified, account_type, primary_role, city').in('id', ids);
   return new Map((data ?? []).map((p: any) => [p.id, p as ActivityActor]));
 }
 
@@ -275,6 +286,7 @@ export async function getActivityFeed(params: {
         title: r.title,
         metadata: r.metadata ?? null,
         createdAt: r.created_at,
+        likeCount: r.like_count ?? 0,
       };
     })
     .filter((e): e is ActivityEntry => e !== null);
@@ -293,4 +305,30 @@ export function getActivitySentence(entry: Pick<ActivityEntry, 'activityType' | 
     case 'recommendation_received': return 'received a new professional recommendation';
     case 'post_published': return 'shared a new post';
   }
+}
+
+// ── Activity event likes -- currently only used by ConnectionActivityCard.
+// Same idempotent-toggle-table + denormalized-count shape as post_likes,
+// scoped to activity_events instead of posts since a connection_created
+// event has no backing Post row to hang the existing Like system off of. ──
+export async function isActivityEventLiked(eventId: string, userId: string): Promise<boolean> {
+  const { data } = await supabase.from('activity_event_likes')
+    .select('id').eq('activity_event_id', eventId).eq('user_id', userId).maybeSingle();
+  return !!data;
+}
+
+export async function toggleActivityEventLike(eventId: string, userId: string, like: boolean): Promise<boolean> {
+  if (like) {
+    const { error } = await supabase.from('activity_event_likes')
+      .upsert({ activity_event_id: eventId, user_id: userId }, { onConflict: 'activity_event_id,user_id', ignoreDuplicates: true });
+    if (error) { console.warn('[activityApi] like error:', error.message); return false; }
+  } else {
+    const { error } = await supabase.from('activity_event_likes')
+      .delete().eq('activity_event_id', eventId).eq('user_id', userId);
+    if (error) { console.warn('[activityApi] unlike error:', error.message); return false; }
+  }
+  const { count } = await supabase.from('activity_event_likes')
+    .select('id', { count: 'exact', head: true }).eq('activity_event_id', eventId);
+  await supabase.from('activity_events').update({ like_count: count ?? 0 }).eq('id', eventId);
+  return true;
 }

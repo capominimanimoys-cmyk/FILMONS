@@ -38,7 +38,9 @@ export function ConnectFeedCard({ item, trustLevels }: {
     case 'opportunity_published':
       return <OpportunityActivityCard entry={entry} trustLevel={trustLevel} />;
     case 'connection_created':
-      return <ConnectionActivityCard entry={entry} trustLevel={trustLevel} otherTrustLevel={entry.otherUser ? trustLevels.get(entry.otherUser.id) : undefined} />;
+      // No Trust Score/TrustBadge on this card by design -- see
+      // ConnectionActivityCard's own header comment.
+      return <ConnectionActivityCard entry={entry} />;
     case 'recommendation_received':
       return <RecommendationActivityCard entry={entry} trustLevel={trustLevel} />;
     case 'post_published':
