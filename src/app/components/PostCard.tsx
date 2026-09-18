@@ -386,6 +386,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     return () => clearInterval(interval);
   }, [(localPost as any).location, (localPost as any).audioTitle]); // eslint-disable-line
   const [showEditModal,  setShowEditModal]  = useState(false);
+  // Lets the "..." menu's "Change visibility" item jump straight to the
+  // audience picker instead of landing on the general edit form first.
+  const [editModalInitialView, setEditModalInitialView] = useState<'visibility' | undefined>(undefined);
   const [showLikesSheet, setShowLikesSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -950,6 +953,10 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
               <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
             </button>
+            <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
+              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+              <Globe className="w-4 h-4 text-gray-400" /> Change visibility
+            </button>
             <button onClick={() => { setShowMenu(false); handleSave(); }}
               className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
               <Bookmark className="w-3.5 h-3.5 text-gray-500" /> {saved ? 'Unsave' : 'Save'}
@@ -958,10 +965,20 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
               <Link2 className="w-4 h-4 text-gray-400" /> Copy link
             </button>
+            <button onClick={async () => {
+              setShowMenu(false);
+              const next = localPost.allowComments === false;
+              setPost(p => ({ ...p, allowComments: next }));
+              await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
+              toast.success(next ? 'Comments turned on' : 'Comments turned off');
+            }}
+              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+              <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
+            </button>
             <div className="border-t border-gray-100 my-1" />
             <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
               className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl">
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Delete post
             </button>
           </div>
         </BottomSheet>
@@ -1021,8 +1038,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         {showEditModal && (
           <EditPostModal
             post={localPost}
-            onSave={updated => { setPost(updated); setShowEditModal(false); }}
-            onClose={() => setShowEditModal(false)}
+            initialView={editModalInitialView}
+            onSave={updated => { setPost(updated); setShowEditModal(false); setEditModalInitialView(undefined); }}
+            onClose={() => { setShowEditModal(false); setEditModalInitialView(undefined); }}
           />
         )}
         {showDeleteConfirm && (
@@ -1068,96 +1086,51 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
         {/* ── Three-dot for OWN posts — now inside header ── */}
         {/* ── Own post menu ── */}
+          {/* One compact menu, per spec -- Edit post / Change visibility /
+              Save post / Copy link / Turn off comments, Delete visually
+              separated as the destructive action. Pin/Highlight/Repost/
+              Boost/Analytics/Post activity/Archive/Download were all
+              removed from here on purpose (not accidentally trimmed) --
+              this menu was 13 items deep, most of them placeholder toasts. */}
           <BottomSheet open={showMenu} onClose={() => setShowMenu(false)}>
             <div className="px-2 py-1">
-              {/* Edit */}
               <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
                 className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
                 <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
               </button>
 
-              {/* Pin / unpin */}
-              <button onClick={() => { setShowMenu(false); toast.success('Post pinned to your profile!'); }}
+              <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
                 className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Pin className="w-4 h-4 text-gray-400" /> Pin to profile
+                <Globe className="w-4 h-4 text-gray-400" /> Change visibility
               </button>
 
-              {/* Highlight */}
-              <button onClick={() => { setShowMenu(false); toast.success('Added to highlights!'); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Star className="w-4 h-4 text-yellow-500" /> Add to highlight
-              </button>
-
-              {/* Save */}
               <button onClick={() => { setShowMenu(false); handleSave(); }}
                 className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
                 <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-current text-blue-600' : 'text-gray-500'}`} />
                 {saved ? 'Unsave post' : 'Save post'}
               </button>
 
-              {/* Copy link */}
               <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
                 className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Link2 className="w-4 h-4 text-gray-400" /> Copy link to post
+                <Link2 className="w-4 h-4 text-gray-400" /> Copy link
               </button>
 
-              {/* Audience */}
-              <button onClick={() => { setShowMenu(false); toast.info('Audience settings coming soon'); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Globe className="w-4 h-4 text-gray-400" /> Edit audience
-              </button>
-
-              {/* Turn off comments */}
-              <button onClick={() => { setShowMenu(false); toast.success(localPost.allowComments === false ? 'Comments turned on' : 'Comments turned off'); }}
+              <button onClick={async () => {
+                setShowMenu(false);
+                const next = localPost.allowComments === false;
+                setPost(p => ({ ...p, allowComments: next }));
+                await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
+                toast.success(next ? 'Comments turned on' : 'Comments turned off');
+              }}
                 className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
                 <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
               </button>
 
-              {/* Repost / Remove repost */}
-              <button onClick={() => { setShowMenu(false); dispatchMenuOpen(); setShowRepostMenu(true); }}
-                className={`flex items-center gap-3 w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${hasReposted ? 'text-red-600 hover:bg-red-50 font-semibold' : 'text-gray-800 hover:bg-gray-50'}`}>
-                <Repeat2 className={`w-4 h-4 ${hasReposted ? 'text-red-500' : 'text-green-600'}`} />
-                {hasReposted ? 'Remove repost' : 'Repost'}
-              </button>
-
-              {/* Boost */}
-              <button onClick={() => { setShowMenu(false); setBoostStep('goal'); setShowBoostModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-purple-700 hover:bg-purple-50 rounded-xl transition-colors font-semibold">
-                <Zap className="w-4 h-4" /> Boost post
-              </button>
-
-              {/* Analytics */}
-              <button onClick={() => { setShowMenu(false); setShowAnalyticsModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <BarChart2 className="w-4 h-4 text-gray-400" /> View analytics
-              </button>
-
-              {/* Who can see */}
-              <button onClick={() => { setShowMenu(false); toast.info(`${(localPost.likes||[]).length} likes · ${commentCount} comments`); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Eye className="w-4 h-4 text-gray-400" /> Post activity
-              </button>
-
-              {/* Archive */}
-              <button onClick={() => { setShowMenu(false); toast.success('Post archived'); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Archive className="w-4 h-4 text-gray-400" /> Archive post
-              </button>
-
               <div className="border-t border-gray-100 my-1" />
 
-              {/* Download media */}
-              {hasMedia && (
-                <button onClick={() => { setShowMenu(false); handleDownload(); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Download className="w-4 h-4 text-gray-400" /> Download media
-                </button>
-              )}
-
-              {/* Delete */}
               <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }} disabled={deleting}
                 className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Move to trash'}
+                <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete post'}
               </button>
             </div>
           </BottomSheet>
