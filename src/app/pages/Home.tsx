@@ -32,6 +32,9 @@ import { CreatePostSheet } from '../components/CreatePostSheet';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
+import { ConnectionRequestsCard } from '../components/ConnectionRequestsCard';
+import { listPendingReceived, respondToConnectionRequest, type ConnectionSummary } from '../lib/connectionsApi';
+import * as notifs from '../lib/notifications';
 import { BottomSheet } from '../components/BottomSheet';
 
 // A recycled (already-swiped) Emergency listing shouldn't reappear too
@@ -333,6 +336,34 @@ export function Home() {
     window.addEventListener('filmons:open-create-post', handler);
     return () => window.removeEventListener('filmons:open-create-post', handler);
   }, [homeMode]);
+
+  // Compact "Connection requests" module, shown directly above the Share
+  // something... trigger on both mobile and desktop Connect -- see
+  // ConnectionRequestsCard. Same respondToConnectionRequest() action every
+  // other Accept/Ignore surface (Notifications, Profile -> Connections)
+  // uses, so accepting/ignoring here is consistent everywhere.
+  const [pendingConnectionRequests, setPendingConnectionRequests] = useState<ConnectionSummary[]>([]);
+  useEffect(() => {
+    if (!user?.id || homeMode !== 'portfolio') return;
+    listPendingReceived(user.id).then(setPendingConnectionRequests).catch(() => {});
+  }, [user?.id, homeMode]);
+
+  const acceptConnectionRequest = async (otherId: string): Promise<boolean> => {
+    if (!user) return false;
+    const ok = await respondToConnectionRequest(user.id, otherId, true);
+    if (!ok) return false;
+    setTimeout(() => setPendingConnectionRequests(prev => prev.filter(p => p.otherUser.id !== otherId)), 1100);
+    notifs.push(otherId, {
+      type: 'connection_accepted' as any,
+      fromUserId: user.id, fromUserName: user.name || user.username || '', fromUserAvatar: user.avatar || undefined,
+    });
+    return true;
+  };
+  const ignoreConnectionRequest = async (otherId: string) => {
+    if (!user) return;
+    setPendingConnectionRequests(prev => prev.filter(p => p.otherUser.id !== otherId));
+    await respondToConnectionRequest(user.id, otherId, false);
+  };
 
   // ── Connect feed -- ONE unified feed, shared by mobile AND desktop.
   // Portfolio and Activity are no longer separate tabs/categories on either
@@ -1247,6 +1278,11 @@ export function Home() {
                   transition: 'padding-bottom 280ms ease-out',
                 }}
               >
+                <ConnectionRequestsCard
+                  requests={pendingConnectionRequests}
+                  onAccept={acceptConnectionRequest}
+                  onIgnore={ignoreConnectionRequest}
+                />
                 {user && (
                   <CreatePostTrigger avatar={user.avatar} name={user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
                 )}
@@ -1369,6 +1405,15 @@ export function Home() {
               </div>
             </div>
 
+            {pendingConnectionRequests.length > 0 && (
+              <div className="mb-4">
+                <ConnectionRequestsCard
+                  requests={pendingConnectionRequests}
+                  onAccept={acceptConnectionRequest}
+                  onIgnore={ignoreConnectionRequest}
+                />
+              </div>
+            )}
             {user && (
               <div className="mb-4">
                 <CreatePostTrigger avatar={user.avatar} name={user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
