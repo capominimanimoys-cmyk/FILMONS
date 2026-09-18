@@ -6,6 +6,7 @@
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { logProfileEngagement } from './profileEngagement';
+import { toStringArray } from './normalizeList';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link';
 
@@ -1207,7 +1208,12 @@ export async function getPortfolioFeed(opts: {
 // follows table, not a placeholder. ──────────────────────────────────────
 export interface SuggestedCreator {
   id: string; name: string; username: string | null; avatar_url: string | null;
-  primary_role: string | null; city: string | null; is_verified: boolean;
+  primary_role: string | null; secondary_roles: string[]; city: string | null; is_verified: boolean;
+  /** Up to a few of the candidate's own skills, for the Connection Card's
+   * "Sony FX6 · RED · Commercial"-style relevance row. */
+  skills: string[];
+  /** Mutual professional Connections with the viewer (not mutual Follows --
+   * Connect's own "strongest social proof" signal, per spec). */
   mutualCount: number;
 }
 
@@ -1238,7 +1244,7 @@ export async function getSuggestedCreators(
 
     const { data: candidateRows } = await supabase
       .from('profiles')
-      .select('id, name, username, avatar_url, primary_role, city, is_verified')
+      .select('id, name, username, avatar_url, primary_role, secondary_roles, city, is_verified, skills')
       .not('name', 'is', null).neq('name', '')
       .not('primary_role', 'is', null)
       .order('is_verified', { ascending: false })
@@ -1273,19 +1279,43 @@ export async function getSuggestedCreators(
     if (!eligible.length) return [];
     const eligibleIds = eligible.map((c: any) => c.id);
 
-    // Mutual follows -- how many people the CURRENT user already follows
-    // also follow this candidate.
+    // Mutual professional Connections (not mutual Follows) -- Connect's
+    // own strongest social-proof signal, per spec. The viewer's own
+    // accepted connections were already gathered above as part of
+    // alreadyConnectedOrPending's source query -- refetch scoped to just
+    // 'accepted' since that one also includes 'pending' (not a real mutual
+    // signal). Then one batched query for every eligible candidate's own
+    // accepted connections, intersected client-side -- O(1) queries
+    // regardless of candidate count, not one per candidate.
+    const { data: viewerAcceptedRows } = await supabase
+      .from('professional_connections').select('user_a_id, user_b_id')
+      .eq('status', 'accepted').or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+    const viewerConnections = new Set(
+      (viewerAcceptedRows ?? []).map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id),
+    );
+
     const mutualCounts = new Map<string, number>();
-    if (alreadyFollowing.size) {
-      const { data: mutualRows } = await supabase
-        .from('follows').select('following_id')
-        .in('following_id', eligibleIds).in('follower_id', [...alreadyFollowing]);
-      (mutualRows ?? []).forEach((r: any) => mutualCounts.set(r.following_id, (mutualCounts.get(r.following_id) ?? 0) + 1));
+    if (viewerConnections.size) {
+      const idList = eligibleIds.join(',');
+      const { data: candidateConnRows } = await supabase
+        .from('professional_connections').select('user_a_id, user_b_id')
+        .eq('status', 'accepted')
+        .or(`user_a_id.in.(${idList}),user_b_id.in.(${idList})`);
+      (candidateConnRows ?? []).forEach((r: any) => {
+        // Whichever side is the eligible candidate, check if the OTHER
+        // side is someone the viewer is also connected to.
+        [[r.user_a_id, r.user_b_id], [r.user_b_id, r.user_a_id]].forEach(([candidateId, otherId]) => {
+          if (eligibleIds.includes(candidateId) && viewerConnections.has(otherId)) {
+            mutualCounts.set(candidateId, (mutualCounts.get(candidateId) ?? 0) + 1);
+          }
+        });
+      });
     }
 
     const suggestions: SuggestedCreator[] = eligible.map((c: any) => ({
       id: c.id, name: c.name, username: c.username, avatar_url: c.avatar_url,
-      primary_role: c.primary_role, city: c.city, is_verified: !!c.is_verified,
+      primary_role: c.primary_role, secondary_roles: toStringArray(c.secondary_roles),
+      city: c.city, is_verified: !!c.is_verified, skills: toStringArray(c.skills),
       mutualCount: mutualCounts.get(c.id) ?? 0,
     }));
     suggestions.sort((a, b) => (b.mutualCount - a.mutualCount) || (Number(b.is_verified) - Number(a.is_verified)));
