@@ -227,9 +227,13 @@ export async function getActivityFeed(params: {
   if (params.tab === 'following') {
     if (!params.followingIds?.length) return { entries: [] }; // no fallback to For You -- proper empty state instead, per spec
     q = q.in('actor_id', params.followingIds);
-  } else if (params.viewerId) {
-    q = q.neq('actor_id', params.viewerId); // "what your network is doing", not your own activity reflected back at you
   }
+  // 'foryou' deliberately does NOT exclude the viewer's own activity --
+  // getPortfolioFeed (the other half of Connect's merge) never excluded the
+  // viewer's own portfolio publishes either, so excluding only posts here
+  // was an inconsistency: a creator's own "Your post is live." publish
+  // needs to actually be visible in their own Connect feed, same as their
+  // own portfolio work already is.
 
   const { data, error } = await q;
   if (error) console.warn('[activityApi] getActivityFeed query failed:', error.message);
