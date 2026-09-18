@@ -11,6 +11,7 @@
 // Portfolio, which still reads exclusively from portfolio_items/
 // portfolio_albums per its own spec.
 import { supabase } from '../../lib/supabase';
+import type { Post } from '../types';
 
 export type ActivityType =
   | 'portfolio_published' | 'portfolio_album_published' | 'service_published'
@@ -51,6 +52,13 @@ export interface ActivityEntry {
   title: string | null;
   metadata: ActivityMetadata | null;
   createdAt: string;
+  /** post_published only -- the REAL Post (media, likes, portfolio
+   * attachment), batch-fetched and attached by connectFeed.ts so Connect
+   * can render the actual PostCard instead of a stripped-down summary.
+   * Undefined for every other activityType, and briefly undefined for a
+   * post_published entry too if the batch fetch is still in flight or
+   * failed for that particular post. */
+  post?: Post;
 }
 
 // Fire-and-forget -- called from the single convergence point each event

@@ -71,7 +71,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         </button>
       </div>
 
-      <p className="text-sm text-gray-800 mt-3">Published a new Portfolio album</p>
+      <p className="text-[11px] font-black text-blue-600 uppercase tracking-wide mt-3">🎬 New Portfolio Album</p>
 
       <button onClick={openAlbum} className="relative block w-full mt-3 rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: coverAspectRatio || 4 / 5 }}>
         {coverUrl ? <img src={coverUrl} alt="" className="w-full h-full object-contain" /> : (

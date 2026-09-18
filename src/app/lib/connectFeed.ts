@@ -12,6 +12,7 @@
 import { getPortfolioFeed, type PortfolioFeedEntry } from './portfolioApi';
 import { getActivityFeed, type ActivityEntry } from './activityApi';
 import { getTrustLevelsBatch, type TrustLevel } from './trustApi';
+import { postsApi } from './api';
 
 export type ConnectSort = 'relevant' | 'recent';
 
@@ -125,6 +126,25 @@ export async function getConnectFeed(opts: {
       before: opts.before?.activityCursor, category: opts.category, subcategory: opts.subcategory, limit,
     }),
   ]);
+
+  // Attach the REAL Post (media, likes, portfolio attachment) to every
+  // post_published entry so Connect can render the actual PostCard instead
+  // of a title-only summary -- one batched fetch per page, not one per
+  // card. A post that failed to fetch (e.g. deleted between logging and
+  // now) just keeps `post` undefined; the card falls back to its own
+  // title-only rendering rather than the whole page failing.
+  const postPublishedIds = activityResult.entries
+    .filter(e => e.activityType === 'post_published' && e.targetId)
+    .map(e => e.targetId as string);
+  if (postPublishedIds.length) {
+    const realPosts = await postsApi.getByIds([...new Set(postPublishedIds)]);
+    const postMap = new Map(realPosts.map(p => [p.id, p]));
+    activityResult.entries = activityResult.entries.map(e =>
+      e.activityType === 'post_published' && e.targetId && postMap.has(e.targetId)
+        ? { ...e, post: postMap.get(e.targetId) }
+        : e,
+    );
+  }
 
   const actorIds = [
     ...portfolioEntries.map(e => e.creator.id),

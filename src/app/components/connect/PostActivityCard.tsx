@@ -1,9 +1,12 @@
-// Desktop Connect feed's compact card for a post_published event. Not
-// part of the original spec's activity-type list (which covers Portfolio/
-// Service/Opportunity/Connection/Recommendation), but posts.create() logs
-// a real event (see activityApi.ts's header comment) -- kept consistent in
-// style with the other compact cards rather than left using the older
-// mobile ActivityFeedCard look.
+// Connect feed's card for a post_published event. Renders the REAL
+// PostCard (media at its true aspect ratio, Like/Comment/Share/Save,
+// portfolio attachment, edit/delete menu) using the actual Post object
+// connectFeed.ts batch-fetches and attaches to the entry -- the same
+// component every other surface in FILMONS uses for a post, so a post
+// looks and behaves identically whether it's seen on Connect, a profile's
+// Activity tab, or its own permalink. Falls back to a lighter title-only
+// summary only if that fetch didn't resolve a post for this entry (e.g.
+// it was deleted between being logged and this page load).
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
@@ -12,6 +15,7 @@ import { UserAvatar } from '../AccountTypeBadge';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
+import { PostCard } from '../PostCard';
 import { getActivitySentence, type ActivityEntry } from '../../lib/activityApi';
 import type { TrustLevel } from '../../lib/trustApi';
 
@@ -25,6 +29,18 @@ function timeAgo(iso: string): string {
 }
 
 export function PostActivityCard({ entry, trustLevel }: { entry: ActivityEntry; trustLevel?: TrustLevel }) {
+  if (entry.post) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <PostCard post={entry.post} />
+      </div>
+    );
+  }
+
+  return <PostActivityFallbackCard entry={entry} trustLevel={trustLevel} />;
+}
+
+function PostActivityFallbackCard({ entry, trustLevel }: { entry: ActivityEntry; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
   const { actor } = entry;
 

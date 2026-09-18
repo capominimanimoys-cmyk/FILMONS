@@ -104,10 +104,13 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         </button>
       </div>
 
-      {/* No "Added a new portfolio project" line -- the card (media, title,
-          category) already makes that obvious; "View in Portfolio" below
-          is the useful action instead, per spec. */}
-      {item.description && <p className="text-sm text-gray-600 mt-3 leading-relaxed line-clamp-3">{item.description}</p>}
+      {/* A small eyebrow, not a repeat of the header's timestamp/sentence --
+          distinguishes this from an ordinary photo/video post at a glance,
+          per spec ("don't make portfolio posts look like ordinary social
+          photos"). */}
+      <p className="text-[11px] font-black text-blue-600 uppercase tracking-wide mt-3">🎬 New Portfolio Work</p>
+
+      {item.description && <p className="text-sm text-gray-600 mt-1.5 leading-relaxed line-clamp-3">{item.description}</p>}
 
       <button onClick={openItemDetail} className="block w-full mt-3">
         <PortfolioMedia item={item} />

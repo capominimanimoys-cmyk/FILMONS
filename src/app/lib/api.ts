@@ -1417,6 +1417,10 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     userName:        row._pname || row._pusername || meta.userName || '',
     userAvatar:      row._pavatar || meta.userAvatar || undefined,
     userAccountType: row._paccount || meta.userAccountType || undefined,
+    // The author's current primary creative role (live join, not frozen at
+    // post-create time) -- PostCard's header already reads this (was
+    // previously always undefined since nothing populated it).
+    userRole:        row._prole || undefined,
     content:         row.content          || '',
     images,
     videos,
@@ -1513,7 +1517,7 @@ export const postsApi = {
       if (userIds.length) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, name, username, avatar_url, account_type')
+          .select('id, name, username, avatar_url, account_type, primary_role')
           .in('id', userIds);
         (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
       }
@@ -1522,7 +1526,7 @@ export const postsApi = {
       const likedIds = currentUser ? await fetchLikedPostIds(postIds, currentUser.id) : new Set<string>();
       const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
-        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type}, currentUser?.id, likedIds);
+        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
@@ -1543,7 +1547,7 @@ export const postsApi = {
     try {
       const { data, error } = await supabase
         .from('posts')
-        .select('*, profiles!author_id(id,name,username,avatar_url,account_type)')
+        .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
         .eq('author_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -1558,7 +1562,7 @@ export const postsApi = {
       if (collabPostIds.length) {
         const { data: cp } = await supabase
           .from('posts')
-          .select('*, profiles!author_id(id,name,username,avatar_url,account_type)')
+          .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
           .in('id', collabPostIds)
           .order('created_at', { ascending: false });
         collabPosts = cp ?? [];
@@ -1575,6 +1579,7 @@ export const postsApi = {
           _pusername:prof.username,
           _pavatar:  prof.avatar_url,
           _paccount: prof.account_type,
+          _prole:    prof.primary_role,
         }, currentUser?.id, likedIds);
       });
       // Viewing someone ELSE's profile is exactly where 'connections'/
@@ -1587,6 +1592,38 @@ export const postsApi = {
         const { posts } = await call<any>(`/posts/user/${userId}`);
         return (posts || []).map((p: any) => normalizePostMedia(p));
       } catch { return []; }
+    }
+  },
+
+  // Batch fetch by id -- used by Connect's post_published activity cards
+  // (activityApi.ts) to render the REAL PostCard (media, likes, portfolio
+  // attachment) instead of a stripped-down compact card, without an N+1
+  // fetch per card. Same select/map/visibility-filter pattern as
+  // getUserPosts, just keyed by a caller-supplied id list instead of an
+  // author.
+  getByIds: async (ids: string[]): Promise<Post[]> => {
+    if (!ids.length) return [];
+    const currentUser = authApi.getCurrentUser();
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
+        .in('id', ids);
+      if (error) throw error;
+      const rows = data || [];
+      const likedIds = currentUser ? await fetchLikedPostIds(rows.map((r: any) => r.id), currentUser.id) : new Set<string>();
+      const mapped = rows.map((row: any) => {
+        const prof = (row.profiles as any) || {};
+        return rowToPostClient({
+          ...row,
+          _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type,
+          _prole: prof.primary_role,
+        }, currentUser?.id, likedIds);
+      });
+      return filterPostsByVisibility(mapped, currentUser?.id);
+    } catch (e) {
+      console.error('[getByIds] error:', e);
+      return [];
     }
   },
 
@@ -1614,7 +1651,7 @@ export const postsApi = {
     try {
       const { data, error } = await supabase
         .from('posts')
-        .select('*, profiles!author_id(id,name,username,avatar_url,account_type)')
+        .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
         .in('author_id', ids)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -1627,6 +1664,7 @@ export const postsApi = {
           _pusername: prof.username,
           _pavatar:   prof.avatar_url,
           _paccount:  prof.account_type,
+          _prole:     prof.primary_role,
         }, currentUser?.id);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);

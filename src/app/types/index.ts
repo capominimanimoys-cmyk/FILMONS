@@ -82,6 +82,10 @@ export interface Post {
   userName: string;
   userAccountType?: string;
   userAvatar?: string;
+  /** The author's current primary creative role (live profile join, not
+   * frozen at post-create time) -- e.g. "Cinematographer". Shown in
+   * PostCard's header, LinkedIn-style. */
+  userRole?: string;
 
   // Type
   postType?: PostType;

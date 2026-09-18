@@ -50,7 +50,13 @@ export function ConnectionActivityCard({ entry, trustLevel, otherTrustLevel }: {
         </button>
       </div>
 
-      <p className="text-center text-xs text-gray-400 mt-1">{timeAgo(entry.createdAt)}</p>
+      <div className="flex items-center justify-center gap-3 mt-2">
+        <p className="text-xs text-gray-400">{timeAgo(entry.createdAt)}</p>
+        <span className="text-gray-200">·</span>
+        <button onClick={() => navigate(`/host/${actor.id}`)} className="text-xs font-bold text-blue-600 hover:underline">
+          View profiles
+        </button>
+      </div>
     </article>
   );
 }
