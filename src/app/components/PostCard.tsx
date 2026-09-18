@@ -27,6 +27,7 @@ import { AudioPostCard } from './AudioPostCard';
 import { SharePostModal } from './SharePostModal';
 import { ListingTagSheet } from './ListingTagSheet';
 import { EditPostModal } from './EditPostModal';
+import { DraggablePortfolioPage } from './connect/DraggablePortfolioPage';
 import { LikesSheet } from './LikesSheet';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
@@ -389,6 +390,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // Lets the "..." menu's "Change visibility" item jump straight to the
   // audience picker instead of landing on the general edit form first.
   const [editModalInitialView, setEditModalInitialView] = useState<'visibility' | undefined>(undefined);
+  const [showPortfolioOverlay, setShowPortfolioOverlay] = useState(false);
   const [showLikesSheet, setShowLikesSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1688,10 +1690,12 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           {/* Attached Portfolio -- real portfolio_item_id, resolved to the
               creator's own Portfolio (never the viewer's), per spec. Part
               of the content section (not the caption) -- a structured
-              attachment card, not raw text. */}
+              attachment card, not raw text. Opens the draggable Portfolio
+              overlay (not a navigate) so viewing it never loses the
+              viewer's scroll position in the feed underneath. */}
           {localPost.portfolioItemId && (
             <button
-              onClick={()=>navigate(`/portfolio/${localPost.userId}`)}
+              onClick={()=>setShowPortfolioOverlay(true)}
               className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
               style={{ width: 'calc(100% - 1.5rem)' }}
             >
@@ -1708,6 +1712,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 </span>
               </div>
             </button>
+          )}
+          {showPortfolioOverlay && (
+            <DraggablePortfolioPage creatorId={localPost.userId} onClose={() => setShowPortfolioOverlay(false)} />
           )}
 
           {/* Attached Listing -- was previously ONLY reachable via the

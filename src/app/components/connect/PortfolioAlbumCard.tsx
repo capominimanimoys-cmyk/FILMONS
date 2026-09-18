@@ -15,6 +15,7 @@ import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
+import { DraggablePortfolioPage } from './DraggablePortfolioPage';
 import type { TrustLevel } from '../../lib/trustApi';
 
 export function PortfolioAlbumCard({ entry, trustLevel }: {
@@ -26,6 +27,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const { album, creator, coverUrl, coverAspectRatio, itemCount } = entry;
   const isOwn = !!user && user.id === creator.id;
 
+  const [showAlbumOverlay, setShowAlbumOverlay] = useState(false);
   const [saved, setSaved] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(album.likes_count ?? 0);
@@ -68,7 +70,10 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
     try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
   };
 
-  const openAlbum = () => navigate(`/portfolio/${creator.id}`);
+  // Opens the draggable Portfolio overlay straight into THIS album (spec
+  // §1/§11) rather than navigating away to /portfolio -- keeps /connect's
+  // scroll position intact underneath.
+  const openAlbum = () => setShowAlbumOverlay(true);
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -148,6 +153,9 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
       {(trustProfileOpen || trustProfileClosing) && createPortal(
         <TrustProfileOverlay userId={creator.id} closing={trustProfileClosing} onClose={closeTrustProfile} />,
         document.body,
+      )}
+      {showAlbumOverlay && (
+        <DraggablePortfolioPage creatorId={creator.id} initialAlbumId={album.id} onClose={() => setShowAlbumOverlay(false)} />
       )}
     </article>
   );
