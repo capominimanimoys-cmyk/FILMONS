@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap, ChevronDown } from 'lucide-react';
+import { Sparkles, Package, Tag, Wrench, User, Building2, Briefcase, Compass, SlidersHorizontal, RefreshCw, PartyPopper, AlertTriangle, Zap, ChevronDown, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { listingsApi } from '../lib/api';
 import { emergencyApi } from '../lib/emergencyApi';
@@ -1131,6 +1131,16 @@ export function Home() {
                     {f.label}
                   </button>
                 ))}
+                {/* Courses isn't a swipe-deck category (a Course isn't a
+                    Listing) -- links out to its own browse page instead of
+                    joining handleFilter/buildDeck. */}
+                <button
+                  onClick={() => navigate('/courses')}
+                  className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap bg-white text-gray-600 border border-gray-200 hover:border-gray-300"
+                >
+                  <GraduationCap className="w-3.5 h-3.5"/>
+                  Courses
+                </button>
               </div>
 
               {/* ── Deck — same Tinder swipe mechanics on every breakpoint; desktop

@@ -70,6 +70,8 @@ import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
 import { LikedItems } from './pages/LikedItems';
+import { CoursesHome } from './pages/CoursesHome';
+import { CourseDetail } from './pages/CourseDetail';
 
 export const router = createBrowserRouter([
   {
@@ -123,6 +125,8 @@ export const router = createBrowserRouter([
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
+      { path: 'courses', Component: CoursesHome },
+      { path: 'courses/:courseId', Component: CourseDetail },
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'portfolio', Component: Portfolio },
