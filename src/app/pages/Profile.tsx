@@ -30,7 +30,7 @@ import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
 import { reliabilityApi, ReputationScore, isCreatorPlus, normalizeTier } from '../lib/reliabilityApi';
 import { AvatarActionSheet, AvatarFullScreen } from '../components/AvatarActionSheet';
-import { PostComposer } from '../components/PostComposer';
+import { CreatePostSheet } from '../components/CreatePostSheet';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
 import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
@@ -1878,23 +1878,19 @@ export function Profile() {
       )}
 
       {/* ── Create Post -- an attached FILMONS page, not a modal (per spec):
-          PostComposer already renders its own fixed inset-0 full-screen
-          overlay, so no extra modal wrapper is needed here -- the old
-          centered-modal wrapper was actually a bug (it also never passed
-          PostComposer an onClose, so the composer's own Back/success-close
-          had nothing to call). Controlled `closing` gives it the same
-          slide-out-to-the-right exit as its slide-in entrance. Profile
-          itself stays mounted underneath throughout, so scroll position
-          and the active tab are preserved automatically. ── */}
+          CreatePostSheet already renders its own fixed inset-0 full-screen
+          overlay, so no extra modal wrapper is needed here. Controlled
+          `closing` gives it the same slide-out exit as its slide-in
+          entrance. Profile itself stays mounted underneath throughout, so
+          scroll position and the active tab are preserved automatically. ── */}
       {(showCompose || composeClosing) && (
-        <PostComposer
+        <CreatePostSheet
           closing={composeClosing}
           initialAction={composeAction}
           onClose={closeCompose}
-          // Only updates the local posts list -- closing is driven by the
-          // composer's own success screen (its Done button already calls
-          // onClose) so the creator actually gets to see "Post published"
-          // instead of it being yanked away the instant publish resolves.
+          // Its own "Your post is live." confirmation calls onClose after
+          // a short delay, so the creator sees confirmation before this
+          // fires and the composer unmounts.
           onPost={post => { setPosts(prev => [post, ...prev]); mergePosts([post]); }}
         />
       )}

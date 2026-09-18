@@ -28,7 +28,7 @@ import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { getConnectFeed, getRecommendedPortfolio, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
-import { PostComposer } from '../components/PostComposer';
+import { CreatePostSheet } from '../components/CreatePostSheet';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
@@ -1521,12 +1521,12 @@ export function Home() {
       )}
 
       {/* ── Create Post -- an attached FILMONS page, not a modal (per
-          spec): PostComposer renders its own fixed inset-0 full-screen
+          spec): CreatePostSheet renders its own fixed inset-0 full-screen
           overlay with the slide transition, so Home stays mounted
           underneath and its scroll position/tab/category are preserved
           automatically. ── */}
       {(showCompose || composeClosing) && (
-        <PostComposer
+        <CreatePostSheet
           closing={composeClosing}
           initialAction={composeAction}
           onClose={closeCompose}
