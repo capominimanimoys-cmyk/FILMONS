@@ -58,7 +58,7 @@ function CaptionText({ text, className, expanded, onExpand, onHashtagTap }: {
   className: string;
   expanded: boolean;
   onExpand: () => void;
-  onHashtagTap: () => void;
+  onHashtagTap: (tag: string) => void;
 }) {
   const isLong = text.length > CAPTION_TRUNCATE_LENGTH;
   const shown = isLong && !expanded ? text.slice(0, CAPTION_TRUNCATE_LENGTH).trimEnd() : text;
@@ -68,7 +68,7 @@ function CaptionText({ text, className, expanded, onExpand, onHashtagTap }: {
   // of re-testing the (stateful, lastIndex-tracking) global regex per part.
   const renderPart = (part: string, i: number) =>
     i % 2 === 1
-      ? <button key={i} onClick={e => { e.stopPropagation(); onHashtagTap(); }} className="text-blue-600 font-semibold hover:underline">{part}</button>
+      ? <button key={i} onClick={e => { e.stopPropagation(); onHashtagTap(part.slice(1)); }} className="text-blue-600 font-semibold hover:underline">{part}</button>
       : <span key={i}>{part}</span>;
 
   return (
@@ -1379,7 +1379,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                   className={`text-gray-900 ${captionSizeClass}`}
                   expanded={captionExpanded}
                   onExpand={() => setCaptionExpanded(true)}
-                  onHashtagTap={() => navigate('/search')}
+                  onHashtagTap={tag => navigate(`/hashtag/${tag}`)}
                 />
               )}
 

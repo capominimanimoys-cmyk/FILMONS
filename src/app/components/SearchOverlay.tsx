@@ -21,6 +21,7 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
+import { searchHashtagSuggestions } from '../lib/hashtagsApi';
 import {
   searchMatchingListings, searchMatchingCreators,
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
@@ -57,7 +58,7 @@ interface ListingRow {
 
 interface Suggestion {
   id: string; text: string; subtext?: string;
-  icon: string; kind: 'listing' | 'creator' | 'service' | 'smart' | 'location'; action: string;
+  icon: string; kind: 'listing' | 'creator' | 'service' | 'smart' | 'location' | 'hashtag'; action: string;
 }
 
 // ── Filter state ───────────────────────────────────────────────────────────────
@@ -345,17 +346,27 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
   if (q.length < 1) return [];
   const ql = normalize(q).replace(/[%_\\,]/g, '');
 
-  const [lRes, uRes] = await Promise.all([
+  const [lRes, uRes, hashtags] = await Promise.all([
     supabase.from('listings').select('id, title, listing_type, listing_mode')
       .ilike('title', `${ql}%`).limit(5),
     supabase.from('profiles').select('id, name, username, primary_role')
       .or(`name.ilike.${ql}%,username.ilike.${ql}%`)
       .not('name','is',null).neq('name','').limit(3),
+    // Both "filmmaking" and "#filmmaking" find #filmmaking -- searchHashtagSuggestions
+    // strips a leading '#' before matching. Shown first in the list, per spec.
+    searchHashtagSuggestions(rawQ, 4),
   ]);
 
   const results: Suggestion[] = [];
   const seen = new Set<string>();
 
+  for (const h of hashtags) {
+    results.push({
+      id: `hashtag-${h.tag}`, text: `#${h.tag}`,
+      subtext: h.usageCount > 0 ? `${h.usageCount} post${h.usageCount === 1 ? '' : 's'}` : undefined,
+      icon: '#', kind: 'hashtag', action: h.tag,
+    });
+  }
   for (const l of (lRes.data ?? [])) {
     if (!l.title || seen.has(l.title)) continue;
     seen.add(l.title);
@@ -1342,6 +1353,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   };
 
   const handleSelectSuggestion = (s: Suggestion) => {
+    if (s.kind === 'hashtag') { setSuggestions([]); handleResultNavigate(`/hashtag/${s.action}`); return; }
     setQ(s.action); setSuggestions([]); runSearch(s.action);
   };
 

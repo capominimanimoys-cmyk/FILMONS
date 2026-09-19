@@ -4,6 +4,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
 import { logProfileEngagement } from './profileEngagement';
 import { logActivityEvent, type ActivityType } from './activityApi';
+import { indexContentHashtags } from './hashtagsApi';
 import { toast } from 'sonner';
 
 // Runs a listings query that filters out paused/removed listings, but
@@ -1810,6 +1811,8 @@ export const postsApi = {
       targetType: 'post', targetId: String(data.id), title: (data.content || content || '').slice(0, 80) || null,
     });
 
+    indexContentHashtags('post', String(data.id), data.content || content).catch(() => {});
+
     return {
       id:              String(data.id),
       userId:          currentUser.id,
@@ -1855,6 +1858,7 @@ export const postsApi = {
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', postId);
     if (error) throw new Error(error.message);
+    if (typeof updates.content === 'string') indexContentHashtags('post', postId, updates.content).catch(() => {});
   },
 
   toggleLike: async (postId: string): Promise<{ liked: boolean; likesCount: number }> => {

@@ -30,6 +30,9 @@ import { supabase } from '../../lib/supabase';
 import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api';
 import { Listing } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { HashtagCategoryResults } from './HashtagCategoryResults';
+import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
+import { Hash } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
 import { ALL_PROFESSIONS } from '../components/ProfessionPicker';
@@ -1599,6 +1602,44 @@ function RadioRow({ label, checked, onClick }: { label: string; checked: boolean
   );
 }
 
+// Hashtags section for /search/category/all -- same "max 5, View all when
+// more exist" rule as every other category here (fetch 6, show 5, View all
+// appears only if a 6th actually exists).
+function HashtagsAllSection({ query }: { query?: string }) {
+  const navigate = useNavigate();
+  const [results, setResults] = useState<HashtagSuggestion[] | null>(null);
+
+  useEffect(() => {
+    if (!query?.trim()) { setResults(null); return; }
+    let cancelled = false;
+    searchHashtagSuggestions(query, 6).then(r => { if (!cancelled) setResults(r); });
+    return () => { cancelled = true; };
+  }, [query]);
+
+  if (!query?.trim() || !results?.length) return null;
+  const shown = results.slice(0, 5);
+
+  return (
+    <div className="px-4 lg:px-0 mb-6">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-sm lg:text-base font-black text-gray-900">Hashtags</p>
+        {results.length > 5 && (
+          <button onClick={() => navigate('/search/category/hashtags', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+            View all <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {shown.map(h => (
+          <button key={h.tag} onClick={() => navigate(`/hashtag/${h.tag}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+            <Hash className="w-3.5 h-3.5 text-blue-500" /> {h.tag}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AllGroupedResults({ navState: initialNavState }: { navState: NavState }) {
   const navigate = useNavigate();
 
@@ -1852,6 +1893,7 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
 
       <div className="py-4 lg:py-6">
         {visibleCategories.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+        {categoryFilter === 'all' && <HashtagsAllSection query={term} />}
       </div>
 
       {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}
@@ -1924,6 +1966,7 @@ export function CategoryResults() {
   if (!isAuthenticated) return null;
 
   if (tab === 'all') return <AllGroupedResults navState={navState}/>;
+  if (tab === 'hashtags') return <HashtagCategoryResults query={navState.query} />;
 
   const category = (tab && (CATEGORY_IDS as string[]).includes(tab)) ? (tab as CategoryTab) : null;
   if (!category) {

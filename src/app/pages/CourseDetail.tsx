@@ -20,6 +20,7 @@ import { getTrustLevelCached, type TrustLevel } from '../lib/trustApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { TrustBadge } from '../components/trust/TrustBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { HashtagText } from '../components/HashtagText';
 import { useAuth } from '../context/AuthContext';
 
 function formatDuration(totalSeconds: number): string {
@@ -308,7 +309,7 @@ export function CourseDetail() {
           {course.description && (
             <div className="bg-white rounded-2xl border border-gray-100 p-4">
               <p className="text-sm font-black text-gray-900 mb-2">About this course</p>
-              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{course.description}</p>
+              <HashtagText text={course.description} className="text-sm text-gray-600 leading-relaxed whitespace-pre-line" />
             </div>
           )}
 

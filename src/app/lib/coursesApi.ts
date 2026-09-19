@@ -3,6 +3,7 @@
 // full schema underneath it; creation/checkout/player land in a later
 // phase. See supabase/migrations/20240511000000_courses.sql.
 import { supabase } from '../../lib/supabase';
+import { indexContentHashtags } from './hashtagsApi';
 
 export type CourseLevel = 'beginner' | 'intermediate' | 'advanced' | 'all_levels';
 export type CourseStatus = 'draft' | 'published' | 'archived';
@@ -170,6 +171,14 @@ export async function getCourses(opts: {
   if (error) { console.warn('[coursesApi] getCourses error:', error.message); return []; }
   const withInstructors = await attachInstructors(data ?? []);
   return attachCurriculumStats(withInstructors);
+}
+
+/** Hashtag results page -- courses mentioning a hashtag, published only. */
+export async function getCoursesByIds(ids: string[]): Promise<Course[]> {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from('courses').select('*').in('id', ids).eq('status', 'published');
+  if (error) return [];
+  return attachCurriculumStats(await attachInstructors(data ?? []));
 }
 
 export async function getPopularCourses(category?: string, limit = 10): Promise<Course[]> {
@@ -345,6 +354,7 @@ export async function createCourse(instructorId: string, accountType: string | n
     status: 'draft',
   }).select('*').single();
   if (error || !data) { console.warn('[coursesApi] createCourse error:', error?.message); return null; }
+  indexContentHashtags('course', data.id, `${input.title} ${input.shortDescription ?? ''} ${input.description ?? ''}`).catch(() => {});
   const [course] = await attachInstructors([data]);
   return course;
 }
@@ -363,6 +373,10 @@ export async function updateCourse(courseId: string, instructorId: string, input
   if (input.price !== undefined) patch.price = input.isFree ? 0 : input.price;
   if (input.coverUrl !== undefined) patch.cover_url = input.coverUrl || null;
   const { data, error } = await supabase.from('courses').update(patch).eq('id', courseId).eq('instructor_id', instructorId).select('id').maybeSingle();
+  if (!error && data && (input.title !== undefined || input.shortDescription !== undefined || input.description !== undefined)) {
+    const { data: row } = await supabase.from('courses').select('title, short_description, description').eq('id', courseId).maybeSingle();
+    indexContentHashtags('course', courseId, `${row?.title ?? ''} ${row?.short_description ?? ''} ${row?.description ?? ''}`).catch(() => {});
+  }
   return !error && !!data;
 }
 

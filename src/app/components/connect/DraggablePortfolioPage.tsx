@@ -22,6 +22,7 @@ import { authApi } from '../../lib/api';
 import { logProfileEngagement } from '../../lib/profileEngagement';
 import { supabase } from '../../../lib/supabase';
 import { UserAvatar } from '../AccountTypeBadge';
+import { HashtagText } from '../HashtagText';
 import { DraggablePage } from '../DraggablePage';
 import { ConnectFlowSheet } from '../ConnectFlowSheet';
 import { BottomSheet, SheetAction, SheetCancel } from '../BottomSheet';
@@ -235,7 +236,7 @@ function ItemViewer({ items, startIndex, creator, meId, onClose }: {
             </div>
           </div>
           <h2 className="font-black text-gray-900 text-lg leading-snug">{item.title}</h2>
-          {item.description && <p className="text-sm text-gray-600 leading-relaxed mt-1.5">{item.description}</p>}
+          {item.description && <HashtagText text={item.description} className="text-sm text-gray-600 leading-relaxed mt-1.5" />}
         </div>
 
         <div className="px-4">
@@ -336,7 +337,7 @@ function AlbumDetailViewer({ album, items, creator, meId, onOpenItem, onClose }:
           <p className="text-sm font-bold text-gray-900">{creator.name}</p>
         </div>
         <h2 className="font-black text-gray-900 text-xl leading-snug">{album.title}</h2>
-        {album.description && <p className="text-sm text-gray-600 leading-relaxed mt-1.5">{album.description}</p>}
+        {album.description && <HashtagText text={album.description} className="text-sm text-gray-600 leading-relaxed mt-1.5" />}
         <p className="text-xs text-gray-400 mt-2 flex items-center gap-1"><Layers className="w-3.5 h-3.5" /> {items.length} item{items.length === 1 ? '' : 's'}</p>
 
         <div className="grid grid-cols-3 gap-1.5 mt-4">
