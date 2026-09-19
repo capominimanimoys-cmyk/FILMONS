@@ -7,7 +7,7 @@ import {
   Bell, Shield, Lock, FileText, HelpCircle, ChevronRight, ArrowLeft,
   Smartphone, LogOut, Trash2, Globe, Star, Eye,
   CheckCircle, Zap, Sparkles, Search,
-  MapPin, Info, Layers,
+  MapPin, Info, Layers, GraduationCap, Compass,
 } from 'lucide-react';
 import { normalizeTier, getTierLabel, getTierBadge } from '../lib/reliabilityApi';
 import { toast } from 'sonner';
@@ -65,6 +65,13 @@ export function Settings() {
             else { go('/wallet'); }
           }
         },
+      ],
+    },
+    {
+      title: 'Learning',
+      items: [
+        { icon: GraduationCap, label: 'My Learning',       sub: 'Courses you\'re taking and teaching', action: () => go('/learning/my-learning') },
+        { icon: Compass,       label: 'Explore Learning',  sub: 'Browse courses on Filmons',           action: () => go('/learning') },
       ],
     },
     {

@@ -72,6 +72,10 @@ import { OpportunityApplicants } from './pages/OpportunityApplicants';
 import { LikedItems } from './pages/LikedItems';
 import { CoursesHome } from './pages/CoursesHome';
 import { CourseDetail } from './pages/CourseDetail';
+import { CourseContent } from './pages/CourseContent';
+import { LearningPlayer } from './pages/LearningPlayer';
+import { MyLearning } from './pages/MyLearning';
+import { CreateCourse } from './pages/CreateCourse';
 
 export const router = createBrowserRouter([
   {
@@ -125,8 +129,14 @@ export const router = createBrowserRouter([
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
-      { path: 'courses', Component: CoursesHome },
-      { path: 'courses/:courseId', Component: CourseDetail },
+      // FILMONS Learning -- its own product area, separate from
+      // Marketplace (courses are educational products, not listings).
+      { path: 'learning', Component: CoursesHome },
+      { path: 'learning/my-learning', Component: MyLearning },
+      { path: 'learning/create', Component: CreateCourse },
+      { path: 'learning/course/:courseId', Component: CourseDetail },
+      { path: 'learning/course/:courseId/content', Component: CourseContent },
+      { path: 'learning/course/:courseId/lesson/:lessonId', Component: LearningPlayer },
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'portfolio', Component: Portfolio },

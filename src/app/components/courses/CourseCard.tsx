@@ -27,7 +27,7 @@ export function CourseCard({ course, trustLevel }: { course: Course; trustLevel?
 
   return (
     <button
-      onClick={() => navigate(`/courses/${course.id}`)}
+      onClick={() => navigate(`/learning/course/${course.id}`)}
       className="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden active:scale-[0.98] transition-transform"
     >
       <div className="relative w-full bg-gray-100" style={{ aspectRatio: '16/9' }}>

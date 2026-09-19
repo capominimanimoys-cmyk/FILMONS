@@ -1135,11 +1135,11 @@ export function Home() {
                     Listing) -- links out to its own browse page instead of
                     joining handleFilter/buildDeck. */}
                 <button
-                  onClick={() => navigate('/courses')}
+                  onClick={() => navigate('/learning')}
                   className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95 whitespace-nowrap bg-white text-gray-600 border border-gray-200 hover:border-gray-300"
                 >
                   <GraduationCap className="w-3.5 h-3.5"/>
-                  Courses
+                  Learning
                 </button>
               </div>
 
