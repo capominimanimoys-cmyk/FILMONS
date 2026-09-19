@@ -3,6 +3,7 @@ import { AddPhotoAlternateRounded, AddRounded, ArrowBackIosNewRounded, AttachFil
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { chatApi, authApi, dbRowToMsg, consumeDeletedConvRecord, persistConversationsCache, writeUsersCache } from '../lib/api';
+import { SharedContentBubble } from '../components/connect/SharedContentBubble';
 import * as notifs from '../lib/notifications';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -1064,6 +1065,7 @@ function MsgActionSheet({ msg, currentUserId, onClose, onReply, onEdit, onPin, o
   const preview = msg.type === 'media'
     ? (msg.mediaType === 'audio' ? 'Voice message' : msg.mediaType === 'video' ? 'Video' : 'Photo')
     : msg.type === 'post' ? 'Shared a post'
+    : msg.type === 'shared_content' ? 'Shared a post'
     : (msg.content || '');
   return (
     <div className="fixed inset-0 z-[200] flex items-end justify-center" onMouseDown={onClose} onTouchEnd={onClose}>
@@ -1142,6 +1144,7 @@ function ConvRow({
   const lastPreview = conv.lastMessagePreview ||
     (!last ? '' :
       last.type === 'post'            ? 'Shared a post' :
+      last.type === 'shared_content'  ? 'Shared a post' :
       last.type === 'rental_request'  ? 'Rental request' :
       last.type === 'payment_request' ? 'Payment request' :
       last.type === 'application'     ? 'Application' :
@@ -3285,6 +3288,11 @@ export function Inbox() {
                               <div>
                                 {msg.content && <div className={`mb-1.5 px-3 py-2 rounded-2xl text-sm ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'}`}>{msg.content}</div>}
                                 <SharedPostBubble post={msg.sharedPost} isOwn={isOwn} />
+                              </div>
+                            ) : msg.type === 'shared_content' && msg.sharedContent ? (
+                              <div>
+                                {msg.content && <div className={`mb-1.5 px-3 py-2 rounded-2xl text-sm ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'}`}>{msg.content}</div>}
+                                <SharedContentBubble content={msg.sharedContent} isOwn={isOwn} />
                               </div>
                             ) : msg.type === 'application' && msg.applicationCard ? (
                               <ApplicationCardBubble msg={msg} />

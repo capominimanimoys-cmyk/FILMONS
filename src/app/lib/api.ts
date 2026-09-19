@@ -2753,6 +2753,7 @@ export function dbRowToMsg(raw: any): ChatMessage {
     mediaUrl:        meta.mediaUrl      ?? undefined,
     mediaType:       meta.mediaType     ?? undefined,
     sharedPost:      meta.sharedPost ? normalizePostMedia(meta.sharedPost) : undefined,
+    sharedContent:   meta.sharedContent ?? undefined,
     rentalRequest:   meta.rentalRequest ?? undefined,
     paymentRequest:  meta.paymentRequest?? undefined,
     applicationCard: meta.applicationCard ?? undefined,
@@ -2983,6 +2984,20 @@ export const chatApi = {
     saveConvs(convs);
     syncMessageToServer(conversationId, message);
     return message;
+  },
+
+  /** Universal FILMONS Share system -- see shareApi.ts's shareContent().
+   *  Builds the ChatMessage object only (local-first, same shape every
+   *  other send* helper here returns); the caller still writes it via
+   *  sendMessageToDB the same way ShareListingModal/sharePost callers do. */
+  shareContent(conversationId: string, senderId: string, senderName: string, senderAvatar: string | undefined, content: import('../types').SharedContentSnapshot, message?: string): ChatMessage {
+    const { convs, idx } = chatApi._ensureLocalConv(conversationId, senderId);
+    const msg: ChatMessage = { id: genMsgId(), senderId, senderName, senderAvatar, type: 'shared_content', sharedContent: content, content: message, createdAt: new Date().toISOString() };
+    convs[idx].messages.push(msg);
+    convs[idx].updatedAt = new Date().toISOString();
+    saveConvs(convs);
+    syncMessageToServer(conversationId, msg);
+    return msg;
   },
 
   updateMessage(conversationId: string, messageId: string, updates: Partial<ChatMessage>): Conversation {
@@ -3416,6 +3431,7 @@ export const chatApi = {
         senderName:    msg.senderName    || null,
         senderAvatar:  msg.senderAvatar  || null,
         sharedPost:    (msg as any).sharedPost ? normalizePostMedia((msg as any).sharedPost) : null,
+        sharedContent: (msg as any).sharedContent || null,
         mediaUrl:      (msg as any).mediaUrl      || null,
         mediaType:     (msg as any).mediaType     || null,
         rentalRequest: (msg as any).rentalRequest || null,
@@ -3612,6 +3628,7 @@ export const chatApi = {
           rentalRequest:  m.metadata?.rentalRequest  ? { status: 'pending', ...m.metadata.rentalRequest }  : undefined,
           paymentRequest: m.metadata?.paymentRequest ? { status: 'pending', ...m.metadata.paymentRequest } : undefined,
           sharedPost:     m.metadata?.sharedPost ? normalizePostMedia(m.metadata.sharedPost) : undefined,
+          sharedContent:  m.metadata?.sharedContent ?? undefined,
           mediaUrl:       m.metadata?.mediaUrl    || undefined,
           mediaType:      m.metadata?.mediaType   || undefined,
           applicationCard: m.metadata?.applicationCard || undefined,

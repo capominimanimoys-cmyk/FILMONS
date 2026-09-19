@@ -290,13 +290,33 @@ export interface OpportunityDetails {
   opportunityStatus?: 'active' | 'applications_closed' | 'completed';
 }
 
+/** Universal FILMONS Share system payload (shareApi.ts's shareContent()) --
+ *  one shape for every shareable Connect content type instead of a separate
+ *  message format per type. A display snapshot only; the real content is
+ *  always re-fetched by (contentType, contentId) when opened, so it never
+ *  goes stale or leaks a since-restricted post. */
+export interface SharedContentSnapshot {
+  contentType: 'post' | 'portfolio_item' | 'portfolio_album' | 'connection';
+  contentId: string;
+  /** portfolio_item/portfolio_album only -- the item/album's owning
+   *  creator, distinct from the post author for a reposted/attached case. */
+  creatorId: string;
+  creatorName: string;
+  creatorAvatar?: string;
+  creatorVerified?: boolean;
+  title?: string;
+  caption?: string;
+  thumbnailUrl?: string;
+  meta?: string[];
+}
+
 export interface ChatMessage {
   id: string;
   conversationId?: string;
   senderId: string;
   senderName: string;
   senderAvatar?: string;
-  type: 'text' | 'post' | 'rental_request' | 'payment_request' | 'media' | 'application' | 'hire' | 'system';
+  type: 'text' | 'post' | 'rental_request' | 'payment_request' | 'media' | 'application' | 'hire' | 'system' | 'shared_content';
   content?: string;
   /** type:'system' only — display text for the centered non-editable event divider (e.g. "You were shortlisted for this opportunity."). */
   systemText?: string;
@@ -317,6 +337,12 @@ export interface ChatMessage {
   /** ISO timestamp the recipient actually read this message, if they have. */
   readAt?: string;
   sharedPost?: Post;
+  /** type:'shared_content' only -- the universal FILMONS Share system's
+   *  message payload (see shareApi.ts). A lightweight display snapshot
+   *  captured at share time (name/avatar/caption/thumbnail), NOT the
+   *  original content itself -- SharedContentBubble re-verifies the real
+   *  content still exists/is visible before letting the recipient open it. */
+  sharedContent?: SharedContentSnapshot;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio';
   rentalRequest?: {

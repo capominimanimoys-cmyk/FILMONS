@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Link2, EyeOff, Flag, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -19,6 +19,9 @@ import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
+import { PostMoreMenu } from './PostMoreMenu';
+import { SharePostSheet } from './SharePostSheet';
+import { getSharedContentDeepLink } from '../../lib/shareApi';
 import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
@@ -37,6 +40,9 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showItemDetail, setShowItemDetail] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
   const [trustProfileClosing, setTrustProfileClosing] = useState(false);
@@ -67,11 +73,6 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
     logPortfolioInteraction(user.id, { category: item.category, subcategory: item.subcategory }, next ? 'save' : 'unsave');
   };
 
-  const handleShare = async () => {
-    const url = `${window.location.origin}/portfolio/${creator.id}`;
-    try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
-  };
-
   // Two distinct destinations, per spec: media/title -> item detail
   // overlay (this page, no navigation); avatar/name -> Profile. The
   // "View [Name]'s Portfolio" action (ViewPortfolioLink) is its own third
@@ -79,6 +80,21 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
   // viewing, so it never routes to the VIEWER's own /portfolio unless they
   // really are the owner.
   const openItemDetail = () => setShowItemDetail(true);
+
+  const shareSnapshot = {
+    contentType: 'portfolio_item' as const,
+    contentId: item.id,
+    creatorId: creator.id,
+    creatorName: creator.name,
+    creatorAvatar: creator.avatar_url ?? undefined,
+    creatorVerified: creator.is_verified,
+    title: item.title,
+    caption: item.description,
+    thumbnailUrl: item.thumbnail_url || item.media_url,
+    meta: [item.category, item.subcategory].filter(Boolean) as string[],
+  };
+
+  if (hidden) return null;
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -100,30 +116,28 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
             </div>
           )}
         </div>
-        <button className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+        <button onClick={() => setShowMoreMenu(true)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
           <MoreHorizontal className="w-4 h-4" />
         </button>
       </div>
 
-      {/* A small eyebrow, not a repeat of the header's timestamp/sentence --
-          distinguishes this from an ordinary photo/video post at a glance,
-          per spec ("don't make portfolio posts look like ordinary social
-          photos"). */}
-      <p className="text-[11px] font-black text-blue-600 uppercase tracking-wide mt-3">🎬 New Portfolio Work</p>
-
-      {item.description && <p className="text-sm text-gray-600 mt-1.5 leading-relaxed line-clamp-3">{item.description}</p>}
+      {/* Title/caption above media, per the FILMONS universal post-layout
+          rule -- replaces the old "New Portfolio Work" eyebrow label. Same
+          typography as PortfolioAlbumCard's title/caption so the two
+          "project" card types read consistently side by side. */}
+      <button onClick={openItemDetail} className="block mt-3 text-left">
+        <p className="text-base font-black text-gray-900 leading-snug hover:underline">{item.title}</p>
+        {item.description && <p className="text-sm text-gray-600 mt-1 leading-relaxed line-clamp-3">{item.description}</p>}
+      </button>
 
       <button onClick={openItemDetail} className="block w-full mt-3">
         <PortfolioMedia item={item} />
       </button>
 
-      <div className="mt-3">
-        <button onClick={openItemDetail} className="text-sm font-bold text-gray-900 hover:underline text-left">{item.title}</button>
-        <div className="flex flex-wrap gap-1.5 mt-1.5">
-          {[item.category, item.subcategory, creator.city].filter(Boolean).map(tag => (
-            <span key={tag} className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">{tag}</span>
-          ))}
-        </div>
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {[item.category, item.subcategory, creator.city].filter(Boolean).map(tag => (
+          <span key={tag} className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">{tag}</span>
+        ))}
       </div>
 
       {/* Lightweight action, not a big CTA -- shouldn't compete with the
@@ -138,7 +152,7 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <MessageCircle className="w-5 h-5 text-gray-400" /> Comment{(item.comments_count ?? 0) > 0 ? ` · ${item.comments_count}` : ''}
         </button>
-        <button onClick={handleShare} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+        <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" /> Share
         </button>
         <button onClick={handleToggleSave} className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
@@ -169,6 +183,19 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         <TrustProfileOverlay userId={creator.id} closing={trustProfileClosing} onClose={closeTrustProfile} />,
         document.body,
       )}
+      {showMoreMenu && (
+        <PostMoreMenu
+          onClose={() => setShowMoreMenu(false)}
+          actions={[
+            { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); navigate(`/portfolio/${creator.id}`); } },
+            { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },
+            { icon: Link2, label: 'Copy link', onClick: async () => { setShowMoreMenu(false); try { await navigator.clipboard.writeText(getSharedContentDeepLink(shareSnapshot)); toast.success('Link copied'); } catch { toast.error('Could not copy link'); } } },
+            { icon: EyeOff, label: 'Hide this post', onClick: () => { setShowMoreMenu(false); setHidden(true); toast('Post hidden', { description: "You won't see this again" }); } },
+            { icon: Flag, label: 'Report', onClick: () => { setShowMoreMenu(false); toast.warning("Reported. We'll review it shortly."); } },
+          ]}
+        />
+      )}
+      {showShareSheet && <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareSheet(false)} />}
     </article>
   );
 }

@@ -28,6 +28,7 @@ import { SharePostModal } from './SharePostModal';
 import { ListingTagSheet } from './ListingTagSheet';
 import { EditPostModal } from './EditPostModal';
 import { DraggablePortfolioPage } from './connect/DraggablePortfolioPage';
+import { PostMoreMenu } from './connect/PostMoreMenu';
 import { LikesSheet } from './LikesSheet';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
@@ -1145,103 +1146,28 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-md text-gray-400 hover:text-gray-700 hover:border-gray-300 transition-all">
               <MoreHorizontal className="w-4 h-4" />
             </button>
-            <BottomSheet open={showOtherMenu} onClose={() => setShowOtherMenu(false)}>
-              <div className="px-2 py-1">
-                {/* Save */}
-                <button onClick={() => { setShowOtherMenu(false); handleSave(); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-current text-blue-600' : 'text-gray-500'}`} />
-                  {saved ? 'Unsave post' : 'Save post'}
-                </button>
-
-                {/* Copy link */}
-                <button onClick={() => { setShowOtherMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Link2 className="w-4 h-4 text-gray-400" /> Copy link to post
-                </button>
-
-                {/* View post */}
-                <button onClick={() => { setShowOtherMenu(false); navigate(`/post/${localPost.id}`); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <ExternalLink className="w-4 h-4 text-gray-400" /> Open post
-                </button>
-
-                {/* Repost / Remove repost */}
-                <button onClick={() => { setShowOtherMenu(false); dispatchMenuOpen(); setShowRepostMenu(true); }}
-                  className={`flex items-center gap-3 w-full px-4 py-3.5 text-sm rounded-xl transition-colors ${hasReposted ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'}`}>
-                  <Repeat2 className={`w-4 h-4 ${hasReposted ? 'text-red-500' : 'text-green-600'}`} />
-                  {hasReposted ? 'Remove your repost' : 'Repost'}
-                </button>
-
-                {/* Post activity */}
-                <button onClick={() => { setShowOtherMenu(false); toast.info(`${(localPost.likes||[]).length} likes · ${commentCount} comments`); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <BarChart className="w-4 h-4 text-gray-400" /> View post interactions
-                </button>
-
-                {/* View profile */}
-                <button onClick={() => { setShowOtherMenu(false); navigate(`/host/${localPost.userId}`); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <UserIcon className="w-4 h-4 text-gray-400" /> See {localPost.userName}&apos;s profile
-                </button>
-
-                {/* Mute notifications for post */}
-                <button onClick={() => { setShowOtherMenu(false); setNotifMuted(v => !v); toast.success(notifMuted ? 'Notifications on for this post' : 'Notifications muted for this post'); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  {notifMuted
-                    ? <Bell className="w-4 h-4 text-gray-400" />
-                    : <BellOff className="w-4 h-4 text-gray-400" />
-                  }
-                  {notifMuted ? 'Unmute notifications' : 'Mute notifications'}
-                </button>
-
-                {/* Unfollow */}
-                <button onClick={() => { setShowOtherMenu(false); toast.success(`Unfollowed ${localPost.userName}`); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <UserMinus className="w-4 h-4 text-gray-400" /> Unfollow {localPost.userName}
-                </button>
-
-                {/* Hide post */}
-                <button onClick={() => { setShowOtherMenu(false); setHidden(true); toast('Post hidden', { description: "You won't see this again" }); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <EyeOff className="w-4 h-4 text-gray-400" /> Hide post
-                </button>
-
-                {/* Not interested */}
-                <button onClick={() => { setShowOtherMenu(false); setHidden(true); toast("Got it! We'll show you less of this"); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <ThumbsDown className="w-4 h-4 text-gray-400" /> Not interested in this
-                </button>
-
-                {/* Download */}
-                {hasMedia && canDownload && (
-                  <button onClick={() => { setShowOtherMenu(false); handleDownload(); }}
-                    className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                    <Download className="w-4 h-4 text-gray-400" /> Download media
-                  </button>
-                )}
-
-                <div className="border-t border-gray-100 my-1" />
-
-                {/* Report */}
-                <button onClick={() => { setShowOtherMenu(false); toast.warning("Post reported. We'll review it shortly."); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-orange-600 hover:bg-orange-50 rounded-xl transition-colors">
-                  <Flag className="w-4 h-4" /> Report post
-                </button>
-
-                {/* Spam */}
-                <button onClick={() => { setShowOtherMenu(false); toast.warning('Marked as spam. Thank you!'); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                  <AlertTriangle className="w-4 h-4" /> Mark as spam
-                </button>
-
-                {/* Block */}
-                <button onClick={() => { setShowOtherMenu(false); toast.warning(`${localPost.userName} has been blocked`); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                  <UserX className="w-4 h-4" /> Block {localPost.userName}
-                </button>
-              </div>
-            </BottomSheet>
+            {/* Trimmed to the FILMONS universal "•••" pattern: a
+                content-specific action (Open post) then the shared
+                Save/Copy link/View profile/Hide/Report set. Like/Comment/
+                Repost/Share stay in the interaction bar below, not here --
+                Post activity/Mute/Unfollow/Not interested/Mark as
+                spam/Block were removed as clutter the universal menu
+                doesn't call for. */}
+            {showOtherMenu && (
+              <PostMoreMenu
+                onClose={() => setShowOtherMenu(false)}
+                actions={[
+                  { icon: ExternalLink, label: 'Open post', onClick: () => { setShowOtherMenu(false); navigate(`/post/${localPost.id}`); } },
+                  { icon: Bookmark, label: saved ? 'Unsave post' : 'Save post', onClick: () => { setShowOtherMenu(false); handleSave(); } },
+                  { icon: Link2, label: 'Copy link', onClick: () => { setShowOtherMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); } },
+                  { icon: UserIcon, label: `See ${localPost.userName}'s profile`, onClick: () => { setShowOtherMenu(false); navigate(`/host/${localPost.userId}`); } },
+                  { icon: EyeOff, label: 'Hide this post', onClick: () => { setShowOtherMenu(false); setHidden(true); toast('Post hidden', { description: "You won't see this again" }); } },
+                ]}
+                destructiveActions={[
+                  { icon: Flag, label: 'Report', onClick: () => { setShowOtherMenu(false); toast.warning("Post reported. We'll review it shortly."); } },
+                ]}
+              />
+            )}
           </div>
         )}
 

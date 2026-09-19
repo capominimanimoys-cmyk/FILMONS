@@ -14,13 +14,14 @@
 // solved.
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Users, MoreHorizontal, Heart, MessageCircle, Send, BadgeCheck, MapPin, ChevronRight, Loader2, Clock } from 'lucide-react';
+import { Users, MoreHorizontal, Heart, MessageCircle, Send, BadgeCheck, MapPin, ChevronRight, Loader2, Clock, EyeOff, Flag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar, AccountTypeBadge } from '../AccountTypeBadge';
 import { ConnectFlowSheet } from '../ConnectFlowSheet';
 import { getConnectionStatus, sendConnectionRequest, type ConnectionStatus } from '../../lib/connectionsApi';
 import { isActivityEventLiked, toggleActivityEventLike, type ActivityEntry, type ActivityActor } from '../../lib/activityApi';
+import { PostMoreMenu } from './PostMoreMenu';
 
 function timeAgo(iso: string): string {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -118,11 +119,13 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(entry.likeCount);
   const [entered, setEntered] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => { requestAnimationFrame(() => setEntered(true)); }, []);
   useEffect(() => { if (user) isActivityEventLiked(entry.id, user.id).then(setLiked); }, [entry.id, user?.id]);
 
-  if (!otherUser) return null;
+  if (!otherUser || hidden) return null;
 
   const toggleLike = async () => {
     if (!user) return;
@@ -154,7 +157,7 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
           <p className="text-sm font-black text-gray-900">New Connection</p>
           <p className="text-xs text-gray-400">{timeAgo(entry.createdAt)}</p>
         </div>
-        <button className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+        <button onClick={() => setShowMoreMenu(true)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
           <MoreHorizontal className="w-4 h-4" />
         </button>
       </div>
@@ -213,6 +216,16 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
           <Send className="w-5 h-5 text-gray-400" /> Share
         </button>
       </div>
+
+      {showMoreMenu && (
+        <PostMoreMenu
+          onClose={() => setShowMoreMenu(false)}
+          actions={[
+            { icon: EyeOff, label: 'Hide this update', onClick: () => { setShowMoreMenu(false); setHidden(true); toast('Hidden', { description: "You won't see this again" }); } },
+            { icon: Flag, label: 'Report', onClick: () => { setShowMoreMenu(false); toast.warning("Reported. We'll review it shortly."); } },
+          ]}
+        />
+      )}
     </article>
   );
 }

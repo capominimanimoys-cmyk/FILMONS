@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send } from 'lucide-react';
+import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send, Link2, EyeOff, Flag, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -16,6 +16,9 @@ import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, t
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { DraggablePortfolioPage } from './DraggablePortfolioPage';
+import { PostMoreMenu } from './PostMoreMenu';
+import { SharePostSheet } from './SharePostSheet';
+import { getSharedContentDeepLink } from '../../lib/shareApi';
 import type { TrustLevel } from '../../lib/trustApi';
 
 export function PortfolioAlbumCard({ entry, trustLevel }: {
@@ -28,6 +31,9 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const isOwn = !!user && user.id === creator.id;
 
   const [showAlbumOverlay, setShowAlbumOverlay] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [saved, setSaved] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(album.likes_count ?? 0);
@@ -65,15 +71,24 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
     logPortfolioInteraction(user.id, { category: (album as any).category ?? '' }, next ? 'like' : 'unlike');
   };
 
-  const handleShare = async () => {
-    const url = `${window.location.origin}/portfolio/${creator.id}`;
-    try { await navigator.clipboard.writeText(url); toast.success('Link copied'); } catch { toast.error('Could not copy link'); }
-  };
-
   // Opens the draggable Portfolio overlay straight into THIS album (spec
   // §1/§11) rather than navigating away to /portfolio -- keeps /connect's
   // scroll position intact underneath.
   const openAlbum = () => setShowAlbumOverlay(true);
+
+  const shareSnapshot = {
+    contentType: 'portfolio_album' as const,
+    contentId: album.id,
+    creatorId: creator.id,
+    creatorName: creator.name,
+    creatorAvatar: creator.avatar_url ?? undefined,
+    creatorVerified: creator.is_verified,
+    title: album.title,
+    thumbnailUrl: coverUrl ?? undefined,
+    meta: [`${itemCount} item${itemCount === 1 ? '' : 's'}`],
+  };
+
+  if (hidden) return null;
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -95,12 +110,17 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
             </div>
           )}
         </div>
-        <button className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+        <button onClick={() => setShowMoreMenu(true)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
           <MoreHorizontal className="w-4 h-4" />
         </button>
       </div>
 
-      <p className="text-[11px] font-black text-blue-600 uppercase tracking-wide mt-3">🎬 New Portfolio Album</p>
+      {/* Title/caption above media, per the FILMONS universal post-layout
+          rule -- replaces the old "New Portfolio Album" eyebrow label. */}
+      <div className="mt-3">
+        <p className="text-base font-black text-gray-900 leading-snug">{album.title}</p>
+        {album.description && <p className="text-sm text-gray-600 mt-1 leading-relaxed line-clamp-3">{album.description}</p>}
+      </div>
 
       <button onClick={openAlbum} className="relative block w-full mt-3 rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: coverAspectRatio || 4 / 5 }}>
         {coverUrl ? <img src={coverUrl} alt="" className="w-full h-full object-contain" /> : (
@@ -110,10 +130,6 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
           <Layers className="w-3 h-3" /> {itemCount}
         </span>
       </button>
-
-      <div className="mt-3">
-        <p className="text-sm font-bold text-gray-900">{album.title}</p>
-      </div>
 
       {/* No separate "View album" button -- the cover image itself already
           opens the album (see the button wrapping it above). This link is
@@ -127,7 +143,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <MessageCircle className="w-5 h-5 text-gray-400" /> Comment{(album.comments_count ?? 0) > 0 ? ` · ${album.comments_count}` : ''}
         </button>
-        <button onClick={handleShare} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+        <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" /> Share
         </button>
         <button onClick={handleToggleSave} className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
@@ -157,6 +173,19 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
       {showAlbumOverlay && (
         <DraggablePortfolioPage creatorId={creator.id} initialAlbumId={album.id} onClose={() => setShowAlbumOverlay(false)} />
       )}
+      {showMoreMenu && (
+        <PostMoreMenu
+          onClose={() => setShowMoreMenu(false)}
+          actions={[
+            { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); setShowAlbumOverlay(true); } },
+            { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },
+            { icon: Link2, label: 'Copy link', onClick: async () => { setShowMoreMenu(false); try { await navigator.clipboard.writeText(getSharedContentDeepLink(shareSnapshot)); toast.success('Link copied'); } catch { toast.error('Could not copy link'); } } },
+            { icon: EyeOff, label: 'Hide this post', onClick: () => { setShowMoreMenu(false); setHidden(true); toast('Post hidden', { description: "You won't see this again" }); } },
+            { icon: Flag, label: 'Report', onClick: () => { setShowMoreMenu(false); toast.warning("Reported. We'll review it shortly."); } },
+          ]}
+        />
+      )}
+      {showShareSheet && <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareSheet(false)} />}
     </article>
   );
 }
