@@ -9,7 +9,7 @@ import { useParams, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Star, Users, Clock, Play, ChevronDown, ChevronUp, FileText,
-  Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2,
+  Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2, Send,
 } from 'lucide-react';
 import {
   getCourse, getCourseCurriculum, isEnrolled, enrollInFreeCourse,
@@ -21,6 +21,7 @@ import { UserAvatar } from '../components/AccountTypeBadge';
 import { TrustBadge } from '../components/trust/TrustBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { HashtagText } from '../components/HashtagText';
+import { SharePostSheet } from '../components/connect/SharePostSheet';
 import { useAuth } from '../context/AuthContext';
 
 function formatDuration(totalSeconds: number): string {
@@ -71,6 +72,7 @@ export function CourseDetail() {
   const [myRating, setMyRating] = useState(0);
   const [myReviewBody, setMyReviewBody] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
 
   const isOwn = !!user && !!course && user.id === course.instructorId;
 
@@ -148,7 +150,10 @@ export function CourseDetail() {
         <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
-        <p className="text-sm font-bold text-gray-900 truncate">{course.category}{course.subcategory ? ` · ${course.subcategory}` : ''}</p>
+        <p className="flex-1 text-sm font-bold text-gray-900 truncate">{course.category}{course.subcategory ? ` · ${course.subcategory}` : ''}</p>
+        <button onClick={() => setShowShareSheet(true)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
+          <Send className="w-4 h-4 text-gray-700" />
+        </button>
       </div>
 
       <div className="lg:max-w-3xl lg:mx-auto">
@@ -376,6 +381,24 @@ export function CourseDetail() {
             <video src={previewLesson.url} controls autoPlay className="w-full max-h-full" />
           </div>
         </div>
+      )}
+
+      {showShareSheet && (
+        <SharePostSheet
+          snapshot={{
+            contentType: 'course',
+            contentId: course.id,
+            creatorId: course.instructorId,
+            creatorName: course.instructor?.name ?? '',
+            creatorAvatar: course.instructor?.avatar_url ?? undefined,
+            creatorVerified: course.instructor?.is_verified,
+            title: course.title,
+            caption: course.shortDescription ?? undefined,
+            thumbnailUrl: course.coverUrl ?? undefined,
+            meta: [course.isFree || course.price === 0 ? 'Free' : `${course.currency} $${course.price.toFixed(2)}`],
+          }}
+          onClose={() => setShowShareSheet(false)}
+        />
       )}
     </div>
   );

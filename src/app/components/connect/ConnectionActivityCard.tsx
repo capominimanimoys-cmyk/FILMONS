@@ -22,6 +22,7 @@ import { ConnectFlowSheet } from '../ConnectFlowSheet';
 import { getConnectionStatus, sendConnectionRequest, type ConnectionStatus } from '../../lib/connectionsApi';
 import { isActivityEventLiked, toggleActivityEventLike, type ActivityEntry, type ActivityActor } from '../../lib/activityApi';
 import { PostMoreMenu } from './PostMoreMenu';
+import { SharePostSheet } from './SharePostSheet';
 
 function timeAgo(iso: string): string {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -120,6 +121,7 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
   const [likeCount, setLikeCount] = useState(entry.likeCount);
   const [entered, setEntered] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
   const [hidden, setHidden] = useState(false);
 
   useEffect(() => { requestAnimationFrame(() => setEntered(true)); }, []);
@@ -136,12 +138,19 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
     if (!ok) { setLiked(!next); setLikeCount(c => c + (next ? -1 : 1)); }
   };
 
-  const handleShare = async () => {
-    try { await navigator.clipboard.writeText(`${window.location.origin}/host/${actor.id}`); toast.success('Link copied'); }
-    catch { toast.error('Could not copy link'); }
-  };
-
   const firstNameOf = (n: string) => n.split(' ')[0];
+
+  // Same <SharePostSheet/> every other FILMONS post type uses -- per the
+  // Share Card unification rule, only the content reference changes.
+  const shareSnapshot = {
+    contentType: 'connection' as const,
+    contentId: entry.id,
+    creatorId: actor.id,
+    creatorName: actor.name,
+    creatorAvatar: actor.avatar_url ?? undefined,
+    creatorVerified: actor.is_verified,
+    title: `${firstNameOf(actor.name)} and ${firstNameOf(otherUser.name)} connected`,
+  };
 
   return (
     <article
@@ -212,7 +221,7 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
         >
           <MessageCircle className="w-5 h-5 text-gray-400" /> Comment
         </button>
-        <button onClick={handleShare} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+        <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" /> Share
         </button>
       </div>
@@ -226,6 +235,7 @@ export function ConnectionActivityCard({ entry }: { entry: ActivityEntry }) {
           ]}
         />
       )}
+      {showShareSheet && <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareSheet(false)} />}
     </article>
   );
 }

@@ -24,11 +24,11 @@ import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
 import { AudioPlayer } from './AudioPlayer';
 import { AudioFeedCard } from './AudioFeedCard';
 import { AudioPostCard } from './AudioPostCard';
-import { SharePostModal } from './SharePostModal';
 import { ListingTagSheet } from './ListingTagSheet';
 import { EditPostModal } from './EditPostModal';
 import { DraggablePortfolioPage } from './connect/DraggablePortfolioPage';
 import { PostMoreMenu } from './connect/PostMoreMenu';
+import { SharePostSheet } from './connect/SharePostSheet';
 import { LikesSheet } from './LikesSheet';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
@@ -407,8 +407,23 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     user ? savedPostsApi.isSavedSync(user.id, post.id) : false
   );
 
-  // Share modal
+  // Share -- the same <SharePostSheet/> every other FILMONS post type uses
+  // (Portfolio items/albums), not a separate post-specific modal. Per the
+  // FILMONS Share Card unification rule: one Share Card design everywhere,
+  // only the underlying content reference changes.
   const [showShareModal, setShowShareModal] = useState(false);
+  const shareSnapshot = {
+    contentType: 'post' as const,
+    contentId: localPost.id,
+    creatorId: localPost.userId,
+    creatorName: localPost.userName,
+    creatorAvatar: localPost.userAvatar,
+    caption: localPost.content,
+    // Video files aren't valid <img> sources -- only a real image thumb
+    // counts here; SharePostSheet/SharedContentBubble already fall back to
+    // a placeholder icon when this is absent.
+    thumbnailUrl: localPost.images?.[0] || undefined,
+  };
   const [notifMuted, setNotifMuted] = useState(false);
 
   // Comments
@@ -1037,7 +1052,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             onCountChange={n => { setCommentCount(n); updatePost(localPost.id, { commentCount: n }); }}
           />
         )}
-        {showShareModal && <SharePostModal post={localPost} onClose={() => setShowShareModal(false)} />}
+        {showShareModal && <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareModal(false)} />}
         {showEditModal && (
           <EditPostModal
             post={localPost}
@@ -1773,9 +1788,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         />
       )}
 
-      {/* ── Share Modal ── */}
+      {/* ── Share ── */}
       {showShareModal && (
-        <SharePostModal post={localPost} onClose={() => setShowShareModal(false)} />
+        <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareModal(false)} />
       )}
 
       {/* ── Likes Sheet ── */}

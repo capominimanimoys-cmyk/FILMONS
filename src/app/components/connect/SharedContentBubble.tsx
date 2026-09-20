@@ -36,6 +36,10 @@ export function SharedContentBubble({ content, isOwn }: { content: SharedContent
       navigate(`/post/${content.contentId}`);
       return;
     }
+    if (content.contentType === 'course') {
+      navigate(`/learning/course/${content.contentId}`);
+      return;
+    }
     navigate(`/host/${content.creatorId}`);
   };
 
