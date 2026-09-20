@@ -76,6 +76,7 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'review_received':     return `${actorName} left a review on your listing`;
     case 'profile_completion':  return 'Your profile is now 80% complete';
     case 'trust_level_update':  return 'Your trust level has increased';
+    case 'portfolio_view':      return 'Someone viewed your portfolio';
     case 'account_verified':    return 'Your account has been verified';
     case 'account_warning':     return 'Important notice about your account';
     case 'system_announcement': return 'New announcement from Filmons';
@@ -141,6 +142,7 @@ function rowToNotif(r: any): Notification {
     read:           r.is_read           ?? r.read ?? false,
     readAt:         r.read_at           ?? undefined,
     createdAt:      r.created_at        ?? new Date().toISOString(),
+    viewCount:      r.view_count        ?? undefined,
   };
 }
 

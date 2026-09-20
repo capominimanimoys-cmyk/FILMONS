@@ -1201,7 +1201,7 @@ function CreateAlbumFromSelectionSheet({
 // separate route -- per the FILMONS rule that there must be only one
 // Portfolio UI/implementation across the app. When absent, behavior is
 // 100% unchanged from the routed page (falls back to useParams/self).
-export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChange }: {
+export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChange, countsAsFullView = true }: {
   overrideUserId?: string;
   /** Auto-opens this album once its data loads -- e.g. tapping an Album
    * card's cover in Connect should land straight on that album. */
@@ -1215,6 +1215,12 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
    * to the real route, without this component needing to know about that
    * caller at all. */
   onTabChange?: (tab: TabType) => void;
+  /** Portfolio View Notifications gate -- true (the default) for a real
+   * routed visit. The draggable preview passes false while only the 70%
+   * preview is open (per spec: a quick peek must NOT count as a view) and
+   * flips it true the moment the user actually commits to the full
+   * Portfolio experience. */
+  countsAsFullView?: boolean;
 } = {}) {
   const { userId: paramUserId } = useParams<{ userId?: string }>();
   const { user: me } = useAuth();
@@ -1287,6 +1293,20 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
     }
     loadPage(targetId);
   }, [targetId]); // eslint-disable-line
+
+  // Portfolio View Notifications -- one fire-and-forget call per eligible
+  // visit (never the owner, never a mere 70% preview peek -- see
+  // countsAsFullView's own doc comment). recordedViewRef guards against a
+  // duplicate call if targetId/countsAsFullView both happen to change in
+  // the same render pass, or the draggable preview flips countsAsFullView
+  // more than once during its transition.
+  const recordedViewRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!targetId || !me || isOwner || !countsAsFullView) return;
+    if (recordedViewRef.current === targetId) return;
+    recordedViewRef.current = targetId;
+    import('../lib/portfolioViewsApi').then(({ recordPortfolioView }) => recordPortfolioView(me.id, targetId));
+  }, [targetId, me?.id, isOwner, countsAsFullView]);
 
   // Auto-open a specific album once its data has loaded (embedded entry
   // point only -- e.g. an Album card's cover tap in Connect).

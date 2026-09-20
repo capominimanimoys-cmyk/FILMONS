@@ -92,6 +92,9 @@ const TEMPLATE_GUEST_SUPPORT_CONFIRM   = 'template_qr9tadk';
 const TEMPLATE_NEW_POST_PORTFOLIO      = 'template_ogrjn58';
 const TEMPLATE_CONNECTION_REQUEST      = 'template_kcau8u1';
 const TEMPLATE_CONNECTION_RESPONSE     = 'template_x5sh4rt';
+// Placeholder until created in the EmailJS dashboard from
+// portfolio-view-template.html and the real id is swapped in.
+const TEMPLATE_PORTFOLIO_VIEW          = 'template_portfolioview';
 // Same template sent to both host and renter -- audience-specific
 // wording is handled by the `recipient_role` param, not a second template.
 const TEMPLATE_BOOKING_REMINDER        = 'template_9ah6jeq';
@@ -504,6 +507,25 @@ export function sendNewPostOrPortfolioEmail(p: {
     content_type_label: p.contentType === 'post' ? 'a new post' : 'new portfolio work',
     content_title: p.title || '',
     content_url: p.contentUrl,
+    settings_url: 'https://filmons.app/settings/notifications',
+  });
+}
+
+// Sent when fn_record_portfolio_view's rate limit (at most once/hour per
+// owner) says an email is due -- viewCount is the CURRENT unread batch
+// size at send time (matches the in-app notification's own count), not a
+// per-view email. Viewer identity is deliberately never included -- see
+// the Portfolio View Notifications spec's privacy section.
+export function sendPortfolioViewEmail(p: {
+  toEmail: string | null | undefined; toName?: string | null; viewCount: number;
+}) {
+  return sendEmailJsRaw(p.toEmail, TEMPLATE_PORTFOLIO_VIEW, {
+    to_name: p.toName || 'there',
+    view_count: p.viewCount,
+    view_count_label: p.viewCount === 1 ? '1 new view' : `${p.viewCount} new views`,
+    views_word: p.viewCount === 1 ? 'view' : 'views',
+    subject_label: p.viewCount === 1 ? 'Your portfolio received a new view' : `${p.viewCount} people viewed your portfolio`,
+    portfolio_url: 'https://filmons.app/portfolio',
     settings_url: 'https://filmons.app/settings/notifications',
   });
 }

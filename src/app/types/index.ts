@@ -444,6 +444,8 @@ export type NotificationType =
   | 'review_received' | 'listing_review'
   // Profile & Trust
   | 'profile_completion' | 'trust_level_update'
+  // Portfolio
+  | 'portfolio_view'
   // System
   | 'account_verified' | 'account_warning' | 'system_announcement' | 'system_notification';
 
@@ -480,6 +482,11 @@ export interface Notification {
   audioId?: string;
   audioTitle?: string;
   audioUses?: number;
+  // Portfolio -- type:'portfolio_view' only. The number of unread views in
+  // this notification's batch (see portfolioViewsApi.ts) -- grows in place
+  // server-side as more people view the same unread batch, rather than a
+  // new notification per viewer.
+  viewCount?: number;
   // Meta
   read: boolean;
   readAt?: string;

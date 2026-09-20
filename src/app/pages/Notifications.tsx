@@ -216,6 +216,14 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Star,          gradient: 'from-yellow-400 to-amber-500',    iconColor: 'text-white', ringColor: 'ring-yellow-100',  label: () => 'Your profile is now 80% complete' };
     case 'trust_level_update':
       return { icon: Shield,        gradient: 'from-blue-600 to-indigo-700',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Trust level increased to Pro' };
+    case 'portfolio_view':
+      return {
+        icon: Eye, gradient: 'from-indigo-400 to-purple-500', iconColor: 'text-white', ringColor: 'ring-indigo-100',
+        label: (n) => {
+          const c = (n as any).viewCount ?? 1;
+          return c > 1 ? `${c} people viewed your portfolio` : 'Someone viewed your portfolio';
+        },
+      };
     case 'account_verified':
       return { icon: Trophy,        gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your account has been verified' };
     case 'account_warning':
@@ -234,11 +242,12 @@ const SYSTEM_TYPES: string[] = [
   'profile_completion','trust_level_update','booking_accepted','booking_rejected',
   'payment_released','application_accepted','application_rejected',
   'payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed',
-  'support_reply',
+  'support_reply','portfolio_view',
 ];
 function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
 function systemIcon(type: string): ElementType {
   switch (type) {
+    case 'portfolio_view':       return Eye;
     case 'profile_completion':   return Star;
     case 'trust_level_update':   return Shield;
     case 'account_verified':     return Trophy;
@@ -601,7 +610,7 @@ const MESSAGE_TYPES        = ['message','new_message','message_received','messag
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','listing_liked','followed_creator_posted'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
-const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked'];
+const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
 const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [
@@ -691,6 +700,10 @@ export function Notifications() {
       navigate('/wallet');
     } else if (n.type === 'support_reply') {
       navigate(n.conversationId ? `/support/cases/${n.conversationId}` : '/support/cases');
+    } else if (n.type === 'portfolio_view') {
+      // No dedicated Portfolio analytics screen exists yet -- falls back to
+      // the owner's own /portfolio, per the spec's own fallback wording.
+      navigate('/portfolio');
     } else if (n.type === 'listing_review') {
       navigate((n as any).listingId
         ? `/listing/${(n as any).listingId}${(n as any).reviewId ? `?review=${(n as any).reviewId}` : ''}`

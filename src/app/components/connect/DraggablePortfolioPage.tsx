@@ -69,9 +69,9 @@ function DesktopPortfolioDrawer({ creatorId, initialAlbumId, onClose }: { creato
         </div>
       )}
     >
-      {() => (
+      {({ isTop }) => (
         <div ref={scrollRef} className="overflow-y-auto h-full">
-          <Portfolio overrideUserId={creatorId} initialAlbumId={initialAlbumId} embedded />
+          <Portfolio overrideUserId={creatorId} initialAlbumId={initialAlbumId} embedded countsAsFullView={isTop} />
         </div>
       )}
     </DraggablePage>
@@ -281,6 +281,7 @@ function MobilePortfolioTransition({ creatorId, initialAlbumId, onClose }: { cre
             overrideUserId={creatorId}
             initialAlbumId={initialAlbumId}
             embedded
+            countsAsFullView={isSettledOrFull}
             onTabChange={tab => { lastTabRef.current = tab; }}
           />
         </div>
