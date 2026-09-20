@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+
+let instanceCounter = 0;
 
 /**
  * Live follower/following counts for a profile being viewed. Separate from
@@ -11,6 +13,20 @@ import { supabase } from '../../lib/supabase';
 export function useFollowCounts(profileId: string | undefined) {
   const [followerCount,  setFollowerCount]  = useState<number | null>(null);
   const [followingCount, setFollowingCount] = useState<number | null>(null);
+
+  // Unique per hook instance, not just per profileId -- Portfolio.tsx is
+  // now mountable both at its own route AND embedded inside the draggable
+  // "View Portfolio" overlay (DraggablePortfolioPage), so two instances of
+  // this hook can legitimately be live for the SAME profileId at once (e.g.
+  // HostProfile.tsx's own header plus an embedded Portfolio for that same
+  // creator). Reusing `follow_counts_${profileId}` as the channel topic in
+  // that case throws "cannot add postgres_changes callbacks... after
+  // subscribe()" -- the second mount's channel object collides with the
+  // first's already-subscribed one. A per-instance suffix makes every
+  // mount's channel topic distinct regardless of how many are watching the
+  // same profile simultaneously.
+  const instanceId = useRef(0);
+  if (!instanceId.current) instanceId.current = ++instanceCounter;
 
   useEffect(() => {
     if (!profileId) { setFollowerCount(null); setFollowingCount(null); return; }
@@ -26,7 +42,7 @@ export function useFollowCounts(profileId: string | undefined) {
     });
 
     const channel = supabase
-      .channel(`follow_counts_${profileId}`)
+      .channel(`follow_counts_${profileId}_${instanceId.current}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'follows', filter: `following_id=eq.${profileId}` },
