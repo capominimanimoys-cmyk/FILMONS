@@ -1808,7 +1808,17 @@ function CoursesAllSection({ query }: { query?: string }) {
   );
 }
 
-function AllGroupedResults({ navState: initialNavState }: { navState: NavState }) {
+// Which of the old fine-grained categories belong to which of the new
+// four top-level Search modes (see SearchOverlay.tsx's TabId) -- 'all'
+// (product=undefined) shows everything, matching the "All is a universal
+// layer over the other three" rule.
+const PRODUCT_CATEGORY_IDS: Record<'marketplace' | 'connect' | 'learning', CategoryTab[]> = {
+  marketplace: ['rental', 'sale', 'studios', 'emergency'],
+  connect: ['creators', 'services', 'opportunities'],
+  learning: [],
+};
+
+function AllGroupedResults({ navState: initialNavState, product }: { navState: NavState; product?: 'marketplace' | 'connect' | 'learning' }) {
   const navigate = useNavigate();
 
   const [searchText, setSearchText] = useState(initialNavState.query ?? '');
@@ -1845,7 +1855,14 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
     },
   };
 
-  const visibleCategories = categoryFilter === 'all' ? CATEGORY_IDS : [categoryFilter];
+  const productCategoryIds = product ? PRODUCT_CATEGORY_IDS[product] : CATEGORY_IDS;
+  const visibleCategories = (categoryFilter === 'all' ? productCategoryIds : [categoryFilter]).filter(c => productCategoryIds.includes(c));
+  const marketplaceCats = visibleCategories.filter(c => PRODUCT_CATEGORY_IDS.marketplace.includes(c));
+  const connectCats = visibleCategories.filter(c => PRODUCT_CATEGORY_IDS.connect.includes(c));
+  // Locations/Portfolio/Posts/Hashtags are Connect's; Courses is
+  // Learning's -- 'all' (product=undefined) shows every group.
+  const showConnectExtras = !product || product === 'connect';
+  const showLearningExtras = !product || product === 'learning';
   const term = navState.query?.trim();
 
   // The ONE shared searchMatchingListings/searchMatchingCreators call for
@@ -1878,9 +1895,16 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
     ...((priceMin || priceMax) ? [{ key: 'price', label: `$${priceMin || '0'}–${priceMax || '∞'}`, onRemove: () => { setPriceMin(''); setPriceMax(''); } }] : []),
   ];
 
+  // Scoped to this product's categories when one is given (e.g. Marketplace
+  // never offers "Creators" as a filter option) -- 'all' still always
+  // offered so the user can clear back out of the product-narrowed view.
+  const categoryOptions = product
+    ? [{ id: 'all' as const, label: 'All categories' }, ...productCategoryIds.map(id => ({ id, label: CATEGORY_LABEL[id] }))]
+    : ALL_CATEGORY_OPTIONS;
+
   const categoryMenu = (
     <div className="max-h-72 overflow-y-auto">
-      {ALL_CATEGORY_OPTIONS.map(o => (
+      {categoryOptions.map(o => (
         <RadioRow key={o.id} label={o.label} checked={categoryFilter === o.id} onClick={() => { setCategoryFilter(o.id); setOpenMenu(null); }}/>
       ))}
     </div>
@@ -1987,7 +2011,9 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
           <button onClick={() => navigate('/search')} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
-          <p className="text-base lg:text-lg font-black text-gray-900">All Results</p>
+          <p className="text-base lg:text-lg font-black text-gray-900">
+            {product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results'}
+          </p>
         </div>
 
         {/* ── Mobile: search input + Filters/Sort row ─────────────────────── */}
@@ -2060,12 +2086,28 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
       </div>
 
       <div className="py-4 lg:py-6">
-        {categoryFilter === 'all' && <LocationsAllSection query={term} />}
-        {visibleCategories.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
-        {categoryFilter === 'all' && <PortfolioAllSection query={term} />}
-        {categoryFilter === 'all' && <PostsAllSection query={term} />}
-        {categoryFilter === 'all' && <CoursesAllSection query={term} />}
-        {categoryFilter === 'all' && <HashtagsAllSection query={term} />}
+        {/* Grouped under its product (Marketplace/Connect/Learning) only on
+            the unscoped /search/category/all page -- a product-scoped page
+            (product set) already IS that one group, so a repeated header
+            would be redundant. */}
+        {!product && marketplaceCats.length > 0 && (
+          <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
+        )}
+        {marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+
+        {!product && (connectCats.length > 0 || showConnectExtras) && (
+          <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
+        )}
+        {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+        {categoryFilter === 'all' && showConnectExtras && <LocationsAllSection query={term} />}
+        {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
+        {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
+        {categoryFilter === 'all' && showConnectExtras && <HashtagsAllSection query={term} />}
+
+        {!product && showLearningExtras && (
+          <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Learning</p>
+        )}
+        {categoryFilter === 'all' && showLearningExtras && <CoursesAllSection query={term} />}
       </div>
 
       {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}
@@ -2138,6 +2180,12 @@ export function CategoryResults() {
   if (!isAuthenticated) return null;
 
   if (tab === 'all') return <AllGroupedResults navState={navState}/>;
+  // Top-level Marketplace/Connect/Learning modes -- the "View all results"
+  // destination from SearchOverlay for a non-'all' tab. Same AllGroupedResults
+  // grouped-sections view, just scoped to one product's categories.
+  if (tab === 'marketplace') return <AllGroupedResults navState={navState} product="marketplace"/>;
+  if (tab === 'connect') return <AllGroupedResults navState={navState} product="connect"/>;
+  if (tab === 'learning') return <AllGroupedResults navState={navState} product="learning"/>;
   if (tab === 'hashtags') return <HashtagCategoryResults query={navState.query} />;
   if (tab === 'locations') return <LocationCategoryResults query={navState.query} />;
   if (tab === 'portfolio') return <PortfolioCategoryResults query={navState.query} />;

@@ -26,6 +26,8 @@ import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions } from '../lib/locationsApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
+import { getCourses, type Course } from '../lib/coursesApi';
+import { CourseCard } from './courses/CourseCard';
 import {
   searchMatchingListings, searchMatchingCreators, searchMatchingPortfolio, searchMatchingPosts,
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
@@ -38,7 +40,15 @@ import {
 // which data source(s) the search bar itself fetches from; ListingTypeFilter
 // stays exactly as it was, an orthogonal refinement layered on top of
 // whatever the active category already fetched.
-type TabId = 'all' | 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
+// Four top-level Filmons discovery modes -- All is a universal layer over
+// the other three (never a fourth product of its own, per spec): Marketplace
+// = Rental/Sale/Studios/Emergency listings, Connect = Creators/Portfolio/
+// Posts/Services/Opportunities/Hashtags/Locations, Learning = Courses. The
+// old one-tab-per-listing-category model (rental/sale/services/studios/
+// opportunities/emergency each its own top-level tab) is gone -- those
+// stay real classifications used internally to group results WITHIN
+// Marketplace/Connect, just never their own tab anymore.
+type TabId = 'all' | 'marketplace' | 'connect' | 'learning';
 type SortBy = 'best_match' | 'newest' | 'price_asc' | 'price_desc';
 
 interface ProfileRow {
@@ -438,59 +448,50 @@ async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings:
 }
 
 // ── Category browse (no query typed yet) ─────────────────────────────────────
-// Tapping a category before typing anything must show that category's
-// results immediately (spec) -- searchAll/runSearch only ever fire on a
-// non-empty query, so this is a separate, simpler DB-level fetch per
-// category: newest-first, is_active only, no text matching at all.
-async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow[]; listings: ListingRow[] }> {
-  if (category === 'all') return { users: [], listings: [] };
+// Tapping a top-level mode before typing anything must show that mode's
+// content immediately (spec) -- searchAll/runSearch only ever fire on a
+// non-empty query, so this is a separate, simpler DB-level fetch per mode:
+// newest-first, is_active/published only, no text matching at all. Each
+// mode fetches everything it needs in one shot; render-time classifiers
+// (isRentalListing etc.) still do the fine-grained grouping within it.
+async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow[]; listings: ListingRow[]; courses: Course[] }> {
+  if (category === 'all') return { users: [], listings: [], courses: [] };
 
-  if (category === 'creators') {
-    const res = await supabase
-      .from('profiles')
-      .select(PROFILE_SELECT)
-      .not('name', 'is', null)
-      .neq('name', '')
-      .not('primary_role', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(24);
-    if (res.error) console.error('[Search] browse creators error:', res.error.message);
-    return { users: (res.data ?? []) as ProfileRow[], listings: [] };
+  if (category === 'learning') {
+    const courses = await getCourses({ limit: 24 }).catch(() => []);
+    return { users: [], listings: [], courses };
   }
 
+  if (category === 'connect') {
+    const [profRes, listingsRes] = await Promise.all([
+      supabase.from('profiles').select(PROFILE_SELECT)
+        .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+        .order('created_at', { ascending: false }).limit(24),
+      withModerationFilter((filterActive) => {
+        let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+        if (filterActive) query = query.eq('moderation_status', 'active');
+        // Services + Opportunities only -- Connect's two listing-backed
+        // categories (per spec, both moved out of Marketplace).
+        return query.in('listing_type', ['service', 'opportunity']).order('created_at', { ascending: false }).limit(24);
+      }),
+    ]);
+    if (profRes.error) console.error('[Search] browse connect creators error:', profRes.error.message);
+    if (listingsRes.error) console.error('[Search] browse connect listings error:', listingsRes.error.message);
+    return { users: (profRes.data ?? []) as ProfileRow[], listings: (listingsRes.data ?? []) as ListingRow[], courses: [] };
+  }
+
+  // marketplace -- everything NOT a Service/Opportunity (those are
+  // Connect's now); render-time classifiers (isRentalListing/isSaleListing/
+  // isStudioListing/emergency flag) group this single fetch into its
+  // Rental/Sale/Studios/Emergency sections, same as the typed-search path.
   const res = await withModerationFilter((filterActive) => {
-    let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+    let query = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true)
+      .neq('listing_type', 'service').neq('listing_type', 'opportunity');
     if (filterActive) query = query.eq('moderation_status', 'active');
-    switch (category) {
-      case 'rental':        query = query.eq('listing_mode', 'rent').neq('listing_type', 'service'); break;
-      case 'sale':           query = query.eq('listing_mode', 'sale'); break;
-      case 'services':       query = query.eq('listing_type', 'service'); break;
-      // Strict listing_type only -- see isOpportunityListing's comment above
-      // for why the keyword fallback this used to also match on (title
-      // ilike '%model%'/'%actor%'/etc) is gone: it pulled ordinary gear
-      // listings into Opportunities and simultaneously stripped them out of
-      // Rental via isRentalListing's exclusion, the exact category-
-      // contamination bug this whole block was fixed for.
-      case 'opportunities':  query = query.eq('listing_type', 'opportunity'); break;
-      case 'studios':        query = query.or('title.ilike.%studio%,service_category.ilike.%studio%'); break;
-      // Fetched for everyone regardless of tier (the gate is who's allowed
-      // to SEE the results, handled at render time -- same "data isn't the
-      // security boundary, the UI decision is" pattern already used for
-      // negotiable/boosted elsewhere) -- only real, still-active Emergency
-      // listings, never an expired one.
-      case 'emergency':      query = query.eq('is_emergency', true).gt('emergency_expires_at', new Date().toISOString()); break;
-    }
-    return query.order('created_at', { ascending: false }).limit(24);
+    return query.order('created_at', { ascending: false }).limit(40);
   });
-  if (res.error) console.error(`[Search] browse ${category} error:`, res.error.message);
-  let listings = (res.data ?? []) as ListingRow[];
-  // The DB-level filter above can't express "listing_mode = rent AND not an
-  // opportunity" in one pass (isOpportunityListing also covers the legacy
-  // keyword fallback, not just listing_type) -- apply the same client-side
-  // classifier used everywhere else so a legacy talent-keyword row can't
-  // leak into Rental here despite being excluded from it everywhere else.
-  if (category === 'rental') listings = listings.filter(l => !isOpportunityListing(l));
-  return { users: [], listings };
+  if (res.error) console.error('[Search] browse marketplace error:', res.error.message);
+  return { users: [], listings: (res.data ?? []) as ListingRow[], courses: [] };
 }
 
 // ── Trending + pre-search ──────────────────────────────────────────────────────
@@ -521,30 +522,28 @@ const CATEGORY_CHIPS = [
 ];
 
 const TABS: { id: TabId; label: string }[] = [
-  { id:'all',           label:'All'           },
-  { id:'rental',        label:'Rental'        },
-  { id:'sale',          label:'Sales'         },
-  { id:'services',      label:'Services'      },
-  { id:'creators',      label:'Creators'      },
-  { id:'studios',       label:'Studios'       },
-  { id:'opportunities', label:'Opportunities' },
-  { id:'emergency',     label:'Emergency'     },
+  { id:'all',         label:'All'         },
+  { id:'marketplace', label:'Marketplace' },
+  { id:'connect',     label:'Connect'     },
+  { id:'learning',    label:'Learning'    },
 ];
 
 // ── Typed category keyword recognition (Enter/Search submit only) ────────────
-// "opportunity", "opportunities", "rental videographer", etc. typed directly
-// into the box and submitted with Enter -- separate from tapping a tab, which
-// already covers the no-keyword case. Singular and plural both recognized,
-// case-insensitively, matched only against the FIRST word so a category name
-// appearing later in an ordinary search phrase is never misread as this.
+// "rental", "opportunity", "course", etc. typed as the first word and
+// submitted with Enter jumps straight to that word's top-level mode --
+// separate from tapping a tab, which already covers the no-keyword case.
+// Singular and plural both recognized, case-insensitively, matched only
+// against the FIRST word so a category name appearing later in an ordinary
+// search phrase is never misread as this.
 const CATEGORY_KEYWORDS: Record<string, TabId> = {
-  rental: 'rental', rentals: 'rental',
-  sale: 'sale', sales: 'sale',
-  service: 'services', services: 'services',
-  creator: 'creators', creators: 'creators',
-  studio: 'studios', studios: 'studios',
-  opportunity: 'opportunities', opportunities: 'opportunities',
-  emergency: 'emergency',
+  rental: 'marketplace', rentals: 'marketplace',
+  sale: 'marketplace', sales: 'marketplace',
+  studio: 'marketplace', studios: 'marketplace',
+  emergency: 'marketplace',
+  service: 'connect', services: 'connect',
+  creator: 'connect', creators: 'connect',
+  opportunity: 'connect', opportunities: 'connect',
+  course: 'learning', courses: 'learning', learning: 'learning',
 };
 
 function parseCategoryKeyword(raw: string): { tab: TabId; rest: string } | null {
@@ -980,8 +979,7 @@ function OpportunityLockedNotice({ onClick }: { onClick: () => void }) {
 // (e.g. "No rental results found for 'DJI'.", "No creators found for
 // 'Photographer'.", "No opportunities found for 'Editor'.").
 const CATEGORY_EMPTY_NOUN: Record<TabId, string> = {
-  all: 'results', rental: 'rental results', sale: 'sale results', services: 'service results',
-  creators: 'creators', studios: 'studios', opportunities: 'opportunities', emergency: 'emergency listings',
+  all: 'results', marketplace: 'marketplace results', connect: 'results', learning: 'courses',
 };
 
 function EmptyState({ q, tab }: { q: string; tab: TabId }) {
@@ -1133,7 +1131,7 @@ function capEmergencyInCategory(items: ListingRow[], limit: number): { visible: 
   return { visible, hiddenCount };
 }
 
-const TAB_IDS: TabId[] = ['all', 'rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
+const TAB_IDS: TabId[] = ['all', 'marketplace', 'connect', 'learning'];
 
 export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [searchParams] = useSearchParams();
@@ -1152,6 +1150,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // Home uses without paying for post bodies it never shows.
   const [shownPosts,     setShownPosts]     = useState<Post[]>([]);
   const [rawHashtags,    setRawHashtags]    = useState<HashtagSuggestion[]>([]);
+  // Learning -- courses, distinct top-level mode from Connect/Marketplace.
+  const [rawCourses,     setRawCourses]     = useState<Course[]>([]);
   // Cached account_type per Opportunity-listing owner, used to exclude
   // locked (over-tier) listings from every result surface here -- grows
   // as new owners show up in results, never refetches one already known.
@@ -1247,7 +1247,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // (via ?tab= on the return URL, read by activeTab's initializer above)
   // so a successful login/signup lands back on that same filtered category
   // view rather than the top of Home or a generic search page.
-  const handleGuestSeeMore = useCallback((tab: TabId) => {
+  // Accepts either a top-level TabId or one of the finer-grained legacy
+  // category ids (rental/creators/portfolio/etc, still real routes under
+  // /search/category/:id -- see CategoryResults.tsx's SingleCategoryResults
+  // -- just no longer top-level tabs in this overlay).
+  const handleGuestSeeMore = useCallback((tab: string) => {
     setPendingReturnUrl(`/search?tab=${tab}`);
     closeAndNavigate(`/login?heading=${encodeURIComponent('Sign up to see more listings')}&sub=${encodeURIComponent("Create your FILMONS account to explore all listings.")}`);
   }, [closeAndNavigate]);
@@ -1259,7 +1263,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // dedicated page, not rendered as a child/overlay of this one -- see
   // closeAndNavigate above for why that requires actually closing this
   // overlay, not just changing the route.
-  const handleViewMoreCategory = useCallback((tab: TabId) => {
+  const handleViewMoreCategory = useCallback((tab: string) => {
     // `q` also rides along as a real URL query param (not just router
     // state) so the destination is a shareable/bookmarkable standalone URL
     // per spec, e.g. `/search/category/all?q=dji` -> `/search/category/
@@ -1312,23 +1316,25 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const runSearch = useCallback((query: string) => {
     if (!query.trim()) {
-      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setResultsReady(false); return;
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawCourses([]); setResultsReady(false); return;
     }
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       Promise.all([
         searchAll(query),
-        // Only ever shown on the 'all' tab (no dedicated tab UI for these
-        // yet), but fetched alongside listings/creators regardless of
-        // activeTab so switching to 'all' doesn't need a second round trip.
+        // Fetched alongside listings/creators regardless of which of the
+        // four top-level modes is active, so switching modes never needs a
+        // second round trip -- the visible* derivations below decide what
+        // actually renders per mode.
         searchMatchingPortfolio(query).catch(() => []),
         searchMatchingPosts(query).catch(() => []),
         searchHashtagSuggestions(query, 6).catch(() => []),
+        getCourses({ query, limit: 24 }).catch(() => []),
       ])
-        .then(([{ users: u, listings: l }, portfolio, posts, hashtags]) => {
+        .then(([{ users: u, listings: l }, portfolio, posts, hashtags, courses]) => {
           setRawUsers(u); setRawListings(l);
-          setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags);
+          setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags); setRawCourses(courses);
           setResultsReady(true);
           if (u.length > 0 || l.length > 0) {
             try {
@@ -1373,12 +1379,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // search text exactly as the user left it.
   useEffect(() => {
     if (hasTyped) return;
-    if (activeTab === 'all') { setRawUsers([]); setRawListings([]); setResultsReady(false); return; }
+    if (activeTab === 'all') { setRawUsers([]); setRawListings([]); setRawCourses([]); setResultsReady(false); return; }
     let cancelled = false;
     setLoading(true); setResultsReady(false);
-    fetchCategoryBrowse(activeTab).then(({ users, listings }) => {
+    fetchCategoryBrowse(activeTab).then(({ users, listings, courses }) => {
       if (cancelled) return;
-      setRawUsers(users); setRawListings(listings); setResultsReady(true); setLoading(false);
+      setRawUsers(users); setRawListings(listings); setRawCourses(courses);
+      // Browsing a mode with no query typed has no Portfolio/Posts/
+      // Hashtags equivalent yet (those only ever come from a typed
+      // search) -- cleared here so switching from a typed Connect search
+      // to tapping Connect fresh doesn't leave stale matches showing.
+      setRawPortfolio([]); setRawPosts([]); setRawHashtags([]);
+      setResultsReady(true); setLoading(false);
     });
     return () => { cancelled = true; };
   }, [activeTab, hasTyped]);
@@ -1390,7 +1402,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setQ(val); setResultsReady(false);
     if (!val.trim()) {
       setSuggestions([]); clearTimeout(suggRef.current); clearTimeout(debounceRef.current);
-      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]);
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawCourses([]);
       setLoading(false); setSuggLoading(false); return;
     }
     setSuggLoading(true);
@@ -1502,17 +1514,25 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const emergencyListings = filteredListings.filter(l => !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date())
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
-  const visibleUsers        = (activeTab === 'all' || activeTab === 'creators')     ? filteredUsers        : [];
-  const rawVisibleRental    = (activeTab === 'all' || activeTab === 'rental')       ? rentalListings       : [];
-  const rawVisibleSale      = (activeTab === 'all' || activeTab === 'sale')         ? saleListings         : [];
-  const rawVisibleServices  = (activeTab === 'all' || activeTab === 'services')     ? serviceListingsOnly  : [];
-  const rawVisibleStudios   = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
-  const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
-  const visibleEmergency    = (activeTab === 'all' || activeTab === 'emergency')    ? emergencyListings     : [];
-  // No dedicated tab for these yet -- only ever shown on 'all'.
-  const visiblePortfolio    = activeTab === 'all' ? rawPortfolio : [];
-  const visiblePosts        = activeTab === 'all' ? rawPosts     : [];
-  const visibleHashtags     = activeTab === 'all' ? rawHashtags  : [];
+  // Four top-level modes, All a universal layer over the other three (per
+  // spec section 15, "All is not a fourth product") -- Marketplace =
+  // Rental/Sale/Studios/Emergency, Connect = Creators/Portfolio/Posts/
+  // Services/Opportunities/Hashtags/Locations, Learning = Courses.
+  const showMarketplace = activeTab === 'all' || activeTab === 'marketplace';
+  const showConnect     = activeTab === 'all' || activeTab === 'connect';
+  const showLearning    = activeTab === 'all' || activeTab === 'learning';
+
+  const visibleUsers        = showConnect     ? filteredUsers        : [];
+  const rawVisibleRental    = showMarketplace ? rentalListings       : [];
+  const rawVisibleSale      = showMarketplace ? saleListings         : [];
+  const rawVisibleServices  = showConnect     ? serviceListingsOnly  : [];
+  const rawVisibleStudios   = showMarketplace ? studioListings       : [];
+  const visibleOpportunities= showConnect     ? opportunityListings  : [];
+  const visibleEmergency    = showMarketplace ? emergencyListings    : [];
+  const visiblePortfolio    = showConnect     ? rawPortfolio         : [];
+  const visiblePosts        = showConnect     ? rawPosts             : [];
+  const visibleHashtags     = showConnect     ? rawHashtags          : [];
+  const visibleCourses      = showLearning    ? rawCourses           : [];
 
   // Emergency-flagged items within each of these four categories are
   // separately capped at emergencyLimit for a restricted tier -- non-
@@ -1524,12 +1544,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const { visible: visibleStudios,  hiddenCount: hiddenEmergencyStudios }  = capEmergencyInCategory(rawVisibleStudios, emergencyLimit);
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
-    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0;
+    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0 && rawCourses.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
-    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawHashtags.length > 0;
+    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawHashtags.length > 0 || rawCourses.length > 0;
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
     || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0
-    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0;
+    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0 || visibleCourses.length > 0;
   const showSuggestions = hasTyped && !resultsReady && !loading && (suggestions.length > 0 || suggLoading);
 
   const activeFilterCount = countActiveFilters(filters);
@@ -1669,20 +1689,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   full result set, typed or not). "View More" either
                   prompts signup (guest) or opens the full, uncapped
                   /search/category/:tab page (logged in, any tier alike),
-                  carrying the current query/filters/sort along with it. */}
-              {visibleUsers.length > 0 && (
-                <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
-                  footer={visibleUsers.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
-                  {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
+                  carrying the current query/filters/sort along with it.
+                  On the 'all' tab, everything below is grouped under its
+                  product (Marketplace/Connect/Learning) per spec -- All is
+                  a universal layer over the other three, never a fourth
+                  product of its own. */}
+              {activeTab === 'all' && (visibleRental.length > 0 || visibleSale.length > 0 || visibleStudios.length > 0 || (canBrowseEmergency && visibleEmergency.length > 0)) && (
+                <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
               )}
-              {/* Each of these four: the generic PREVIEW_LIMIT cap takes
-                  priority when it applies -- it affects the whole
-                  category, not just emergency items. Otherwise, if
-                  emergency items were held back within this category
-                  specifically (hiddenEmergencyX, computed on the
-                  already-capped list above), show that gate instead. */}
               {visibleRental.length > 0 && (
                 <ResultSection label="📦 Rental" count={Math.min(visibleRental.length, PREVIEW_LIMIT)} grid
                   footer={visibleRental.length > PREVIEW_LIMIT
@@ -1699,20 +1713,42 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleSale.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {visibleServices.length > 0 && (
-                <ResultSection label="🛠️ Services" count={Math.min(visibleServices.length, PREVIEW_LIMIT)}
-                  footer={visibleServices.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
-                    : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleServices.slice(0, PREVIEW_LIMIT).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
               {visibleStudios.length > 0 && (
                 <ResultSection label="🏢 Studios" count={Math.min(visibleStudios.length, PREVIEW_LIMIT)} grid
                   footer={visibleStudios.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/>
                     : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                   {visibleStudios.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                </ResultSection>
+              )}
+              {/* Dedicated Emergency section is Professional/Business only
+                  now -- Guest/Creator/Creator+ never see it at all (not
+                  even a preview), since Emergency isn't a browsable
+                  category for them anymore. They still see emergency-
+                  flagged listings inside Rental/Sales/Studios below, each
+                  capped at EMERGENCY_LIMIT_RESTRICTED (2) with its own
+                  badge. */}
+              {canBrowseEmergency && visibleEmergency.length > 0 && (
+                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
+                  {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                </ResultSection>
+              )}
+              {activeTab === 'all' && (visibleUsers.length > 0 || visibleServices.length > 0 || visibleOpportunities.length > 0 || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0) && (
+                <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Connect</p>
+              )}
+              {visibleUsers.length > 0 && (
+                <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
+                  footer={visibleUsers.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
+                  {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
+                </ResultSection>
+              )}
+              {visibleServices.length > 0 && (
+                <ResultSection label="🛠️ Services" count={Math.min(visibleServices.length, PREVIEW_LIMIT)}
+                  footer={visibleServices.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
+                    : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                  {visibleServices.slice(0, PREVIEW_LIMIT).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
               {visibleOpportunities.length > 0 && (
@@ -1730,27 +1766,10 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleOpportunities.slice(0, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
               )}
-              {/* Dedicated Emergency section is Professional/Business only
-                  now -- Guest/Creator/Creator+ never see it at all (not
-                  even a preview), since Emergency isn't a browsable
-                  category for them anymore. They still see emergency-
-                  flagged listings inside Rental/Sales/Services/Studios/
-                  Opportunities below, each capped at
-                  EMERGENCY_LIMIT_RESTRICTED (2) with its own badge. */}
-              {canBrowseEmergency && visibleEmergency.length > 0 && (
-                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
-                  {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {/* Portfolio/Posts/Hashtags -- 'all' tab only (no dedicated
-                  tab UI for these yet), same PREVIEW_LIMIT-and-"View all"
-                  pattern as every category above, reusing the existing
-                  draggable Portfolio preview / real Post page / hashtag
-                  page rather than a search-specific viewer. */}
               {visiblePortfolio.length > 0 && (
                 <ResultSection label="🎬 Portfolio" count={Math.min(visiblePortfolio.length, PREVIEW_LIMIT)} grid
                   footer={visiblePortfolio.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('portfolio' as TabId)}/> : undefined}>
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('portfolio')}/> : undefined}>
                   {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
                     <button
                       key={`${r.type}-${r.id}`}
@@ -1771,7 +1790,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               {visiblePosts.length > 0 && (
                 <ResultSection label="📝 Posts" count={Math.min(visiblePosts.length, PREVIEW_LIMIT)}
                   footer={visiblePosts.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts' as TabId)}/> : undefined}>
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts')}/> : undefined}>
                   <div className="px-4 space-y-3 py-1">
                     {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
                   </div>
@@ -1781,7 +1800,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <section className="mb-1">
                   <div className="flex items-center justify-between px-4 py-2 mt-1">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest"># Hashtags</p>
-                    <span className="text-[10px] text-gray-400">{visibleHashtags.length}</span>
+                    {visibleHashtags.length > PREVIEW_LIMIT ? (
+                      <button onClick={() => handleViewMoreCategory('hashtags')} className="text-[10px] font-bold text-blue-600">View all</button>
+                    ) : (
+                      <span className="text-[10px] text-gray-400">{visibleHashtags.length}</span>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-2 px-4">
                     {visibleHashtags.slice(0, PREVIEW_LIMIT).map(h => (
@@ -1793,15 +1816,27 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   </div>
                 </section>
               )}
+              {activeTab === 'all' && visibleCourses.length > 0 && (
+                <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Learning</p>
+              )}
+              {visibleCourses.length > 0 && (
+                <ResultSection label="🎓 Courses" count={Math.min(visibleCourses.length, PREVIEW_LIMIT)} grid
+                  footer={visibleCourses.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('courses')}/> : undefined}>
+                  {visibleCourses.slice(0, PREVIEW_LIMIT).map(c => <CourseCard key={c.id} course={c} />)}
+                </ResultSection>
+              )}
               {resultsReady && !loading && !hasVisible && (
                 <EmptyState q={q} tab={activeTab}/>
               )}
-              {/* All tab only -- one final action below every category
-                  section, opening the combined, uncapped results page. */}
-              {activeTab === 'all' && hasVisible && (
+              {/* One final action below every section, opening the
+                  combined, uncapped results page for whichever of the
+                  four modes is active -- /search/category/all,
+                  /marketplace, /connect, or /learning. */}
+              {hasVisible && (
                 <div className="px-4 pt-2 pb-4">
                   <button
-                    onClick={() => !user ? handleGuestSeeMore('all') : handleViewMoreCategory('all')}
+                    onClick={() => !user ? handleGuestSeeMore(activeTab) : handleViewMoreCategory(activeTab)}
                     className="w-full py-3.5 rounded-2xl bg-gray-900 text-white text-sm font-bold text-center hover:bg-gray-800 transition-colors"
                   >
                     View all results
