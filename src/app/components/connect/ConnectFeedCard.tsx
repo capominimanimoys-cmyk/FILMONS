@@ -38,9 +38,12 @@ export function ConnectFeedCard({ item, trustLevels }: {
     case 'opportunity_published':
       return <OpportunityActivityCard entry={entry} trustLevel={trustLevel} />;
     case 'connection_created':
-      // No Trust Score/TrustBadge on this card by design -- see
-      // ConnectionActivityCard's own header comment.
-      return <ConnectionActivityCard entry={entry} />;
+      // Connection Post Cards temporarily removed from every feed --
+      // getActivityFeed already excludes activity_type='connection_created'
+      // at the query level; this is just a second guard so a stray/cached
+      // entry can never render one. ConnectionActivityCard itself is left
+      // in place (unused for now), not deleted, so this is easy to revert.
+      return null;
     case 'recommendation_received':
       return <RecommendationActivityCard entry={entry} trustLevel={trustLevel} />;
     case 'post_published':

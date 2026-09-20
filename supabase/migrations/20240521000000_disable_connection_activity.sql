@@ -1,0 +1,18 @@
+-- Temporarily stop Connection Post Cards from being generated. Drops ONLY
+-- the trigger that auto-inserts a 'connection_created' activity_events row
+-- when a professional_connections request is accepted (see
+-- 20240502000000_activity_events.sql's trg_connection_activity /
+-- trg_fn_log_connection_activity). Does NOT touch:
+--   - professional_connections (requests, accepted relationships, counts)
+--   - any connection notification path
+--   - the trigger FUNCTION itself (left defined, just unattached) -- so
+--     re-enabling this later is a single CREATE TRIGGER statement away,
+--     identical to the one this drops.
+--
+-- Already-created 'connection_created' rows are left in place (not
+-- deleted) and are excluded from feed reads instead, at the query level
+-- (activityApi.ts's getActivityFeed now filters activity_type !=
+-- 'connection_created'). This is the "prefer filtering/deprecating over
+-- deleting" half of the fix; this migration is the "stop creating new
+-- ones" half.
+DROP TRIGGER IF EXISTS trg_connection_activity ON public.professional_connections;

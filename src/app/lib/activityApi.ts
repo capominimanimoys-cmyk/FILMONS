@@ -248,6 +248,16 @@ export async function getActivityFeed(params: {
   if (params.before) q = q.lt('created_at', params.before);
   if (params.category) q = q.eq('category', params.category);
   if (params.subcategory) q = q.eq('subcategory', params.subcategory);
+  // Connection Post Cards temporarily removed from every feed -- the
+  // underlying connection system (requests/accepts/counts/notifications)
+  // is completely untouched; this only stops the auto-generated "X and Y
+  // connected" activity row from ever being SHOWN. The row-creation side
+  // (a DB trigger on professional_connections, not client code -- see
+  // trg_connection_activity) is disabled separately in
+  // 20240521000000_disable_connection_activity.sql, so this filter mostly
+  // guards against the backlog of already-created rows; both together
+  // cover "stop creating" and "stop showing".
+  q = q.neq('activity_type', 'connection_created');
 
   if (params.tab === 'following') {
     if (!params.followingIds?.length) return { entries: [] }; // no fallback to For You -- proper empty state instead, per spec
