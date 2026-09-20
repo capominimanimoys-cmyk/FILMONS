@@ -738,7 +738,11 @@ function LocationPickerSheet({ onSelect, onClose }: { onSelect: (loc: LocationRe
   };
 
   return (
-    <BottomSheet title="Add location" onClose={onClose}>
+    // CreatePostSheet's own overlay is z-[85] (a fixed full-screen sheet,
+    // not portaled) -- BottomSheet's default z-70 rendered this BEHIND it
+    // despite being portaled to document.body, since an explicit z-index
+    // wins over DOM order regardless of portal target.
+    <BottomSheet title="Add location" onClose={onClose} zIndex={90}>
       <div className="px-4 pt-2 pb-3 space-y-2">
         <input
           autoFocus
