@@ -15,7 +15,7 @@ import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
-import { DraggablePortfolioPage } from './DraggablePortfolioPage';
+import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
@@ -30,7 +30,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const { album, creator, coverUrl, coverAspectRatio, itemCount } = entry;
   const isOwn = !!user && user.id === creator.id;
 
-  const [showAlbumOverlay, setShowAlbumOverlay] = useState(false);
+  const { openPortfolioPreview } = usePortfolioPreview();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -74,7 +74,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   // Opens the draggable Portfolio overlay straight into THIS album (spec
   // §1/§11) rather than navigating away to /portfolio -- keeps /connect's
   // scroll position intact underneath.
-  const openAlbum = () => setShowAlbumOverlay(true);
+  const openAlbum = () => openPortfolioPreview(creator.id, album.id);
 
   const shareSnapshot = {
     contentType: 'portfolio_album' as const,
@@ -170,14 +170,11 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         <TrustProfileOverlay userId={creator.id} closing={trustProfileClosing} onClose={closeTrustProfile} />,
         document.body,
       )}
-      {showAlbumOverlay && (
-        <DraggablePortfolioPage creatorId={creator.id} initialAlbumId={album.id} onClose={() => setShowAlbumOverlay(false)} />
-      )}
       {showMoreMenu && (
         <PostMoreMenu
           onClose={() => setShowMoreMenu(false)}
           actions={[
-            { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); setShowAlbumOverlay(true); } },
+            { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); openAlbum(); } },
             { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },
             { icon: Link2, label: 'Copy link', onClick: async () => { setShowMoreMenu(false); try { await navigator.clipboard.writeText(getSharedContentDeepLink(shareSnapshot)); toast.success('Link copied'); } catch { toast.error('Could not copy link'); } } },
             { icon: EyeOff, label: 'Hide this post', onClick: () => { setShowMoreMenu(false); setHidden(true); toast('Post hidden', { description: "You won't see this again" }); } },

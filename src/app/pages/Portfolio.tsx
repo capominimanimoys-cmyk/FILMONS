@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type TabType     = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
+export type TabType = 'all' | 'photos' | 'videos' | 'reels' | 'audio' | 'projects' | 'case_studies' | 'bts' | 'albums';
 type ShareTarget =
   | { type: 'album'; album: PortfolioAlbum }
   | { type: 'item'; item: PortfolioItem };
@@ -1201,7 +1201,7 @@ function CreateAlbumFromSelectionSheet({
 // separate route -- per the FILMONS rule that there must be only one
 // Portfolio UI/implementation across the app. When absent, behavior is
 // 100% unchanged from the routed page (falls back to useParams/self).
-export function Portfolio({ overrideUserId, initialAlbumId, embedded }: {
+export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChange }: {
   overrideUserId?: string;
   /** Auto-opens this album once its data loads -- e.g. tapping an Album
    * card's cover in Connect should land straight on that album. */
@@ -1210,6 +1210,11 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded }: {
    * its own route -- suppresses the guest redirect (the overlay is only
    * ever opened for a specific creator, never "my own missing profile"). */
   embedded?: boolean;
+  /** Reports the active tab out on every change -- lets the embedding
+   * overlay hand the current category off via nav state when it expands
+   * to the real route, without this component needing to know about that
+   * caller at all. */
+  onTabChange?: (tab: TabType) => void;
 } = {}) {
   const { userId: paramUserId } = useParams<{ userId?: string }>();
   const { user: me } = useAuth();
@@ -1235,7 +1240,13 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded }: {
   const [settings, setSettings] = useState<PortfolioSettings>({
     ...DEFAULT_PORTFOLIO_SETTINGS, id: '', user_id: '', updated_at: '',
   });
-  const [activeTab,       setActiveTab]       = useState<TabType>('all');
+  // Seeded from the draggable-preview handoff's nav state (see
+  // DraggablePortfolioPage's expandPortfolioToFullPage) so the category the
+  // user had selected in the preview survives becoming the real routed
+  // page instead of resetting to "All". No-op for a normal direct visit --
+  // location.state is simply absent then.
+  const [activeTab,       setActiveTab]       = useState<TabType>((location.state as any)?.initialTab ?? 'all');
+  useEffect(() => { onTabChange?.(activeTab); }, [activeTab]); // eslint-disable-line
   const [viewer,          setViewer]          = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [showAdd,         setShowAdd]         = useState(false);
   const [showFollowSheet, setShowFollowSheet] = useState<null | 'followers' | 'following'>(null);

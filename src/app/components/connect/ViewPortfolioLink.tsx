@@ -10,12 +10,12 @@
 // Tapping this opens the Portfolio as a draggable overlay (see the FILMONS
 // "Draggable View Portfolio" spec) instead of navigating to /portfolio --
 // the whole point is browsing a creator's work WITHOUT losing your scroll
-// position in /connect underneath. Self-contained: every existing call
-// site (already passing creatorId/creatorFirstName/isOwn) gets the new
-// behavior automatically, no caller changes needed.
-import { useState } from 'react';
+// position in /connect underneath. Opens via the global
+// PortfolioPreviewContext (Root.tsx) rather than owning local state, so
+// the overlay survives if/when it later activates the real /portfolio
+// route -- see that context's own header comment.
 import { ArrowRight } from 'lucide-react';
-import { DraggablePortfolioPage } from './DraggablePortfolioPage';
+import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 
 export function ViewPortfolioLink({ creatorId, creatorFirstName, isOwn, className, onNavigate }: {
   creatorId: string;
@@ -26,16 +26,13 @@ export function ViewPortfolioLink({ creatorId, creatorFirstName, isOwn, classNam
    * logProfileEngagement's 'view_portfolio_click' event. */
   onNavigate?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const { openPortfolioPreview } = usePortfolioPreview();
   return (
-    <>
-      <button
-        onClick={e => { e.stopPropagation(); onNavigate?.(); setOpen(true); }}
-        className={`flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors ${className ?? ''}`}
-      >
-        {isOwn ? 'View your Portfolio' : `View ${creatorFirstName}'s Portfolio`} <ArrowRight className="w-3.5 h-3.5" />
-      </button>
-      {open && <DraggablePortfolioPage creatorId={creatorId} onClose={() => setOpen(false)} />}
-    </>
+    <button
+      onClick={e => { e.stopPropagation(); onNavigate?.(); openPortfolioPreview(creatorId); }}
+      className={`flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors ${className ?? ''}`}
+    >
+      {isOwn ? 'View your Portfolio' : `View ${creatorFirstName}'s Portfolio`} <ArrowRight className="w-3.5 h-3.5" />
+    </button>
   );
 }

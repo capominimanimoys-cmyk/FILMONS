@@ -12,9 +12,11 @@ import { SubscriptionDowngradeBanner } from '../components/SubscriptionDowngrade
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { CookieConsent } from '../components/CookieConsent';
 import { RouteProgressBar } from '../components/RouteProgressBar';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getPendingReturnUrl } from '../lib/authReturnUrl';
+import { PortfolioPreviewContext, type PortfolioPreviewRequest } from '../context/PortfolioPreviewContext';
+import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
 import type { User } from '../types';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
@@ -41,6 +43,13 @@ export function Root() {
   const { user, isAuthenticated, isGuest, deviceVerified } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen,  setSearchOpen]  = useState(false);
+  // Global "View Portfolio" preview -- see PortfolioPreviewContext's own
+  // header comment for why this lives here and not on whichever card
+  // opens it.
+  const [portfolioPreview, setPortfolioPreview] = useState<PortfolioPreviewRequest | null>(null);
+  const openPortfolioPreview = useCallback((creatorId: string, initialAlbumId?: string) => {
+    setPortfolioPreview({ creatorId, initialAlbumId });
+  }, []);
   // Inbox reports whether an active conversation is open on mobile —
   // same window CustomEvent pattern api.ts already uses for
   // 'filmons:unread-changed', not a new context, since there's exactly
@@ -144,16 +153,19 @@ export function Root() {
 
   if (hideAll) {
     return (
-      <NotificationBannerProvider>
-        <div className="min-h-screen flex flex-col">
-          <Outlet />
-        </div>
-        <CookieConsent />
-      </NotificationBannerProvider>
+      <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
+        <NotificationBannerProvider>
+          <div className="min-h-screen flex flex-col">
+            <Outlet />
+          </div>
+          <CookieConsent />
+        </NotificationBannerProvider>
+      </PortfolioPreviewContext.Provider>
     );
   }
 
   return (
+    <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
     <NotificationBannerProvider>
       <RouteProgressBar />
       <div className="min-h-screen flex flex-col">
@@ -203,8 +215,21 @@ export function Root() {
         {/* Guest auth prompt — rendered globally, triggered via showGuestPrompt() */}
         <GuestAuthPrompt />
 
+        {/* View Portfolio draggable preview -- rendered here (not by
+            whichever card opened it) specifically so it survives the
+            moment it activates the real /portfolio route underneath it;
+            see PortfolioPreviewContext's header comment. */}
+        {portfolioPreview && (
+          <DraggablePortfolioPage
+            creatorId={portfolioPreview.creatorId}
+            initialAlbumId={portfolioPreview.initialAlbumId}
+            onClose={() => setPortfolioPreview(null)}
+          />
+        )}
+
         <CookieConsent />
       </div>
     </NotificationBannerProvider>
+    </PortfolioPreviewContext.Provider>
   );
 }

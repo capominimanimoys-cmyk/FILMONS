@@ -26,7 +26,7 @@ import { AudioFeedCard } from './AudioFeedCard';
 import { AudioPostCard } from './AudioPostCard';
 import { ListingTagSheet } from './ListingTagSheet';
 import { EditPostModal } from './EditPostModal';
-import { DraggablePortfolioPage } from './connect/DraggablePortfolioPage';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './connect/PostMoreMenu';
 import { SharePostSheet } from './connect/SharePostSheet';
 import { LikesSheet } from './LikesSheet';
@@ -391,7 +391,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // Lets the "..." menu's "Change visibility" item jump straight to the
   // audience picker instead of landing on the general edit form first.
   const [editModalInitialView, setEditModalInitialView] = useState<'visibility' | undefined>(undefined);
-  const [showPortfolioOverlay, setShowPortfolioOverlay] = useState(false);
+  const { openPortfolioPreview } = usePortfolioPreview();
   const [showLikesSheet, setShowLikesSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1636,7 +1636,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               viewer's scroll position in the feed underneath. */}
           {localPost.portfolioItemId && (
             <button
-              onClick={()=>setShowPortfolioOverlay(true)}
+              onClick={()=>openPortfolioPreview(localPost.userId)}
               className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
               style={{ width: 'calc(100% - 1.5rem)' }}
             >
@@ -1654,10 +1654,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </div>
             </button>
           )}
-          {showPortfolioOverlay && (
-            <DraggablePortfolioPage creatorId={localPost.userId} onClose={() => setShowPortfolioOverlay(false)} />
-          )}
-
           {/* Attached Listing -- was previously ONLY reachable via the
               shoppable-tag icon overlaid on photo/video media, so a post
               with a linked listing but no visual media (a text + listing

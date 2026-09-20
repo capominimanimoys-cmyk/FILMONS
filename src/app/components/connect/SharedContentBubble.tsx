@@ -15,17 +15,17 @@ import { useNavigate } from 'react-router';
 import { CheckCircle2, Layers, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { postsApi } from '../../lib/api';
-import { DraggablePortfolioPage } from './DraggablePortfolioPage';
+import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import type { SharedContentSnapshot } from '../../types';
 
 export function SharedContentBubble({ content, isOwn }: { content: SharedContentSnapshot; isOwn: boolean }) {
   const navigate = useNavigate();
-  const [openPortfolio, setOpenPortfolio] = useState(false);
+  const { openPortfolioPreview } = usePortfolioPreview();
   const [checking, setChecking] = useState(false);
 
   const handleTap = async () => {
     if (content.contentType === 'portfolio_item' || content.contentType === 'portfolio_album') {
-      setOpenPortfolio(true);
+      openPortfolioPreview(content.creatorId, content.contentType === 'portfolio_album' ? content.contentId : undefined);
       return;
     }
     if (content.contentType === 'post') {
@@ -73,13 +73,6 @@ export function SharedContentBubble({ content, isOwn }: { content: SharedContent
           )}
         </div>
       </button>
-      {openPortfolio && (
-        <DraggablePortfolioPage
-          creatorId={content.creatorId}
-          initialAlbumId={content.contentType === 'portfolio_album' ? content.contentId : undefined}
-          onClose={() => setOpenPortfolio(false)}
-        />
-      )}
     </>
   );
 }
