@@ -1,7 +1,6 @@
 // FILMONS -- /hashtag/:tag. Real content across every content type that
-// actually supports hashtags today (posts, Portfolio items/albums,
-// courses) -- see hashtagsApi.ts's own comment on why listings/services/
-// opportunities aren't included yet.
+// actually supports hashtags today: posts, Portfolio items/albums,
+// courses, and listings.
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft, Hash, BadgeCheck, Star, Users } from 'lucide-react';
@@ -9,6 +8,7 @@ import { getHashtag, getHashtagContent, type HashtagContent } from '../lib/hasht
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
 import { CourseCard } from '../components/courses/CourseCard';
+import { ListingCard } from '../components/ListingCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
 function formatCount(n: number): string {
@@ -29,7 +29,7 @@ export function HashtagPage() {
     getHashtagContent(tag).then(setContent);
   }, [tag]);
 
-  const nothingYet = content && !content.posts.length && !content.portfolio.length && !content.courses.length;
+  const nothingYet = content && !content.posts.length && !content.portfolio.length && !content.courses.length && !content.listings.length;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -103,6 +103,17 @@ export function HashtagPage() {
                 <p className="text-sm font-black text-gray-900">Courses</p>
                 <div className="flex gap-3 overflow-x-auto no-scrollbar">
                   {content.courses.map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
+                </div>
+              </div>
+            )}
+
+            {content.listings.length > 0 && (
+              <div className="space-y-2.5">
+                <p className="text-sm font-black text-gray-900">Listings</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {content.listings.map(l => (
+                    <ListingCard key={l.id} listing={l} onClick={() => navigate(`/listing/${l.id}`)} />
+                  ))}
                 </div>
               </div>
             )}

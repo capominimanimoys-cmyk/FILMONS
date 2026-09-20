@@ -11,6 +11,8 @@
 // See supabase/migrations/20240518000000_hashtags.sql.
 import { supabase } from '../../lib/supabase';
 import { getCoursesByIds, type Course } from './coursesApi';
+import { LISTING_COLUMNS, mapListingRow } from './api';
+import type { Listing } from '../types';
 
 const HASHTAG_RE = /#([a-zA-Z0-9_]+)/g;
 
@@ -154,6 +156,7 @@ export interface HashtagContent {
   posts: HashtagPost[];
   portfolio: HashtagPortfolioEntry[];
   courses: Course[];
+  listings: Listing[];
 }
 
 /** Hashtag results page's content -- only content types FILMONS actually
@@ -164,7 +167,7 @@ export interface HashtagContent {
 export async function getHashtagContent(tagInput: string, limit = 30): Promise<HashtagContent> {
   const tag = normalizeHashtag(tagInput);
   const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
-  if (!hashtagRow) return { posts: [], portfolio: [], courses: [] };
+  if (!hashtagRow) return { posts: [], portfolio: [], courses: [], listings: [] };
 
   const { data: mentions } = await supabase.from('hashtag_mentions')
     .select('content_type, content_id, created_at')
@@ -175,14 +178,23 @@ export async function getHashtagContent(tagInput: string, limit = 30): Promise<H
 
   const idsFor = (type: HashtagContentType) => rows.filter(r => r.content_type === type).map(r => r.content_id);
 
-  const [posts, items, albums, courses] = await Promise.all([
+  const [posts, items, albums, courses, listings] = await Promise.all([
     fetchHashtagPosts(idsFor('post'), limit),
     fetchHashtagPortfolioItems(idsFor('portfolio_item'), limit),
     fetchHashtagPortfolioAlbums(idsFor('portfolio_album'), limit),
     getCoursesByIds(idsFor('course')),
+    fetchHashtagListings(idsFor('listing'), limit),
   ]);
 
-  return { posts, portfolio: [...items, ...albums], courses };
+  return { posts, portfolio: [...items, ...albums], courses, listings };
+}
+
+async function fetchHashtagListings(ids: string[], limit: number): Promise<Listing[]> {
+  if (!ids.length) return [];
+  const { data } = await supabase.from('listings').select(LISTING_COLUMNS)
+    .in('id', ids).eq('is_active', true)
+    .order('created_at', { ascending: false }).limit(limit);
+  return (data ?? []).map(mapListingRow);
 }
 
 async function fetchHashtagPosts(ids: string[], limit: number): Promise<HashtagPost[]> {

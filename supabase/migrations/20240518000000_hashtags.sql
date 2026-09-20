@@ -4,21 +4,38 @@
 -- existed before this migration, but no migration anywhere in this repo
 -- ever actually created the backing table/RPCs -- likely created directly
 -- in Supabase outside version control before this project's "every schema
--- change is a tracked migration" convention took hold). This migration:
+-- change is a tracked migration" convention took hold).
 --
---  1. Creates `hashtags`/`post_hashtags` if they don't already exist,
---     matching the shape the existing client code already expects
---     (id/tag/post_count -- NOT renamed, to avoid a second, parallel
---     naming scheme).
+-- REVISED after diagnosing "hashtags result page doesn't show results":
+-- querying the live database directly showed this migration was NEVER
+-- applied (hashtag_mentions doesn't exist at all), AND the original
+-- assumption about the pre-existing `hashtags` table shape was wrong --
+-- live columns are (id, tag, uses, created_at), not (id, tag, post_count,
+-- created_at, last_used_at). The first version of this migration's
+-- CREATE TABLE IF NOT EXISTS would have silently no-op'd against that
+-- already-existing table (Postgres doesn't add missing columns from a
+-- no-op CREATE), so `post_count` would never have existed -- every RPC
+-- and client query built against it would have failed or (worse, for
+-- fire-and-forget indexing calls that swallow errors) silently done
+-- nothing. This version:
+--
+--  1. Renames the real `uses` column to `post_count` (single safe rename,
+--     zero data loss) so it matches every call site already written
+--     against "post_count" -- this migration's own functions below, and
+--     hashtagsApi.ts's Hashtag type/getTopHashtags/etc.
 --  2. Adds `hashtag_mentions`, a NEW generic mention table so hashtags
---     work across Portfolio items/albums and Courses too, not just posts
---     (per the FILMONS Browse Search Hashtag Support spec).
+--     work across Portfolio items/albums/courses/listings, not just posts
+--     (per the FILMONS Browse Search Hashtag Support spec) -- and
+--     backfills it from the existing `post_hashtags` rows so posts
+--     tagged before this feature existed don't vanish from hashtag
+--     results.
 --  3. (Re)defines upsert_hashtag/search_hashtags via CREATE OR REPLACE so
---     they work correctly against this tracked schema regardless of
---     whether a same-named-but-different version already exists live.
+--     they work correctly against the renamed column regardless of
+--     whatever the original out-of-band versions did.
 --
--- IF NOT EXISTS + CREATE OR REPLACE throughout specifically so this is
--- safe to run whether or not the original out-of-band schema is present.
+-- IF NOT EXISTS/safe-rename guards + CREATE OR REPLACE throughout so this
+-- is safe to run exactly once against the real live schema described
+-- above.
 
 CREATE TABLE IF NOT EXISTS public.hashtags (
   id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,6 +43,13 @@ CREATE TABLE IF NOT EXISTS public.hashtags (
   post_count    integer     NOT NULL DEFAULT 0,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='hashtags' AND column_name='uses')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='hashtags' AND column_name='post_count') THEN
+    ALTER TABLE public.hashtags RENAME COLUMN uses TO post_count;
+  END IF;
+END $$;
 ALTER TABLE public.hashtags ADD COLUMN IF NOT EXISTS last_used_at timestamptz NOT NULL DEFAULT now();
 CREATE INDEX IF NOT EXISTS hashtags_tag_prefix_idx ON public.hashtags (tag text_pattern_ops);
 
@@ -52,7 +76,9 @@ CREATE INDEX IF NOT EXISTS hashtag_mentions_content_idx ON public.hashtag_mentio
 
 -- post_count only ever reflects content_type='post' mentions (that's what
 -- the compose-time "#filmmaking · 234 posts" suggestion actually means);
--- last_used_at refreshes on ANY content type's mention.
+-- last_used_at refreshes on ANY content type's mention. Created BEFORE the
+-- backfill below so the backfill's own inserts drive it, rather than
+-- needing a separate recompute step.
 CREATE OR REPLACE FUNCTION public.fn_sync_hashtag_mention_counts()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -73,6 +99,20 @@ DROP TRIGGER IF EXISTS trg_sync_hashtag_mention_counts ON public.hashtag_mention
 CREATE TRIGGER trg_sync_hashtag_mention_counts
 AFTER INSERT OR DELETE ON public.hashtag_mentions
 FOR EACH ROW EXECUTE FUNCTION public.fn_sync_hashtag_mention_counts();
+
+-- Backfill: every post already tagged via the old post_hashtags-only flow
+-- (before hashtagsApi.ts switched to writing hashtag_mentions directly)
+-- gets a matching hashtag_mentions row, so it keeps showing up in
+-- /hashtag/:tag results instead of silently disappearing. post_count is
+-- zeroed first so the trigger above (already live at this point in the
+-- script) recomputes it from scratch as these rows are inserted, instead
+-- of double-adding on top of whatever the old pre-existing counting
+-- mechanism had already set.
+UPDATE public.hashtags SET post_count = 0;
+INSERT INTO public.hashtag_mentions (hashtag_id, content_type, content_id, created_at)
+SELECT ph.hashtag_id, 'post', ph.post_id, ph.created_at
+FROM public.post_hashtags ph
+ON CONFLICT (hashtag_id, content_type, content_id) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION public.upsert_hashtag(p_tag text)
 RETURNS uuid LANGUAGE plpgsql AS $$
