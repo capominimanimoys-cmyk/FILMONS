@@ -59,6 +59,7 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'listing_liked':             return `${actorName} liked your listing`;
     case 'creator_liked':             return `${actorName} liked your profile`;
     case 'followed_creator_posted':   return `${actorName} posted a new listing`;
+    case 'course_published':          return `${actorName} published a new course`;
     case 'message_request_accepted':  return `${actorName} accepted your message request`;
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';

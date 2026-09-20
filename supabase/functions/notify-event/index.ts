@@ -134,6 +134,55 @@ Deno.serve(async (req) => {
       return json({ sent, of: mutualIds.length });
     }
 
+    if (type === 'course_published') {
+      const { instructorId, instructorName, courseId, courseTitle } = body;
+      if (!instructorId || !courseId) return json({ error: 'Missing fields' }, 400);
+      // Followers (one-way) UNION accepted Connections (mutual) --
+      // Filmons' two real "people who should hear about this" relationships,
+      // deduplicated so someone who is both only gets one notification/email.
+      // Capped at 200 -- a real broadcast to an instructor's whole audience,
+      // not the 50-recipient ceiling the smaller mutual-friends events use.
+      const [followerRows, connectionRows] = await Promise.all([
+        selectMany('follows', `following_id=eq.${instructorId}&select=follower_id&limit=200`),
+        selectMany('professional_connections', `status=eq.accepted&or=(user_a_id.eq.${instructorId},user_b_id.eq.${instructorId})&select=user_a_id,user_b_id&limit=200`),
+      ]);
+      const recipientIds = new Set<string>();
+      for (const r of followerRows) if (r.follower_id !== instructorId) recipientIds.add(r.follower_id);
+      for (const r of connectionRows) {
+        const otherId = r.user_a_id === instructorId ? r.user_b_id : r.user_a_id;
+        if (otherId !== instructorId) recipientIds.add(otherId);
+      }
+      const ids = [...recipientIds].slice(0, 200);
+      const courseUrl = `https://learning.filmons.app/course/${courseId}`;
+      let sent = 0;
+      for (const recipientId of ids) {
+        const recipient = await selectOne('profiles', `id=eq.${recipientId}`);
+        if (!recipient) continue;
+        // In-app notification -- same row shape src/app/lib/notifications.ts's
+        // push() writes client-side, done here instead since this fan-out
+        // already has the full recipient list server-side. post_id/
+        // post_content reused as generic "content id/title" fields (no
+        // dedicated course_id column -- see Notifications.tsx's
+        // course_published handling).
+        await fetch(rest('/notifications'), {
+          method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            user_id: recipientId, actor_id: instructorId, actor_name: instructorName || 'Someone',
+            type: 'course_published', title: `${instructorName || 'Someone'} published a new course`,
+            post_id: courseId, post_content: courseTitle || null, is_read: false,
+          }),
+        }).catch(() => {});
+        if (recipient.email) {
+          await sendNewPostOrPortfolioEmail({
+            toEmail: recipient.email, toName: recipient.name, fromName: instructorName || 'A creator you follow',
+            contentType: 'course', title: courseTitle, contentUrl: courseUrl,
+          });
+        }
+        sent++;
+      }
+      return json({ sent, of: ids.length });
+    }
+
     if (type === 'connection_request') {
       const { toUserId, fromUserId, fromName, note } = body;
       if (!toUserId || !fromUserId) return json({ error: 'Missing fields' }, 400);

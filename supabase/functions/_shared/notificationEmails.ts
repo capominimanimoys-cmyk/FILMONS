@@ -494,17 +494,21 @@ export function sendFollowedCreatorPostedEmail(p: {
 
 // Sent to mutual follows (people the creator follows who also follow them
 // back -- "friends", per how this was requested) when they publish a new
-// Post or Portfolio item. Same template covers both content types via
-// content_type_label/content_url, rather than two near-identical templates.
+// Post, Portfolio item, or -- now -- a Filmons Learning Course. Same
+// template covers all three content types via content_type_label/
+// content_url, rather than a near-identical template per type. Course
+// URLs point at learning.filmons.app (a different origin than post/
+// portfolio's filmons.app links), since Learning is its own product.
 export function sendNewPostOrPortfolioEmail(p: {
   toEmail: string | null | undefined; toName?: string | null;
-  fromName: string; contentType: 'post' | 'portfolio';
+  fromName: string; contentType: 'post' | 'portfolio' | 'course';
   title?: string | null; contentUrl: string;
 }) {
+  const label = p.contentType === 'post' ? 'a new post' : p.contentType === 'portfolio' ? 'new portfolio work' : 'a new course';
   return sendEmailJsRaw(p.toEmail, TEMPLATE_NEW_POST_PORTFOLIO, {
     to_name: p.toName || 'there',
     from_name: p.fromName,
-    content_type_label: p.contentType === 'post' ? 'a new post' : 'new portfolio work',
+    content_type_label: label,
     content_title: p.title || '',
     content_url: p.contentUrl,
     settings_url: 'https://filmons.app/settings/notifications',

@@ -6,13 +6,14 @@
 // specced flow. Permission is enforced here (not just hidden from a menu):
 // a Creator/Creator+ landing on this route directly sees the upgrade
 // screen, never the form.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { ArrowLeft, Lock, ImagePlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { canCreateCourses, createCourse, updateCourse, publishCourse, getCourse, type CourseLevel } from '../lib/coursesApi';
+import { notifyEvent } from '../lib/notifyEvent';
 import { PORTFOLIO_CATEGORIES } from '../lib/portfolioApi';
 import { supabase } from '../../lib/supabase';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
@@ -43,6 +44,12 @@ export function CreateCourse() {
 
   const allowed = canCreateCourses(user?.accountType);
 
+  // Captured so handleSave can tell a genuine first publish (worth
+  // notifying followers/connections about) apart from re-saving an
+  // already-published course -- editing published copy shouldn't re-fire
+  // the "published a new course" fan-out every time.
+  const wasPublishedRef = useRef(false);
+
   useEffect(() => {
     if (!editId) return;
     getCourse(editId).then(c => {
@@ -55,6 +62,7 @@ export function CreateCourse() {
       setIsFree(c.isFree || c.price === 0);
       setPrice(c.price ? String(c.price) : '');
       setCoverUrl(c.coverUrl ?? '');
+      wasPublishedRef.current = c.status === 'published';
       setLoading(false);
     });
   }, [editId]);
@@ -111,8 +119,20 @@ export function CreateCourse() {
     }
     if (publish && id) {
       const ok = await publishCourse(id, user.id);
-      if (!ok) toast.error('Saved as draft -- could not publish');
-      else toast.success('Course published!');
+      if (!ok) {
+        toast.error('Saved as draft -- could not publish');
+      } else {
+        toast.success('Course published!');
+        // Only a genuine draft -> published transition notifies
+        // followers/connections -- re-saving an already-published course
+        // (editing details, updating the cover) never re-fires this.
+        if (!wasPublishedRef.current) {
+          notifyEvent({
+            type: 'course_published', instructorId: user.id, instructorName: user.name || user.username || '',
+            courseId: id, courseTitle: title.trim().slice(0, 80),
+          });
+        }
+      }
     } else {
       toast.success('Draft saved');
     }

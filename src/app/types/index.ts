@@ -446,6 +446,8 @@ export type NotificationType =
   | 'profile_completion' | 'trust_level_update'
   // Portfolio
   | 'portfolio_view'
+  // Learning
+  | 'course_published'
   // System
   | 'account_verified' | 'account_warning' | 'system_announcement' | 'system_notification';
 

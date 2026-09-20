@@ -18,6 +18,7 @@ import { ConnectionsSection } from './ConnectionsSection';
 import { RecommendationsSection } from './RecommendationsSection';
 import { ProfileInteractionSection } from './ProfileInteractionSection';
 import { SocialLinksSection, type SocialLinksData } from './SocialLinksSection';
+import { CoursesSection } from './CoursesSection';
 import type { ProfileInteractionStats } from '../../lib/profileEngagement';
 import type { TrustProfile } from '../../lib/trustApi';
 import type { ConnectionSummary } from '../../lib/connectionsApi';
@@ -144,6 +145,8 @@ export function ProfileAllTab({
         title="Listings" icon="🏷️ " listings={listings} lockedIds={lockedListingIds} onViewAll={onViewListings}
         emptyText="No active listings." ownerEmptyText="You have no active listings yet." isOwner={isOwner}
       />
+
+      <CoursesSection userId={userId} isOwner={isOwner} />
 
       <MyGearSection gear={gear} isOwner={isOwner} onEdit={onEditGear} />
 

@@ -5,9 +5,10 @@ import {
   Check, Trash2, X, BellOff, UserCheck, Inbox, ArrowRight, Repeat2,
   ShoppingBag, Zap, Trophy, AtSign, Shield, Star,
   Rocket, Wrench, PartyPopper, Eye, ChevronRight, Loader2,
-  CalendarDays, CreditCard,
+  CalendarDays, CreditCard, GraduationCap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLearningTransition } from '../context/LearningTransitionContext';
 import { useFollow } from '../context/FollowContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { Notification, User } from '../types';
@@ -133,6 +134,8 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Heart,         gradient: 'from-rose-400 to-pink-500',       iconColor: 'text-white', ringColor: 'ring-rose-100',    label: () => 'liked your post' };
     case 'content_repost':
       return { icon: Repeat2,       gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'reposted your content' };
+    case 'course_published':
+      return { icon: GraduationCap, gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: (n) => `published a new course${(n as any).postContent ? `: "${(n as any).postContent}"` : ''}` };
     case 'new_follower':
       return { icon: UserPlus,      gradient: 'from-blue-500 to-blue-600',       iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'started following you' };
     case 'follow_request':
@@ -610,7 +613,7 @@ const MESSAGE_TYPES        = ['message','new_message','message_received','messag
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','listing_liked','followed_creator_posted'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
-const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view'];
+const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view','course_published'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
 const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [
@@ -657,6 +660,7 @@ const EMPTY_STATE: Record<Tab, { title: string; body: string }> = {
 export function Notifications() {
   const { user }   = useAuth();
   const navigate   = useNavigate();
+  const { enterLearning } = useLearningTransition();
   const {
     notifications: notifs,
     loading: refreshing,
@@ -704,6 +708,10 @@ export function Notifications() {
       // No dedicated Portfolio analytics screen exists yet -- falls back to
       // the owner's own /portfolio, per the spec's own fallback wording.
       navigate('/portfolio');
+    } else if (n.type === 'course_published') {
+      // Filmons Learning is a separate product/origin now -- postId holds
+      // the course id (reused generic field, no dedicated column).
+      if ((n as any).postId) enterLearning(`/course/${(n as any).postId}`);
     } else if (n.type === 'listing_review') {
       navigate((n as any).listingId
         ? `/listing/${(n as any).listingId}${(n as any).reviewId ? `?review=${(n as any).reviewId}` : ''}`
