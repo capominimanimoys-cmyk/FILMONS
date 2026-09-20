@@ -76,7 +76,7 @@ function ContinueLearningRow({ courses, onSeeAll }: { courses: EnrolledCourse[];
               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${c.progressPercent}%` }} /></div>
               <span className="text-[10px] font-bold text-gray-400 shrink-0">{c.progressPercent}%</span>
             </div>
-            <button onClick={() => navigate(`/learning/course/${c.id}`)} className="w-full mt-2.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">Continue</button>
+            <button onClick={() => navigate(`/course/${c.id}`)} className="w-full mt-2.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">Continue</button>
           </div>
         ))}
       </div>
@@ -144,7 +144,7 @@ export function CoursesHome() {
             <p className="text-xl font-black text-gray-900">FILMONS Learning</p>
             <p className="text-sm text-gray-400 mt-0.5">Learn. Create. Grow.</p>
           </div>
-          <button onClick={() => navigate('/learning/my-learning')} className="shrink-0 px-3 py-1.5 rounded-full bg-gray-100 text-xs font-bold text-gray-600">
+          <button onClick={() => navigate('/my-learning')} className="shrink-0 px-3 py-1.5 rounded-full bg-gray-100 text-xs font-bold text-gray-600">
             My Learning
           </button>
         </div>
@@ -209,7 +209,7 @@ export function CoursesHome() {
         ) : (
           <>
             <CourseRow title="For You" courses={recommended} trustLevels={trustLevels} onSeeAll={() => setCategory(undefined)} />
-            <ContinueLearningRow courses={continueLearning} onSeeAll={() => navigate('/learning/my-learning')} />
+            <ContinueLearningRow courses={continueLearning} onSeeAll={() => navigate('/my-learning')} />
             <CourseRow title={category ? `Popular in ${category}` : 'Popular on FILMONS'} courses={popular} trustLevels={trustLevels} />
             <CourseRow title="From Your Connections" courses={fromConnections} trustLevels={trustLevels} />
             <CourseRow title="New Courses" courses={newest} trustLevels={trustLevels} />

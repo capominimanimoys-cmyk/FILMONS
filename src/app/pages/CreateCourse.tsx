@@ -11,6 +11,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { ArrowLeft, Lock, ImagePlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLearningTransition } from '../context/LearningTransitionContext';
 import { canCreateCourses, createCourse, updateCourse, publishCourse, getCourse, type CourseLevel } from '../lib/coursesApi';
 import { PORTFOLIO_CATEGORIES } from '../lib/portfolioApi';
 import { supabase } from '../../lib/supabase';
@@ -23,6 +24,7 @@ const LEVELS: { id: CourseLevel; label: string }[] = [
 
 export function CreateCourse() {
   const navigate = useNavigate();
+  const { leaveLearning } = useLearningTransition();
   const { user } = useAuth();
   const [params] = useSearchParams();
   const editId = params.get('edit');
@@ -64,10 +66,10 @@ export function CreateCourse() {
         <p className="text-base font-black text-gray-900">Upgrade to create courses</p>
         <p className="text-sm text-gray-500 max-w-xs">Upgrade to Professional or Business to create and publish courses on Filmons.</p>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/professional-account-steps')} className="px-5 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">Go Professional</button>
-          <button onClick={() => navigate('/business-account-steps')} className="px-5 py-3 rounded-2xl bg-gray-900 text-white text-sm font-bold">Go Business</button>
+          <button onClick={() => leaveLearning('/professional-account-steps')} className="px-5 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">Go Professional</button>
+          <button onClick={() => leaveLearning('/business-account-steps')} className="px-5 py-3 rounded-2xl bg-gray-900 text-white text-sm font-bold">Go Business</button>
         </div>
-        <button onClick={() => navigate('/learning')} className="text-sm font-bold text-gray-400">Back to Learning</button>
+        <button onClick={() => navigate('/')} className="text-sm font-bold text-gray-400">Back to Learning</button>
       </div>
     );
   }
@@ -115,7 +117,7 @@ export function CreateCourse() {
       toast.success('Draft saved');
     }
     setSaving(false);
-    navigate('/learning/my-learning');
+    navigate('/my-learning');
   };
 
   return (

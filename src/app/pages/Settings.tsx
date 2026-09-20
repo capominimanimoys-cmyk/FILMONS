@@ -1,6 +1,7 @@
-import { useNavigate, Link } from 'react-router';
+import { useNavigate, useLocation, Link } from 'react-router';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
+import { useLearningTransition } from '../context/LearningTransitionContext';
 import { useT } from '../lib/i18n';
 import {
   User, BarChart2, ShoppingBag, CreditCard, Package, MessageCircle,
@@ -15,6 +16,8 @@ import { toast } from 'sonner';
 export function Settings() {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { enterLearning } = useLearningTransition();
   const T = useT();
 
   const handleLogout = async () => {
@@ -70,8 +73,8 @@ export function Settings() {
     {
       title: 'Learning',
       items: [
-        { icon: GraduationCap, label: 'My Learning',       sub: 'Courses you\'re taking and teaching', action: () => go('/learning/my-learning') },
-        { icon: Compass,       label: 'Explore Learning',  sub: 'Browse courses on Filmons',           action: () => go('/learning') },
+        { icon: GraduationCap, label: 'My Learning',       sub: 'Courses you\'re taking and teaching', action: () => enterLearning('/learning/my-learning', { route: location.pathname + location.search }) },
+        { icon: Compass,       label: 'Explore Learning',  sub: 'Browse courses on Filmons',           action: () => enterLearning('/learning', { route: location.pathname + location.search }) },
       ],
     },
     {

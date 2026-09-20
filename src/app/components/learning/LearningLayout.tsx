@@ -1,21 +1,28 @@
-// Shell for every /learning/* route (see routes.tsx) -- renders the
-// product header once instead of duplicating it per page, and shows a
-// short branded startup splash the FIRST time this session lands inside
-// Learning without having come through the normal enterLearning()
-// transition (e.g. a direct URL visit or a page refresh while already
-// inside /learning/*), per spec section 12. Internal Learning-to-Learning
-// navigation (Course -> Lesson, Discover -> Course, etc.) never replays
-// this -- the flag is set for the rest of the browser session once shown.
+// Shell for every route in this bundle (learning.html -- see
+// learningRoutes.tsx). Renders the product header once instead of
+// duplicating it per page, and shows a short branded startup splash the
+// FIRST time this session lands inside Learning WITHOUT having just come
+// through enterLearning()'s own transition (a direct URL visit, a
+// bookmark, or a page refresh) -- per spec section 12. A proper product-
+// switch entry already played the transition on the main bundle's side
+// (see LearningTransitionContext) right before this bundle even loaded,
+// so replaying it here too would double up -- detected via the same
+// sessionStorage origin key enterLearning() writes just before navigating
+// (present = arrived via a real product switch, skip; absent = direct
+// entry, show it). Either way this is a one-shot per session: subsequent
+// in-Learning navigation (Course -> Lesson, Discover -> Course, etc.)
+// never replays it.
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router';
 import { LearningHeader } from './LearningHeader';
 import { FilmonsLearningTransition } from './FilmonsLearningTransition';
 
 const ENTERED_KEY = 'filmons_learning_entered';
+const ORIGIN_KEY = 'filmons_learning_origin';
 
 export function LearningLayout() {
   const [showStartup, setShowStartup] = useState(() => {
-    try { return !sessionStorage.getItem(ENTERED_KEY); } catch { return false; }
+    try { return !sessionStorage.getItem(ENTERED_KEY) && !sessionStorage.getItem(ORIGIN_KEY); } catch { return false; }
   });
 
   useEffect(() => {

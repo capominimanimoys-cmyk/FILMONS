@@ -11,16 +11,19 @@
 // already fetches fresh from the creator's live Portfolio, so a
 // since-deleted/hidden item or album simply won't be there to open.
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { CheckCircle2, Layers, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { postsApi } from '../../lib/api';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
+import { useLearningTransition } from '../../context/LearningTransitionContext';
 import type { SharedContentSnapshot } from '../../types';
 
 export function SharedContentBubble({ content, isOwn }: { content: SharedContentSnapshot; isOwn: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { openPortfolioPreview } = usePortfolioPreview();
+  const { enterLearning } = useLearningTransition();
   const [checking, setChecking] = useState(false);
 
   const handleTap = async () => {
@@ -37,7 +40,7 @@ export function SharedContentBubble({ content, isOwn }: { content: SharedContent
       return;
     }
     if (content.contentType === 'course') {
-      navigate(`/learning/course/${content.contentId}`);
+      enterLearning(`/learning/course/${content.contentId}`, { route: location.pathname + location.search });
       return;
     }
     navigate(`/host/${content.creatorId}`);

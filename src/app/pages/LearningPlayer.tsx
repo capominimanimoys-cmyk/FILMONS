@@ -53,7 +53,7 @@ export function LearningPlayer() {
 
   const goToLesson = useCallback((i: number) => {
     const target = lessons[i];
-    if (target) navigate(`/learning/course/${courseId}/lesson/${target.id}`);
+    if (target) navigate(`/course/${courseId}/lesson/${target.id}`);
   }, [lessons, courseId, navigate]);
 
   const handleMarkComplete = async () => {
@@ -75,7 +75,7 @@ export function LearningPlayer() {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-3 px-6 text-center">
         <p className="text-sm font-bold text-white">Enroll to watch this lesson</p>
-        <button onClick={() => navigate(`/learning/course/${courseId}`)} className="text-sm font-bold text-blue-400">Back to course</button>
+        <button onClick={() => navigate(`/course/${courseId}`)} className="text-sm font-bold text-blue-400">Back to course</button>
       </div>
     );
   }
@@ -86,7 +86,7 @@ export function LearningPlayer() {
   return (
     <div className="min-h-screen bg-black flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="flex items-center gap-3 px-4 py-3 shrink-0" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-        <button onClick={() => navigate(`/learning/course/${courseId}`)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 shrink-0">
+        <button onClick={() => navigate(`/course/${courseId}`)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 shrink-0">
           <ArrowLeft className="w-4 h-4 text-white" />
         </button>
         <p className="text-sm font-bold text-white truncate">{course?.title}</p>

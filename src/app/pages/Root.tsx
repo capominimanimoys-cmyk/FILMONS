@@ -16,7 +16,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getPendingReturnUrl } from '../lib/authReturnUrl';
 import { PortfolioPreviewContext, type PortfolioPreviewRequest } from '../context/PortfolioPreviewContext';
-import { LearningTransitionProvider } from '../context/LearningTransitionContext';
+import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../context/LearningTransitionContext';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
 import type { User } from '../types';
 
@@ -83,6 +83,20 @@ export function Root() {
     return () => window.removeEventListener('filmons:home-bars-hidden', handler);
   }, []);
   useEffect(() => { setChromeHidden(false); }, [location.pathname]);
+
+  // Restores scroll position after a hard navigation back from the
+  // Filmons Learning bundle (see LearningTransitionContext's
+  // leaveLearning) -- a real page load can't preserve scrollY any other
+  // way. One-shot: cleared immediately so it never fires again this
+  // session for an unrelated later visit to the same route.
+  useEffect(() => {
+    let y: string | null = null;
+    try {
+      y = sessionStorage.getItem(LEARNING_RESTORE_SCROLL_KEY);
+      if (y) sessionStorage.removeItem(LEARNING_RESTORE_SCROLL_KEY);
+    } catch {}
+    if (y) requestAnimationFrame(() => window.scrollTo({ top: Number(y) }));
+  }, []);
 
   // Close the vertical menu on every route change, regardless of how
   // navigation happened (menu link, back/forward, programmatic redirect) —

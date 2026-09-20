@@ -72,13 +72,6 @@ import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
 import { LikedItems } from './pages/LikedItems';
-import { CoursesHome } from './pages/CoursesHome';
-import { CourseDetail } from './pages/CourseDetail';
-import { CourseContent } from './pages/CourseContent';
-import { LearningPlayer } from './pages/LearningPlayer';
-import { MyLearning } from './pages/MyLearning';
-import { CreateCourse } from './pages/CreateCourse';
-import { LearningLayout } from './components/learning/LearningLayout';
 
 export const router = createBrowserRouter([
   {
@@ -132,23 +125,15 @@ export const router = createBrowserRouter([
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
-      // FILMONS Learning -- its own product shell (LearningLayout renders
-      // the Learning-specific header; Root.tsx hides the normal Filmons
-      // top bar/bottom nav/sidebar for every /learning/* path), reached via
-      // the branded Filmons -> Filmons Learning transition
-      // (LearningTransitionContext) rather than a normal in-app navigate.
-      {
-        path: 'learning',
-        Component: LearningLayout,
-        children: [
-          { index: true, Component: CoursesHome },
-          { path: 'my-learning', Component: MyLearning },
-          { path: 'create', Component: CreateCourse },
-          { path: 'course/:courseId', Component: CourseDetail },
-          { path: 'course/:courseId/content', Component: CourseContent },
-          { path: 'course/:courseId/lesson/:lessonId', Component: LearningPlayer },
-        ],
-      },
+      // NOTE: FILMONS Learning (/learning/*) is NOT a route in this
+      // router — like /admin/*, it's an entirely separate Rollup bundle
+      // (learning.html, built from src/app/learningRoutes.tsx +
+      // LearningApp.tsx). This app's JS never imports any Learning page/
+      // component; vercel.json rewrites /learning/* (and, once DNS
+      // exists, learning.filmons.app/*) straight to learning.html instead
+      // of this app's index.html. Crossing into it is a real browser
+      // navigation via useLearningTransition()'s enterLearning(), not a
+      // route in this tree.
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'hashtag/:tag', Component: HashtagPage },

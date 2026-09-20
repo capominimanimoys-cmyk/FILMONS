@@ -64,14 +64,17 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       rollupOptions: {
-        // Two real, separate Rollup entry points -- admin.html pulls in
-        // AdminApp/adminRoutes only, so the FILMONS Admin pages/components
-        // never end up in the chunk a normal user's browser downloads
-        // from index.html, and vice versa (see vercel.json: /admin/* is
-        // rewritten to admin.html, everything else to index.html).
+        // Three real, separate Rollup entry points -- admin.html pulls in
+        // AdminApp/adminRoutes only and learning.html pulls in
+        // LearningApp/learningRoutes only, so neither the FILMONS Admin
+        // nor FILMONS Learning pages/components end up in the chunk a
+        // normal user's browser downloads from index.html, and vice versa
+        // (see vercel.json: /admin/* -> admin.html, /learning/* ->
+        // learning.html, everything else -> index.html).
         input: {
           main: resolve(__dirname, 'index.html'),
           admin: resolve(__dirname, 'admin.html'),
+          learning: resolve(__dirname, 'learning.html'),
         },
       },
     },

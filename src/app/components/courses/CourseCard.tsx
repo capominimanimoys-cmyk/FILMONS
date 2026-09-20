@@ -6,6 +6,7 @@ import { Star, Clock, BadgeCheck } from 'lucide-react';
 import { UserAvatar } from '../AccountTypeBadge';
 import { TrustBadge } from '../trust/TrustBadge';
 import { useLearningTransition } from '../../context/LearningTransitionContext';
+import { isInsideLearningBundle } from '../../lib/learningBundle';
 import type { Course } from '../../lib/coursesApi';
 import type { TrustLevel } from '../../lib/trustApi';
 
@@ -27,14 +28,15 @@ export function CourseCard({ course, trustLevel }: { course: Course; trustLevel?
   const location = useLocation();
   const { enterLearning } = useLearningTransition();
   const duration = formatDuration(course.durationSeconds);
-  // Already inside Learning -> plain in-product navigation, never replay
-  // the branded transition (spec: "do not show special loading every
-  // time"). Tapped from anywhere else in Filmons (Search, a Hashtag/
-  // Location page, Connect) -> the full Filmons -> Learning product switch.
-  const insideLearning = location.pathname.startsWith('/learning');
+  // Already inside the Learning bundle -> plain in-product (basename-
+  // relative) navigation, never replay the branded transition (spec: "do
+  // not show special loading every time"). Tapped from the main Filmons
+  // bundle (Search, a Hashtag/Location page, Connect, etc.) -> the full
+  // Filmons -> Learning product switch, a real cross-bundle navigation.
+  const insideLearning = isInsideLearningBundle();
 
   const open = () => {
-    if (insideLearning) navigate(`/learning/course/${course.id}`);
+    if (insideLearning) navigate(`/course/${course.id}`);
     else enterLearning(`/learning/course/${course.id}`, { route: location.pathname + location.search });
   };
 

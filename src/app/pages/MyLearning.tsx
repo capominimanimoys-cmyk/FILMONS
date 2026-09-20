@@ -25,7 +25,7 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
 function EnrolledRow({ course }: { course: EnrolledCourse }) {
   const navigate = useNavigate();
   return (
-    <button onClick={() => navigate(`/learning/course/${course.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
+    <button onClick={() => navigate(`/course/${course.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
       <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
         {course.coverUrl ? <img src={course.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>}
       </div>
@@ -62,7 +62,7 @@ function MyCourseRow({ course, onChanged }: { course: Course; onChanged: () => v
 
   return (
     <div className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3">
-      <button onClick={() => navigate(`/learning/course/${course.id}`)} className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+      <button onClick={() => navigate(`/course/${course.id}`)} className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
         {course.coverUrl ? <img src={course.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>}
       </button>
       <div className="flex-1 min-w-0">
@@ -73,7 +73,7 @@ function MyCourseRow({ course, onChanged }: { course: Course; onChanged: () => v
           {course.ratingCount > 0 && <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400" /> {course.ratingAvg.toFixed(1)}</span>}
         </div>
       </div>
-      <button onClick={() => navigate(`/learning/create?edit=${course.id}`)} className="shrink-0 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">Edit</button>
+      <button onClick={() => navigate(`/create?edit=${course.id}`)} className="shrink-0 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">Edit</button>
       <button onClick={() => setMenuOpen(true)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
         <MoreHorizontal className="w-4 h-4" />
       </button>
@@ -123,7 +123,7 @@ export function MyLearning() {
 
       <div className="max-w-xl mx-auto px-4 py-4 space-y-3">
         {tab === 'mine' && (
-          <button onClick={() => navigate('/learning/create')} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">
+          <button onClick={() => navigate('/create')} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">
             <Plus className="w-4 h-4" /> Create Course
           </button>
         )}
@@ -134,7 +134,7 @@ export function MyLearning() {
           ) : enrolled.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-sm font-bold text-gray-600">No courses yet</p>
-              <button onClick={() => navigate('/learning')} className="text-sm font-bold text-blue-600 mt-2">Browse Learning</button>
+              <button onClick={() => navigate('/')} className="text-sm font-bold text-blue-600 mt-2">Browse Learning</button>
             </div>
           ) : enrolled.map(c => <EnrolledRow key={c.id} course={c} />)
         ) : mine === null ? (

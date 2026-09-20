@@ -23,6 +23,7 @@ import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { HashtagText } from '../components/HashtagText';
 import { SharePostSheet } from '../components/connect/SharePostSheet';
 import { useAuth } from '../context/AuthContext';
+import { useLearningTransition } from '../context/LearningTransitionContext';
 
 function formatDuration(totalSeconds: number): string {
   if (!totalSeconds) return '';
@@ -58,6 +59,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
 export function CourseDetail() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const { leaveLearning } = useLearningTransition();
   const { user } = useAuth();
   const [course, setCourse] = useState<Course | null | undefined>(undefined);
   const [sections, setSections] = useState<CourseSection[]>([]);
@@ -103,7 +105,7 @@ export function CourseDetail() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
         <p className="text-sm font-bold text-gray-700">Course not found</p>
-        <button onClick={() => navigate('/learning')} className="text-sm font-bold text-blue-600">Back to Learning</button>
+        <button onClick={() => navigate('/')} className="text-sm font-bold text-blue-600">Back to Learning</button>
       </div>
     );
   }
@@ -114,7 +116,7 @@ export function CourseDetail() {
   const firstIncompleteLesson = () => allLessons.find(l => !lessonProgress[l.id]) ?? allLessons[allLessons.length - 1];
 
   const handleEnroll = async () => {
-    if (!user) { navigate('/login'); return; }
+    if (!user) { leaveLearning('/login'); return; }
     if (!course.isFree && course.price > 0) { toast('Course checkout is coming soon', { description: 'Paid enrollment isn\'t live yet.' }); return; }
     setEnrolling(true);
     const ok = await enrollInFreeCourse(user.id, course.id);
@@ -128,8 +130,8 @@ export function CourseDetail() {
 
   const handleContinue = () => {
     const lesson = firstIncompleteLesson();
-    if (!lesson) { navigate(`/learning/course/${course.id}/content`); return; }
-    navigate(`/learning/course/${course.id}/lesson/${lesson.id}`);
+    if (!lesson) { navigate(`/course/${course.id}/content`); return; }
+    navigate(`/course/${course.id}/lesson/${lesson.id}`);
   };
 
   const handleSubmitReview = async () => {
@@ -187,7 +189,7 @@ export function CourseDetail() {
             {duration && <span>{duration}</span>}
           </div>
 
-          <button onClick={() => navigate(course.instructor?.username ? `/${course.instructor.username}` : `/host/${course.instructorId}`)}
+          <button onClick={() => leaveLearning(course.instructor?.username ? `/${course.instructor.username}` : `/host/${course.instructorId}`)}
             className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
             <UserAvatar user={{ id: course.instructorId, name: course.instructor?.name || '', avatar: course.instructor?.avatar_url ?? undefined }} size={44} />
             <div className="flex-1 min-w-0">
@@ -209,7 +211,7 @@ export function CourseDetail() {
               {course.isFree || course.price === 0 ? 'Free' : `${course.currency} $${course.price.toFixed(2)}`}
             </p>
             {isOwn ? (
-              <button onClick={() => navigate(`/learning/course/${course.id}/content`)} className="w-full py-3 rounded-2xl bg-gray-900 text-white text-sm font-bold">
+              <button onClick={() => navigate(`/course/${course.id}/content`)} className="w-full py-3 rounded-2xl bg-gray-900 text-white text-sm font-bold">
                 View course content
               </button>
             ) : enrolled ? (
@@ -217,7 +219,7 @@ export function CourseDetail() {
                 <button onClick={handleContinue} className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">
                   Continue course
                 </button>
-                <button onClick={() => navigate(`/learning/course/${course.id}/content`)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">
+                <button onClick={() => navigate(`/course/${course.id}/content`)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">
                   View course content
                 </button>
               </>
@@ -280,7 +282,7 @@ export function CourseDetail() {
                             const canOpen = enrolled || isOwn || (l.isPreview && l.type === 'video' && !!l.videoUrl);
                             const completed = !!lessonProgress[l.id];
                             const onTap = () => {
-                              if (enrolled || isOwn) navigate(`/learning/course/${course.id}/lesson/${l.id}`);
+                              if (enrolled || isOwn) navigate(`/course/${course.id}/lesson/${l.id}`);
                               else if (l.isPreview && l.videoUrl) setPreviewLesson({ title: l.title, url: l.videoUrl });
                             };
                             return (
