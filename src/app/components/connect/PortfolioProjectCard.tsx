@@ -22,6 +22,7 @@ import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
+import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
@@ -32,6 +33,7 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
 }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
+  const { openPortfolioPreview } = usePortfolioPreview();
   const { item, creator } = entry;
   const isOwn = !!user && user.id === creator.id;
 
@@ -187,7 +189,7 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         <PostMoreMenu
           onClose={() => setShowMoreMenu(false)}
           actions={[
-            { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); navigate(`/portfolio/${creator.id}`); } },
+            { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); openPortfolioPreview(creator.id); } },
             { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },
             { icon: Link2, label: 'Copy link', onClick: async () => { setShowMoreMenu(false); try { await navigator.clipboard.writeText(getSharedContentDeepLink(shareSnapshot)); toast.success('Link copied'); } catch { toast.error('Could not copy link'); } } },
             { icon: EyeOff, label: 'Hide this post', onClick: () => { setShowMoreMenu(false); setHidden(true); toast('Post hidden', { description: "You won't see this again" }); } },

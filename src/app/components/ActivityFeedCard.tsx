@@ -17,6 +17,7 @@ import { TrustProfileOverlay } from './trust/TrustProfileOverlay';
 import { UserAvatar } from './AccountTypeBadge';
 import type { ActivityEntry } from '../lib/activityApi';
 import { getActivitySentence } from '../lib/activityApi';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import type { TrustLevel } from '../lib/trustApi';
 
 function timeAgo(iso: string): string {
@@ -34,6 +35,7 @@ const PREVIEW_ICON: Record<string, typeof ImageIcon> = {
 
 export function ActivityFeedCard({ entry, trustLevel }: { entry: ActivityEntry; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
+  const { openPortfolioPreview } = usePortfolioPreview();
   const { actor } = entry;
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
@@ -47,7 +49,7 @@ export function ActivityFeedCard({ entry, trustLevel }: { entry: ActivityEntry; 
     switch (entry.targetType) {
       case 'portfolio_item':
       case 'portfolio_album':
-        navigate(`/portfolio/${actor.id}`); // opens the creator's full public Portfolio, same convention as "View Portfolio →" elsewhere
+        openPortfolioPreview(actor.id); // draggable preview, same convention as "View Portfolio →" elsewhere
         return;
       case 'listing':
         navigate(`/listing/${entry.targetId}`);

@@ -14,12 +14,14 @@ import { TrustBadge } from './trust/TrustBadge';
 import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
 import { togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import type { TrustLevel } from '../lib/trustApi';
 
 const RAIL_HEIGHT = 160;
 
 function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEntry; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
+  const { openPortfolioPreview } = usePortfolioPreview();
   const { user, showGuestPrompt } = useAuth();
   const [saved, setSaved] = useState(false);
 
@@ -33,7 +35,7 @@ function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEn
 
   useEffect(() => { if (user) isPortfolioSaved(user.id, targetId, targetType).then(setSaved); }, [targetId, user?.id]);
 
-  const openCreatorPortfolio = () => navigate(`/portfolio/${entry.creator.id}`);
+  const openCreatorPortfolio = () => openPortfolioPreview(entry.creator.id, isAlbum ? entry.album.id : undefined);
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation();

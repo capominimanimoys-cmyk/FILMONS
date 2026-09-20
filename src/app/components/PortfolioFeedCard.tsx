@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import {
   Heart, MessageCircle, Send, Bookmark, Play, X, MoreHorizontal,
   BadgeCheck, UserPlus, UserCheck, ExternalLink, ChevronRight,
@@ -232,6 +233,7 @@ function AlbumCardMenu({
   onToggleSave: () => void; onShare: () => void; onClose: () => void; onRemoved: () => void;
 }) {
   const navigate = useNavigate();
+  const { openPortfolioPreview } = usePortfolioPreview();
   const { user, showGuestPrompt } = useAuth();
   const [deleting, setDeleting] = useState(false);
 
@@ -277,7 +279,7 @@ function AlbumCardMenu({
             <button onClick={() => run(() => navigate(`/host/${entry.creator.id}`))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <User className="w-4 h-4 text-gray-400" /> View creator profile
             </button>
-            <button onClick={() => run(() => { logProfileEngagement(entry.creator.id, 'view_portfolio_click', user?.id); navigate(`/portfolio/${entry.creator.id}`); })} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+            <button onClick={() => run(() => { logProfileEngagement(entry.creator.id, 'view_portfolio_click', user?.id); openPortfolioPreview(entry.creator.id); })} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <ExternalLink className="w-4 h-4 text-gray-400" /> View portfolio
             </button>
             <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
