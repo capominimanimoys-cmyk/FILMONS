@@ -21,11 +21,13 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
-import { searchHashtagSuggestions } from '../lib/hashtagsApi';
+import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions } from '../lib/locationsApi';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import {
-  searchMatchingListings, searchMatchingCreators,
+  searchMatchingListings, searchMatchingCreators, searchMatchingPortfolio, searchMatchingPosts,
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
+  type SearchPortfolioRow, type SearchPostRow,
 } from '../lib/filmSearch';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1136,6 +1138,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
   const [rawListings,    setRawListings]    = useState<ListingRow[]>([]);
+  // Portfolio/Posts/Hashtags -- only ever populated for a typed search on
+  // the 'all' tab (no dedicated tab UI for these yet, unlike
+  // rawUsers/rawListings above); shown as their own ResultSections there,
+  // same PREVIEW_LIMIT-and-"View all" pattern as every other section.
+  const [rawPortfolio,   setRawPortfolio]   = useState<SearchPortfolioRow[]>([]);
+  const [rawPosts,       setRawPosts]       = useState<SearchPostRow[]>([]);
+  const [rawHashtags,    setRawHashtags]    = useState<HashtagSuggestion[]>([]);
   // Cached account_type per Opportunity-listing owner, used to exclude
   // locked (over-tier) listings from every result surface here -- grows
   // as new owners show up in results, never refetches one already known.
@@ -1163,6 +1172,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // reveal anything further. isProfessional() covers both unlimited
   // tiers, and defaults false for a guest (no user) or any lower tier.
   const { user, isAuthenticated } = useAuth();
+  const { openPortfolioPreview } = usePortfolioPreview();
   const canBrowseOpportunities = isProfessional(user?.accountType);
   const [showOpportunityGate, setShowOpportunityGate] = useState(false);
   // Same Professional-or-Business rule as Home.tsx's canBrowseEmergency --
@@ -1283,14 +1293,23 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const runSearch = useCallback((query: string) => {
     if (!query.trim()) {
-      setRawUsers([]); setRawListings([]); setResultsReady(false); return;
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setResultsReady(false); return;
     }
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      searchAll(query)
-        .then(({ users: u, listings: l }) => {
+      Promise.all([
+        searchAll(query),
+        // Only ever shown on the 'all' tab (no dedicated tab UI for these
+        // yet), but fetched alongside listings/creators regardless of
+        // activeTab so switching to 'all' doesn't need a second round trip.
+        searchMatchingPortfolio(query).catch(() => []),
+        searchMatchingPosts(query).catch(() => []),
+        searchHashtagSuggestions(query, 6).catch(() => []),
+      ])
+        .then(([{ users: u, listings: l }, portfolio, posts, hashtags]) => {
           setRawUsers(u); setRawListings(l);
+          setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags);
           setResultsReady(true);
           if (u.length > 0 || l.length > 0) {
             try {
@@ -1352,7 +1371,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setQ(val); setResultsReady(false);
     if (!val.trim()) {
       setSuggestions([]); clearTimeout(suggRef.current); clearTimeout(debounceRef.current);
-      setRawUsers([]); setRawListings([]);
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]);
       setLoading(false); setSuggLoading(false); return;
     }
     setSuggLoading(true);
@@ -1471,6 +1490,10 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const rawVisibleStudios   = (activeTab === 'all' || activeTab === 'studios')      ? studioListings       : [];
   const visibleOpportunities= (activeTab === 'all' || activeTab === 'opportunities')? opportunityListings   : [];
   const visibleEmergency    = (activeTab === 'all' || activeTab === 'emergency')    ? emergencyListings     : [];
+  // No dedicated tab for these yet -- only ever shown on 'all'.
+  const visiblePortfolio    = activeTab === 'all' ? rawPortfolio : [];
+  const visiblePosts        = activeTab === 'all' ? rawPosts     : [];
+  const visibleHashtags     = activeTab === 'all' ? rawHashtags  : [];
 
   // Emergency-flagged items within each of these four categories are
   // separately capped at emergencyLimit for a restricted tier -- non-
@@ -1481,10 +1504,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const { visible: visibleServices, hiddenCount: hiddenEmergencyServices } = capEmergencyInCategory(rawVisibleServices, emergencyLimit);
   const { visible: visibleStudios,  hiddenCount: hiddenEmergencyStudios }  = capEmergencyInCategory(rawVisibleStudios, emergencyLimit);
 
-  const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0;
-  const hasResults = filteredUsers.length > 0 || filteredListings.length > 0;
+  const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
+    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0;
+  const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
+    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawHashtags.length > 0;
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
-    || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0;
+    || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0
+    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0;
   const showSuggestions = hasTyped && !resultsReady && !loading && (suggestions.length > 0 || suggLoading);
 
   const activeFilterCount = countActiveFilters(filters);
@@ -1696,6 +1722,61 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
                   {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                 </ResultSection>
+              )}
+              {/* Portfolio/Posts/Hashtags -- 'all' tab only (no dedicated
+                  tab UI for these yet), same PREVIEW_LIMIT-and-"View all"
+                  pattern as every category above, reusing the existing
+                  draggable Portfolio preview / real Post page / hashtag
+                  page rather than a search-specific viewer. */}
+              {visiblePortfolio.length > 0 && (
+                <ResultSection label="🎬 Portfolio" count={Math.min(visiblePortfolio.length, PREVIEW_LIMIT)} grid
+                  footer={visiblePortfolio.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('portfolio' as TabId)}/> : undefined}>
+                  {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
+                    <button
+                      key={`${r.type}-${r.id}`}
+                      onClick={() => { handleClose(); openPortfolioPreview(r.user_id, r.type === 'album' ? r.id : undefined); }}
+                      className="relative rounded-xl overflow-hidden bg-gray-100"
+                      style={{ aspectRatio: 4 / 5 }}
+                    >
+                      {(r.thumbnail_url || r.media_url || r.cover_url) ? (
+                        <img src={r.thumbnail_url || r.media_url || r.cover_url || ''} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎬</div>
+                      )}
+                      <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[11px] font-bold text-white drop-shadow truncate text-left">{r.title}</span>
+                    </button>
+                  ))}
+                </ResultSection>
+              )}
+              {visiblePosts.length > 0 && (
+                <ResultSection label="📝 Posts" count={Math.min(visiblePosts.length, PREVIEW_LIMIT)}
+                  footer={visiblePosts.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts' as TabId)}/> : undefined}>
+                  {visiblePosts.slice(0, PREVIEW_LIMIT).map(p => (
+                    <button key={p.id} onClick={() => handleResultNavigate(`/post/${p.id}`)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50">
+                      {p.media_urls?.[0] && <img src={p.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />}
+                      <p className="text-sm text-gray-700 truncate">{p.content}</p>
+                    </button>
+                  ))}
+                </ResultSection>
+              )}
+              {visibleHashtags.length > 0 && (
+                <section className="mb-1">
+                  <div className="flex items-center justify-between px-4 py-2 mt-1">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest"># Hashtags</p>
+                    <span className="text-[10px] text-gray-400">{visibleHashtags.length}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 px-4">
+                    {visibleHashtags.slice(0, PREVIEW_LIMIT).map(h => (
+                      <button key={h.tag} onClick={() => handleResultNavigate(`/hashtag/${h.tag}`)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+                        #{h.tag}
+                      </button>
+                    ))}
+                  </div>
+                </section>
               )}
               {resultsReady && !loading && !hasVisible && (
                 <EmptyState q={q} tab={activeTab}/>
