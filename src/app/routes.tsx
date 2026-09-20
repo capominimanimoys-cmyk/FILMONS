@@ -78,6 +78,7 @@ import { CourseContent } from './pages/CourseContent';
 import { LearningPlayer } from './pages/LearningPlayer';
 import { MyLearning } from './pages/MyLearning';
 import { CreateCourse } from './pages/CreateCourse';
+import { LearningLayout } from './components/learning/LearningLayout';
 
 export const router = createBrowserRouter([
   {
@@ -131,14 +132,23 @@ export const router = createBrowserRouter([
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
-      // FILMONS Learning -- its own product area, separate from
-      // Marketplace (courses are educational products, not listings).
-      { path: 'learning', Component: CoursesHome },
-      { path: 'learning/my-learning', Component: MyLearning },
-      { path: 'learning/create', Component: CreateCourse },
-      { path: 'learning/course/:courseId', Component: CourseDetail },
-      { path: 'learning/course/:courseId/content', Component: CourseContent },
-      { path: 'learning/course/:courseId/lesson/:lessonId', Component: LearningPlayer },
+      // FILMONS Learning -- its own product shell (LearningLayout renders
+      // the Learning-specific header; Root.tsx hides the normal Filmons
+      // top bar/bottom nav/sidebar for every /learning/* path), reached via
+      // the branded Filmons -> Filmons Learning transition
+      // (LearningTransitionContext) rather than a normal in-app navigate.
+      {
+        path: 'learning',
+        Component: LearningLayout,
+        children: [
+          { index: true, Component: CoursesHome },
+          { path: 'my-learning', Component: MyLearning },
+          { path: 'create', Component: CreateCourse },
+          { path: 'course/:courseId', Component: CourseDetail },
+          { path: 'course/:courseId/content', Component: CourseContent },
+          { path: 'course/:courseId/lesson/:lessonId', Component: LearningPlayer },
+        ],
+      },
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'hashtag/:tag', Component: HashtagPage },

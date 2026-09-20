@@ -1,10 +1,11 @@
 // FILMONS Courses -- browse card. Trust is shown via the compact
 // TrustBadge only -- never the instructor's raw /100 Reliability score,
 // per spec.
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { Star, Clock, BadgeCheck } from 'lucide-react';
 import { UserAvatar } from '../AccountTypeBadge';
 import { TrustBadge } from '../trust/TrustBadge';
+import { useLearningTransition } from '../../context/LearningTransitionContext';
 import type { Course } from '../../lib/coursesApi';
 import type { TrustLevel } from '../../lib/trustApi';
 
@@ -23,11 +24,23 @@ const LEVEL_LABEL: Record<string, string> = {
 
 export function CourseCard({ course, trustLevel }: { course: Course; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { enterLearning } = useLearningTransition();
   const duration = formatDuration(course.durationSeconds);
+  // Already inside Learning -> plain in-product navigation, never replay
+  // the branded transition (spec: "do not show special loading every
+  // time"). Tapped from anywhere else in Filmons (Search, a Hashtag/
+  // Location page, Connect) -> the full Filmons -> Learning product switch.
+  const insideLearning = location.pathname.startsWith('/learning');
+
+  const open = () => {
+    if (insideLearning) navigate(`/learning/course/${course.id}`);
+    else enterLearning(`/learning/course/${course.id}`, { route: location.pathname + location.search });
+  };
 
   return (
     <button
-      onClick={() => navigate(`/learning/course/${course.id}`)}
+      onClick={open}
       className="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden active:scale-[0.98] transition-transform"
     >
       <div className="relative w-full bg-gray-100" style={{ aspectRatio: '16/9' }}>
