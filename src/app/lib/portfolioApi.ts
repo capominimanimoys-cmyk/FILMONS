@@ -42,6 +42,7 @@ export interface PortfolioItem {
   views_count?:        number;
   saves_count?:        number;
   likes_count?:        number;
+  reposts_count?:      number;
   aspect_ratio?:       number;
   width?:              number;
   height?:             number;
@@ -63,6 +64,7 @@ export interface PortfolioAlbum {
   visibility:        'public' | 'followers' | 'private';
   likes_count?:      number;
   comments_count?:   number;
+  reposts_count?:    number;
   sort_order:        number;
   created_at:        string;
   item_count?:       number;  // client-side computed
@@ -954,6 +956,37 @@ export async function togglePortfolioSave(
   );
   if (!error && creatorId) logProfileEngagement(creatorId, 'portfolio_save', userId, targetId);
   return !error;
+}
+
+// Repost -- mirrors the Post repost system (reposts table +
+// posts.reposts_count, both updated directly by the client, no DB
+// trigger) rather than a new counting convention. See
+// 20240522000000_portfolio_reposts.sql.
+export async function isPortfolioReposted(userId: string, targetId: string, targetType: PortfolioSaveTargetType): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('portfolio_reposts').select('id')
+      .eq('user_id', userId).eq('target_id', targetId).eq('target_type', targetType)
+      .maybeSingle();
+    return !!data;
+  } catch { return false; }
+}
+
+export async function togglePortfolioRepost(
+  userId: string, targetId: string, targetType: PortfolioSaveTargetType, currentlyReposted: boolean, currentCount: number,
+): Promise<boolean> {
+  const table = targetType === 'portfolio_item' ? 'portfolio_items' : 'portfolio_albums';
+  if (currentlyReposted) {
+    const { error } = await supabase.from('portfolio_reposts').delete()
+      .eq('user_id', userId).eq('target_id', targetId).eq('target_type', targetType);
+    if (error) return false;
+    await supabase.from(table).update({ reposts_count: Math.max(0, currentCount - 1) }).eq('id', targetId);
+    return true;
+  }
+  const { error } = await supabase.from('portfolio_reposts').insert({ user_id: userId, target_type: targetType, target_id: targetId });
+  if (error) return false;
+  await supabase.from(table).update({ reposts_count: currentCount + 1 }).eq('id', targetId);
+  return true;
 }
 
 // Report -- backs the Home -> Portfolio feed card menu's "Report" action.

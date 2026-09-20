@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send, Link2, EyeOff, Flag, ExternalLink } from 'lucide-react';
+import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -12,7 +12,7 @@ import { PortfolioCommentSheet, timeAgo } from '../PortfolioCommentSheet';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
-import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, type PortfolioFeedEntry } from '../../lib/portfolioApi';
+import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
@@ -37,6 +37,8 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const [saved, setSaved] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(album.likes_count ?? 0);
+  const [reposted, setReposted] = useState(false);
+  const [repostsCount, setRepostsCount] = useState(album.reposts_count ?? 0);
   const [showComments, setShowComments] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
@@ -48,6 +50,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
 
   useEffect(() => { if (user) isPortfolioSaved(user.id, album.id, 'portfolio_album').then(setSaved); }, [album.id, user?.id]);
   useEffect(() => { if (user) isAlbumLiked(album.id, user.id).then(setLiked); }, [album.id, user?.id]);
+  useEffect(() => { if (user) isPortfolioReposted(user.id, album.id, 'portfolio_album').then(setReposted); }, [album.id, user?.id]);
 
   const handleToggleSave = async () => {
     if (!user) { showGuestPrompt('Create your Filmons account to save portfolio work.', 'Sign up to save'); return; }
@@ -69,6 +72,16 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
     const ok = await toggleAlbumLike(album.id, user.id, !next);
     if (!ok) { setLiked(!next); setLikesCount(c => c + (next ? -1 : 1)); toast.error('Could not update like'); return; }
     logPortfolioInteraction(user.id, { category: (album as any).category ?? '' }, next ? 'like' : 'unlike');
+  };
+
+  const handleToggleRepost = async () => {
+    if (!user) { toast.error('Sign in to repost'); return; }
+    const next = !reposted;
+    setReposted(next);
+    setRepostsCount(c => c + (next ? 1 : -1));
+    const ok = await togglePortfolioRepost(user.id, album.id, 'portfolio_album', !next, repostsCount);
+    if (!ok) { setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); toast.error('Could not update repost'); return; }
+    toast.success(next ? 'Reposted to your followers' : 'Repost removed');
   };
 
   // Opens the draggable Portfolio overlay straight into THIS album (spec
@@ -142,6 +155,9 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         </button>
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <MessageCircle className="w-5 h-5 text-gray-400" /> {(album.comments_count ?? 0) > 0 ? album.comments_count : ''}
+        </button>
+        <button onClick={handleToggleRepost} className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
+          <Repeat2 className="w-5 h-5" /> {repostsCount > 0 ? repostsCount : ''}
         </button>
         <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" />

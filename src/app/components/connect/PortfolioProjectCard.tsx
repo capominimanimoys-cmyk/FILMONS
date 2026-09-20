@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Link2, EyeOff, Flag, ExternalLink } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -23,7 +23,7 @@ import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
-import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../../lib/portfolioApi';
+import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
 
@@ -39,6 +39,8 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
 
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(item.likes_count ?? 0);
+  const [reposted, setReposted] = useState(false);
+  const [repostsCount, setRepostsCount] = useState(item.reposts_count ?? 0);
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showItemDetail, setShowItemDetail] = useState(false);
@@ -55,6 +57,7 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
 
   useEffect(() => { if (user) isItemLiked(item.id, user.id).then(setLiked); }, [item.id, user?.id]);
   useEffect(() => { if (user) isPortfolioSaved(user.id, item.id, 'portfolio_item').then(setSaved); }, [item.id, user?.id]);
+  useEffect(() => { if (user) isPortfolioReposted(user.id, item.id, 'portfolio_item').then(setReposted); }, [item.id, user?.id]);
 
   const handleToggleLike = async () => {
     if (!user) { showGuestPrompt('Create your Filmons account to like portfolio work.', 'Sign up to like posts'); return; }
@@ -73,6 +76,16 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
     const ok = await togglePortfolioSave(user.id, item.id, 'portfolio_item', !next, creator.id);
     if (!ok) { setSaved(!next); toast.error('Could not update save'); return; }
     logPortfolioInteraction(user.id, { category: item.category, subcategory: item.subcategory }, next ? 'save' : 'unsave');
+  };
+
+  const handleToggleRepost = async () => {
+    if (!user) { toast.error('Sign in to repost'); return; }
+    const next = !reposted;
+    setReposted(next);
+    setRepostsCount(c => c + (next ? 1 : -1));
+    const ok = await togglePortfolioRepost(user.id, item.id, 'portfolio_item', !next, repostsCount);
+    if (!ok) { setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); toast.error('Could not update repost'); return; }
+    toast.success(next ? 'Reposted to your followers' : 'Repost removed');
   };
 
   // Two distinct destinations, per spec: media/title -> item detail
@@ -153,6 +166,9 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         </button>
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <MessageCircle className="w-5 h-5 text-gray-400" /> {(item.comments_count ?? 0) > 0 ? item.comments_count : ''}
+        </button>
+        <button onClick={handleToggleRepost} className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
+          <Repeat2 className="w-5 h-5" /> {repostsCount > 0 ? repostsCount : ''}
         </button>
         <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" />
