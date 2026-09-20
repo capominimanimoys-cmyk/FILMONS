@@ -1159,18 +1159,15 @@ export async function getPortfolioFeed(opts: {
     // an enum of "bad" values -- a creator with NO settings row at all is
     // NOT excluded here, matching this schema's own column default of
     // 'public' for a row that doesn't exist yet.
-    const { data: nonPublicRows } = await supabase.from('portfolio_settings').select('user_id').neq('visibility', 'public');
+    // Independent of each other (neither reads the other's result) -- run
+    // together instead of as two sequential round trips, since this whole
+    // function sits on the critical path of every Connect feed load.
+    const [{ data: nonPublicRows }, { data: albumMembershipRows }] = await Promise.all([
+      supabase.from('portfolio_settings').select('user_id').neq('visibility', 'public'),
+      supabase.from('portfolio_album_items').select('item_id').order('added_at', { ascending: false }).limit(FEED_ALBUM_MEMBERSHIP_LOOKBACK),
+    ]);
     const nonPublicUserIds = (nonPublicRows ?? []).map((r: any) => r.user_id);
-
-    const excludeItemIds = new Set<string>();
-    {
-      const { data } = await supabase
-        .from('portfolio_album_items')
-        .select('item_id')
-        .order('added_at', { ascending: false })
-        .limit(FEED_ALBUM_MEMBERSHIP_LOOKBACK);
-      (data ?? []).forEach((r: any) => excludeItemIds.add(r.item_id));
-    }
+    const excludeItemIds = new Set<string>((albumMembershipRows ?? []).map((r: any) => r.item_id));
 
     // withHidden/withSubcategory=false is the 42703 (undefined_column)
     // fallback -- same not-yet-applied-migration protection as
@@ -1351,38 +1348,40 @@ export async function getSuggestedCreators(
 ): Promise<SuggestedCreator[]> {
   const limit = opts.limit ?? 10;
   try {
-    // Same shape as Home.tsx's existing Listings creator-card query
-    // (profiles with a real name + primary_role) -- overfetch since a
-    // chunk of candidates gets filtered out below (non-public portfolio,
-    // no visible items).
-    const { data: myFollowingRows } = await supabase.from('follows').select('following_id').eq('follower_id', userId);
-    const alreadyFollowing = new Set((myFollowingRows ?? []).map((r: any) => r.following_id));
-
-    // Exclude anyone already a Professional Connection or with a pending
-    // request either direction -- the card's primary action is Connect,
-    // so someone already connected/pending isn't a useful suggestion here
-    // (per spec: never recommend already-connected or pending users).
-    const { data: connectionRows } = await supabase
-      .from('professional_connections')
-      .select('user_a_id, user_b_id')
-      .in('status', ['accepted', 'pending'])
-      .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+    // None of these four depend on each other's result -- run them
+    // together instead of as four sequential round trips (this fetch is on
+    // Connect's initial-paint critical path). `status` is selected on the
+    // connections query too so the accepted subset can be reused below as
+    // the mutual-connection signal instead of a second query for it.
+    const [{ data: myFollowingRows }, { data: connectionRows }, { data: dismissedRows }, { data: candidateRows }] = await Promise.all([
+      // Same shape as Home.tsx's existing Listings creator-card query
+      // (profiles with a real name + primary_role) -- overfetch since a
+      // chunk of candidates gets filtered out below (non-public portfolio,
+      // no visible items).
+      supabase.from('follows').select('following_id').eq('follower_id', userId),
+      // Exclude anyone already a Professional Connection or with a pending
+      // request either direction -- the card's primary action is Connect,
+      // so someone already connected/pending isn't a useful suggestion here
+      // (per spec: never recommend already-connected or pending users).
+      supabase.from('professional_connections').select('user_a_id, user_b_id, status')
+        .in('status', ['accepted', 'pending']).or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`),
+      // Dismissed ("x") suggestions stay hidden -- see connectionsApi.ts's
+      // dismissSuggestion/connection_dismissals.
+      supabase.from('connection_dismissals').select('dismissed_user_id').eq('user_id', userId),
+      supabase.from('profiles')
+        .select('id, name, username, avatar_url, primary_role, secondary_roles, city, is_verified, skills')
+        .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+        .order('is_verified', { ascending: false }).limit(limit * 6),
+    ]);
     const alreadyConnectedOrPending = new Set(
       (connectionRows ?? []).map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id),
     );
-
-    // Dismissed ("×") suggestions stay hidden -- see connectionsApi.ts's
-    // dismissSuggestion/connection_dismissals.
-    const { data: dismissedRows } = await supabase.from('connection_dismissals').select('dismissed_user_id').eq('user_id', userId);
+    const viewerConnections = new Set(
+      (connectionRows ?? []).filter((r: any) => r.status === 'accepted').map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id),
+    );
+    const alreadyFollowing = new Set((myFollowingRows ?? []).map((r: any) => r.following_id));
     const dismissed = new Set((dismissedRows ?? []).map((r: any) => r.dismissed_user_id));
 
-    const { data: candidateRows } = await supabase
-      .from('profiles')
-      .select('id, name, username, avatar_url, primary_role, secondary_roles, city, is_verified, skills')
-      .not('name', 'is', null).neq('name', '')
-      .not('primary_role', 'is', null)
-      .order('is_verified', { ascending: false })
-      .limit(limit * 6);
     const candidates = (candidateRows ?? []).filter((c: any) =>
       c.id !== userId && !alreadyFollowing.has(c.id) && !alreadyConnectedOrPending.has(c.id) && !dismissed.has(c.id));
     if (!candidates.length) return [];
@@ -1393,15 +1392,19 @@ export async function getSuggestedCreators(
     // "never query for content the viewer shouldn't see" approach
     // getPortfolioFeed uses). A candidate with no settings row at all is
     // NOT excluded, matching the schema's own 'public' column default.
-    const { data: settingsRows } = await supabase.from('portfolio_settings').select('user_id, visibility').in('user_id', candidateIds);
+    // Neither query below depends on the other (both only need
+    // candidateIds), so they run together.
+    const [{ data: settingsRows }, itemRowsRes] = await Promise.all([
+      supabase.from('portfolio_settings').select('user_id, visibility').in('user_id', candidateIds),
+      // Must have at least one visible portfolio item -- an empty or
+      // fully-hidden portfolio isn't a useful discovery recommendation.
+      // is_hidden may not exist yet if 20240423000000 hasn't been applied
+      // -- falls back to "has any item at all" on that specific error
+      // rather than breaking this feature over a not-yet-applied migration.
+      supabase.from('portfolio_items').select('user_id, is_hidden').in('user_id', candidateIds),
+    ]);
     const nonPublic = new Set((settingsRows ?? []).filter((s: any) => s.visibility !== 'public').map((s: any) => s.user_id));
-
-    // Must have at least one visible portfolio item -- an empty or fully-
-    // hidden portfolio isn't a useful discovery recommendation. is_hidden
-    // may not exist yet if 20240423000000 hasn't been applied -- falls
-    // back to "has any item at all" on that specific error rather than
-    // breaking this feature over a not-yet-applied migration.
-    let itemRows = (await supabase.from('portfolio_items').select('user_id, is_hidden').in('user_id', candidateIds));
+    let itemRows = itemRowsRes;
     if (itemRows.error?.code === '42703') {
       itemRows = await supabase.from('portfolio_items').select('user_id').in('user_id', candidateIds) as any;
     }
@@ -1412,21 +1415,6 @@ export async function getSuggestedCreators(
     const eligible = candidates.filter((c: any) => !nonPublic.has(c.id) && withVisibleItem.has(c.id));
     if (!eligible.length) return [];
     const eligibleIds = eligible.map((c: any) => c.id);
-
-    // Mutual professional Connections (not mutual Follows) -- Connect's
-    // own strongest social-proof signal, per spec. The viewer's own
-    // accepted connections were already gathered above as part of
-    // alreadyConnectedOrPending's source query -- refetch scoped to just
-    // 'accepted' since that one also includes 'pending' (not a real mutual
-    // signal). Then one batched query for every eligible candidate's own
-    // accepted connections, intersected client-side -- O(1) queries
-    // regardless of candidate count, not one per candidate.
-    const { data: viewerAcceptedRows } = await supabase
-      .from('professional_connections').select('user_a_id, user_b_id')
-      .eq('status', 'accepted').or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
-    const viewerConnections = new Set(
-      (viewerAcceptedRows ?? []).map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id),
-    );
 
     const mutualCounts = new Map<string, number>();
     if (viewerConnections.size) {

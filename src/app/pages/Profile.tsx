@@ -50,7 +50,7 @@ import * as notifs from '../lib/notifications';
 import { ProfileHeader } from '../components/profile/ProfileHeader';
 import { CreatorVerificationBanner } from '../components/profile/CreatorVerificationBanner';
 import { normalizeVerificationStatus } from '../lib/verification';
-import { getTrustProfile, type TrustProfile } from '../lib/trustApi';
+import { mapReputationRowToTrustProfile, type TrustProfile } from '../lib/trustApi';
 import { TrustDetailsSheet } from '../components/trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../components/trust/TrustProfileOverlay';
 import { getProfileInteractionStats, type ProfileInteractionStats } from '../lib/profileEngagement';
@@ -745,8 +745,10 @@ export function Profile() {
     }
     if (user) {
       load(); initAboutForm();
-      reliabilityApi.getScore(user.id).then(setRep).catch(()=>{});
-      getTrustProfile(user.id).then(setTrust).catch(()=>{});
+      // getScore() already selects '*' (every filmons_* column included),
+      // so derive TrustProfile from the same row instead of a second
+      // round trip to the exact same reputation_scores table/row.
+      reliabilityApi.getScore(user.id).then(r => { setRep(r); setTrust(mapReputationRowToTrustProfile(user.id, r)); }).catch(()=>{});
       getProfileInteractionStats(user.id).then(setInteractionStats).catch(()=>{});
       // Load badge visibility prefs
       import('../lib/settingsApi').then(({ reputationSettingsApi }) => {

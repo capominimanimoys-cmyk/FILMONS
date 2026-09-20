@@ -709,6 +709,8 @@ export const authApi = {
 // ============================================
 let _listingsCache: Listing[] | null = null;
 let _listingsCacheAt = 0; // reset to force re-fetch with fixed image parsing
+let _opportunitiesCache: Listing[] | null = null;
+let _opportunitiesCacheAt = 0;
 
 // Call after any direct (non-listingsApi.create) insert/update so the next
 // getAll() actually re-fetches instead of serving a stale 60s cache — a
@@ -718,6 +720,8 @@ let _listingsCacheAt = 0; // reset to force re-fetch with fixed image parsing
 export function invalidateListingsCache() {
   _listingsCache = null;
   _listingsCacheAt = 0;
+  _opportunitiesCache = null;
+  _opportunitiesCacheAt = 0;
 }
 
 // `rowVal || metaVal || []` is a trap: an array is truthy even when empty,
@@ -864,6 +868,10 @@ export const listingsApi = {
    *  directly instead, same eligibility (is_active = true) and legacy
    *  keyword fallback SearchOverlay's fetchCategoryBrowse already uses. */
   getOpportunities: async (): Promise<Listing[]> => {
+    // Same 60s in-memory cache as getAll() -- this was refetching its full
+    // limit(100) query on every Home mount/refresh even though Opportunity
+    // listings change far less often than "most recent 80 listings."
+    if (_opportunitiesCache?.length && Date.now() - _opportunitiesCacheAt < 60_000) return _opportunitiesCache;
     try {
       const { data, error } = await withModerationFilter((filterActive) => {
         let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
@@ -873,11 +881,14 @@ export const listingsApi = {
           .order('created_at', { ascending: false })
           .limit(100);
       });
-      if (error) { console.error('❌ getOpportunities query failed:', error.message); return []; }
-      return (data || []).map(mapListingRow);
+      if (error) { console.error('❌ getOpportunities query failed:', error.message); return _opportunitiesCache ?? []; }
+      const listings = (data || []).map(mapListingRow);
+      _opportunitiesCache = listings;
+      _opportunitiesCacheAt = Date.now();
+      return listings;
     } catch (e) {
       console.warn('getOpportunities exception:', e);
-      return [];
+      return _opportunitiesCache ?? [];
     }
   },
 

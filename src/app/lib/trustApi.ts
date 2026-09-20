@@ -58,18 +58,13 @@ const EMPTY: Omit<TrustProfile, 'userId'> = {
   identityVerified: false, updatedAt: null,
 };
 
-export async function getTrustProfile(userId: string): Promise<TrustProfile> {
-  const { data } = await supabase.from('reputation_scores').select(
-    'filmons_reliability_score, filmons_trust_level, filmons_connection_score, filmons_recommendation_score, ' +
-    'filmons_transaction_score, filmons_identity_score, filmons_valid_connections, filmons_connections_elite, ' +
-    'filmons_connections_trusted, filmons_connections_reliable, filmons_connections_building_new, ' +
-    'filmons_connections_creator, filmons_connections_creator_plus, filmons_connections_professional, filmons_connections_business, ' +
-    'filmons_valid_recommendations, filmons_completed_rentals, filmons_completed_buy_sell, ' +
-    'filmons_completed_paid_services, filmons_completed_paid_opportunities, filmons_identity_verified, filmons_score_updated_at',
-  ).eq('user_id', userId).maybeSingle();
-
+// Pure mapper, split out of getTrustProfile so a caller that has ALREADY
+// fetched a `reputation_scores` row for other reasons (e.g. Profile.tsx's
+// own reliabilityApi.getScore(), which already selects '*' -- every
+// filmons_* column included) can derive a TrustProfile from it without a
+// second round trip to the exact same table/row.
+export function mapReputationRowToTrustProfile(userId: string, data: any | null | undefined): TrustProfile {
   if (!data) return { userId, ...EMPTY };
-
   return {
     userId,
     reliabilityScore: data.filmons_reliability_score ?? 0,
@@ -99,6 +94,18 @@ export async function getTrustProfile(userId: string): Promise<TrustProfile> {
     identityVerified: data.filmons_identity_verified ?? false,
     updatedAt: data.filmons_score_updated_at ?? null,
   };
+}
+
+export async function getTrustProfile(userId: string): Promise<TrustProfile> {
+  const { data } = await supabase.from('reputation_scores').select(
+    'filmons_reliability_score, filmons_trust_level, filmons_connection_score, filmons_recommendation_score, ' +
+    'filmons_transaction_score, filmons_identity_score, filmons_valid_connections, filmons_connections_elite, ' +
+    'filmons_connections_trusted, filmons_connections_reliable, filmons_connections_building_new, ' +
+    'filmons_connections_creator, filmons_connections_creator_plus, filmons_connections_professional, filmons_connections_business, ' +
+    'filmons_valid_recommendations, filmons_completed_rentals, filmons_completed_buy_sell, ' +
+    'filmons_completed_paid_services, filmons_completed_paid_opportunities, filmons_identity_verified, filmons_score_updated_at',
+  ).eq('user_id', userId).maybeSingle();
+  return mapReputationRowToTrustProfile(userId, data);
 }
 
 // Lightweight batch fetch for feed cards (Home Portfolio/Listing cards) --
