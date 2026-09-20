@@ -1813,8 +1813,8 @@ function CoursesAllSection({ query }: { query?: string }) {
 // (product=undefined) shows everything, matching the "All is a universal
 // layer over the other three" rule.
 const PRODUCT_CATEGORY_IDS: Record<'marketplace' | 'connect' | 'learning', CategoryTab[]> = {
-  marketplace: ['rental', 'sale', 'studios', 'emergency'],
-  connect: ['creators', 'services', 'opportunities'],
+  marketplace: ['rental', 'sale', 'services', 'studios', 'opportunities', 'emergency'],
+  connect: ['creators'],
   learning: [],
 };
 
