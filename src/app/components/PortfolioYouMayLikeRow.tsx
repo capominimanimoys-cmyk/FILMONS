@@ -94,18 +94,26 @@ export function PortfolioYouMayLikeRow({ entries, trustLevels, onSeeAll }: {
   onSeeAll?: () => void;
 }) {
   if (!entries.length) return null;
+  // Single shared horizontal inset on the outer container -- the heading
+  // and the card row both sit flush against it with no padding/negative-
+  // margin math of their own, so their left edges can never drift apart
+  // (was previously -mx-3.5/px-3.5 on the row alone, which depended on
+  // exactly cancelling the parent's own p-3.5). The trailing spacer gives
+  // the last card breathing room without needing to extend the row past
+  // the container's padding.
   return (
-    <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3.5 space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] py-3.5">
+      <div className="flex items-center justify-between px-3.5 mb-3">
         <p className="text-sm font-bold text-gray-900">Portfolio You May Like</p>
         {onSeeAll && (
           <button onClick={onSeeAll} className="text-xs font-bold text-blue-600 shrink-0">See all →</button>
         )}
       </div>
-      <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-3.5 px-3.5" style={{ scrollSnapType: 'x mandatory' }}>
+      <div className="flex gap-2.5 overflow-x-auto no-scrollbar px-3.5" style={{ scrollSnapType: 'x mandatory' }}>
         {entries.map(entry => (
           <PortfolioSuggestionCard key={entry.id} entry={entry} trustLevel={trustLevels?.get(entry.creator.id)} />
         ))}
+        <div className="shrink-0 w-px" aria-hidden />
       </div>
     </div>
   );

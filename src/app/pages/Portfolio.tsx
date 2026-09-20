@@ -1195,7 +1195,22 @@ function CreateAlbumFromSelectionSheet({
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export function Portfolio() {
+// `overrideUserId`/`initialAlbumId`/`embedded` exist ONLY so this exact same
+// component/route can be mounted inside the draggable "View Portfolio"
+// presentation (see DraggablePortfolioPage.tsx) instead of navigating to a
+// separate route -- per the FILMONS rule that there must be only one
+// Portfolio UI/implementation across the app. When absent, behavior is
+// 100% unchanged from the routed page (falls back to useParams/self).
+export function Portfolio({ overrideUserId, initialAlbumId, embedded }: {
+  overrideUserId?: string;
+  /** Auto-opens this album once its data loads -- e.g. tapping an Album
+   * card's cover in Connect should land straight on that album. */
+  initialAlbumId?: string;
+  /** True when mounted inside the draggable presentation rather than at
+   * its own route -- suppresses the guest redirect (the overlay is only
+   * ever opened for a specific creator, never "my own missing profile"). */
+  embedded?: boolean;
+} = {}) {
   const { userId: paramUserId } = useParams<{ userId?: string }>();
   const { user: me } = useAuth();
   const navigate = useNavigate();
@@ -1250,17 +1265,28 @@ export function Portfolio() {
   const [shareTarget,      setShareTarget]      = useState<ShareTarget | null>(null);
   const [addToAlbumTarget, setAddToAlbumTarget] = useState<PortfolioItem | null>(null);
 
-  const targetId = paramUserId ?? me?.id;
+  const targetId = overrideUserId ?? paramUserId ?? me?.id;
   const isOwner  = !!me && !!targetId && me.id === targetId;
   const { followerCount, followingCount } = useFollowCounts(targetId);
 
   useEffect(() => {
     if (!targetId) {
-      if (!me) navigate('/login', { replace: true });
+      if (!me && !embedded) navigate('/login', { replace: true });
       return;
     }
     loadPage(targetId);
   }, [targetId]); // eslint-disable-line
+
+  // Auto-open a specific album once its data has loaded (embedded entry
+  // point only -- e.g. an Album card's cover tap in Connect).
+  const autoOpenedAlbumRef = useRef(false);
+  useEffect(() => {
+    if (!initialAlbumId || autoOpenedAlbumRef.current || !albums.length) return;
+    const target = albums.find(a => a.id === initialAlbumId);
+    if (!target) return;
+    autoOpenedAlbumRef.current = true;
+    openAlbum(target);
+  }, [initialAlbumId, albums]); // eslint-disable-line
 
   // Reuses the existing Add Work flow for Home's contextual + button (Home
   // -> Portfolio mode) instead of building a second creation flow -- Home
