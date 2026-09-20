@@ -22,6 +22,7 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 import { searchHashtagSuggestions } from '../lib/hashtagsApi';
+import { searchLocationSuggestions } from '../lib/locationsApi';
 import {
   searchMatchingListings, searchMatchingCreators,
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
@@ -58,7 +59,7 @@ interface ListingRow {
 
 interface Suggestion {
   id: string; text: string; subtext?: string;
-  icon: string; kind: 'listing' | 'creator' | 'service' | 'smart' | 'location' | 'hashtag'; action: string;
+  icon: string; kind: 'listing' | 'creator' | 'service' | 'smart' | 'location' | 'location-real' | 'hashtag'; action: string;
 }
 
 // ── Filter state ───────────────────────────────────────────────────────────────
@@ -346,7 +347,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
   if (q.length < 1) return [];
   const ql = normalize(q).replace(/[%_\\,]/g, '');
 
-  const [lRes, uRes, hashtags] = await Promise.all([
+  const [lRes, uRes, hashtags, locations] = await Promise.all([
     supabase.from('listings').select('id, title, listing_type, listing_mode')
       .ilike('title', `${ql}%`).limit(5),
     supabase.from('profiles').select('id, name, username, primary_role')
@@ -355,11 +356,24 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
     // Both "filmmaking" and "#filmmaking" find #filmmaking -- searchHashtagSuggestions
     // strips a leading '#' before matching. Shown first in the list, per spec.
     searchHashtagSuggestions(rawQ, 4),
+    // Real, DB-backed location matches (distinct from the cosmetic
+    // "${city} Videographer" canned phrases generateSmartSuggestions
+    // produces below) -- tapping one opens the dedicated /search/location
+    // page directly, per the Browse/Search spec's "Locations" suggestion
+    // group.
+    searchLocationSuggestions(rawQ, 3),
   ]);
 
   const results: Suggestion[] = [];
   const seen = new Set<string>();
 
+  for (const l of locations) {
+    results.push({
+      id: `location-${l.key}`, text: l.displayName,
+      subtext: l.mentionCount > 0 ? `${l.mentionCount} result${l.mentionCount === 1 ? '' : 's'}` : undefined,
+      icon: '📍', kind: 'location-real', action: l.key,
+    });
+  }
   for (const h of hashtags) {
     results.push({
       id: `hashtag-${h.tag}`, text: `#${h.tag}`,
@@ -1354,6 +1368,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const handleSelectSuggestion = (s: Suggestion) => {
     if (s.kind === 'hashtag') { setSuggestions([]); handleResultNavigate(`/hashtag/${s.action}`); return; }
+    if (s.kind === 'location-real') { setSuggestions([]); handleResultNavigate(`/search/location/${encodeURIComponent(s.action)}`); return; }
     setQ(s.action); setSuggestions([]); runSearch(s.action);
   };
 

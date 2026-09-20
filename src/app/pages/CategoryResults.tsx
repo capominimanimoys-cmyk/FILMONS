@@ -31,8 +31,17 @@ import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api
 import { Listing } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { HashtagCategoryResults } from './HashtagCategoryResults';
+import { LocationCategoryResults } from './LocationCategoryResults';
+import { PortfolioCategoryResults } from './PortfolioCategoryResults';
+import { PostsCategoryResults } from './PostsCategoryResults';
+import { CoursesCategoryResults } from './CoursesCategoryResults';
 import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
-import { Hash } from 'lucide-react';
+import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locationsApi';
+import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
+import { getCourses, type Course } from '../lib/coursesApi';
+import { CourseCard } from '../components/courses/CourseCard';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
+import { Hash, MapPin } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
 import { ALL_PROFESSIONS } from '../components/ProfessionPicker';
@@ -1640,6 +1649,154 @@ function HashtagsAllSection({ query }: { query?: string }) {
   );
 }
 
+// Same "max 5, View all when more exist" rule as HashtagsAllSection above.
+function LocationsAllSection({ query }: { query?: string }) {
+  const navigate = useNavigate();
+  const [results, setResults] = useState<LocationSuggestion[] | null>(null);
+
+  useEffect(() => {
+    if (!query?.trim()) { setResults(null); return; }
+    let cancelled = false;
+    searchLocationSuggestions(query, 6).then(r => { if (!cancelled) setResults(r); });
+    return () => { cancelled = true; };
+  }, [query]);
+
+  if (!query?.trim() || !results?.length) return null;
+  const shown = results.slice(0, 5);
+
+  return (
+    <div className="px-4 lg:px-0 mb-6">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-sm lg:text-base font-black text-gray-900">Locations</p>
+        {results.length > 5 && (
+          <button onClick={() => navigate('/search/category/locations', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+            View all <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {shown.map(l => (
+          <button key={l.key} onClick={() => navigate(`/search/location/${encodeURIComponent(l.key)}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+            <MapPin className="w-3.5 h-3.5 text-blue-500" /> {l.displayName}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PortfolioAllSection({ query }: { query?: string }) {
+  const navigate = useNavigate();
+  const { openPortfolioPreview } = usePortfolioPreview();
+  const [results, setResults] = useState<SearchPortfolioRow[] | null>(null);
+
+  useEffect(() => {
+    if (!query?.trim()) { setResults(null); return; }
+    let cancelled = false;
+    searchMatchingPortfolio(query).then(r => { if (!cancelled) setResults(r); });
+    return () => { cancelled = true; };
+  }, [query]);
+
+  if (!query?.trim() || !results?.length) return null;
+  const shown = results.slice(0, 5);
+
+  return (
+    <div className="px-4 lg:px-0 mb-6">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-sm lg:text-base font-black text-gray-900">Portfolio</p>
+        {results.length > 5 && (
+          <button onClick={() => navigate('/search/category/portfolio', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+            View all <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-3 lg:grid-cols-5 gap-1.5">
+        {shown.map(r => (
+          <button
+            key={`${r.type}-${r.id}`}
+            onClick={() => openPortfolioPreview(r.user_id, r.type === 'album' ? r.id : undefined)}
+            className="relative rounded-xl overflow-hidden bg-gray-100"
+            style={{ aspectRatio: 4 / 5 }}
+          >
+            {(r.thumbnail_url || r.media_url || r.cover_url) ? (
+              <img src={r.thumbnail_url || r.media_url || r.cover_url || ''} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎬</div>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PostsAllSection({ query }: { query?: string }) {
+  const navigate = useNavigate();
+  const [results, setResults] = useState<SearchPostRow[] | null>(null);
+
+  useEffect(() => {
+    if (!query?.trim()) { setResults(null); return; }
+    let cancelled = false;
+    searchMatchingPosts(query).then(r => { if (!cancelled) setResults(r); });
+    return () => { cancelled = true; };
+  }, [query]);
+
+  if (!query?.trim() || !results?.length) return null;
+  const shown = results.slice(0, 5);
+
+  return (
+    <div className="px-4 lg:px-0 mb-6">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-sm lg:text-base font-black text-gray-900">Posts</p>
+        {results.length > 5 && (
+          <button onClick={() => navigate('/search/category/posts', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+            View all <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {shown.map(p => (
+          <button key={p.id} onClick={() => navigate(`/post/${p.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
+            {p.media_urls?.[0] && <img src={p.media_urls[0]} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />}
+            <p className="text-sm text-gray-700 truncate">{p.content}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CoursesAllSection({ query }: { query?: string }) {
+  const navigate = useNavigate();
+  const [results, setResults] = useState<Course[] | null>(null);
+
+  useEffect(() => {
+    if (!query?.trim()) { setResults(null); return; }
+    let cancelled = false;
+    getCourses({ query, limit: 6 }).then(r => { if (!cancelled) setResults(r); });
+    return () => { cancelled = true; };
+  }, [query]);
+
+  if (!query?.trim() || !results?.length) return null;
+  const shown = results.slice(0, 5);
+
+  return (
+    <div className="px-4 lg:px-0 mb-6">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-sm lg:text-base font-black text-gray-900">Courses</p>
+        {results.length > 5 && (
+          <button onClick={() => navigate('/search/category/courses', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+            View all <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex gap-3 overflow-x-auto no-scrollbar">
+        {shown.map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
+      </div>
+    </div>
+  );
+}
+
 function AllGroupedResults({ navState: initialNavState }: { navState: NavState }) {
   const navigate = useNavigate();
 
@@ -1892,7 +2049,11 @@ function AllGroupedResults({ navState: initialNavState }: { navState: NavState }
       </div>
 
       <div className="py-4 lg:py-6">
+        {categoryFilter === 'all' && <LocationsAllSection query={term} />}
         {visibleCategories.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+        {categoryFilter === 'all' && <PortfolioAllSection query={term} />}
+        {categoryFilter === 'all' && <PostsAllSection query={term} />}
+        {categoryFilter === 'all' && <CoursesAllSection query={term} />}
         {categoryFilter === 'all' && <HashtagsAllSection query={term} />}
       </div>
 
@@ -1967,6 +2128,10 @@ export function CategoryResults() {
 
   if (tab === 'all') return <AllGroupedResults navState={navState}/>;
   if (tab === 'hashtags') return <HashtagCategoryResults query={navState.query} />;
+  if (tab === 'locations') return <LocationCategoryResults query={navState.query} />;
+  if (tab === 'portfolio') return <PortfolioCategoryResults query={navState.query} />;
+  if (tab === 'posts') return <PostsCategoryResults query={navState.query} />;
+  if (tab === 'courses') return <CoursesCategoryResults query={navState.query} />;
 
   const category = (tab && (CATEGORY_IDS as string[]).includes(tab)) ? (tab as CategoryTab) : null;
   if (!category) {

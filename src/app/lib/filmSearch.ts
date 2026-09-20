@@ -64,6 +64,27 @@ export interface SearchProfileRow {
 const LISTING_SELECT = LISTING_COLUMNS;
 const PROFILE_SELECT = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified, secondary_roles, skills, account_type';
 
+// Portfolio Works/Albums and Posts -- previously not searchable at all (no
+// function existed; buildPortfolioFilters() in searchUtils.ts was dead
+// code with zero callers). Same "one search, two presentations" shape as
+// listings/profiles above so SearchOverlay and CategoryResults can never
+// disagree here either.
+export interface SearchPortfolioRow {
+  id: string; type: 'item' | 'album'; user_id: string; title: string;
+  description: string | null; category?: string | null;
+  media_url?: string | null; thumbnail_url?: string | null; cover_url?: string | null;
+  visibility?: string | null; created_at?: string | null;
+}
+export interface SearchPostRow {
+  id: string; author_id: string; content: string | null;
+  media_urls?: string[] | null; visibility?: string | null; created_at?: string | null;
+}
+const PORTFOLIO_ITEM_SELECT = 'id, user_id, title, description, category, media_url, thumbnail_url, visibility, created_at';
+const PORTFOLIO_ALBUM_SELECT = 'id, user_id, title, description, category, cover_url, visibility, created_at';
+const POST_SELECT = 'id, author_id, content, media_urls, visibility, created_at';
+const PORTFOLIO_LIMIT = 200;
+const POST_LIMIT = 200;
+
 function safe(s: string) { return s.replace(/[%_\\]/g, ''); }
 
 // ── Category classification ──────────────────────────────────────────────────
@@ -235,4 +256,56 @@ export async function searchMatchingCreators(rawQuery: string): Promise<SearchPr
     scoreResult(rawQuery, b.name, b.primary_role ?? '', b.bio ?? '') -
     scoreResult(rawQuery, a.name, a.primary_role ?? '', a.bio ?? ''));
   return users;
+}
+
+async function searchPortfolioByTerms(terms: string[]): Promise<SearchPortfolioRow[]> {
+  const clauses = terms.flatMap(t => [`title.ilike.%${t}%`, `description.ilike.%${t}%`, `category.ilike.%${t}%`]).join(',');
+  const [itemsRes, albumsRes] = await Promise.all([
+    supabase.from('portfolio_items').select(PORTFOLIO_ITEM_SELECT).or(clauses).limit(PORTFOLIO_LIMIT),
+    supabase.from('portfolio_albums').select(PORTFOLIO_ALBUM_SELECT).or(clauses).limit(PORTFOLIO_LIMIT),
+  ]);
+  if (itemsRes.error) console.error('[filmSearch] portfolio items error:', itemsRes.error.message);
+  if (albumsRes.error) console.error('[filmSearch] portfolio albums error:', albumsRes.error.message);
+
+  // Discovery surface, not a personalized/gated feed -- only publicly
+  // visible rows, same convention as getHashtagContent/getLocationContent.
+  // A row with no visibility set at all is NOT excluded (matches the
+  // schema's own column default).
+  const items: SearchPortfolioRow[] = (itemsRes.data ?? [])
+    .filter((r: any) => !r.visibility || r.visibility === 'public')
+    .map((r: any) => ({ ...r, type: 'item' as const }));
+  const albums: SearchPortfolioRow[] = (albumsRes.data ?? [])
+    .filter((r: any) => !r.visibility || r.visibility === 'public')
+    .map((r: any) => ({ ...r, type: 'album' as const }));
+  return [...items, ...albums];
+}
+
+export async function searchMatchingPortfolio(rawQuery: string): Promise<SearchPortfolioRow[]> {
+  const terms = expandSearchTerms(rawQuery);
+  if (!terms.length) return [];
+  const rows = await searchPortfolioByTerms(terms);
+  rows.sort((a, b) =>
+    scoreResult(rawQuery, b.title, b.description ?? '', b.category ?? '') -
+    scoreResult(rawQuery, a.title, a.description ?? '', a.category ?? ''));
+  return rows;
+}
+
+async function searchPostsByTerms(terms: string[]): Promise<SearchPostRow[]> {
+  const { data, error } = await supabase.from('posts').select(POST_SELECT)
+    .eq('visibility', 'public')
+    .or(terms.map(t => `content.ilike.%${t}%`).join(','))
+    .order('created_at', { ascending: false })
+    .limit(POST_LIMIT);
+  if (error) console.error('[filmSearch] posts error:', error.message);
+  return (data ?? []) as SearchPostRow[];
+}
+
+export async function searchMatchingPosts(rawQuery: string): Promise<SearchPostRow[]> {
+  const terms = expandSearchTerms(rawQuery);
+  if (!terms.length) return [];
+  const rows = await searchPostsByTerms(terms);
+  rows.sort((a, b) =>
+    scoreResult(rawQuery, b.content ?? '', '', '') -
+    scoreResult(rawQuery, a.content ?? '', '', ''));
+  return rows;
 }
