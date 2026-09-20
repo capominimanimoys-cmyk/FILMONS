@@ -166,7 +166,14 @@ export async function getCourses(opts: {
   if (opts.category) q = q.eq('category', opts.category);
   if (opts.subcategory) q = q.eq('subcategory', opts.subcategory);
   if (opts.instructorId) q = q.eq('instructor_id', opts.instructorId);
-  if (opts.query?.trim()) q = q.ilike('title', `%${opts.query.trim()}%`);
+  if (opts.query?.trim()) {
+    // Title-only was too narrow for the Learning homepage's role/tool-based
+    // recommendation sections ("Recommended because you're a Photographer"
+    // rarely appears verbatim in a course TITLE, but often in its category
+    // or description) -- OR across all three instead.
+    const term = opts.query.trim();
+    q = q.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%`);
+  }
   const { data, error } = await q;
   if (error) { console.warn('[coursesApi] getCourses error:', error.message); return []; }
   const withInstructors = await attachInstructors(data ?? []);
@@ -442,4 +449,39 @@ export async function getCoursesFromInstructors(instructorIds: string[], limit =
     .order('created_at', { ascending: false }).limit(limit);
   if (error) return [];
   return attachCurriculumStats(await attachInstructors(data ?? []));
+}
+
+export interface TopInstructor {
+  id: string; name: string; avatar_url: string | null; is_verified: boolean;
+  primary_role: string | null; studentCount: number; courseCount: number;
+}
+
+/** Learning Home's "Top instructors" -- ranked by real student_count summed
+ *  across their published courses (never a fabricated learner number).
+ *  Client-side aggregation over a bounded batch rather than a DB
+ *  aggregate query, consistent with how this app avoids Postgres
+ *  functions it can't test against the live database from here. */
+export async function getTopInstructors(limit = 6): Promise<TopInstructor[]> {
+  const { data } = await supabase.from('courses').select('instructor_id, student_count')
+    .eq('status', 'published').limit(500);
+  if (!data?.length) return [];
+  const stats = new Map<string, { students: number; courses: number }>();
+  for (const row of data as any[]) {
+    const cur = stats.get(row.instructor_id) ?? { students: 0, courses: 0 };
+    cur.students += row.student_count || 0;
+    cur.courses += 1;
+    stats.set(row.instructor_id, cur);
+  }
+  const ranked = [...stats.entries()].sort((a, b) => b[1].students - a[1].students || b[1].courses - a[1].courses).slice(0, limit);
+  const ids = ranked.map(([id]) => id);
+  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url, is_verified, primary_role').in('id', ids);
+  const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  return ranked.map(([id, s]) => {
+    const p = profileMap.get(id);
+    return {
+      id, name: p?.name ?? 'Filmons instructor', avatar_url: p?.avatar_url ?? null,
+      is_verified: !!p?.is_verified, primary_role: p?.primary_role ?? null,
+      studentCount: s.students, courseCount: s.courses,
+    };
+  });
 }

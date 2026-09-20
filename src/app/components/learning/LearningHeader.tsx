@@ -22,7 +22,7 @@ export function LearningHeader() {
   const canTeach = isProfessional(user?.accountType);
 
   const navItems = [
-    { label: 'Discover', path: '/' },
+    { label: 'Home', path: '/' },
     { label: 'My Learning', path: '/my-learning' },
     ...(canTeach ? [{ label: 'Teach', path: '/create' }] : []),
   ];
@@ -40,6 +40,24 @@ export function LearningHeader() {
         <button onClick={() => leaveLearning('/search?tab=learning')} className="ml-auto w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0" aria-label="Search Learning">
           <Search className="w-4 h-4 text-gray-700" />
         </button>
+      </div>
+      {/* Mobile secondary nav -- no bottom tab bar exists for this bundle
+          (Root.tsx's MobileBottomNav never renders here), so this is the
+          only persistent way to reach My Learning/Teach from anywhere
+          other than an in-page link. */}
+      <div className="md:hidden flex items-center gap-5 px-4 pb-2.5 overflow-x-auto no-scrollbar">
+        {navItems.map(item => {
+          const active = location.pathname === item.path;
+          return (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={`shrink-0 text-xs font-bold pb-1 border-b-2 transition-colors ${active ? 'text-gray-900 border-blue-600' : 'text-gray-400 border-transparent'}`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Desktop */}
