@@ -1,7 +1,16 @@
-// FILMONS Locations -- centralized discovery object, same architecture as
-// hashtagsApi.ts. See supabase/migrations/20240520000000_locations.sql for
-// why the canonical key is a lightweight city-segment normalization
-// rather than true geocoding.
+// FILMONS Locations discovery -- same generic cross-content-type
+// architecture as hashtagsApi.ts, but built on top of the REAL, already
+// pre-existing `locations` table (id, name, city, province, postal_code,
+// country, lat, lng, uses, created_at) that locationApi.ts's Nominatim
+// geocoding flow already populates -- NOT a separate normalized-key
+// scheme. See supabase/migrations/20240520000000_locations.sql for how
+// this was discovered/reconciled (same class of bug as the hashtags
+// migration having never been applied against the real schema).
+//
+// Content's free-text location field is always "City, Province" (see
+// SmartAddressInput's mode="city"), so matching/creating a `locations` row
+// by its `city` column (case-insensitive) is the right join key -- no new
+// column needed.
 import { supabase } from '../../lib/supabase';
 
 export function normalizeLocationKey(input: string): string {
@@ -22,12 +31,14 @@ export async function indexContentLocation(contentType: LocationContentType, con
     await supabase.from('location_mentions').delete().eq('content_type', contentType).eq('content_id', contentId);
     const text = (locationText ?? '').trim();
     if (!text) return;
-    const key = normalizeLocationKey(text);
-    if (!key) return;
+    const cityKey = normalizeLocationKey(text);
+    if (!cityKey) return;
 
-    let { data: loc } = await supabase.from('locations').select('id').eq('normalized_key', key).maybeSingle();
+    let { data: loc } = await supabase.from('locations').select('id').ilike('city', cityKey).limit(1).maybeSingle();
     if (!loc) {
-      const { data: created } = await supabase.from('locations').insert({ normalized_key: key, display_name: text }).select('id').maybeSingle();
+      const { data: created } = await supabase.from('locations')
+        .insert({ name: text, city: text.split(',')[0].trim(), country: 'Canada' })
+        .select('id').maybeSingle();
       loc = created;
     }
     if (!loc) return;
@@ -52,22 +63,21 @@ export interface LocationSuggestion {
 export async function searchLocationSuggestions(query: string, limit = 10): Promise<LocationSuggestion[]> {
   const q = normalizeLocationKey(query);
   if (!q) return [];
-  const { data, error } = await supabase.from('locations').select('normalized_key, display_name, mention_count')
-    .ilike('normalized_key', `%${q}%`)
-    .order('mention_count', { ascending: false })
-    .order('last_used_at', { ascending: false })
+  const { data, error } = await supabase.from('locations').select('city, name, uses')
+    .ilike('city', `%${q}%`)
+    .order('uses', { ascending: false })
     .limit(50);
   if (error || !data?.length) return [];
 
-  const tier = (key: string) => key === q ? 0 : key.startsWith(q) ? 1 : 2;
-  const ranked = [...data].sort((a: any, b: any) => tier(a.normalized_key) - tier(b.normalized_key) || b.mention_count - a.mention_count);
-  return ranked.slice(0, limit).map((l: any) => ({ key: l.normalized_key, displayName: l.display_name, mentionCount: l.mention_count }));
+  const tier = (city: string) => city.toLowerCase() === q ? 0 : city.toLowerCase().startsWith(q) ? 1 : 2;
+  const ranked = [...data].sort((a: any, b: any) => tier(a.city ?? '') - tier(b.city ?? '') || b.uses - a.uses);
+  return ranked.slice(0, limit).map((l: any) => ({ key: (l.city ?? '').toLowerCase(), displayName: l.name || l.city, mentionCount: l.uses }));
 }
 
 export async function getLocation(keyInput: string): Promise<LocationSuggestion | null> {
   const key = normalizeLocationKey(keyInput);
-  const { data } = await supabase.from('locations').select('normalized_key, display_name, mention_count').eq('normalized_key', key).maybeSingle();
-  return data ? { key: data.normalized_key, displayName: data.display_name, mentionCount: data.mention_count } : null;
+  const { data } = await supabase.from('locations').select('city, name, uses').ilike('city', key).limit(1).maybeSingle();
+  return data ? { key: (data.city ?? '').toLowerCase(), displayName: data.name || data.city, mentionCount: data.uses } : null;
 }
 
 export interface LocationPost {
@@ -92,7 +102,7 @@ export interface LocationContent {
  *  visibility-respecting (same pattern as getHashtagContent). */
 export async function getLocationContent(keyInput: string, limit = 30): Promise<LocationContent> {
   const key = normalizeLocationKey(keyInput);
-  const { data: locRow } = await supabase.from('locations').select('id').eq('normalized_key', key).maybeSingle();
+  const { data: locRow } = await supabase.from('locations').select('id').ilike('city', key).limit(1).maybeSingle();
   if (!locRow) return { posts: [], portfolio: [], listings: [] };
 
   const { data: mentions } = await supabase.from('location_mentions')
