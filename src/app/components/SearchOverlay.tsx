@@ -14,7 +14,9 @@ import { supabase } from '../../lib/supabase';
 import {
   expandQuery, normalize, extractLocation,
 } from '../lib/searchUtils';
-import { withModerationFilter } from '../lib/api';
+import { withModerationFilter, postsApi } from '../lib/api';
+import { PostCard } from './PostCard';
+import type { Post } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
 import { getLockedOpportunityIds } from '../lib/entitlements';
@@ -1144,6 +1146,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // same PREVIEW_LIMIT-and-"View all" pattern as every other section.
   const [rawPortfolio,   setRawPortfolio]   = useState<SearchPortfolioRow[]>([]);
   const [rawPosts,       setRawPosts]       = useState<SearchPostRow[]>([]);
+  // rawPosts is the lightweight match set (drives the count/"View all"
+  // gate below); only the first PREVIEW_LIMIT get hydrated into full Post
+  // objects so this preview renders through the same universal PostCard
+  // Home uses without paying for post bodies it never shows.
+  const [shownPosts,     setShownPosts]     = useState<Post[]>([]);
   const [rawHashtags,    setRawHashtags]    = useState<HashtagSuggestion[]>([]);
   // Cached account_type per Opportunity-listing owner, used to exclude
   // locked (over-tier) listings from every result surface here -- grows
@@ -1283,6 +1290,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     });
     return () => { cancelled = true; };
   }, [rawListings]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const ids = rawPosts.slice(0, PREVIEW_LIMIT).map(r => r.id);
+    if (!ids.length) { setShownPosts([]); return; }
+    let cancelled = false;
+    postsApi.getByIds(ids).then(posts => {
+      if (cancelled) return;
+      const byId = new Map(posts.map(p => [p.id, p]));
+      setShownPosts(ids.map(id => byId.get(id)).filter((p): p is Post => !!p));
+    });
+    return () => { cancelled = true; };
+  }, [rawPosts]);
 
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
   useEffect(() => {
@@ -1753,13 +1772,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <ResultSection label="📝 Posts" count={Math.min(visiblePosts.length, PREVIEW_LIMIT)}
                   footer={visiblePosts.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts' as TabId)}/> : undefined}>
-                  {visiblePosts.slice(0, PREVIEW_LIMIT).map(p => (
-                    <button key={p.id} onClick={() => handleResultNavigate(`/post/${p.id}`)}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50">
-                      {p.media_urls?.[0] && <img src={p.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />}
-                      <p className="text-sm text-gray-700 truncate">{p.content}</p>
-                    </button>
-                  ))}
+                  <div className="px-4 space-y-3 py-1">
+                    {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
+                  </div>
                 </ResultSection>
               )}
               {visibleHashtags.length > 0 && (

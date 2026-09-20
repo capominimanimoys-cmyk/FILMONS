@@ -1,39 +1,24 @@
 // FILMONS Browse Search -- /search/category/posts. All Posts matching the
-// active search query. Mirrors HashtagCategoryResults.tsx's structure;
-// taps open the real /post/:id (reuses the universal Post Card there --
-// no search-specific post card, per spec).
+// active search query, rendered through the exact same universal PostCard
+// Home uses (full like/comment/repost/share interactions) -- no
+// search-specific post card, per spec.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Search, BadgeCheck } from 'lucide-react';
-import { searchMatchingPosts, type SearchPostRow } from '../lib/filmSearch';
-import { supabase } from '../../lib/supabase';
-import { UserAvatar } from '../components/AccountTypeBadge';
+import { ArrowLeft, Search } from 'lucide-react';
+import { searchAndHydratePosts } from '../lib/filmSearch';
+import { PostCard } from '../components/PostCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
-
-interface AuthoredPost extends SearchPostRow {
-  authorName: string; authorAvatar: string | null; authorVerified: boolean;
-}
-
-async function attachAuthors(rows: SearchPostRow[]): Promise<AuthoredPost[]> {
-  if (!rows.length) return [];
-  const authorIds = [...new Set(rows.map(r => r.author_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url, is_verified').in('id', authorIds);
-  const map = new Map((profiles ?? []).map((p: any) => [p.id, p]));
-  return rows.map(r => {
-    const p = map.get(r.author_id);
-    return { ...r, authorName: p?.name ?? 'Filmons user', authorAvatar: p?.avatar_url ?? null, authorVerified: !!p?.is_verified };
-  });
-}
+import type { Post } from '../types';
 
 export function PostsCategoryResults({ query: initialQuery }: { query?: string }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery ?? '');
-  const [results, setResults] = useState<AuthoredPost[] | null>(null);
+  const [results, setResults] = useState<Post[] | null>(null);
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
     setResults(null);
-    const t = setTimeout(() => { searchMatchingPosts(query).then(attachAuthors).then(setResults); }, 250);
+    const t = setTimeout(() => { searchAndHydratePosts(query).then(setResults); }, 250);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -62,20 +47,8 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
         ) : results.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-16">No posts matching "{query}"</p>
         ) : (
-          <div className="space-y-2">
-            {results.map(p => (
-              <button key={p.id} onClick={() => navigate(`/post/${p.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
-                {p.media_urls?.[0] && <img src={p.media_urls[0]} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1">
-                    <UserAvatar user={{ id: p.author_id, name: p.authorName, avatar: p.authorAvatar ?? undefined }} size={20} />
-                    <p className="text-xs font-bold text-gray-900 truncate">{p.authorName}</p>
-                    {p.authorVerified && <BadgeCheck className="w-3 h-3 text-blue-500 shrink-0" />}
-                  </div>
-                  <p className="text-xs text-gray-600 truncate mt-0.5">{p.content}</p>
-                </div>
-              </button>
-            ))}
+          <div className="space-y-3">
+            {results.map(p => <PostCard key={p.id} post={p} />)}
           </div>
         )}
       </div>

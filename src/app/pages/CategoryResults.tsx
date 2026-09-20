@@ -27,8 +27,9 @@ import {
   Bookmark, Calendar, CalendarClock, X, ChevronDown, ChevronLeft, ChevronRight, Heart, CheckCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { withModerationFilter, LISTING_COLUMNS, mapListingRow } from '../lib/api';
-import { Listing } from '../types';
+import { withModerationFilter, LISTING_COLUMNS, mapListingRow, postsApi } from '../lib/api';
+import { Listing, type Post } from '../types';
+import { PostCard } from '../components/PostCard';
 import { useAuth } from '../context/AuthContext';
 import { HashtagCategoryResults } from './HashtagCategoryResults';
 import { LocationCategoryResults } from './LocationCategoryResults';
@@ -1732,17 +1733,32 @@ function PortfolioAllSection({ query }: { query?: string }) {
 
 function PostsAllSection({ query }: { query?: string }) {
   const navigate = useNavigate();
+  // Lightweight match rows drive the count/"View all" gate; only the first
+  // 5 get hydrated into full Post objects (below) so this preview doesn't
+  // pay for post bodies it never renders.
   const [results, setResults] = useState<SearchPostRow[] | null>(null);
+  const [shownPosts, setShownPosts] = useState<Post[]>([]);
 
   useEffect(() => {
-    if (!query?.trim()) { setResults(null); return; }
+    if (!query?.trim()) { setResults(null); setShownPosts([]); return; }
     let cancelled = false;
     searchMatchingPosts(query).then(r => { if (!cancelled) setResults(r); });
     return () => { cancelled = true; };
   }, [query]);
 
+  useEffect(() => {
+    const ids = (results ?? []).slice(0, 5).map(r => r.id);
+    if (!ids.length) { setShownPosts([]); return; }
+    let cancelled = false;
+    postsApi.getByIds(ids).then(posts => {
+      if (cancelled) return;
+      const byId = new Map(posts.map(p => [p.id, p]));
+      setShownPosts(ids.map(id => byId.get(id)).filter((p): p is Post => !!p));
+    });
+    return () => { cancelled = true; };
+  }, [results]);
+
   if (!query?.trim() || !results?.length) return null;
-  const shown = results.slice(0, 5);
 
   return (
     <div className="px-4 lg:px-0 mb-6">
@@ -1754,13 +1770,8 @@ function PostsAllSection({ query }: { query?: string }) {
           </button>
         )}
       </div>
-      <div className="space-y-2">
-        {shown.map(p => (
-          <button key={p.id} onClick={() => navigate(`/post/${p.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
-            {p.media_urls?.[0] && <img src={p.media_urls[0]} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />}
-            <p className="text-sm text-gray-700 truncate">{p.content}</p>
-          </button>
-        ))}
+      <div className="space-y-3">
+        {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
       </div>
     </div>
   );

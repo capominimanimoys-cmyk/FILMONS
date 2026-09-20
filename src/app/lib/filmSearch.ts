@@ -16,8 +16,9 @@
 // module is only the "what actually matches the query" layer underneath
 // that.
 import { supabase } from '../../lib/supabase';
-import { withModerationFilter, LISTING_COLUMNS } from './api';
+import { withModerationFilter, LISTING_COLUMNS, postsApi } from './api';
 import { expandQuery, normalize, scoreResult } from './searchUtils';
+import type { Post } from '../types';
 
 // Full listing row shape, not just the text fields matching needs -- a
 // listing's Opportunity details (paid/deadline/roleNeeded/etc.) live inside
@@ -308,4 +309,20 @@ export async function searchMatchingPosts(rawQuery: string): Promise<SearchPostR
     scoreResult(rawQuery, b.content ?? '', '', '') -
     scoreResult(rawQuery, a.content ?? '', '', ''));
   return rows;
+}
+
+/** Same match set as searchMatchingPosts, hydrated into full Post objects
+ *  (likes/comments/author/media/etc.) so search results can render through
+ *  the exact same universal PostCard Home uses instead of a lighter
+ *  search-specific summary row -- per spec, search decides WHAT to show,
+ *  the original feature decides HOW. postsApi.getByIds doesn't preserve
+ *  input order, so results are re-sorted back into the relevance order
+ *  searchMatchingPosts already computed. */
+export async function searchAndHydratePosts(rawQuery: string, limit?: number): Promise<Post[]> {
+  const rows = await searchMatchingPosts(rawQuery);
+  const ordered = limit ? rows.slice(0, limit) : rows;
+  if (!ordered.length) return [];
+  const posts = await postsApi.getByIds(ordered.map(r => r.id));
+  const byId = new Map(posts.map(p => [p.id, p]));
+  return ordered.map(r => byId.get(r.id)).filter((p): p is Post => !!p);
 }
