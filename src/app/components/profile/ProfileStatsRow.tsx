@@ -57,7 +57,6 @@ export function ProfileStatsRow({
       )}
       <Stat value={followerCount}    label="Followers"           onClick={onTapFollowers} />
       <Stat value={followingCount}   label="Following"           onClick={onTapFollowing} />
-      <Stat value={interactionCount} label="Profile Interaction" onClick={onTapInteraction} />
     </div>
   );
 }
