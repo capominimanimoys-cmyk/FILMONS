@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { BadgeCheck, MapPin, Clock, UserCheck, MoreHorizontal, User as UserIcon, ThumbsDown, Flag } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { sendConnectionRequest } from '../lib/connectionsApi';
+import { sendConnectionRequest, dismissSuggestion } from '../lib/connectionsApi';
 import { ConnectFlowSheet } from './ConnectFlowSheet';
 import { UserAvatar } from './AccountTypeBadge';
 import { BottomSheet, SheetAction, SheetCancel } from './BottomSheet';
@@ -125,14 +125,22 @@ function SuggestedCreatorCard({ creator, onNotInterested }: { creator: Suggested
 }
 
 export function PeopleYouMayKnowRow({ creators, onSeeAll }: { creators: SuggestedCreator[]; onSeeAll?: () => void }) {
+  const { user } = useAuth();
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const visible = creators.filter(c => !dismissedIds.has(c.id));
   if (!visible.length) return null;
 
+  const handleNotInterested = (creatorId: string) => {
+    setDismissedIds(prev => new Set([...prev, creatorId]));
+    // Persisted (not just this session) so the same person doesn't
+    // resurface next load -- see connection_dismissals.
+    if (user) dismissSuggestion(user.id, creatorId);
+  };
+
   return (
     <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3.5 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-bold text-gray-900">People you may want to connect with</p>
+        <p className="text-sm font-bold text-gray-900">People you may like to connect with</p>
         {onSeeAll && (
           <button onClick={onSeeAll} className="text-xs font-bold text-blue-600 shrink-0">See all →</button>
         )}
@@ -142,7 +150,7 @@ export function PeopleYouMayKnowRow({ creators, onSeeAll }: { creators: Suggeste
           more" affordance without needing arrows/dots. */}
       <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-3.5 px-3.5" style={{ scrollSnapType: 'x mandatory' }}>
         {visible.map(c => (
-          <SuggestedCreatorCard key={c.id} creator={c} onNotInterested={() => setDismissedIds(prev => new Set([...prev, c.id]))} />
+          <SuggestedCreatorCard key={c.id} creator={c} onNotInterested={() => handleNotInterested(c.id)} />
         ))}
       </div>
     </div>

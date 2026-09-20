@@ -21,7 +21,7 @@ export function ProfileHeader({
   isOwner, onTapCover, onTapAvatar, onEditProfile, onShare, onMenu,
   isFollowing, isPending, onFollow, onMessage,
   connectionStatus, onConnect,
-  followerCount, followingCount, interactionCount, onTapFollowers, onTapFollowing, onTapInteraction,
+  connectionCount, followerCount, followingCount, interactionCount, onTapConnections, onTapFollowers, onTapFollowing, onTapInteraction,
 }: {
   coverPhoto?: string | null;
   avatar?: string | null;
@@ -63,9 +63,11 @@ export function ProfileHeader({
   // identity block, per spec ("Move these three stats directly into the
   // Profile header area"). Shared ProfileStatsRow so Profile.tsx and
   // HostProfile.tsx can never drift on placement/behavior.
+  connectionCount?: number | null;
   followerCount: number | null;
   followingCount: number | null;
   interactionCount: number | null;
+  onTapConnections?: () => void;
   onTapFollowers: () => void;
   onTapFollowing: () => void;
   onTapInteraction?: () => void;
@@ -190,9 +192,11 @@ export function ProfileHeader({
       {/* Stats -- full-bleed (outside the px-3 identity padding above), no
           border above/below/between (see ProfileStatsRow itself). */}
       <ProfileStatsRow
+        connectionCount={connectionCount}
         followerCount={followerCount}
         followingCount={followingCount}
         interactionCount={interactionCount}
+        onTapConnections={onTapConnections}
         onTapFollowers={onTapFollowers}
         onTapFollowing={onTapFollowing}
         onTapInteraction={onTapInteraction}

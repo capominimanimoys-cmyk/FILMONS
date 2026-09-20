@@ -1288,9 +1288,11 @@ export function Profile() {
         onEditProfile={() => setEditProfileSection('about')}
         onShare={() => { captureSnapshot(); navigate('/share-card'); }}
         onMenu={() => setShowActionSheet(true)}
+        connectionCount={connectionCount}
         followerCount={followerCount}
         followingCount={followingCount}
         interactionCount={interactionStats?.total ?? null}
+        onTapConnections={() => navigate('/connections')}
         onTapFollowers={() => setShowFollowers('followers')}
         onTapFollowing={() => setShowFollowers('following')}
       />

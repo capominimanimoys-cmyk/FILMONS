@@ -146,6 +146,41 @@ export async function getMutualConnectionCount(meId: string, otherId: string): P
   return theirs.filter(c => mineIds.has(c.otherUser.id)).length;
 }
 
+// Pending requests `userId` has SENT (Requests -> Sent tab) -- the mirror
+// of listPendingReceived above.
+export async function listSentRequests(userId: string): Promise<ConnectionSummary[]> {
+  const { data, error } = await supabase.from('professional_connections')
+    .select('id, user_a_id, user_b_id, created_at, requested_by, note')
+    .eq('status', 'pending').eq('requested_by', userId)
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+  if (error || !data?.length) return [];
+
+  const otherIds = data.map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id);
+  const { data: profileRows } = await supabase
+    .from('profiles').select('id, name, username, avatar_url, account_type, is_verified').in('id', otherIds);
+  const profileMap = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
+
+  return data
+    .map((r: any) => {
+      const otherId = r.user_a_id === userId ? r.user_b_id : r.user_a_id;
+      const otherUser = profileMap.get(otherId);
+      return otherUser ? { id: r.id, otherUser, createdAt: r.created_at, note: r.note } : null;
+    })
+    .filter((r): r is ConnectionSummary => r !== null);
+}
+
+// Withdraw a request I sent -- same underlying transition as declining one
+// I received (status -> 'declined'); either party ending a pending request
+// collapses to the same "not connected, request is gone" end state.
+export async function withdrawConnectionRequest(meId: string, otherId: string): Promise<boolean> {
+  const [a, b] = orderedPair(meId, otherId);
+  const { error } = await supabase.from('professional_connections')
+    .update({ status: 'declined', responded_at: new Date().toISOString() })
+    .eq('user_a_id', a).eq('user_b_id', b);
+  return !error;
+}
+
 export type ConnectionDegree = 1 | 2 | 3;
 
 // LinkedIn-style network degree -- 1st (directly connected), 2nd (share a
@@ -157,4 +192,19 @@ export async function getConnectionDegree(meId: string, otherId: string): Promis
   if (status === 'connected') return 1;
   const mutual = await getMutualConnectionCount(meId, otherId);
   return mutual > 0 ? 2 : 3;
+}
+
+// ── Suggested connections dismissal ──────────────────────────────────────
+// The actual suggestion algorithm is getSuggestedCreators() in
+// portfolioApi.ts (already scores by mutual connections + verification +
+// portfolio quality) -- reused as-is by both Home's discovery row and
+// /connections' Suggested tab per spec ("do not maintain separate
+// algorithms"), rather than a second parallel scorer here. This just adds
+// the one piece that didn't exist yet: remembering a dismissal so "×" on a
+// card actually keeps that person from resurfacing.
+export async function dismissSuggestion(userId: string, dismissedUserId: string): Promise<boolean> {
+  const { error } = await supabase.from('connection_dismissals').upsert(
+    { user_id: userId, dismissed_user_id: dismissedUserId }, { onConflict: 'user_id,dismissed_user_id' },
+  );
+  return !error;
 }

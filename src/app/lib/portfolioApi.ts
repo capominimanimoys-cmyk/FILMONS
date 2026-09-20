@@ -1371,6 +1371,11 @@ export async function getSuggestedCreators(
       (connectionRows ?? []).map((r: any) => r.user_a_id === userId ? r.user_b_id : r.user_a_id),
     );
 
+    // Dismissed ("×") suggestions stay hidden -- see connectionsApi.ts's
+    // dismissSuggestion/connection_dismissals.
+    const { data: dismissedRows } = await supabase.from('connection_dismissals').select('dismissed_user_id').eq('user_id', userId);
+    const dismissed = new Set((dismissedRows ?? []).map((r: any) => r.dismissed_user_id));
+
     const { data: candidateRows } = await supabase
       .from('profiles')
       .select('id, name, username, avatar_url, primary_role, secondary_roles, city, is_verified, skills')
@@ -1379,7 +1384,7 @@ export async function getSuggestedCreators(
       .order('is_verified', { ascending: false })
       .limit(limit * 6);
     const candidates = (candidateRows ?? []).filter((c: any) =>
-      c.id !== userId && !alreadyFollowing.has(c.id) && !alreadyConnectedOrPending.has(c.id));
+      c.id !== userId && !alreadyFollowing.has(c.id) && !alreadyConnectedOrPending.has(c.id) && !dismissed.has(c.id));
     if (!candidates.length) return [];
     const candidateIds = candidates.map((c: any) => c.id);
 

@@ -14,12 +14,17 @@ function formatCount(n: number | null): string {
 }
 
 export function ProfileStatsRow({
-  followerCount, followingCount, interactionCount,
-  onTapFollowers, onTapFollowing, onTapInteraction,
+  connectionCount, followerCount, followingCount, interactionCount,
+  onTapConnections, onTapFollowers, onTapFollowing, onTapInteraction,
 }: {
+  /** A real, accepted Professional Connection (mutual) -- distinct from
+   * Follow (one-directional). Omit to hide the stat entirely (e.g. another
+   * user's Profile whose privacy settings don't allow exposing it). */
+  connectionCount?: number | null;
   followerCount: number | null;
   followingCount: number | null;
   interactionCount: number | null;
+  onTapConnections?: () => void;
   onTapFollowers: () => void;
   onTapFollowing: () => void;
   /** Owner: can later open a Profile analytics/details experience once one
@@ -47,6 +52,9 @@ export function ProfileStatsRow({
 
   return (
     <div className="flex items-stretch bg-white">
+      {connectionCount != null && (
+        <Stat value={connectionCount} label="Connections" onClick={onTapConnections} />
+      )}
       <Stat value={followerCount}    label="Followers"           onClick={onTapFollowers} />
       <Stat value={followingCount}   label="Following"           onClick={onTapFollowing} />
       <Stat value={interactionCount} label="Profile Interaction" onClick={onTapInteraction} />

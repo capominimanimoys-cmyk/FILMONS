@@ -1327,7 +1327,7 @@ export function Home() {
                         <PeopleYouMayKnowRow
                           key="people-you-may-know"
                           creators={suggestedCreators}
-                          onSeeAll={() => navigate('/search/category/creators')}
+                          onSeeAll={() => navigate('/connections/suggested')}
                         />
                       ) : item.kind === 'portfolio-suggested' ? (
                         <PortfolioYouMayLikeRow
@@ -1517,7 +1517,7 @@ export function Home() {
                     <PeopleYouMayKnowRow
                       key="people-you-may-know"
                       creators={suggestedCreators}
-                      onSeeAll={() => navigate('/search/category/creators')}
+                      onSeeAll={() => navigate('/connections/suggested')}
                     />
                   ) : item.kind === 'portfolio-suggested' ? (
                     <PortfolioYouMayLikeRow

@@ -150,6 +150,8 @@ export const router = createBrowserRouter([
       { path: 'share-card', Component: ShareCard },
       { path: 'verification', Component: Verification },
       { path: 'connections', Component: MyConnections },
+      { path: 'connections/requests', Component: MyConnections },
+      { path: 'connections/suggested', Component: MyConnections },
       { path: 'refund-policy', Component: RefundPolicy },
       { path: 'privacy-policy', Component: PrivacyPolicy },
       { path: 'terms-conditions', Component: TermsConditions },
