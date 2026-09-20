@@ -162,9 +162,13 @@ export function ProfileAllTab({
         onViewAll={onViewAllRecommendations} onRecommend={onRecommend}
       />
 
-      {isOwner && <ProfileInteractionSection stats={interactionStats} />}
-
       <SocialLinksSection links={socialLinks} isOwner={isOwner} onEdit={onEditSocialLinks} creatorId={userId} actorId={viewerId} />
+
+      {/* Bottom of the page, both Own Profile and Host/public Profile --
+          per spec, a viewer only ever sees the simple last-30-days total +
+          trend (no detailed breakdown/"View analytics" link, which stays
+          owner-only whenever that's built). */}
+      <ProfileInteractionSection stats={interactionStats} />
     </div>
   );
 }

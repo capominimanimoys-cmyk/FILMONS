@@ -453,9 +453,11 @@ export function HostProfile() {
         onMessage={handleMessage}
         connectionStatus={me && me.id !== host.id ? connectionStatus : undefined}
         onConnect={handleConnect}
+        connectionCount={connectionCount}
         followerCount={followerCount}
         followingCount={followingCount}
         interactionCount={interactionStats?.total ?? null}
+        onTapConnections={() => navigate(`/connections?user=${host.id}`)}
         onTapFollowers={() => setShowFollowers('followers')}
         onTapFollowing={() => setShowFollowers('following')}
       />
