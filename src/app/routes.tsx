@@ -55,6 +55,7 @@ import MyOrders from './pages/MyOrders';
 import { SearchPage } from './pages/SearchPage';
 import { CategoryResults } from './pages/CategoryResults';
 import { HashtagPage } from './pages/HashtagPage';
+import { LocationPage } from './pages/LocationPage';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { GoogleSignup }  from './pages/GoogleSignup';
 import { CompleteProfile } from './pages/Onboarding';
@@ -141,6 +142,7 @@ export const router = createBrowserRouter([
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'hashtag/:tag', Component: HashtagPage },
+      { path: 'search/location/:key', Component: LocationPage },
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },
       { path: 'edit-portfolio-item/:itemId', Component: EditPortfolioItem },

@@ -138,13 +138,13 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
 
       <div className="flex items-center gap-5 mt-3 pt-3 border-t border-gray-50">
         <button onClick={handleToggleLike} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
-          <Heart className={`w-5 h-5 ${liked ? 'text-red-500 fill-red-500' : 'text-gray-400'}`} /> Like{likesCount > 0 ? ` · ${likesCount}` : ''}
+          <Heart className={`w-5 h-5 ${liked ? 'text-red-500 fill-red-500' : 'text-gray-400'}`} /> {likesCount > 0 ? likesCount : ''}
         </button>
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
-          <MessageCircle className="w-5 h-5 text-gray-400" /> Comment{(album.comments_count ?? 0) > 0 ? ` · ${album.comments_count}` : ''}
+          <MessageCircle className="w-5 h-5 text-gray-400" /> {(album.comments_count ?? 0) > 0 ? album.comments_count : ''}
         </button>
         <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
-          <Send className="w-5 h-5 text-gray-400" /> Share
+          <Send className="w-5 h-5 text-gray-400" />
         </button>
         <button onClick={handleToggleSave} className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Bookmark className={`w-5 h-5 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-400'}`} /> Save

@@ -5,6 +5,7 @@ import * as notifs from './notifications';
 import { logProfileEngagement } from './profileEngagement';
 import { logActivityEvent, type ActivityType } from './activityApi';
 import { indexContentHashtags } from './hashtagsApi';
+import { indexContentLocation } from './locationsApi';
 import { toast } from 'sonner';
 
 // Runs a listings query that filters out paused/removed listings, but
@@ -1092,6 +1093,8 @@ export const listingsApi = {
               descriptionExcerpt: (newListing.description || '').slice(0, 160) || undefined,
             },
           });
+          indexContentHashtags('listing', data.id, `${newListing.title} ${newListing.description}`).catch(() => {});
+          indexContentLocation('listing', data.id, newListing.city).catch(() => {});
           return { ...newListing, id: data.id };
         }
         // Show the exact Supabase error in the UI
@@ -1812,6 +1815,7 @@ export const postsApi = {
     });
 
     indexContentHashtags('post', String(data.id), data.content || content).catch(() => {});
+    if (extraMeta?.location) indexContentLocation('post', String(data.id), extraMeta.location).catch(() => {});
 
     return {
       id:              String(data.id),
@@ -1859,6 +1863,7 @@ export const postsApi = {
       .eq('id', postId);
     if (error) throw new Error(error.message);
     if (typeof updates.content === 'string') indexContentHashtags('post', postId, updates.content).catch(() => {});
+    if (updates.location !== undefined) indexContentLocation('post', postId, updates.location).catch(() => {});
   },
 
   toggleLike: async (postId: string): Promise<{ liked: boolean; likesCount: number }> => {

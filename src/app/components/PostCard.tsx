@@ -29,6 +29,7 @@ import { EditPostModal } from './EditPostModal';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './connect/PostMoreMenu';
 import { SharePostSheet } from './connect/SharePostSheet';
+import { normalizeLocationKey } from '../lib/locationsApi';
 import { LikesSheet } from './LikesSheet';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
@@ -1346,7 +1347,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                   <div className="px-2 py-2">
                     <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Post Details</p>
                     {hasLoc && (
-                      <button onClick={()=>setShowMetaSheet(false)}
+                      <button onClick={()=>{ setShowMetaSheet(false); navigate(`/search/location/${encodeURIComponent(normalizeLocationKey((localPost as any).location))}`); }}
                         className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
                         <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
                           <MapPin className="w-4 h-4 text-blue-500"/>

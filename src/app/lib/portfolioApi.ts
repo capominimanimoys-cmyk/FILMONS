@@ -8,6 +8,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { logProfileEngagement } from './profileEngagement';
 import { toStringArray } from './normalizeList';
 import { indexContentHashtags } from './hashtagsApi';
+import { indexContentLocation } from './locationsApi';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text';
 
@@ -248,6 +249,7 @@ export async function createPortfolioItem(
     .single();
   if (error) { console.error('[portfolio] create error:', error.message); return null; }
   indexContentHashtags('portfolio_item', data.id, `${item.title ?? ''} ${item.description ?? ''}`).catch(() => {});
+  indexContentLocation('portfolio_item', data.id, item.location).catch(() => {});
   return data as PortfolioItem;
 }
 
@@ -267,6 +269,7 @@ export async function updatePortfolioItem(
     const { data: row } = await supabase.from('portfolio_items').select('title, description').eq('id', id).maybeSingle();
     indexContentHashtags('portfolio_item', id, `${row?.title ?? ''} ${row?.description ?? ''}`).catch(() => {});
   }
+  if (updates.location !== undefined) indexContentLocation('portfolio_item', id, updates.location).catch(() => {});
   return true;
 }
 
@@ -510,6 +513,7 @@ export async function updateAlbum(
     const { data: row } = await supabase.from('portfolio_albums').select('title, description').eq('id', id).maybeSingle();
     indexContentHashtags('portfolio_album', id, `${row?.title ?? ''} ${row?.description ?? ''}`).catch(() => {});
   }
+  if (updates.location !== undefined) indexContentLocation('portfolio_album', id, updates.location).catch(() => {});
   return true;
 }
 

@@ -72,7 +72,7 @@ export async function attachHashtagsToPost(postId: string, tags: string[]): Prom
 // ── New: generic multi-content-type indexing + discovery, per the FILMONS
 // Browse Search Hashtag Support spec. ──────────────────────────────────────
 
-export type HashtagContentType = 'post' | 'portfolio_item' | 'portfolio_album' | 'course';
+export type HashtagContentType = 'post' | 'portfolio_item' | 'portfolio_album' | 'course' | 'listing';
 
 async function indexContentHashtagList(contentType: HashtagContentType, contentId: string, tags: string[]): Promise<void> {
   try {
