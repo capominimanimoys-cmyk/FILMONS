@@ -112,17 +112,14 @@ export function Root() {
   // unlike the sidebar/bottom-nav flags below, this ONE flag now covers
   // both the mobile `TopBar` and `DesktopTopBar` renders, since both
   // should disappear together for this route.
-  // /learning/* is its own product shell (LearningLayout renders its own
-  // header) -- the normal Filmons top bar/bottom nav never show there, per
-  // the Learning Product Entry spec's "own navigation behavior."
-  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/learning');
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox');
   const showFooter   = location.pathname === '/';
   // /inbox wants the full viewport on mobile too, matching a dedicated
   // messaging app (no bottom tab bar under the conversation list OR an
   // open conversation) -- conversationOpen (below) already covered the
   // open-conversation case via its own event from Inbox.tsx, but the list
   // view itself should never show it either now.
-  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/learning') || conversationOpen;
+  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || location.pathname.startsWith('/inbox') || conversationOpen;
   // The dedicated /search/category/* pages (CategoryResults.tsx) want the
   // full desktop width for their own two-column filters+results layout --
   // removing DesktopSidebar from the DOM entirely (not just visually
@@ -137,7 +134,7 @@ export function Root() {
   // thread) layout wants the full desktop width, and now carries its own
   // complete top navigation (see Inbox.tsx's "Top bar") instead of the
   // global one.
-  const hideDesktopSidebar = location.pathname.startsWith('/search/category/') || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/learning');
+  const hideDesktopSidebar = location.pathname.startsWith('/search/category/') || location.pathname.startsWith('/inbox');
 
   // New Browser / First Sign-In Verification — checked before anything
   // else that requires a real session. deviceVerified is null until the

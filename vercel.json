@@ -11,8 +11,6 @@
       "has": [{ "type": "host", "value": "admin.filmons.app" }],
       "destination": "/admin.html"
     },
-    { "source": "/learning", "destination": "/learning.html" },
-    { "source": "/learning/(.*)", "destination": "/learning.html" },
     {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "learning.filmons.app" }],

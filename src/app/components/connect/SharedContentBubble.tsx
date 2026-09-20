@@ -40,7 +40,7 @@ export function SharedContentBubble({ content, isOwn }: { content: SharedContent
       return;
     }
     if (content.contentType === 'course') {
-      enterLearning(`/learning/course/${content.contentId}`, { route: location.pathname + location.search });
+      enterLearning(`/course/${content.contentId}`, { route: location.pathname + location.search });
       return;
     }
     navigate(`/host/${content.creatorId}`);

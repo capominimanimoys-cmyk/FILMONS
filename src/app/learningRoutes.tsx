@@ -9,13 +9,12 @@ import { LearningPlayer } from './pages/LearningPlayer';
 
 // Every path below is written RELATIVE TO THE BASENAME -- never hardcode
 // '/learning' anywhere in this tree, in LearningHeader's nav, or in any
-// Learning page's internal links. React Router prepends/strips the
-// basename for you, so the exact same tree serves two different real URL
-// shapes (same dual-reachability pattern as adminRoutes.tsx):
-//   filmons.app/learning/...      (basename '/learning', today's setup)
-//   learning.filmons.app/...      (basename '', once that subdomain/DNS
-//                                   record exists -- see
-//                                   createLearningRouter below)
+// Learning page's internal links. Filmons Learning is reachable ONLY at
+// learning.filmons.app in production (see learningOrigin.ts -- there is
+// no filmons.app/learning path at all anymore); the sole exception is a
+// localhost-only dev fallback (basename '/learning' there, since local
+// dev has no second subdomain/port to point at) -- see
+// createLearningRouter below.
 const learningRouteTree = [
   {
     path: '/',
@@ -31,17 +30,15 @@ const learningRouteTree = [
   },
 ];
 
-// learning.html (this bundle's entry) is reachable two ways -- see
-// vercel.json: filmons.app/learning/* (path-based rewrite, works today)
-// and learning.filmons.app/* (host-based rewrite, works once that domain
-// + DNS record are added in Vercel). Same JS, same route tree, only the
-// basename differs, decided once at router-creation time from the
-// hostname actually serving the page -- identical pattern to
-// createAdminRouter() in adminRoutes.tsx.
+// learning.html (this bundle's entry) is reachable at learning.filmons.app
+// (see vercel.json's host-based rewrite) once that domain + DNS record are
+// added in Vercel -- until then it's only reachable via local dev's
+// basename '/learning' fallback below. Basename is decided once at
+// router-creation time from the hostname actually serving the page.
 export function createLearningRouter() {
-  const onDedicatedSubdomain = typeof window !== 'undefined'
-    && window.location.hostname === 'learning.filmons.app';
+  const isLocalDev = typeof window !== 'undefined'
+    && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   return createBrowserRouter(learningRouteTree, {
-    basename: onDedicatedSubdomain ? '/' : '/learning',
+    basename: isLocalDev ? '/learning' : '/',
   });
 }

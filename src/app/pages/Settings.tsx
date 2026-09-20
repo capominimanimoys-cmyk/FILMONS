@@ -73,8 +73,8 @@ export function Settings() {
     {
       title: 'Learning',
       items: [
-        { icon: GraduationCap, label: 'My Learning',       sub: 'Courses you\'re taking and teaching', action: () => enterLearning('/learning/my-learning', { route: location.pathname + location.search }) },
-        { icon: Compass,       label: 'Explore Learning',  sub: 'Browse courses on Filmons',           action: () => enterLearning('/learning', { route: location.pathname + location.search }) },
+        { icon: GraduationCap, label: 'My Learning',       sub: 'Courses you\'re taking and teaching', action: () => enterLearning('/my-learning', { route: location.pathname + location.search }) },
+        { icon: Compass,       label: 'Explore Learning',  sub: 'Browse courses on Filmons',           action: () => enterLearning('/', { route: location.pathname + location.search }) },
       ],
     },
     {

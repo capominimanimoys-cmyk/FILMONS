@@ -1,15 +1,19 @@
 // Global "Filmons <-> Filmons Learning" product-switch transition.
-// Filmons Learning is now a REAL separate Rollup bundle/router (see
-// learning.html/learningRoutes.tsx, mirroring admin.html/adminRoutes.tsx)
-// -- reachable today at filmons.app/learning/* (path rewrite) and, once
-// DNS exists, at learning.filmons.app/* directly (host rewrite). Crossing
-// between the two is therefore a REAL browser navigation
-// (window.location.href), not a React Router route change -- a different
-// bundle's JS has to load. This provider is importable from either
-// bundle's root (App.tsx / LearningApp.tsx) so the same hook works
-// wherever a CourseCard or the Learning header happens to render.
+// Filmons Learning is a REAL separate Rollup bundle/router (see
+// learning.html/learningRoutes.tsx) reachable ONLY at learning.filmons.app
+// -- there is no filmons.app/learning path anymore (see learningOrigin.ts;
+// the one exception is a localhost-only dev fallback). Crossing between
+// the two products is therefore always a real CROSS-ORIGIN navigation in
+// production (window.location.href), never a React Router route change.
+// This provider is importable from either bundle's root (App.tsx /
+// LearningApp.tsx) so the same hook works wherever a CourseCard or the
+// Learning header happens to render. `path` arguments are always relative
+// to the DESTINATION product's own basename ('/' there) -- never prefix
+// them with '/learning' yourself, learningOrigin()/filmonsOrigin() supply
+// the right host.
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { FilmonsLearningTransition } from '../components/learning/FilmonsLearningTransition';
+import { learningOrigin, filmonsOrigin } from '../lib/learningOrigin';
 
 interface LearningOrigin {
   route: string;
@@ -50,11 +54,12 @@ export function LearningTransitionProvider({ children }: { children: ReactNode }
       try { sessionStorage.setItem(ORIGIN_KEY, JSON.stringify({ route: origin.route, scrollY: window.scrollY } satisfies LearningOrigin)); } catch {}
     }
     setMode('enter');
-    // A real cross-bundle navigation -- starts immediately so the browser
+    // A real cross-origin navigation -- starts immediately so the browser
     // is already fetching the destination while the overlay plays on top
     // of whatever's currently rendered (never gated behind the animation
-    // finishing, per spec).
-    window.location.href = path;
+    // finishing, per spec). `path` is relative to Learning's own root
+    // ('/course/xyz', not '/learning/course/xyz').
+    window.location.href = learningOrigin() + path;
   };
 
   const leaveLearning = (path?: string) => {
@@ -69,7 +74,7 @@ export function LearningTransitionProvider({ children }: { children: ReactNode }
       if (origin?.scrollY) sessionStorage.setItem(RESTORE_SCROLL_KEY, String(origin.scrollY));
     } catch {}
     setMode('exit');
-    window.location.href = path ?? origin?.route ?? '/home';
+    window.location.href = filmonsOrigin() + (path ?? origin?.route ?? '/home');
   };
 
   return (

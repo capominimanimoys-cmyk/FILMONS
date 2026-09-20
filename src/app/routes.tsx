@@ -125,15 +125,16 @@ export const router = createBrowserRouter([
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
-      // NOTE: FILMONS Learning (/learning/*) is NOT a route in this
-      // router — like /admin/*, it's an entirely separate Rollup bundle
-      // (learning.html, built from src/app/learningRoutes.tsx +
-      // LearningApp.tsx). This app's JS never imports any Learning page/
-      // component; vercel.json rewrites /learning/* (and, once DNS
-      // exists, learning.filmons.app/*) straight to learning.html instead
-      // of this app's index.html. Crossing into it is a real browser
-      // navigation via useLearningTransition()'s enterLearning(), not a
-      // route in this tree.
+      // NOTE: FILMONS Learning is NOT a route in this router at all, and
+      // there is no filmons.app/learning path anymore either — it's a
+      // true separate product, reachable ONLY at learning.filmons.app
+      // (an entirely separate Rollup bundle, learning.html, built from
+      // src/app/learningRoutes.tsx + LearningApp.tsx; see vercel.json's
+      // host-based rewrite once that DNS record exists). This app's JS
+      // never imports any Learning page/component. Crossing into it is a
+      // real cross-origin navigation via useLearningTransition()'s
+      // enterLearning() (see learningOrigin.ts), never a route in this
+      // tree and never a filmons.app/learning redirect.
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'hashtag/:tag', Component: HashtagPage },

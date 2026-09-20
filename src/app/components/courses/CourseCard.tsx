@@ -37,7 +37,7 @@ export function CourseCard({ course, trustLevel }: { course: Course; trustLevel?
 
   const open = () => {
     if (insideLearning) navigate(`/course/${course.id}`);
-    else enterLearning(`/learning/course/${course.id}`, { route: location.pathname + location.search });
+    else enterLearning(`/course/${course.id}`, { route: location.pathname + location.search });
   };
 
   return (
