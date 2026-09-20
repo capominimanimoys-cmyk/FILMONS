@@ -1456,11 +1456,36 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
     onToggleSelect: toggleSelect,
   };
 
-  if (!introDone) {
+  // Embedded (draggable preview) skips the branded splash entirely -- the
+  // whole point of that flow is the sheet animation starting immediately
+  // (spec: "the animation should never wait for the network request"), and
+  // a full-page loader flashing inside a 70%-height sheet reads as broken,
+  // not branded. The routed page keeps it.
+  if (!introDone && !embedded) {
     return <FilmonsLoader ready={!loading} onComplete={() => setIntroDone(true)} />;
   }
 
   if (!profile) {
+    // Still fetching (only reachable here in embedded mode -- the routed
+    // page's own FilmonsLoader gate above already waited for this) --
+    // a lightweight skeleton instead of a "not found" flash while the
+    // preview's own sheet-open animation is already running.
+    if (loading) {
+      return (
+        <div className="px-4 pt-3 pb-8 animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="w-16 h-16 rounded-full bg-gray-100 shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-32 bg-gray-100 rounded" />
+              <div className="h-3 w-24 bg-gray-100 rounded" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 mt-5">
+            {Array.from({ length: 9 }).map((_, i) => <div key={i} className="rounded-xl bg-gray-100" style={{ aspectRatio: 4 / 5 }} />)}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
