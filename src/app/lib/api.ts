@@ -1557,6 +1557,42 @@ export const postsApi = {
     }
   },
 
+  // "Top posts" for Browse Search's Connect empty-state discovery group
+  // (see CategoryResults.tsx's ProductDiscoveryGroups) -- same shape as
+  // getAll above, just ordered by the real, trigger-synced likes_count
+  // column instead of recency.
+  getTopPosts: async (limit = 10): Promise<Post[]> => {
+    const currentUser = authApi.getCurrentUser();
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('likes_count', { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      const rows = data || [];
+      const userIds = [...new Set(rows.map((r:any)=>r.author_id).filter(Boolean))];
+      let profileMap: Record<string,any> = {};
+      if (userIds.length) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, name, username, avatar_url, account_type, primary_role')
+          .in('id', userIds);
+        (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
+      }
+      const postIds = rows.map((r:any) => r.id);
+      const likedIds = currentUser ? await fetchLikedPostIds(postIds, currentUser.id) : new Set<string>();
+      const mapped = rows.map((row:any) => {
+        const prof = profileMap[row.author_id] || {};
+        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds);
+      });
+      return filterPostsByVisibility(mapped, currentUser?.id);
+    } catch(e) {
+      console.error('[getTopPosts] error:', e);
+      return [];
+    }
+  },
+
   getUserPosts: async (userId: string): Promise<Post[]> => {
     const currentUser = authApi.getCurrentUser();
     try {

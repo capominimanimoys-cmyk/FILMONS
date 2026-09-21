@@ -38,8 +38,8 @@ import { PostsCategoryResults } from './PostsCategoryResults';
 import { CoursesCategoryResults } from './CoursesCategoryResults';
 import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locationsApi';
-import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
-import { getCourses, type Course } from '../lib/coursesApi';
+import { searchMatchingPortfolio, searchMatchingPosts, searchAndHydratePosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
+import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from '../components/courses/CourseCard';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { Hash, MapPin } from 'lucide-react';
@@ -1818,6 +1818,191 @@ const PRODUCT_CATEGORY_IDS: Record<'marketplace' | 'connect' | 'learning', Categ
   learning: [],
 };
 
+// ── "All Results", empty search field -- per spec, showing every item
+// unfiltered is replaced with exactly 3 discovery groups (Latest / Top /
+// "Because you're a {Primary Role}") inside each of the three product
+// Search tabs (Marketplace/Connect/Learning). The moment the viewer types
+// anything, AllGroupedResults swaps back to the ordinary query-driven
+// CategorySection/*AllSection rendering below -- this only ever covers the
+// `!term` case, and only for a product-scoped page (the unscoped "All"
+// tab keeps its existing mixed-category browse, since "Latest" of a
+// listing+post+course blend has no single coherent meaning).
+const DISCOVERY_GROUP_LIMIT = 10;
+
+// Emergency is excluded from "Latest"/"Top" -- it's a permission-gated
+// category (Professional/Business only) with its own dedicated locked-
+// preview UI; surfacing it in a general discovery row would either leak
+// it to a restricted-tier viewer or need its own lock treatment inline.
+// Fetches DISCOVERY_GROUP_LIMIT*2 and slices after filtering, since the
+// Emergency exclusion happens client-side (is_emergency can be NULL on
+// older rows, so a `.eq('is_emergency', false)` server-side filter would
+// silently also exclude those -- same reasoning as the rest of this file's
+// "missing = default" handling).
+async function fetchLatestMarketplaceListings(limit: number): Promise<Listing[]> {
+  const res = await withModerationFilter((filterActive) => {
+    let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+    if (filterActive) q = q.eq('moderation_status', 'active');
+    return q.order('created_at', { ascending: false }).limit(limit * 2);
+  });
+  return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
+}
+
+// "Top" -- boosted listings first (the one real, non-fabricated promotion
+// signal this schema has), recency as the tiebreak/fallback so this never
+// looks broken when nothing happens to be boosted right now.
+async function fetchTopMarketplaceListings(limit: number): Promise<Listing[]> {
+  const res = await withModerationFilter((filterActive) => {
+    let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+    if (filterActive) q = q.eq('moderation_status', 'active');
+    return q.order('boosted', { ascending: false }).order('created_at', { ascending: false }).limit(limit * 2);
+  });
+  return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
+}
+
+function DiscoveryRow({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  if (count === 0) return null;
+  return (
+    <section className="mb-6 lg:mb-8">
+      {/* DESKTOP_SECTION_PAD is itself the full responsive scale (px-4 at
+          every size, up to lg:px-8/xl:px-10) -- same padding the row
+          content below already uses on desktop, so the title lines up
+          with it without a separate mobile-only variant. */}
+      <p className={`text-sm lg:text-base font-black text-gray-900 mb-2.5 lg:mb-3 ${DESKTOP_SECTION_PAD}`}>{title}</p>
+      {children}
+    </section>
+  );
+}
+
+function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect' | 'learning' }) {
+  const { user } = useAuth();
+  const primaryRole = user?.primaryRole?.trim() || null;
+
+  const [latestListings, setLatestListings] = useState<Listing[] | null>(null);
+  const [topListings, setTopListings] = useState<Listing[] | null>(null);
+  const [roleListings, setRoleListings] = useState<Listing[] | null>(null);
+
+  const [latestPosts, setLatestPosts] = useState<Post[] | null>(null);
+  const [topPosts, setTopPosts] = useState<Post[] | null>(null);
+  const [rolePosts, setRolePosts] = useState<Post[] | null>(null);
+
+  const [latestCourses, setLatestCourses] = useState<Course[] | null>(null);
+  const [topCourses, setTopCourses] = useState<Course[] | null>(null);
+  const [roleCourses, setRoleCourses] = useState<Course[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (product === 'marketplace') {
+      fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setLatestListings(r); });
+      fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); });
+      if (primaryRole) {
+        searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
+      } else setRoleListings([]);
+    } else if (product === 'connect') {
+      postsApi.getAll(DISCOVERY_GROUP_LIMIT, 0).then(r => { if (!cancelled) setLatestPosts(r); });
+      postsApi.getTopPosts(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopPosts(r); });
+      if (primaryRole) {
+        searchAndHydratePosts(primaryRole, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setRolePosts(r); });
+      } else setRolePosts([]);
+    } else if (product === 'learning') {
+      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); });
+      getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); });
+      if (primaryRole) {
+        getCourses({ query: primaryRole, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setRoleCourses(r); });
+      } else setRoleCourses([]);
+    }
+    return () => { cancelled = true; };
+  }, [product, primaryRole]);
+
+  const roleTitle = `Because you're a ${primaryRole}`;
+
+  if (product === 'marketplace') {
+    const loading = latestListings === null || topListings === null || roleListings === null;
+    if (loading) return <DiscoveryLoading />;
+    return (
+      <>
+        <DiscoveryRow title="Latest" count={latestListings.length}>
+          <ListingDiscoveryRow listings={latestListings} />
+        </DiscoveryRow>
+        <DiscoveryRow title="Top" count={topListings.length}>
+          <ListingDiscoveryRow listings={topListings} />
+        </DiscoveryRow>
+        {primaryRole && (
+          <DiscoveryRow title={roleTitle} count={roleListings.length}>
+            <ListingDiscoveryRow listings={roleListings} />
+          </DiscoveryRow>
+        )}
+      </>
+    );
+  }
+
+  if (product === 'connect') {
+    const loading = latestPosts === null || topPosts === null || rolePosts === null;
+    if (loading) return <DiscoveryLoading />;
+    return (
+      <>
+        <DiscoveryRow title="Latest" count={latestPosts.length}>
+          <div className="px-4 lg:px-0 space-y-3">{latestPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
+        </DiscoveryRow>
+        <DiscoveryRow title="Top" count={topPosts.length}>
+          <div className="px-4 lg:px-0 space-y-3">{topPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
+        </DiscoveryRow>
+        {primaryRole && (
+          <DiscoveryRow title={roleTitle} count={rolePosts.length}>
+            <div className="px-4 lg:px-0 space-y-3">{rolePosts.map(p => <PostCard key={p.id} post={p} />)}</div>
+          </DiscoveryRow>
+        )}
+      </>
+    );
+  }
+
+  // learning
+  const loading = latestCourses === null || topCourses === null || roleCourses === null;
+  if (loading) return <DiscoveryLoading />;
+  return (
+    <>
+      <DiscoveryRow title="Latest" count={latestCourses.length}>
+        <CourseDiscoveryRow courses={latestCourses} />
+      </DiscoveryRow>
+      <DiscoveryRow title="Top" count={topCourses.length}>
+        <CourseDiscoveryRow courses={topCourses} />
+      </DiscoveryRow>
+      {primaryRole && (
+        <DiscoveryRow title={roleTitle} count={roleCourses.length}>
+          <CourseDiscoveryRow courses={roleCourses} />
+        </DiscoveryRow>
+      )}
+    </>
+  );
+}
+
+function DiscoveryLoading() {
+  return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+}
+
+// Same mobile-fixed-card / desktop-fluid-card split as CategorySection's
+// listings rows above -- reusing PreviewListingCard/DesktopListingCard
+// rather than a third listing-card design.
+function ListingDiscoveryRow({ listings }: { listings: Listing[] }) {
+  return (
+    <>
+      <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
+        {listings.map(l => <PreviewListingCard key={l.id} listing={l} />)}
+      </div>
+      <div className={`hidden lg:flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}>
+        {listings.map(l => <DesktopListingCard key={l.id} listing={l} />)}
+      </div>
+    </>
+  );
+}
+
+function CourseDiscoveryRow({ courses }: { courses: Course[] }) {
+  return (
+    <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 lg:px-0">
+      {courses.map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
+    </div>
+  );
+}
+
 function AllGroupedResults({ navState: initialNavState, product }: { navState: NavState; product?: 'marketplace' | 'connect' | 'learning' }) {
   const navigate = useNavigate();
 
@@ -2086,28 +2271,42 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
       </div>
 
       <div className="py-4 lg:py-6">
-        {/* Grouped under its product (Marketplace/Connect/Learning) only on
-            the unscoped /search/category/all page -- a product-scoped page
-            (product set) already IS that one group, so a repeated header
-            would be redundant. */}
-        {!product && marketplaceCats.length > 0 && (
-          <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
-        )}
-        {marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+        {/* Empty search field, on one of the 3 product-scoped tabs, no
+            category narrowed -- per spec, replace the usual mixed browse
+            with exactly Latest / Top / "Because you're a {role}" instead
+            of showing everything. Typing anything (term becomes truthy) or
+            picking a specific category from the filter bar falls straight
+            back to the normal rendering below -- this is the ONLY branch
+            that skips it. The unscoped "All" tab (product undefined) never
+            takes this path -- see ProductDiscoveryGroups's own comment. */}
+        {product && !term && categoryFilter === 'all' ? (
+          <ProductDiscoveryGroups product={product} />
+        ) : (
+          <>
+            {/* Grouped under its product (Marketplace/Connect/Learning) only on
+                the unscoped /search/category/all page -- a product-scoped page
+                (product set) already IS that one group, so a repeated header
+                would be redundant. */}
+            {!product && marketplaceCats.length > 0 && (
+              <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
+            )}
+            {marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
 
-        {!product && (connectCats.length > 0 || showConnectExtras) && (
-          <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
-        )}
-        {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
-        {categoryFilter === 'all' && showConnectExtras && <LocationsAllSection query={term} />}
-        {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
-        {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
-        {categoryFilter === 'all' && showConnectExtras && <HashtagsAllSection query={term} />}
+            {!product && (connectCats.length > 0 || showConnectExtras) && (
+              <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
+            )}
+            {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+            {categoryFilter === 'all' && showConnectExtras && <LocationsAllSection query={term} />}
+            {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
+            {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
+            {categoryFilter === 'all' && showConnectExtras && <HashtagsAllSection query={term} />}
 
-        {!product && showLearningExtras && (
-          <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Learning</p>
+            {!product && showLearningExtras && (
+              <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Learning</p>
+            )}
+            {categoryFilter === 'all' && showLearningExtras && <CoursesAllSection query={term} />}
+          </>
         )}
-        {categoryFilter === 'all' && showLearningExtras && <CoursesAllSection query={term} />}
       </div>
 
       {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}
