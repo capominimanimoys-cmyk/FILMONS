@@ -79,7 +79,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
     const next = !reposted;
     setReposted(next);
     setRepostsCount(c => c + (next ? 1 : -1));
-    const ok = await togglePortfolioRepost(user.id, album.id, 'portfolio_album', !next, repostsCount);
+    const ok = await togglePortfolioRepost(user.id, album.id, 'portfolio_album', !next, repostsCount, album.title);
     if (!ok) { setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); toast.error('Could not update repost'); return; }
     toast.success(next ? 'Reposted to your followers' : 'Repost removed');
   };

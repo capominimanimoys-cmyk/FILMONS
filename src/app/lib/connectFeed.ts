@@ -9,7 +9,7 @@
 // since the same content already arrives, richer and live, via
 // getPortfolioFeed -- including them from both sources would double-count
 // every portfolio publish.
-import { getPortfolioFeed, type PortfolioFeedEntry } from './portfolioApi';
+import { getPortfolioFeed, getPortfolioEntriesByIds, type PortfolioFeedEntry } from './portfolioApi';
 import { getActivityFeed, type ActivityEntry } from './activityApi';
 import { getTrustLevelsBatch, type TrustLevel } from './trustApi';
 import { postsApi } from './api';
@@ -133,15 +133,34 @@ export async function getConnectFeed(opts: {
   // card. A post that failed to fetch (e.g. deleted between logging and
   // now) just keeps `post` undefined; the card falls back to its own
   // title-only rendering rather than the whole page failing.
-  const postPublishedIds = activityResult.entries
-    .filter(e => e.activityType === 'post_published' && e.targetId)
+  const postTargetIds = activityResult.entries
+    .filter(e => e.targetId && (e.activityType === 'post_published' || (e.activityType === 'content_reposted' && e.targetType === 'post')))
     .map(e => e.targetId as string);
-  if (postPublishedIds.length) {
-    const realPosts = await postsApi.getByIds([...new Set(postPublishedIds)]);
+  if (postTargetIds.length) {
+    const realPosts = await postsApi.getByIds([...new Set(postTargetIds)]);
     const postMap = new Map(realPosts.map(p => [p.id, p]));
     activityResult.entries = activityResult.entries.map(e =>
-      e.activityType === 'post_published' && e.targetId && postMap.has(e.targetId)
+      e.targetId && postMap.has(e.targetId) && (e.activityType === 'post_published' || (e.activityType === 'content_reposted' && e.targetType === 'post'))
         ? { ...e, post: postMap.get(e.targetId) }
+        : e,
+    );
+  }
+
+  // Same batching for a content_reposted entry whose original is a
+  // Portfolio item/album -- attaches the REAL live PortfolioFeedEntry so
+  // Connect can render it via PortfolioProjectCard/PortfolioAlbumCard.
+  const repostItemIds = activityResult.entries
+    .filter(e => e.activityType === 'content_reposted' && e.targetType === 'portfolio_item' && e.targetId)
+    .map(e => e.targetId as string);
+  const repostAlbumIds = activityResult.entries
+    .filter(e => e.activityType === 'content_reposted' && e.targetType === 'portfolio_album' && e.targetId)
+    .map(e => e.targetId as string);
+  if (repostItemIds.length || repostAlbumIds.length) {
+    const entryMap = await getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)]);
+    activityResult.entries = activityResult.entries.map(e =>
+      e.activityType === 'content_reposted' && e.targetId
+        && (e.targetType === 'portfolio_item' || e.targetType === 'portfolio_album') && entryMap.has(e.targetId)
+        ? { ...e, portfolioEntry: entryMap.get(e.targetId) }
         : e,
     );
   }

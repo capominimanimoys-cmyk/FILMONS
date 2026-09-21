@@ -13,6 +13,7 @@ import { OpportunityActivityCard } from './OpportunityActivityCard';
 import { ConnectionActivityCard } from './ConnectionActivityCard';
 import { RecommendationActivityCard } from './RecommendationActivityCard';
 import { PostActivityCard } from './PostActivityCard';
+import { RepostedActivityCard } from './RepostedActivityCard';
 
 export type { ConnectFeedItem };
 
@@ -48,6 +49,8 @@ export function ConnectFeedCard({ item, trustLevels }: {
       return <RecommendationActivityCard entry={entry} trustLevel={trustLevel} />;
     case 'post_published':
       return <PostActivityCard entry={entry} trustLevel={trustLevel} />;
+    case 'content_reposted':
+      return <RepostedActivityCard entry={entry} trustLevel={trustLevel} />;
     default:
       return null; // portfolio_published/portfolio_album_published never reach here -- 'activity' kind excludes them (see connectFeed.ts)
   }

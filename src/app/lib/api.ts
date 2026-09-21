@@ -1760,6 +1760,11 @@ export const postsApi = {
       author_id:  currentUser.id,
       content:    content || '',
       post_type:  extraMeta?.postType || postType || 'post',
+      // metadata carries repostOf (and other fields rowToPostClient reads
+      // back via `meta.*`) -- previously built above but never attached to
+      // the insert, so a quote-repost's link to its original silently
+      // vanished on reload (only survived in the in-memory return value).
+      metadata:   metadata,
     };
 
     // Add media columns only if non-empty

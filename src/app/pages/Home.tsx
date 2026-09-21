@@ -30,6 +30,8 @@ import { getConnectFeed, getRecommendedPortfolio, type ConnectFeedItem, type Con
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
 import { CreatePostSheet } from '../components/CreatePostSheet';
+import { useRepostCompose } from '../context/RepostComposeContext';
+import type { PortfolioItem } from '../lib/portfolioApi';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
@@ -324,11 +326,26 @@ export function Home() {
   const [showCompose, setShowCompose] = useState(false);
   const [composeClosing, setComposeClosing] = useState(false);
   const [composeAction, setComposeAction] = useState<'photo'|'portfolio'|'listing'|undefined>(undefined);
+  const [repostSeedItem, setRepostSeedItem] = useState<PortfolioItem | undefined>(undefined);
   const openCompose = (action?: 'photo'|'portfolio'|'listing') => { setComposeAction(action); setShowCompose(true); };
   const closeCompose = () => {
     setComposeClosing(true);
-    setTimeout(() => { setShowCompose(false); setComposeClosing(false); setComposeAction(undefined); }, 380);
+    setTimeout(() => { setShowCompose(false); setComposeClosing(false); setComposeAction(undefined); setRepostSeedItem(undefined); }, 380);
   };
+
+  // "Repost with your thoughts" on a Portfolio card (PortfolioProjectCard,
+  // deep in the Connect feed tree below) requests this composer via
+  // RepostComposeContext rather than a prop drilled through
+  // ConnectFeedCard -- see that context's own header comment.
+  const { pendingRepostItem, clearRepostCompose } = useRepostCompose();
+  useEffect(() => {
+    if (pendingRepostItem) {
+      setRepostSeedItem(pendingRepostItem);
+      setComposeAction(undefined);
+      setShowCompose(true);
+      clearRepostCompose();
+    }
+  }, [pendingRepostItem]); // eslint-disable-line react-hooks/exhaustive-deps
   // MobileBottomNav's contextual + button (Connect -> Create Post) can't
   // navigate into this already-mounted composer the way it navigates to
   // /create-listing for Marketplace -- it fires this event instead, and
@@ -1587,6 +1604,7 @@ export function Home() {
         <CreatePostSheet
           closing={composeClosing}
           initialAction={composeAction}
+          initialPortfolioItem={repostSeedItem}
           onClose={closeCompose}
           // No optimistic prepend into connectItems -- a freshly published
           // post already appears via its own post_published activity_events

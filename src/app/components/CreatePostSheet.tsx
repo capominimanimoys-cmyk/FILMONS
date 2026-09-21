@@ -50,11 +50,18 @@ const AUDIENCE_OPTIONS: { id: Visibility; label: string; sub: string; icon: any 
 const isUUID = (v: any): boolean =>
   !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
 
-export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, closing }: {
+export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, initialPortfolioItem, closing }: {
   onClose: () => void;
   onPost?: (p?: any) => void;
   currentUser?: any;
   initialAction?: 'photo' | 'portfolio' | 'listing';
+  /** Pre-attaches a Portfolio item without going through PortfolioBrowser --
+   * feeds "Repost with your thoughts" on a Portfolio card, which opens this
+   * composer already carrying the item so the resulting post is a real,
+   * separately-engageable wrapper post (its own likes/comments) around the
+   * SAME live attachment mechanism the ordinary "attach portfolio work" flow
+   * already uses, not a new repost-specific code path. */
+  initialPortfolioItem?: PortfolioItem;
   closing?: boolean;
 }) {
   const { user: authUser } = useAuth();
@@ -66,7 +73,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, c
   const [media, setMedia] = useState<MediaDraft[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<ProfileResult[]>([]);
-  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem | null>(null);
+  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem | null>(initialPortfolioItem ?? null);
   const [selectedListings, setSelectedListings] = useState<Listing[]>([]);
   const [location, setLocation] = useState<LocationResult | null>(null);
   const [link, setLink] = useState('');

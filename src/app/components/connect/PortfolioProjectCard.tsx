@@ -23,9 +23,11 @@ import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
+import { useRepostCompose } from '../../context/RepostComposeContext';
 import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
+import { BottomSheet } from '../BottomSheet';
 
 export function PortfolioProjectCard({ entry, trustLevel }: {
   entry: Extract<PortfolioFeedEntry, { type: 'item' }>;
@@ -41,6 +43,8 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
   const [likesCount, setLikesCount] = useState(item.likes_count ?? 0);
   const [reposted, setReposted] = useState(false);
   const [repostsCount, setRepostsCount] = useState(item.reposts_count ?? 0);
+  const [showRepostMenu, setShowRepostMenu] = useState(false);
+  const { requestRepostCompose } = useRepostCompose();
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showItemDetail, setShowItemDetail] = useState(false);
@@ -83,9 +87,16 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
     const next = !reposted;
     setReposted(next);
     setRepostsCount(c => c + (next ? 1 : -1));
-    const ok = await togglePortfolioRepost(user.id, item.id, 'portfolio_item', !next, repostsCount);
+    setShowRepostMenu(false);
+    const ok = await togglePortfolioRepost(user.id, item.id, 'portfolio_item', !next, repostsCount, item.title);
     if (!ok) { setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); toast.error('Could not update repost'); return; }
     toast.success(next ? 'Reposted to your followers' : 'Repost removed');
+  };
+
+  const handleRepostWithThoughts = () => {
+    if (!user) { toast.error('Sign in to repost'); return; }
+    setShowRepostMenu(false);
+    requestRepostCompose(item);
   };
 
   // Two distinct destinations, per spec: media/title -> item detail
@@ -167,7 +178,8 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <MessageCircle className="w-5 h-5 text-gray-400" /> {(item.comments_count ?? 0) > 0 ? item.comments_count : ''}
         </button>
-        <button onClick={handleToggleRepost} className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
+        <button onClick={() => { if (!user) { toast.error('Sign in to repost'); return; } setShowRepostMenu(true); }}
+          className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
           <Repeat2 className="w-5 h-5" /> {repostsCount > 0 ? repostsCount : ''}
         </button>
         <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
@@ -177,6 +189,47 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
           <Bookmark className={`w-5 h-5 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-400'}`} /> Save
         </button>
       </div>
+
+      {/* ── Repost menu -- mirrors PostCard.tsx's own sheet exactly, per
+          spec ("Repost" / "Repost with your thoughts" / Cancel). "Repost
+          with your thoughts" hands off to the ordinary Post composer with
+          this item pre-attached (see RepostComposeContext) rather than
+          inventing a second engagement surface for Portfolio work. ── */}
+      <BottomSheet open={showRepostMenu} onClose={() => setShowRepostMenu(false)}>
+        <div className="px-2 py-2">
+          <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
+          {reposted ? (
+            <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
+              <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                <Repeat2 className="w-4 h-4 text-red-500" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-black text-red-600">Remove Repost</p>
+                <p className="text-xs text-gray-400">Remove from your profile and feed</p>
+              </div>
+            </button>
+          ) : (
+            <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
+              <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
+                <Repeat2 className="w-4 h-4 text-green-500" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-black text-gray-900">Repost</p>
+                <p className="text-xs text-gray-400">Share to your followers</p>
+              </div>
+            </button>
+          )}
+          <button onClick={handleRepostWithThoughts} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
+            <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+              <MessageCircle className="w-4 h-4 text-blue-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
+              <p className="text-xs text-gray-400">Add your own commentary</p>
+            </div>
+          </button>
+        </div>
+      </BottomSheet>
 
       {showItemDetail && createPortal(
         <PortfolioItemFocusView item={item} onClose={() => setShowItemDetail(false)} />,

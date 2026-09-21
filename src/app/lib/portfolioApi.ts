@@ -9,6 +9,7 @@ import { logProfileEngagement } from './profileEngagement';
 import { toStringArray } from './normalizeList';
 import { indexContentHashtags } from './hashtagsApi';
 import { indexContentLocation } from './locationsApi';
+import { logContentRepostActivity, removeContentRepostActivity } from './activityApi';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text';
 
@@ -974,6 +975,7 @@ export async function isPortfolioReposted(userId: string, targetId: string, targ
 
 export async function togglePortfolioRepost(
   userId: string, targetId: string, targetType: PortfolioSaveTargetType, currentlyReposted: boolean, currentCount: number,
+  title?: string | null,
 ): Promise<boolean> {
   const table = targetType === 'portfolio_item' ? 'portfolio_items' : 'portfolio_albums';
   if (currentlyReposted) {
@@ -981,11 +983,16 @@ export async function togglePortfolioRepost(
       .eq('user_id', userId).eq('target_id', targetId).eq('target_type', targetType);
     if (error) return false;
     await supabase.from(table).update({ reposts_count: Math.max(0, currentCount - 1) }).eq('id', targetId);
+    removeContentRepostActivity(userId, targetType, targetId).catch(() => {});
     return true;
   }
   const { error } = await supabase.from('portfolio_reposts').insert({ user_id: userId, target_type: targetType, target_id: targetId });
   if (error) return false;
   await supabase.from(table).update({ reposts_count: currentCount + 1 }).eq('id', targetId);
+  // Distributes into the reposter's followers' Connect feed -- target_type
+  // matches portfolio_published/portfolio_album_published's own values, so
+  // filterVisible() already re-checks the original's live visibility.
+  logContentRepostActivity(userId, targetType, targetId, title ?? null).catch(() => {});
   return true;
 }
 
@@ -1319,6 +1326,88 @@ export async function getPortfolioFeed(opts: {
     console.warn('[portfolio feed] fetch error:', e);
     return [];
   }
+}
+
+// Batch-fetches real PortfolioFeedEntry objects for a set of item/album ids
+// -- used by connectFeed.ts to render a content_reposted activity event's
+// embedded original via the exact same PortfolioProjectCard/PortfolioAlbumCard
+// getPortfolioFeed's own entries use (live likes/comments, not a frozen
+// snapshot). Reuses the same visibility rules getPortfolioFeed enforces
+// (item.is_hidden, item/album visibility, owner's portfolio_settings) --
+// an id that no longer passes those checks (deleted, hidden, made private)
+// simply has no entry in the returned map, same "one source of truth"
+// cascade filterVisible() already gives every other activity type.
+export async function getPortfolioEntriesByIds(
+  itemIds: string[], albumIds: string[],
+): Promise<Map<string, PortfolioFeedEntry>> {
+  const map = new Map<string, PortfolioFeedEntry>();
+  if (!itemIds.length && !albumIds.length) return map;
+  try {
+    const [itemsRes, albumsRes, settingsRes] = await Promise.all([
+      itemIds.length ? supabase.from('portfolio_items').select('*').in('id', itemIds) : Promise.resolve({ data: [] as any[] }),
+      albumIds.length ? supabase.from('portfolio_albums').select('*').eq('visibility', 'public').in('id', albumIds) : Promise.resolve({ data: [] as any[] }),
+      supabase.from('portfolio_settings').select('user_id').neq('visibility', 'public'),
+    ]);
+    const nonPublicUserIds = new Set((settingsRes.data ?? []).map((r: any) => r.user_id));
+    const items = ((itemsRes.data ?? []) as PortfolioItem[])
+      .filter(i => !(i as any).visibility || (i as any).visibility === 'public')
+      .filter(i => !i.is_hidden && !nonPublicUserIds.has(i.user_id));
+    const albums = ((albumsRes.data ?? []) as PortfolioAlbum[]).filter(a => !nonPublicUserIds.has(a.user_id));
+    if (!items.length && !albums.length) return map;
+
+    const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
+    const { data: profileRows } = await supabase.from('profiles')
+      .select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds);
+    const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
+    const creatorFor = (userId: string): PortfolioFeedCreator => {
+      const p = profiles.get(userId);
+      return {
+        id: userId, name: p?.name ?? 'Creator', username: p?.username ?? null,
+        avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+        is_verified: !!p?.is_verified,
+      };
+    };
+
+    items.forEach(item => map.set(item.id, { type: 'item', id: item.id, created_at: item.created_at, creator: creatorFor(item.user_id), item }));
+
+    if (albums.length) {
+      const { data } = await supabase
+        .from('portfolio_album_items')
+        .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url, aspect_ratio, width, height)')
+        .in('album_id', albums.map(a => a.id))
+        .order('album_id', { ascending: true })
+        .order('sort_order', { ascending: true });
+      const itemCountByAlbum = new Map<string, number>();
+      const previewByAlbum = new Map<string, PortfolioFeedPreviewItem[]>();
+      (data ?? []).forEach((r: any) => {
+        itemCountByAlbum.set(r.album_id, (itemCountByAlbum.get(r.album_id) ?? 0) + 1);
+        const it = r.portfolio_items;
+        if (!it) return;
+        const list = previewByAlbum.get(r.album_id) ?? [];
+        if (list.length < 3) {
+          list.push({
+            id: it.id, media_type: it.media_type, url: it.thumbnail_url || it.media_url || null,
+            aspect_ratio: it.aspect_ratio ?? (it.width && it.height ? it.width / it.height : null),
+          });
+          previewByAlbum.set(r.album_id, list);
+        }
+      });
+      albums.forEach(album => {
+        if (!(itemCountByAlbum.get(album.id) ?? 0)) return; // empty album -- same exclusion rule getPortfolioFeed uses
+        const preview = previewByAlbum.get(album.id) ?? [];
+        map.set(album.id, {
+          type: 'album', id: album.id, created_at: album.created_at, creator: creatorFor(album.user_id), album,
+          coverUrl: album.cover_url || preview[0]?.url || null,
+          coverAspectRatio: preview[0]?.aspect_ratio ?? null,
+          itemCount: itemCountByAlbum.get(album.id) ?? 0,
+          previewItems: preview,
+        });
+      });
+    }
+  } catch (e) {
+    console.warn('[portfolioApi] getPortfolioEntriesByIds failed:', e);
+  }
+  return map;
 }
 
 // ── "People You May Know" -- Home -> Portfolio feed's creator-discovery

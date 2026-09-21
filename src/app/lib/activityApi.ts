@@ -12,11 +12,17 @@
 // portfolio_albums per its own spec.
 import { supabase } from '../../lib/supabase';
 import type { Post } from '../types';
+import type { PortfolioFeedEntry } from './portfolioApi';
 
 export type ActivityType =
   | 'portfolio_published' | 'portfolio_album_published' | 'service_published'
   | 'opportunity_published' | 'listing_published' | 'connection_created'
-  | 'recommendation_received' | 'post_published';
+  | 'recommendation_received' | 'post_published' | 'content_reposted';
+
+/** What a content_reposted entry's target_type can be -- deliberately the
+ *  same string values post_published/portfolio_published already use, so
+ *  filterVisible()'s existing per-type checks cover reposts for free. */
+export type RepostTargetType = 'post' | 'portfolio_item' | 'portfolio_album';
 
 export interface ActivityActor {
   id: string; name: string; username: string | null; avatar_url: string | null; is_verified: boolean;
@@ -65,6 +71,12 @@ export interface ActivityEntry {
    * post_published entry too if the batch fetch is still in flight or
    * failed for that particular post. */
   post?: Post;
+  /** content_reposted only, targetType 'portfolio_item'/'portfolio_album' --
+   * the REAL live PortfolioItem/PortfolioAlbum (same shape getPortfolioFeed
+   * itself returns), batch-fetched and attached by connectFeed.ts so a
+   * repost of a Portfolio work renders via the actual PortfolioProjectCard/
+   * PortfolioAlbumCard, not a frozen title-only summary. */
+  portfolioEntry?: PortfolioFeedEntry;
   /** Real, persisted count (activity_events.like_count) -- see
    * toggleActivityEventLike/isActivityEventLiked. Currently only surfaced
    * by ConnectionActivityCard; other card types don't render a Like
@@ -314,7 +326,25 @@ export function getActivitySentence(entry: Pick<ActivityEntry, 'activityType' | 
     case 'connection_created': return entry.otherUser ? `completed a professional connection with ${entry.otherUser.name}` : 'made a new professional connection';
     case 'recommendation_received': return 'received a new professional recommendation';
     case 'post_published': return 'shared a new post';
+    case 'content_reposted': return 'reposted this';
   }
+}
+
+// ── Repost feed distribution -- called alongside the existing
+// reposts/portfolio_reposts table writes (which still own the repost
+// COUNT and "is this reposted by me" state), never instead of them. This
+// is purely the "make it show up in a follower's Connect feed" half.
+export async function logContentRepostActivity(
+  actorId: string, targetType: RepostTargetType, targetId: string, title?: string | null,
+): Promise<void> {
+  return logActivityEvent({ actorId, activityType: 'content_reposted', targetType, targetId, title });
+}
+
+export async function removeContentRepostActivity(actorId: string, targetType: RepostTargetType, targetId: string): Promise<void> {
+  const { error } = await supabase.from('activity_events').delete()
+    .eq('actor_id', actorId).eq('activity_type', 'content_reposted')
+    .eq('target_type', targetType).eq('target_id', targetId);
+  if (error) console.warn('[activityApi] removeContentRepostActivity failed:', error.message);
 }
 
 // ── Activity event likes -- currently only used by ConnectionActivityCard.

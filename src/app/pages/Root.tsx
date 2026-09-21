@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { getPendingReturnUrl } from '../lib/authReturnUrl';
 import { PortfolioPreviewContext, type PortfolioPreviewRequest } from '../context/PortfolioPreviewContext';
 import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../context/LearningTransitionContext';
+import { RepostComposeProvider } from '../context/RepostComposeContext';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
 import type { User } from '../types';
 
@@ -170,12 +171,14 @@ export function Root() {
     return (
       <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
         <LearningTransitionProvider>
+        <RepostComposeProvider>
           <NotificationBannerProvider>
             <div className="min-h-screen flex flex-col">
               <Outlet />
             </div>
             <CookieConsent />
           </NotificationBannerProvider>
+        </RepostComposeProvider>
         </LearningTransitionProvider>
       </PortfolioPreviewContext.Provider>
     );
@@ -184,6 +187,7 @@ export function Root() {
   return (
     <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
     <LearningTransitionProvider>
+    <RepostComposeProvider>
     <NotificationBannerProvider>
       <RouteProgressBar />
       <div className="min-h-screen flex flex-col">
@@ -248,6 +252,7 @@ export function Root() {
         <CookieConsent />
       </div>
     </NotificationBannerProvider>
+    </RepostComposeProvider>
     </LearningTransitionProvider>
     </PortfolioPreviewContext.Provider>
   );

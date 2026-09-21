@@ -18,6 +18,7 @@ import {
 import { Post, Comment } from '../types';
 import { postsApi, commentsApi, authApi, savedPostsApi } from '../lib/api';
 import * as notifs from '../lib/notifications';
+import { logContentRepostActivity, removeContentRepostActivity } from '../lib/activityApi';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
@@ -747,15 +748,17 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         quote_text: null,
       });
       if (error) throw error;
-      // Update both local state and PostContext so all views stay in sync
+      // Update local state + PostContext for instant feedback; posts.reposts_count
+      // itself is kept in sync by the existing DB trigger on the reposts table
+      // (no manual .update() here -- that used to race the trigger).
       setPost(p => ({ ...p, repostCount: (p.repostCount ?? 0) + 1 }));
-      // Also increment posts.reposts_count in DB
-      supabase.from('posts')
-        .update({ reposts_count: (localPost.repostCount ?? 0) + 1 })
-        .eq('id', localPost.id)
-        .then(() => {});
       setHasReposted(true);
       onReposted?.(localPost);
+      // Distributes the repost into the reposter's followers' Connect feeds.
+      // Reuses target_type 'post' so filterVisible() already re-checks the
+      // original's live visibility on every read -- if it's later deleted or
+      // made private, this entry stops surfacing it automatically.
+      logContentRepostActivity(user.id, 'post', localPost.id, localPost.content?.slice(0, 80) || null).catch(() => {});
       toast.success('Reposted to your followers');
       setShowRepostMenu(false);
       if (localPost.userId && localPost.userId !== user.id) {
@@ -781,12 +784,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     try {
       await supabase.from('reposts').delete().eq('user_id', user.id).eq('post_id', localPost.id);
       setPost(p => ({ ...p, repostCount: Math.max(0, (p.repostCount ?? 1) - 1) }));
-      supabase.from('posts')
-        .update({ reposts_count: Math.max(0, (localPost.repostCount ?? 1) - 1) })
-        .eq('id', localPost.id)
-        .then(() => {});
       setHasReposted(false);
       setShowRepostMenu(false);
+      removeContentRepostActivity(user.id, 'post', localPost.id).catch(() => {});
       toast.success('Repost removed');
     } catch { toast.error('Could not remove repost'); }
     finally { setReposting(false); }
@@ -1220,7 +1220,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 <MessageCircle className="w-4 h-4 text-blue-500"/>
               </div>
               <div className="flex-1">
-                <p className="text-sm font-black text-gray-900">Quote Repost</p>
+                <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
                 <p className="text-xs text-gray-400">Add your own commentary</p>
               </div>
             </button>
