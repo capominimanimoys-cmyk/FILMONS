@@ -1430,6 +1430,11 @@ export interface SuggestedCreator {
   /** Mutual professional Connections with the viewer (not mutual Follows --
    * Connect's own "strongest social proof" signal, per spec). */
   mutualCount: number;
+  /** Up to 3 of the actual mutual connections (real people, not a random
+   * sample of the count) -- the small overlapping avatar stack on a
+   * Suggested card. Same size cap as mutualCount is uncapped -- the full
+   * number still reads out via mutualCount even when more than 3 exist. */
+  mutualAvatars: { id: string; name: string; avatar_url: string | null }[];
 }
 
 export async function getSuggestedCreators(
@@ -1506,6 +1511,9 @@ export async function getSuggestedCreators(
     const eligibleIds = eligible.map((c: any) => c.id);
 
     const mutualCounts = new Map<string, number>();
+    // Real mutual-connection ids per candidate (capped at 3 -- the avatar
+    // stack never needs more), not just a count.
+    const mutualIdsByCandidate = new Map<string, string[]>();
     if (viewerConnections.size) {
       const idList = eligibleIds.join(',');
       const { data: candidateConnRows } = await supabase
@@ -1518,9 +1526,17 @@ export async function getSuggestedCreators(
         [[r.user_a_id, r.user_b_id], [r.user_b_id, r.user_a_id]].forEach(([candidateId, otherId]) => {
           if (eligibleIds.includes(candidateId) && viewerConnections.has(otherId)) {
             mutualCounts.set(candidateId, (mutualCounts.get(candidateId) ?? 0) + 1);
+            const list = mutualIdsByCandidate.get(candidateId) ?? [];
+            if (list.length < 3) { list.push(otherId); mutualIdsByCandidate.set(candidateId, list); }
           }
         });
       });
+    }
+    const allMutualIds = [...new Set([...mutualIdsByCandidate.values()].flat())];
+    const mutualProfileMap = new Map<string, { id: string; name: string; avatar_url: string | null }>();
+    if (allMutualIds.length) {
+      const { data: mutualProfiles } = await supabase.from('profiles').select('id, name, avatar_url').in('id', allMutualIds);
+      (mutualProfiles ?? []).forEach((p: any) => mutualProfileMap.set(p.id, { id: p.id, name: p.name, avatar_url: p.avatar_url }));
     }
 
     const suggestions: SuggestedCreator[] = eligible.map((c: any) => ({
@@ -1528,6 +1544,7 @@ export async function getSuggestedCreators(
       primary_role: c.primary_role, secondary_roles: toStringArray(c.secondary_roles),
       city: c.city, is_verified: !!c.is_verified, skills: toStringArray(c.skills),
       mutualCount: mutualCounts.get(c.id) ?? 0,
+      mutualAvatars: (mutualIdsByCandidate.get(c.id) ?? []).map(id => mutualProfileMap.get(id)).filter((p): p is { id: string; name: string; avatar_url: string | null } => !!p),
     }));
     suggestions.sort((a, b) => (b.mutualCount - a.mutualCount) || (Number(b.is_verified) - Number(a.is_verified)));
     return suggestions.slice(0, limit);

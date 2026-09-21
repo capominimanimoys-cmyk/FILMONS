@@ -33,6 +33,10 @@ import { NotificationSettings }  from './pages/NotificationSettings';
 import { MessageSettings }        from './pages/MessageSettings';
 import { VerificationSettings }   from './pages/VerificationSettings';
 import { MyConnections }          from './pages/MyConnections';
+import { ConnectionRequests }      from './pages/ConnectionRequests';
+import { AllConnections }          from './pages/AllConnections';
+import { SuggestedConnections }    from './pages/SuggestedConnections';
+import { ConnectionsActivity }     from './pages/ConnectionsActivity';
 import { PrivacySettings }        from './pages/PrivacySettings';
 import { ReviewsSettings }        from './pages/ReviewsSettings';
 import { DeviceSettings }         from './pages/DeviceSettings';
@@ -146,8 +150,10 @@ export const router = createBrowserRouter([
       { path: 'share-card', Component: ShareCard },
       { path: 'verification', Component: Verification },
       { path: 'connections', Component: MyConnections },
-      { path: 'connections/requests', Component: MyConnections },
-      { path: 'connections/suggested', Component: MyConnections },
+      { path: 'connections/requests', Component: ConnectionRequests },
+      { path: 'connections/all', Component: AllConnections },
+      { path: 'connections/suggested', Component: SuggestedConnections },
+      { path: 'connections/activity', Component: ConnectionsActivity },
       { path: 'refund-policy', Component: RefundPolicy },
       { path: 'privacy-policy', Component: PrivacyPolicy },
       { path: 'terms-conditions', Component: TermsConditions },

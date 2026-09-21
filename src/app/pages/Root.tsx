@@ -113,14 +113,19 @@ export function Root() {
   // unlike the sidebar/bottom-nav flags below, this ONE flag now covers
   // both the mobile `TopBar` and `DesktopTopBar` renders, since both
   // should disappear together for this route.
-  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox');
+  // /connections (and every subpage under it -- requests/all/suggested/
+  // activity) is its own focused, full-screen workspace per spec, not
+  // another primary navigation feed -- it carries its own local "<- Title"
+  // header (see ConnectionsSubpageShell) instead of the global one, same
+  // treatment /inbox already gets for the same reason.
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections');
   const showFooter   = location.pathname === '/';
   // /inbox wants the full viewport on mobile too, matching a dedicated
   // messaging app (no bottom tab bar under the conversation list OR an
   // open conversation) -- conversationOpen (below) already covered the
   // open-conversation case via its own event from Inbox.tsx, but the list
   // view itself should never show it either now.
-  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || location.pathname.startsWith('/inbox') || conversationOpen;
+  const hideBottomNav = NO_BOTTOM_NAV_PAGES.some(p => location.pathname.startsWith(p)) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections') || conversationOpen;
   // The dedicated /search/category/* pages (CategoryResults.tsx) want the
   // full desktop width for their own two-column filters+results layout --
   // removing DesktopSidebar from the DOM entirely (not just visually
