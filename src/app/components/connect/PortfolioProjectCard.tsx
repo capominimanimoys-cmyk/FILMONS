@@ -195,41 +195,43 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
           with your thoughts" hands off to the ordinary Post composer with
           this item pre-attached (see RepostComposeContext) rather than
           inventing a second engagement surface for Portfolio work. ── */}
-      <BottomSheet open={showRepostMenu} onClose={() => setShowRepostMenu(false)}>
-        <div className="px-2 py-2">
-          <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
-          {reposted ? (
-            <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
-              <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                <Repeat2 className="w-4 h-4 text-red-500" />
+      {showRepostMenu && (
+        <BottomSheet onClose={() => setShowRepostMenu(false)}>
+          <div className="px-2 py-2">
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
+            {reposted ? (
+              <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
+                <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                  <Repeat2 className="w-4 h-4 text-red-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-black text-red-600">Remove Repost</p>
+                  <p className="text-xs text-gray-400">Remove from your profile and feed</p>
+                </div>
+              </button>
+            ) : (
+              <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
+                <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
+                  <Repeat2 className="w-4 h-4 text-green-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-black text-gray-900">Repost</p>
+                  <p className="text-xs text-gray-400">Share to your followers</p>
+                </div>
+              </button>
+            )}
+            <button onClick={handleRepostWithThoughts} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
+              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                <MessageCircle className="w-4 h-4 text-blue-500" />
               </div>
               <div className="flex-1">
-                <p className="text-sm font-black text-red-600">Remove Repost</p>
-                <p className="text-xs text-gray-400">Remove from your profile and feed</p>
+                <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
+                <p className="text-xs text-gray-400">Add your own commentary</p>
               </div>
             </button>
-          ) : (
-            <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
-              <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                <Repeat2 className="w-4 h-4 text-green-500" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-black text-gray-900">Repost</p>
-                <p className="text-xs text-gray-400">Share to your followers</p>
-              </div>
-            </button>
-          )}
-          <button onClick={handleRepostWithThoughts} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
-            <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-              <MessageCircle className="w-4 h-4 text-blue-500" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
-              <p className="text-xs text-gray-400">Add your own commentary</p>
-            </div>
-          </button>
-        </div>
-      </BottomSheet>
+          </div>
+        </BottomSheet>
+      )}
 
       {showItemDetail && createPortal(
         <PortfolioItemFocusView item={item} onClose={() => setShowItemDetail(false)} />,

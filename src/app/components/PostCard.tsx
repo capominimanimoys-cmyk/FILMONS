@@ -966,81 +966,93 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         />
 
         {/* Shared sheets — same ones used by regular PostCard */}
-        <BottomSheet open={showMenu} onClose={() => setShowMenu(false)}>
-          <div className="px-2 py-1">
-            <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
-            </button>
-            <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <Globe className="w-4 h-4 text-gray-400" /> Change visibility
-            </button>
-            <button onClick={() => { setShowMenu(false); handleSave(); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <Bookmark className="w-3.5 h-3.5 text-gray-500" /> {saved ? 'Unsave' : 'Save'}
-            </button>
-            <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <Link2 className="w-4 h-4 text-gray-400" /> Copy link
-            </button>
-            <button onClick={async () => {
-              setShowMenu(false);
-              const next = localPost.allowComments === false;
-              setPost(p => ({ ...p, allowComments: next }));
-              await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
-              toast.success(next ? 'Comments turned on' : 'Comments turned off');
-            }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
-            </button>
-            <div className="border-t border-gray-100 my-1" />
-            <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl">
-              <Trash2 className="w-4 h-4" /> Delete post
-            </button>
-          </div>
-        </BottomSheet>
-
-        <BottomSheet open={showOtherMenu} onClose={() => setShowOtherMenu(false)}>
-          <div className="px-2 py-1">
-            <button onClick={() => { setShowOtherMenu(false); handleSave(); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <Bookmark className="w-3.5 h-3.5 text-gray-500" /> {saved ? 'Unsave' : 'Save'}
-            </button>
-            <button onClick={() => { setShowOtherMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <Link2 className="w-4 h-4 text-gray-400" /> Copy link
-            </button>
-            <button onClick={() => { setShowOtherMenu(false); setHidden(true); toast('Post hidden'); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-              <EyeOff className="w-4 h-4 text-gray-400" /> Hide post
-            </button>
-          </div>
-        </BottomSheet>
-
-        <BottomSheet open={showRepostMenu} onClose={() => setShowRepostMenu(false)}>
-          <div className="px-2 py-2">
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
-            {hasReposted ? (
-              <button onClick={() => handleUndoRepost()} disabled={reposting}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50">
-                <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                  <Repeat2 className="w-4 h-4 text-red-500" />
-                </div>
-                <div><p className="text-sm font-black text-red-600">Remove Repost</p><p className="text-xs text-gray-400">Remove from your profile</p></div>
+        {/* BottomSheet has no `open` prop -- it must be mount/unmounted by
+            its caller (see BottomSheet.tsx's own doc comment); rendering it
+            unconditionally with a bogus `open={...}` prop meant it silently
+            became permanently visible shortly after every PostCard mounted,
+            since its internal reveal effect runs once on mount regardless
+            of this state. */}
+        {showMenu && (
+          <BottomSheet onClose={() => setShowMenu(false)}>
+            <div className="px-2 py-1">
+              <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
               </button>
-            ) : (
-              <button onClick={handleRepost} disabled={reposting}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50">
-                <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                  <Repeat2 className="w-4 h-4 text-green-500" />
-                </div>
-                <div><p className="text-sm font-black text-gray-900">Repost</p><p className="text-xs text-gray-400">Share to your followers</p></div>
+              <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <Globe className="w-4 h-4 text-gray-400" /> Change visibility
               </button>
-            )}
-          </div>
-        </BottomSheet>
+              <button onClick={() => { setShowMenu(false); handleSave(); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <Bookmark className="w-3.5 h-3.5 text-gray-500" /> {saved ? 'Unsave' : 'Save'}
+              </button>
+              <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <Link2 className="w-4 h-4 text-gray-400" /> Copy link
+              </button>
+              <button onClick={async () => {
+                setShowMenu(false);
+                const next = localPost.allowComments === false;
+                setPost(p => ({ ...p, allowComments: next }));
+                await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
+                toast.success(next ? 'Comments turned on' : 'Comments turned off');
+              }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
+              </button>
+              <div className="border-t border-gray-100 my-1" />
+              <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl">
+                <Trash2 className="w-4 h-4" /> Delete post
+              </button>
+            </div>
+          </BottomSheet>
+        )}
+
+        {showOtherMenu && (
+          <BottomSheet onClose={() => setShowOtherMenu(false)}>
+            <div className="px-2 py-1">
+              <button onClick={() => { setShowOtherMenu(false); handleSave(); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <Bookmark className="w-3.5 h-3.5 text-gray-500" /> {saved ? 'Unsave' : 'Save'}
+              </button>
+              <button onClick={() => { setShowOtherMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <Link2 className="w-4 h-4 text-gray-400" /> Copy link
+              </button>
+              <button onClick={() => { setShowOtherMenu(false); setHidden(true); toast('Post hidden'); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
+                <EyeOff className="w-4 h-4 text-gray-400" /> Hide post
+              </button>
+            </div>
+          </BottomSheet>
+        )}
+
+        {showRepostMenu && (
+          <BottomSheet onClose={() => setShowRepostMenu(false)}>
+            <div className="px-2 py-2">
+              <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
+              {hasReposted ? (
+                <button onClick={() => handleUndoRepost()} disabled={reposting}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50">
+                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                    <Repeat2 className="w-4 h-4 text-red-500" />
+                  </div>
+                  <div><p className="text-sm font-black text-red-600">Remove Repost</p><p className="text-xs text-gray-400">Remove from your profile</p></div>
+                </button>
+              ) : (
+                <button onClick={handleRepost} disabled={reposting}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50">
+                  <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
+                    <Repeat2 className="w-4 h-4 text-green-500" />
+                  </div>
+                  <div><p className="text-sm font-black text-gray-900">Repost</p><p className="text-xs text-gray-400">Share to your followers</p></div>
+                </button>
+              )}
+            </div>
+          </BottomSheet>
+        )}
 
         {showComments && (
           <CommentSheet
@@ -1111,48 +1123,50 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               Boost/Analytics/Post activity/Archive/Download were all
               removed from here on purpose (not accidentally trimmed) --
               this menu was 13 items deep, most of them placeholder toasts. */}
-          <BottomSheet open={showMenu} onClose={() => setShowMenu(false)}>
-            <div className="px-2 py-1">
-              <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
-              </button>
+          {showMenu && (
+            <BottomSheet onClose={() => setShowMenu(false)}>
+              <div className="px-2 py-1">
+                <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+                  <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
+                </button>
 
-              <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Globe className="w-4 h-4 text-gray-400" /> Change visibility
-              </button>
+                <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+                  <Globe className="w-4 h-4 text-gray-400" /> Change visibility
+                </button>
 
-              <button onClick={() => { setShowMenu(false); handleSave(); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-current text-blue-600' : 'text-gray-500'}`} />
-                {saved ? 'Unsave post' : 'Save post'}
-              </button>
+                <button onClick={() => { setShowMenu(false); handleSave(); }}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+                  <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-current text-blue-600' : 'text-gray-500'}`} />
+                  {saved ? 'Unsave post' : 'Save post'}
+                </button>
 
-              <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <Link2 className="w-4 h-4 text-gray-400" /> Copy link
-              </button>
+                <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+                  <Link2 className="w-4 h-4 text-gray-400" /> Copy link
+                </button>
 
-              <button onClick={async () => {
-                setShowMenu(false);
-                const next = localPost.allowComments === false;
-                setPost(p => ({ ...p, allowComments: next }));
-                await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
-                toast.success(next ? 'Comments turned on' : 'Comments turned off');
-              }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
-              </button>
+                <button onClick={async () => {
+                  setShowMenu(false);
+                  const next = localPost.allowComments === false;
+                  setPost(p => ({ ...p, allowComments: next }));
+                  await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
+                  toast.success(next ? 'Comments turned on' : 'Comments turned off');
+                }}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
+                  <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
+                </button>
 
-              <div className="border-t border-gray-100 my-1" />
+                <div className="border-t border-gray-100 my-1" />
 
-              <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }} disabled={deleting}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete post'}
-              </button>
-            </div>
-          </BottomSheet>
+                <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }} disabled={deleting}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                  <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete post'}
+                </button>
+              </div>
+            </BottomSheet>
+          )}
 
 
         {/* ── Three-dot for OTHER users' posts ── */}
@@ -1188,44 +1202,46 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         )}
 
         {/* ── Repost dropdown ── */}
-        <BottomSheet open={showRepostMenu} onClose={() => setShowRepostMenu(false)}>
-          <div className="px-2 py-2">
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
-            {hasReposted ? (
-              <button onClick={() => handleUndoRepost()} disabled={reposting}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
-                <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                  <Repeat2 className="w-4 h-4 text-red-500"/>
+        {showRepostMenu && (
+          <BottomSheet onClose={() => setShowRepostMenu(false)}>
+            <div className="px-2 py-2">
+              <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
+              {hasReposted ? (
+                <button onClick={() => handleUndoRepost()} disabled={reposting}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
+                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                    <Repeat2 className="w-4 h-4 text-red-500"/>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-red-600">{reposting ? 'Removing…' : 'Remove Repost'}</p>
+                    <p className="text-xs text-gray-400">Remove from your profile and feed</p>
+                  </div>
+                </button>
+              ) : (
+                <button onClick={handleRepost} disabled={reposting}
+                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
+                  <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
+                    <Repeat2 className="w-4 h-4 text-green-500"/>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-gray-900">{reposting ? 'Reposting…' : 'Repost'}</p>
+                    <p className="text-xs text-gray-400">Share to your followers</p>
+                  </div>
+                </button>
+              )}
+              <button onClick={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
+                <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                  <MessageCircle className="w-4 h-4 text-blue-500"/>
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-black text-red-600">{reposting ? 'Removing…' : 'Remove Repost'}</p>
-                  <p className="text-xs text-gray-400">Remove from your profile and feed</p>
+                  <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
+                  <p className="text-xs text-gray-400">Add your own commentary</p>
                 </div>
               </button>
-            ) : (
-              <button onClick={handleRepost} disabled={reposting}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
-                <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                  <Repeat2 className="w-4 h-4 text-green-500"/>
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-black text-gray-900">{reposting ? 'Reposting…' : 'Repost'}</p>
-                  <p className="text-xs text-gray-400">Share to your followers</p>
-                </div>
-              </button>
-            )}
-            <button onClick={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
-              className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
-              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                <MessageCircle className="w-4 h-4 text-blue-500"/>
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
-                <p className="text-xs text-gray-400">Add your own commentary</p>
-              </div>
-            </button>
-          </div>
-        </BottomSheet>
+            </div>
+          </BottomSheet>
+        )}
 
         {/* ── Card box ── */}
         <div ref={cardRef} className="bg-white border-b border-gray-100">
@@ -1343,41 +1359,43 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 </div>
 
                 {/* Post Details sheet */}
-                <BottomSheet open={showMetaSheet} onClose={()=>setShowMetaSheet(false)}>
-                  <div className="px-2 py-2">
-                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Post Details</p>
-                    {hasLoc && (
-                      <button onClick={()=>{ setShowMetaSheet(false); navigate(`/search/location/${encodeURIComponent(normalizeLocationKey((localPost as any).location))}`); }}
-                        className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
-                        <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                          <MapPin className="w-4 h-4 text-blue-500"/>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-black text-gray-900">📍 View Location</p>
-                          <p className="text-xs text-gray-400">{(localPost as any).location}</p>
-                        </div>
-                      </button>
-                    )}
-                    {hasAudio && (
-                      <button onClick={()=>{
-                        setShowMetaSheet(false);
-                        const aId=(localPost as any).audioId, aTitle=(localPost as any).audioTitle;
-                        if(aId) navigate(`/audio/${aId}`);
-                        else if(aTitle) navigate(`/audio/search?title=${encodeURIComponent(aTitle)}`);
-                      }}
-                        className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-sm"
-                          style={{background:'linear-gradient(135deg,#3b82f6,#8b5cf6)'}}>♫</div>
-                        <div className="flex-1">
-                          <p className="text-sm font-black text-gray-900">🎵 View Audio Details</p>
-                          <p className="text-xs text-gray-400">
-                            {isOriginal ? `Original Audio · @${localPost.userName}` : `${(localPost as any).audioTitle} · ${(localPost as any).audioArtist}`}
-                          </p>
-                        </div>
-                      </button>
-                    )}
-                  </div>
-                </BottomSheet>
+                {showMetaSheet && (
+                  <BottomSheet onClose={()=>setShowMetaSheet(false)}>
+                    <div className="px-2 py-2">
+                      <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Post Details</p>
+                      {hasLoc && (
+                        <button onClick={()=>{ setShowMetaSheet(false); navigate(`/search/location/${encodeURIComponent(normalizeLocationKey((localPost as any).location))}`); }}
+                          className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
+                          <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                            <MapPin className="w-4 h-4 text-blue-500"/>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-black text-gray-900">📍 View Location</p>
+                            <p className="text-xs text-gray-400">{(localPost as any).location}</p>
+                          </div>
+                        </button>
+                      )}
+                      {hasAudio && (
+                        <button onClick={()=>{
+                          setShowMetaSheet(false);
+                          const aId=(localPost as any).audioId, aTitle=(localPost as any).audioTitle;
+                          if(aId) navigate(`/audio/${aId}`);
+                          else if(aTitle) navigate(`/audio/search?title=${encodeURIComponent(aTitle)}`);
+                        }}
+                          className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-sm"
+                            style={{background:'linear-gradient(135deg,#3b82f6,#8b5cf6)'}}>♫</div>
+                          <div className="flex-1">
+                            <p className="text-sm font-black text-gray-900">🎵 View Audio Details</p>
+                            <p className="text-xs text-gray-400">
+                              {isOriginal ? `Original Audio · @${localPost.userName}` : `${(localPost as any).audioTitle} · ${(localPost as any).audioArtist}`}
+                            </p>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  </BottomSheet>
+                )}
               </>
             );
           })()}
