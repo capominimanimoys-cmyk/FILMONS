@@ -1,20 +1,23 @@
 // Repost menu -- shared by PostCard.tsx and every Portfolio card (item/
 // album), so there is exactly one implementation to fix/style, not one
-// per content type. Deliberately NOT built on BottomSheet/createPortal:
-// rendered directly inline in the caller's own tree, the same pattern
-// this file's neighboring "Quote Repost Modal"/"Boost Modal" already use.
-// A portaled sheet was confirmed (via live debugging with a user) to
-// sometimes never actually reach the DOM even though React's own render
-// log proved the component tree included it -- consistent with a browser
-// extension/content blocker treating a dynamically-inserted, high-z-index,
-// document.body-appended overlay as an unwanted popup and stripping it.
-// A plain in-tree overlay (no portal) sidesteps that heuristic entirely.
+// per content type.
+//
+// Portaled to document.body via createPortal, same as CommentSheet.tsx --
+// an earlier version of this file rendered inline (no portal) instead,
+// on the theory that something was stripping portaled overlays. That
+// theory didn't hold up: rendering inline meant this sheet's `fixed`
+// positioning got trapped inside whatever ancestor of PostCard happens to
+// establish a CSS containing block (a transform/filter/etc. somewhere up
+// the tree, e.g. Home's feed wrapper) instead of the real viewport -- the
+// sheet showed up clipped inside the post card instead of covering the
+// screen. Comments (also portaled) was independently confirmed working
+// for the user who hit that bug, so the portal itself was never the
+// problem; this now matches CommentSheet's exact structure.
 //
 // Slides up from the bottom on open / down on close -- same double-RAF
-// mount trick + delayed-close pattern as CommentSheet.tsx, so this feels
-// identical to the Comments sheet rather than the flat, no-transition
-// popup it started as.
+// mount trick + delayed-close pattern as CommentSheet.tsx.
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Repeat2, MessageCircle, Check, X } from 'lucide-react';
 
 export function RepostMenuSheet({
@@ -66,7 +69,7 @@ function RepostMenuSheetInner({
   // write is in flight, same as before this component had an entrance/exit
   // animation at all). Only Cancel/backdrop/X use the local animated
   // close() -- those have nothing to wait on.
-  return (
+  return createPortal((
     <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -136,5 +139,5 @@ function RepostMenuSheetInner({
         </button>
       </div>
     </div>
-  );
+  ), document.body);
 }
