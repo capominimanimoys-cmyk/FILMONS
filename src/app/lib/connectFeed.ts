@@ -136,15 +136,6 @@ export async function getConnectFeed(opts: {
   const postTargetIds = activityResult.entries
     .filter(e => e.targetId && (e.activityType === 'post_published' || (e.activityType === 'content_reposted' && e.targetType === 'post')))
     .map(e => e.targetId as string);
-  if (postTargetIds.length) {
-    const realPosts = await postsApi.getByIds([...new Set(postTargetIds)]);
-    const postMap = new Map(realPosts.map(p => [p.id, p]));
-    activityResult.entries = activityResult.entries.map(e =>
-      e.targetId && postMap.has(e.targetId) && (e.activityType === 'post_published' || (e.activityType === 'content_reposted' && e.targetType === 'post'))
-        ? { ...e, post: postMap.get(e.targetId) }
-        : e,
-    );
-  }
 
   // Same batching for a content_reposted entry whose original is a
   // Portfolio item/album -- attaches the REAL live PortfolioFeedEntry so
@@ -155,22 +146,41 @@ export async function getConnectFeed(opts: {
   const repostAlbumIds = activityResult.entries
     .filter(e => e.activityType === 'content_reposted' && e.targetType === 'portfolio_album' && e.targetId)
     .map(e => e.targetId as string);
-  if (repostItemIds.length || repostAlbumIds.length) {
-    const entryMap = await getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)]);
-    activityResult.entries = activityResult.entries.map(e =>
-      e.activityType === 'content_reposted' && e.targetId
-        && (e.targetType === 'portfolio_item' || e.targetType === 'portfolio_album') && entryMap.has(e.targetId)
-        ? { ...e, portfolioEntry: entryMap.get(e.targetId) }
-        : e,
-    );
-  }
 
+  // actorIds only reads portfolioEntries/activityResult.entries, both
+  // already resolved above -- none of these 3 lookups depend on each
+  // other's result, so they were needlessly run as 3 sequential round
+  // trips before; now one Promise.all.
   const actorIds = [
     ...portfolioEntries.map(e => e.creator.id),
     ...activityResult.entries.flatMap(e => [e.actor.id, e.otherUser?.id].filter((x): x is string => !!x)),
   ];
   const unresolved = [...new Set(actorIds)].filter(id => !opts.trustLevels?.has(id));
-  const freshLevels = unresolved.length ? await getTrustLevelsBatch(unresolved) : new Map<string, TrustLevel>();
+
+  const [realPosts, repostEntryMap, freshLevels] = await Promise.all([
+    postTargetIds.length ? postsApi.getByIds([...new Set(postTargetIds)]) : Promise.resolve([]),
+    (repostItemIds.length || repostAlbumIds.length)
+      ? getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)])
+      : Promise.resolve(new Map<string, PortfolioFeedEntry>()),
+    unresolved.length ? getTrustLevelsBatch(unresolved) : Promise.resolve(new Map<string, TrustLevel>()),
+  ]);
+
+  if (postTargetIds.length) {
+    const postMap = new Map(realPosts.map(p => [p.id, p]));
+    activityResult.entries = activityResult.entries.map(e =>
+      e.targetId && postMap.has(e.targetId) && (e.activityType === 'post_published' || (e.activityType === 'content_reposted' && e.targetType === 'post'))
+        ? { ...e, post: postMap.get(e.targetId) }
+        : e,
+    );
+  }
+  if (repostItemIds.length || repostAlbumIds.length) {
+    activityResult.entries = activityResult.entries.map(e =>
+      e.activityType === 'content_reposted' && e.targetId
+        && (e.targetType === 'portfolio_item' || e.targetType === 'portfolio_album') && repostEntryMap.has(e.targetId)
+        ? { ...e, portfolioEntry: repostEntryMap.get(e.targetId) }
+        : e,
+    );
+  }
   const trustLevels = new Map([...(opts.trustLevels ?? new Map()), ...freshLevels]);
 
   const followingSet = new Set(followingIdsArr);

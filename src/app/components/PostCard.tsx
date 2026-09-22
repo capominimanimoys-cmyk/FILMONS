@@ -582,8 +582,17 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // Only subscribe to posts UPDATE — this carries the authoritative likes_count
   // and avoids double-counting from simultaneous post_likes INSERT + posts UPDATE.
   useEffect(() => {
+    // A crypto.randomUUID() suffix, not Date.now() -- the same post can
+    // now mount as more than one PostCard at once (e.g. its own feed
+    // entry AND a repost of it via RepostedActivityCard), and two mounts
+    // landing in the same React commit can call Date.now() within the
+    // same millisecond, producing an identical channel name. Supabase
+    // then treats the second .channel() call as the SAME already-
+    // subscribed channel, and the .on() below throws ("cannot add
+    // postgres_changes callback ... after 'subscribe()'") instead of
+    // ever attaching its own listener.
     const ch = supabase
-      .channel(`post_likes:${localPost.id}:${Date.now()}`)
+      .channel(`post_likes:${localPost.id}:${crypto.randomUUID()}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'posts',
         filter: `id=eq.${localPost.id}`,

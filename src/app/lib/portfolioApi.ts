@@ -1257,23 +1257,28 @@ export async function getPortfolioFeed(opts: {
     albums = albums.filter(a => (itemCountByAlbum.get(a.id) ?? 0) > 0);
     if (!items.length && !albums.length) return [];
 
+    // Neither of these two lookups depends on the other's result (author
+    // profiles need only items/albums; the cover-item lookup needs only
+    // albums) -- both already resolved above, so run together instead of
+    // as two sequential round trips.
     const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
-    const { data: profileRows } = await supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds);
-    const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
-
     // An explicit cover_item_id (a creator-chosen "featured" cover) can be
     // any item in the album, not necessarily one of the first 3 by sort
     // order -- looked up separately from previewByAlbum below rather than
     // assumed to already be in that slice.
     const coverLookupIds = albums.filter(a => !a.cover_url && a.cover_item_id).map(a => a.cover_item_id!);
+    const [{ data: profileRows }, coverRes] = await Promise.all([
+      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds),
+      coverLookupIds.length
+        ? supabase.from('portfolio_items').select('id, thumbnail_url, media_url, aspect_ratio, width, height').in('id', coverLookupIds)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
     const coverItemMap = new Map<string, { url: string | null; aspect_ratio: number | null }>();
-    if (coverLookupIds.length) {
-      const { data } = await supabase.from('portfolio_items').select('id, thumbnail_url, media_url, aspect_ratio, width, height').in('id', coverLookupIds);
-      (data ?? []).forEach((r: any) => coverItemMap.set(r.id, {
-        url: r.thumbnail_url || r.media_url || null,
-        aspect_ratio: r.aspect_ratio ?? (r.width && r.height ? r.width / r.height : null),
-      }));
-    }
+    (coverRes.data ?? []).forEach((r: any) => coverItemMap.set(r.id, {
+      url: r.thumbnail_url || r.media_url || null,
+      aspect_ratio: r.aspect_ratio ?? (r.width && r.height ? r.width / r.height : null),
+    }));
 
     const creatorFor = (userId: string): PortfolioFeedCreator => {
       const p = profiles.get(userId);
@@ -1355,9 +1360,20 @@ export async function getPortfolioEntriesByIds(
     const albums = ((albumsRes.data ?? []) as PortfolioAlbum[]).filter(a => !nonPublicUserIds.has(a.user_id));
     if (!items.length && !albums.length) return map;
 
+    // Independent of each other (profiles needs only items/albums, the
+    // album-items lookup needs only albums, both already resolved above)
+    // -- run together instead of as two sequential round trips.
     const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
-    const { data: profileRows } = await supabase.from('profiles')
-      .select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds);
+    const [{ data: profileRows }, albumItemsRes] = await Promise.all([
+      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds),
+      albums.length
+        ? supabase.from('portfolio_album_items')
+            .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url, aspect_ratio, width, height)')
+            .in('album_id', albums.map(a => a.id))
+            .order('album_id', { ascending: true })
+            .order('sort_order', { ascending: true })
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
     const profiles = new Map((profileRows ?? []).map((p: any) => [p.id, p]));
     const creatorFor = (userId: string): PortfolioFeedCreator => {
       const p = profiles.get(userId);
@@ -1371,12 +1387,7 @@ export async function getPortfolioEntriesByIds(
     items.forEach(item => map.set(item.id, { type: 'item', id: item.id, created_at: item.created_at, creator: creatorFor(item.user_id), item }));
 
     if (albums.length) {
-      const { data } = await supabase
-        .from('portfolio_album_items')
-        .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url, aspect_ratio, width, height)')
-        .in('album_id', albums.map(a => a.id))
-        .order('album_id', { ascending: true })
-        .order('sort_order', { ascending: true });
+      const data = albumItemsRes.data;
       const itemCountByAlbum = new Map<string, number>();
       const previewByAlbum = new Map<string, PortfolioFeedPreviewItem[]>();
       (data ?? []).forEach((r: any) => {
