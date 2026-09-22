@@ -1218,7 +1218,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         )}
 
         {/* ── Repost dropdown ── */}
-        {showRepostMenu && (
+        {showRepostMenu && (() => { console.warn('[repost-debug] rendering sheet for post', localPost.id); return true; })() && (
           <BottomSheet onClose={() => setShowRepostMenu(false)}>
             <div className="px-2 py-2">
               <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
@@ -1765,7 +1765,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </button>
             {/* Repost */}
             <button
-              onClick={()=>{ if(!user){toast.error('Sign in to repost');return;} dispatchMenuOpen(); setShowRepostMenu(v=>!v); }}
+              onClick={()=>{ console.warn('[repost-debug] button clicked', { hasUser: !!user, postId: localPost.id, showRepostMenuBefore: showRepostMenu }); if(!user){toast.error('Sign in to repost');return;} dispatchMenuOpen(); setShowRepostMenu(v=>!v); }}
               className={`flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-all active:scale-90 ${hasReposted?'text-green-500':'text-gray-700 hover:text-green-500'}`}>
               <Repeat2 className={`w-5 h-5 ${hasReposted?'text-green-500':''}`}/>
               {(localPost.repostCount??0)>0 && (
