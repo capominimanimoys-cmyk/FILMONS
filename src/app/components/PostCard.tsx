@@ -34,7 +34,7 @@ import { normalizeLocationKey } from '../lib/locationsApi';
 import { LikesSheet } from './LikesSheet';
 import { RepostsSheet } from './RepostsSheet';
 import { RepostMenuSheet } from './RepostMenuSheet';
-import { RepostComposer } from './RepostComposer';
+import { usePostRepostCompose } from '../context/PostRepostComposeContext';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 import { BottomSheet } from './BottomSheet';
 import { PostOwnMenuSheet } from './PostOwnMenuSheet';
@@ -350,11 +350,14 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Gate only -- the composer itself (RepostComposer.tsx) owns its own
-  // comment text/posting state and is portaled to document.body, not
-  // rendered inline here (see that file's own header comment for why).
-  const [showRepostModal, setShowRepostModal] = useState(false);
   const [reposting, setReposting] = useState(false);
+  // "Repost with thoughts" opens the real, full-featured Create Post
+  // composer (media/portfolio/listing/link/location/mentions/hashtags),
+  // not a stripped-down dedicated one -- requested globally (see
+  // PostRepostComposeContext's own header comment for why this can't just
+  // be local state here) so it works no matter which page this PostCard
+  // happens to be rendered on.
+  const { requestPostRepostCompose } = usePostRepostCompose();
 
   // Lightbox
   const [lightbox, setLightbox] = useState<{ type: 'image' | 'video' | 'audio'; index: number } | null>(null);
@@ -932,14 +935,8 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           busy={reposting}
           onRepost={handleRepost}
           onUndoRepost={() => handleUndoRepost()}
-          onRepostWithThoughts={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
+          onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(localPost, newPost => onReposted?.(newPost)); }}
         />
-
-        {/* Portaled to document.body -- see RepostComposer.tsx's own
-            header comment for why this must never render inline here. */}
-        {showRepostModal && (
-          <RepostComposer post={localPost} onClose={() => setShowRepostModal(false)} onPosted={newPost => onReposted?.(newPost)} />
-        )}
 
         {showComments && (
           <CommentSheet
@@ -1069,7 +1066,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           busy={reposting}
           onRepost={handleRepost}
           onUndoRepost={() => handleUndoRepost()}
-          onRepostWithThoughts={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
+          onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(localPost, newPost => onReposted?.(newPost)); }}
         />
 
         {/* ── Card box ── */}
@@ -1695,16 +1692,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </div>
           </div>
         </div>
-      )}
-
-      {/* ── Repost with your thoughts -- portaled to document.body, never
-          rendered inline inside this card. See RepostComposer.tsx's own
-          header comment: the previous inline version's `fixed` overlay
-          could get trapped inside whatever CSS containing block this
-          card's ancestors happen to establish, showing up squeezed
-          inside the post instead of covering the screen. ── */}
-      {showRepostModal && (
-        <RepostComposer post={localPost} onClose={() => setShowRepostModal(false)} onPosted={newPost => onReposted?.(newPost)} />
       )}
 
       {/* ── Boost Post Modal ── */}

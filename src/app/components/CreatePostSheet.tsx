@@ -31,8 +31,9 @@ import { searchProfiles, attachMentionsToPost, type ProfileResult } from '../lib
 import { notifyEvent } from '../lib/notifyEvent';
 import * as notifs from '../lib/notifications';
 import { toast } from 'sonner';
-import type { Visibility, Listing } from '../types';
+import type { Visibility, Listing, Post } from '../types';
 import type { PortfolioItem } from '../lib/portfolioApi';
+import { QuotedPostPreview } from './QuotedPostPreview';
 
 interface MediaDraft {
   id: string;
@@ -50,7 +51,7 @@ const AUDIENCE_OPTIONS: { id: Visibility; label: string; sub: string; icon: any 
 const isUUID = (v: any): boolean =>
   !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
 
-export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, initialPortfolioItem, closing }: {
+export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, initialPortfolioItem, initialRepostOfPost, closing }: {
   onClose: () => void;
   onPost?: (p?: any) => void;
   currentUser?: any;
@@ -62,6 +63,12 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
    * SAME live attachment mechanism the ordinary "attach portfolio work" flow
    * already uses, not a new repost-specific code path. */
   initialPortfolioItem?: PortfolioItem;
+  /** "Repost with thoughts" on a Post -- same idea as initialPortfolioItem
+   * above, just for the other repostable content type. The original is
+   * shown read-only via QuotedPostPreview and written back as a live
+   * reference (repostOf: {postId, userId, ...}) via postsApi.create's own
+   * repostOf param, never copied into this new post's own content. */
+  initialRepostOfPost?: Post;
   closing?: boolean;
 }) {
   const { user: authUser } = useAuth();
@@ -202,7 +209,12 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
     setSelectedListings(p => p.find(l => l.id === listing.id) ? p.filter(l => l.id !== listing.id) : [...p, listing]);
   };
 
-  const hasContent = caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || selectedListings.length > 0;
+  // Reposting a Post specifically requires the viewer's own thoughts (the
+  // point of "repost with thoughts" vs. a plain instant repost) -- the
+  // attached original doesn't count as "your own content" for this gate.
+  const hasContent = initialRepostOfPost
+    ? caption.trim().length > 0
+    : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || selectedListings.length > 0;
 
   // ── Publish ─────────────────────────────────────────────────────────────
   const publish = async () => {
@@ -248,7 +260,15 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         [],
         true,
         link.trim() || undefined,
-        undefined,
+        initialRepostOfPost ? {
+          postId:    initialRepostOfPost.id,
+          userId:    initialRepostOfPost.userId,
+          userName:  initialRepostOfPost.userName,
+          userAvatar: initialRepostOfPost.userAvatar,
+          content:   initialRepostOfPost.content,
+          images:    initialRepostOfPost.images,
+          createdAt: initialRepostOfPost.createdAt,
+        } : undefined,
         {
           location: location?.name || undefined,
           listingId: firstListing && isUUID(firstListing.id) ? String(firstListing.id) : undefined,
@@ -276,6 +296,18 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         if (rows.length) supabase.from('post_listings').upsert(rows, { onConflict: 'post_id,listing_id', ignoreDuplicates: true }).then(() => {}).catch(() => {});
       }
       if (draftId) deleteDraft(draftId).catch(() => {});
+
+      if (initialRepostOfPost && initialRepostOfPost.userId !== user.id) {
+        notifs.push(initialRepostOfPost.userId, {
+          type: 'content_repost_thoughts',
+          fromUserId:    user.id,
+          fromUserName:  user.name,
+          fromUserAvatar: user.avatar,
+          postId:        newPost.id,
+          postContent:   caption.trim().slice(0, 60),
+          postImage:     initialRepostOfPost.images?.[0] || initialRepostOfPost.thumbnailUrl,
+        });
+      }
 
       notifyEvent({
         type: 'new_post_portfolio', creatorId: user.id, creatorName: user.name || user.username || '',
@@ -441,7 +473,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
             ref={textareaRef}
             value={caption}
             onChange={e => handleCaptionChange(e.target.value)}
-            placeholder="Share something with the Filmons community…"
+            placeholder={initialRepostOfPost ? 'What are your thoughts?' : 'Share something with the Filmons community…'}
             className="w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-400 resize-none outline-none leading-relaxed py-2"
             style={{ minHeight: 120 }}
             autoFocus
@@ -573,6 +605,18 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
               <p className="text-xs font-bold text-blue-600 truncate flex-1">{link}</p>
               <button onClick={() => setLink('')}><X className="w-3.5 h-3.5 text-gray-400" /></button>
             </div>
+          </div>
+        )}
+
+        {/* Repost from {original author}'s post -- read-only, never a copy;
+            the live reference is written back via postsApi.create's own
+            repostOf param above. */}
+        {initialRepostOfPost && (
+          <div className="px-4 pt-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 mb-1.5">
+              Repost from {initialRepostOfPost.userName}'s post
+            </p>
+            <QuotedPostPreview post={initialRepostOfPost} />
           </div>
         )}
 

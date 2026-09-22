@@ -1,8 +1,9 @@
-// The embedded "original post" shown inside RepostComposer.tsx -- a
-// read-only preview (avatar, creator, role/time, caption, media), never
-// the full interactive PostCard. No Like/Comment/Repost/Share/Save/
-// three-dot menu here on purpose: this is a quote, not a second live post
-// card nested inside the composer.
+// The embedded "original post" shown inside CreatePostSheet.tsx when
+// composing a "repost with thoughts" -- a read-only preview (avatar,
+// creator, role/time, caption, media), never the full interactive
+// PostCard. No Like/Comment/Repost/Share/Save/three-dot menu here on
+// purpose: this is a quote, not a second live post card nested inside
+// the composer.
 import { UserAvatar } from './AccountTypeBadge';
 import type { Post } from '../types';
 

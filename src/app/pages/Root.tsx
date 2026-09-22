@@ -18,6 +18,7 @@ import { getPendingReturnUrl } from '../lib/authReturnUrl';
 import { PortfolioPreviewContext, type PortfolioPreviewRequest } from '../context/PortfolioPreviewContext';
 import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../context/LearningTransitionContext';
 import { RepostComposeProvider } from '../context/RepostComposeContext';
+import { PostRepostComposeProvider, GlobalPostRepostComposer } from '../context/PostRepostComposeContext';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
 import type { User } from '../types';
 
@@ -177,12 +178,15 @@ export function Root() {
       <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
         <LearningTransitionProvider>
         <RepostComposeProvider>
+        <PostRepostComposeProvider>
           <NotificationBannerProvider>
             <div className="min-h-screen flex flex-col">
               <Outlet />
             </div>
+            <GlobalPostRepostComposer />
             <CookieConsent />
           </NotificationBannerProvider>
+        </PostRepostComposeProvider>
         </RepostComposeProvider>
         </LearningTransitionProvider>
       </PortfolioPreviewContext.Provider>
@@ -193,6 +197,7 @@ export function Root() {
     <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
     <LearningTransitionProvider>
     <RepostComposeProvider>
+    <PostRepostComposeProvider>
     <NotificationBannerProvider>
       <RouteProgressBar />
       <div className="min-h-screen flex flex-col">
@@ -254,9 +259,12 @@ export function Root() {
           />
         )}
 
+        <GlobalPostRepostComposer />
+
         <CookieConsent />
       </div>
     </NotificationBannerProvider>
+    </PostRepostComposeProvider>
     </RepostComposeProvider>
     </LearningTransitionProvider>
     </PortfolioPreviewContext.Provider>
