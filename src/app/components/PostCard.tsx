@@ -34,6 +34,7 @@ import { normalizeLocationKey } from '../lib/locationsApi';
 import { LikesSheet } from './LikesSheet';
 import { RepostsSheet } from './RepostsSheet';
 import { RepostMenuSheet } from './RepostMenuSheet';
+import { RepostComposer } from './RepostComposer';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
 function timeAgo(dateString?: string | null): string {
@@ -400,8 +401,10 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Gate only -- the composer itself (RepostComposer.tsx) owns its own
+  // comment text/posting state and is portaled to document.body, not
+  // rendered inline here (see that file's own header comment for why).
   const [showRepostModal, setShowRepostModal] = useState(false);
-  const [repostComment, setRepostComment] = useState('');
   const [reposting, setReposting] = useState(false);
 
   // Lightbox
@@ -804,46 +807,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     finally { setReposting(false); }
   };
 
-  const handleQuoteRepost = async () => {
-    if (!user) { toast.error('Sign in to repost'); return; }
-    if (!repostComment.trim()) { toast.error('Add a comment to quote repost'); return; }
-    setReposting(true);
-    try {
-      const newPost = await postsApi.create(
-        repostComment.trim(), undefined, undefined, undefined, undefined,
-        true, undefined, undefined, true, undefined,
-        {
-          postId: localPost.id,
-          userId: localPost.userId,
-          userName: localPost.userName,
-          userAvatar: localPost.userAvatar,
-          content: localPost.content,
-          images: localPost.images,
-          createdAt: localPost.createdAt,
-        },
-      );
-      onReposted?.(newPost);
-      // postId points at the NEW wrapper post (not the original) -- unlike
-      // a plain repost, this one has real content of its own to open, so
-      // "tapping the notification opens that repost" can mean exactly that.
-      if (localPost.userId && localPost.userId !== user.id) {
-        notifs.push(localPost.userId, {
-          type: 'content_repost_thoughts',
-          fromUserId:    user.id,
-          fromUserName:  user.name,
-          fromUserAvatar: user.avatar,
-          postId:        newPost.id,
-          postContent:   repostComment.trim().slice(0, 60),
-          postImage:     localPost.images?.[0] || localPost.thumbnailUrl,
-        });
-      }
-      toast.success('Quote reposted!');
-      setShowRepostModal(false);
-      setRepostComment('');
-    } catch { toast.error('Could not quote repost'); }
-    finally { setReposting(false); }
-  };
-
   // ── toggle comments ──
   const handleToggleComments = () => setShowComments(v => !v);
 
@@ -1065,35 +1028,10 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           onRepostWithThoughts={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
         />
 
-        {/* ── Quote Repost Modal -- same as the main (non-audio) branch's
-            own copy below; this branch returns before ever reaching that
-            one, so it needs its own instance to make "Repost with your
-            thoughts" actually work for audio posts too. ── */}
+        {/* Portaled to document.body -- see RepostComposer.tsx's own
+            header comment for why this must never render inline here. */}
         {showRepostModal && (
-          <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowRepostModal(false)}>
-            <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h3 className="font-bold text-gray-900">Repost with your thoughts</h3>
-                <button onClick={() => setShowRepostModal(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"><X className="w-4 h-4" /></button>
-              </div>
-              <div className="p-5 space-y-3">
-                <textarea value={repostComment} onChange={e => setRepostComment(e.target.value)}
-                  placeholder="What do you think?" rows={3}
-                  className="w-full text-sm text-gray-800 placeholder-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-400 resize-none" />
-                <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <UserAvatar user={{ name: localPost.userName, avatar: localPost.userAvatar, id: localPost.userId }} size={22} />
-                    <span className="text-xs font-semibold text-gray-700">{localPost.userName}</span>
-                  </div>
-                  {localPost.content && <p className="text-xs text-gray-600 line-clamp-2">{localPost.content}</p>}
-                </div>
-                <button onClick={handleQuoteRepost} disabled={reposting || !repostComment.trim()}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors">
-                  {reposting ? <><Loader2 className="w-4 h-4 animate-spin" /> Reposting…</> : <><Repeat2 className="w-4 h-4" /> Post</>}
-                </button>
-              </div>
-            </div>
-          </div>
+          <RepostComposer post={localPost} onClose={() => setShowRepostModal(false)} onPosted={newPost => onReposted?.(newPost)} />
         )}
 
         {showComments && (
@@ -1884,33 +1822,14 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         </div>
       )}
 
-      {/* ── Quote Repost Modal ── */}
+      {/* ── Repost with your thoughts -- portaled to document.body, never
+          rendered inline inside this card. See RepostComposer.tsx's own
+          header comment: the previous inline version's `fixed` overlay
+          could get trapped inside whatever CSS containing block this
+          card's ancestors happen to establish, showing up squeezed
+          inside the post instead of covering the screen. ── */}
       {showRepostModal && (
-        <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowRepostModal(false)}>
-          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h3 className="font-bold text-gray-900">Repost with your thoughts</h3>
-              <button onClick={() => setShowRepostModal(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <textarea value={repostComment} onChange={e => setRepostComment(e.target.value)}
-                placeholder="What do you think?" rows={3}
-                className="w-full text-sm text-gray-800 placeholder-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-400 resize-none" />
-              <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <UserAvatar user={{ name: localPost.userName, avatar: localPost.userAvatar, id: localPost.userId }} size={22} />
-                  <span className="text-xs font-semibold text-gray-700">{localPost.userName}</span>
-                </div>
-                {localPost.content && <p className="text-xs text-gray-600 line-clamp-2">{localPost.content}</p>}
-                {localPost.images?.[0] && <img src={localPost.images[0]} alt="" className="mt-1.5 w-full h-16 object-cover rounded-lg" />}
-              </div>
-              <button onClick={handleQuoteRepost} disabled={reposting || !repostComment.trim()}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors">
-                {reposting ? <><Loader2 className="w-4 h-4 animate-spin" /> Reposting…</> : <><Repeat2 className="w-4 h-4" /> Post</>}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RepostComposer post={localPost} onClose={() => setShowRepostModal(false)} onPosted={newPost => onReposted?.(newPost)} />
       )}
 
       {/* ── Boost Post Modal ── */}
