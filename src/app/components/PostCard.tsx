@@ -634,22 +634,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const displayLikesCount = localPost.likesCount ?? (localPost.likes || []).length;
   const canDownload = isOwn || localPost.allowDownload !== false;
 
-  // ── Fetch real comment count — staggered to avoid mass re-render cascade ──
-  useEffect(() => {
-    const t = setTimeout(() => {
-      commentsApi.getCount(localPost.id).then(cnt => {
-        // Always update from server — server is authoritative
-        setCommentCount(cnt);
-        try {
-          const cache = JSON.parse(localStorage.getItem('filmons_comment_counts') || '{}');
-          cache[localPost.id] = cnt;
-          localStorage.setItem('filmons_comment_counts', JSON.stringify(cache));
-        } catch {}
-      }).catch(() => {});
-    }, Math.random() * 2000 + 500); // stagger 0.5–2.5s
-    return () => clearTimeout(t);
-  }, [localPost.id]); // eslint-disable-line
-
   // tagged users
   const taggedUsers = ((localPost as any).taggedUserIds || []).length
     ? (((localPost as any).taggedUserIds || []).map((id: string) => authApi.getUserByIdSync(id)).filter(Boolean) as import('../types').User[])
