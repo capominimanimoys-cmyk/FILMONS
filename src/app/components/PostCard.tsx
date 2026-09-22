@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, Music, Repeat2, Flag,
   EyeOff, BarChart, User as UserIcon, AlertTriangle,
   Bell, BellOff, UserMinus, Archive, Edit2, Globe, Eye,
-  Copy, Clock, Tag, Smile, ThumbsDown, MapPin, ArrowRight, Check,
+  Copy, Clock, Tag, Smile, ThumbsDown, MapPin, ArrowRight,
 } from 'lucide-react';
 import { Post, Comment } from '../types';
 import { postsApi, commentsApi, authApi, savedPostsApi } from '../lib/api';
@@ -33,6 +33,7 @@ import { SharePostSheet } from './connect/SharePostSheet';
 import { normalizeLocationKey } from '../lib/locationsApi';
 import { LikesSheet } from './LikesSheet';
 import { RepostsSheet } from './RepostsSheet';
+import { RepostMenuSheet } from './RepostMenuSheet';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
 function timeAgo(dateString?: string | null): string {
@@ -1045,29 +1046,45 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           </BottomSheet>
         )}
 
-        {showRepostMenu && (
-          <BottomSheet onClose={() => setShowRepostMenu(false)}>
-            <div className="px-2 py-2">
-              <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
-              {hasReposted ? (
-                <button onClick={() => handleUndoRepost()} disabled={reposting}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50">
-                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                    <Repeat2 className="w-4 h-4 text-red-500" />
+        <RepostMenuSheet
+          open={showRepostMenu}
+          onClose={() => setShowRepostMenu(false)}
+          hasReposted={hasReposted}
+          busy={reposting}
+          onRepost={handleRepost}
+          onUndoRepost={() => handleUndoRepost()}
+          onRepostWithThoughts={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
+        />
+
+        {/* ── Quote Repost Modal -- same as the main (non-audio) branch's
+            own copy below; this branch returns before ever reaching that
+            one, so it needs its own instance to make "Repost with your
+            thoughts" actually work for audio posts too. ── */}
+        {showRepostModal && (
+          <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowRepostModal(false)}>
+            <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h3 className="font-bold text-gray-900">Repost with your thoughts</h3>
+                <button onClick={() => setShowRepostModal(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-5 space-y-3">
+                <textarea value={repostComment} onChange={e => setRepostComment(e.target.value)}
+                  placeholder="What do you think?" rows={3}
+                  className="w-full text-sm text-gray-800 placeholder-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-400 resize-none" />
+                <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <UserAvatar user={{ name: localPost.userName, avatar: localPost.userAvatar, id: localPost.userId }} size={22} />
+                    <span className="text-xs font-semibold text-gray-700">{localPost.userName}</span>
                   </div>
-                  <div><p className="text-sm font-black text-red-600">Remove Repost</p><p className="text-xs text-gray-400">Remove from your profile</p></div>
+                  {localPost.content && <p className="text-xs text-gray-600 line-clamp-2">{localPost.content}</p>}
+                </div>
+                <button onClick={handleQuoteRepost} disabled={reposting || !repostComment.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors">
+                  {reposting ? <><Loader2 className="w-4 h-4 animate-spin" /> Reposting…</> : <><Repeat2 className="w-4 h-4" /> Post</>}
                 </button>
-              ) : (
-                <button onClick={handleRepost} disabled={reposting}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50">
-                  <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                    <Repeat2 className="w-4 h-4 text-green-500" />
-                  </div>
-                  <div><p className="text-sm font-black text-gray-900">Repost</p><p className="text-xs text-gray-400">Share to your followers</p></div>
-                </button>
-              )}
+              </div>
             </div>
-          </BottomSheet>
+          </div>
         )}
 
         {showComments && (
@@ -1218,52 +1235,15 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         )}
 
         {/* ── Repost dropdown ── */}
-        {showRepostMenu && (() => { console.warn('[repost-debug] rendering sheet for post', localPost.id); return true; })() && (
-          <BottomSheet onClose={() => setShowRepostMenu(false)}>
-            <div className="px-2 py-2">
-              <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
-              {hasReposted && (
-                <div className="flex items-center gap-2 px-4 pb-2 text-green-600">
-                  <Check className="w-3.5 h-3.5" />
-                  <p className="text-xs font-black">Reposted</p>
-                </div>
-              )}
-              {hasReposted ? (
-                <button onClick={() => handleUndoRepost()} disabled={reposting}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
-                  <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                    <Repeat2 className="w-4 h-4 text-red-500"/>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-black text-red-600">{reposting ? 'Removing…' : 'Remove repost'}</p>
-                    <p className="text-xs text-gray-400">Remove from your Activity and future distribution</p>
-                  </div>
-                </button>
-              ) : (
-                <button onClick={handleRepost} disabled={reposting}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
-                  <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                    <Repeat2 className="w-4 h-4 text-green-500"/>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-black text-gray-900">{reposting ? 'Reposting…' : 'Repost'}</p>
-                    <p className="text-xs text-gray-400">Share instantly with your network</p>
-                  </div>
-                </button>
-              )}
-              <button onClick={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
-                <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                  <MessageCircle className="w-4 h-4 text-blue-500"/>
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
-                  <p className="text-xs text-gray-400">Add something before sharing</p>
-                </div>
-              </button>
-            </div>
-          </BottomSheet>
-        )}
+        <RepostMenuSheet
+          open={showRepostMenu}
+          onClose={() => setShowRepostMenu(false)}
+          hasReposted={hasReposted}
+          busy={reposting}
+          onRepost={handleRepost}
+          onUndoRepost={() => handleUndoRepost()}
+          onRepostWithThoughts={() => { setShowRepostMenu(false); setShowRepostModal(true); }}
+        />
 
         {/* ── Card box ── */}
         <div ref={cardRef} className="bg-white border-b border-gray-100">
@@ -1765,7 +1745,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </button>
             {/* Repost */}
             <button
-              onClick={()=>{ console.warn('[repost-debug] button clicked', { hasUser: !!user, postId: localPost.id, showRepostMenuBefore: showRepostMenu }); if(!user){toast.error('Sign in to repost');return;} dispatchMenuOpen(); setShowRepostMenu(v=>!v); }}
+              onClick={()=>{ if(!user){toast.error('Sign in to repost');return;} dispatchMenuOpen(); setShowRepostMenu(v=>!v); }}
               className={`flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-all active:scale-90 ${hasReposted?'text-green-500':'text-gray-700 hover:text-green-500'}`}>
               <Repeat2 className={`w-5 h-5 ${hasReposted?'text-green-500':''}`}/>
               {(localPost.repostCount??0)>0 && (
@@ -1897,15 +1877,15 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
       {/* ── Quote Repost Modal ── */}
       {showRepostModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowRepostModal(false)}>
           <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h3 className="font-bold text-gray-900">Quote Repost</h3>
+              <h3 className="font-bold text-gray-900">Repost with your thoughts</h3>
               <button onClick={() => setShowRepostModal(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-3">
               <textarea value={repostComment} onChange={e => setRepostComment(e.target.value)}
-                placeholder="Add your comment…" rows={3}
+                placeholder="What do you think?" rows={3}
                 className="w-full text-sm text-gray-800 placeholder-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-400 resize-none" />
               <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
                 <div className="flex items-center gap-2 mb-1.5">
@@ -1917,7 +1897,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </div>
               <button onClick={handleQuoteRepost} disabled={reposting || !repostComment.trim()}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors">
-                {reposting ? <><Loader2 className="w-4 h-4 animate-spin" /> Reposting…</> : <><Repeat2 className="w-4 h-4" /> Quote Repost</>}
+                {reposting ? <><Loader2 className="w-4 h-4 animate-spin" /> Reposting…</> : <><Repeat2 className="w-4 h-4" /> Post</>}
               </button>
             </div>
           </div>

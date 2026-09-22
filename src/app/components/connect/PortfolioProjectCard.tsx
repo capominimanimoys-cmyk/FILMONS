@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Link2, EyeOff, Flag, ExternalLink, Repeat2, Check } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -27,7 +27,7 @@ import { useRepostCompose } from '../../context/RepostComposeContext';
 import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
-import { BottomSheet } from '../BottomSheet';
+import { RepostMenuSheet } from '../RepostMenuSheet';
 
 export function PortfolioProjectCard({ entry, trustLevel }: {
   entry: Extract<PortfolioFeedEntry, { type: 'item' }>;
@@ -190,54 +190,20 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         </button>
       </div>
 
-      {/* ── Repost menu -- mirrors PostCard.tsx's own sheet exactly, per
-          spec ("Repost" / "Repost with your thoughts" / Cancel). "Repost
-          with your thoughts" hands off to the ordinary Post composer with
-          this item pre-attached (see RepostComposeContext) rather than
-          inventing a second engagement surface for Portfolio work. ── */}
-      {showRepostMenu && (
-        <BottomSheet onClose={() => setShowRepostMenu(false)}>
-          <div className="px-2 py-2">
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
-            {reposted && (
-              <div className="flex items-center gap-2 px-4 pb-2 text-green-600">
-                <Check className="w-3.5 h-3.5" />
-                <p className="text-xs font-black">Reposted</p>
-              </div>
-            )}
-            {reposted ? (
-              <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
-                <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                  <Repeat2 className="w-4 h-4 text-red-500" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-black text-red-600">Remove repost</p>
-                  <p className="text-xs text-gray-400">Remove from your Activity and future distribution</p>
-                </div>
-              </button>
-            ) : (
-              <button onClick={handleToggleRepost} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-green-50 transition-colors">
-                <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                  <Repeat2 className="w-4 h-4 text-green-500" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-black text-gray-900">Repost</p>
-                  <p className="text-xs text-gray-400">Share instantly with your network</p>
-                </div>
-              </button>
-            )}
-            <button onClick={handleRepostWithThoughts} className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-gray-50 transition-colors">
-              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                <MessageCircle className="w-4 h-4 text-blue-500" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
-                <p className="text-xs text-gray-400">Add something before sharing</p>
-              </div>
-            </button>
-          </div>
-        </BottomSheet>
-      )}
+      {/* ── Repost menu -- shared component with PostCard.tsx (not a
+          per-content-type reimplementation). "Repost with your thoughts"
+          hands off to the ordinary Post composer with this item
+          pre-attached (see RepostComposeContext) rather than inventing a
+          second engagement surface for Portfolio work. ── */}
+      <RepostMenuSheet
+        open={showRepostMenu}
+        onClose={() => setShowRepostMenu(false)}
+        hasReposted={reposted}
+        busy={false}
+        onRepost={handleToggleRepost}
+        onUndoRepost={handleToggleRepost}
+        onRepostWithThoughts={handleRepostWithThoughts}
+      />
 
       {showItemDetail && createPortal(
         <PortfolioItemFocusView item={item} onClose={() => setShowItemDetail(false)} />,
