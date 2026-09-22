@@ -9,6 +9,12 @@
 // extension/content blocker treating a dynamically-inserted, high-z-index,
 // document.body-appended overlay as an unwanted popup and stripping it.
 // A plain in-tree overlay (no portal) sidesteps that heuristic entirely.
+//
+// Slides up from the bottom on open / down on close -- same double-RAF
+// mount trick + delayed-close pattern as CommentSheet.tsx, so this feels
+// identical to the Comments sheet rather than the flat, no-transition
+// popup it started as.
+import { useState, useEffect, useCallback } from 'react';
 import { Repeat2, MessageCircle, Check, X } from 'lucide-react';
 
 export function RepostMenuSheet({
@@ -25,21 +31,61 @@ export function RepostMenuSheet({
   onRepostWithThoughts: () => void;
 }) {
   if (!open) return null;
+  return <RepostMenuSheetInner {...{ onClose, hasReposted, busy, busyLabel, onRepost, onUndoRepost, onRepostWithThoughts }} />;
+}
+
+// Split out so the double-RAF/visible-state effect resets cleanly every
+// time the sheet mounts (parent controls mount/unmount via `open`, same
+// convention BottomSheet's own doc comment already establishes).
+function RepostMenuSheetInner({
+  onClose, hasReposted, busy, busyLabel, onRepost, onUndoRepost, onRepostWithThoughts,
+}: Omit<Parameters<typeof RepostMenuSheet>[0], 'open'>) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    let t: number;
+    const outer = requestAnimationFrame(() => { t = requestAnimationFrame(() => setVisible(true)); });
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(t); };
+  }, []);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  const close = useCallback(() => {
+    setVisible(false);
+    setTimeout(onClose, 320);
+  }, [onClose]);
+
+  // Repost/Undo/"with thoughts" are NOT wrapped in close() here -- their
+  // handlers (in PostCard.tsx/PortfolioProjectCard.tsx) already call the
+  // parent's setShowRepostMenu(false) themselves once the action actually
+  // completes (so "Reposting…" stays visible on this sheet while the
+  // write is in flight, same as before this component had an entrance/exit
+  // animation at all). Only Cancel/backdrop/X use the local animated
+  // close() -- those have nothing to wait on.
   return (
-    <div
-      className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+    <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
+        style={{ opacity: visible ? 1 : 0 }}
+        onClick={close}
+      />
       <div
         className="relative w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          transform: visible ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
         onClick={e => e.stopPropagation()}
       >
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
         <div className="hidden sm:flex items-center justify-between px-4 pt-3">
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Repost</p>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100">
+          <button onClick={close} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100">
             <X className="w-3.5 h-3.5 text-gray-400" />
           </button>
         </div>
@@ -85,7 +131,7 @@ export function RepostMenuSheet({
             </div>
           </button>
         </div>
-        <button onClick={onClose} className="w-full py-3.5 text-sm font-black text-gray-500 text-center border-t border-gray-100">
+        <button onClick={close} className="w-full py-3.5 text-sm font-black text-gray-500 text-center border-t border-gray-100">
           Cancel
         </button>
       </div>
