@@ -116,6 +116,14 @@ interface NavState {
     accountLevel?: AccountTier | null;
   } | null;
   sort?: SortOption;
+  // Overrides AllGroupedResults' default product-name header (e.g.
+  // "Marketplace") -- used by the Browse Search landing page's "Because
+  // you're a {role}" row so "View all" lands on a page titled "Because
+  // you're a Filmmaker" rather than a generic "Marketplace", while the
+  // role stays active as the page's actual search query (see `query`
+  // above) so the personalization itself carries over too, not just the
+  // label.
+  pageTitle?: string;
 }
 
 interface CreatorRow {
@@ -2197,7 +2205,8 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
           <p className="text-base lg:text-lg font-black text-gray-900">
-            {product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results'}
+            {initialNavState.pageTitle
+              || (product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results')}
           </p>
         </div>
 
@@ -2374,6 +2383,7 @@ export function CategoryResults() {
       verifiedOnly: searchParams.get('verified') === '1',
       accountLevel: (searchParams.get('level') as AccountTier | null) || null,
     },
+    pageTitle: stateNav.pageTitle,
   };
 
   if (!isAuthenticated) return null;

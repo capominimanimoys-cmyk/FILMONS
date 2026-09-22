@@ -1377,6 +1377,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     closeAndNavigate(`/search/category/${tab}${qs}`, { query: q, filters, sort });
   }, [closeAndNavigate, q, filters, sort]);
 
+  // Marketplace landing page's "Because you're a {role}" row -- its own
+  // "View all", distinct from handleViewMoreCategory above, because the
+  // destination needs to (a) carry the role itself as the page's actual
+  // search query, so the personalization stays active rather than
+  // dropping to a generic unfiltered Marketplace list, and (b) show
+  // "Because you're a {role}" as the page's own title instead of the
+  // generic "Marketplace" -- see CategoryResults.tsx's pageTitle.
+  const handleViewAllRole = useCallback(() => {
+    if (!user?.primaryRole) return;
+    const role = user.primaryRole;
+    closeAndNavigate(`/search/category/marketplace?q=${encodeURIComponent(role)}`, {
+      query: role, filters, sort, pageTitle: `Because you're a ${role}`,
+    });
+  }, [closeAndNavigate, user?.primaryRole, filters, sort]);
+
   // Backfills oppOwnerTypes for any Opportunity-listing owner in the
   // current results not already cached -- one small profiles lookup per
   // newly-seen batch of owners, never re-fetching one already known.
@@ -1863,7 +1878,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                       primaryRole is unset, so no extra gate is needed here. */}
                   {user?.primaryRole && (
                     <MarketplaceDiscoveryRow title={`Because you're a ${user.primaryRole}`} listings={roleListings}
-                      onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                      onNavigate={handleResultNavigate} onViewAll={handleViewAllRole}/>
                   )}
                 </>
               ) : (
