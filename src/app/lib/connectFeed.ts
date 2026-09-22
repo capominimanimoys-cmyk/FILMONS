@@ -10,22 +10,109 @@
 // getPortfolioFeed -- including them from both sources would double-count
 // every portfolio publish.
 import { getPortfolioFeed, getPortfolioEntriesByIds, type PortfolioFeedEntry } from './portfolioApi';
-import { getActivityFeed, type ActivityEntry } from './activityApi';
+import { getActivityFeed, type ActivityEntry, type ActivityActor } from './activityApi';
 import { getTrustLevelsBatch, type TrustLevel } from './trustApi';
 import { postsApi } from './api';
+import type { Post } from '../types';
 
 export type ConnectSort = 'relevant' | 'recent';
 
 export type ConnectFeedItem =
   | { kind: 'portfolio'; entry: PortfolioFeedEntry }
-  | { kind: 'activity'; entry: ActivityEntry };
+  | { kind: 'activity'; entry: ActivityEntry }
+  // Multiple people reposting the SAME original, combined into one item --
+  // see groupReposts below. Never used for "repost with thoughts" (that's
+  // a real new post_published entry, its own distinct 'activity' item,
+  // per spec: each person's commentary is different content).
+  | {
+      kind: 'repost-group';
+      targetType: 'post' | 'portfolio_item' | 'portfolio_album';
+      targetId: string;
+      /** Most-recent-first, de-duplicated by actor id. */
+      actors: ActivityActor[];
+      totalActorCount: number;
+      createdAt: string;
+      post?: Post;
+      portfolioEntry?: PortfolioFeedEntry;
+    };
 
 function itemTimestamp(item: ConnectFeedItem): number {
-  return new Date(item.kind === 'portfolio' ? item.entry.created_at : item.entry.createdAt).getTime();
+  if (item.kind === 'portfolio') return new Date(item.entry.created_at).getTime();
+  if (item.kind === 'activity')  return new Date(item.entry.createdAt).getTime();
+  return new Date(item.createdAt).getTime();
 }
 
 function itemActorId(item: ConnectFeedItem): string {
-  return item.kind === 'portfolio' ? item.entry.creator.id : item.entry.actor.id;
+  if (item.kind === 'portfolio') return item.entry.creator.id;
+  if (item.kind === 'activity')  return item.entry.actor.id;
+  return item.actors[0]?.id ?? '';
+}
+
+// React key for one feed item -- centralized here (rather than a ternary
+// re-typed at each .map() call site) now that there are three kinds, not
+// two, to keep straight.
+export function connectFeedItemKey(item: ConnectFeedItem): string {
+  if (item.kind === 'portfolio')     return `portfolio-${item.entry.type}-${item.entry.id}`;
+  if (item.kind === 'repost-group')  return `repost-group-${item.targetType}-${item.targetId}`;
+  return `activity-${item.entry.id}`;
+}
+
+// "A and B reposted" / "A, B and C reposted" / "A, B and N others reposted"
+// -- up to 2 named, matching the spec's own example ("User A, User C and 3
+// others reposted"). Shared by every surface that renders a repost-group
+// item (Connect feed's RepostGroupCard, Connections Activity's compact
+// row) so the phrasing never drifts between them.
+export function formatReposterNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  if (names.length === 3) return `${names[0]}, ${names[1]} and ${names[2]}`;
+  return `${names[0]}, ${names[1]} and ${names.length - 2} others`;
+}
+
+// Multiple people reposting the SAME original within one feed page reads as
+// noisy near-duplicates (spec: "avoid showing User B's identical post
+// repeatedly") -- grouped into one "User A, User C and N others reposted"
+// item with a single instance of the original underneath, instead of N
+// separate RepostedActivityCards. Scoped to entries already fetched for
+// this page (not a standing server-side aggregate) -- reposts of the same
+// content spread far apart in time can still land as separate groups on
+// different pages. A real, working first pass, not the final word on
+// aggregation (same spirit as relevanceScore's own comment above).
+function groupReposts(entries: ActivityEntry[]): ConnectFeedItem[] {
+  const groups = new Map<string, ActivityEntry[]>();
+  const items: ConnectFeedItem[] = [];
+  for (const e of entries) {
+    if (e.activityType !== 'content_reposted' || !e.targetId || !e.targetType) {
+      items.push({ kind: 'activity', entry: e });
+      continue;
+    }
+    const key = `${e.targetType}:${e.targetId}`;
+    const list = groups.get(key);
+    if (list) list.push(e); else groups.set(key, [e]);
+  }
+  for (const list of groups.values()) {
+    if (list.length === 1) { items.push({ kind: 'activity', entry: list[0] }); continue; }
+    const sorted = [...list].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const seen = new Set<string>();
+    const actors: ActivityActor[] = [];
+    for (const e of sorted) {
+      if (seen.has(e.actor.id)) continue;
+      seen.add(e.actor.id);
+      actors.push(e.actor);
+    }
+    const mostRecent = sorted[0];
+    items.push({
+      kind: 'repost-group',
+      targetType: mostRecent.targetType as 'post' | 'portfolio_item' | 'portfolio_album',
+      targetId: mostRecent.targetId!,
+      actors,
+      totalActorCount: actors.length,
+      createdAt: mostRecent.createdAt,
+      post: sorted.find(e => e.post)?.post,
+      portfolioEntry: sorted.find(e => e.portfolioEntry)?.portfolioEntry,
+    });
+  }
+  return items;
 }
 
 // A transparent, explainable first pass at "Most relevant" -- not a black
@@ -51,10 +138,10 @@ function mergeAndSort(
 ): ConnectFeedItem[] {
   const items: ConnectFeedItem[] = [
     ...portfolioEntries.map(entry => ({ kind: 'portfolio' as const, entry })),
-    // portfolio_published/portfolio_album_published excluded -- see file header.
-    ...activityEntries
-      .filter(e => e.activityType !== 'portfolio_published' && e.activityType !== 'portfolio_album_published')
-      .map(entry => ({ kind: 'activity' as const, entry })),
+    // portfolio_published/portfolio_album_published excluded -- see file
+    // header. content_reposted entries are grouped by target (see
+    // groupReposts above) before everything else passes through as-is.
+    ...groupReposts(activityEntries.filter(e => e.activityType !== 'portfolio_published' && e.activityType !== 'portfolio_album_published')),
   ];
   if (sort === 'relevant') {
     return items.sort((a, b) => relevanceScore(b, { followingIds, trustLevels }) - relevanceScore(a, { followingIds, trustLevels }));

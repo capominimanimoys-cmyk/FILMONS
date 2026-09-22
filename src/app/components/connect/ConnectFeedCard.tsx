@@ -14,6 +14,7 @@ import { ConnectionActivityCard } from './ConnectionActivityCard';
 import { RecommendationActivityCard } from './RecommendationActivityCard';
 import { PostActivityCard } from './PostActivityCard';
 import { RepostedActivityCard } from './RepostedActivityCard';
+import { RepostGroupCard } from './RepostGroupCard';
 
 export type { ConnectFeedItem };
 
@@ -28,6 +29,11 @@ export function ConnectFeedCard({ item, trustLevels }: {
     return item.entry.type === 'item'
       ? <PortfolioProjectCard entry={item.entry as Extract<PortfolioFeedEntry, { type: 'item' }>} trustLevel={trustLevel} />
       : <PortfolioAlbumCard entry={item.entry as Extract<PortfolioFeedEntry, { type: 'album' }>} trustLevel={trustLevel} />;
+  }
+
+  if (item.kind === 'repost-group') {
+    const trustLevel = trustLevels.get(item.actors[0]?.id ?? '');
+    return <RepostGroupCard item={item} trustLevel={trustLevel} />;
   }
 
   const entry = item.entry;

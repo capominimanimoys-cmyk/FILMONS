@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { listConnections, listPendingReceived, type ConnectionSummary } from '../lib/connectionsApi';
 import { getSuggestedCreators, type SuggestedCreator } from '../lib/portfolioApi';
 import { searchMatchingCreators, type SearchProfileRow } from '../lib/filmSearch';
-import { getConnectFeed, type ConnectFeedItem } from '../lib/connectFeed';
+import { getConnectFeed, formatReposterNames, type ConnectFeedItem } from '../lib/connectFeed';
 import { getActivitySentence } from '../lib/activityApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
@@ -85,6 +85,25 @@ function ActivityPreviewRow({ item }: { item: ConnectFeedItem }) {
         </div>
         <p className="text-xs text-gray-600 flex-1 min-w-0 truncate">
           <span className="font-bold text-gray-900">{entry.creator.name}</span> added {title} · {timeAgo(entry.created_at)}
+        </p>
+      </button>
+    );
+  }
+
+  if (item.kind === 'repost-group') {
+    const { actors, targetType, targetId, createdAt } = item;
+    return (
+      <button
+        onClick={() => navigate(targetType === 'post' ? `/post/${targetId}` : `/host/${actors[0].id}`)}
+        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200 shrink-0">
+          {actors[0].avatar_url
+            ? <img src={actors[0].avatar_url} alt="" className="w-full h-full object-cover" />
+            : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">{actors[0].name?.[0]?.toUpperCase() || '?'}</div>}
+        </div>
+        <p className="text-xs text-gray-600 flex-1 min-w-0 truncate">
+          <span className="font-bold text-gray-900">{formatReposterNames(actors.map(a => a.name))}</span> reposted · {timeAgo(createdAt)}
         </p>
       </button>
     );

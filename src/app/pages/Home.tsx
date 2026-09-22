@@ -26,7 +26,7 @@ import { ListingCard } from '../components/ListingCard';
 import { getSuggestedCreators, PORTFOLIO_CATEGORIES, type SuggestedCreator, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
-import { getConnectFeed, getRecommendedPortfolio, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
+import { getConnectFeed, getRecommendedPortfolio, connectFeedItemKey, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
 import { CreatePostSheet } from '../components/CreatePostSheet';
@@ -1357,7 +1357,7 @@ export function Home() {
                         />
                       ) : (
                         <ConnectFeedCard
-                          key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
+                          key={connectFeedItemKey(item)}
                           item={item} trustLevels={connectTrustLevels}
                         />
                       ))}

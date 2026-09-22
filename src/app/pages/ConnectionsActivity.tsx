@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router';
 import { FileText, Image as ImageIcon, Briefcase, Tag, Repeat2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { listConnections } from '../lib/connectionsApi';
-import { getConnectFeed, type ConnectFeedItem } from '../lib/connectFeed';
+import { getConnectFeed, formatReposterNames, type ConnectFeedItem } from '../lib/connectFeed';
 import { getActivitySentence } from '../lib/activityApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { ConnectionsPageHeader } from '../components/connect/ConnectionsPageHeader';
@@ -47,6 +47,27 @@ function CompactActivityRow({ item }: { item: ConnectFeedItem }) {
           <p className="text-xs text-gray-400 truncate">{title} · {timeAgo(entry.created_at)}</p>
         </div>
         <Thumb url={thumb} fallback={ImageIcon} />
+      </button>
+    );
+  }
+
+  if (item.kind === 'repost-group') {
+    const { actors, targetType, targetId, post, portfolioEntry, createdAt } = item;
+    const thumb = post?.images?.[0] || post?.thumbnailUrl
+      || (portfolioEntry?.type === 'item' ? (portfolioEntry.item.thumbnail_url || portfolioEntry.item.media_url) : portfolioEntry?.type === 'album' ? portfolioEntry.coverUrl : undefined);
+    const openGroupTarget = () => {
+      if (targetType === 'post') { navigate(`/post/${targetId}`); return; }
+      const ownerId = portfolioEntry?.creator.id ?? actors[0].id;
+      openPortfolioPreview(ownerId, targetType === 'portfolio_album' ? targetId : undefined);
+    };
+    return (
+      <button onClick={openGroupTarget} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left">
+        <Avatar url={actors[0].avatar_url} name={actors[0].name} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-gray-900 truncate"><span className="font-bold">{formatReposterNames(actors.map(a => a.name))}</span> reposted</p>
+          <p className="text-xs text-gray-400 truncate">{timeAgo(createdAt)}</p>
+        </div>
+        {thumb ? <Thumb url={thumb} fallback={Repeat2} /> : <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0 text-gray-300"><Repeat2 className="w-4 h-4" /></div>}
       </button>
     );
   }
