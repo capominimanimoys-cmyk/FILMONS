@@ -12,7 +12,7 @@ import {
   Zap, BarChart2, Pin, Star, TrendingUp, Maximize2,
   ChevronLeft, ChevronRight, Music, Repeat2, Flag,
   EyeOff, BarChart, User as UserIcon, AlertTriangle,
-  Bell, BellOff, UserMinus, Archive, Edit2, Globe, Eye,
+  Bell, BellOff, UserMinus, Archive, Eye,
   Copy, Clock, Tag, Smile, ThumbsDown, MapPin, ArrowRight,
 } from 'lucide-react';
 import { Post, Comment } from '../types';
@@ -36,6 +36,8 @@ import { RepostsSheet } from './RepostsSheet';
 import { RepostMenuSheet } from './RepostMenuSheet';
 import { RepostComposer } from './RepostComposer';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
+import { BottomSheet } from './BottomSheet';
+import { PostOwnMenuSheet } from './PostOwnMenuSheet';
 
 function timeAgo(dateString?: string | null): string {
   if (!dateString) return '';
@@ -86,64 +88,6 @@ function CaptionText({ text, className, expanded, onExpand, onHashtagTap }: {
         </>
       )}
     </p>
-  );
-}
-
-// ── Bottom Sheet — slides up from bottom with transition ─────────────────────
-function BottomSheet({ open, onClose, children }: {
-  open: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const [visible, setVisible] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setMounted(true);
-      requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)));
-    } else {
-      setVisible(false);
-      const t = setTimeout(() => setMounted(false), 360);
-      return () => clearTimeout(t);
-    }
-  }, [open]);
-
-  if (!mounted) return null;
-
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]"
-        style={{
-          opacity: visible ? 1 : 0,
-          transition: 'opacity 0.28s ease',
-        }}
-        onClick={onClose}
-      />
-      {/* Sheet */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl"
-        style={{
-          transform: visible ? 'translateY(0)' : 'translateY(100%)',
-          transition: visible
-            ? 'transform 0.36s cubic-bezier(0.32,0.72,0,1)'
-            : 'transform 0.28s cubic-bezier(0.4,0,1,1)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 bg-gray-200 rounded-full" />
-        </div>
-        <div className="overflow-y-auto max-h-[80vh] pb-6">
-          {children}
-        </div>
-      </div>
-    </>,
-    document.body,
   );
 }
 
@@ -902,14 +846,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const dispatchMenuOpen = () =>
     window.dispatchEvent(new CustomEvent(POST_MENU_EVENT, { detail: { postId: localPost.id } }));
 
-  const toggleMenu = () => {
-    console.warn('[menu-debug] toggleMenu clicked', { postId: localPost.id, isOwn, showMenuBefore: showMenu });
-    if (!showMenu) dispatchMenuOpen();
-    setShowMenu(v => !v);
-  };
-  useEffect(() => {
-    console.warn('[menu-debug] showMenu is now', showMenu, 'for post', localPost.id);
-  }, [showMenu, localPost.id]);
+  const toggleMenu = () => { if (!showMenu) dispatchMenuOpen(); setShowMenu(v => !v); };
   const toggleOtherMenu = () => { if (!showOtherMenu) dispatchMenuOpen(); setShowOtherMenu(v => !v); };
 
   if (hidden) return null;
@@ -946,49 +883,23 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         />
 
         {/* Shared sheets — same ones used by regular PostCard */}
-        {/* BottomSheet has no `open` prop -- it must be mount/unmounted by
-            its caller (see BottomSheet.tsx's own doc comment); rendering it
-            unconditionally with a bogus `open={...}` prop meant it silently
-            became permanently visible shortly after every PostCard mounted,
-            since its internal reveal effect runs once on mount regardless
-            of this state. */}
-        {showMenu && (
-          <BottomSheet onClose={() => setShowMenu(false)}>
-            <div className="px-2 py-1">
-              <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-                <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
-              </button>
-              <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-                <Globe className="w-4 h-4 text-gray-400" /> Change visibility
-              </button>
-              <button onClick={() => { setShowMenu(false); handleSave(); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-                <Bookmark className="w-3.5 h-3.5 text-gray-500" /> {saved ? 'Unsave' : 'Save'}
-              </button>
-              <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-                <Link2 className="w-4 h-4 text-gray-400" /> Copy link
-              </button>
-              <button onClick={async () => {
-                setShowMenu(false);
-                const next = localPost.allowComments === false;
-                setPost(p => ({ ...p, allowComments: next }));
-                await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
-                toast.success(next ? 'Comments turned on' : 'Comments turned off');
-              }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl">
-                <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
-              </button>
-              <div className="border-t border-gray-100 my-1" />
-              <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
-                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl">
-                <Trash2 className="w-4 h-4" /> Delete post
-              </button>
-            </div>
-          </BottomSheet>
-        )}
+        <PostOwnMenuSheet
+          open={showMenu}
+          onClose={() => setShowMenu(false)}
+          saved={saved}
+          allowComments={localPost.allowComments !== false}
+          onEdit={() => setShowEditModal(true)}
+          onChangeVisibility={() => { setEditModalInitialView('visibility'); setShowEditModal(true); }}
+          onToggleSave={handleSave}
+          onCopyLink={() => { navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
+          onToggleComments={async () => {
+            const next = localPost.allowComments === false;
+            setPost(p => ({ ...p, allowComments: next }));
+            await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
+            toast.success(next ? 'Comments turned on' : 'Comments turned off');
+          }}
+          onDelete={() => setShowDeleteConfirm(true)}
+        />
 
         {showOtherMenu && (
           <BottomSheet onClose={() => setShowOtherMenu(false)}>
@@ -1087,57 +998,30 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         )}
 
         {/* ── Three-dot for OWN posts — now inside header ── */}
-        {/* ── Own post menu ── */}
-          {/* One compact menu, per spec -- Edit post / Change visibility /
-              Save post / Copy link / Turn off comments, Delete visually
-              separated as the destructive action. Pin/Highlight/Repost/
-              Boost/Analytics/Post activity/Archive/Download were all
-              removed from here on purpose (not accidentally trimmed) --
-              this menu was 13 items deep, most of them placeholder toasts. */}
-          {showMenu && (
-            <BottomSheet onClose={() => setShowMenu(false)}>
-              <div className="px-2 py-1">
-                <button onClick={() => { setShowMenu(false); setShowEditModal(true); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
-                </button>
-
-                <button onClick={() => { setShowMenu(false); setEditModalInitialView('visibility'); setShowEditModal(true); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Globe className="w-4 h-4 text-gray-400" /> Change visibility
-                </button>
-
-                <button onClick={() => { setShowMenu(false); handleSave(); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-current text-blue-600' : 'text-gray-500'}`} />
-                  {saved ? 'Unsave post' : 'Save post'}
-                </button>
-
-                <button onClick={() => { setShowMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <Link2 className="w-4 h-4 text-gray-400" /> Copy link
-                </button>
-
-                <button onClick={async () => {
-                  setShowMenu(false);
-                  const next = localPost.allowComments === false;
-                  setPost(p => ({ ...p, allowComments: next }));
-                  await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
-                  toast.success(next ? 'Comments turned on' : 'Comments turned off');
-                }}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-                  <MessageCircle className="w-4 h-4 text-gray-400" /> {localPost.allowComments === false ? 'Turn on comments' : 'Turn off comments'}
-                </button>
-
-                <div className="border-t border-gray-100 my-1" />
-
-                <button onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }} disabled={deleting}
-                  className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                  <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting…' : 'Delete post'}
-                </button>
-              </div>
-            </BottomSheet>
-          )}
+        {/* Own post menu -- Edit post / Change visibility / Save post /
+            Copy link / Turn off comments, Delete visually separated as the
+            destructive action. Pin/Highlight/Repost/Boost/Analytics/Post
+            activity/Archive/Download were all removed from here on purpose
+            (not accidentally trimmed) -- this menu was 13 items deep, most
+            of them placeholder toasts. */}
+        <PostOwnMenuSheet
+          open={showMenu}
+          onClose={() => setShowMenu(false)}
+          saved={saved}
+          allowComments={localPost.allowComments !== false}
+          deleting={deleting}
+          onEdit={() => setShowEditModal(true)}
+          onChangeVisibility={() => { setEditModalInitialView('visibility'); setShowEditModal(true); }}
+          onToggleSave={handleSave}
+          onCopyLink={() => { navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
+          onToggleComments={async () => {
+            const next = localPost.allowComments === false;
+            setPost(p => ({ ...p, allowComments: next }));
+            await postsApi.update(localPost.id, { allow_comments: next }).catch(() => {});
+            toast.success(next ? 'Comments turned on' : 'Comments turned off');
+          }}
+          onDelete={() => setShowDeleteConfirm(true)}
+        />
 
 
         {/* ── Three-dot for OTHER users' posts ── */}
