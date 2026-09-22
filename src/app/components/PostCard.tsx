@@ -918,7 +918,14 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const dispatchMenuOpen = () =>
     window.dispatchEvent(new CustomEvent(POST_MENU_EVENT, { detail: { postId: localPost.id } }));
 
-  const toggleMenu = () => { if (!showMenu) dispatchMenuOpen(); setShowMenu(v => !v); };
+  const toggleMenu = () => {
+    console.warn('[menu-debug] toggleMenu clicked', { postId: localPost.id, isOwn, showMenuBefore: showMenu });
+    if (!showMenu) dispatchMenuOpen();
+    setShowMenu(v => !v);
+  };
+  useEffect(() => {
+    console.warn('[menu-debug] showMenu is now', showMenu, 'for post', localPost.id);
+  }, [showMenu, localPost.id]);
   const toggleOtherMenu = () => { if (!showOtherMenu) dispatchMenuOpen(); setShowOtherMenu(v => !v); };
 
   if (hidden) return null;
