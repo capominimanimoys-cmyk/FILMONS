@@ -921,7 +921,7 @@ function listingTypeBadge(l: ListingRow): 'RENTAL' | 'SALE' | 'SERVICE' | 'OPPOR
 }
 
 const BADGE_STYLE: Record<ReturnType<typeof listingTypeBadge>, string> = {
-  RENTAL: 'bg-blue-600', SALE: 'bg-purple-600', SERVICE: 'bg-teal-600', OPPORTUNITY: 'bg-amber-600',
+  RENTAL: 'bg-blue-600', SALE: 'bg-emerald-600', SERVICE: 'bg-teal-600', OPPORTUNITY: 'bg-purple-600',
 };
 
 // Single consistent grid-card design for the Marketplace landing page's 3
@@ -990,8 +990,15 @@ function MarketplaceDiscoveryRow({ title, listings, onNavigate, onViewAll }: {
         <p className="text-[13px] font-black text-gray-900">{title}</p>
         <ViewAllLink onClick={onViewAll}/>
       </div>
+      {/* scroll-pl-4 (scroll-padding-left, matching this row's own px-4) --
+          without it, a snap-x/snap-mandatory row with no explicit scroll
+          padding can settle its initial scroll position so the first
+          card's edge lines up with the scrollport edge instead of the
+          row's own left padding, landing flush against the screen edge
+          instead of under the first letter of the section label above
+          it. Same fix as CategoryResults.tsx's own preview rows. */}
       <motion.div variants={listV} initial="hidden" animate="visible"
-        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory">
+        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory scroll-pl-4">
         {listings.map(l => <DiscoveryListingCard key={l.id} l={l} onNavigate={onNavigate}/>)}
       </motion.div>
     </section>
@@ -1227,6 +1234,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
   const [rawListings,    setRawListings]    = useState<ListingRow[]>([]);
+  // Marketplace landing page's 4th row ("Because you're a {role}") -- a
+  // real full-text match against the viewer's own saved primaryRole
+  // (searchMatchingListings, the same matcher every other search surface
+  // uses), not a filter over the already-fetched 40-row browse pool --
+  // that pool is too small/recent-only to reliably contain a good role
+  // match, so this gets its own small fetch. See the effect below.
+  const [roleListings,   setRoleListings]   = useState<ListingRow[]>([]);
   // Portfolio/Posts/Hashtags -- only ever populated for a typed search on
   // the 'all' tab (no dedicated tab UI for these yet, unlike
   // rawUsers/rawListings above); shown as their own ResultSections there,
@@ -1483,6 +1497,23 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     });
     return () => { cancelled = true; };
   }, [activeTab, hasTyped]);
+
+  // Marketplace landing page's "Because you're a {role}" row -- fires
+  // only for that exact case (marketplace tab, empty query, viewer has a
+  // real saved primaryRole). Hidden entirely (never a guessed role) when
+  // primaryRole is empty -- see the row's own `user?.primaryRole &&` gate
+  // further down.
+  useEffect(() => {
+    if (!(activeTab === 'marketplace' && !hasTyped) || !user?.primaryRole) { setRoleListings([]); return; }
+    let cancelled = false;
+    searchMatchingListings(user.primaryRole).then(rows => {
+      if (cancelled) return;
+      const mapped = (rows as unknown as ListingRow[])
+        .filter(l => !(!!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date()));
+      setRoleListings(mapped.slice(0, PREVIEW_LIMIT));
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, hasTyped, user?.primaryRole]);
 
   const handleQueryChange = (val: string) => {
     // activeTab is deliberately left untouched -- switching from typed
@@ -1825,6 +1856,15 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
                   <MarketplaceDiscoveryRow title="Listings nearby" listings={nearbyListings}
                     onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                  {/* Always the viewer's real saved primaryRole, never a
+                      guessed one -- MarketplaceDiscoveryRow already hides
+                      itself when `listings` is empty, and roleListings is
+                      forced to [] by the fetch effect above whenever
+                      primaryRole is unset, so no extra gate is needed here. */}
+                  {user?.primaryRole && (
+                    <MarketplaceDiscoveryRow title={`Because you're a ${user.primaryRole}`} listings={roleListings}
+                      onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                  )}
                 </>
               ) : (
                 <>
@@ -1968,8 +2008,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               {/* One final action below every section, opening the
                   combined, uncapped results page for whichever of the
                   four modes is active -- /search/category/all,
-                  /marketplace, /connect, or /learning. */}
-              {hasVisible && (
+                  /marketplace, /connect, or /learning. Not shown on the
+                  Marketplace landing page itself -- Top/Latest/Nearby/
+                  "Because you're a {role}" already each have their own
+                  "View all", and this page is deliberately organized as
+                  independent discovery sections with no single global
+                  "view everything" action. */}
+              {hasVisible && !showMarketplaceLanding && (
                 <div className="px-4 pt-2 pb-4">
                   <button
                     onClick={() => !user ? handleGuestSeeMore(activeTab) : handleViewMoreCategory(activeTab)}
