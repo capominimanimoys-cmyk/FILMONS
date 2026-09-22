@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, Music, Repeat2, Flag,
   EyeOff, BarChart, User as UserIcon, AlertTriangle,
   Bell, BellOff, UserMinus, Archive, Edit2, Globe, Eye,
-  Copy, Clock, Tag, Smile, ThumbsDown, MapPin, ArrowRight,
+  Copy, Clock, Tag, Smile, ThumbsDown, MapPin, ArrowRight, Check,
 } from 'lucide-react';
 import { Post, Comment } from '../types';
 import { postsApi, commentsApi, authApi, savedPostsApi } from '../lib/api';
@@ -32,6 +32,7 @@ import { PostMoreMenu } from './connect/PostMoreMenu';
 import { SharePostSheet } from './connect/SharePostSheet';
 import { normalizeLocationKey } from '../lib/locationsApi';
 import { LikesSheet } from './LikesSheet';
+import { RepostsSheet } from './RepostsSheet';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 
 function timeAgo(dateString?: string | null): string {
@@ -395,6 +396,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const [editModalInitialView, setEditModalInitialView] = useState<'visibility' | undefined>(undefined);
   const { openPortfolioPreview } = usePortfolioPreview();
   const [showLikesSheet, setShowLikesSheet] = useState(false);
+  const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRepostModal, setShowRepostModal] = useState(false);
@@ -811,6 +813,20 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         },
       );
       onReposted?.(newPost);
+      // postId points at the NEW wrapper post (not the original) -- unlike
+      // a plain repost, this one has real content of its own to open, so
+      // "tapping the notification opens that repost" can mean exactly that.
+      if (localPost.userId && localPost.userId !== user.id) {
+        notifs.push(localPost.userId, {
+          type: 'content_repost_thoughts',
+          fromUserId:    user.id,
+          fromUserName:  user.name,
+          fromUserAvatar: user.avatar,
+          postId:        newPost.id,
+          postContent:   repostComment.trim().slice(0, 60),
+          postImage:     localPost.images?.[0] || localPost.thumbnailUrl,
+        });
+      }
       toast.success('Quote reposted!');
       setShowRepostModal(false);
       setRepostComment('');
@@ -1206,6 +1222,12 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           <BottomSheet onClose={() => setShowRepostMenu(false)}>
             <div className="px-2 py-2">
               <p className="text-xs font-black text-gray-400 uppercase tracking-widest px-4 pb-3">Repost</p>
+              {hasReposted && (
+                <div className="flex items-center gap-2 px-4 pb-2 text-green-600">
+                  <Check className="w-3.5 h-3.5" />
+                  <p className="text-xs font-black">Reposted</p>
+                </div>
+              )}
               {hasReposted ? (
                 <button onClick={() => handleUndoRepost()} disabled={reposting}
                   className="flex items-center gap-3 w-full px-4 py-3.5 text-left rounded-xl hover:bg-red-50 transition-colors">
@@ -1213,8 +1235,8 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                     <Repeat2 className="w-4 h-4 text-red-500"/>
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-black text-red-600">{reposting ? 'Removing…' : 'Remove Repost'}</p>
-                    <p className="text-xs text-gray-400">Remove from your profile and feed</p>
+                    <p className="text-sm font-black text-red-600">{reposting ? 'Removing…' : 'Remove repost'}</p>
+                    <p className="text-xs text-gray-400">Remove from your Activity and future distribution</p>
                   </div>
                 </button>
               ) : (
@@ -1225,7 +1247,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-black text-gray-900">{reposting ? 'Reposting…' : 'Repost'}</p>
-                    <p className="text-xs text-gray-400">Share to your followers</p>
+                    <p className="text-xs text-gray-400">Share instantly with your network</p>
                   </div>
                 </button>
               )}
@@ -1236,7 +1258,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-black text-gray-900">Repost with your thoughts</p>
-                  <p className="text-xs text-gray-400">Add your own commentary</p>
+                  <p className="text-xs text-gray-400">Add something before sharing</p>
                 </div>
               </button>
             </div>
@@ -1746,7 +1768,13 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               onClick={()=>{ if(!user){toast.error('Sign in to repost');return;} dispatchMenuOpen(); setShowRepostMenu(v=>!v); }}
               className={`flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-all active:scale-90 ${hasReposted?'text-green-500':'text-gray-700 hover:text-green-500'}`}>
               <Repeat2 className={`w-5 h-5 ${hasReposted?'text-green-500':''}`}/>
-              {(localPost.repostCount??0)>0 && <span className="text-[13px] font-semibold min-w-[12px]">{localPost.repostCount}</span>}
+              {(localPost.repostCount??0)>0 && (
+                <button
+                  onClick={e => { e.stopPropagation(); setShowRepostsSheet(true); }}
+                  className="text-[13px] font-semibold min-w-[12px] hover:underline">
+                  {localPost.repostCount}
+                </button>
+              )}
             </button>
             {/* Share */}
             <button onClick={()=>setShowShareModal(true)}
@@ -1815,6 +1843,11 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           likeIds={localPost.likes || []}
           onClose={() => setShowLikesSheet(false)}
         />
+      )}
+
+      {/* ── Reposts Sheet ── */}
+      {showRepostsSheet && (
+        <RepostsSheet postId={localPost.id} onClose={() => setShowRepostsSheet(false)} />
       )}
 
       {/* ── Edit Post Modal ── */}

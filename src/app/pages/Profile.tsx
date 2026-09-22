@@ -36,7 +36,9 @@ import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
-import { getPortfolioItems, deletePortfolioItem, toggleFeatured, type PortfolioItem } from '../lib/portfolioApi';
+import { getPortfolioItems, deletePortfolioItem, toggleFeatured, getPortfolioEntriesByIds, type PortfolioItem } from '../lib/portfolioApi';
+import { getUserRepostActivity, type ActivityEntry } from '../lib/activityApi';
+import { RepostedActivityCard } from '../components/connect/RepostedActivityCard';
 import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 import { isServiceListing } from '../lib/listingHelpers';
 import { useFollowCounts } from '../lib/useFollowCounts';
@@ -572,6 +574,7 @@ export function Profile() {
 
   // Content state
   const [posts,         setPosts]         = useState<Post[]>([]);
+  const [repostActivity, setRepostActivity] = useState<ActivityEntry[]>([]);
   const [taggedPosts,   setTaggedPosts]   = useState<Post[]>([]);
   const [repostedPosts, setRepostedPosts] = useState<Post[]>([]);
   const [repostersMap,  setRepostersMap]  = useState<Record<string, any[]>>({});
@@ -817,6 +820,7 @@ export function Profile() {
         myPosts, myListings, myReviews, myReceivedReviews, myPortfolio,
         myRecommendations, myRecommendationCount,
         myConnections, myConnectionCount, myPendingConnections,
+        myRepostActivity,
       ] = await Promise.all([
         postsApi.getUserPosts(user.id).catch(() => []),
         listingsApi.getUserListings(user.id).catch(() => []),
@@ -828,6 +832,7 @@ export function Profile() {
         listConnections(user.id, { limit: 8 }).catch(() => []),
         getConnectionCount(user.id).catch(() => 0),
         listPendingReceived(user.id).catch(() => []),
+        getUserRepostActivity(user.id).catch(() => []),
       ]);
       setPosts(myPosts);
       setListings(myListings);
@@ -840,6 +845,24 @@ export function Profile() {
       setConnectionCount(myConnectionCount);
       setPendingConnections(myPendingConnections.slice(0, 2));
       mergePosts(myPosts);
+
+      // Hydrate the reposts' embedded originals -- same batching
+      // (postsApi.getByIds / getPortfolioEntriesByIds) connectFeed.ts uses,
+      // so Profile -> Activity renders the exact same live RepostedActivityCard
+      // Connect does, not a second summary format.
+      const postTargetIds = myRepostActivity.filter(e => e.targetType === 'post' && e.targetId).map(e => e.targetId as string);
+      const itemTargetIds = myRepostActivity.filter(e => e.targetType === 'portfolio_item' && e.targetId).map(e => e.targetId as string);
+      const albumTargetIds = myRepostActivity.filter(e => e.targetType === 'portfolio_album' && e.targetId).map(e => e.targetId as string);
+      const [repostedPosts, portfolioEntryMap] = await Promise.all([
+        postTargetIds.length ? postsApi.getByIds([...new Set(postTargetIds)]) : Promise.resolve([]),
+        (itemTargetIds.length || albumTargetIds.length) ? getPortfolioEntriesByIds([...new Set(itemTargetIds)], [...new Set(albumTargetIds)]) : Promise.resolve(new Map()),
+      ]);
+      const postMap = new Map(repostedPosts.map(p => [p.id, p]));
+      setRepostActivity(myRepostActivity.map(e => ({
+        ...e,
+        post: e.targetType === 'post' && e.targetId ? postMap.get(e.targetId) : undefined,
+        portfolioEntry: (e.targetType === 'portfolio_item' || e.targetType === 'portfolio_album') && e.targetId ? portfolioEntryMap.get(e.targetId) : undefined,
+      })));
     } finally { setLoading(false); }
   }
 
@@ -1493,19 +1516,28 @@ export function Profile() {
             </div>
           )}
 
-          {/* ACTIVITY — the user's own posts. Was previously fetched
-              (postsApi.getUserPosts) but never rendered anywhere on this
-              page; this is that fetch's first live use. */}
+          {/* ACTIVITY — the user's own posts, merged with their plain
+              reposts (quote-reposts already show up here for free -- they're
+              real posts.getUserPosts already returns). A plain repost never
+              creates Portfolio content, so nothing extra is needed to keep
+              it out of the Portfolio tab -- that's already the default. */}
           {tab === 'activity' && (
             <div className="md:max-w-2xl md:mx-auto py-4 space-y-4">
               <CreatePostTrigger avatar={user.avatar} name={displayName || user.name} onOpen={() => openCompose()} onShortcut={openCompose} />
               {showProfileLoader ? <div className="flex justify-center py-10"><FilmonsBrandLoader size="md" label="Loading posts"/></div>
-                : posts.length === 0
+                : posts.length === 0 && repostActivity.length === 0
                   ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No activity yet</p></div>
-                  : posts.map(p => <PostCard key={p.id} post={p} onDeleted={(id)=>{
-                    setPosts(prev=>prev.filter(x=>x.id!==id));
-                    try { localStorage.removeItem(`filmons_posts_${user?.id}`); } catch {}
-                  }} onLikeToggled={handleLikeToggled} />)
+                  : [
+                      ...posts.map(p => ({ kind: 'post' as const, createdAt: p.createdAt, post: p })),
+                      ...repostActivity.map(e => ({ kind: 'repost' as const, createdAt: e.createdAt, entry: e })),
+                    ]
+                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                      .map(row => row.kind === 'post'
+                        ? <PostCard key={row.post.id} post={row.post} onDeleted={(id)=>{
+                            setPosts(prev=>prev.filter(x=>x.id!==id));
+                            try { localStorage.removeItem(`filmons_posts_${user?.id}`); } catch {}
+                          }} onLikeToggled={handleLikeToggled} />
+                        : <RepostedActivityCard key={row.entry.id} entry={row.entry} />)
               }
 
               {/* Liked Listings — folded into Activity (was its own "Liked"

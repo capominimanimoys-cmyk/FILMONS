@@ -1512,6 +1512,16 @@ async function filterPostsByVisibility(posts: Post[], viewerId?: string): Promis
   });
 }
 
+// One entry in the Reposts list sheet (postsApi.getReposts) -- 'plain' is a
+// reference-only repost (the `reposts` table), 'thoughts' is a real wrapper
+// post (quotePostId is that post's own id, openable on its own).
+export interface RepostListEntry {
+  userId: string; userName: string; userAvatar?: string; userUsername?: string;
+  type: 'plain' | 'thoughts';
+  createdAt: string;
+  quotePostId?: string;
+}
+
 // ============================================
 // POSTS API
 // ============================================
@@ -1674,6 +1684,42 @@ export const postsApi = {
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch (e) {
       console.error('[getByIds] error:', e);
+      return [];
+    }
+  },
+
+  // "Who reposted this" -- powers the Reposts list sheet opened by tapping
+  // the repost count. Merges the two real mechanisms a repost can be:
+  // a plain toggle-table row (`reposts`, no new content) and a "repost with
+  // thoughts" (a real posts row whose metadata.repostOf.postId points back
+  // here) -- there's no single table that already has both, so this is the
+  // one place that combines them into one list.
+  getReposts: async (postId: string, limit = 100): Promise<RepostListEntry[]> => {
+    try {
+      const [{ data: plainRows }, { data: quoteRows }] = await Promise.all([
+        supabase.from('reposts').select('user_id, created_at').eq('post_id', postId).order('created_at', { ascending: false }).limit(limit),
+        supabase.from('posts').select('id, author_id, created_at').eq('metadata->repostOf->>postId', postId).order('created_at', { ascending: false }).limit(limit),
+      ]);
+      const userIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
+      const { data: profiles } = userIds.length
+        ? await supabase.from('profiles').select('id, name, username, avatar_url').in('id', userIds)
+        : { data: [] as any[] };
+      const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+      const nameOf = (id: string) => profileMap.get(id)?.name || 'Someone';
+      const avatarOf = (id: string) => profileMap.get(id)?.avatar_url || undefined;
+      const usernameOf = (id: string) => profileMap.get(id)?.username || undefined;
+
+      const plain: RepostListEntry[] = (plainRows ?? []).map((r: any) => ({
+        userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
+        type: 'plain', createdAt: r.created_at,
+      }));
+      const thoughts: RepostListEntry[] = (quoteRows ?? []).map((r: any) => ({
+        userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
+        type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
+      }));
+      return [...plain, ...thoughts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) {
+      console.error('[getReposts] error:', e);
       return [];
     }
   },

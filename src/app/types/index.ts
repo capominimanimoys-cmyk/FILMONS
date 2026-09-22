@@ -422,7 +422,7 @@ export type NotificationType =
   | 'comment_received' | 'comment_reply' | 'comment_like'
   | 'comment_mention'  | 'comment_pinned' | 'comment_deleted'
   // Likes, Reposts & Posts
-  | 'new_post' | 'content_like' | 'content_repost' | 'post_mention'
+  | 'new_post' | 'content_like' | 'content_repost' | 'content_repost_thoughts' | 'post_mention'
   // Network / Followers
   | 'new_follower' | 'follow_request' | 'follow_accepted'
   | 'connection_request' | 'connection_accepted'

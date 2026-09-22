@@ -29,7 +29,8 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'post_mention':        return `${actorName} mentioned you in a post`;
     case 'content_like':        return `${actorName} liked your post`;
     case 'like':                return `${actorName} liked your post`;
-    case 'content_repost':      return `${actorName} reposted your content`;
+    case 'content_repost':         return `${actorName} reposted your post`;
+    case 'content_repost_thoughts': return `${actorName} reposted your post with their thoughts`;
     case 'repost':              return `${actorName} reposted your post`;
     case 'new_follower':        return `${actorName} started following you`;
     case 'follow':              return `${actorName} started following you`;

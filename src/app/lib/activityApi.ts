@@ -347,6 +347,36 @@ export async function removeContentRepostActivity(actorId: string, targetType: R
   if (error) console.warn('[activityApi] removeContentRepostActivity failed:', error.message);
 }
 
+// This user's own plain reposts (Post/Portfolio) -- powers Profile ->
+// Activity showing "you reposted X" alongside your own posts, per the
+// Repost spec ("The repost should also appear under My Profile -> Activity.
+// It does not appear in Portfolio unless the content was originally the
+// user's own portfolio work" -- a plain repost never creates portfolio
+// content, so that half is already satisfied for free by not doing
+// anything there). Re-uses filterVisible/fetchProfilesAndTrust so a
+// repost of something since deleted/made private silently drops out here
+// too, same cascade every other surface gets.
+export async function getUserRepostActivity(userId: string, limit = 50): Promise<ActivityEntry[]> {
+  const { data, error } = await supabase.from('activity_events').select('*')
+    .eq('actor_id', userId).eq('activity_type', 'content_reposted')
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) console.warn('[activityApi] getUserRepostActivity query failed:', error.message);
+  if (error || !data?.length) return [];
+
+  const visible = await filterVisible(data, userId);
+  if (!visible.length) return [];
+
+  const actorMap = await fetchProfilesAndTrust([userId]);
+  const actor = actorMap.get(userId);
+  if (!actor) return [];
+
+  return visible.map(r => ({
+    id: r.id, activityType: r.activity_type as ActivityType, actor, otherUser: null,
+    targetType: r.target_type, targetId: r.target_id, category: r.category, title: r.title,
+    metadata: r.metadata ?? null, createdAt: r.created_at, likeCount: r.like_count ?? 0,
+  }));
+}
+
 // ── Activity event likes -- currently only used by ConnectionActivityCard.
 // Same idempotent-toggle-table + denormalized-count shape as post_likes,
 // scoped to activity_events instead of posts since a connection_created

@@ -35,7 +35,7 @@ function priorityOf(type: string): number {
   if (['application_received','application_shortlisted','application_accepted','application_rejected'].includes(type)) return 3;
   if (['connection_request','follow_request','connection_accepted','follow_accepted','new_follower'].includes(type)) return 4;
   if (['comment_received','comment_reply','comment_like','comment_mention','comment_pinned'].includes(type)) return 5;
-  if (['content_like','content_repost','new_post'].includes(type)) return 6;
+  if (['content_like','content_repost','content_repost_thoughts','new_post'].includes(type)) return 6;
   return 7;
 }
 
@@ -133,7 +133,9 @@ function typeCfg(n: Notification): NotifCfg {
     case 'content_like':
       return { icon: Heart,         gradient: 'from-rose-400 to-pink-500',       iconColor: 'text-white', ringColor: 'ring-rose-100',    label: () => 'liked your post' };
     case 'content_repost':
-      return { icon: Repeat2,       gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'reposted your content' };
+      return { icon: Repeat2,       gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'reposted your post' };
+    case 'content_repost_thoughts':
+      return { icon: Repeat2,       gradient: 'from-green-400 to-emerald-500',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'reposted your post with their thoughts' };
     case 'course_published':
       return { icon: GraduationCap, gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: (n) => `published a new course${(n as any).postContent ? `: "${(n as any).postContent}"` : ''}` };
     case 'new_follower':
@@ -613,7 +615,7 @@ const MESSAGE_TYPES        = ['message','new_message','message_received','messag
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','listing_liked','followed_creator_posted'];
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
-const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view','course_published'];
+const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','content_repost_thoughts','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view','course_published'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
 const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [

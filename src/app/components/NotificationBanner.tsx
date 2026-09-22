@@ -51,6 +51,7 @@ const PRIORITY: Record<string, 'high' | 'medium' | 'low'> = {
   comment_pinned:        'medium',
   content_like:          'medium',
   content_repost:        'medium',
+  content_repost_thoughts: 'medium',
   new_follower:          'medium',
   follow_request:        'medium',
   follow_accepted:       'medium',
@@ -468,7 +469,9 @@ function bannerCfg(n: Notification): {
     case 'content_like':
       return { gradient: 'from-rose-400 to-pink-500',     Icon: Heart,          action: 'liked your post',             title: 'New Like',            emoji: '❤️', rich: false, barColor: '#fb7185,#ec4899' };
     case 'content_repost':
-      return { gradient: 'from-green-400 to-emerald-500', Icon: Repeat2,        action: 'reposted your content',       title: 'Repost',              emoji: '🔁', rich: false, barColor: '#4ade80,#10b981' };
+      return { gradient: 'from-green-400 to-emerald-500', Icon: Repeat2,        action: 'reposted your post',           title: 'Repost',              emoji: '🔁', rich: false, barColor: '#4ade80,#10b981' };
+    case 'content_repost_thoughts':
+      return { gradient: 'from-green-400 to-emerald-500', Icon: Repeat2,        action: 'reposted your post with their thoughts', title: 'Repost', emoji: '🔁', rich: false, barColor: '#4ade80,#10b981' };
     // Network
     case 'new_follower':
       return { gradient: 'from-blue-500 to-blue-600',     Icon: UserPlus,       action: 'started following you',       title: 'New Follower',        emoji: '👤', rich: false, barColor: '#3b82f6,#2563eb' };
