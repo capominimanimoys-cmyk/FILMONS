@@ -1363,8 +1363,26 @@ async function fetchLikedPostIds(postIds: string[], userId: string): Promise<Set
   } catch { return new Set(); }
 }
 
+// Same batching pattern as fetchLikedPostIds above -- a plain (non-
+// "with thoughts") repost is a row in `reposts`, keyed (user_id, post_id),
+// never a second posts row (see PostCard.tsx's handleRepost/handleUndoRepost).
+// Threaded into rowToPostClient so "Reposted" renders correctly the first
+// time a post is ever seen on ANY surface, not just for the rest of the
+// session after tapping Repost locally.
+async function fetchRepostedPostIds(postIds: string[], userId: string): Promise<Set<string>> {
+  if (!postIds.length || !userId) return new Set();
+  try {
+    const { data } = await supabase
+      .from('reposts')
+      .select('post_id')
+      .eq('user_id', userId)
+      .in('post_id', postIds);
+    return new Set((data || []).map((r: any) => r.post_id));
+  } catch { return new Set(); }
+}
+
 // ── Client-side post row mapper ───────────────────────────────────────────────
-function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<string>): Post {
+function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<string>, repostedPostIds?: Set<string>): Post {
   const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata
     : (() => { try { return JSON.parse(row.metadata || '{}'); } catch { return {}; } })();
 
@@ -1450,6 +1468,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     isLiked:         likedPostIds
                        ? likedPostIds.has(row.id)
                        : currentUserId ? likes.includes(currentUserId) : false,
+    hasReposted:     repostedPostIds ? repostedPostIds.has(row.id) : false,
     createdAt:       row.created_at,
     allowComments:   meta.allowComments   !== false,
     allowDownload:   meta.allowDownload   !== false,
@@ -1546,12 +1565,14 @@ export const postsApi = {
           .in('id', userIds);
         (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
       }
-      // Batch-fetch liked post IDs from post_likes
+      // Batch-fetch liked + reposted post IDs (post_likes / reposts) in parallel
       const postIds = rows.map((r:any) => r.id);
-      const likedIds = currentUser ? await fetchLikedPostIds(postIds, currentUser.id) : new Set<string>();
+      const [likedIds, repostedIds] = currentUser
+        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id)])
+        : [new Set<string>(), new Set<string>()];
       const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
-        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds);
+        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
@@ -1591,10 +1612,12 @@ export const postsApi = {
         (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
       }
       const postIds = rows.map((r:any) => r.id);
-      const likedIds = currentUser ? await fetchLikedPostIds(postIds, currentUser.id) : new Set<string>();
+      const [likedIds, repostedIds] = currentUser
+        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id)])
+        : [new Set<string>(), new Set<string>()];
       const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
-        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds);
+        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
@@ -1629,9 +1652,9 @@ export const postsApi = {
         collabPosts = cp ?? [];
       }
       const allRows = [...(data || []), ...collabPosts.filter(cp => !data?.find((p: any) => p.id === cp.id))];
-      const likedIds = currentUser
-        ? await fetchLikedPostIds(allRows.map(r => r.id), currentUser.id)
-        : new Set<string>();
+      const [likedIds, repostedIds] = currentUser
+        ? await Promise.all([fetchLikedPostIds(allRows.map(r => r.id), currentUser.id), fetchRepostedPostIds(allRows.map(r => r.id), currentUser.id)])
+        : [new Set<string>(), new Set<string>()];
       const mapped = allRows.map((row: any) => {
         const prof = (row.profiles as any) || {};
         return rowToPostClient({
@@ -1641,7 +1664,7 @@ export const postsApi = {
           _pavatar:  prof.avatar_url,
           _paccount: prof.account_type,
           _prole:    prof.primary_role,
-        }, currentUser?.id, likedIds);
+        }, currentUser?.id, likedIds, repostedIds);
       });
       // Viewing someone ELSE's profile is exactly where 'connections'/
       // 'private' visibility matters most -- a non-connection browsing
@@ -1672,14 +1695,16 @@ export const postsApi = {
         .in('id', ids);
       if (error) throw error;
       const rows = data || [];
-      const likedIds = currentUser ? await fetchLikedPostIds(rows.map((r: any) => r.id), currentUser.id) : new Set<string>();
+      const [likedIds, repostedIds] = currentUser
+        ? await Promise.all([fetchLikedPostIds(rows.map((r: any) => r.id), currentUser.id), fetchRepostedPostIds(rows.map((r: any) => r.id), currentUser.id)])
+        : [new Set<string>(), new Set<string>()];
       const mapped = rows.map((row: any) => {
         const prof = (row.profiles as any) || {};
         return rowToPostClient({
           ...row,
           _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type,
           _prole: prof.primary_role,
-        }, currentUser?.id, likedIds);
+        }, currentUser?.id, likedIds, repostedIds);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch (e) {

@@ -35,6 +35,12 @@ export function PostDetail() {
         if (error || !data) throw error;
         const prof = (data.profiles as any) || {};
         const mu   = Array.isArray(data.media_urls) ? data.media_urls : [];
+        // This is a hand-rolled fetch (not postsApi.getByIds), so it needs
+        // its own repost-state check -- same (user_id, post_id) lookup
+        // against `reposts` as fetchRepostedPostIds in api.ts.
+        const hasReposted = user
+          ? !!(await supabase.from('reposts').select('post_id').eq('user_id', user.id).eq('post_id', id).maybeSingle()).data
+          : false;
         setPost({
           ...data,
           userId:          data.author_id,
@@ -58,6 +64,7 @@ export function PostDetail() {
           likes:           Array.isArray(data.likes) ? data.likes : [],
           likesCount:      data.likes_count ?? 0,
           content:         data.content || data.caption || '',
+          hasReposted,
         });
       } catch {
         postsApi.getAll().then(posts => setPost(posts.find(p => p.id === id) || null)).catch(() => {});

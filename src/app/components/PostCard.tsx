@@ -268,7 +268,12 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
   // Repost
   const [showRepostMenu,   setShowRepostMenu]   = useState(false);
-  const [hasReposted,      setHasReposted]      = useState(!!userRepostPostId);
+  // userRepostPostId is a legacy explicit-prop override (kept for any
+  // caller that still passes it); every post-fetching function in api.ts
+  // now batches this in as post.hasReposted (same pattern as isLiked), so
+  // this is correct on first render everywhere a post is fetched, not just
+  // for the rest of the session after tapping Repost locally.
+  const [hasReposted,      setHasReposted]      = useState(!!userRepostPostId || !!(rawPost as any).hasReposted);
   const [repostBanner, setRepostBanner] = useState<{ names: string[]; extra: number } | null>(null);
 
   // Fetch who from the current user's circle reposted this post
@@ -1070,20 +1075,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         {/* ── Card box ── */}
         <div ref={cardRef} className="bg-white border-b border-gray-100">
 
-          {/* ── Repost banner ── */}
-          {localPost.repostOf && (
-            <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5 text-xs text-gray-400">
-              <Repeat2 className="w-3 h-3 text-green-500 shrink-0"/>
-              <span>Reposted by{' '}
-                <span className="font-semibold text-gray-600">
-                  @{(localPost.repostOf as any).reposterUsername
-                    || (localPost.repostOf as any).userName
-                    || localPost.userName}
-                </span>
-              </span>
-            </div>
-          )}
-
           {/* ══ 1. HEADER ══ */}
           <div className="flex items-center px-3 pt-3 pb-2 gap-2.5">
             <button onClick={()=>navigate(`/host/${localPost.userId}`)} className="shrink-0">
@@ -1526,20 +1517,29 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </button>
           )}
 
-          {/* Repost embedded */}
+          {/* Repost embedded -- "↻ Repost from {original author}'s post"
+              labels this unambiguously as a quote-repost of THEIR content,
+              distinct from the header above (which is the reposter,
+              localPost.userName/userAvatar -- this is their own new post
+              row). */}
           {localPost.repostOf && (
-            <div className="mx-3 mt-2 border border-gray-200 rounded-xl overflow-hidden cursor-pointer"
-              onClick={()=>navigate(`/post/${localPost.repostOf!.postId}`)}>
-              <div className="px-3 py-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <UserAvatar user={{name:localPost.repostOf.userName,avatar:localPost.repostOf.userAvatar,id:localPost.repostOf.userId}} size={18}/>
-                  <span className="text-xs font-semibold text-gray-700">{localPost.repostOf.userName}</span>
+            <div className="mx-3 mt-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 mb-1.5">
+                <Repeat2 className="w-3 h-3 shrink-0"/> Repost from {localPost.repostOf.userName}'s post
+              </p>
+              <div className="border border-gray-200 rounded-xl overflow-hidden cursor-pointer"
+                onClick={()=>navigate(`/post/${localPost.repostOf!.postId}`)}>
+                <div className="px-3 py-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <UserAvatar user={{name:localPost.repostOf.userName,avatar:localPost.repostOf.userAvatar,id:localPost.repostOf.userId}} size={18}/>
+                    <span className="text-xs font-semibold text-gray-700">{localPost.repostOf.userName}</span>
+                  </div>
+                  {localPost.repostOf.content && <p className="text-sm text-gray-600 line-clamp-2">{localPost.repostOf.content}</p>}
                 </div>
-                {localPost.repostOf.content && <p className="text-sm text-gray-600 line-clamp-2">{localPost.repostOf.content}</p>}
+                {(Array.isArray(localPost.repostOf.images)?localPost.repostOf.images:[])[0] && (
+                  <img src={(Array.isArray(localPost.repostOf.images)?localPost.repostOf.images:[])[0]} alt="" className="w-full h-28 object-cover"/>
+                )}
               </div>
-              {(Array.isArray(localPost.repostOf.images)?localPost.repostOf.images:[])[0] && (
-                <img src={(Array.isArray(localPost.repostOf.images)?localPost.repostOf.images:[])[0]} alt="" className="w-full h-28 object-cover"/>
-              )}
             </div>
           )}
 

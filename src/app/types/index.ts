@@ -134,6 +134,12 @@ export interface Post {
     postId: string; userId: string; userName: string;
     userAvatar?: string; content: string; images?: string[]; createdAt?: string;
   };
+  /** Whether the CURRENT viewer has already (plain-)reposted this post --
+   * batched in alongside likes at fetch time (see fetchRepostedPostIds in
+   * api.ts) so the "Reposted" state is correct everywhere a post is
+   * rendered, not just for the rest of the session after tapping Repost
+   * locally. PostCard seeds its own hasReposted state from this. */
+  hasReposted?: boolean;
 
   createdAt: string;
   updatedAt?: string;
