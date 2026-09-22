@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
   TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock, AlertTriangle,
-  Heart, MessageCircle, BadgeCheck,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
@@ -35,10 +34,11 @@ import {
   type SearchPortfolioRow, type SearchPostRow,
 } from '../lib/filmSearch';
 import { getSuggestedCreators, getPortfolioFeed, type SuggestedCreator, type PortfolioFeedEntry } from '../lib/portfolioApi';
-import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
 import { getActivityFeed, getActivitySentence, type ActivityEntry } from '../lib/activityApi';
 import { dismissSuggestion } from '../lib/connectionsApi';
 import { SuggestedConnectionCard } from './connect/SuggestedConnectionCard';
+import { PortfolioProjectCard } from './connect/PortfolioProjectCard';
+import { PortfolioAlbumCard } from './connect/PortfolioAlbumCard';
 import { UserAvatar } from './AccountTypeBadge';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1045,86 +1045,6 @@ function ConnectDiscoveryRow({ title, onViewAll, children }: {
   );
 }
 
-// "Trending in Connect" card -- a real (boosted-by-likes) Post. Restyled
-// to match Home's Connect feed card language (PostActivityCard/PostCard):
-// avatar+name header ABOVE the media (not a footer caption), real Heart/
-// MessageCircle icons for the engagement row, bg-white/rounded-2xl/
-// border-gray-100 with no shadow -- just a compact, horizontally-scrolled
-// version of the same look, not a different design. Posts don't carry
-// stored aspect-ratio metadata the way Portfolio items do (see
-// FeaturedPortfolioCard below, which does), so this keeps a fixed square
-// crop rather than a per-post real ratio.
-function TrendingPostCard({ post, onNavigate }: { post: Post; onNavigate: () => void }) {
-  const media = post.images?.[0] || post.videos?.[0] || post.thumbnailUrl;
-  const isVideo = !post.images?.[0] && !!post.videos?.[0];
-  return (
-    <button onClick={onNavigate}
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden active:scale-[0.97] transition-transform text-left shrink-0 w-[168px] snap-start">
-      <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-2">
-        <UserAvatar user={{ id: post.userId, name: post.userName, avatar: post.userAvatar }} size={26}/>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-bold text-gray-900 truncate">{post.userName}</p>
-          <p className="text-[10px] text-gray-400 truncate">{timeAgoShort(post.createdAt)}</p>
-        </div>
-      </div>
-      <div className="relative aspect-square bg-gray-100 overflow-hidden">
-        {media ? (
-          isVideo
-            ? <video src={media} className="w-full h-full object-cover" muted playsInline/>
-            : <img src={media} className="w-full h-full object-cover" alt=""/>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center p-3 text-center text-[11px] text-gray-400 leading-snug">{post.content?.slice(0, 80) || '📝'}</div>
-        )}
-      </div>
-      <div className="flex items-center gap-3 px-2.5 pt-2">
-        <span className="flex items-center gap-1 text-[11px] text-gray-500"><Heart className="w-3.5 h-3.5 text-gray-400"/>{post.likesCount ?? 0}</span>
-        <span className="flex items-center gap-1 text-[11px] text-gray-500"><MessageCircle className="w-3.5 h-3.5 text-gray-400"/>{post.commentCount ?? 0}</span>
-      </div>
-      {post.content && <p className="px-2.5 pb-2.5 pt-1 text-[11px] text-gray-500 truncate">{post.content}</p>}
-    </button>
-  );
-}
-
-// "Featured Portfolio" card -- PUBLIC-visibility work/albums only
-// (getPortfolioFeed already filters to that). Same header-above-media
-// restyle as TrendingPostCard above, matching PortfolioProjectCard's
-// layout order. Portfolio items/albums DO carry real aspect-ratio
-// metadata, so the card's own media box is sized to it
-// (getPortfolioMediaAspectRatio for items, coverAspectRatio for albums)
-// instead of a hardcoded ratio -- this is "the existing media-ratio fix"
-// the spec asks to keep applying: original ratio = card ratio = cover
-// ratio, never stretched.
-function FeaturedPortfolioCard({ entry, onOpen }: { entry: PortfolioFeedEntry; onOpen: () => void }) {
-  const isAlbum = entry.type === 'album';
-  const ratio = isAlbum ? (entry.coverAspectRatio || 4 / 5) : getPortfolioMediaAspectRatio(entry.item);
-  const url = isAlbum ? entry.coverUrl : (entry.item.thumbnail_url || entry.item.media_url);
-  const likes = isAlbum ? (entry.album.likes_count ?? 0) : (entry.item.likes_count ?? 0);
-  const title = isAlbum ? entry.album.title : entry.item.title;
-  const creator = entry.creator;
-  return (
-    <button onClick={onOpen}
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden active:scale-[0.97] transition-transform text-left shrink-0 w-[168px] snap-start">
-      <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-2">
-        <UserAvatar user={{ id: creator.id, name: creator.name, avatar: creator.avatar_url }} size={26}/>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <p className="text-[11px] font-bold text-gray-900 truncate">{creator.name}</p>
-            {creator.is_verified && <BadgeCheck className="w-3 h-3 text-blue-600 fill-blue-100 shrink-0"/>}
-          </div>
-          {creator.primary_role && <p className="text-[10px] text-gray-400 truncate">{creator.primary_role}</p>}
-        </div>
-      </div>
-      <div className="w-full bg-gray-100 overflow-hidden" style={{ aspectRatio: ratio }}>
-        {url ? <img src={url} className="w-full h-full object-cover" alt=""/> : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
-      </div>
-      <div className="px-2.5 pt-2 pb-2.5">
-        <p className="text-[11px] font-bold text-gray-800 truncate">{title}</p>
-        <span className="flex items-center gap-1 text-[11px] text-gray-500 mt-1"><Heart className="w-3.5 h-3.5 text-gray-400"/>{likes}</span>
-      </div>
-    </button>
-  );
-}
-
 // "Creator Activity" -- compact rows (not cards) per spec: avatar + name +
 // activity sentence + time. getActivitySentence is the same real-sentence
 // generator Connect's dedicated Activity tab (ActivityFeedCard.tsx) uses,
@@ -1650,8 +1570,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     // Connect's own empty-query state is always the landing page now (see
     // showConnectLanding), which is fetched entirely by its own effect
     // above -- this generic newest-profiles browse query has no consumer
-    // left for 'connect' and would just be wasted work.
-    if (activeTab === 'connect') { setRawUsers([]); setRawListings([]); setRawCourses([]); setResultsReady(true); return; }
+    // left for 'connect' and would just be wasted work. `loading` must
+    // still be explicitly cleared here (not just left alone) -- if it was
+    // `true` from an in-flight search/tab-switch at the moment this
+    // branch runs, nothing else ever resets it, and the render's
+    // `loading ? <spinner> : ...` check has no earlier bypass for
+    // Connect the way it does for the 'all' tab -- the whole landing page
+    // got stuck behind a permanent "Searching…" spinner.
+    if (activeTab === 'connect') { setRawUsers([]); setRawListings([]); setRawCourses([]); setResultsReady(true); setLoading(false); return; }
     let cancelled = false;
     setLoading(true); setResultsReady(false);
     fetchCategoryBrowse(activeTab).then(({ users, listings, courses }) => {
@@ -2175,20 +2101,37 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                       ))}
                     </ConnectDiscoveryRow>
                   )}
+                  {/* Real, full Home-style post cards -- the exact same
+                      PostCard/PortfolioProjectCard/PortfolioAlbumCard
+                      components Home's Connect feed uses (Like/Comment/
+                      Repost/Share/Save/•••, portfolio & listing
+                      attachments, repost embeds, all included), stacked
+                      vertically like a feed, not a horizontal row of
+                      compact cards -- per spec, a Connect post must look
+                      the same everywhere in FILMONS. */}
                   {connectTrendingPosts.length > 0 && (
-                    <ConnectDiscoveryRow title="Trending in Connect" onViewAll={() => handleViewMoreCategory('posts')}>
-                      {connectTrendingPosts.map(p => (
-                        <TrendingPostCard key={p.id} post={p} onNavigate={() => handleResultNavigate(`/post/${p.id}`)}/>
-                      ))}
-                    </ConnectDiscoveryRow>
+                    <section className="mb-4">
+                      <div className="flex items-center justify-between px-4 py-2">
+                        <p className="text-[13px] font-black text-gray-900">Trending in Connect</p>
+                        <ViewAllLink onClick={() => handleViewMoreCategory('posts')}/>
+                      </div>
+                      <div className="px-4 space-y-3">
+                        {connectTrendingPosts.map(p => <PostCard key={p.id} post={p}/>)}
+                      </div>
+                    </section>
                   )}
                   {connectFeaturedPortfolio.length > 0 && (
-                    <ConnectDiscoveryRow title="Featured Portfolio" onViewAll={() => handleViewMoreCategory('portfolio')}>
-                      {connectFeaturedPortfolio.map(entry => (
-                        <FeaturedPortfolioCard key={`${entry.type}-${entry.id}`} entry={entry}
-                          onOpen={() => { handleClose(); openPortfolioPreview(entry.creator.id, entry.type === 'album' ? entry.album.id : undefined); }}/>
-                      ))}
-                    </ConnectDiscoveryRow>
+                    <section className="mb-4">
+                      <div className="flex items-center justify-between px-4 py-2">
+                        <p className="text-[13px] font-black text-gray-900">Featured Portfolio</p>
+                        <ViewAllLink onClick={() => handleViewMoreCategory('portfolio')}/>
+                      </div>
+                      <div className="px-4 space-y-3">
+                        {connectFeaturedPortfolio.map(entry => entry.type === 'item'
+                          ? <PortfolioProjectCard key={`item-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
+                          : <PortfolioAlbumCard key={`album-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
+                      </div>
+                    </section>
                   )}
                   {connectPopularHashtags.length > 0 && (
                     <section className="mb-4">
