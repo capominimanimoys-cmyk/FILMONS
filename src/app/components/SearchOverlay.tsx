@@ -23,7 +23,7 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
-import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
+import { searchHashtagSuggestions, getTopHashtags, type HashtagSuggestion, type Hashtag } from '../lib/hashtagsApi';
 import { searchLocationSuggestions } from '../lib/locationsApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
@@ -33,6 +33,12 @@ import {
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
   type SearchPortfolioRow, type SearchPostRow,
 } from '../lib/filmSearch';
+import { getSuggestedCreators, getPortfolioFeed, type SuggestedCreator, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
+import { getActivityFeed, getActivitySentence, type ActivityEntry } from '../lib/activityApi';
+import { dismissSuggestion } from '../lib/connectionsApi';
+import { SuggestedConnectionCard } from './connect/SuggestedConnectionCard';
+import { UserAvatar } from './AccountTypeBadge';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Global-search categories -- deliberately separate from ListingTypeFilter
@@ -1005,6 +1011,124 @@ function MarketplaceDiscoveryRow({ title, listings, onNavigate, onViewAll }: {
   );
 }
 
+function timeAgoShort(iso?: string | null): string {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Content-agnostic version of MarketplaceDiscoveryRow above, for Connect's
+// landing page -- its 5 sections each need a genuinely different card
+// design (a creator card isn't a post card isn't a hashtag chip), so this
+// only owns the shared title+"View all"+scroll-pl-4-alignment shell;
+// callers pass their own cards as children and decide their own
+// empty-hiding (no single `items.length` this component could check).
+function ConnectDiscoveryRow({ title, onViewAll, children }: {
+  title: string; onViewAll: () => void; children: ReactNode;
+}) {
+  return (
+    <section className="mb-4">
+      <div className="flex items-center justify-between px-4 py-2">
+        <p className="text-[13px] font-black text-gray-900">{title}</p>
+        <ViewAllLink onClick={onViewAll}/>
+      </div>
+      <motion.div variants={listV} initial="hidden" animate="visible"
+        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory scroll-pl-4">
+        {children}
+      </motion.div>
+    </section>
+  );
+}
+
+// "Trending in Connect" card -- a real (boosted-by-likes) Post, rendered
+// compact rather than through the full interactive PostCard. Posts don't
+// carry stored aspect-ratio metadata the way Portfolio items do (see
+// FeaturedPortfolioCard below, which does), so this uses the same fixed
+// 4:5 cover crop as every other compact card on this landing page rather
+// than a per-post real ratio.
+function TrendingPostCard({ post, onNavigate }: { post: Post; onNavigate: () => void }) {
+  const media = post.images?.[0] || post.videos?.[0] || post.thumbnailUrl;
+  const isVideo = !post.images?.[0] && !!post.videos?.[0];
+  return (
+    <button onClick={onNavigate}
+      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left shrink-0 w-[160px] snap-start">
+      <div className="relative aspect-[4/5] bg-gray-100 overflow-hidden">
+        {media ? (
+          isVideo
+            ? <video src={media} className="w-full h-full object-cover" muted playsInline/>
+            : <img src={media} className="w-full h-full object-cover" alt=""/>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center p-3 text-center text-[11px] text-gray-400 leading-snug">{post.content?.slice(0, 80) || '📝'}</div>
+        )}
+      </div>
+      <div className="p-2.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <UserAvatar user={{ id: post.userId, name: post.userName, avatar: post.userAvatar }} size={16}/>
+          <p className="text-[11px] font-bold text-gray-700 truncate">{post.userName}</p>
+        </div>
+        <div className="flex items-center gap-2.5 text-[10px] text-gray-400 font-bold mt-1.5 pt-1.5 border-t border-gray-50">
+          <span>❤ {post.likesCount ?? 0}</span>
+          <span>💬 {post.commentCount ?? 0}</span>
+          <span className="ml-auto text-gray-300">{timeAgoShort(post.createdAt)}</span>
+        </div>
+        {media && post.content && <p className="text-[11px] text-gray-500 truncate mt-1">{post.content}</p>}
+      </div>
+    </button>
+  );
+}
+
+// "Featured Portfolio" card -- PUBLIC-visibility work/albums only
+// (getPortfolioFeed already filters to that). Unlike TrendingPostCard
+// above, Portfolio items/albums DO carry real aspect-ratio metadata, so
+// the card's own media box is sized to it (getPortfolioMediaAspectRatio
+// for items, coverAspectRatio for albums) instead of a hardcoded ratio --
+// this is "the existing media-ratio fix" the spec asks to keep applying:
+// original ratio = card ratio = cover ratio, never stretched.
+function FeaturedPortfolioCard({ entry, onOpen }: { entry: PortfolioFeedEntry; onOpen: () => void }) {
+  const isAlbum = entry.type === 'album';
+  const ratio = isAlbum ? (entry.coverAspectRatio || 4 / 5) : getPortfolioMediaAspectRatio(entry.item);
+  const url = isAlbum ? entry.coverUrl : (entry.item.thumbnail_url || entry.item.media_url);
+  const likes = isAlbum ? (entry.album.likes_count ?? 0) : (entry.item.likes_count ?? 0);
+  const creator = entry.creator;
+  return (
+    <button onClick={onOpen}
+      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left shrink-0 w-[150px] snap-start">
+      <div className="w-full bg-gray-100 overflow-hidden" style={{ aspectRatio: ratio }}>
+        {url ? <img src={url} className="w-full h-full object-cover" alt=""/> : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
+      </div>
+      <div className="p-2.5 flex items-center gap-1.5">
+        <UserAvatar user={{ id: creator.id, name: creator.name, avatar: creator.avatar_url }} size={18}/>
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold text-gray-800 truncate">{creator.name}</p>
+          {creator.primary_role && <p className="text-[10px] text-gray-400 truncate">{creator.primary_role}</p>}
+        </div>
+        <span className="ml-auto text-[10px] text-gray-400 font-bold shrink-0">❤ {likes}</span>
+      </div>
+    </button>
+  );
+}
+
+// "Creator Activity" -- compact rows (not cards) per spec: avatar + name +
+// activity sentence + time. getActivitySentence is the same real-sentence
+// generator Connect's dedicated Activity tab (ActivityFeedCard.tsx) uses,
+// just laid out inline instead of that card's bigger bordered layout.
+function CreatorActivityRow({ entry, onOpen }: { entry: ActivityEntry; onOpen: () => void }) {
+  return (
+    <button onClick={onOpen}
+      className="shrink-0 snap-start w-[230px] flex items-center gap-2.5 bg-white border border-gray-100 rounded-2xl p-3 text-left active:scale-[0.98] transition-transform">
+      <UserAvatar user={{ id: entry.actor.id, name: entry.actor.name, avatar: entry.actor.avatar_url }} size={32}/>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-gray-700 truncate"><span className="font-bold text-gray-900">{entry.actor.name}</span> {getActivitySentence(entry)}</p>
+        <p className="text-[10px] text-gray-300 mt-0.5">{timeAgoShort(entry.createdAt)}</p>
+      </div>
+    </button>
+  );
+}
+
 function ResultSection({ label, count, grid=false, children, footer }: { label:string; count:number; grid?:boolean; children:ReactNode; footer?:ReactNode }) {
   return (
     <section className="mb-1">
@@ -1241,6 +1365,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // that pool is too small/recent-only to reliably contain a good role
   // match, so this gets its own small fetch. See the effect below.
   const [roleListings,   setRoleListings]   = useState<ListingRow[]>([]);
+  // Connect landing page (Search -> Connect, empty query) -- 5 discovery
+  // sections, each sourced from real existing infrastructure (never a
+  // fabricated/newest-only substitute): getSuggestedCreators (same signal
+  // set as the Connections hub), postsApi.getTopPosts (real likes_count),
+  // getPortfolioFeed (already public-only), getTopHashtags (real
+  // post_count), getActivityFeed (broad public "foryou" activity). See the
+  // fetch effect below.
+  const [connectSuggested,        setConnectSuggested]        = useState<SuggestedCreator[]>([]);
+  const [connectTrendingPosts,    setConnectTrendingPosts]    = useState<Post[]>([]);
+  const [connectFeaturedPortfolio,setConnectFeaturedPortfolio]= useState<PortfolioFeedEntry[]>([]);
+  const [connectPopularHashtags,  setConnectPopularHashtags]  = useState<Hashtag[]>([]);
+  const [connectActivity,         setConnectActivity]         = useState<ActivityEntry[]>([]);
   // Portfolio/Posts/Hashtags -- only ever populated for a typed search on
   // the 'all' tab (no dedicated tab UI for these yet, unlike
   // rawUsers/rawListings above); shown as their own ResultSections there,
@@ -1498,6 +1634,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   useEffect(() => {
     if (hasTyped) return;
     if (activeTab === 'all') { setRawUsers([]); setRawListings([]); setRawCourses([]); setResultsReady(false); return; }
+    // Connect's own empty-query state is always the landing page now (see
+    // showConnectLanding), which is fetched entirely by its own effect
+    // above -- this generic newest-profiles browse query has no consumer
+    // left for 'connect' and would just be wasted work.
+    if (activeTab === 'connect') { setRawUsers([]); setRawListings([]); setRawCourses([]); setResultsReady(true); return; }
     let cancelled = false;
     setLoading(true); setResultsReady(false);
     fetchCategoryBrowse(activeTab).then(({ users, listings, courses }) => {
@@ -1529,6 +1670,53 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     });
     return () => { cancelled = true; };
   }, [activeTab, hasTyped, user?.primaryRole]);
+
+  // Connect landing page's 5 sections -- one combined fetch, same
+  // condition-inlined-in-the-effect pattern as roleListings above (rather
+  // than depending on the showConnectLanding const, which is computed
+  // later in this function body, after every hook). getSuggestedCreators
+  // requires a real userId (it's not guest-safe -- see its own comments),
+  // so "People you may know" is simply left empty for a guest rather than
+  // falling back to a weaker/fabricated list.
+  useEffect(() => {
+    if (!(activeTab === 'connect' && !hasTyped)) return;
+    let cancelled = false;
+    Promise.all([
+      user?.id ? getSuggestedCreators(user.id, { limit: 10 }).catch(() => []) : Promise.resolve([]),
+      postsApi.getTopPosts(10).catch(() => []),
+      getPortfolioFeed({ limit: 10 }).catch(() => []),
+      getTopHashtags(12).catch(() => []),
+      getActivityFeed({ tab: 'foryou', limit: 10 }).catch(() => ({ entries: [] as ActivityEntry[] })),
+    ]).then(([creators, posts, portfolio, hashtags, activity]) => {
+      if (cancelled) return;
+      setConnectSuggested(creators);
+      setConnectTrendingPosts(posts);
+      setConnectFeaturedPortfolio(portfolio);
+      setConnectPopularHashtags(hashtags);
+      setConnectActivity(activity.entries);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, hasTyped, user?.id]);
+
+  // Creator Activity row's click target -- same targetType switch
+  // ActivityFeedCard.tsx's openResource uses, inlined here since that
+  // logic isn't exported standalone.
+  const openActivityResource = useCallback((entry: ActivityEntry) => {
+    switch (entry.targetType) {
+      case 'portfolio_item':
+      case 'portfolio_album':
+        handleClose(); openPortfolioPreview(entry.actor.id); return;
+      case 'listing':
+        handleResultNavigate(`/listing/${entry.targetId}`); return;
+      case 'post':
+        handleResultNavigate(`/post/${entry.targetId}`); return;
+      case 'connection':
+        if (entry.otherUser) handleResultNavigate(`/host/${entry.otherUser.id}`);
+        return;
+      default:
+        handleResultNavigate(`/host/${entry.actor.id}`);
+    }
+  }, [handleClose, openPortfolioPreview, handleResultNavigate]);
 
   const handleQueryChange = (val: string) => {
     // activeTab is deliberately left untouched -- switching from typed
@@ -1706,6 +1894,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         .slice(0, PREVIEW_LIMIT)
     : [];
   const showMarketplaceLanding = activeTab === 'marketplace' && !hasTyped;
+  // Search -> Connect, empty query: the 5-section discovery landing page
+  // (People you may know/Trending/Featured Portfolio/Popular Hashtags/
+  // Creator Activity) -- same "own empty-query landing state, untouched
+  // typed-search/'all'-tab behavior" pattern as showMarketplaceLanding.
+  const showConnectLanding = activeTab === 'connect' && !hasTyped;
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
     && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0 && rawCourses.length === 0;
@@ -1947,65 +2140,137 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   )}
                 </>
               )}
-              {activeTab === 'all' && (visibleUsers.length > 0 || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0) && (
-                <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Connect</p>
-              )}
-              {visibleUsers.length > 0 && (
-                <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
-                  footer={visibleUsers.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
-                  {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {visiblePortfolio.length > 0 && (
-                <ResultSection label="🎬 Portfolio" count={Math.min(visiblePortfolio.length, PREVIEW_LIMIT)} grid
-                  footer={visiblePortfolio.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('portfolio')}/> : undefined}>
-                  {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
-                    <button
-                      key={`${r.type}-${r.id}`}
-                      onClick={() => { handleClose(); openPortfolioPreview(r.user_id, r.type === 'album' ? r.id : undefined); }}
-                      className="relative rounded-xl overflow-hidden bg-gray-100"
-                      style={{ aspectRatio: 4 / 5 }}
-                    >
-                      {(r.thumbnail_url || r.media_url || r.cover_url) ? (
-                        <img src={r.thumbnail_url || r.media_url || r.cover_url || ''} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎬</div>
-                      )}
-                      <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[11px] font-bold text-white drop-shadow truncate text-left">{r.title}</span>
-                    </button>
-                  ))}
-                </ResultSection>
-              )}
-              {visiblePosts.length > 0 && (
-                <ResultSection label="📝 Posts" count={Math.min(visiblePosts.length, PREVIEW_LIMIT)}
-                  footer={visiblePosts.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts')}/> : undefined}>
-                  <div className="px-4 space-y-3 py-1">
-                    {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
-                  </div>
-                </ResultSection>
-              )}
-              {visibleHashtags.length > 0 && (
-                <section className="mb-1">
-                  <div className="flex items-center justify-between px-4 py-2 mt-1">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest"># Hashtags</p>
-                    {visibleHashtags.length > PREVIEW_LIMIT ? (
-                      <button onClick={() => handleViewMoreCategory('hashtags')} className="text-[10px] font-bold text-blue-600">View all</button>
-                    ) : (
-                      <span className="text-[10px] text-gray-400">{visibleHashtags.length}</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 px-4">
-                    {visibleHashtags.slice(0, PREVIEW_LIMIT).map(h => (
-                      <button key={h.tag} onClick={() => handleResultNavigate(`/hashtag/${h.tag}`)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
-                        #{h.tag}
-                      </button>
-                    ))}
-                  </div>
-                </section>
+              {/* Search -> Connect, empty query: the 5-section discovery
+                  landing page -- People you may know/Trending in Connect/
+                  Featured Portfolio/Popular Hashtags/Creator Activity, NOT
+                  the generic Creators/Portfolio/Posts/Hashtags preview list
+                  below. That list stays exactly as it was for the 'all' tab
+                  and for Connect once the viewer actually types something. */}
+              {showConnectLanding ? (
+                <>
+                  {connectSuggested.length > 0 && (
+                    <ConnectDiscoveryRow title="People you may know" onViewAll={() => closeAndNavigate('/connections/suggested')}>
+                      {connectSuggested.map(c => (
+                        <SuggestedConnectionCard key={c.id} creator={c} showMenu
+                          widthClassName="w-[172px] shrink-0 snap-start"
+                          onConnected={() => {}}
+                          onDismiss={() => {
+                            setConnectSuggested(prev => prev.filter(x => x.id !== c.id));
+                            if (user) dismissSuggestion(user.id, c.id);
+                          }}
+                        />
+                      ))}
+                    </ConnectDiscoveryRow>
+                  )}
+                  {connectTrendingPosts.length > 0 && (
+                    <ConnectDiscoveryRow title="Trending in Connect" onViewAll={() => handleViewMoreCategory('posts')}>
+                      {connectTrendingPosts.map(p => (
+                        <TrendingPostCard key={p.id} post={p} onNavigate={() => handleResultNavigate(`/post/${p.id}`)}/>
+                      ))}
+                    </ConnectDiscoveryRow>
+                  )}
+                  {connectFeaturedPortfolio.length > 0 && (
+                    <ConnectDiscoveryRow title="Featured Portfolio" onViewAll={() => handleViewMoreCategory('portfolio')}>
+                      {connectFeaturedPortfolio.map(entry => (
+                        <FeaturedPortfolioCard key={`${entry.type}-${entry.id}`} entry={entry}
+                          onOpen={() => { handleClose(); openPortfolioPreview(entry.creator.id, entry.type === 'album' ? entry.album.id : undefined); }}/>
+                      ))}
+                    </ConnectDiscoveryRow>
+                  )}
+                  {connectPopularHashtags.length > 0 && (
+                    <section className="mb-4">
+                      <div className="flex items-center justify-between px-4 py-2">
+                        <p className="text-[13px] font-black text-gray-900">Popular Hashtags</p>
+                        <ViewAllLink onClick={() => handleViewMoreCategory('hashtags')}/>
+                      </div>
+                      <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory scroll-pl-4">
+                        {connectPopularHashtags.map(h => (
+                          <button key={h.id} onClick={() => handleResultNavigate(`/hashtag/${h.tag}`)}
+                            className="shrink-0 snap-start flex flex-col items-start gap-0.5 px-3.5 py-2 rounded-2xl bg-white border border-gray-100 shadow-sm">
+                            <span className="text-sm font-black text-blue-600">#{h.tag}</span>
+                            <span className="text-[10px] text-gray-400 font-bold">{h.post_count} post{h.post_count === 1 ? '' : 's'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {connectActivity.length > 0 && (
+                    // No dedicated "everyone's activity" full page exists
+                    // yet -- /connections/activity is scoped to the
+                    // viewer's own connections, narrower than this row's
+                    // broad public feed, but it's the closest real
+                    // destination with the same compact-row format rather
+                    // than building a whole new page for this one link.
+                    <ConnectDiscoveryRow title="Creator Activity" onViewAll={() => closeAndNavigate('/connections/activity')}>
+                      {connectActivity.map(entry => (
+                        <CreatorActivityRow key={entry.id} entry={entry} onOpen={() => openActivityResource(entry)}/>
+                      ))}
+                    </ConnectDiscoveryRow>
+                  )}
+                </>
+              ) : (
+                <>
+                  {activeTab === 'all' && (visibleUsers.length > 0 || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0) && (
+                    <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Connect</p>
+                  )}
+                  {visibleUsers.length > 0 && (
+                    <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
+                      footer={visibleUsers.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
+                      {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                  {visiblePortfolio.length > 0 && (
+                    <ResultSection label="🎬 Portfolio" count={Math.min(visiblePortfolio.length, PREVIEW_LIMIT)} grid
+                      footer={visiblePortfolio.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => handleViewMoreCategory('portfolio')}/> : undefined}>
+                      {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
+                        <button
+                          key={`${r.type}-${r.id}`}
+                          onClick={() => { handleClose(); openPortfolioPreview(r.user_id, r.type === 'album' ? r.id : undefined); }}
+                          className="relative rounded-xl overflow-hidden bg-gray-100"
+                          style={{ aspectRatio: 4 / 5 }}
+                        >
+                          {(r.thumbnail_url || r.media_url || r.cover_url) ? (
+                            <img src={r.thumbnail_url || r.media_url || r.cover_url || ''} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎬</div>
+                          )}
+                          <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[11px] font-bold text-white drop-shadow truncate text-left">{r.title}</span>
+                        </button>
+                      ))}
+                    </ResultSection>
+                  )}
+                  {visiblePosts.length > 0 && (
+                    <ResultSection label="📝 Posts" count={Math.min(visiblePosts.length, PREVIEW_LIMIT)}
+                      footer={visiblePosts.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts')}/> : undefined}>
+                      <div className="px-4 space-y-3 py-1">
+                        {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
+                      </div>
+                    </ResultSection>
+                  )}
+                  {visibleHashtags.length > 0 && (
+                    <section className="mb-1">
+                      <div className="flex items-center justify-between px-4 py-2 mt-1">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest"># Hashtags</p>
+                        {visibleHashtags.length > PREVIEW_LIMIT ? (
+                          <button onClick={() => handleViewMoreCategory('hashtags')} className="text-[10px] font-bold text-blue-600">View all</button>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">{visibleHashtags.length}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 px-4">
+                        {visibleHashtags.slice(0, PREVIEW_LIMIT).map(h => (
+                          <button key={h.tag} onClick={() => handleResultNavigate(`/hashtag/${h.tag}`)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+                            #{h.tag}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
               )}
               {activeTab === 'all' && visibleCourses.length > 0 && (
                 <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Learning</p>
@@ -2017,7 +2282,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleCourses.slice(0, PREVIEW_LIMIT).map(c => <CourseCard key={c.id} course={c} />)}
                 </ResultSection>
               )}
-              {resultsReady && !loading && !hasVisible && (
+              {resultsReady && !loading && !hasVisible && !showConnectLanding && (
                 <EmptyState q={q} tab={activeTab}/>
               )}
               {/* One final action below every section, opening the
@@ -2029,7 +2294,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   "View all", and this page is deliberately organized as
                   independent discovery sections with no single global
                   "view everything" action. */}
-              {hasVisible && !showMarketplaceLanding && (
+              {hasVisible && !showMarketplaceLanding && !showConnectLanding && (
                 <div className="px-4 pt-2 pb-4">
                   <button
                     onClick={() => !user ? handleGuestSeeMore(activeTab) : handleViewMoreCategory(activeTab)}

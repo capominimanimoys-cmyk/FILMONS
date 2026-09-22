@@ -6,11 +6,13 @@
 // recommendation reason, Connect, and Dismiss.
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { BadgeCheck, Clock, UserCheck, X as XIcon } from 'lucide-react';
+import { BadgeCheck, Clock, UserCheck, X as XIcon, MoreHorizontal, User as UserIcon, ThumbsDown, Flag } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { sendConnectionRequest } from '../../lib/connectionsApi';
 import type { SuggestedCreator } from '../../lib/portfolioApi';
 import { ConnectFlowSheet } from '../ConnectFlowSheet';
+import { BottomSheet, SheetAction, SheetCancel } from '../BottomSheet';
 
 // The one real "why" signal this app can honestly claim without a dedicated
 // reasons engine: a shared Primary Role (the exact phrasing the spec's own
@@ -28,7 +30,7 @@ function recommendationReason(creator: SuggestedCreator, myPrimaryRole?: string 
   return null;
 }
 
-export function SuggestedConnectionCard({ creator, onConnected, onDismiss, widthClassName = 'w-64 shrink-0' }: {
+export function SuggestedConnectionCard({ creator, onConnected, onDismiss, widthClassName = 'w-64 shrink-0', showMenu = false }: {
   creator: SuggestedCreator;
   onConnected: () => void;
   onDismiss: () => void;
@@ -37,11 +39,19 @@ export function SuggestedConnectionCard({ creator, onConnected, onDismiss, width
    * instead (SuggestedConnections.tsx's full page), so the two never fight
    * over conflicting width utilities. */
   widthClassName?: string;
+  /** Adds a top-right three-dot menu (View profile / Not interested /
+   * Report) -- distinct from the Dismiss-X button below, which stays as-is
+   * for every existing caller. Off by default so the Connections hub/
+   * SuggestedConnections page keep their current, unchanged layout; the
+   * Browse Search Connect landing page ("People you may know") turns it
+   * on. "Not interested" just calls the same onDismiss the X button does. */
+  showMenu?: boolean;
 }) {
   const navigate = useNavigate();
   const { user, showGuestPrompt } = useAuth();
   const [requested, setRequested] = useState(false);
   const [showFlow, setShowFlow] = useState(false);
+  const [showMenuSheet, setShowMenuSheet] = useState(false);
 
   const openProfile = () => navigate(creator.username ? `/${creator.username}` : `/host/${creator.id}`);
 
@@ -56,7 +66,16 @@ export function SuggestedConnectionCard({ creator, onConnected, onDismiss, width
   const reason = recommendationReason(creator, user?.primaryRole);
 
   return (
-    <div className={`bg-white border border-gray-100 rounded-2xl p-4 flex flex-col gap-2.5 ${widthClassName}`}>
+    <div className={`relative bg-white border border-gray-100 rounded-2xl p-4 flex flex-col gap-2.5 ${widthClassName}`}>
+      {showMenu && (
+        <button
+          onClick={() => setShowMenuSheet(true)}
+          aria-label="More options"
+          className="absolute top-2.5 right-2.5 w-7 h-7 flex items-center justify-center rounded-full text-gray-300 hover:bg-gray-50 hover:text-gray-500 transition-colors"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      )}
       <button onClick={openProfile} className="w-14 h-14 rounded-full overflow-hidden bg-gray-200 shrink-0 self-start">
         {creator.avatar_url
           ? <img src={creator.avatar_url} alt={creator.name} className="w-full h-full object-cover" />
@@ -104,6 +123,23 @@ export function SuggestedConnectionCard({ creator, onConnected, onDismiss, width
       </div>
 
       {showFlow && <ConnectFlowSheet name={creator.name} avatar={creator.avatar_url} onSend={send} onClose={() => setShowFlow(false)} />}
+
+      {showMenuSheet && (
+        <BottomSheet onClose={() => setShowMenuSheet(false)}>
+          <div className="py-1">
+            <SheetAction icon={UserIcon} label="View profile" onClick={() => { setShowMenuSheet(false); openProfile(); }} />
+            <SheetAction icon={ThumbsDown} label="Not interested" onClick={() => {
+              setShowMenuSheet(false); onDismiss();
+              toast("Got it! We'll show you less of this.");
+            }} />
+            <SheetAction icon={Flag} label="Report" destructive onClick={() => {
+              setShowMenuSheet(false);
+              toast.warning("Report submitted. We'll review it shortly.");
+            }} />
+          </div>
+          <div className="px-2 pb-2"><SheetCancel onClick={() => setShowMenuSheet(false)} /></div>
+        </BottomSheet>
+      )}
     </div>
   );
 }
