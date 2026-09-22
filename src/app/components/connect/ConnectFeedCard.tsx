@@ -18,11 +18,17 @@ import { RepostGroupCard } from './RepostGroupCard';
 
 export type { ConnectFeedItem };
 
-export function ConnectFeedCard({ item, trustLevels }: {
+export function ConnectFeedCard({ item, trustLevels, onDeleted }: {
   item: ConnectFeedItem;
   /** Batched, keyed by user id -- see lib/connectFeed.ts's trust-level
    * batching. Connection cards need BOTH parties' levels. */
   trustLevels: Map<string, TrustLevel>;
+  /** Real post id, once a PostCard nested somewhere inside this item
+   * confirms its own delete actually succeeded -- lets the caller (Home's
+   * feed) drop the item from its own list immediately instead of it just
+   * sitting there until the next full refetch (PostCard's onDeleted has
+   * no effect on its own; nobody upstream was listening for it before). */
+  onDeleted?: (postId: string) => void;
 }) {
   if (item.kind === 'portfolio') {
     const trustLevel = trustLevels.get(item.entry.creator.id);
@@ -33,7 +39,7 @@ export function ConnectFeedCard({ item, trustLevels }: {
 
   if (item.kind === 'repost-group') {
     const trustLevel = trustLevels.get(item.actors[0]?.id ?? '');
-    return <RepostGroupCard item={item} trustLevel={trustLevel} />;
+    return <RepostGroupCard item={item} trustLevel={trustLevel} onDeleted={onDeleted} />;
   }
 
   const entry = item.entry;
@@ -54,9 +60,9 @@ export function ConnectFeedCard({ item, trustLevels }: {
     case 'recommendation_received':
       return <RecommendationActivityCard entry={entry} trustLevel={trustLevel} />;
     case 'post_published':
-      return <PostActivityCard entry={entry} trustLevel={trustLevel} />;
+      return <PostActivityCard entry={entry} trustLevel={trustLevel} onDeleted={onDeleted} />;
     case 'content_reposted':
-      return <RepostedActivityCard entry={entry} trustLevel={trustLevel} />;
+      return <RepostedActivityCard entry={entry} trustLevel={trustLevel} onDeleted={onDeleted} />;
     default:
       return null; // portfolio_published/portfolio_album_published never reach here -- 'activity' kind excludes them (see connectFeed.ts)
   }

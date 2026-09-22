@@ -423,6 +423,19 @@ export function Home() {
   const [desktopSortMenuOpen, setDesktopSortMenuOpen] = useState(false);
   const [showMoreCategories, setShowMoreCategories] = useState(false);
   const [connectItems, setConnectItems] = useState<ConnectFeedItem[]>([]);
+  // PostCard's own onDeleted only updates its caller -- nothing upstream
+  // was listening for it inside the Connect feed, so a successful delete
+  // left the post sitting in connectItems until the next full refetch.
+  // Removes every feed item that displays this specific post: the owner's
+  // own post_published entry, a content_reposted entry pointing at it, or
+  // a combined repost-group whose attached post is it.
+  const handleConnectPostDeleted = useCallback((postId: string) => {
+    setConnectItems(prev => prev.filter(item => {
+      if (item.kind === 'activity') return item.entry.targetId !== postId;
+      if (item.kind === 'repost-group') return item.post?.id !== postId;
+      return true;
+    }));
+  }, []);
   const [connectTrustLevels, setConnectTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectLoadingMore, setConnectLoadingMore] = useState(false);
@@ -1359,6 +1372,7 @@ export function Home() {
                         <ConnectFeedCard
                           key={connectFeedItemKey(item)}
                           item={item} trustLevels={connectTrustLevels}
+                          onDeleted={handleConnectPostDeleted}
                         />
                       ))}
                     </div>
@@ -1547,8 +1561,9 @@ export function Home() {
                     />
                   ) : (
                     <ConnectFeedCard
-                      key={item.kind === 'portfolio' ? `portfolio-${item.entry.type}-${item.entry.id}` : `activity-${item.entry.id}`}
+                      key={connectFeedItemKey(item)}
                       item={item} trustLevels={connectTrustLevels}
+                      onDeleted={handleConnectPostDeleted}
                     />
                   ))}
                 </div>

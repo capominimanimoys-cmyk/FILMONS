@@ -32,7 +32,7 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function RepostedActivityCard({ entry, trustLevel }: { entry: ActivityEntry; trustLevel?: TrustLevel }) {
+export function RepostedActivityCard({ entry, trustLevel, onDeleted }: { entry: ActivityEntry; trustLevel?: TrustLevel; onDeleted?: (postId: string) => void }) {
   const navigate = useNavigate();
   const { actor } = entry;
 
@@ -53,7 +53,7 @@ export function RepostedActivityCard({ entry, trustLevel }: { entry: ActivityEnt
       <div>
         {Attribution}
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <PostCard post={entry.post} />
+          <PostCard post={entry.post} onDeleted={onDeleted} />
         </div>
       </div>
     );

@@ -28,11 +28,11 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function PostActivityCard({ entry, trustLevel }: { entry: ActivityEntry; trustLevel?: TrustLevel }) {
+export function PostActivityCard({ entry, trustLevel, onDeleted }: { entry: ActivityEntry; trustLevel?: TrustLevel; onDeleted?: (postId: string) => void }) {
   if (entry.post) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <PostCard post={entry.post} />
+        <PostCard post={entry.post} onDeleted={onDeleted} />
       </div>
     );
   }

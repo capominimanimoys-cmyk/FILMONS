@@ -959,19 +959,18 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           />
         )}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
-            <div className="relative w-full bg-white rounded-t-3xl p-6 pb-10 z-10">
+          <BottomSheet onClose={() => setShowDeleteConfirm(false)}>
+            <div className="px-6 pb-6 pt-2">
               <p className="text-base font-black text-gray-900 mb-2">Delete this audio post?</p>
               <p className="text-sm text-gray-400 mb-6">This cannot be undone.</p>
               <div className="flex gap-3">
                 <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3 rounded-2xl bg-gray-100 text-gray-600 font-semibold text-sm">Cancel</button>
-                <button onClick={() => handleDelete(true)} disabled={deleting} className="flex-1 py-3 rounded-2xl bg-red-500 text-white font-black text-sm">
+                <button onClick={() => { setShowDeleteConfirm(false); handleDelete(true); }} disabled={deleting} className="flex-1 py-3 rounded-2xl bg-red-500 text-white font-black text-sm">
                   {deleting ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
             </div>
-          </div>
+          </BottomSheet>
         )}
         {showLikesSheet && (
           <LikesSheet postId={localPost.id} likeIds={localPost.likes || []} onClose={() => setShowLikesSheet(false)} />
@@ -1658,19 +1657,20 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         />
       )}
 
-      {/* ── Delete confirmation bottom sheet ── */}
+      {/* ── Delete confirmation -- shared BottomSheet (portaled to
+          document.body), not a raw `fixed inset-0` div. The raw version
+          rendered inline inside this card's own tree, so it got trapped
+          inside whatever CSS containing block this card's ancestors
+          establish instead of the real viewport -- same containing-block
+          bug already fixed for RepostMenuSheet/RepostComposer/the own-
+          post menu, confirmed again here by a user screenshot showing it
+          clipped inside the post card. ── */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
-          <div className="relative w-full bg-white rounded-t-3xl p-6 pb-10 z-10">
-            <div className="flex justify-center mb-4">
-              <div className="w-10 h-1 bg-gray-300 rounded-full" />
-            </div>
-            <div className="flex flex-col items-center text-center mb-6">
+        <BottomSheet onClose={() => setShowDeleteConfirm(false)}>
+          <div className="px-6 pb-6">
+            <div className="flex flex-col items-center text-center mb-6 pt-2">
               <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mb-3">
-                <svg className="w-7 h-7 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
+                <Trash2 className="w-6 h-6 text-red-500" />
               </div>
               <h3 className="text-gray-900 font-bold text-lg">Delete Post?</h3>
               <p className="text-gray-500 text-sm mt-1">This action cannot be undone. Your post will be permanently removed.</p>
@@ -1691,7 +1691,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </button>
             </div>
           </div>
-        </div>
+        </BottomSheet>
       )}
 
       {/* ── Boost Post Modal ── */}

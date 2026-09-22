@@ -28,9 +28,10 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function RepostGroupCard({ item, trustLevel }: {
+export function RepostGroupCard({ item, trustLevel, onDeleted }: {
   item: Extract<ConnectFeedItem, { kind: 'repost-group' }>;
   trustLevel?: TrustLevel;
+  onDeleted?: (postId: string) => void;
 }) {
   const navigate = useNavigate();
   const { actors, targetType, post, portfolioEntry, createdAt } = item;
@@ -58,7 +59,7 @@ export function RepostGroupCard({ item, trustLevel }: {
       <div>
         {Attribution}
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <PostCard post={post} />
+          <PostCard post={post} onDeleted={onDeleted} />
         </div>
       </div>
     );
