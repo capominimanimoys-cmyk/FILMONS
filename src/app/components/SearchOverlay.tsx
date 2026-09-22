@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
   TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock, AlertTriangle,
+  Heart, MessageCircle, BadgeCheck,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
@@ -1044,19 +1045,29 @@ function ConnectDiscoveryRow({ title, onViewAll, children }: {
   );
 }
 
-// "Trending in Connect" card -- a real (boosted-by-likes) Post, rendered
-// compact rather than through the full interactive PostCard. Posts don't
-// carry stored aspect-ratio metadata the way Portfolio items do (see
-// FeaturedPortfolioCard below, which does), so this uses the same fixed
-// 4:5 cover crop as every other compact card on this landing page rather
-// than a per-post real ratio.
+// "Trending in Connect" card -- a real (boosted-by-likes) Post. Restyled
+// to match Home's Connect feed card language (PostActivityCard/PostCard):
+// avatar+name header ABOVE the media (not a footer caption), real Heart/
+// MessageCircle icons for the engagement row, bg-white/rounded-2xl/
+// border-gray-100 with no shadow -- just a compact, horizontally-scrolled
+// version of the same look, not a different design. Posts don't carry
+// stored aspect-ratio metadata the way Portfolio items do (see
+// FeaturedPortfolioCard below, which does), so this keeps a fixed square
+// crop rather than a per-post real ratio.
 function TrendingPostCard({ post, onNavigate }: { post: Post; onNavigate: () => void }) {
   const media = post.images?.[0] || post.videos?.[0] || post.thumbnailUrl;
   const isVideo = !post.images?.[0] && !!post.videos?.[0];
   return (
     <button onClick={onNavigate}
-      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left shrink-0 w-[160px] snap-start">
-      <div className="relative aspect-[4/5] bg-gray-100 overflow-hidden">
+      className="bg-white rounded-2xl border border-gray-100 overflow-hidden active:scale-[0.97] transition-transform text-left shrink-0 w-[168px] snap-start">
+      <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-2">
+        <UserAvatar user={{ id: post.userId, name: post.userName, avatar: post.userAvatar }} size={26}/>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold text-gray-900 truncate">{post.userName}</p>
+          <p className="text-[10px] text-gray-400 truncate">{timeAgoShort(post.createdAt)}</p>
+        </div>
+      </div>
+      <div className="relative aspect-square bg-gray-100 overflow-hidden">
         {media ? (
           isVideo
             ? <video src={media} className="w-full h-full object-cover" muted playsInline/>
@@ -1065,48 +1076,50 @@ function TrendingPostCard({ post, onNavigate }: { post: Post; onNavigate: () => 
           <div className="w-full h-full flex items-center justify-center p-3 text-center text-[11px] text-gray-400 leading-snug">{post.content?.slice(0, 80) || '📝'}</div>
         )}
       </div>
-      <div className="p-2.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <UserAvatar user={{ id: post.userId, name: post.userName, avatar: post.userAvatar }} size={16}/>
-          <p className="text-[11px] font-bold text-gray-700 truncate">{post.userName}</p>
-        </div>
-        <div className="flex items-center gap-2.5 text-[10px] text-gray-400 font-bold mt-1.5 pt-1.5 border-t border-gray-50">
-          <span>❤ {post.likesCount ?? 0}</span>
-          <span>💬 {post.commentCount ?? 0}</span>
-          <span className="ml-auto text-gray-300">{timeAgoShort(post.createdAt)}</span>
-        </div>
-        {media && post.content && <p className="text-[11px] text-gray-500 truncate mt-1">{post.content}</p>}
+      <div className="flex items-center gap-3 px-2.5 pt-2">
+        <span className="flex items-center gap-1 text-[11px] text-gray-500"><Heart className="w-3.5 h-3.5 text-gray-400"/>{post.likesCount ?? 0}</span>
+        <span className="flex items-center gap-1 text-[11px] text-gray-500"><MessageCircle className="w-3.5 h-3.5 text-gray-400"/>{post.commentCount ?? 0}</span>
       </div>
+      {post.content && <p className="px-2.5 pb-2.5 pt-1 text-[11px] text-gray-500 truncate">{post.content}</p>}
     </button>
   );
 }
 
 // "Featured Portfolio" card -- PUBLIC-visibility work/albums only
-// (getPortfolioFeed already filters to that). Unlike TrendingPostCard
-// above, Portfolio items/albums DO carry real aspect-ratio metadata, so
-// the card's own media box is sized to it (getPortfolioMediaAspectRatio
-// for items, coverAspectRatio for albums) instead of a hardcoded ratio --
-// this is "the existing media-ratio fix" the spec asks to keep applying:
-// original ratio = card ratio = cover ratio, never stretched.
+// (getPortfolioFeed already filters to that). Same header-above-media
+// restyle as TrendingPostCard above, matching PortfolioProjectCard's
+// layout order. Portfolio items/albums DO carry real aspect-ratio
+// metadata, so the card's own media box is sized to it
+// (getPortfolioMediaAspectRatio for items, coverAspectRatio for albums)
+// instead of a hardcoded ratio -- this is "the existing media-ratio fix"
+// the spec asks to keep applying: original ratio = card ratio = cover
+// ratio, never stretched.
 function FeaturedPortfolioCard({ entry, onOpen }: { entry: PortfolioFeedEntry; onOpen: () => void }) {
   const isAlbum = entry.type === 'album';
   const ratio = isAlbum ? (entry.coverAspectRatio || 4 / 5) : getPortfolioMediaAspectRatio(entry.item);
   const url = isAlbum ? entry.coverUrl : (entry.item.thumbnail_url || entry.item.media_url);
   const likes = isAlbum ? (entry.album.likes_count ?? 0) : (entry.item.likes_count ?? 0);
+  const title = isAlbum ? entry.album.title : entry.item.title;
   const creator = entry.creator;
   return (
     <button onClick={onOpen}
-      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left shrink-0 w-[150px] snap-start">
+      className="bg-white rounded-2xl border border-gray-100 overflow-hidden active:scale-[0.97] transition-transform text-left shrink-0 w-[168px] snap-start">
+      <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-2">
+        <UserAvatar user={{ id: creator.id, name: creator.name, avatar: creator.avatar_url }} size={26}/>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1">
+            <p className="text-[11px] font-bold text-gray-900 truncate">{creator.name}</p>
+            {creator.is_verified && <BadgeCheck className="w-3 h-3 text-blue-600 fill-blue-100 shrink-0"/>}
+          </div>
+          {creator.primary_role && <p className="text-[10px] text-gray-400 truncate">{creator.primary_role}</p>}
+        </div>
+      </div>
       <div className="w-full bg-gray-100 overflow-hidden" style={{ aspectRatio: ratio }}>
         {url ? <img src={url} className="w-full h-full object-cover" alt=""/> : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
       </div>
-      <div className="p-2.5 flex items-center gap-1.5">
-        <UserAvatar user={{ id: creator.id, name: creator.name, avatar: creator.avatar_url }} size={18}/>
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold text-gray-800 truncate">{creator.name}</p>
-          {creator.primary_role && <p className="text-[10px] text-gray-400 truncate">{creator.primary_role}</p>}
-        </div>
-        <span className="ml-auto text-[10px] text-gray-400 font-bold shrink-0">❤ {likes}</span>
+      <div className="px-2.5 pt-2 pb-2.5">
+        <p className="text-[11px] font-bold text-gray-800 truncate">{title}</p>
+        <span className="flex items-center gap-1 text-[11px] text-gray-500 mt-1"><Heart className="w-3.5 h-3.5 text-gray-400"/>{likes}</span>
       </div>
     </button>
   );
