@@ -69,6 +69,11 @@ interface ListingRow {
   is_active?: boolean | null;
   is_emergency?: boolean | null;
   emergency_expires_at?: string | null;
+  /** Marketplace landing page's "Top listings" signal -- the same real,
+   * non-fabricated promotion flag CategoryResults.tsx's own Top row uses
+   * (see fetchTopMarketplaceListings there). Added to LISTING_SELECT
+   * below since this file never previously selected it. */
+  boosted?: boolean | null;
 }
 
 interface Suggestion {
@@ -419,7 +424,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
 
 // ── Universal search ───────────────────────────────────────────────────────────
 // Columns confirmed to exist in DB (matches api.ts getAll select — no province)
-const LISTING_SELECT  = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at';
+const LISTING_SELECT  = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at, boosted';
 const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
 
 // ── Category classification + core matching ──────────────────────────────────
@@ -897,6 +902,99 @@ function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
       </div>
       <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
     </motion.button>
+  );
+}
+
+// Which of the 4 badge labels the Marketplace landing page's mixed-type
+// cards show -- reuses the exact same classifiers every other category
+// split in this file already relies on (isOpportunityListing etc from
+// filmSearch.ts), so a listing can never disagree with itself about what
+// it is between this badge and its actual section elsewhere. Studios
+// aren't their own badge (per spec: only RENTAL/SALE/SERVICE/OPPORTUNITY)
+// -- a studio listing is really just a rental or sale whose title/category
+// happens to mention "studio", so it falls back to whichever of those two
+// its own listing_mode says.
+function listingTypeBadge(l: ListingRow): 'RENTAL' | 'SALE' | 'SERVICE' | 'OPPORTUNITY' {
+  if (isOpportunityListing(l as any)) return 'OPPORTUNITY';
+  if (isServiceListing(l as any)) return 'SERVICE';
+  return l.listing_mode === 'sale' ? 'SALE' : 'RENTAL';
+}
+
+const BADGE_STYLE: Record<ReturnType<typeof listingTypeBadge>, string> = {
+  RENTAL: 'bg-blue-600', SALE: 'bg-purple-600', SERVICE: 'bg-teal-600', OPPORTUNITY: 'bg-amber-600',
+};
+
+// Single consistent grid-card design for the Marketplace landing page's 3
+// mixed-type rows (Top/Latest/Nearby) -- MarketplaceCard/ServiceCard/
+// OpportunityCard each have their own per-category layout (grid vs. row)
+// elsewhere in this file, but the landing page's own spec shows one
+// uniform card shape with a type badge across every listing kind, so this
+// is a new, dedicated component rather than forcing the type badge onto
+// 3 differently-shaped existing ones.
+function DiscoveryListingCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
+  const badge = listingTypeBadge(l);
+  const price = badge === 'SERVICE' ? `$${Number(l.price).toLocaleString()}/hr`
+    : badge === 'OPPORTUNITY' ? (l.price > 0 ? `$${Number(l.price).toLocaleString()}` : 'Unpaid')
+    : `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
+  return (
+    <motion.button variants={itemV}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
+      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left shrink-0 w-[150px] snap-start">
+      <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
+        {l.images?.[0]
+          ? <img src={l.images[0]} className="w-full h-full object-cover" alt=""/>
+          : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>
+        }
+        <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${BADGE_STYLE[badge]}`}>
+          {badge}
+        </span>
+      </div>
+      <div className="p-2.5">
+        <p className="text-xs font-bold text-gray-900 truncate leading-snug">{l.title}</p>
+        {l.city && (
+          <p className="text-[10px] text-gray-400 flex items-center gap-0.5 mt-0.5 truncate">
+            <MapPin className="w-2.5 h-2.5 shrink-0"/>{l.city}
+          </p>
+        )}
+        <p className="text-xs font-black text-blue-600 mt-1">{price}</p>
+      </div>
+    </motion.button>
+  );
+}
+
+// "View all ->" link -- distinct from ViewMoreButton (a full-width row
+// used by the per-category sections below) since the Marketplace landing
+// page's own spec shows a compact inline link next to each section title
+// instead.
+function ViewAllLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-0.5 text-xs font-bold text-blue-600 hover:text-blue-700 shrink-0">
+      View all <ChevronRight className="w-3.5 h-3.5"/>
+    </button>
+  );
+}
+
+// One row of the Marketplace landing page (Top/Latest/Nearby) -- title +
+// "View all", horizontal scroll of up to 5 mixed-type cards. Hides itself
+// entirely when empty (e.g. "Listings nearby" with no city match) rather
+// than showing an empty section.
+function MarketplaceDiscoveryRow({ title, listings, onNavigate, onViewAll }: {
+  title: string; listings: ListingRow[];
+  onNavigate: (url: string, state?: Record<string, unknown>) => void;
+  onViewAll: () => void;
+}) {
+  if (!listings.length) return null;
+  return (
+    <section className="mb-4">
+      <div className="flex items-center justify-between px-4 py-2">
+        <p className="text-[13px] font-black text-gray-900">{title}</p>
+        <ViewAllLink onClick={onViewAll}/>
+      </div>
+      <motion.div variants={listV} initial="hidden" animate="visible"
+        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory">
+        {listings.map(l => <DiscoveryListingCard key={l.id} l={l} onNavigate={onNavigate}/>)}
+      </motion.div>
+    </section>
   );
 }
 
@@ -1534,6 +1632,35 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const { visible: visibleServices, hiddenCount: hiddenEmergencyServices } = capEmergencyInCategory(rawVisibleServices, emergencyLimit);
   const { visible: visibleStudios,  hiddenCount: hiddenEmergencyStudios }  = capEmergencyInCategory(rawVisibleStudios, emergencyLimit);
 
+  // Marketplace landing page (Search -> Marketplace, empty query) -- Top/
+  // Latest/Listings nearby, mixing every type together rather than one
+  // section per category. Built from the SAME already-fetched/classified
+  // pool as the per-category sections above (rawVisibleX, pre-emergency-
+  // cap) rather than a second query -- Emergency itself is excluded here
+  // (it's a separate, permission-gated surface with its own dedicated
+  // section/badge already), matching how CategoryResults.tsx's own Top/
+  // Latest discovery rows treat it.
+  const isActiveEmergency = (l: ListingRow) => !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
+  const marketplaceMixedPool = showMarketplace
+    ? [...rawVisibleRental, ...rawVisibleSale, ...rawVisibleServices, ...rawVisibleStudios, ...visibleOpportunities].filter(l => !isActiveEmergency(l))
+    : [];
+  const topListings = [...marketplaceMixedPool]
+    .sort((a, b) => (Number(!!b.boosted) - Number(!!a.boosted)) || (new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()))
+    .slice(0, PREVIEW_LIMIT);
+  const latestListings = [...marketplaceMixedPool]
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, PREVIEW_LIMIT);
+  // Hidden entirely (not a fake/empty section) when the viewer has no
+  // saved city -- guests and profiles that never filled this in have
+  // nothing real to match "nearby" against.
+  const nearbyListings = user?.city
+    ? [...marketplaceMixedPool]
+        .filter(l => l.city && l.city.toLowerCase().includes(user.city!.toLowerCase()))
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, PREVIEW_LIMIT)
+    : [];
+  const showMarketplaceLanding = activeTab === 'marketplace' && !hasTyped;
+
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
     && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0 && rawCourses.length === 0;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
@@ -1685,67 +1812,85 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   product (Marketplace/Connect/Learning) per spec -- All is
                   a universal layer over the other three, never a fourth
                   product of its own. */}
-              {activeTab === 'all' && (visibleRental.length > 0 || visibleSale.length > 0 || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || (canBrowseEmergency && visibleEmergency.length > 0)) && (
-                <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
-              )}
-              {visibleRental.length > 0 && (
-                <ResultSection label="📦 Rental" count={Math.min(visibleRental.length, PREVIEW_LIMIT)} grid
-                  footer={visibleRental.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : handleViewMoreCategory('rental')}/>
-                    : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleRental.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {visibleSale.length > 0 && (
-                <ResultSection label="🏷️ Sales" count={Math.min(visibleSale.length, PREVIEW_LIMIT)} grid
-                  footer={visibleSale.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : handleViewMoreCategory('sale')}/>
-                    : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleSale.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {visibleStudios.length > 0 && (
-                <ResultSection label="🏢 Studios" count={Math.min(visibleStudios.length, PREVIEW_LIMIT)} grid
-                  footer={visibleStudios.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/>
-                    : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleStudios.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {visibleServices.length > 0 && (
-                <ResultSection label="🛠️ Services" count={Math.min(visibleServices.length, PREVIEW_LIMIT)}
-                  footer={visibleServices.length > PREVIEW_LIMIT
-                    ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
-                    : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
-                  {visibleServices.slice(0, PREVIEW_LIMIT).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {visibleOpportunities.length > 0 && (
-                <ResultSection label="💼 Opportunities" count={Math.min(visibleOpportunities.length, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT)}
-                  footer={canBrowseOpportunities
-                    ? (visibleOpportunities.length > PREVIEW_LIMIT ? <ViewMoreButton onClick={() => handleViewMoreCategory('opportunities')}/> : undefined)
-                    : (visibleOpportunities.length > OPPORTUNITY_LOCKED_LIMIT ? <OpportunityLockedNotice onClick={() => setShowOpportunityGate(true)}/> : undefined)}>
-                  {/* Opportunities has its own, stricter permanent cap for
-                      Guest/Creator/Creator+ (!canBrowseOpportunities, which
-                      covers a guest too since isProfessional(undefined) is
-                      false) -- OPPORTUNITY_LOCKED_LIMIT (5), never exposed
-                      further via View More, search, or filters. Professional/
-                      Business get the same PREVIEW_LIMIT (5) as every other
-                      category, with a real View More to the full page. */}
-                  {visibleOpportunities.slice(0, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
-              )}
-              {/* Dedicated Emergency section is Professional/Business only
-                  now -- Guest/Creator/Creator+ never see it at all (not
-                  even a preview), since Emergency isn't a browsable
-                  category for them anymore. They still see emergency-
-                  flagged listings inside Rental/Sales/Studios below, each
-                  capped at EMERGENCY_LIMIT_RESTRICTED (2) with its own
-                  badge. */}
-              {canBrowseEmergency && visibleEmergency.length > 0 && (
-                <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
-                  {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
-                </ResultSection>
+              {/* Search -> Marketplace, empty query: a discovery landing
+                  page (Top/Latest/Nearby, mixed types + badges), NOT the
+                  per-category preview list below -- that stays exactly as
+                  it was for the 'all' tab and for Marketplace once the
+                  viewer actually types something. */}
+              {showMarketplaceLanding ? (
+                <>
+                  <MarketplaceDiscoveryRow title="Top listings" listings={topListings}
+                    onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                  <MarketplaceDiscoveryRow title="Latest listings" listings={latestListings}
+                    onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                  <MarketplaceDiscoveryRow title="Listings nearby" listings={nearbyListings}
+                    onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                </>
+              ) : (
+                <>
+                  {activeTab === 'all' && (visibleRental.length > 0 || visibleSale.length > 0 || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || (canBrowseEmergency && visibleEmergency.length > 0)) && (
+                    <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
+                  )}
+                  {visibleRental.length > 0 && (
+                    <ResultSection label="📦 Rental" count={Math.min(visibleRental.length, PREVIEW_LIMIT)} grid
+                      footer={visibleRental.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : handleViewMoreCategory('rental')}/>
+                        : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                      {visibleRental.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                  {visibleSale.length > 0 && (
+                    <ResultSection label="🏷️ Sales" count={Math.min(visibleSale.length, PREVIEW_LIMIT)} grid
+                      footer={visibleSale.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : handleViewMoreCategory('sale')}/>
+                        : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                      {visibleSale.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                  {visibleStudios.length > 0 && (
+                    <ResultSection label="🏢 Studios" count={Math.min(visibleStudios.length, PREVIEW_LIMIT)} grid
+                      footer={visibleStudios.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/>
+                        : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                      {visibleStudios.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                  {visibleServices.length > 0 && (
+                    <ResultSection label="🛠️ Services" count={Math.min(visibleServices.length, PREVIEW_LIMIT)}
+                      footer={visibleServices.length > PREVIEW_LIMIT
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
+                        : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
+                      {visibleServices.slice(0, PREVIEW_LIMIT).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                  {visibleOpportunities.length > 0 && (
+                    <ResultSection label="💼 Opportunities" count={Math.min(visibleOpportunities.length, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT)}
+                      footer={canBrowseOpportunities
+                        ? (visibleOpportunities.length > PREVIEW_LIMIT ? <ViewMoreButton onClick={() => handleViewMoreCategory('opportunities')}/> : undefined)
+                        : (visibleOpportunities.length > OPPORTUNITY_LOCKED_LIMIT ? <OpportunityLockedNotice onClick={() => setShowOpportunityGate(true)}/> : undefined)}>
+                      {/* Opportunities has its own, stricter permanent cap for
+                          Guest/Creator/Creator+ (!canBrowseOpportunities, which
+                          covers a guest too since isProfessional(undefined) is
+                          false) -- OPPORTUNITY_LOCKED_LIMIT (5), never exposed
+                          further via View More, search, or filters. Professional/
+                          Business get the same PREVIEW_LIMIT (5) as every other
+                          category, with a real View More to the full page. */}
+                      {visibleOpportunities.slice(0, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT).map(l => <OpportunityCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                  {/* Dedicated Emergency section is Professional/Business only
+                      now -- Guest/Creator/Creator+ never see it at all (not
+                      even a preview), since Emergency isn't a browsable
+                      category for them anymore. They still see emergency-
+                      flagged listings inside Rental/Sales/Studios below, each
+                      capped at EMERGENCY_LIMIT_RESTRICTED (2) with its own
+                      badge. */}
+                  {canBrowseEmergency && visibleEmergency.length > 0 && (
+                    <ResultSection label="🚨 Emergency" count={visibleEmergency.length} grid>
+                      {visibleEmergency.slice(0, 12).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
+                    </ResultSection>
+                  )}
+                </>
               )}
               {activeTab === 'all' && (visibleUsers.length > 0 || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0) && (
                 <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Connect</p>
