@@ -58,6 +58,27 @@ import { UserAvatar } from './AccountTypeBadge';
 type TabId = 'all' | 'marketplace' | 'connect' | 'learning';
 type SortBy = 'best_match' | 'newest' | 'price_asc' | 'price_desc';
 
+// All Results' Connect section mixes 3 differently-shaped result types
+// (a row-style creator card, a square portfolio thumbnail, a full-height
+// PostCard) into one 2-column layout -- round-robin interleaved so a
+// creator-heavy or post-heavy match set doesn't crowd the other types out
+// of the first 6 shown.
+type AllResultsConnectItem =
+  | { kind: 'creator'; row: ProfileRow }
+  | { kind: 'portfolio'; row: SearchPortfolioRow }
+  | { kind: 'post'; post: Post };
+
+function interleave3<A, B, C>(a: A[], b: B[], c: C[]): (A | B | C)[] {
+  const out: (A | B | C)[] = [];
+  const max = Math.max(a.length, b.length, c.length);
+  for (let i = 0; i < max; i++) {
+    if (i < a.length) out.push(a[i]);
+    if (i < b.length) out.push(b[i]);
+    if (i < c.length) out.push(c[i]);
+  }
+  return out;
+}
+
 interface ProfileRow {
   id: string; name: string; username: string | null; avatar_url: string | null;
   city: string | null; location: string | null; primary_role: string | null;
@@ -938,7 +959,7 @@ const BADGE_STYLE: Record<ReturnType<typeof listingTypeBadge>, string> = {
 // uniform card shape with a type badge across every listing kind, so this
 // is a new, dedicated component rather than forcing the type badge onto
 // 3 differently-shaped existing ones.
-function DiscoveryListingCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void }) {
+function DiscoveryListingCard({ l, onNavigate, gridMode = false }: { l: ListingRow; onNavigate: (url: string, state?: Record<string, unknown>) => void; /** All Results' 2-col grid needs this to fill its cell instead of the horizontal-scroll rows' fixed 150px width. */ gridMode?: boolean }) {
   const badge = listingTypeBadge(l);
   const price = badge === 'SERVICE' ? `$${Number(l.price).toLocaleString()}/hr`
     : badge === 'OPPORTUNITY' ? (l.price > 0 ? `$${Number(l.price).toLocaleString()}` : 'Unpaid')
@@ -946,7 +967,7 @@ function DiscoveryListingCard({ l, onNavigate }: { l: ListingRow; onNavigate: (u
   return (
     <motion.button variants={itemV}
       onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
-      className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left shrink-0 w-[150px] snap-start">
+      className={`bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left ${gridMode ? 'w-full' : 'shrink-0 w-[150px] snap-start'}`}>
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
           ? <img src={l.images[0]} className="w-full h-full object-cover" alt=""/>
@@ -1097,6 +1118,66 @@ function ViewMoreButton({ onClick }: { onClick: () => void }) {
       View more
     </button>
   );
+}
+
+// All Results' per-product section shell -- title + "View all ->" header
+// (always shown, same destination as the granular per-category pages),
+// up to 6 items passed in as children, and a "View more {label} results
+// (N)" full-width footer using the REAL total match count -- shown only
+// when there actually are more than 6 (per spec: "If there are 6 or fewer
+// results, do not show View more").
+function AllResultsSection({ title, totalCount, onViewAll, onViewMore, moreLabel, children }: {
+  title: string; totalCount: number; onViewAll: () => void; onViewMore: () => void; moreLabel: string; children: ReactNode;
+}) {
+  return (
+    <section className="mb-5">
+      <div className="flex items-center justify-between px-4 py-2">
+        <p className="text-[13px] font-black text-gray-900">{title}</p>
+        <ViewAllLink onClick={onViewAll}/>
+      </div>
+      {children}
+      {totalCount > 6 && (
+        <div className="px-4 pt-2">
+          <button onClick={onViewMore}
+            className="w-full py-3 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-center gap-1 text-sm font-bold text-gray-700">
+            View more {moreLabel} results ({totalCount.toLocaleString()}) <ChevronRight className="w-3.5 h-3.5"/>
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// One cell of All Results' Connect section -- three differently-shaped
+// result types share this one 2-column layout (see AllResultsConnectItem/
+// interleave3), each rendered through its own REAL existing component
+// (CreatorCard row / portfolio thumbnail tile matching the granular
+// Portfolio section's own design / the full PostCard), never a generic
+// compact substitute.
+function AllResultsConnectCard({ item, onNavigate, onOpenPortfolio }: {
+  item: AllResultsConnectItem;
+  onNavigate: (url: string) => void;
+  onOpenPortfolio: (userId: string, albumId?: string) => void;
+}) {
+  if (item.kind === 'creator') return <CreatorCard u={item.row} onNavigate={onNavigate}/>;
+  if (item.kind === 'portfolio') {
+    const r = item.row;
+    return (
+      <button
+        onClick={() => onOpenPortfolio(r.user_id, r.type === 'album' ? r.id : undefined)}
+        className="relative w-full rounded-xl overflow-hidden bg-gray-100"
+        style={{ aspectRatio: 4 / 5 }}
+      >
+        {(r.thumbnail_url || r.media_url || r.cover_url) ? (
+          <img src={r.thumbnail_url || r.media_url || r.cover_url || ''} alt="" className="w-full h-full object-cover"/>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎬</div>
+        )}
+        <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[11px] font-bold text-white drop-shadow truncate text-left">{r.title}</span>
+      </button>
+    );
+  }
+  return <PostCard post={item.post}/>;
 }
 
 function EmergencyCategoryGateButton({ onClick }: { onClick: () => void }) {
@@ -1832,6 +1913,27 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, PREVIEW_LIMIT)
     : [];
+  // All Results (activeTab 'all', typed query) -- per spec, groups into
+  // exactly 3 product sections (Marketplace/Connect/Learning) capped at 6
+  // each in a 2-column grid, instead of the granular per-category
+  // sections the Marketplace/Connect/Learning tabs keep showing on their
+  // own typed search (unchanged below). Built from the SAME already-
+  // fetched/classified visibleX arrays as those granular sections -- no
+  // second query -- so "View more {product} results (N)" can report the
+  // real total match count even though only 6 render here.
+  const allMarketplaceCombined = activeTab === 'all'
+    ? [...visibleRental, ...visibleSale, ...visibleStudios, ...visibleServices, ...visibleOpportunities]
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    : [];
+  const allConnectCombined: AllResultsConnectItem[] = activeTab === 'all'
+    ? interleave3(
+        visibleUsers.map(row => ({ kind: 'creator' as const, row })),
+        visiblePortfolio.map(row => ({ kind: 'portfolio' as const, row })),
+        shownPosts.map(post => ({ kind: 'post' as const, post })),
+      )
+    : [];
+  const allConnectTotal = visibleUsers.length + visiblePortfolio.length + visiblePosts.length;
+
   const showMarketplaceLanding = activeTab === 'marketplace' && !hasTyped;
   // Search -> Connect, empty query: the 5-section discovery landing page
   // (People you may know/Trending/Featured Portfolio/Popular Hashtags/
@@ -1990,12 +2092,63 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   product (Marketplace/Connect/Learning) per spec -- All is
                   a universal layer over the other three, never a fourth
                   product of its own. */}
+              {/* All Results (typed query, activeTab 'all') -- exactly 3
+                  product-labeled sections (Marketplace/Connect/Learning),
+                  each capped at 6 in a 2-column grid with its own "View
+                  all ->" header link and, when the real total exceeds 6,
+                  a "View more {product} results (N)" footer. This
+                  replaces the granular per-category sections ONLY for
+                  this tab -- the Marketplace/Connect/Learning tabs' own
+                  typed search below is completely untouched, still the
+                  full per-category breakdown. */}
+              {activeTab === 'all' && (
+                <>
+                  {allMarketplaceCombined.length > 0 && (
+                    <AllResultsSection title="Marketplace" totalCount={allMarketplaceCombined.length}
+                      moreLabel="Marketplace"
+                      onViewAll={() => handleViewMoreCategory('marketplace')}
+                      onViewMore={() => handleViewMoreCategory('marketplace')}>
+                      <div className="grid grid-cols-2 gap-2.5 px-4">
+                        {allMarketplaceCombined.slice(0, 6).map(l => (
+                          <DiscoveryListingCard key={l.id} l={l} onNavigate={handleResultNavigate} gridMode/>
+                        ))}
+                      </div>
+                    </AllResultsSection>
+                  )}
+                  {allConnectCombined.length > 0 && (
+                    <AllResultsSection title="Connect" totalCount={allConnectTotal}
+                      moreLabel="Connect"
+                      onViewAll={() => handleViewMoreCategory('connect')}
+                      onViewMore={() => handleViewMoreCategory('connect')}>
+                      <div className="grid grid-cols-2 gap-2.5 px-4 items-start">
+                        {allConnectCombined.slice(0, 6).map(item => (
+                          <AllResultsConnectCard
+                            key={item.kind === 'creator' ? `c-${item.row.id}` : item.kind === 'portfolio' ? `p-${item.row.type}-${item.row.id}` : `post-${item.post.id}`}
+                            item={item} onNavigate={handleResultNavigate}
+                            onOpenPortfolio={(userId, albumId) => { handleClose(); openPortfolioPreview(userId, albumId); }}
+                          />
+                        ))}
+                      </div>
+                    </AllResultsSection>
+                  )}
+                  {visibleCourses.length > 0 && (
+                    <AllResultsSection title="FILMONS Learning" totalCount={visibleCourses.length}
+                      moreLabel="Learning"
+                      onViewAll={() => handleViewMoreCategory('courses')}
+                      onViewMore={() => handleViewMoreCategory('courses')}>
+                      <div className="grid grid-cols-2 gap-2.5 px-4">
+                        {visibleCourses.slice(0, 6).map(c => <CourseCard key={c.id} course={c}/>)}
+                      </div>
+                    </AllResultsSection>
+                  )}
+                </>
+              )}
               {/* Search -> Marketplace, empty query: a discovery landing
                   page (Top/Latest/Nearby, mixed types + badges), NOT the
                   per-category preview list below -- that stays exactly as
                   it was for the 'all' tab and for Marketplace once the
                   viewer actually types something. */}
-              {showMarketplaceLanding ? (
+              {activeTab !== 'all' && (showMarketplaceLanding ? (
                 <>
                   <MarketplaceDiscoveryRow title="Top listings" listings={topListings}
                     onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
@@ -2015,9 +2168,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </>
               ) : (
                 <>
-                  {activeTab === 'all' && (visibleRental.length > 0 || visibleSale.length > 0 || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || (canBrowseEmergency && visibleEmergency.length > 0)) && (
-                    <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
-                  )}
                   {visibleRental.length > 0 && (
                     <ResultSection label="📦 Rental" count={Math.min(visibleRental.length, PREVIEW_LIMIT)} grid
                       footer={visibleRental.length > PREVIEW_LIMIT
@@ -2078,14 +2228,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     </ResultSection>
                   )}
                 </>
-              )}
+              ))}
               {/* Search -> Connect, empty query: the 5-section discovery
                   landing page -- People you may know/Trending in Connect/
                   Featured Portfolio/Popular Hashtags/Creator Activity, NOT
                   the generic Creators/Portfolio/Posts/Hashtags preview list
                   below. That list stays exactly as it was for the 'all' tab
                   and for Connect once the viewer actually types something. */}
-              {showConnectLanding ? (
+              {activeTab !== 'all' && (showConnectLanding ? (
                 <>
                   {connectSuggested.length > 0 && (
                     <ConnectDiscoveryRow title="People you may know" onViewAll={() => closeAndNavigate('/connections/suggested')}>
@@ -2166,9 +2316,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </>
               ) : (
                 <>
-                  {activeTab === 'all' && (visibleUsers.length > 0 || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0) && (
-                    <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Connect</p>
-                  )}
                   {visibleUsers.length > 0 && (
                     <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
                       footer={visibleUsers.length > PREVIEW_LIMIT
@@ -2227,11 +2374,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     </section>
                   )}
                 </>
-              )}
-              {activeTab === 'all' && visibleCourses.length > 0 && (
-                <p className="px-4 pt-3 pb-1 text-[11px] font-black text-gray-300 uppercase tracking-widest">Learning</p>
-              )}
-              {visibleCourses.length > 0 && (
+              ))}
+              {activeTab !== 'all' && visibleCourses.length > 0 && (
                 <ResultSection label="🎓 Courses" count={Math.min(visibleCourses.length, PREVIEW_LIMIT)} grid
                   footer={visibleCourses.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => handleViewMoreCategory('courses')}/> : undefined}>
@@ -2249,8 +2393,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   "Because you're a {role}" already each have their own
                   "View all", and this page is deliberately organized as
                   independent discovery sections with no single global
-                  "view everything" action. */}
-              {hasVisible && !showMarketplaceLanding && !showConnectLanding && (
+                  "view everything" action. Not shown on the 'all' tab
+                  either -- its 3 product sections (Marketplace/Connect/
+                  Learning) already each carry their own "View all"/"View
+                  more", and a single button here couldn't meaningfully
+                  say which one it'd go to. */}
+              {hasVisible && !showMarketplaceLanding && !showConnectLanding && activeTab !== 'all' && (
                 <div className="px-4 pt-2 pb-4">
                   <button
                     onClick={() => !user ? handleGuestSeeMore(activeTab) : handleViewMoreCategory(activeTab)}
