@@ -41,7 +41,9 @@ import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locat
 import { searchMatchingPortfolio, searchMatchingPosts, searchAndHydratePosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
 import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from '../components/courses/CourseCard';
-import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
+import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
+import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { Hash, MapPin } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
@@ -1729,49 +1731,71 @@ function LocationsAllSection({ query }: { query?: string }) {
   );
 }
 
+// Splits an already-ordered list into 2 columns by alternating index --
+// preserves real per-item heights (a portfolio album card and a portfolio
+// item card are rarely the same height) instead of forcing every row to
+// match its tallest cell, which is what a plain `grid` would do. Same
+// technique SearchOverlay.tsx's All Results Connect section already uses.
+function splitTwoColumns<T>(items: T[]): [T[], T[]] {
+  return [items.filter((_, i) => i % 2 === 0), items.filter((_, i) => i % 2 === 1)];
+}
+
 function PortfolioAllSection({ query }: { query?: string }) {
   const navigate = useNavigate();
-  const { openPortfolioPreview } = usePortfolioPreview();
-  const [results, setResults] = useState<SearchPortfolioRow[] | null>(null);
+  const [matches, setMatches] = useState<SearchPortfolioRow[] | null>(null);
+  // Hydrated into real PortfolioFeedEntry objects (creator info, real
+  // aspect ratio, likes/comments counts, album preview items) so this
+  // renders through the EXACT same PortfolioProjectCard/PortfolioAlbumCard
+  // Home's Connect feed uses -- the lightweight SearchPortfolioRow match
+  // rows above only drive the count/"View all" gate, same pattern
+  // PostsAllSection already uses for posts.
+  const [entries, setEntries] = useState<PortfolioFeedEntry[]>([]);
 
   useEffect(() => {
-    if (!query?.trim()) { setResults(null); return; }
+    if (!query?.trim()) { setMatches(null); setEntries([]); return; }
     let cancelled = false;
-    searchMatchingPortfolio(query).then(r => { if (!cancelled) setResults(r); });
+    searchMatchingPortfolio(query).then(r => { if (!cancelled) setMatches(r); });
     return () => { cancelled = true; };
   }, [query]);
 
-  if (!query?.trim() || !results?.length) return null;
-  const shown = results.slice(0, 5);
+  useEffect(() => {
+    const shown = (matches ?? []).slice(0, 6);
+    const itemIds = shown.filter(r => r.type === 'item').map(r => r.id);
+    const albumIds = shown.filter(r => r.type === 'album').map(r => r.id);
+    if (!itemIds.length && !albumIds.length) { setEntries([]); return; }
+    let cancelled = false;
+    getPortfolioEntriesByIds(itemIds, albumIds).then(byId => {
+      if (cancelled) return;
+      setEntries(shown.map(r => byId.get(r.id)).filter((e): e is PortfolioFeedEntry => !!e));
+    });
+    return () => { cancelled = true; };
+  }, [matches]);
+
+  if (!query?.trim() || !matches?.length) return null;
+  const [left, right] = splitTwoColumns(entries);
 
   return (
     <div className="px-4 lg:px-0 mb-6">
       <div className="flex items-center justify-between mb-2.5">
         <p className="text-sm lg:text-base font-black text-gray-900">Portfolio</p>
-        {results.length > 5 && (
+        {matches.length > 6 && (
           <button onClick={() => navigate('/search/category/portfolio', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
             View all <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
-      <div className="grid grid-cols-3 lg:grid-cols-5 gap-1.5">
-        {shown.map(r => (
-          <button
-            key={`${r.type}-${r.id}`}
-            onClick={() => openPortfolioPreview(r.user_id, r.type === 'album' ? r.id : undefined)}
-            className="relative rounded-xl overflow-hidden bg-gray-100"
-            style={{ aspectRatio: 4 / 5 }}
-          >
-            {(r.thumbnail_url || r.media_url || r.cover_url) ? (
-              <img src={r.thumbnail_url || r.media_url || r.cover_url || ''} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🎬</div>
-            )}
-          </button>
-        ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+        <div className="space-y-3">{left.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e}/>)}</div>
+        <div className="space-y-3">{right.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e}/>)}</div>
       </div>
     </div>
   );
+}
+
+function PortfolioEntryCard({ entry }: { entry: PortfolioFeedEntry }) {
+  return entry.type === 'item'
+    ? <PortfolioProjectCard entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
+    : <PortfolioAlbumCard entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>;
 }
 
 function PostsAllSection({ query }: { query?: string }) {
@@ -1802,6 +1826,7 @@ function PostsAllSection({ query }: { query?: string }) {
   }, [results]);
 
   if (!query?.trim() || !results?.length) return null;
+  const [left, right] = splitTwoColumns(shownPosts);
 
   return (
     <div className="px-4 lg:px-0 mb-6">
@@ -1813,8 +1838,9 @@ function PostsAllSection({ query }: { query?: string }) {
           </button>
         )}
       </div>
-      <div className="space-y-3">
-        {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+        <div className="space-y-3">{left.map(p => <PostCard key={p.id} post={p} />)}</div>
+        <div className="space-y-3">{right.map(p => <PostCard key={p.id} post={p} />)}</div>
       </div>
     </div>
   );

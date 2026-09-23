@@ -10,6 +10,13 @@ import { PostCard } from '../components/PostCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import type { Post } from '../types';
 
+// Splits an already-ordered list into 2 columns by alternating index --
+// preserves each post's own real height instead of a plain grid forcing
+// every row to match its tallest cell.
+function splitTwoColumns<T>(items: T[]): [T[], T[]] {
+  return [items.filter((_, i) => i % 2 === 0), items.filter((_, i) => i % 2 === 1)];
+}
+
 export function PostsCategoryResults({ query: initialQuery }: { query?: string }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery ?? '');
@@ -31,7 +38,7 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
         <p className="text-sm font-bold text-gray-900">Posts</p>
       </div>
 
-      <div className="lg:max-w-2xl lg:mx-auto px-4 py-4 space-y-4">
+      <div className="lg:max-w-4xl lg:mx-auto px-4 py-4 space-y-4">
         <div className="relative">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -47,9 +54,15 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
         ) : results.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-16">No posts matching "{query}"</p>
         ) : (
-          <div className="space-y-3">
-            {results.map(p => <PostCard key={p.id} post={p} />)}
-          </div>
+          (() => {
+            const [left, right] = splitTwoColumns(results);
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+                <div className="space-y-3">{left.map(p => <PostCard key={p.id} post={p} />)}</div>
+                <div className="space-y-3">{right.map(p => <PostCard key={p.id} post={p} />)}</div>
+              </div>
+            );
+          })()
         )}
       </div>
     </div>
