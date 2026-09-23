@@ -388,6 +388,9 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
   // Comments
   const [showComments, setShowComments] = useState(false);
+  // Comment icon (write intent) vs. tapping the comment count (read
+  // intent) -- only the icon should auto-focus/open the keyboard.
+  const [commentsFocusIntent, setCommentsFocusIntent] = useState(true);
   const [commentCount, setCommentCount] = useState(() => {
     const cached = getPost(post.id);
     return cached?.commentCount
@@ -945,6 +948,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             allowComments={localPost.allowComments !== false}
             commentCount={commentCount}
             totalCommentsCount={localPost.totalCommentsCount ?? commentCount}
+            autoFocusComposer={commentsFocusIntent}
             onClose={() => setShowComments(false)}
             onCountChange={n => { setCommentCount(n); updatePost(localPost.id, { commentCount: n }); }}
           />
@@ -1555,11 +1559,21 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 </button>
               )}
             </button>
-            {/* Comment */}
-            <button onClick={()=>setShowComments(true)}
+            {/* Comment icon -- write intent, opens with the keyboard focused */}
+            <button onClick={()=>{ setCommentsFocusIntent(true); setShowComments(true); }}
               className="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-gray-700 hover:text-blue-500 transition-all active:scale-90">
               <MessageCircle className="w-5 h-5"/>
-              {((localPost.totalCommentsCount ?? commentCount) > 0) && <span className="text-[13px] font-semibold min-w-[12px]">{localPost.totalCommentsCount ?? commentCount}</span>}
+              {/* Comment count -- read intent, opens WITHOUT auto-focusing the
+                  keyboard (a separate tap target, its own stopPropagation so
+                  it doesn't also trigger the icon button underneath it). */}
+              {((localPost.totalCommentsCount ?? commentCount) > 0) && (
+                <span
+                  onClick={e => { e.stopPropagation(); setCommentsFocusIntent(false); setShowComments(true); }}
+                  className="text-[13px] font-semibold min-w-[12px] hover:underline"
+                >
+                  {localPost.totalCommentsCount ?? commentCount}
+                </span>
+              )}
             </button>
             {/* Repost */}
             <button

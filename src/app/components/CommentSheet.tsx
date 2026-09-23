@@ -470,10 +470,16 @@ interface CommentSheetProps {
   totalCommentsCount?: number;  // main + replies
   onClose: () => void;
   onCountChange?: (n: number) => void;
+  /** Comment button (write intent) vs. tapping the comment COUNT (read
+   * intent) per spec: "Comment button -> write a comment... Comment count
+   * -> read comments" -- only the button should pop the keyboard.
+   * Defaults true so every existing caller keeps today's behavior. */
+  autoFocusComposer?: boolean;
 }
 
 export function CommentSheet({
   postId, postOwnerId, allowComments, commentCount, totalCommentsCount, onClose, onCountChange,
+  autoFocusComposer = true,
 }: CommentSheetProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -556,7 +562,7 @@ export function CommentSheet({
     hasLoadedRef.current = true;
     if (_fetched.has(postId)) return;
     load();
-    setTimeout(() => inputRef.current?.focus(), 450);
+    if (autoFocusComposer) setTimeout(() => inputRef.current?.focus(), 450);
   }, [load, postId]);
 
   const loadMore = async () => {
