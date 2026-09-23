@@ -19,7 +19,7 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -164,6 +164,25 @@ const CATEGORY_CLASSIFIER: Record<Exclude<CategoryTab, 'creators' | 'emergency'>
   rental: isRentalListing, sale: isSaleListing, services: isServiceListing,
   opportunities: isOpportunityListing, studios: isStudioListing,
 };
+
+// Marketplace View All's mixed-type badge -- Studios isn't its own badge
+// type (same precedent as SearchOverlay.tsx's own listingTypeBadge: a
+// Studio listing falls back to RENTAL/SALE by listingMode), so every
+// listing lands on exactly one of the 4 badges the spec's pills use.
+type MarketplaceBadge = 'RENTAL' | 'SALE' | 'SERVICE' | 'OPPORTUNITY';
+const MARKETPLACE_BADGE_STYLE: Record<MarketplaceBadge, string> = {
+  RENTAL: 'bg-blue-600', SALE: 'bg-emerald-600', SERVICE: 'bg-teal-600', OPPORTUNITY: 'bg-purple-600',
+};
+// Operates on the raw SearchListingRow (not the mapped Listing) so it
+// reuses the EXACT same classifiers CATEGORY_CLASSIFIER does -- guarantees
+// a listing's badge always agrees with which pill/category it's filtered
+// into, rather than a second ad-hoc check on the mapped object's fields
+// potentially disagreeing with that classification.
+function marketplaceTypeBadge(l: SearchListingRow): MarketplaceBadge {
+  if (isOpportunityListing(l)) return 'OPPORTUNITY';
+  if (isServiceListing(l)) return 'SERVICE';
+  return isSaleListing(l) ? 'SALE' : 'RENTAL';
+}
 
 // Pure (no fetch): classify/filter/sort/paginate an already-fetched shared
 // match set for one category. Pulled out of fetchCategoryPage so
@@ -951,18 +970,34 @@ const PREVIEW_IMAGE_STYLE: React.CSSProperties = {
 const PREVIEW_CARD_CLASS = 'snap-start overflow-hidden border border-gray-100 bg-white shadow-sm text-left flex flex-col active:scale-[0.97] transition-transform';
 const PREVIEW_IMAGE_CLASS = 'relative shrink-0 bg-gray-100 overflow-hidden';
 
-function PreviewListingCard({ listing }: { listing: Listing }) {
+function PreviewListingCard({ listing, badge, gridMode = false }: {
+  listing: Listing;
+  /** Marketplace View All's RENTAL/SALE/SERVICE/OPPORTUNITY badge -- omitted
+   * (undefined) everywhere else this card already renders, so every other
+   * existing usage is visually unchanged. */
+  badge?: MarketplaceBadge;
+  /** Fills its 2-column grid cell instead of the horizontal-scroll rows'
+   * fixed 240px width. */
+  gridMode?: boolean;
+}) {
   const navigate = useNavigate();
   const price = `$${Number(listing.price ?? 0).toLocaleString()}${listing.listingMode === 'rent' ? '/day' : ''}`;
   const isEmergency = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
   return (
-    <button onClick={() => navigate(`/listing/${listing.id}`)} style={PREVIEW_CARD_STYLE} className={PREVIEW_CARD_CLASS}>
-      <div style={PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
+    <button onClick={() => navigate(`/listing/${listing.id}`)}
+      style={gridMode ? { borderRadius: 16 } : PREVIEW_CARD_STYLE}
+      className={`${PREVIEW_CARD_CLASS} ${gridMode ? 'w-full h-auto' : ''}`}>
+      <div style={gridMode ? { aspectRatio: '4 / 3' } : PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
         {listing.images?.[0]
           ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
+        {badge && (
+          <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[badge]}`}>
+            {badge}
+          </span>
+        )}
         {isEmergency && (
-          <span className="absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
+          <span className={`absolute top-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm ${badge ? 'right-1.5' : 'left-1.5'}`}>
             <AlertTriangle className="w-2.5 h-2.5 fill-white"/> Emergency
           </span>
         )}
@@ -2080,6 +2115,51 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
 
   const matchedFor = (cat: CategoryTab) => (term && cat !== 'emergency') ? sharedMatched : undefined;
 
+  // Marketplace View All -- every listing type mixed into ONE grid (per
+  // spec: "Do NOT create separate sections for Rentals/Sales/Services/
+  // Opportunities"), not the per-category carousels CategorySection
+  // renders for every other product. Built from the SAME sharedMatched
+  // this page already fetches once. The pill filter and the badge use the
+  // literal same marketplaceTypeBadge() call, so a listing's badge can
+  // never disagree with which pill it's currently filtered under.
+  const marketplaceUnified = useMemo((): { listing: Listing; badge: MarketplaceBadge }[] => {
+    if (product !== 'marketplace' || !sharedMatched) return [];
+    const marketplaceCats: Exclude<CategoryTab, 'creators' | 'emergency'>[] = ['rental', 'sale', 'services', 'opportunities', 'studios'];
+    let rows = sharedMatched.listings.filter(l => marketplaceCats.some(c => CATEGORY_CLASSIFIER[c](l)));
+    if (categoryFilter === 'rental')        rows = rows.filter(l => marketplaceTypeBadge(l) === 'RENTAL');
+    else if (categoryFilter === 'sale')     rows = rows.filter(l => marketplaceTypeBadge(l) === 'SALE');
+    else if (categoryFilter === 'services') rows = rows.filter(l => marketplaceTypeBadge(l) === 'SERVICE');
+    else if (categoryFilter === 'opportunities') rows = rows.filter(l => marketplaceTypeBadge(l) === 'OPPORTUNITY');
+    const price = navState.filters?.priceRange;
+    if (price?.min != null) rows = rows.filter(l => (l.price ?? 0) >= price.min!);
+    if (price?.max != null) rows = rows.filter(l => (l.price ?? 0) <= price.max!);
+    const loc = navState.filters?.location?.toLowerCase();
+    if (loc) rows = rows.filter(l => (l.city ?? '').toLowerCase().includes(loc));
+    if (allSort === 'newest') {
+      rows = [...rows].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    } // 'relevance'/'nearest' (no real distance data -- see Distance dropdown's own comment) leave the shared matcher's own ranking as-is.
+    return rows.map(row => ({ listing: mapListingRow(row), badge: marketplaceTypeBadge(row) }));
+  }, [product, sharedMatched, categoryFilter, navState.filters?.priceRange, navState.filters?.location, allSort]);
+
+  // Client-side incremental reveal (the full set is already in memory from
+  // one shared fetch, so this is a render-window, not a real paginated
+  // re-fetch) -- same IntersectionObserver-sentinel UX as
+  // SingleCategoryResults' own infinite scroll, matching spec's "no 6-cap
+  // on this dedicated page... prefer smooth vertical continuation."
+  const [marketplaceVisibleCount, setMarketplaceVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => { setMarketplaceVisibleCount(PAGE_SIZE); }, [categoryFilter, term, allSort, location, priceMin, priceMax]);
+  const marketplaceSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (product !== 'marketplace') return;
+    const el = marketplaceSentinelRef.current;
+    if (!el || marketplaceVisibleCount >= marketplaceUnified.length) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) setMarketplaceVisibleCount(c => c + PAGE_SIZE);
+    }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [product, marketplaceVisibleCount, marketplaceUnified.length]);
+
   const activeChips: { key: string; label: string; onRemove: () => void }[] = [
     ...(categoryFilter !== 'all' ? [{ key: 'cat', label: CATEGORY_LABEL[categoryFilter], onRemove: () => setCategoryFilter('all') }] : []),
     ...(location ? [{ key: 'loc', label: location, onRemove: () => setLocation('') }] : []),
@@ -2204,11 +2284,37 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           <button onClick={() => navigate('/search')} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
-          <p className="text-base lg:text-lg font-black text-gray-900">
-            {initialNavState.pageTitle
-              || (product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results')}
-          </p>
+          <div>
+            <p className="text-base lg:text-lg font-black text-gray-900">
+              {initialNavState.pageTitle
+                || (product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results')}
+            </p>
+            {product === 'marketplace' && term && (
+              <p className="text-xs text-gray-400 font-semibold">{marketplaceUnified.length.toLocaleString()} results for "{term}"</p>
+            )}
+          </div>
         </div>
+
+        {/* Marketplace View All's type pills -- All/Rental/Sale/Service/
+            Opportunity, replacing the shared dropdown category picker for
+            this product specifically (every other product keeps it). Studio
+            listings aren't their own pill (same precedent as
+            marketplaceTypeBadge/SearchOverlay's own listingTypeBadge --
+            they fold into RENTAL/SALE), so selecting one of these 4 pills
+            filters by marketplaceTypeBadge, never CATEGORY_CLASSIFIER
+            directly -- guarantees the pill and the badge always agree. */}
+        {product === 'marketplace' && (
+          <div className="px-4 lg:px-8 xl:px-10 pb-3 flex gap-1.5 overflow-x-auto no-scrollbar">
+            {(['all', 'rental', 'sale', 'services', 'opportunities'] as AllCategoryFilter[]).map(id => (
+              <button key={id} onClick={() => setCategoryFilter(id)}
+                className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                  categoryFilter === id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                {id === 'all' ? 'All' : id === 'services' ? 'Service' : id === 'opportunities' ? 'Opportunity' : CATEGORY_LABEL[id].replace(/s$/, '')}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── Mobile: search input + Filters/Sort row ─────────────────────── */}
         <div className="lg:hidden px-4 pb-3 space-y-2.5">
@@ -2299,7 +2405,46 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
             {!product && marketplaceCats.length > 0 && (
               <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
             )}
-            {marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+            {product === 'marketplace' ? (
+              term ? (
+                marketplaceUnified.length === 0 ? (
+                  <div className="px-4 lg:px-8 py-10 text-center">
+                    <p className="text-sm font-bold text-gray-700">
+                      No {categoryFilter === 'all' ? 'Marketplace' : CATEGORY_LABEL[categoryFilter]} listings found for "{term}".
+                    </p>
+                    {categoryFilter !== 'all' && (
+                      <button onClick={() => setCategoryFilter('all')} className="mt-3 text-sm font-bold text-blue-600 hover:text-blue-700">
+                        Clear {CATEGORY_LABEL[categoryFilter]} filter
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 lg:px-8 xl:px-10">
+                      {marketplaceUnified.slice(0, marketplaceVisibleCount).map(({ listing, badge }) => (
+                        <PreviewListingCard key={listing.id} listing={listing} badge={badge} gridMode/>
+                      ))}
+                    </div>
+                    {marketplaceVisibleCount < marketplaceUnified.length && (
+                      <>
+                        <div ref={marketplaceSentinelRef} className="h-1"/>
+                        <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-gray-300 animate-spin"/></div>
+                      </>
+                    )}
+                  </>
+                )
+              ) : (
+                // No query typed but a specific type pill is selected --
+                // falls back to that one category's own existing browse
+                // view (CategorySection, unchanged) rather than a second,
+                // separate "combined browse-mode pool" data path; the
+                // unified mixed grid above covers every typed-search case,
+                // which is this page's primary scenario.
+                <CategorySection category={categoryFilter as Exclude<CategoryTab, 'creators' | 'emergency'>} navState={navState} matched={undefined}/>
+              )
+            ) : (
+              marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)
+            )}
 
             {!product && (connectCats.length > 0 || showConnectExtras) && (
               <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
