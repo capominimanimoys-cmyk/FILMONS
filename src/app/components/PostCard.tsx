@@ -292,39 +292,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // this is correct on first render everywhere a post is fetched, not just
   // for the rest of the session after tapping Repost locally.
   const [hasReposted,      setHasReposted]      = useState(!!userRepostPostId || !!(rawPost as any).hasReposted);
-  const [repostBanner, setRepostBanner] = useState<{ names: string[]; extra: number } | null>(null);
-
-  // Fetch who from the current user's circle reposted this post
-  useEffect(() => {
-    if (!user || !(localPost.repostCount ?? 0)) return;
-    const following = user.following || [];
-    const idsToCheck = [...new Set([user.id, ...following])];
-    if (!idsToCheck.length) return;
-    let cancelled = false;
-    supabase
-      .from('reposts')
-      .select('user_id')
-      .eq('post_id', localPost.id)
-      .in('user_id', idsToCheck.slice(0, 50))
-      .limit(3)
-      .then(async ({ data }) => {
-        if (cancelled || !data?.length) return;
-        const ids = data.map((r: any) => r.user_id);
-        const names: string[] = [];
-        if (ids.includes(user.id)) names.push('You');
-        const friendIds = ids.filter((id: string) => id !== user.id).slice(0, 2);
-        if (friendIds.length) {
-          const { data: profiles } = await supabase
-            .from('profiles').select('id, name, username').in('id', friendIds);
-          (profiles || []).forEach((p: any) => names.push(p.name || p.username || ''));
-        }
-        if (!cancelled && names.length) {
-          const extra = Math.max(0, (localPost.repostCount ?? 0) - names.length);
-          setRepostBanner({ names, extra });
-        }
-      });
-    return () => { cancelled = true; };
-  }, [localPost.id, localPost.repostCount, user?.id]); // eslint-disable-line
   const [textOverlays,     setTextOverlays]     = useState<TextLayer[]>([]);
 
   // Fetch text overlays for this post
@@ -1023,22 +990,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   return (
     <>
       <div className="relative">
-        {/* ── Repost banner (top of card) ── */}
-        {repostBanner && (
-          <div className="flex items-center gap-1.5 px-4 py-1.5 bg-green-50 border-b border-green-100">
-            <Repeat2 className="w-3 h-3 text-green-500 shrink-0" />
-            <p className="text-[11px] text-gray-500 truncate">
-              <span className="font-semibold text-gray-700">
-                {repostBanner.names.slice(0, 2).join(', ')}
-              </span>
-              {repostBanner.extra > 0 && (
-                <span className="text-gray-400"> +{repostBanner.extra} more</span>
-              )}
-              {' '}reposted
-            </p>
-          </div>
-        )}
-
         {/* ── Three-dot for OWN posts — now inside header ── */}
         {/* Own post menu -- Edit post / Change visibility / Save post /
             Copy link / Turn off comments, Delete visually separated as the
