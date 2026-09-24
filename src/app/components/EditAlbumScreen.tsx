@@ -24,12 +24,12 @@ import { BottomSheet, SheetAction } from './BottomSheet';
 import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
 import type { EditAlbumSection } from './AlbumActionsSheet';
 
-type Visibility = 'public' | 'followers' | 'private';
+type Visibility = 'public' | 'connections' | 'private';
 
 const VIS_OPTIONS: { id: Visibility; label: string; sub: string; Icon: any }[] = [
-  { id: 'public',    label: 'Public',    sub: 'Anyone can view',     Icon: Globe },
-  { id: 'followers', label: 'Followers', sub: 'Your followers only', Icon: Users },
-  { id: 'private',   label: 'Private',   sub: 'Only you',            Icon: Lock  },
+  { id: 'public',      label: 'Public',      sub: 'Anyone can view',       Icon: Globe },
+  { id: 'connections', label: 'Connections', sub: 'Your connections only', Icon: Users },
+  { id: 'private',     label: 'Private',     sub: 'Only you',              Icon: Lock  },
 ];
 
 interface Props {

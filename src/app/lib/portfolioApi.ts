@@ -11,6 +11,7 @@ import { indexContentHashtags } from './hashtagsApi';
 import { indexContentLocation } from './locationsApi';
 import { logContentRepostActivity, removeContentRepostActivity } from './activityApi';
 import { fetchViewerConnectionsAndFollows, type RepostContextEntry } from './api';
+import { getConnectionStatus } from './connectionsApi';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text';
 
@@ -63,7 +64,13 @@ export interface PortfolioAlbum {
   description?:      string;
   cover_item_id?:    string;
   cover_url?:        string;  // uploaded cover image URL (DB column, see migration 20240128)
-  visibility:        'public' | 'followers' | 'private';
+  // 'connections' (mutual, accepted professional_connections) replaced
+  // 'followers' (one-way) as of migration 20240603 -- matches the audience
+  // model Posts already use (see filterPostsByVisibility in api.ts). Old
+  // rows are migrated by that same file; canViewAlbum below is the new
+  // per-album gate this enables (nothing enforced album-level visibility
+  // before this).
+  visibility:        'public' | 'connections' | 'private';
   likes_count?:      number;
   comments_count?:   number;
   reposts_count?:    number;
@@ -488,6 +495,50 @@ export async function getAlbums(userId: string): Promise<PortfolioAlbum[]> {
     if (error) { console.warn('[albums] fetch error:', error.message); return []; }
     return (data ?? []) as PortfolioAlbum[];
   } catch { return []; }
+}
+
+// Single-album fetch with its creator's profile attached -- unlike every
+// existing album read (getAlbums, getPortfolioFeed, getPortfolioEntriesByIds),
+// which already has the owner's userId in scope before fetching, a
+// standalone album-viewing surface (AlbumDetailPage) may only have an
+// albumId (e.g. reached from an activity/notification), so it needs its
+// own creator lookup rather than assuming one's already loaded.
+export async function getAlbum(id: string): Promise<(PortfolioAlbum & { creator: PortfolioFeedCreator }) | null> {
+  try {
+    const { data: album, error } = await supabase.from('portfolio_albums').select('*').eq('id', id).maybeSingle();
+    if (error || !album) return null;
+    const { data: p } = await supabase.from('profiles')
+      .select('id, name, username, avatar_url, primary_role, city, is_verified')
+      .eq('id', album.user_id).maybeSingle();
+    const creator: PortfolioFeedCreator = {
+      id: album.user_id, name: p?.name ?? 'Creator', username: p?.username ?? null,
+      avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+      is_verified: !!p?.is_verified,
+    };
+    return { ...(album as PortfolioAlbum), creator };
+  } catch (e) {
+    console.warn('[getAlbum] error:', e);
+    return null;
+  }
+}
+
+// Per-album view gate -- nothing enforced portfolio_albums.visibility on
+// its own before this (only the whole-portfolio-level gate in Portfolio.tsx
+// did, via a different portfolio_settings.visibility value). Same
+// public/connections/private shape and 'connections' semantics
+// (filterPostsByVisibility in api.ts) already enforces for Posts, just a
+// single-pair check (getConnectionStatus) rather than a batched one since
+// this gates one album at a time, not a list.
+export async function canViewAlbum(album: Pick<PortfolioAlbum, 'visibility' | 'user_id'>, viewerId?: string): Promise<boolean> {
+  if (album.visibility === 'public') return true;
+  if (!viewerId) return false;
+  if (viewerId === album.user_id) return true;
+  if (album.visibility === 'private') return false;
+  if (album.visibility === 'connections') {
+    const status = await getConnectionStatus(viewerId, album.user_id);
+    return status === 'connected';
+  }
+  return false;
 }
 
 export async function createAlbum(
