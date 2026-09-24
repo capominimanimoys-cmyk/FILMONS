@@ -81,6 +81,12 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   const [tags, setTags] = useState<string[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<ProfileResult[]>([]);
   const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem | null>(initialPortfolioItem ?? null);
+  // "Post" is a real, removable attachment type like Portfolio/Listing --
+  // local state (not a direct read of the initialRepostOfPost prop) so
+  // the composer can drop it. Per spec: "If User A removes the Post
+  // attachment, the composer becomes a normal Create Post. It is no
+  // longer considered Repost with Thought."
+  const [repostOfPost, setRepostOfPost] = useState<Post | undefined>(initialRepostOfPost);
   const [selectedListings, setSelectedListings] = useState<Listing[]>([]);
   const [location, setLocation] = useState<LocationResult | null>(null);
   const [link, setLink] = useState('');
@@ -212,7 +218,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // Reposting a Post specifically requires the viewer's own thoughts (the
   // point of "repost with thoughts" vs. a plain instant repost) -- the
   // attached original doesn't count as "your own content" for this gate.
-  const hasContent = initialRepostOfPost
+  const hasContent = repostOfPost
     ? caption.trim().length > 0
     : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || selectedListings.length > 0;
 
@@ -260,14 +266,14 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         [],
         true,
         link.trim() || undefined,
-        initialRepostOfPost ? {
-          postId:    initialRepostOfPost.id,
-          userId:    initialRepostOfPost.userId,
-          userName:  initialRepostOfPost.userName,
-          userAvatar: initialRepostOfPost.userAvatar,
-          content:   initialRepostOfPost.content,
-          images:    initialRepostOfPost.images,
-          createdAt: initialRepostOfPost.createdAt,
+        repostOfPost ? {
+          postId:    repostOfPost.id,
+          userId:    repostOfPost.userId,
+          userName:  repostOfPost.userName,
+          userAvatar: repostOfPost.userAvatar,
+          content:   repostOfPost.content,
+          images:    repostOfPost.images,
+          createdAt: repostOfPost.createdAt,
         } : undefined,
         {
           location: location?.name || undefined,
@@ -297,16 +303,25 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
       }
       if (draftId) deleteDraft(draftId).catch(() => {});
 
-      if (initialRepostOfPost && initialRepostOfPost.userId !== user.id) {
-        notifs.push(initialRepostOfPost.userId, {
-          type: 'content_repost_thoughts',
-          fromUserId:    user.id,
-          fromUserName:  user.name,
-          fromUserAvatar: user.avatar,
-          postId:        newPost.id,
-          postContent:   caption.trim().slice(0, 60),
-          postImage:     initialRepostOfPost.images?.[0] || initialRepostOfPost.thumbnailUrl,
-        });
+      if (repostOfPost) {
+        // Registers the SAME (user_id, post_id) relationship a plain
+        // repost writes -- the original's repost count and this viewer's
+        // "Reposted" active state now come from one source regardless of
+        // which flow created it. No-ops silently (23505) if User A already
+        // has a repost record for this post (a prior plain repost, or a
+        // prior "with thoughts") -- one unique reposter, +1 max, ever.
+        postsApi.registerRepost(user.id, repostOfPost.id).catch(() => {});
+        if (repostOfPost.userId !== user.id) {
+          notifs.push(repostOfPost.userId, {
+            type: 'content_repost_thoughts',
+            fromUserId:    user.id,
+            fromUserName:  user.name,
+            fromUserAvatar: user.avatar,
+            postId:        newPost.id,
+            postContent:   caption.trim().slice(0, 60),
+            postImage:     repostOfPost.images?.[0] || repostOfPost.thumbnailUrl,
+          });
+        }
       }
 
       notifyEvent({
@@ -473,7 +488,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
             ref={textareaRef}
             value={caption}
             onChange={e => handleCaptionChange(e.target.value)}
-            placeholder={initialRepostOfPost ? 'What are your thoughts?' : 'Share something with the Filmons community…'}
+            placeholder={repostOfPost ? 'What are your thoughts?' : 'Share something with the Filmons community…'}
             className="w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-400 resize-none outline-none leading-relaxed py-2"
             style={{ minHeight: 120 }}
             autoFocus
@@ -608,15 +623,24 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           </div>
         )}
 
-        {/* Repost from {original author}'s post -- read-only, never a copy;
-            the live reference is written back via postsApi.create's own
-            repostOf param above. */}
-        {initialRepostOfPost && (
+        {/* "Post" -- a real, removable attachment type like Portfolio/
+            Listing above, not a fixed fact about this composer session.
+            Read-only preview, never a copy; the live reference is written
+            back via postsApi.create's own repostOf param on publish. If
+            User A removes it, this simply becomes a normal Create Post
+            (hasContent's own gate stops requiring a caption once
+            repostOfPost is gone, same as any other post). */}
+        {repostOfPost && (
           <div className="px-4 pt-3">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 mb-1.5">
-              Repost from {initialRepostOfPost.userName}'s post
-            </p>
-            <QuotedPostPreview post={initialRepostOfPost} />
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-400">
+                Repost from {repostOfPost.userName}'s post
+              </p>
+              <button onClick={() => setRepostOfPost(undefined)} className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                <X className="w-3.5 h-3.5 text-gray-600" />
+              </button>
+            </div>
+            <QuotedPostPreview post={repostOfPost} />
           </div>
         )}
 

@@ -1713,12 +1713,38 @@ export const postsApi = {
     }
   },
 
+  // Registers the (user_id, post_id) repost relationship -- the SAME
+  // `reposts` table row handleRepost's plain-repost path already writes,
+  // now also called from CreatePostSheet.publish() when a "repost with
+  // thoughts" is published. One relationship, one count, regardless of
+  // which of the two flows created it: reposts_count is driven entirely
+  // by this table's own DB trigger (fn_sync_reposts_count), and the
+  // table's own unique (user_id, post_id) constraint means a user who
+  // already has a row here -- from a PRIOR plain repost, or a prior
+  // "with thoughts" -- silently no-ops on a second insert (23505) rather
+  // than double-counting. This is what makes "User A can only contribute
+  // +1, however many times they repost or quote-repost" true by
+  // construction, not by a separate de-dup check. Errors other than the
+  // expected duplicate are logged but never surfaced to the user --
+  // publish() must not roll back just because THIS side effect failed.
+  registerRepost: async (userId: string, postId: string): Promise<void> => {
+    try {
+      const { error } = await supabase.from('reposts').insert({ user_id: userId, post_id: postId, quote_text: null });
+      if (error && error.code !== '23505') console.error('[registerRepost] error:', error.message);
+    } catch (e) { console.error('[registerRepost] error:', e); }
+  },
+
   // "Who reposted this" -- powers the Reposts list sheet opened by tapping
   // the repost count. Merges the two real mechanisms a repost can be:
   // a plain toggle-table row (`reposts`, no new content) and a "repost with
   // thoughts" (a real posts row whose metadata.repostOf.postId points back
   // here) -- there's no single table that already has both, so this is the
-  // one place that combines them into one list.
+  // one place that combines them into one list. Since registerRepost above
+  // now ALSO writes a `reposts` row for a "with thoughts" repost (so the
+  // count/hasReposted state has one source of truth), the same user can
+  // legitimately appear in both plainRows and quoteRows here -- de-duped
+  // by user_id below, keeping the richer 'thoughts' entry (it links to
+  // their actual commentary) over the bare 'plain' one.
   getReposts: async (postId: string, limit = 100): Promise<RepostListEntry[]> => {
     try {
       const [{ data: plainRows }, { data: quoteRows }] = await Promise.all([
@@ -1734,15 +1760,22 @@ export const postsApi = {
       const avatarOf = (id: string) => profileMap.get(id)?.avatar_url || undefined;
       const usernameOf = (id: string) => profileMap.get(id)?.username || undefined;
 
-      const plain: RepostListEntry[] = (plainRows ?? []).map((r: any) => ({
-        userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
-        type: 'plain', createdAt: r.created_at,
-      }));
-      const thoughts: RepostListEntry[] = (quoteRows ?? []).map((r: any) => ({
-        userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
-        type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
-      }));
-      return [...plain, ...thoughts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const byUser = new Map<string, RepostListEntry>();
+      // 'thoughts' populated first so it always wins the de-dup below.
+      for (const r of (quoteRows ?? []) as any[]) {
+        byUser.set(r.author_id, {
+          userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
+          type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
+        });
+      }
+      for (const r of (plainRows ?? []) as any[]) {
+        if (byUser.has(r.user_id)) continue;
+        byUser.set(r.user_id, {
+          userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
+          type: 'plain', createdAt: r.created_at,
+        });
+      }
+      return [...byUser.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (e) {
       console.error('[getReposts] error:', e);
       return [];
