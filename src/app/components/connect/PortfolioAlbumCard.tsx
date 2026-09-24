@@ -20,6 +20,7 @@ import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
 import type { TrustLevel } from '../../lib/trustApi';
+import { PortfolioRepostsSheet } from './PortfolioRepostsSheet';
 
 export function PortfolioAlbumCard({ entry, trustLevel }: {
   entry: Extract<PortfolioFeedEntry, { type: 'album' }>;
@@ -39,6 +40,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const [likesCount, setLikesCount] = useState(album.likes_count ?? 0);
   const [reposted, setReposted] = useState(false);
   const [repostsCount, setRepostsCount] = useState(album.reposts_count ?? 0);
+  const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
@@ -157,7 +159,10 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
           <MessageCircle className="w-5 h-5 text-gray-400" /> {(album.comments_count ?? 0) > 0 ? album.comments_count : ''}
         </button>
         <button onClick={handleToggleRepost} className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
-          <Repeat2 className="w-5 h-5" /> {repostsCount > 0 ? repostsCount : ''}
+          <Repeat2 className="w-5 h-5" />
+          {repostsCount > 0 && (
+            <span onClick={e => { e.stopPropagation(); setShowRepostsSheet(true); }} className="hover:underline">{repostsCount}</span>
+          )}
         </button>
         <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" />
@@ -199,6 +204,9 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         />
       )}
       {showShareSheet && <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareSheet(false)} />}
+      {showRepostsSheet && (
+        <PortfolioRepostsSheet targetId={album.id} targetType="portfolio_album" onClose={() => setShowRepostsSheet(false)} />
+      )}
     </article>
   );
 }

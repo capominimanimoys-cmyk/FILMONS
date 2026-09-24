@@ -1390,7 +1390,7 @@ async function fetchRepostedPostIds(postIds: string[], userId: string): Promise<
 // per-card fetch -- this app already had an N+1 regression from a
 // similar feature earlier, so the relevant-viewer-ids lookup and the
 // repost lookup both run once for the whole batch of postIds.
-async function fetchViewerConnectionsAndFollows(viewerId: string): Promise<{ connections: Set<string>; following: Set<string> }> {
+export async function fetchViewerConnectionsAndFollows(viewerId: string): Promise<{ connections: Set<string>; following: Set<string> }> {
   const [{ data: connRows }, { data: followRows }] = await Promise.all([
     supabase.from('professional_connections').select('user_a_id, user_b_id')
       .eq('status', 'accepted').or(`user_a_id.eq.${viewerId},user_b_id.eq.${viewerId}`),

@@ -1,49 +1,50 @@
-// "Reposts" list -- opened by tapping a post's repost count, same pattern
-// as LikesSheet. Distinguishes a plain repost ("Reposted") from a repost
-// with thoughts ("Reposted with thoughts", openable on its own since that
-// one is a real post) -- postsApi.getReposts already merges both real
-// mechanisms into one list.
+// "Reposts" list for a Portfolio item/album -- same shape as PostCard's
+// own RepostsSheet.tsx (relevance-ordered: connections, then people the
+// viewer follows, then everyone else; role/location per row), backed by
+// getPortfolioReposts instead of postsApi.getReposts. Didn't exist at all
+// before this -- the repost count on Portfolio cards was static text with
+// no tap target.
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Repeat2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { postsApi, type RepostListEntry } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
-import { UserAvatar } from './AccountTypeBadge';
+import { getPortfolioReposts, type PortfolioRepostListEntry, type PortfolioSaveTargetType } from '../../lib/portfolioApi';
+import { useAuth } from '../../context/AuthContext';
+import { UserAvatar } from '../AccountTypeBadge';
 
-const RELATION_LABEL: Record<RepostListEntry['viewerRelation'], string | null> = {
+const RELATION_LABEL: Record<PortfolioRepostListEntry['viewerRelation'], string | null> = {
   connection: 'Connection', following: 'Following', none: null,
 };
 
-export function RepostsSheet({ postId, onClose }: { postId: string; onClose: () => void }) {
+export function PortfolioRepostsSheet({ targetId, targetType, onClose }: {
+  targetId: string; targetType: PortfolioSaveTargetType; onClose: () => void;
+}) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [entries, setEntries] = useState<RepostListEntry[]>([]);
+  const [entries, setEntries] = useState<PortfolioRepostListEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    postsApi.getReposts(postId, user?.id).then(r => { setEntries(r); setLoading(false); });
-  }, [postId, user?.id]);
+    getPortfolioReposts(targetId, targetType, user?.id).then(r => { setEntries(r); setLoading(false); });
+  }, [targetId, targetType, user?.id]);
 
-  const openEntry = (e: RepostListEntry) => {
+  const openEntry = (e: PortfolioRepostListEntry) => {
     onClose();
     if (e.type === 'thoughts' && e.quotePostId) navigate(`/post/${e.quotePostId}`);
     else navigate(e.userUsername ? `/${e.userUsername}` : `/host/${e.userId}`);
   };
 
   // Portaled to document.body -- same containing-block bug already fixed
-  // for RepostMenuSheet/RepostComposer/the delete confirm this session:
-  // rendered inline inside PostCard's own tree, a `fixed inset-0` overlay
-  // can get trapped inside whatever CSS containing block an ancestor
-  // establishes instead of the real viewport.
+  // for RepostMenuSheet/RepostComposer/the delete confirm/RepostsSheet
+  // this session.
   return createPortal((
     <div className="fixed inset-0 z-[80] flex items-end" onClick={onClose}>
       <div
         className="w-full bg-white rounded-t-2xl shadow-xl flex flex-col"
-        style={{ maxHeight: '80vh', animation: 'repostsSlideUp 0.28s cubic-bezier(0.4,0,0.2,1)' }}
+        style={{ maxHeight: '80vh', animation: 'portfolioRepostsSlideUp 0.28s cubic-bezier(0.4,0,0.2,1)' }}
         onClick={e => e.stopPropagation()}
       >
-        <style>{`@keyframes repostsSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+        <style>{`@keyframes portfolioRepostsSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
 
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 shrink-0" />
 

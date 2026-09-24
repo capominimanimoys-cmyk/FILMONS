@@ -10,6 +10,7 @@ import { toStringArray } from './normalizeList';
 import { indexContentHashtags } from './hashtagsApi';
 import { indexContentLocation } from './locationsApi';
 import { logContentRepostActivity, removeContentRepostActivity } from './activityApi';
+import { fetchViewerConnectionsAndFollows } from './api';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text';
 
@@ -994,6 +995,100 @@ export async function togglePortfolioRepost(
   // filterVisible() already re-checks the original's live visibility.
   logContentRepostActivity(userId, targetType, targetId, title ?? null).catch(() => {});
   return true;
+}
+
+// Registers the (user_id, target) repost relationship without requiring
+// the caller to already know the current count (unlike togglePortfolioRepost,
+// which expects the caller to pass one to compute currentCount +/- 1) --
+// called from CreatePostSheet.publish() when a "repost with thoughts" on
+// a Portfolio item/album is published, mirroring postsApi.registerRepost's
+// role for Posts. Checks isPortfolioReposted first and no-ops if the user
+// already has a repost record for this target (from a prior plain repost
+// or a prior "with thoughts") -- same "one user, +1 max" guarantee, just
+// as an explicit check here since portfolio_reposts has no DB trigger to
+// lean on for the count (see togglePortfolioRepost's own manual
+// increment/decrement).
+export async function registerPortfolioRepost(
+  userId: string, targetId: string, targetType: PortfolioSaveTargetType, title?: string | null,
+): Promise<void> {
+  try {
+    if (await isPortfolioReposted(userId, targetId, targetType)) return;
+    const table = targetType === 'portfolio_item' ? 'portfolio_items' : 'portfolio_albums';
+    const { data: row } = await supabase.from(table).select('reposts_count').eq('id', targetId).maybeSingle();
+    const { error } = await supabase.from('portfolio_reposts').insert({ user_id: userId, target_type: targetType, target_id: targetId });
+    if (error) { if (error.code !== '23505') console.error('[registerPortfolioRepost] error:', error.message); return; }
+    await supabase.from(table).update({ reposts_count: (row?.reposts_count ?? 0) + 1 }).eq('id', targetId);
+    logContentRepostActivity(userId, targetType, targetId, title ?? null).catch(() => {});
+  } catch (e) { console.error('[registerPortfolioRepost] error:', e); }
+}
+
+// "Who reposted this" for a Portfolio item/album -- same merge-both-
+// mechanisms-and-de-dup-by-user shape as postsApi.getReposts, since
+// Portfolio's own "repost with thoughts" also lands as a real posts row
+// (metadata.portfolioItemId/portfolioItemTitle/... -- the SAME flat-column
+// attachment pattern the ordinary "attach my own portfolio work" flow
+// uses, not a repostOf reference, since Portfolio content is attached
+// rather than quoted). `viewerId` drives the same Connection/Following
+// label + relevance ordering the Posts sheet already has.
+export interface PortfolioRepostListEntry {
+  userId: string; userName: string; userAvatar?: string; userUsername?: string;
+  primaryRole?: string | null; city?: string | null;
+  viewerRelation: 'connection' | 'following' | 'none';
+  type: 'plain' | 'thoughts';
+  createdAt: string;
+  quotePostId?: string;
+}
+export async function getPortfolioReposts(
+  targetId: string, targetType: PortfolioSaveTargetType, viewerId?: string, limit = 100,
+): Promise<PortfolioRepostListEntry[]> {
+  try {
+    const [{ data: plainRows }, { data: quoteRows }] = await Promise.all([
+      supabase.from('portfolio_reposts').select('user_id, created_at').eq('target_id', targetId).eq('target_type', targetType)
+        .order('created_at', { ascending: false }).limit(limit),
+      supabase.from('posts').select('id, author_id, created_at')
+        .eq(targetType === 'portfolio_item' ? 'metadata->>portfolioItemId' : 'metadata->>portfolioAlbumId', targetId)
+        .order('created_at', { ascending: false }).limit(limit),
+    ]);
+    const userIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
+    const [{ data: profiles }, relations] = await Promise.all([
+      userIds.length
+        ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', userIds)
+        : Promise.resolve({ data: [] as any[] }),
+      viewerId ? fetchViewerConnectionsAndFollows(viewerId) : Promise.resolve({ connections: new Set<string>(), following: new Set<string>() }),
+    ]);
+    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+    const nameOf = (id: string) => profileMap.get(id)?.name || 'Someone';
+    const avatarOf = (id: string) => profileMap.get(id)?.avatar_url || undefined;
+    const usernameOf = (id: string) => profileMap.get(id)?.username || undefined;
+    const relationOf = (id: string): PortfolioRepostListEntry['viewerRelation'] =>
+      relations.connections.has(id) ? 'connection' : relations.following.has(id) ? 'following' : 'none';
+
+    const byUser = new Map<string, PortfolioRepostListEntry>();
+    for (const r of (quoteRows ?? []) as any[]) {
+      byUser.set(r.author_id, {
+        userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
+        primaryRole: profileMap.get(r.author_id)?.primary_role, city: profileMap.get(r.author_id)?.city,
+        viewerRelation: relationOf(r.author_id),
+        type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
+      });
+    }
+    for (const r of (plainRows ?? []) as any[]) {
+      if (byUser.has(r.user_id)) continue;
+      byUser.set(r.user_id, {
+        userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
+        primaryRole: profileMap.get(r.user_id)?.primary_role, city: profileMap.get(r.user_id)?.city,
+        viewerRelation: relationOf(r.user_id),
+        type: 'plain', createdAt: r.created_at,
+      });
+    }
+    const relationRank: Record<PortfolioRepostListEntry['viewerRelation'], number> = { connection: 0, following: 1, none: 2 };
+    return [...byUser.values()].sort((a, b) =>
+      relationRank[a.viewerRelation] - relationRank[b.viewerRelation]
+      || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  } catch (e) {
+    console.error('[getPortfolioReposts] error:', e);
+    return [];
+  }
 }
 
 // Report -- backs the Home -> Portfolio feed card menu's "Report" action.

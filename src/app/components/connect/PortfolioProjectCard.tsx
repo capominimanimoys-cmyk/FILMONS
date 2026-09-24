@@ -28,6 +28,7 @@ import { toggleItemLike, isItemLiked, togglePortfolioSave, isPortfolioSaved, tog
 import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
 import { RepostMenuSheet } from '../RepostMenuSheet';
+import { PortfolioRepostsSheet } from './PortfolioRepostsSheet';
 
 export function PortfolioProjectCard({ entry, trustLevel }: {
   entry: Extract<PortfolioFeedEntry, { type: 'item' }>;
@@ -44,6 +45,7 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
   const [reposted, setReposted] = useState(false);
   const [repostsCount, setRepostsCount] = useState(item.reposts_count ?? 0);
   const [showRepostMenu, setShowRepostMenu] = useState(false);
+  const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const { requestRepostCompose } = useRepostCompose();
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -180,7 +182,10 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         </button>
         <button onClick={() => { if (!user) { toast.error('Sign in to repost'); return; } setShowRepostMenu(true); }}
           className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
-          <Repeat2 className="w-5 h-5" /> {repostsCount > 0 ? repostsCount : ''}
+          <Repeat2 className="w-5 h-5" />
+          {repostsCount > 0 && (
+            <span onClick={e => { e.stopPropagation(); setShowRepostsSheet(true); }} className="hover:underline">{repostsCount}</span>
+          )}
         </button>
         <button onClick={() => setShowShareSheet(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <Send className="w-5 h-5 text-gray-400" />
@@ -204,6 +209,9 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
         onUndoRepost={handleToggleRepost}
         onRepostWithThoughts={handleRepostWithThoughts}
       />
+      {showRepostsSheet && (
+        <PortfolioRepostsSheet targetId={item.id} targetType="portfolio_item" onClose={() => setShowRepostsSheet(false)} />
+      )}
 
       {showItemDetail && createPortal(
         <PortfolioItemFocusView item={item} onClose={() => setShowItemDetail(false)} />,

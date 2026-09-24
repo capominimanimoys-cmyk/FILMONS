@@ -32,7 +32,7 @@ import { notifyEvent } from '../lib/notifyEvent';
 import * as notifs from '../lib/notifications';
 import { toast } from 'sonner';
 import type { Visibility, Listing, Post } from '../types';
-import type { PortfolioItem } from '../lib/portfolioApi';
+import { registerPortfolioRepost, type PortfolioItem } from '../lib/portfolioApi';
 import { QuotedPostPreview } from './QuotedPostPreview';
 
 interface MediaDraft {
@@ -81,6 +81,11 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   const [tags, setTags] = useState<string[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<ProfileResult[]>([]);
   const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem | null>(initialPortfolioItem ?? null);
+  // Fixed at mount -- true only when this composer session STARTED as a
+  // Portfolio "repost with thoughts" (see initialPortfolioItem's own doc
+  // comment), never for the ordinary "+ Portfolio" attach-my-own-work
+  // picker, which never sets initialPortfolioItem.
+  const isPortfolioRepostFlow = !!initialPortfolioItem;
   // "Post" is a real, removable attachment type like Portfolio/Listing --
   // local state (not a direct read of the initialRepostOfPost prop) so
   // the composer can drop it. Per spec: "If User A removes the Post
@@ -302,6 +307,19 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         if (rows.length) supabase.from('post_listings').upsert(rows, { onConflict: 'post_id,listing_id', ignoreDuplicates: true }).then(() => {}).catch(() => {});
       }
       if (draftId) deleteDraft(draftId).catch(() => {});
+
+      // Same registration for a Portfolio item's "repost with thoughts"
+      // (PortfolioProjectCard's own RepostMenuSheet -> requestRepostCompose
+      // -> this composer's initialPortfolioItem) -- NOT for the ordinary
+      // "+ Portfolio" attach-my-own-work flow, which never sets
+      // initialPortfolioItem in the first place. isPortfolioRepostFlow
+      // additionally requires the attachment to still be the SAME item
+      // (not removed-then-replaced with the poster's own work via the
+      // browser), and that it isn't the poster's own item to begin with.
+      if (isPortfolioRepostFlow && selectedPortfolioItem && selectedPortfolioItem.id === initialPortfolioItem?.id
+        && selectedPortfolioItem.user_id !== user.id) {
+        registerPortfolioRepost(user.id, selectedPortfolioItem.id, 'portfolio_item', selectedPortfolioItem.title).catch(() => {});
+      }
 
       if (repostOfPost) {
         // Registers the SAME (user_id, post_id) relationship a plain
