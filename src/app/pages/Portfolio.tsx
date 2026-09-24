@@ -9,7 +9,7 @@ import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { ShareSheet } from '../components/ShareSheet';
-import { CreateAlbumSheet } from '../components/CreateAlbumSheet';
+import { AlbumEditorPage } from '../components/AlbumEditorPage';
 import { HireFlowSheet } from '../components/HireFlowSheet';
 import { AddToAlbumSheet } from '../components/AddToAlbumSheet';
 import { PortfolioItemActionSheet } from '../components/PortfolioItemActionSheet';
@@ -19,7 +19,7 @@ import { EditAlbumScreen } from '../components/EditAlbumScreen';
 import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
-  getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum, createAlbum,
+  getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum,
   getPortfolioSettings, upsertPortfolioSettings, DEFAULT_PORTFOLIO_SETTINGS,
   isItemLiked, toggleItemLike, getItemComments, addItemComment,
   incrementItemView, logPortfolioEngagementEvent,
@@ -1041,21 +1041,22 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
 // Bulk-adds every selected item to either a brand-new album or an existing
 // one. If any selected item already belongs to an album, asks which the
 // user wants first rather than silently duplicating membership.
-type SelectionAlbumStep = 'checking' | 'choice' | 'name' | 'pick';
+type SelectionAlbumStep = 'checking' | 'choice' | 'pick';
 
 function CreateAlbumFromSelectionSheet({
-  selectedIds, albums, onClose, onDone, onAddedToExisting,
+  selectedIds, albums, onClose, onCreateNew, onAddedToExisting,
 }: {
   selectedIds: string[];
   albums: PortfolioAlbum[];
   onClose: () => void;
-  onDone: (album: PortfolioAlbum) => void;
+  // Hands off to the shared AlbumEditorPage (pre-seeded with these
+  // selected items) instead of this sheet maintaining its own separate,
+  // simpler creation form -- per spec, one shared creation flow for every
+  // Add Album entry point.
+  onCreateNew: () => void;
   onAddedToExisting: () => void;
 }) {
-  const { user } = useAuth();
   const [step, setStep] = useState<SelectionAlbumStep>('checking');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -1064,19 +1065,10 @@ function CreateAlbumFromSelectionSheet({
         .from('portfolio_album_items')
         .select('item_id')
         .in('item_id', selectedIds);
-      setStep((data ?? []).length > 0 ? 'choice' : 'name');
+      if ((data ?? []).length > 0) setStep('choice');
+      else onCreateNew();
     })();
   }, []); // eslint-disable-line
-
-  const handleCreate = async () => {
-    if (!user || !title.trim()) { toast.error('Add an album name'); return; }
-    setSaving(true);
-    const album = await createAlbum(user.id, { title: title.trim(), description: description.trim() || undefined, visibility: 'public' });
-    if (!album) { setSaving(false); toast.error('Could not create album'); return; }
-    await Promise.all(selectedIds.map(id => addItemToAlbum(album.id, id)));
-    setSaving(false);
-    onDone(album);
-  };
 
   const handleAddToExisting = async (albumId: string) => {
     setSaving(true);
@@ -1115,7 +1107,7 @@ function CreateAlbumFromSelectionSheet({
               Some of these items are already in an album. What would you like to do?
             </p>
             <button
-              onClick={() => setStep('name')}
+              onClick={onCreateNew}
               className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-gray-100 text-left"
             >
               <FolderPlus className="w-4 h-4 text-blue-500 shrink-0" />
@@ -1127,36 +1119,6 @@ function CreateAlbumFromSelectionSheet({
             >
               <FolderOpen className="w-4 h-4 text-blue-500 shrink-0" />
               <span className="text-sm font-bold text-gray-900">Add to existing album</span>
-            </button>
-          </div>
-        )}
-
-        {step === 'name' && (
-          <div className="p-4 space-y-4">
-            <div>
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Album Name</label>
-              <input
-                value={title} onChange={e => setTitle(e.target.value)} maxLength={60}
-                placeholder="My Portfolio"
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Description (optional)</label>
-              <textarea
-                value={description} onChange={e => setDescription(e.target.value)} rows={3} maxLength={300}
-                placeholder="What's this album about?"
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-400 bg-gray-50 resize-none"
-              />
-            </div>
-            <p className="text-xs text-gray-400">{selectedIds.length} items will be added to this album.</p>
-            <button
-              onClick={handleCreate}
-              disabled={saving || !title.trim()}
-              className="w-full py-4 rounded-2xl font-black text-white text-sm disabled:opacity-40 active:scale-[0.98] transition-all"
-              style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Album'}
             </button>
           </div>
         )}
@@ -1275,6 +1237,11 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
   const [albumItems,       setAlbumItems]       = useState<PortfolioItem[]>([]);
   const [albumLoading,     setAlbumLoading]     = useState(false);
   const [showCreateAlbum,  setShowCreateAlbum]  = useState(false);
+  // Pre-seeded selection for AlbumEditorPage -- set when Create Album is
+  // triggered from the bulk-select flow (CreateAlbumFromSelectionSheet's
+  // "create new" path hands its already-picked items in here instead of
+  // maintaining a second, simpler creation UI).
+  const [createAlbumSeedItems, setCreateAlbumSeedItems] = useState<PortfolioItem[] | undefined>(undefined);
   const [albumMenuId,      setAlbumMenuId]      = useState<string | null>(null);
   const [editingAlbum,     setEditingAlbum]     = useState<{ album: PortfolioAlbum; focusSection?: EditAlbumSection } | null>(null);
 
@@ -1771,6 +1738,18 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
               >
                 <Plus className="w-4 h-4" /> Add Work
               </button>
+              {/* Real "Add Album" entry point in the main action row --
+                  previously only reachable via a small dashed button
+                  buried inside the Albums tab, which was itself the
+                  likely source of "Add Album doesn't work" (easily
+                  confused with Home's unrelated "+" -> compose button).
+                  Visible on every tab, same as Add Work. */}
+              <button
+                onClick={() => setShowCreateAlbum(true)}
+                className="flex items-center gap-1.5 text-gray-700 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                <FolderPlus className="w-4 h-4" /> Add Album
+              </button>
               <button
                 onClick={() => navigate(`/share-card?userId=${profile.id}`)}
                 className="w-9 h-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 active:scale-95 transition-all"
@@ -2054,11 +2033,14 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
           selectedIds={[...selectedIds]}
           albums={albums}
           onClose={() => setShowAlbumFromSelection(false)}
-          onDone={album => {
-            setAlbums(prev => [album, ...prev]);
+          onCreateNew={() => {
+            // Hands the already-selected items into the SAME shared
+            // creation flow every other "Add Album" entry point uses,
+            // pre-seeded, instead of a second, simpler creation form.
+            setCreateAlbumSeedItems(items.filter(i => selectedIds.has(i.id)));
             setShowAlbumFromSelection(false);
+            setShowCreateAlbum(true);
             exitSelectMode();
-            toast.success(`Album "${album.title}" created`);
           }}
           onAddedToExisting={() => {
             setShowAlbumFromSelection(false);
@@ -2078,12 +2060,19 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
         />
       )}
 
-      {/* ── Create album sheet (owner only) ── */}
+      {/* ── Create album (owner only) -- one shared flow for every Add
+          Album entry point (main action row, Albums-tab dashed button,
+          empty-albums state, bulk-select "Create Album"). ── */}
       {showCreateAlbum && isOwner && (
-        <CreateAlbumSheet
-          existingItems={items}
-          onCreated={album => setAlbums(prev => [album, ...prev])}
-          onClose={() => setShowCreateAlbum(false)}
+        <AlbumEditorPage
+          initialSelectedItems={createAlbumSeedItems}
+          onClose={() => { setShowCreateAlbum(false); setCreateAlbumSeedItems(undefined); }}
+          onCreated={album => {
+            setAlbums(prev => [album, ...prev]);
+            setShowCreateAlbum(false);
+            setCreateAlbumSeedItems(undefined);
+            openAlbum(album);
+          }}
         />
       )}
 
