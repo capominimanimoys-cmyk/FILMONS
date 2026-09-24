@@ -52,6 +52,18 @@ function timeAgo(dateString?: string | null): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// "You reposted this post" / "{name} +N more reposted this post" -- the
+// social-context row shown above a post's OWN header, per spec. entries[0]
+// is always the primary name shown (post.repostContext sorts 'self'
+// first, so the viewer's own repost -- if any -- always wins "You" over
+// naming someone else first).
+function repostContextLabel(entries: NonNullable<Post['repostContext']>, viewerId?: string): string {
+  const first = entries[0];
+  const name = first.id === viewerId ? 'You' : first.name;
+  const extra = entries.length - 1;
+  return extra > 0 ? `${name} +${extra} more reposted this post` : `${name} reposted this post`;
+}
+
 // Long captions show a truncated preview with an inline "...more" that
 // expands in place (never navigates away), per spec. #hashtags stay part
 // of the caption's own flow (never moved below media) and get FILMONS
@@ -1074,6 +1086,21 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
         {/* ── Card box ── */}
         <div ref={cardRef} className="bg-white border-b border-gray-100">
+
+          {/* Repost social-context row -- "You"/{name} reposted, relevant
+              to the viewer only (their own repost, connections, or people
+              they follow; never a stranger). Sits above the header per
+              spec, tappable to the same Reposted-by sheet the repost
+              count already opens. */}
+          {localPost.repostContext && localPost.repostContext.length > 0 && (
+            <button onClick={() => setShowRepostsSheet(true)}
+              className="w-full flex items-center gap-2 px-3 pt-3 pb-1 text-left hover:bg-gray-50 transition-colors">
+              <UserAvatar user={{ id: localPost.repostContext[0].id, name: localPost.repostContext[0].name, avatar: localPost.repostContext[0].avatarUrl }} size={18}/>
+              <p className="text-xs text-gray-500 truncate">
+                <span className="font-bold text-gray-700">{repostContextLabel(localPost.repostContext, user?.id)}</span>
+              </p>
+            </button>
+          )}
 
           {/* ══ 1. HEADER ══ */}
           <div className="flex items-center px-3 pt-3 pb-2 gap-2.5">

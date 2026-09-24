@@ -1381,8 +1381,73 @@ async function fetchRepostedPostIds(postIds: string[], userId: string): Promise<
   } catch { return new Set(); }
 }
 
+// "You reposted this post" / "{name} +N more reposted this post" -- the
+// social-context row shown on a post's OWN card (not just the separate
+// Connect-feed distribution wrapper). Only ever the viewer themselves,
+// their accepted connections, or people they follow -- per spec, "Do not
+// fill this area with random users." Batched once per page/feed load
+// (same shape as fetchLikedPostIds/fetchRepostedPostIds above), not a
+// per-card fetch -- this app already had an N+1 regression from a
+// similar feature earlier, so the relevant-viewer-ids lookup and the
+// repost lookup both run once for the whole batch of postIds.
+async function fetchViewerRelevantIds(viewerId: string): Promise<Set<string>> {
+  const [{ data: connRows }, { data: followRows }] = await Promise.all([
+    supabase.from('professional_connections').select('user_a_id, user_b_id')
+      .eq('status', 'accepted').or(`user_a_id.eq.${viewerId},user_b_id.eq.${viewerId}`),
+    supabase.from('follows').select('following_id').eq('follower_id', viewerId),
+  ]);
+  const ids = new Set<string>();
+  (connRows ?? []).forEach((r: any) => ids.add(r.user_a_id === viewerId ? r.user_b_id : r.user_a_id));
+  (followRows ?? []).forEach((r: any) => ids.add(r.following_id));
+  return ids;
+}
+
+export async function fetchRepostContext(postIds: string[], viewerId?: string): Promise<Map<string, RepostContextEntry[]>> {
+  const empty = new Map<string, RepostContextEntry[]>();
+  if (!postIds.length || !viewerId) return empty;
+  try {
+    const relevant = await fetchViewerRelevantIds(viewerId);
+    const relevantIds = [...relevant, viewerId];
+    const [{ data: plainRows }, { data: quoteRows }] = await Promise.all([
+      supabase.from('reposts').select('post_id, user_id').in('post_id', postIds).in('user_id', relevantIds),
+      supabase.from('posts').select('id, author_id, metadata').in('metadata->repostOf->>postId', postIds).in('author_id', relevantIds),
+    ]);
+    const actorIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
+    if (!actorIds.length) return empty;
+    const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url').in('id', actorIds);
+    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+    // One entry per (post_id, user_id) -- de-dup a user who both plain-
+    // and quote-reposted the same post, same precedent as getReposts.
+    const byPost = new Map<string, Map<string, RepostContextEntry>>();
+    const addEntry = (postId: string, userId: string) => {
+      const prof = profileMap.get(userId);
+      if (!prof) return;
+      const relation: RepostContextEntry['relation'] = userId === viewerId ? 'self' : relevant.has(userId) ? 'connection' : 'other';
+      const users = byPost.get(postId) ?? new Map<string, RepostContextEntry>();
+      if (!users.has(userId)) users.set(userId, { id: userId, name: prof.name, avatarUrl: prof.avatar_url, relation });
+      byPost.set(postId, users);
+    };
+    (quoteRows ?? []).forEach((r: any) => {
+      const targetId = r.metadata?.repostOf?.postId;
+      if (targetId) addEntry(targetId, r.author_id);
+    });
+    (plainRows ?? []).forEach((r: any) => addEntry(r.post_id, r.user_id));
+
+    const result = new Map<string, RepostContextEntry[]>();
+    for (const [postId, users] of byPost) {
+      // "self" first (drives "You..."), then everyone else -- connections
+      // and follows are already the only two relations that can reach this
+      // point (relevantIds), so no further distinction needed between them.
+      const sorted = [...users.values()].sort((a, b) => (a.relation === 'self' ? -1 : b.relation === 'self' ? 1 : 0));
+      result.set(postId, sorted);
+    }
+    return result;
+  } catch { return empty; }
+}
+
 // ── Client-side post row mapper ───────────────────────────────────────────────
-function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<string>, repostedPostIds?: Set<string>): Post {
+function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<string>, repostedPostIds?: Set<string>, repostContextMap?: Map<string, RepostContextEntry[]>): Post {
   const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata
     : (() => { try { return JSON.parse(row.metadata || '{}'); } catch { return {}; } })();
 
@@ -1469,6 +1534,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
                        ? likedPostIds.has(row.id)
                        : currentUserId ? likes.includes(currentUserId) : false,
     hasReposted:     repostedPostIds ? repostedPostIds.has(row.id) : false,
+    repostContext:   repostContextMap?.get(row.id),
     createdAt:       row.created_at,
     allowComments:   meta.allowComments   !== false,
     allowDownload:   meta.allowDownload   !== false,
@@ -1541,6 +1607,15 @@ export interface RepostListEntry {
   quotePostId?: string;
 }
 
+// One relevant reposter for the social-context row on a post's own card
+// (see fetchRepostContext) -- 'self' is always sorted first (drives "You
+// reposted..."), 'connection' covers both accepted professional
+// connections and follows (the row doesn't distinguish the two further).
+export interface RepostContextEntry {
+  id: string; name: string; avatarUrl: string | null;
+  relation: 'self' | 'connection' | 'other';
+}
+
 // ============================================
 // POSTS API
 // ============================================
@@ -1565,14 +1640,15 @@ export const postsApi = {
           .in('id', userIds);
         (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
       }
-      // Batch-fetch liked + reposted post IDs (post_likes / reposts) in parallel
+      // Batch-fetch liked + reposted post IDs (post_likes / reposts) + the
+      // "who relevant reposted this" context, all in parallel.
       const postIds = rows.map((r:any) => r.id);
-      const [likedIds, repostedIds] = currentUser
-        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id)])
-        : [new Set<string>(), new Set<string>()];
+      const [likedIds, repostedIds, repostContextMap] = currentUser
+        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id), fetchRepostContext(postIds, currentUser.id)])
+        : [new Set<string>(), new Set<string>(), new Map<string, RepostContextEntry[]>()];
       const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
-        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds);
+        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds, repostContextMap);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
@@ -1612,12 +1688,12 @@ export const postsApi = {
         (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
       }
       const postIds = rows.map((r:any) => r.id);
-      const [likedIds, repostedIds] = currentUser
-        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id)])
-        : [new Set<string>(), new Set<string>()];
+      const [likedIds, repostedIds, repostContextMap] = currentUser
+        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id), fetchRepostContext(postIds, currentUser.id)])
+        : [new Set<string>(), new Set<string>(), new Map<string, RepostContextEntry[]>()];
       const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
-        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds);
+        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds, repostContextMap);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch(e) {
@@ -1652,9 +1728,9 @@ export const postsApi = {
         collabPosts = cp ?? [];
       }
       const allRows = [...(data || []), ...collabPosts.filter(cp => !data?.find((p: any) => p.id === cp.id))];
-      const [likedIds, repostedIds] = currentUser
-        ? await Promise.all([fetchLikedPostIds(allRows.map(r => r.id), currentUser.id), fetchRepostedPostIds(allRows.map(r => r.id), currentUser.id)])
-        : [new Set<string>(), new Set<string>()];
+      const [likedIds, repostedIds, repostContextMap] = currentUser
+        ? await Promise.all([fetchLikedPostIds(allRows.map(r => r.id), currentUser.id), fetchRepostedPostIds(allRows.map(r => r.id), currentUser.id), fetchRepostContext(allRows.map(r => r.id), currentUser.id)])
+        : [new Set<string>(), new Set<string>(), new Map<string, RepostContextEntry[]>()];
       const mapped = allRows.map((row: any) => {
         const prof = (row.profiles as any) || {};
         return rowToPostClient({
@@ -1664,7 +1740,7 @@ export const postsApi = {
           _pavatar:  prof.avatar_url,
           _paccount: prof.account_type,
           _prole:    prof.primary_role,
-        }, currentUser?.id, likedIds, repostedIds);
+        }, currentUser?.id, likedIds, repostedIds, repostContextMap);
       });
       // Viewing someone ELSE's profile is exactly where 'connections'/
       // 'private' visibility matters most -- a non-connection browsing
@@ -1695,16 +1771,16 @@ export const postsApi = {
         .in('id', ids);
       if (error) throw error;
       const rows = data || [];
-      const [likedIds, repostedIds] = currentUser
-        ? await Promise.all([fetchLikedPostIds(rows.map((r: any) => r.id), currentUser.id), fetchRepostedPostIds(rows.map((r: any) => r.id), currentUser.id)])
-        : [new Set<string>(), new Set<string>()];
+      const [likedIds, repostedIds, repostContextMap] = currentUser
+        ? await Promise.all([fetchLikedPostIds(rows.map((r: any) => r.id), currentUser.id), fetchRepostedPostIds(rows.map((r: any) => r.id), currentUser.id), fetchRepostContext(rows.map((r: any) => r.id), currentUser.id)])
+        : [new Set<string>(), new Set<string>(), new Map<string, RepostContextEntry[]>()];
       const mapped = rows.map((row: any) => {
         const prof = (row.profiles as any) || {};
         return rowToPostClient({
           ...row,
           _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type,
           _prole: prof.primary_role,
-        }, currentUser?.id, likedIds, repostedIds);
+        }, currentUser?.id, likedIds, repostedIds, repostContextMap);
       });
       return filterPostsByVisibility(mapped, currentUser?.id);
     } catch (e) {

@@ -140,6 +140,13 @@ export interface Post {
    * rendered, not just for the rest of the session after tapping Repost
    * locally. PostCard seeds its own hasReposted state from this. */
   hasReposted?: boolean;
+  /** Who -- among the viewer themselves, their accepted connections, or
+   * people they follow -- reposted this post (plain or with thoughts).
+   * Batched at fetch time (see fetchRepostContext in api.ts); empty/
+   * undefined means nobody relevant to the viewer reposted it, in which
+   * case PostCard shows no social-context row at all (never a random
+   * stranger's name). 'self' entries sort first. */
+  repostContext?: { id: string; name: string; avatarUrl: string | null; relation: 'self' | 'connection' | 'other' }[];
 
   createdAt: string;
   updatedAt?: string;

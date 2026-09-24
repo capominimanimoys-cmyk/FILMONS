@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { ChevronLeft, Heart } from 'lucide-react';
 import { Post, Comment } from '../types';
 import { PostCard } from '../components/PostCard';
-import { commentsApi, postsApi } from '../lib/api';
+import { commentsApi, postsApi, fetchRepostContext } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { UserAvatar } from '../components/AccountTypeBadge';
 
@@ -41,6 +41,7 @@ export function PostDetail() {
         const hasReposted = user
           ? !!(await supabase.from('reposts').select('post_id').eq('user_id', user.id).eq('post_id', id).maybeSingle()).data
           : false;
+        const repostContext = user ? (await fetchRepostContext([id], user.id)).get(id) : undefined;
         setPost({
           ...data,
           userId:          data.author_id,
@@ -65,6 +66,7 @@ export function PostDetail() {
           likesCount:      data.likes_count ?? 0,
           content:         data.content || data.caption || '',
           hasReposted,
+          repostContext,
         });
       } catch {
         postsApi.getAll().then(posts => setPost(posts.find(p => p.id === id) || null)).catch(() => {});
