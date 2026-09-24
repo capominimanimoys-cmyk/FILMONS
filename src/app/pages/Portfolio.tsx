@@ -1044,7 +1044,7 @@ function MinimalLayout({ items, isOwner, onTap, onToggle, onDelete, onShare, onA
 type SelectionAlbumStep = 'checking' | 'choice' | 'pick';
 
 function CreateAlbumFromSelectionSheet({
-  selectedIds, albums, onClose, onCreateNew, onAddedToExisting,
+  selectedIds, albums, onClose, onCreateNew, onAddedToExisting, mode = 'create',
 }: {
   selectedIds: string[];
   albums: PortfolioAlbum[];
@@ -1055,11 +1055,16 @@ function CreateAlbumFromSelectionSheet({
   // Add Album entry point.
   onCreateNew: () => void;
   onAddedToExisting: () => void;
+  /** 'move' -- the bulk-select "Move to Album" action -- skips straight to
+   * picking an existing album; there's nothing to "create new" for since
+   * the user explicitly asked to move into an album, not make one. */
+  mode?: 'create' | 'move';
 }) {
-  const [step, setStep] = useState<SelectionAlbumStep>('checking');
+  const [step, setStep] = useState<SelectionAlbumStep>(mode === 'move' ? 'pick' : 'checking');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (mode === 'move') return;
     (async () => {
       const { data } = await supabase
         .from('portfolio_album_items')
@@ -1223,6 +1228,7 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
   const [selectMode,  setSelectMode]  = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showAlbumFromSelection, setShowAlbumFromSelection] = useState(false);
+  const [showMoveToAlbum, setShowMoveToAlbum] = useState(false);
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -2016,6 +2022,13 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
               <Trash2 className="w-4 h-4" /> Delete Work
             </button>
             <button
+              onClick={() => setShowMoveToAlbum(true)}
+              disabled={selectedIds.size < 1}
+              className="flex items-center gap-1.5 text-gray-700 text-sm font-bold px-3.5 py-2.5 rounded-2xl border border-gray-200 bg-white disabled:opacity-40 active:scale-95 transition-all hover:bg-gray-50"
+            >
+              <FolderOpen className="w-4 h-4" /> Move to Album
+            </button>
+            <button
               onClick={() => setShowAlbumFromSelection(true)}
               disabled={selectedIds.size < 2}
               className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2.5 rounded-2xl disabled:opacity-40 active:scale-95 transition-all"
@@ -2025,6 +2038,25 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Move selected items to an existing album (1+ items) -- same
+          add-to-existing-album path Create Album's own "some items
+          already in an album" branch already uses, just reachable
+          directly without needing 2+ items or a conflict first. ── */}
+      {showMoveToAlbum && (
+        <CreateAlbumFromSelectionSheet
+          mode="move"
+          selectedIds={[...selectedIds]}
+          albums={albums}
+          onClose={() => setShowMoveToAlbum(false)}
+          onCreateNew={() => {}}
+          onAddedToExisting={() => {
+            setShowMoveToAlbum(false);
+            exitSelectMode();
+            toast.success('Moved to album');
+          }}
+        />
       )}
 
       {/* ── Create album from selection ── */}

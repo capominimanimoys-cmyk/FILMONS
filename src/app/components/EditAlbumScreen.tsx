@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   ChevronLeft, X, Check, Globe, Lock, Users, Loader2, Plus, Trash2,
@@ -19,6 +20,7 @@ import {
 import { searchProfiles, type ProfileResult } from '../lib/mentionsApi';
 import { supabase } from '../../lib/supabase';
 import { AddPortfolioItemSheet } from './AddPortfolioItemSheet';
+import { PortfolioContentPicker } from './PortfolioContentPicker';
 import { ItemActionsSheet } from './ItemActionsSheet';
 import { BottomSheet, SheetAction } from './BottomSheet';
 import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
@@ -141,6 +143,8 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
   const [coverPickerOpen, setCoverPickerOpen] = useState(false);
   const [addCreditOpen, setAddCreditOpen] = useState(false);
   const [addMediaOpen, setAddMediaOpen] = useState(false);
+  const [addMediaChoiceOpen, setAddMediaChoiceOpen] = useState(false);
+  const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
   const [itemMenuTarget, setItemMenuTarget] = useState<PortfolioItem | null>(null);
   const [editDetailsItem, setEditDetailsItem] = useState<PortfolioItem | null>(null);
   const [moveItemTarget, setMoveItemTarget] = useState<PortfolioItem | null>(null);
@@ -152,6 +156,19 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
   const mediaRef   = useRef<HTMLDivElement>(null);
 
   const initialSnapshot = useRef('');
+
+  // Was never wrapped in createPortal (rendered inline inside Portfolio.tsx's
+  // own tree) and never dispatched the bars-hidden event -- the same
+  // containing-block class of bug fixed repeatedly elsewhere this session:
+  // if Portfolio.tsx happens to be rendered inside a transformed ancestor
+  // (e.g. DraggablePortfolioPage's drag/slide wrapper), this screen's
+  // "fixed inset-0" gets trapped inside that ancestor's bounding box
+  // instead of covering the true viewport, leaving the real TopBar visible
+  // on top of (or around) this screen's own header/back button.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: true } }));
+    return () => window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: false } }));
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -295,13 +312,16 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
     onClose();
   };
 
-  return (
+  return createPortal((
     <div className="fixed inset-0 z-[90] bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0">
-        <button onClick={handleClose} className="flex items-center gap-1.5 text-gray-600">
-          <ChevronLeft className="w-5 h-5" /> <span className="text-sm font-bold">Edit Album</span>
+      {/* Header -- back is its own circular icon button (was combined
+          with the "Edit Album" label into one wide button, easy to miss
+          as a back affordance) */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+        <button onClick={handleClose} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+          <ChevronLeft className="w-5 h-5 text-gray-600" />
         </button>
+        <span className="text-sm font-black text-gray-900">Edit Album</span>
         <button
           onClick={handleSave}
           disabled={saving}
@@ -414,7 +434,7 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
                   );
                 })}
                 <button
-                  onClick={() => setAddMediaOpen(true)}
+                  onClick={() => setAddMediaChoiceOpen(true)}
                   className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-300 hover:text-blue-500"
                 >
                   <Plus className="w-5 h-5" />
@@ -513,7 +533,53 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
         </BottomSheet>
       )}
 
-      {/* Add media */}
+      {/* Add media -- choice between content already in the creator's
+          Portfolio (reference only, never duplicated) and a fresh upload. */}
+      {addMediaChoiceOpen && (
+        <BottomSheet onClose={() => setAddMediaChoiceOpen(false)} title="Add to album">
+          <div className="px-2 py-2">
+            <button
+              onClick={() => { setAddMediaChoiceOpen(false); setShowPortfolioPicker(true); }}
+              className="flex items-center gap-3 w-full px-4 py-3.5 text-left hover:bg-gray-50 rounded-xl"
+            >
+              <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
+                <FolderOpen className="w-4 h-4 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-900">From Portfolio</p>
+                <p className="text-xs text-gray-400">Choose existing projects or media</p>
+              </div>
+            </button>
+            <button
+              onClick={() => { setAddMediaChoiceOpen(false); setAddMediaOpen(true); }}
+              className="flex items-center gap-3 w-full px-4 py-3.5 text-left hover:bg-gray-50 rounded-xl"
+            >
+              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                <Upload className="w-4 h-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-900">New Media</p>
+                <p className="text-xs text-gray-400">Upload new photos or videos</p>
+              </div>
+            </button>
+          </div>
+        </BottomSheet>
+      )}
+
+      {showPortfolioPicker && (
+        <PortfolioContentPicker
+          userId={userId}
+          excludeItemIds={items.map(i => i.id)}
+          onClose={() => setShowPortfolioPicker(false)}
+          onAdd={async picked => {
+            await Promise.all(picked.map(item => addItemToAlbum(album.id, item.id)));
+            setItems(prev => [...prev, ...picked]);
+            setShowPortfolioPicker(false);
+            toast.success(picked.length === 1 ? 'Added to album' : `${picked.length} items added to album`);
+          }}
+        />
+      )}
+
       {addMediaOpen && (
         <AddPortfolioItemSheet
           onClose={() => setAddMediaOpen(false)}
@@ -608,7 +674,7 @@ export function EditAlbumScreen({ album, focusSection, userId, albums, onClose, 
         </BottomSheet>
       )}
     </div>
-  );
+  ), document.body);
 }
 
 // ── Add Credit form ───────────────────────────────────────────────────────────

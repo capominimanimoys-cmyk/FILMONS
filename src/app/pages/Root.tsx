@@ -119,7 +119,11 @@ export function Root() {
   // another primary navigation feed -- it carries its own local "<- Title"
   // header (see ConnectionsSubpageShell) instead of the global one, same
   // treatment /inbox already gets for the same reason.
-  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections');
+  // /portfolio (and every /portfolio/:userId) carries its own in-page
+  // cover/avatar/profile header and tab bar already -- the global TopBar
+  // above it was redundant chrome competing with the dedicated portfolio
+  // workspace feel, same reasoning /inbox and /connections already get.
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections') || location.pathname.startsWith('/portfolio');
   const showFooter   = location.pathname === '/';
   // /inbox wants the full viewport on mobile too, matching a dedicated
   // messaging app (no bottom tab bar under the conversation list OR an
