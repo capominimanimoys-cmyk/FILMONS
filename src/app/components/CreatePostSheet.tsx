@@ -51,7 +51,7 @@ const AUDIENCE_OPTIONS: { id: Visibility; label: string; sub: string; icon: any 
 const isUUID = (v: any): boolean =>
   !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
 
-export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, initialPortfolioItem, initialRepostOfPost, closing }: {
+export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, initialPortfolioItem, initialRepostOfPost, initialRepostOfAlbum, closing }: {
   onClose: () => void;
   onPost?: (p?: any) => void;
   currentUser?: any;
@@ -69,6 +69,12 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
    * reference (repostOf: {postId, userId, ...}) via postsApi.create's own
    * repostOf param, never copied into this new post's own content. */
   initialRepostOfPost?: Post;
+  /** "Repost with thoughts" on a Portfolio ALBUM (PortfolioAlbumCard's own
+   * RepostMenuSheet, distinct from initialPortfolioItem above which is
+   * the ordinary "attach my own work" mechanism reused for ITEM reposts).
+   * A lightweight ref, not the full PortfolioAlbum -- written back as a
+   * live reference via extraMeta.repostOfAlbum, never a copy. */
+  initialRepostOfAlbum?: NonNullable<Post['repostOfAlbum']>;
   closing?: boolean;
 }) {
   const { user: authUser } = useAuth();
@@ -92,6 +98,9 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // attachment, the composer becomes a normal Create Post. It is no
   // longer considered Repost with Thought."
   const [repostOfPost, setRepostOfPost] = useState<Post | undefined>(initialRepostOfPost);
+  // Same removable-attachment treatment as repostOfPost above, for a
+  // Portfolio album repost.
+  const [repostOfAlbum, setRepostOfAlbum] = useState<NonNullable<Post['repostOfAlbum']> | undefined>(initialRepostOfAlbum);
   const [selectedListings, setSelectedListings] = useState<Listing[]>([]);
   const [location, setLocation] = useState<LocationResult | null>(null);
   const [link, setLink] = useState('');
@@ -223,7 +232,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // Reposting a Post specifically requires the viewer's own thoughts (the
   // point of "repost with thoughts" vs. a plain instant repost) -- the
   // attached original doesn't count as "your own content" for this gate.
-  const hasContent = repostOfPost
+  const hasContent = (repostOfPost || repostOfAlbum)
     ? caption.trim().length > 0
     : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || selectedListings.length > 0;
 
@@ -292,6 +301,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           portfolioItemTitle: selectedPortfolioItem?.title,
           portfolioItemCategory: selectedPortfolioItem?.category,
           portfolioItemThumb: selectedPortfolioItem?.thumbnail_url,
+          repostOfAlbum: repostOfAlbum,
           visibility,
         },
       );
@@ -338,6 +348,22 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
             postId:        newPost.id,
             postContent:   caption.trim().slice(0, 60),
             postImage:     repostOfPost.images?.[0] || repostOfPost.thumbnailUrl,
+          });
+        }
+      }
+
+      if (repostOfAlbum) {
+        // Same registration, for a Portfolio ALBUM repost target.
+        registerPortfolioRepost(user.id, repostOfAlbum.albumId, 'portfolio_album', repostOfAlbum.title).catch(() => {});
+        if (repostOfAlbum.userId !== user.id) {
+          notifs.push(repostOfAlbum.userId, {
+            type: 'content_repost_thoughts',
+            fromUserId:    user.id,
+            fromUserName:  user.name,
+            fromUserAvatar: user.avatar,
+            postId:        newPost.id,
+            postContent:   caption.trim().slice(0, 60),
+            postImage:     repostOfAlbum.coverUrl,
           });
         }
       }
@@ -506,7 +532,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
             ref={textareaRef}
             value={caption}
             onChange={e => handleCaptionChange(e.target.value)}
-            placeholder={repostOfPost ? 'What are your thoughts?' : 'Share something with the Filmons community…'}
+            placeholder={(repostOfPost || repostOfAlbum) ? 'What are your thoughts?' : 'Share something with the Filmons community…'}
             className="w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-400 resize-none outline-none leading-relaxed py-2"
             style={{ minHeight: 120 }}
             autoFocus
@@ -659,6 +685,34 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
               </button>
             </div>
             <QuotedPostPreview post={repostOfPost} />
+          </div>
+        )}
+
+        {/* "Repost from {original owner}'s album" -- read-only, never a
+            copy; the live reference is written back via
+            extraMeta.repostOfAlbum on publish. Removable the same way as
+            the Post attachment above -- removing it just becomes a
+            normal post (hasContent's gate stops requiring a caption once
+            it's gone). */}
+        {repostOfAlbum && (
+          <div className="px-4 pt-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-400">
+                Repost from {repostOfAlbum.userName}'s album
+              </p>
+              <button onClick={() => setRepostOfAlbum(undefined)} className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                <X className="w-3.5 h-3.5 text-gray-600" />
+              </button>
+            </div>
+            <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white flex items-center gap-3 p-3">
+              <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                {repostOfAlbum.coverUrl && <img src={repostOfAlbum.coverUrl} alt="" className="w-full h-full object-cover" />}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{repostOfAlbum.title}</p>
+                <p className="text-xs text-gray-400">{repostOfAlbum.itemCount ?? 0} portfolio item{repostOfAlbum.itemCount === 1 ? '' : 's'}</p>
+              </div>
+            </div>
           </div>
         )}
 

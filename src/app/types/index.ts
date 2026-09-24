@@ -134,6 +134,13 @@ export interface Post {
     postId: string; userId: string; userName: string;
     userAvatar?: string; content: string; images?: string[]; createdAt?: string;
   };
+  /** Same idea as repostOf, for a reposted Portfolio ALBUM (rather than a
+   * Post) -- a live reference (albumId + owner), never a copy of the
+   * album's content. */
+  repostOfAlbum?: {
+    albumId: string; userId: string; userName: string; userAvatar?: string;
+    title: string; coverUrl?: string; itemCount?: number;
+  };
   /** Whether the CURRENT viewer has already (plain-)reposted this post --
    * batched in alongside likes at fetch time (see fetchRepostedPostIds in
    * api.ts) so the "Reposted" state is correct everywhere a post is

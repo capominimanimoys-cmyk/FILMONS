@@ -21,6 +21,8 @@ import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
 import type { TrustLevel } from '../../lib/trustApi';
 import { PortfolioRepostsSheet } from './PortfolioRepostsSheet';
+import { RepostMenuSheet } from '../RepostMenuSheet';
+import { usePostRepostCompose } from '../../context/PostRepostComposeContext';
 
 export function PortfolioAlbumCard({ entry, trustLevel }: {
   entry: Extract<PortfolioFeedEntry, { type: 'album' }>;
@@ -32,6 +34,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const isOwn = !!user && user.id === creator.id;
 
   const { openPortfolioPreview } = usePortfolioPreview();
+  const { requestAlbumRepostCompose } = usePostRepostCompose();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -41,6 +44,7 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
   const [reposted, setReposted] = useState(false);
   const [repostsCount, setRepostsCount] = useState(album.reposts_count ?? 0);
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
+  const [showRepostMenu, setShowRepostMenu] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
   const [trustProfileOpen, setTrustProfileOpen] = useState(false);
@@ -81,9 +85,24 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
     const next = !reposted;
     setReposted(next);
     setRepostsCount(c => c + (next ? 1 : -1));
+    setShowRepostMenu(false);
     const ok = await togglePortfolioRepost(user.id, album.id, 'portfolio_album', !next, repostsCount, album.title);
     if (!ok) { setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); toast.error('Could not update repost'); return; }
     toast.success(next ? 'Reposted to your followers' : 'Repost removed');
+  };
+
+  const handleRepostWithThoughts = () => {
+    if (!user) { toast.error('Sign in to repost'); return; }
+    setShowRepostMenu(false);
+    requestAlbumRepostCompose({
+      albumId: album.id,
+      userId: creator.id,
+      userName: creator.name,
+      userAvatar: creator.avatar_url ?? undefined,
+      title: album.title,
+      coverUrl: coverUrl ?? undefined,
+      itemCount,
+    });
   };
 
   // Opens the draggable Portfolio overlay straight into THIS album (spec
@@ -158,7 +177,8 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         <button onClick={() => setShowComments(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
           <MessageCircle className="w-5 h-5 text-gray-400" /> {(album.comments_count ?? 0) > 0 ? album.comments_count : ''}
         </button>
-        <button onClick={handleToggleRepost} className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
+        <button onClick={() => { if (!user) { toast.error('Sign in to repost'); return; } setShowRepostMenu(true); }}
+          className={`flex items-center gap-1.5 text-sm transition-colors ${reposted ? 'text-green-500' : 'text-gray-600 hover:text-green-500'}`}>
           <Repeat2 className="w-5 h-5" />
           {repostsCount > 0 && (
             <span onClick={e => { e.stopPropagation(); setShowRepostsSheet(true); }} className="hover:underline">{repostsCount}</span>
@@ -204,6 +224,15 @@ export function PortfolioAlbumCard({ entry, trustLevel }: {
         />
       )}
       {showShareSheet && <SharePostSheet snapshot={shareSnapshot} onClose={() => setShowShareSheet(false)} />}
+      <RepostMenuSheet
+        open={showRepostMenu}
+        onClose={() => setShowRepostMenu(false)}
+        hasReposted={reposted}
+        busy={false}
+        onRepost={handleToggleRepost}
+        onUndoRepost={handleToggleRepost}
+        onRepostWithThoughts={handleRepostWithThoughts}
+      />
       {showRepostsSheet && (
         <PortfolioRepostsSheet targetId={album.id} targetType="portfolio_album" onClose={() => setShowRepostsSheet(false)} />
       )}

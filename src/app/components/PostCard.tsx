@@ -1576,6 +1576,30 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </div>
           )}
 
+          {/* Repost embedded -- Portfolio ALBUM variant. Opens the real
+              Album Detail via the same draggable-page transition every
+              other "View Portfolio"/"View Album" entry point already
+              uses (openPortfolioPreview), never a Search-specific viewer. */}
+          {localPost.repostOfAlbum && (
+            <div className="mx-3 mt-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 mb-1.5">
+                <Repeat2 className="w-3 h-3 shrink-0"/> Repost from {localPost.repostOfAlbum.userName}'s album
+              </p>
+              <button
+                onClick={() => openPortfolioPreview(localPost.repostOfAlbum!.userId, localPost.repostOfAlbum!.albumId)}
+                className="w-full border border-gray-200 rounded-xl overflow-hidden flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">
+                  {localPost.repostOfAlbum.coverUrl && <img src={localPost.repostOfAlbum.coverUrl} alt="" className="w-full h-full object-cover"/>}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{localPost.repostOfAlbum.title}</p>
+                  <p className="text-xs text-gray-400">{localPost.repostOfAlbum.itemCount ?? 0} portfolio item{localPost.repostOfAlbum.itemCount === 1 ? '' : 's'}</p>
+                </div>
+              </button>
+            </div>
+          )}
+
           {/* ══ 4. ACTIONS ══ */}
           <div className="flex items-center px-1 pt-0.5 pb-0.5">
             {/* Like */}

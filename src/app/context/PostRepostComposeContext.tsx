@@ -1,8 +1,8 @@
-// "Repost with your thoughts" on a POST -- same idea as
-// RepostComposeContext.tsx (which does this for a Portfolio item), just for
-// the other repostable content type. Hoisted to Root.tsx rather than
-// Home.tsx/Profile.tsx's own local CreatePostSheet mounts, because a Post's
-// repost trigger lives inside PostCard.tsx, which renders on many more
+// "Repost with your thoughts" on a POST or a Portfolio ALBUM -- same idea
+// as RepostComposeContext.tsx (which does this for a Portfolio ITEM), for
+// the two other repostable content types. Hoisted to Root.tsx rather than
+// Home.tsx/Profile.tsx's own local CreatePostSheet mounts, because both
+// triggers (PostCard.tsx, PortfolioAlbumCard.tsx) render on many more
 // pages than just those two (Search, PostDetail, HostProfile, category
 // discovery rows, ...) -- the composer needs to be reachable from ALL of
 // them, not just whichever page happens to already have its own
@@ -11,31 +11,27 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import type { Post } from '../types';
 import { CreatePostSheet } from '../components/CreatePostSheet';
 
-interface PendingPostRepost {
-  post: Post;
-  /** Optional -- lets the ORIGINATING PostCard's parent react to the new
-   * repost (e.g. Home's feed inserting it at the top), same as the old
-   * per-instance RepostComposer's onPosted prop. Omitted callers just don't
-   * get a local update; the new post still shows up next time that list
-   * reloads. */
-  onPosted?: (newPost: Post) => void;
-}
+type PendingRepost =
+  | { kind: 'post'; post: Post; onPosted?: (newPost: Post) => void }
+  | { kind: 'album'; album: NonNullable<Post['repostOfAlbum']>; onPosted?: (newPost: Post) => void };
 
 interface PostRepostComposeContextValue {
-  pendingPostRepost: PendingPostRepost | null;
+  pendingPostRepost: PendingRepost | null;
   requestPostRepostCompose: (post: Post, onPosted?: (newPost: Post) => void) => void;
+  requestAlbumRepostCompose: (album: NonNullable<Post['repostOfAlbum']>, onPosted?: (newPost: Post) => void) => void;
   clearPostRepostCompose: () => void;
 }
 
 const PostRepostComposeContext = createContext<PostRepostComposeContextValue | null>(null);
 
 export function PostRepostComposeProvider({ children }: { children: ReactNode }) {
-  const [pendingPostRepost, setPendingPostRepost] = useState<PendingPostRepost | null>(null);
+  const [pendingPostRepost, setPendingPostRepost] = useState<PendingRepost | null>(null);
   return (
     <PostRepostComposeContext.Provider
       value={{
         pendingPostRepost,
-        requestPostRepostCompose: (post, onPosted) => setPendingPostRepost({ post, onPosted }),
+        requestPostRepostCompose: (post, onPosted) => setPendingPostRepost({ kind: 'post', post, onPosted }),
+        requestAlbumRepostCompose: (album, onPosted) => setPendingPostRepost({ kind: 'album', album, onPosted }),
         clearPostRepostCompose: () => setPendingPostRepost(null),
       }}
     >
@@ -52,9 +48,10 @@ export function usePostRepostCompose(): PostRepostComposeContextValue {
 
 // Mounted once at Root.tsx's own top level (a sibling of Outlet, same as
 // DraggablePortfolioPage/PortfolioPreviewContext) -- rendering the real
-// CreatePostSheet, pre-loaded with the original post, from WHATEVER page
-// the "Repost with thoughts" trigger fired on, not just Home/Profile's own
-// separate CreatePostSheet mounts (which only cover their own pages).
+// CreatePostSheet, pre-loaded with the original post/album, from WHATEVER
+// page the "Repost with thoughts" trigger fired on, not just Home/
+// Profile's own separate CreatePostSheet mounts (which only cover their
+// own pages).
 export function GlobalPostRepostComposer() {
   const { pendingPostRepost, clearPostRepostCompose } = usePostRepostCompose();
   const [closing, setClosing] = useState(false);
@@ -75,7 +72,8 @@ export function GlobalPostRepostComposer() {
   return (
     <CreatePostSheet
       closing={closing}
-      initialRepostOfPost={pendingPostRepost.post}
+      initialRepostOfPost={pendingPostRepost.kind === 'post' ? pendingPostRepost.post : undefined}
+      initialRepostOfAlbum={pendingPostRepost.kind === 'album' ? pendingPostRepost.album : undefined}
       onPost={newPost => pendingPostRepost.onPosted?.(newPost)}
       onClose={close}
     />

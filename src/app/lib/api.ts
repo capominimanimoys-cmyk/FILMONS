@@ -1542,6 +1542,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     taggedUserIds:   meta.taggedUserIds   || [],
     link:            meta.link            || undefined,
     repostOf:        meta.repostOf        || undefined,
+    repostOfAlbum:   meta.repostOfAlbum   || undefined,
     isArchived:      row.is_archived      || false,
     isPinned:        row.is_pinned        || false,
     // Audio metadata for PostCard audio section
@@ -1966,6 +1967,15 @@ export const postsApi = {
       portfolioItemTitle?:    string;
       portfolioItemCategory?: string;
       portfolioItemThumb?:    string;
+      // Portfolio ALBUM repost reference -- a new optional extraMeta field
+      // (not a new positional param, which would have silently shifted
+      // every existing postsApi.create call site) written into
+      // metadata.repostOfAlbum, same live-reference pattern repostOf
+      // already uses for a reposted POST. There's no portfolio_album_id
+      // column on `posts` (only portfolio_item_id, for the ordinary
+      // "+ Portfolio" self-attach flow) -- reuses the flexible metadata
+      // JSON instead of a new migration.
+      repostOfAlbum?: Post['repostOfAlbum'];
       visibility?: Visibility;
     },
   ): Promise<Post> => {
@@ -1992,6 +2002,7 @@ export const postsApi = {
       link:            link?.trim() || null,
       likes:           [],
       repostOf:        repostOf || null,
+      repostOfAlbum:   extraMeta?.repostOfAlbum || null,
     };
 
     // Direct Supabase insert — only columns that exist in posts table
