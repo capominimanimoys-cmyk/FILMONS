@@ -136,12 +136,61 @@ function mergeAndSort(
   portfolioEntries: PortfolioFeedEntry[], activityEntries: ActivityEntry[],
   sort: ConnectSort, followingIds: Set<string>, trustLevels: Map<string, TrustLevel>,
 ): ConnectFeedItem[] {
+  // A repost's own activity entry is redundant once the reposted content
+  // ALREADY has its own card on this page -- a Portfolio item/album (via
+  // portfolioEntries) or a Post (via its own post_published entry). That
+  // card already carries the real repost count and (Posts only) its own
+  // "You/{name} reposted this" row, so wrapping the SAME content again in
+  // a separate "{name} reposted this" card underneath just shows it
+  // twice. Dropped here rather than suppressed at render time, so the
+  // surviving card can also be bumped to the repost's own recency (see
+  // promotedAt below) instead of sitting wherever the original content's
+  // own timestamp would otherwise place it. When a repost is the ONLY way
+  // this content reaches the viewer (they follow the reposter but not the
+  // original creator), there's no existing card to fold it into, so it
+  // still renders as its own item/repost-group, same as before. Scoped to
+  // this one fetched page, same known limitation groupReposts above
+  // already has -- a repost on a different page than its original can
+  // still land as its own item.
+  const presentKeys = new Set<string>([
+    ...portfolioEntries.map(e => `${e.type === 'item' ? 'portfolio_item' : 'portfolio_album'}:${e.id}`),
+    ...activityEntries.filter(e => e.activityType === 'post_published' && e.targetId).map(e => `post:${e.targetId}`),
+  ]);
+  const redundantReposts = new Set(
+    activityEntries.filter(e =>
+      e.activityType === 'content_reposted' && e.targetId && e.targetType && presentKeys.has(`${e.targetType}:${e.targetId}`)),
+  );
+  // Latest redundant repost's time per target -- used only to bump that
+  // target's own card up in sort order ("promoted" by the repost), never
+  // to change what's actually displayed as its "time ago" (PostCard/
+  // PortfolioProjectCard read the real content's own createdAt for that,
+  // not this).
+  const promotedAt = new Map<string, number>();
+  redundantReposts.forEach(e => {
+    const key = `${e.targetType}:${e.targetId}`;
+    const t = new Date(e.createdAt).getTime();
+    if (t > (promotedAt.get(key) ?? 0)) promotedAt.set(key, t);
+  });
+  const bump = (key: string, iso: string): string => {
+    const t = promotedAt.get(key);
+    return t && t > new Date(iso).getTime() ? new Date(t).toISOString() : iso;
+  };
+
+  const filteredActivity = activityEntries
+    .filter(e => !redundantReposts.has(e))
+    .map(e => e.activityType === 'post_published' && e.targetId
+      ? { ...e, createdAt: bump(`post:${e.targetId}`, e.createdAt) }
+      : e);
+
   const items: ConnectFeedItem[] = [
-    ...portfolioEntries.map(entry => ({ kind: 'portfolio' as const, entry })),
+    ...portfolioEntries.map(entry => ({
+      kind: 'portfolio' as const,
+      entry: { ...entry, created_at: bump(`${entry.type === 'item' ? 'portfolio_item' : 'portfolio_album'}:${entry.id}`, entry.created_at) },
+    })),
     // portfolio_published/portfolio_album_published excluded -- see file
     // header. content_reposted entries are grouped by target (see
     // groupReposts above) before everything else passes through as-is.
-    ...groupReposts(activityEntries.filter(e => e.activityType !== 'portfolio_published' && e.activityType !== 'portfolio_album_published')),
+    ...groupReposts(filteredActivity.filter(e => e.activityType !== 'portfolio_published' && e.activityType !== 'portfolio_album_published')),
   ];
   if (sort === 'relevant') {
     return items.sort((a, b) => relevanceScore(b, { followingIds, trustLevels }) - relevanceScore(a, { followingIds, trustLevels }));
