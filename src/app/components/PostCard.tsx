@@ -232,6 +232,12 @@ interface PostCardProps {
   onReposted?: (newPost: Post) => void;
   /** ID of the current user's existing repost of this post (if any) */
   userRepostPostId?: string;
+  /** Set by callers that already show their own "{name} reposted this"
+   * attribution above this card -- RepostedActivityCard/RepostGroupCard,
+   * the Connect feed's distribution wrappers. Without this, a distributed
+   * repost showed the SAME "reposted" context twice: once from the
+   * wrapper, once from this card's own repostContext row. */
+  hideRepostContext?: boolean;
 }
 
 // Normalize a post's media fields — handles PG array strings e.g. "{url1,url2}"
@@ -246,7 +252,7 @@ function normalizePost(p: any): any {
   return { ...p, images: a(p.images), videos: a(p.videos), audios: a(p.audios) };
 }
 
-export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, userRepostPostId }: PostCardProps) {
+export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, userRepostPostId, hideRepostContext }: PostCardProps) {
   const post = normalizePost(rawPost);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -1092,7 +1098,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               they follow; never a stranger). Sits above the header per
               spec, tappable to the same Reposted-by sheet the repost
               count already opens. */}
-          {localPost.repostContext && localPost.repostContext.length > 0 && (
+          {!hideRepostContext && localPost.repostContext && localPost.repostContext.length > 0 && (
             <button onClick={() => setShowRepostsSheet(true)}
               className="w-full flex items-center gap-2 px-3 pt-3 pb-1 text-left hover:bg-gray-50 transition-colors">
               <UserAvatar user={{ id: localPost.repostContext[0].id, name: localPost.repostContext[0].name, avatar: localPost.repostContext[0].avatarUrl }} size={18}/>

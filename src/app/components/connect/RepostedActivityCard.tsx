@@ -53,7 +53,7 @@ export function RepostedActivityCard({ entry, trustLevel, onDeleted }: { entry: 
       <div>
         {Attribution}
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <PostCard post={entry.post} onDeleted={onDeleted} />
+          <PostCard post={entry.post} onDeleted={onDeleted} hideRepostContext />
         </div>
       </div>
     );

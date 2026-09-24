@@ -59,7 +59,7 @@ export function RepostGroupCard({ item, trustLevel, onDeleted }: {
       <div>
         {Attribution}
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <PostCard post={post} onDeleted={onDeleted} />
+          <PostCard post={post} onDeleted={onDeleted} hideRepostContext />
         </div>
       </div>
     );
