@@ -36,6 +36,9 @@ export interface PortfolioItem {
   is_featured:         boolean;
   tags?:               string[];
   tools?:              string[];
+  /** Simple tag-style names, not linked profiles -- see migration
+   * 20240604000000_portfolio_item_collaborators.sql. */
+  collaborators?:      string[];
   client_name?:        string;
   /** Item-level audience -- distinct from the account-wide
    * portfolio_settings.visibility gate. Missing/undefined defaults to

@@ -7,15 +7,15 @@ import { useFollowCounts } from '../lib/useFollowCounts';
 import { authApi, socialApi } from '../lib/api';
 import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 import { UserAvatar } from '../components/AccountTypeBadge';
-import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
+import { WorkEditor } from '../components/WorkEditor';
 import { ShareSheet } from '../components/ShareSheet';
-import { AlbumEditorPage } from '../components/AlbumEditorPage';
+import { AlbumEditor } from '../components/AlbumEditor';
 import { HireFlowSheet } from '../components/HireFlowSheet';
 import { AddToAlbumSheet } from '../components/AddToAlbumSheet';
 import { PortfolioItemActionSheet } from '../components/PortfolioItemActionSheet';
 import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 import { AlbumActionsSheet, type EditAlbumSection } from '../components/AlbumActionsSheet';
-import { EditAlbumScreen } from '../components/EditAlbumScreen';
+import { BottomSheet } from '../components/BottomSheet';
 import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
@@ -1222,6 +1222,7 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
   useEffect(() => { onTabChange?.(activeTab); }, [activeTab]); // eslint-disable-line
   const [viewer,          setViewer]          = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [showAdd,         setShowAdd]         = useState(false);
+  const [showAddMenu,     setShowAddMenu]     = useState(false);
   const [showFollowSheet, setShowFollowSheet] = useState<null | 'followers' | 'following'>(null);
 
   // Multi-select → automatic album creation
@@ -1248,6 +1249,10 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
   // "create new" path hands its already-picked items in here instead of
   // maintaining a second, simpler creation UI).
   const [createAlbumSeedItems, setCreateAlbumSeedItems] = useState<PortfolioItem[] | undefined>(undefined);
+  // WorkEditor hands 2+ files picked at once here instead of trying to
+  // cram them into one work -- AlbumEditor pre-seeds them as uploading
+  // entries (existing "1 file = Work, 2+ files = Album" rule, kept).
+  const [createAlbumSeedFiles, setCreateAlbumSeedFiles] = useState<File[] | undefined>(undefined);
   const [albumMenuId,      setAlbumMenuId]      = useState<string | null>(null);
   const [editingAlbum,     setEditingAlbum]     = useState<{ album: PortfolioAlbum; focusSection?: EditAlbumSection } | null>(null);
 
@@ -1737,24 +1742,19 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
                   <CheckSquare className="w-3.5 h-3.5" /> {selectMode ? 'Cancel' : 'Select'}
                 </button>
               )}
+              {/* One "+ Add" entry point -> Add Work / Create Album, per
+                  the user's explicit hierarchy (Portfolio -> + Add ->
+                  [Add Work | Create Album]) -- replaces two separate
+                  buttons; also fixes "Add Album doesn't work" (previously
+                  only reachable via a small dashed button buried inside
+                  the Albums tab, easily confused with Home's unrelated
+                  "+" -> compose button). Visible on every tab. */}
               <button
-                onClick={() => setShowAdd(true)}
+                onClick={() => setShowAddMenu(true)}
                 className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2 rounded-2xl active:scale-95 transition-all"
                 style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
               >
-                <Plus className="w-4 h-4" /> Add Work
-              </button>
-              {/* Real "Add Album" entry point in the main action row --
-                  previously only reachable via a small dashed button
-                  buried inside the Albums tab, which was itself the
-                  likely source of "Add Album doesn't work" (easily
-                  confused with Home's unrelated "+" -> compose button).
-                  Visible on every tab, same as Add Work. */}
-              <button
-                onClick={() => setShowCreateAlbum(true)}
-                className="flex items-center gap-1.5 text-gray-700 text-sm font-bold px-4 py-2 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 active:scale-95 transition-all"
-              >
-                <FolderPlus className="w-4 h-4" /> Add Album
+                <Plus className="w-4 h-4" /> Add
               </button>
               <button
                 onClick={() => navigate(`/share-card?userId=${profile.id}`)}
@@ -1991,11 +1991,29 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
         />
       )}
 
-      {/* ── Add item sheet (owner only) ── */}
+      {/* ── + Add menu (owner only) -- one entry point, Add Work / Create
+          Album, per the unified Portfolio creation hierarchy. ── */}
+      {showAddMenu && isOwner && (
+        <BottomSheet onClose={() => setShowAddMenu(false)} title="Add to Portfolio">
+          <div className="px-2 py-2">
+            <button onClick={() => { setShowAddMenu(false); setShowAdd(true); }} className="flex items-center gap-3 w-full px-4 py-3.5 text-left hover:bg-gray-50 rounded-xl">
+              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0"><Plus className="w-4 h-4 text-blue-500" /></div>
+              <div><p className="text-sm font-bold text-gray-900">Add Work</p><p className="text-xs text-gray-400">Publish one portfolio work</p></div>
+            </button>
+            <button onClick={() => { setShowAddMenu(false); setShowCreateAlbum(true); }} className="flex items-center gap-3 w-full px-4 py-3.5 text-left hover:bg-gray-50 rounded-xl">
+              <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center shrink-0"><FolderPlus className="w-4 h-4 text-purple-500" /></div>
+              <div><p className="text-sm font-bold text-gray-900">Create Album</p><p className="text-xs text-gray-400">Organize several works into a collection</p></div>
+            </button>
+          </div>
+        </BottomSheet>
+      )}
+
+      {/* ── Add Work (owner only) ── */}
       {showAdd && isOwner && (
-        <AddPortfolioItemSheet
+        <WorkEditor
           onClose={() => setShowAdd(false)}
-          onAdded={item => setItems(prev => [item, ...prev])}
+          onCreated={item => { setItems(prev => [item, ...prev]); setShowAdd(false); }}
+          onMultiFile={files => { setShowAdd(false); setCreateAlbumSeedFiles(files); setShowCreateAlbum(true); }}
         />
       )}
 
@@ -2093,32 +2111,39 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
       )}
 
       {/* ── Create album (owner only) -- one shared flow for every Add
-          Album entry point (main action row, Albums-tab dashed button,
+          Album entry point (+ Add menu, Albums-tab dashed button,
           empty-albums state, bulk-select "Create Album"). ── */}
       {showCreateAlbum && isOwner && (
-        <AlbumEditorPage
-          initialSelectedItems={createAlbumSeedItems}
-          onClose={() => { setShowCreateAlbum(false); setCreateAlbumSeedItems(undefined); }}
+        <AlbumEditor
+          mode="create"
+          initialWorks={createAlbumSeedItems}
+          initialFiles={createAlbumSeedFiles}
+          onClose={() => { setShowCreateAlbum(false); setCreateAlbumSeedItems(undefined); setCreateAlbumSeedFiles(undefined); }}
           onCreated={album => {
             setAlbums(prev => [album, ...prev]);
             setShowCreateAlbum(false);
             setCreateAlbumSeedItems(undefined);
+            setCreateAlbumSeedFiles(undefined);
             openAlbum(album);
           }}
         />
       )}
 
-      {/* ── Edit album screen (owner only) ── */}
+      {/* ── Edit album (owner only) -- same shared component as Create
+          Album, mode="edit". ── */}
       {editingAlbum && isOwner && me && (
-        <EditAlbumScreen
+        <AlbumEditor
+          mode="edit"
           album={editingAlbum.album}
-          focusSection={editingAlbum.focusSection}
-          userId={me.id}
-          albums={albums}
           onClose={() => setEditingAlbum(null)}
           onSaved={updated => {
             setAlbums(prev => prev.map(a => a.id === updated.id ? updated : a));
             if (activeAlbum?.id === updated.id) setActiveAlbum(updated);
+            setEditingAlbum(null);
+          }}
+          onDeleted={() => {
+            setAlbums(prev => prev.filter(a => a.id !== editingAlbum.album.id));
+            if (activeAlbum?.id === editingAlbum.album.id) setActiveAlbum(null);
           }}
         />
       )}
