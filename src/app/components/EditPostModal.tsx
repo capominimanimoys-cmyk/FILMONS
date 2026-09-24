@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, ChevronLeft, ChevronRight, MapPin, Globe, Users, Lock,
+  X, ChevronLeft, ChevronRight, MapPin,
   Music, Trash2, MessageCircle, Download, Check, Loader2, RefreshCw,
 } from 'lucide-react';
 import { Post } from '../types';
@@ -28,41 +28,6 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
-function VisibilitySheet({
-  value,
-  onChange,
-  onClose,
-}: {
-  value: string;
-  onChange: (v: 'public' | 'followers' | 'private') => void;
-  onClose: () => void;
-}) {
-  const opts: { key: 'public' | 'followers' | 'private'; icon: React.ReactNode; label: string; sub: string }[] = [
-    { key: 'public',    icon: <Globe className="w-5 h-5 text-gray-500"/>,  label: 'Anyone',    sub: 'Anyone can see this post' },
-    { key: 'followers', icon: <Users className="w-5 h-5 text-gray-500"/>,  label: 'Followers', sub: 'Only your followers' },
-    { key: 'private',   icon: <Lock  className="w-5 h-5 text-gray-500"/>,  label: 'Only me',   sub: 'Only you can see this' },
-  ];
-  return (
-    <div className="fixed inset-0 z-[91] flex items-end" onClick={onClose}>
-      <div className="w-full bg-white rounded-t-2xl shadow-xl pb-6 pt-3" onClick={e => e.stopPropagation()}>
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4"/>
-        <p className="text-center font-bold text-gray-900 text-sm mb-2">Audience</p>
-        {opts.map(o => (
-          <button key={o.key} onClick={() => { onChange(o.key); onClose(); }}
-            className="flex items-center gap-3 w-full px-5 py-3.5 hover:bg-gray-50">
-            {o.icon}
-            <div className="flex-1 text-left">
-              <p className="text-sm font-semibold text-gray-900">{o.label}</p>
-              <p className="text-xs text-gray-400">{o.sub}</p>
-            </div>
-            {value === o.key && <Check className="w-4 h-4 text-blue-500"/>}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 interface EditMediaItem {
   type: 'image' | 'video';
   url: string;
@@ -77,12 +42,9 @@ interface Props {
   post: Post;
   onSave: (updated: Post) => void;
   onClose: () => void;
-  /** Lets a caller (PostCard's "..." -> Change visibility) jump straight
-   * to the Audience sheet instead of landing on the general edit form. */
-  initialView?: 'visibility';
 }
 
-export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
+export function EditPostModal({ post, onSave, onClose }: Props) {
   const originalMedia: EditMediaItem[] = [
     ...(post.images || []).map(u => ({ type: 'image' as const, url: u })),
     ...(post.videos || []).map(u => ({ type: 'video' as const, url: u })),
@@ -91,12 +53,10 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
   const [mediaIdx, setMediaIdx]         = useState(0);
   const [caption, setCaption]           = useState(post.content || '');
   const [location, setLocation]         = useState((post as any).location || '');
-  const [visibility, setVisibility]     = useState<'public'|'followers'|'private'>((post as any).visibility || 'public');
   const [allowComments, setAllowComments] = useState(post.allowComments !== false);
   const [allowDownload, setAllowDownload] = useState(post.allowDownload !== false);
   const [hasAudio, setHasAudio]         = useState(!!(post.audioTitle || (post as any).audio_url));
   const [saving, setSaving]             = useState(false);
-  const [showVisibility, setShowVisibility] = useState(initialView === 'visibility');
   const [showDiscard, setShowDiscard]   = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -123,7 +83,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
   const isDirty =
     caption       !== (post.content || '')      ||
     location      !== ((post as any).location || '') ||
-    visibility    !== ((post as any).visibility || 'public') ||
     allowComments !== (post.allowComments !== false) ||
     allowDownload !== (post.allowDownload !== false) ||
     hasAudio      !== !!(post.audioTitle || (post as any).audio_url) ||
@@ -164,7 +123,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
       const updates: Record<string, any> = {};
       if (caption       !== (post.content || ''))             { updates.content = caption; updates.caption = caption; }
       if (location      !== ((post as any).location || ''))   updates.location = location || null;
-      if (visibility    !== ((post as any).visibility || 'public')) updates.visibility = visibility;
       if (allowComments !== (post.allowComments !== false))   updates.allow_comments = allowComments;
       if (allowDownload !== (post.allowDownload !== false))   updates.allow_download = allowDownload;
       if (!hasAudio && (post.audioTitle || (post as any).audio_url)) {
@@ -213,7 +171,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
         allowComments,
         allowDownload,
         location,
-        visibility,
         images:       finalImages,
         videos:       finalVideos,
         audioTitle:   hasAudio ? post.audioTitle : undefined,
@@ -223,7 +180,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
         updatedAt:    changed ? new Date().toISOString() : post.updatedAt,
       } as any;
       (updated as any).location   = location;
-      (updated as any).visibility = visibility;
       if (!hasAudio) {
         (updated as any).audio_url   = undefined;
         updated.audioTitle           = undefined;
@@ -238,13 +194,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
       setSaving(false);
     }
   };
-
-  const visibilityIcon = visibility === 'private'
-    ? <Lock className="w-3.5 h-3.5"/>
-    : visibility === 'followers'
-    ? <Users className="w-3.5 h-3.5"/>
-    : <Globe className="w-3.5 h-3.5"/>;
-  const visibilityLabel = visibility === 'private' ? 'Only me' : visibility === 'followers' ? 'Followers' : 'Anyone';
 
   const activeMedia = mediaItems[mediaIdx];
 
@@ -380,17 +329,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
             </div>
           </div>
 
-          {/* Audience */}
-          <button onClick={() => setShowVisibility(true)}
-            className="flex items-center gap-3 w-full px-4 py-4 border-b border-gray-100 text-left hover:bg-gray-50">
-            <div className="flex items-center gap-2 text-gray-500">{visibilityIcon}</div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-900">Audience</p>
-              <p className="text-xs text-gray-400">{visibilityLabel}</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-300"/>
-          </button>
-
           {/* Audio */}
           {(post.audioTitle || (post as any).audio_url) && (
             <div className="px-4 py-4 border-b border-gray-100">
@@ -444,11 +382,6 @@ export function EditPostModal({ post, onSave, onClose, initialView }: Props) {
 
           <div className="h-8"/>
         </div>
-
-        {/* ── Visibility sheet ── */}
-        {showVisibility && (
-          <VisibilitySheet value={visibility} onChange={setVisibility} onClose={() => setShowVisibility(false)}/>
-        )}
 
         {/* ── Discard confirm ── */}
         {showDiscard && (

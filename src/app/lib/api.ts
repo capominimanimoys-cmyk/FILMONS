@@ -2135,9 +2135,28 @@ export const postsApi = {
   },
 
   update: async (postId: string, updates: Record<string, any>): Promise<void> => {
+    const patch: Record<string, any> = { ...updates };
+    // allow_comments/allow_download only ever get READ from
+    // metadata.allowComments/allowDownload (see rowToPostClient) -- they
+    // were never actually stored there at edit time, only in these flat
+    // columns nothing reads back, so toggling either off/on here (both
+    // EditPostModal and PostOwnMenuSheet's quick toggle) looked like it
+    // worked (instant local state update) but silently reverted on the
+    // next reload. Merge into metadata too whenever either is present.
+    if ('allow_comments' in patch || 'allow_download' in patch) {
+      const { data: row } = await supabase.from('posts').select('metadata').eq('id', postId).maybeSingle();
+      const rawMeta = row?.metadata;
+      const meta: any = rawMeta && typeof rawMeta === 'object' ? rawMeta
+        : typeof rawMeta === 'string' ? (() => { try { return JSON.parse(rawMeta); } catch { return {}; } })()
+        : {};
+      const nextMeta = { ...meta };
+      if ('allow_comments' in patch) nextMeta.allowComments = patch.allow_comments;
+      if ('allow_download' in patch) nextMeta.allowDownload = patch.allow_download;
+      patch.metadata = nextMeta;
+    }
     const { error } = await supabase
       .from('posts')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('id', postId);
     if (error) throw new Error(error.message);
     if (typeof updates.content === 'string') indexContentHashtags('post', postId, updates.content).catch(() => {});

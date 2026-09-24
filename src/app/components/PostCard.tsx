@@ -327,9 +327,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     return () => clearInterval(interval);
   }, [(localPost as any).location, (localPost as any).audioTitle]); // eslint-disable-line
   const [showEditModal,  setShowEditModal]  = useState(false);
-  // Lets the "..." menu's "Change visibility" item jump straight to the
-  // audience picker instead of landing on the general edit form first.
-  const [editModalInitialView, setEditModalInitialView] = useState<'visibility' | undefined>(undefined);
   const { openPortfolioPreview } = usePortfolioPreview();
   const [showLikesSheet, setShowLikesSheet] = useState(false);
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
@@ -953,7 +950,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           saved={saved}
           allowComments={localPost.allowComments !== false}
           onEdit={() => setShowEditModal(true)}
-          onChangeVisibility={() => { setEditModalInitialView('visibility'); setShowEditModal(true); }}
           onToggleSave={handleSave}
           onCopyLink={() => { navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
           onToggleComments={async () => {
@@ -1010,9 +1006,8 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         {showEditModal && (
           <EditPostModal
             post={localPost}
-            initialView={editModalInitialView}
-            onSave={updated => { setPost(updated); setShowEditModal(false); setEditModalInitialView(undefined); }}
-            onClose={() => { setShowEditModal(false); setEditModalInitialView(undefined); }}
+            onSave={updated => { setPost(updated); setShowEditModal(false); }}
+            onClose={() => setShowEditModal(false)}
           />
         )}
         {showDeleteConfirm && (
@@ -1053,7 +1048,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           allowComments={localPost.allowComments !== false}
           deleting={deleting}
           onEdit={() => setShowEditModal(true)}
-          onChangeVisibility={() => { setEditModalInitialView('visibility'); setShowEditModal(true); }}
           onToggleSave={handleSave}
           onCopyLink={() => { navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
           onToggleComments={async () => {

@@ -7,11 +7,11 @@
 // near-identical copies of the same action list.
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Edit2, Globe, Bookmark, Link2, MessageCircle, Trash2, X } from 'lucide-react';
+import { Edit2, Bookmark, Link2, MessageCircle, Trash2, X } from 'lucide-react';
 
 export function PostOwnMenuSheet({
   open, onClose, saved, allowComments, deleting,
-  onEdit, onChangeVisibility, onToggleSave, onCopyLink, onToggleComments, onDelete,
+  onEdit, onToggleSave, onCopyLink, onToggleComments, onDelete,
 }: {
   open: boolean;
   onClose: () => void;
@@ -19,18 +19,17 @@ export function PostOwnMenuSheet({
   allowComments: boolean;
   deleting?: boolean;
   onEdit: () => void;
-  onChangeVisibility: () => void;
   onToggleSave: () => void;
   onCopyLink: () => void;
   onToggleComments: () => void;
   onDelete: () => void;
 }) {
   if (!open) return null;
-  return <PostOwnMenuSheetInner {...{ onClose, saved, allowComments, deleting, onEdit, onChangeVisibility, onToggleSave, onCopyLink, onToggleComments, onDelete }} />;
+  return <PostOwnMenuSheetInner {...{ onClose, saved, allowComments, deleting, onEdit, onToggleSave, onCopyLink, onToggleComments, onDelete }} />;
 }
 
 function PostOwnMenuSheetInner({
-  onClose, saved, allowComments, deleting, onEdit, onChangeVisibility, onToggleSave, onCopyLink, onToggleComments, onDelete,
+  onClose, saved, allowComments, deleting, onEdit, onToggleSave, onCopyLink, onToggleComments, onDelete,
 }: Omit<Parameters<typeof PostOwnMenuSheet>[0], 'open'>) {
   const [visible, setVisible] = useState(false);
 
@@ -83,10 +82,6 @@ function PostOwnMenuSheetInner({
           <button onClick={act(onEdit)}
             className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
             <Edit2 className="w-4 h-4 text-gray-400" /> Edit post
-          </button>
-          <button onClick={act(onChangeVisibility)}
-            className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
-            <Globe className="w-4 h-4 text-gray-400" /> Change visibility
           </button>
           <button onClick={act(onToggleSave)}
             className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
