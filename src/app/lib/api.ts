@@ -1390,23 +1390,24 @@ async function fetchRepostedPostIds(postIds: string[], userId: string): Promise<
 // per-card fetch -- this app already had an N+1 regression from a
 // similar feature earlier, so the relevant-viewer-ids lookup and the
 // repost lookup both run once for the whole batch of postIds.
-async function fetchViewerRelevantIds(viewerId: string): Promise<Set<string>> {
+async function fetchViewerConnectionsAndFollows(viewerId: string): Promise<{ connections: Set<string>; following: Set<string> }> {
   const [{ data: connRows }, { data: followRows }] = await Promise.all([
     supabase.from('professional_connections').select('user_a_id, user_b_id')
       .eq('status', 'accepted').or(`user_a_id.eq.${viewerId},user_b_id.eq.${viewerId}`),
     supabase.from('follows').select('following_id').eq('follower_id', viewerId),
   ]);
-  const ids = new Set<string>();
-  (connRows ?? []).forEach((r: any) => ids.add(r.user_a_id === viewerId ? r.user_b_id : r.user_a_id));
-  (followRows ?? []).forEach((r: any) => ids.add(r.following_id));
-  return ids;
+  const connections = new Set<string>();
+  (connRows ?? []).forEach((r: any) => connections.add(r.user_a_id === viewerId ? r.user_b_id : r.user_a_id));
+  const following = new Set<string>((followRows ?? []).map((r: any) => r.following_id));
+  return { connections, following };
 }
 
 export async function fetchRepostContext(postIds: string[], viewerId?: string): Promise<Map<string, RepostContextEntry[]>> {
   const empty = new Map<string, RepostContextEntry[]>();
   if (!postIds.length || !viewerId) return empty;
   try {
-    const relevant = await fetchViewerRelevantIds(viewerId);
+    const { connections, following } = await fetchViewerConnectionsAndFollows(viewerId);
+    const relevant = new Set([...connections, ...following]);
     const relevantIds = [...relevant, viewerId];
     const [{ data: plainRows }, { data: quoteRows }] = await Promise.all([
       supabase.from('reposts').select('post_id, user_id').in('post_id', postIds).in('user_id', relevantIds),
@@ -1602,6 +1603,11 @@ async function filterPostsByVisibility(posts: Post[], viewerId?: string): Promis
 // post (quotePostId is that post's own id, openable on its own).
 export interface RepostListEntry {
   userId: string; userName: string; userAvatar?: string; userUsername?: string;
+  primaryRole?: string | null; city?: string | null;
+  /** The SHEET VIEWER's own relationship to this reposter -- 'connection'/
+   * 'following' drive the "Connection"/"Following" label and the sheet's
+   * relevance ordering; 'none' shows no label (not a random-user callout). */
+  viewerRelation: 'connection' | 'following' | 'none';
   type: 'plain' | 'thoughts';
   createdAt: string;
   quotePostId?: string;
@@ -1821,26 +1827,38 @@ export const postsApi = {
   // legitimately appear in both plainRows and quoteRows here -- de-duped
   // by user_id below, keeping the richer 'thoughts' entry (it links to
   // their actual commentary) over the bare 'plain' one.
-  getReposts: async (postId: string, limit = 100): Promise<RepostListEntry[]> => {
+  //
+  // `viewerId` (the person who opened this sheet, not the reposters)
+  // drives the "Connection"/"Following" label per row and the sheet's own
+  // ordering -- connections first, then people the viewer follows, then
+  // everyone else, matching spec: "Show relevant people first."
+  getReposts: async (postId: string, viewerId?: string, limit = 100): Promise<RepostListEntry[]> => {
     try {
       const [{ data: plainRows }, { data: quoteRows }] = await Promise.all([
         supabase.from('reposts').select('user_id, created_at').eq('post_id', postId).order('created_at', { ascending: false }).limit(limit),
         supabase.from('posts').select('id, author_id, created_at').eq('metadata->repostOf->>postId', postId).order('created_at', { ascending: false }).limit(limit),
       ]);
       const userIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
-      const { data: profiles } = userIds.length
-        ? await supabase.from('profiles').select('id, name, username, avatar_url').in('id', userIds)
-        : { data: [] as any[] };
+      const [{ data: profiles }, relations] = await Promise.all([
+        userIds.length
+          ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', userIds)
+          : Promise.resolve({ data: [] as any[] }),
+        viewerId ? fetchViewerConnectionsAndFollows(viewerId) : Promise.resolve({ connections: new Set<string>(), following: new Set<string>() }),
+      ]);
       const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
       const nameOf = (id: string) => profileMap.get(id)?.name || 'Someone';
       const avatarOf = (id: string) => profileMap.get(id)?.avatar_url || undefined;
       const usernameOf = (id: string) => profileMap.get(id)?.username || undefined;
+      const relationOf = (id: string): RepostListEntry['viewerRelation'] =>
+        relations.connections.has(id) ? 'connection' : relations.following.has(id) ? 'following' : 'none';
 
       const byUser = new Map<string, RepostListEntry>();
       // 'thoughts' populated first so it always wins the de-dup below.
       for (const r of (quoteRows ?? []) as any[]) {
         byUser.set(r.author_id, {
           userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
+          primaryRole: profileMap.get(r.author_id)?.primary_role, city: profileMap.get(r.author_id)?.city,
+          viewerRelation: relationOf(r.author_id),
           type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
         });
       }
@@ -1848,10 +1866,15 @@ export const postsApi = {
         if (byUser.has(r.user_id)) continue;
         byUser.set(r.user_id, {
           userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
+          primaryRole: profileMap.get(r.user_id)?.primary_role, city: profileMap.get(r.user_id)?.city,
+          viewerRelation: relationOf(r.user_id),
           type: 'plain', createdAt: r.created_at,
         });
       }
-      return [...byUser.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const relationRank: Record<RepostListEntry['viewerRelation'], number> = { connection: 0, following: 1, none: 2 };
+      return [...byUser.values()].sort((a, b) =>
+        relationRank[a.viewerRelation] - relationRank[b.viewerRelation]
+        || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (e) {
       console.error('[getReposts] error:', e);
       return [];

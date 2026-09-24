@@ -7,16 +7,22 @@ import { useState, useEffect } from 'react';
 import { X, Repeat2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { postsApi, type RepostListEntry } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { UserAvatar } from './AccountTypeBadge';
+
+const RELATION_LABEL: Record<RepostListEntry['viewerRelation'], string | null> = {
+  connection: 'Connection', following: 'Following', none: null,
+};
 
 export function RepostsSheet({ postId, onClose }: { postId: string; onClose: () => void }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [entries, setEntries] = useState<RepostListEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    postsApi.getReposts(postId).then(r => { setEntries(r); setLoading(false); });
-  }, [postId]);
+    postsApi.getReposts(postId, user?.id).then(r => { setEntries(r); setLoading(false); });
+  }, [postId, user?.id]);
 
   const openEntry = (e: RepostListEntry) => {
     onClose();
@@ -61,11 +67,18 @@ export function RepostsSheet({ postId, onClose }: { postId: string; onClose: () 
                 <UserAvatar user={{ id: e.userId, name: e.userName, avatar: e.userAvatar }} size={44} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{e.userName}</p>
+                  {(e.primaryRole || e.city) && (
+                    <p className="text-xs text-gray-500 truncate">
+                      {[e.primaryRole, e.city].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   <p className="text-xs text-gray-400 flex items-center gap-1">
                     <Repeat2 className="w-3 h-3 text-green-500" />
                     {e.type === 'thoughts' ? 'Reposted with thoughts' : 'Reposted'}
+                    {RELATION_LABEL[e.viewerRelation] && <span> · {RELATION_LABEL[e.viewerRelation]}</span>}
                   </p>
                 </div>
+                <span className="text-xs font-bold text-blue-600 shrink-0">View</span>
               </button>
             ))
           )}
