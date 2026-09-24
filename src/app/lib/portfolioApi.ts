@@ -10,7 +10,7 @@ import { toStringArray } from './normalizeList';
 import { indexContentHashtags } from './hashtagsApi';
 import { indexContentLocation } from './locationsApi';
 import { logContentRepostActivity, removeContentRepostActivity } from './activityApi';
-import { fetchViewerConnectionsAndFollows } from './api';
+import { fetchViewerConnectionsAndFollows, type RepostContextEntry } from './api';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text';
 
@@ -1046,7 +1046,7 @@ export async function getPortfolioReposts(
       supabase.from('portfolio_reposts').select('user_id, created_at').eq('target_id', targetId).eq('target_type', targetType)
         .order('created_at', { ascending: false }).limit(limit),
       supabase.from('posts').select('id, author_id, created_at')
-        .eq(targetType === 'portfolio_item' ? 'metadata->>portfolioItemId' : 'metadata->>portfolioAlbumId', targetId)
+        .eq(targetType === 'portfolio_item' ? 'metadata->>portfolioItemId' : 'metadata->repostOfAlbum->>albumId', targetId)
         .order('created_at', { ascending: false }).limit(limit),
     ]);
     const userIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
@@ -1089,6 +1089,77 @@ export async function getPortfolioReposts(
     console.error('[getPortfolioReposts] error:', e);
     return [];
   }
+}
+
+// Batched "You/{name} reposted this" social-context row for Portfolio cards
+// -- same idea and shape as fetchRepostContext (api.ts) for Posts, one
+// query for a whole page of cards rather than per-card. Merges the plain-
+// repost table (portfolio_reposts) with "repost with thoughts" posts for
+// BOTH content types in one pass, since a batch from getPortfolioFeed
+// naturally mixes item and album ids together. Item quote-reposts and the
+// ordinary "+ Portfolio" self-attach flow share the same metadata shape
+// (metadata.portfolioItemId) with no separate marker distinguishing them
+// -- same known limitation getPortfolioReposts already has for items, not
+// newly introduced here.
+export async function fetchPortfolioRepostContext(
+  itemIds: string[], albumIds: string[], viewerId?: string,
+): Promise<Map<string, RepostContextEntry[]>> {
+  const empty = new Map<string, RepostContextEntry[]>();
+  const allIds = [...itemIds, ...albumIds];
+  if (!allIds.length || !viewerId) return empty;
+  try {
+    const { connections, following } = await fetchViewerConnectionsAndFollows(viewerId);
+    const relevant = new Set([...connections, ...following]);
+    const relevantIds = [...relevant, viewerId];
+    const [{ data: plainRows }, { data: itemQuoteRows }, { data: albumQuoteRows }] = await Promise.all([
+      supabase.from('portfolio_reposts').select('target_id, user_id').in('target_id', allIds).in('user_id', relevantIds),
+      itemIds.length
+        ? supabase.from('posts').select('id, author_id, metadata').in('metadata->>portfolioItemId', itemIds).in('author_id', relevantIds)
+        : Promise.resolve({ data: [] as any[] }),
+      albumIds.length
+        ? supabase.from('posts').select('id, author_id, metadata').in('metadata->repostOfAlbum->>albumId', albumIds).in('author_id', relevantIds)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const actorIds = [...new Set([
+      ...(plainRows ?? []).map((r: any) => r.user_id),
+      ...(itemQuoteRows ?? []).map((r: any) => r.author_id),
+      ...(albumQuoteRows ?? []).map((r: any) => r.author_id),
+    ])];
+    if (!actorIds.length) return empty;
+    const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url').in('id', actorIds);
+    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+    // One entry per (target_id, user_id) -- de-dup a user who both plain-
+    // and quote-reposted the same item/album, same precedent as
+    // fetchRepostContext/getReposts.
+    const byTarget = new Map<string, Map<string, RepostContextEntry>>();
+    const addEntry = (targetId: string, userId: string) => {
+      const prof = profileMap.get(userId);
+      if (!prof) return;
+      const relation: RepostContextEntry['relation'] = userId === viewerId ? 'self' : relevant.has(userId) ? 'connection' : 'other';
+      const users = byTarget.get(targetId) ?? new Map<string, RepostContextEntry>();
+      if (!users.has(userId)) users.set(userId, { id: userId, name: prof.name, avatarUrl: prof.avatar_url, relation });
+      byTarget.set(targetId, users);
+    };
+    (itemQuoteRows ?? []).forEach((r: any) => {
+      const targetId = r.metadata?.portfolioItemId;
+      if (targetId) addEntry(targetId, r.author_id);
+    });
+    (albumQuoteRows ?? []).forEach((r: any) => {
+      const targetId = r.metadata?.repostOfAlbum?.albumId;
+      if (targetId) addEntry(targetId, r.author_id);
+    });
+    (plainRows ?? []).forEach((r: any) => addEntry(r.target_id, r.user_id));
+
+    const result = new Map<string, RepostContextEntry[]>();
+    for (const [targetId, users] of byTarget) {
+      // "self" first (drives "You..."), then everyone else -- same order
+      // as fetchRepostContext.
+      const sorted = [...users.values()].sort((a, b) => (a.relation === 'self' ? -1 : b.relation === 'self' ? 1 : 0));
+      result.set(targetId, sorted);
+    }
+    return result;
+  } catch { return empty; }
 }
 
 // Report -- backs the Home -> Portfolio feed card menu's "Report" action.
@@ -1209,8 +1280,8 @@ export interface PortfolioFeedPreviewItem {
   id: string; media_type: MediaType; url: string | null; aspect_ratio: number | null;
 }
 export type PortfolioFeedEntry =
-  | { type: 'item'; id: string; created_at: string; creator: PortfolioFeedCreator; item: PortfolioItem }
-  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; coverAspectRatio: number | null; itemCount: number; previewItems: PortfolioFeedPreviewItem[] };
+  | { type: 'item'; id: string; created_at: string; creator: PortfolioFeedCreator; item: PortfolioItem; repostContext?: RepostContextEntry[] }
+  | { type: 'album'; id: string; created_at: string; creator: PortfolioFeedCreator; album: PortfolioAlbum; coverUrl: string | null; coverAspectRatio: number | null; itemCount: number; previewItems: PortfolioFeedPreviewItem[]; repostContext?: RepostContextEntry[] };
 
 // Capped rather than truly exhaustive -- covers realistic recent activity
 // without a full table scan every feed load. An item added long ago to an
@@ -1237,6 +1308,10 @@ export async function getPortfolioFeed(opts: {
    * relevant content from elsewhere", per spec). Never applied to the
    * unfiltered mixed feed, only a filtered tab. */
   viewerCity?: string;
+  /** Drives each entry's repostContext ("You/{name} reposted this") --
+   * omitted (no viewer signed in, or caller doesn't need the row) means
+   * no extra query at all, same opt-in shape as fetchRepostContext. */
+  viewerId?: string;
 } = {}): Promise<PortfolioFeedEntry[]> {
   const limit = opts.limit ?? 20;
   // Overfetch from each source before merging -- the two pools get combined
@@ -1421,7 +1496,18 @@ export async function getPortfolioFeed(opts: {
       return boostEligible && isLocalMatch(e.creator.city) ? base + LOCAL_BOOST_MS : base;
     };
     entries.sort((a, b) => sortKey(b) - sortKey(a));
-    return entries.slice(0, limit);
+    const paged = entries.slice(0, limit);
+
+    // Context is fetched for the final page only (not the overfetched
+    // pool above) -- keeps this an opt-in extra query sized to what's
+    // actually rendered.
+    if (opts.viewerId) {
+      const pagedItemIds = paged.filter(e => e.type === 'item').map(e => e.id);
+      const pagedAlbumIds = paged.filter(e => e.type === 'album').map(e => e.id);
+      const contextMap = await fetchPortfolioRepostContext(pagedItemIds, pagedAlbumIds, opts.viewerId);
+      paged.forEach(e => { const ctx = contextMap.get(e.id); if (ctx) e.repostContext = ctx; });
+    }
+    return paged;
   } catch (e) {
     console.warn('[portfolio feed] fetch error:', e);
     return [];
@@ -1438,7 +1524,7 @@ export async function getPortfolioFeed(opts: {
 // simply has no entry in the returned map, same "one source of truth"
 // cascade filterVisible() already gives every other activity type.
 export async function getPortfolioEntriesByIds(
-  itemIds: string[], albumIds: string[],
+  itemIds: string[], albumIds: string[], viewerId?: string,
 ): Promise<Map<string, PortfolioFeedEntry>> {
   const map = new Map<string, PortfolioFeedEntry>();
   if (!itemIds.length && !albumIds.length) return map;
@@ -1509,6 +1595,11 @@ export async function getPortfolioEntriesByIds(
           previewItems: preview,
         });
       });
+    }
+
+    if (viewerId && map.size) {
+      const contextMap = await fetchPortfolioRepostContext(items.map(i => i.id), [...map.values()].filter(e => e.type === 'album').map(e => e.id), viewerId);
+      map.forEach(e => { const ctx = contextMap.get(e.id); if (ctx) e.repostContext = ctx; });
     }
   } catch (e) {
     console.warn('[portfolioApi] getPortfolioEntriesByIds failed:', e);

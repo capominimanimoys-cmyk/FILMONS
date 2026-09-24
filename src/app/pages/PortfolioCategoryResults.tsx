@@ -15,6 +15,7 @@ import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfo
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useAuth } from '../context/AuthContext';
 
 // Splits an already-ordered list into 2 columns by alternating index --
 // preserves each card's own real height (an album card and an item card
@@ -26,6 +27,7 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
 
 export function PortfolioCategoryResults({ query: initialQuery }: { query?: string }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [query, setQuery] = useState(initialQuery ?? '');
   const [matches, setMatches] = useState<SearchPortfolioRow[] | null>(null);
   const [entries, setEntries] = useState<PortfolioFeedEntry[] | null>(null);
@@ -43,12 +45,12 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
     const itemIds = matches.filter(r => r.type === 'item').map(r => r.id);
     const albumIds = matches.filter(r => r.type === 'album').map(r => r.id);
     let cancelled = false;
-    getPortfolioEntriesByIds(itemIds, albumIds).then(byId => {
+    getPortfolioEntriesByIds(itemIds, albumIds, user?.id).then(byId => {
       if (cancelled) return;
       setEntries(matches.map(r => byId.get(r.id)).filter((e): e is PortfolioFeedEntry => !!e));
     });
     return () => { cancelled = true; };
-  }, [matches]);
+  }, [matches, user?.id]);
 
   const [left, right] = splitTwoColumns(entries ?? []);
 

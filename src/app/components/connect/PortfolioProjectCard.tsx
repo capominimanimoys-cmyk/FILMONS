@@ -29,10 +29,27 @@ import { logPortfolioInteraction } from '../../lib/personalization';
 import type { TrustLevel } from '../../lib/trustApi';
 import { RepostMenuSheet } from '../RepostMenuSheet';
 import { PortfolioRepostsSheet } from './PortfolioRepostsSheet';
+import type { RepostContextEntry } from '../../lib/api';
 
-export function PortfolioProjectCard({ entry, trustLevel }: {
+// "You reposted this" / "{name} +N more reposted this" -- same shape as
+// PostCard.tsx's own repostContextLabel, just without "post" in the
+// wording since this card isn't one. entries[0] is always the primary
+// name shown (repostContext sorts 'self' first).
+function repostContextLabel(entries: RepostContextEntry[], viewerId?: string): string {
+  const first = entries[0];
+  const name = first.id === viewerId ? 'You' : first.name;
+  const extra = entries.length - 1;
+  return extra > 0 ? `${name} +${extra} more reposted this` : `${name} reposted this`;
+}
+
+export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
   entry: Extract<PortfolioFeedEntry, { type: 'item' }>;
   trustLevel?: TrustLevel;
+  /** Suppresses this card's own repost-context row when a wrapper
+   * (RepostedActivityCard/RepostGroupCard) already shows its own
+   * "{name} reposted this" attribution line above it -- same fix as
+   * PostCard.tsx's hideRepostContext, same duplication it prevents. */
+  hideRepostContext?: boolean;
 }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
@@ -126,6 +143,19 @@ export function PortfolioProjectCard({ entry, trustLevel }: {
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 p-5">
+      {/* Repost social-context row -- "You"/{name} reposted, relevant to
+          the viewer only (their own repost, connections, or people they
+          follow). Same placement/behavior as PostCard.tsx's own row. */}
+      {!hideRepostContext && entry.repostContext && entry.repostContext.length > 0 && (
+        <button onClick={() => setShowRepostsSheet(true)}
+          className="w-full flex items-center gap-2 pb-2.5 text-left hover:opacity-80 transition-opacity">
+          <Repeat2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+          <UserAvatar user={{ id: entry.repostContext[0].id, name: entry.repostContext[0].name, avatar: entry.repostContext[0].avatarUrl }} size={18}/>
+          <p className="text-xs text-gray-500 truncate">
+            <span className="font-bold text-gray-700">{repostContextLabel(entry.repostContext, user?.id)}</span>
+          </p>
+        </button>
+      )}
       <div className="flex items-start gap-3">
         <button onClick={() => navigate(`/host/${creator.id}`)} className="shrink-0">
           <UserAvatar user={{ id: creator.id, name: creator.name, avatar: creator.avatar_url }} size={44} />

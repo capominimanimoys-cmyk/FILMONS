@@ -173,7 +173,7 @@ export async function getRecommendedPortfolio(opts: {
   limit?: number;
 }): Promise<PortfolioFeedEntry[]> {
   const limit = opts.limit ?? 8;
-  const entries = await getPortfolioFeed({ limit: limit * 3, category: opts.category });
+  const entries = await getPortfolioFeed({ limit: limit * 3, category: opts.category, viewerId: opts.viewerId });
   const exclude = opts.excludeIds ?? new Set<string>();
   return entries
     .filter(e => e.creator.id !== opts.viewerId && !exclude.has(e.id))
@@ -207,6 +207,7 @@ export async function getConnectFeed(opts: {
       limit, before: opts.before?.portfolioCursor,
       authorIds: opts.tab === 'following' ? followingIdsArr : undefined,
       category: opts.category, subcategory: opts.subcategory,
+      viewerId: opts.viewerId,
     }),
     getActivityFeed({
       tab: opts.tab, viewerId: opts.viewerId, followingIds: followingIdsArr,
@@ -247,7 +248,7 @@ export async function getConnectFeed(opts: {
   const [realPosts, repostEntryMap, freshLevels] = await Promise.all([
     postTargetIds.length ? postsApi.getByIds([...new Set(postTargetIds)]) : Promise.resolve([]),
     (repostItemIds.length || repostAlbumIds.length)
-      ? getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)])
+      ? getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)], opts.viewerId)
       : Promise.resolve(new Map<string, PortfolioFeedEntry>()),
     unresolved.length ? getTrustLevelsBatch(unresolved) : Promise.resolve(new Map<string, TrustLevel>()),
   ]);

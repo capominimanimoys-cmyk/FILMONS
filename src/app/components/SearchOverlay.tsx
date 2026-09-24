@@ -1704,7 +1704,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     Promise.all([
       user?.id ? getSuggestedCreators(user.id, { limit: 10 }).catch(() => []) : Promise.resolve([]),
       postsApi.getTopPosts(10).catch(() => []),
-      getPortfolioFeed({ limit: 10 }).catch(() => []),
+      getPortfolioFeed({ limit: 10, viewerId: user?.id }).catch(() => []),
       getTopHashtags(12).catch(() => []),
       getActivityFeed({ tab: 'foryou', limit: 10 }).catch(() => ({ entries: [] as ActivityEntry[] })),
     ]).then(([creators, posts, portfolio, hashtags, activity]) => {

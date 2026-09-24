@@ -855,7 +855,7 @@ export function Profile() {
       const albumTargetIds = myRepostActivity.filter(e => e.targetType === 'portfolio_album' && e.targetId).map(e => e.targetId as string);
       const [repostedPosts, portfolioEntryMap] = await Promise.all([
         postTargetIds.length ? postsApi.getByIds([...new Set(postTargetIds)]) : Promise.resolve([]),
-        (itemTargetIds.length || albumTargetIds.length) ? getPortfolioEntriesByIds([...new Set(itemTargetIds)], [...new Set(albumTargetIds)]) : Promise.resolve(new Map()),
+        (itemTargetIds.length || albumTargetIds.length) ? getPortfolioEntriesByIds([...new Set(itemTargetIds)], [...new Set(albumTargetIds)], user?.id) : Promise.resolve(new Map()),
       ]);
       const postMap = new Map(repostedPosts.map(p => [p.id, p]));
       setRepostActivity(myRepostActivity.map(e => ({

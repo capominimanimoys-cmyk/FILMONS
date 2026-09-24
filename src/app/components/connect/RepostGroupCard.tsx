@@ -69,7 +69,7 @@ export function RepostGroupCard({ item, trustLevel, onDeleted }: {
     return (
       <div>
         {Attribution}
-        <PortfolioProjectCard entry={portfolioEntry as Extract<typeof portfolioEntry, { type: 'item' }>} trustLevel={trustLevel} />
+        <PortfolioProjectCard entry={portfolioEntry as Extract<typeof portfolioEntry, { type: 'item' }>} trustLevel={trustLevel} hideRepostContext />
       </div>
     );
   }
@@ -78,7 +78,7 @@ export function RepostGroupCard({ item, trustLevel, onDeleted }: {
     return (
       <div>
         {Attribution}
-        <PortfolioAlbumCard entry={portfolioEntry as Extract<typeof portfolioEntry, { type: 'album' }>} trustLevel={trustLevel} />
+        <PortfolioAlbumCard entry={portfolioEntry as Extract<typeof portfolioEntry, { type: 'album' }>} trustLevel={trustLevel} hideRepostContext />
       </div>
     );
   }

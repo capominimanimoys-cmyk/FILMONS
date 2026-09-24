@@ -1742,6 +1742,7 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
 
 function PortfolioAllSection({ query }: { query?: string }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [matches, setMatches] = useState<SearchPortfolioRow[] | null>(null);
   // Hydrated into real PortfolioFeedEntry objects (creator info, real
   // aspect ratio, likes/comments counts, album preview items) so this
@@ -1764,12 +1765,12 @@ function PortfolioAllSection({ query }: { query?: string }) {
     const albumIds = shown.filter(r => r.type === 'album').map(r => r.id);
     if (!itemIds.length && !albumIds.length) { setEntries([]); return; }
     let cancelled = false;
-    getPortfolioEntriesByIds(itemIds, albumIds).then(byId => {
+    getPortfolioEntriesByIds(itemIds, albumIds, user?.id).then(byId => {
       if (cancelled) return;
       setEntries(shown.map(r => byId.get(r.id)).filter((e): e is PortfolioFeedEntry => !!e));
     });
     return () => { cancelled = true; };
-  }, [matches]);
+  }, [matches, user?.id]);
 
   if (!query?.trim() || !matches?.length) return null;
   const [left, right] = splitTwoColumns(entries);
