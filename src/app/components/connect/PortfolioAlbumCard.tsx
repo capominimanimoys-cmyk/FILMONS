@@ -57,6 +57,11 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
   const [likesCount, setLikesCount] = useState(album.likes_count ?? 0);
   const [reposted, setReposted] = useState(false);
   const [repostsCount, setRepostsCount] = useState(album.reposts_count ?? 0);
+  // Local override of entry.repostContext (same pattern as reposted/
+  // repostsCount above) -- entry itself is an immutable prop, so without
+  // this, reposting wouldn't show "You reposted this" until the next full
+  // feed refetch.
+  const [repostContext, setRepostContext] = useState<RepostContextEntry[]>(entry.repostContext ?? []);
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showRepostMenu, setShowRepostMenu] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -97,11 +102,18 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
   const handleToggleRepost = async () => {
     if (!user) { toast.error('Sign in to repost'); return; }
     const next = !reposted;
+    const prevContext = repostContext;
     setReposted(next);
     setRepostsCount(c => c + (next ? 1 : -1));
+    setRepostContext(next
+      ? [{ id: user.id, name: user.name || 'You', avatarUrl: user.avatar || null, relation: 'self' }, ...prevContext.filter(e => e.id !== user.id)]
+      : prevContext.filter(e => e.id !== user.id));
     setShowRepostMenu(false);
     const ok = await togglePortfolioRepost(user.id, album.id, 'portfolio_album', !next, repostsCount, album.title);
-    if (!ok) { setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); toast.error('Could not update repost'); return; }
+    if (!ok) {
+      setReposted(!next); setRepostsCount(c => c + (next ? -1 : 1)); setRepostContext(prevContext);
+      toast.error('Could not update repost'); return;
+    }
     toast.success(next ? 'Reposted to your followers' : 'Repost removed');
   };
 
@@ -143,13 +155,13 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
       {/* Repost social-context row -- "You"/{name} reposted, relevant to
           the viewer only (their own repost, connections, or people they
           follow). Same placement/behavior as PostCard.tsx's own row. */}
-      {!hideRepostContext && entry.repostContext && entry.repostContext.length > 0 && (
+      {!hideRepostContext && repostContext.length > 0 && (
         <button onClick={() => setShowRepostsSheet(true)}
           className="w-full flex items-center gap-2 pb-2.5 text-left hover:opacity-80 transition-opacity">
           <Repeat2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-          <UserAvatar user={{ id: entry.repostContext[0].id, name: entry.repostContext[0].name, avatar: entry.repostContext[0].avatarUrl }} size={18}/>
+          <UserAvatar user={{ id: repostContext[0].id, name: repostContext[0].name, avatar: repostContext[0].avatarUrl }} size={18}/>
           <p className="text-xs text-gray-500 truncate">
-            <span className="font-bold text-gray-700">{repostContextLabel(entry.repostContext, user?.id)}</span>
+            <span className="font-bold text-gray-700">{repostContextLabel(repostContext, user?.id)}</span>
           </p>
         </button>
       )}

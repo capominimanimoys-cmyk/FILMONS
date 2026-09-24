@@ -688,7 +688,17 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     if (reposting) return;
     setReposting(true);
     const prevCount = localPost.repostCount ?? 0;
-    setPost(p => ({ ...p, repostCount: prevCount + 1 }));
+    const prevContext = localPost.repostContext ?? [];
+    // Optimistically add "You" to the social-context row too, sorted first
+    // (same convention fetchRepostContext's own server-side sort uses) --
+    // without this the row only reflected the server's last fetch, so a
+    // fresh repost didn't show "You reposted this post" until the next
+    // full reload.
+    setPost(p => ({
+      ...p,
+      repostCount: prevCount + 1,
+      repostContext: [{ id: user.id, name: user.name || 'You', avatarUrl: user.avatar || null, relation: 'self' as const }, ...prevContext.filter(e => e.id !== user.id)],
+    }));
     setHasReposted(true);
     setShowRepostMenu(false);
     try {
@@ -718,12 +728,13 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
       }
     } catch (e: any) {
       if (e?.code === '23505') {
-        // Already reposted server-side -- hasReposted was already correct,
-        // just undo the optimistic count bump (it wasn't actually new).
+        // Already reposted server-side -- hasReposted/repostContext were
+        // already correct, just undo the optimistic count bump (it wasn't
+        // actually new).
         setPost(p => ({ ...p, repostCount: prevCount }));
         toast.info('Already reposted');
       } else {
-        setPost(p => ({ ...p, repostCount: prevCount }));
+        setPost(p => ({ ...p, repostCount: prevCount, repostContext: prevContext }));
         setHasReposted(false);
         toast.error('Could not repost');
       }
@@ -735,7 +746,12 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     if (reposting) return;
     setReposting(true);
     const prevCount = localPost.repostCount ?? 1;
-    setPost(p => ({ ...p, repostCount: Math.max(0, prevCount - 1) }));
+    const prevContext = localPost.repostContext ?? [];
+    setPost(p => ({
+      ...p,
+      repostCount: Math.max(0, prevCount - 1),
+      repostContext: prevContext.filter(e => e.id !== user.id),
+    }));
     setHasReposted(false);
     setShowRepostMenu(false);
     try {
@@ -744,7 +760,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
       removeContentRepostActivity(user.id, 'post', localPost.id).catch(() => {});
       toast.success('Repost removed');
     } catch {
-      setPost(p => ({ ...p, repostCount: prevCount }));
+      setPost(p => ({ ...p, repostCount: prevCount, repostContext: prevContext }));
       setHasReposted(true);
       toast.error('Could not remove repost');
     } finally { setReposting(false); }
