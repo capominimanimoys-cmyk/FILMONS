@@ -63,12 +63,14 @@ function RepostMenuSheetInner({
   }, [onClose]);
 
   // Repost/Undo/"with thoughts" are NOT wrapped in close() here -- their
-  // handlers (in PostCard.tsx/PortfolioProjectCard.tsx) already call the
-  // parent's setShowRepostMenu(false) themselves once the action actually
-  // completes (so "Reposting…" stays visible on this sheet while the
-  // write is in flight, same as before this component had an entrance/exit
-  // animation at all). Only Cancel/backdrop/X use the local animated
-  // close() -- those have nothing to wait on.
+  // handlers (in PostCard.tsx/PortfolioProjectCard.tsx/PortfolioAlbumCard.tsx)
+  // are optimistic and call the parent's setShowRepostMenu(false)
+  // synchronously, before the write even starts, so `busy`/busyLabel below
+  // are effectively dead in the common case (the sheet is already gone by
+  // the time a write could still be in flight) -- kept only as a fallback
+  // for whatever brief instant remains between click and unmount. Only
+  // Cancel/backdrop/X use the local animated close() -- those have nothing
+  // to wait on either way.
   return createPortal((
     <div className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center">
       <div

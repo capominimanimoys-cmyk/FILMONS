@@ -710,9 +710,20 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   };
 
   // ── repost ──
+  // Optimistic, same pattern as handleLike above -- flip state + close the
+  // sheet instantly, write in the background, roll back on failure. This
+  // used to await the insert/delete before touching any UI state at all,
+  // which made "Remove repost" in particular feel noticeably slow (the
+  // sheet just sat on "Removing…" for the round trip) for no reason: the
+  // repost row itself is never read back, so there's nothing to wait for.
   const handleRepost = async () => {
     if (!user) { toast.error('Sign in to repost'); return; }
+    if (reposting) return;
     setReposting(true);
+    const prevCount = localPost.repostCount ?? 0;
+    setPost(p => ({ ...p, repostCount: prevCount + 1 }));
+    setHasReposted(true);
+    setShowRepostMenu(false);
     try {
       const { error } = await supabase.from('reposts').insert({
         user_id: user.id,
@@ -720,11 +731,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         quote_text: null,
       });
       if (error) throw error;
-      // Update local state + PostContext for instant feedback; posts.reposts_count
-      // itself is kept in sync by the existing DB trigger on the reposts table
-      // (no manual .update() here -- that used to race the trigger).
-      setPost(p => ({ ...p, repostCount: (p.repostCount ?? 0) + 1 }));
-      setHasReposted(true);
       onReposted?.(localPost);
       // Distributes the repost into the reposter's followers' Connect feeds.
       // Reuses target_type 'post' so filterVisible() already re-checks the
@@ -732,7 +738,6 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
       // made private, this entry stops surfacing it automatically.
       logContentRepostActivity(user.id, 'post', localPost.id, localPost.content?.slice(0, 80) || null).catch(() => {});
       toast.success('Reposted to your followers');
-      setShowRepostMenu(false);
       if (localPost.userId && localPost.userId !== user.id) {
         notifs.push(localPost.userId, {
           type: 'content_repost',
@@ -745,23 +750,37 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
         });
       }
     } catch (e: any) {
-      if (e?.code === '23505') toast.info('Already reposted');
-      else toast.error('Could not repost');
+      if (e?.code === '23505') {
+        // Already reposted server-side -- hasReposted was already correct,
+        // just undo the optimistic count bump (it wasn't actually new).
+        setPost(p => ({ ...p, repostCount: prevCount }));
+        toast.info('Already reposted');
+      } else {
+        setPost(p => ({ ...p, repostCount: prevCount }));
+        setHasReposted(false);
+        toast.error('Could not repost');
+      }
     } finally { setReposting(false); }
   };
 
   const handleUndoRepost = async (_?: string) => {
     if (!user) return;
+    if (reposting) return;
     setReposting(true);
+    const prevCount = localPost.repostCount ?? 1;
+    setPost(p => ({ ...p, repostCount: Math.max(0, prevCount - 1) }));
+    setHasReposted(false);
+    setShowRepostMenu(false);
     try {
-      await supabase.from('reposts').delete().eq('user_id', user.id).eq('post_id', localPost.id);
-      setPost(p => ({ ...p, repostCount: Math.max(0, (p.repostCount ?? 1) - 1) }));
-      setHasReposted(false);
-      setShowRepostMenu(false);
+      const { error } = await supabase.from('reposts').delete().eq('user_id', user.id).eq('post_id', localPost.id);
+      if (error) throw error;
       removeContentRepostActivity(user.id, 'post', localPost.id).catch(() => {});
       toast.success('Repost removed');
-    } catch { toast.error('Could not remove repost'); }
-    finally { setReposting(false); }
+    } catch {
+      setPost(p => ({ ...p, repostCount: prevCount }));
+      setHasReposted(true);
+      toast.error('Could not remove repost');
+    } finally { setReposting(false); }
   };
 
   // ── toggle comments ──
