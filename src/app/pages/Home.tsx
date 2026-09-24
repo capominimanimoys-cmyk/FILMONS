@@ -15,7 +15,7 @@ import { filterOutLockedOpportunities } from '../lib/entitlements';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { useFollow } from '../context/FollowContext';
-import { Listing } from '../types';
+import { Listing, type Post } from '../types';
 import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
@@ -337,10 +337,12 @@ export function Home() {
   // deep in the Connect feed tree below) requests this composer via
   // RepostComposeContext rather than a prop drilled through
   // ConnectFeedCard -- see that context's own header comment.
-  const { pendingRepostItem, clearRepostCompose } = useRepostCompose();
+  const { pendingRepostItem, pendingRepostOnPosted, clearRepostCompose } = useRepostCompose();
+  const [repostSeedOnPosted, setRepostSeedOnPosted] = useState<((newPost: Post) => void) | null>(null);
   useEffect(() => {
     if (pendingRepostItem) {
       setRepostSeedItem(pendingRepostItem);
+      setRepostSeedOnPosted(() => pendingRepostOnPosted);
       setComposeAction(undefined);
       setShowCompose(true);
       clearRepostCompose();
@@ -1625,7 +1627,7 @@ export function Home() {
           // post already appears via its own post_published activity_events
           // row (fires synchronously in postsApi.create), so a plain
           // in-memory refetch (not a page reload) is enough to surface it.
-          onPost={() => { retryConnect(); }}
+          onPost={newPost => { retryConnect(); repostSeedOnPosted?.(newPost); setRepostSeedOnPosted(null); }}
         />
       )}
 

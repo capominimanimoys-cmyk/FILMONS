@@ -1633,6 +1633,14 @@ export const postsApi = {
       const { data, error } = await supabase
         .from('posts')
         .select('*')
+        // A deleted post's hard-delete can fail (FK from reposts/comments/
+        // activity_events without ON DELETE CASCADE) and fall back to a
+        // soft delete (is_archived: true) -- this client-side path never
+        // filtered it out, unlike the edge-function fallback below, which
+        // already does (WHERE is_archived = false OR IS NULL). A deleted
+        // post kept showing in Home/Profile until now for exactly that
+        // reason. IS NULL covers rows from before this column existed.
+        .or('is_archived.eq.false,is_archived.is.null')
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
       if (error) throw error;
@@ -1681,6 +1689,7 @@ export const postsApi = {
       const { data, error } = await supabase
         .from('posts')
         .select('*')
+        .or('is_archived.eq.false,is_archived.is.null')
         .order('likes_count', { ascending: false })
         .limit(limit);
       if (error) throw error;
@@ -1716,6 +1725,7 @@ export const postsApi = {
         .from('posts')
         .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
         .eq('author_id', userId)
+        .or('is_archived.eq.false,is_archived.is.null')
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -1731,6 +1741,7 @@ export const postsApi = {
           .from('posts')
           .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
           .in('id', collabPostIds)
+          .or('is_archived.eq.false,is_archived.is.null')
           .order('created_at', { ascending: false });
         collabPosts = cp ?? [];
       }
@@ -1775,7 +1786,8 @@ export const postsApi = {
       const { data, error } = await supabase
         .from('posts')
         .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
-        .in('id', ids);
+        .in('id', ids)
+        .or('is_archived.eq.false,is_archived.is.null');
       if (error) throw error;
       const rows = data || [];
       const [likedIds, repostedIds, repostContextMap] = currentUser

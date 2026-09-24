@@ -128,6 +128,19 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
       title: album.title,
       coverUrl: coverUrl ?? undefined,
       itemCount,
+    }, () => {
+      // The composer registers the repost server-side on publish
+      // (registerPortfolioRepost in CreatePostSheet), but that happens in
+      // a totally separate global mount with no way back into THIS card's
+      // own state -- without this, the album's own card (repost count,
+      // "You reposted this" row) stayed stale until a full reload even
+      // though the repost itself registered correctly.
+      const alreadyReflected = repostContext.some(e => e.id === user.id);
+      setReposted(true);
+      if (!alreadyReflected) {
+        setRepostContext(prev => [{ id: user.id, name: user.name || 'You', avatarUrl: user.avatar || null, relation: 'self' }, ...prev]);
+        setRepostsCount(c => c + 1);
+      }
     });
   };
 

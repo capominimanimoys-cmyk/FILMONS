@@ -256,7 +256,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const post = normalizePost(rawPost);
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { getPost, updatePost } = usePostStore();
+  const { getPost, updatePost, removePost } = usePostStore();
 
   // Always initialise from prop for content; only take cached values for engagement counts
   const [localPost, setLocalPost] = useState<Post>(() => {
@@ -671,7 +671,16 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   const handleDelete = async (confirmed = false) => {
     if (!confirmed && !window.confirm('Delete this post?')) return;
     setDeleting(true);
-    try { await postsApi.delete(localPost.id); onDeleted?.(localPost.id); toast.success('Post deleted'); }
+    try {
+      await postsApi.delete(localPost.id);
+      // removePost purges the global session-persisted cache too -- without
+      // this, a deleted post could still resurface via getAllPosts() (the
+      // Liked/Reels tabs read straight from that cache) even after the
+      // server-side fetch queries were fixed to filter it out.
+      removePost(localPost.id);
+      onDeleted?.(localPost.id);
+      toast.success('Post deleted');
+    }
     catch { toast.error('Could not delete post'); }
     finally { setDeleting(false); }
   };
@@ -683,6 +692,30 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // which made "Remove repost" in particular feel noticeably slow (the
   // sheet just sat on "Removing…" for the round trip) for no reason: the
   // repost row itself is never read back, so there's nothing to wait for.
+  // Optimistically reflects a NEW repost of THIS post in its own local
+  // state -- shared by the "repost with thoughts" success callback below.
+  // A quote-repost registers the exact same (user_id, post_id) reposts
+  // row (postsApi.registerRepost, called from CreatePostSheet.publish())
+  // as the plain-repost button below, but happens through the GLOBAL
+  // composer (a totally separate mount, see PostRepostComposeContext),
+  // which has no way to reach back into THIS specific card's state on its
+  // own -- without this, the original post's own card (repost count,
+  // "You reposted this post" row) stayed stale until a full reload even
+  // though the repost itself registered correctly.
+  const applyLocalRepostAdd = () => {
+    if (!user) return;
+    setHasReposted(true);
+    setPost(p => {
+      const prevContext = p.repostContext ?? [];
+      if (prevContext.some(e => e.id === user.id)) return p;
+      return {
+        ...p,
+        repostCount: (p.repostCount ?? 0) + 1,
+        repostContext: [{ id: user.id, name: user.name || 'You', avatarUrl: user.avatar || null, relation: 'self' as const }, ...prevContext],
+      };
+    });
+  };
+
   const handleRepost = async () => {
     if (!user) { toast.error('Sign in to repost'); return; }
     if (reposting) return;
@@ -958,7 +991,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           busy={reposting}
           onRepost={handleRepost}
           onUndoRepost={() => handleUndoRepost()}
-          onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(localPost, newPost => onReposted?.(newPost)); }}
+          onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(localPost, newPost => { applyLocalRepostAdd(); onReposted?.(newPost); }); }}
         />
 
         {showComments && (
@@ -1073,7 +1106,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           busy={reposting}
           onRepost={handleRepost}
           onUndoRepost={() => handleUndoRepost()}
-          onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(localPost, newPost => onReposted?.(newPost)); }}
+          onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(localPost, newPost => { applyLocalRepostAdd(); onReposted?.(newPost); }); }}
         />
 
         {/* ── Card box ── */}
