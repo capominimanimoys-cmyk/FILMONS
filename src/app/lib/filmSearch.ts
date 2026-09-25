@@ -17,7 +17,7 @@
 // that.
 import { supabase } from '../../lib/supabase';
 import { withModerationFilter, LISTING_COLUMNS, postsApi } from './api';
-import { expandQuery, normalize, scoreResult } from './searchUtils';
+import { expandQuery, normalize, scoreResult, type MarketplaceIntentType } from './searchUtils';
 import type { Post } from '../types';
 
 // Full listing row shape, not just the text fields matching needs -- a
@@ -249,22 +249,32 @@ export async function searchMatchingListings(rawQuery: string): Promise<SearchLi
   return listings;
 }
 
-// Opportunity/Job/Work intent (detectOpportunityIntent in searchUtils.ts)
-// means "show me Opportunity listings", not "find listings whose title
-// literally contains the word job/work" -- searchMatchingListings above
+// Marketplace intent (detectMarketplaceIntent in searchUtils.ts) means
+// "show me listings of THIS type", not "find listings whose title
+// literally contains the intent word" -- searchMatchingListings above
 // requires a text match on every result, which is exactly wrong here: a
 // listing titled "Looking for a Cinematographer" is a real Opportunity
-// that would never match a literal "jobs" search. This filters by
-// listing_type='opportunity' directly (every eligible Opportunity,
-// regardless of title) and only ADDS text relevance on top when a
-// remainder term exists (e.g. "cinematographer" from "cinematographer
-// jobs") -- an empty remainder returns every current Opportunity,
-// newest first.
-export async function searchOpportunityListings(remainder: string): Promise<SearchListingRow[]> {
+// that would never match a literal "jobs" search, and a Rental titled
+// "Sony FX6 Cinema Camera" would never match a literal "rental" search
+// either. This filters by the listing's real type/mode directly (every
+// eligible listing of that type, regardless of title) and only ADDS text
+// relevance on top when a remainder term exists (e.g. "camera" from
+// "camera rental") -- an empty remainder returns every current listing of
+// that type, newest first.
+//
+// Rental/Sale are stored via listing_mode (rent/sale), not listing_type --
+// mirrors isRentalListing/isSaleListing/isServiceListing/isOpportunityListing's
+// own exact conditions in this file so this never disagrees with how a
+// listing is classified everywhere else.
+export async function searchListingsByIntent(type: MarketplaceIntentType, remainder: string): Promise<SearchListingRow[]> {
   const terms = remainder.trim() ? expandSearchTerms(remainder) : [];
   const res = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true).eq('listing_type', 'opportunity');
+    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
     if (filterActive) q = q.eq('moderation_status', 'active');
+    if (type === 'rental')      q = q.eq('listing_mode', 'rent').neq('listing_type', 'service').neq('listing_type', 'opportunity');
+    else if (type === 'sale')   q = q.eq('listing_mode', 'sale').neq('listing_type', 'opportunity');
+    else if (type === 'service')q = q.eq('listing_type', 'service');
+    else                        q = q.eq('listing_type', 'opportunity');
     if (terms.length) {
       const clauses = terms.flatMap(term => [
         `title.ilike.%${term}%`, `description.ilike.%${term}%`,
@@ -274,7 +284,7 @@ export async function searchOpportunityListings(remainder: string): Promise<Sear
     }
     return q.order('created_at', { ascending: false }).limit(LISTING_TEXT_LIMIT);
   });
-  if (res.error) console.error('[filmSearch] opportunity listings error:', res.error.message);
+  if (res.error) console.error(`[filmSearch] ${type} listings error:`, res.error.message);
   const listings = (res.data ?? []) as unknown as SearchListingRow[];
   if (terms.length) {
     listings.sort((a, b) =>
@@ -282,6 +292,11 @@ export async function searchOpportunityListings(remainder: string): Promise<Sear
       scoreResult(remainder, a.title, a.description ?? '', a.city ?? ''));
   }
   return listings;
+}
+
+/** Back-compat wrapper for the Opportunity-only call sites. */
+export async function searchOpportunityListings(remainder: string): Promise<SearchListingRow[]> {
+  return searchListingsByIntent('opportunity', remainder);
 }
 
 export async function searchMatchingCreators(rawQuery: string): Promise<SearchProfileRow[]> {

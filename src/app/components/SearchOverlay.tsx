@@ -12,7 +12,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import {
-  expandQuery, normalize, extractLocation, detectOpportunityIntent,
+  expandQuery, normalize, extractLocation, detectMarketplaceIntent, type MarketplaceIntentType,
 } from '../lib/searchUtils';
 import { withModerationFilter, postsApi } from '../lib/api';
 import { PostCard } from './PostCard';
@@ -30,7 +30,7 @@ import { getCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from './courses/CourseCard';
 import {
   searchMatchingListings, searchMatchingCreators, searchMatchingPortfolio, searchMatchingPosts,
-  searchOpportunityListings,
+  searchListingsByIntent,
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
   type SearchPortfolioRow, type SearchPostRow,
 } from '../lib/filmSearch';
@@ -472,18 +472,29 @@ async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings:
   const q = rawQ.trim();
   if (!q) return { users: [], listings: [] };
 
-  // Opportunity/Job/Work intent means "show me Opportunity listings",
-  // not "find listings whose title literally contains the word job" --
-  // searchOpportunityListings returns every eligible Opportunity
-  // (optionally relevance-scoped by whatever's left of the query after
-  // stripping the intent word, e.g. "cinematographer" from
-  // "cinematographer jobs"), never requiring the literal intent word to
-  // appear in a listing's own text.
-  const { isOpportunity, remainder } = detectOpportunityIntent(rawQ);
-  const [listings, users] = await Promise.all([
-    isOpportunity ? searchOpportunityListings(remainder) : searchMatchingListings(rawQ),
-    searchMatchingCreators(isOpportunity ? remainder : rawQ),
+  // Marketplace intent (Rental/Sale/Service/Opportunity) means "show me
+  // listings of THIS type", not "find listings whose title literally
+  // contains the intent word" -- searchListingsByIntent returns every
+  // eligible listing of the detected type(s) directly (optionally
+  // relevance-scoped by whatever's left of the query after stripping the
+  // intent words, e.g. "camera" from "camera rental"), never requiring
+  // the literal intent word to appear in a listing's own text. More than
+  // one intent can fire at once ("rental or sale camera") -- results are
+  // unioned, deduped by id.
+  const { intents, remainder } = detectMarketplaceIntent(rawQ);
+  const hasIntent = intents.length > 0;
+  const [rawListingResults, users] = await Promise.all([
+    hasIntent
+      ? Promise.all(intents.map(t => searchListingsByIntent(t, remainder))).then(sets => sets.flat())
+      : searchMatchingListings(rawQ),
+    searchMatchingCreators(hasIntent ? remainder : rawQ),
   ]);
+  const seen = new Set<string>();
+  const listings = rawListingResults.filter(l => {
+    if (!l?.id || seen.has(l.id)) return false;
+    seen.add(l.id);
+    return true;
+  });
 
   console.log(`[Search] "${q}" → ${listings.length} listings | ${users.length} profiles`);
   return { users: users as ProfileRow[], listings: listings as unknown as ListingRow[] };
@@ -569,11 +580,11 @@ const TABS: { id: TabId; label: string }[] = [
 // against the FIRST word so a category name appearing later in an ordinary
 // search phrase is never misread as this.
 const CATEGORY_KEYWORDS: Record<string, TabId> = {
-  rental: 'marketplace', rentals: 'marketplace',
-  sale: 'marketplace', sales: 'marketplace',
+  rental: 'marketplace', rentals: 'marketplace', rent: 'marketplace', renting: 'marketplace',
+  sale: 'marketplace', sales: 'marketplace', buy: 'marketplace', buying: 'marketplace', purchase: 'marketplace', used: 'marketplace',
   studio: 'marketplace', studios: 'marketplace',
   emergency: 'marketplace',
-  service: 'marketplace', services: 'marketplace',
+  service: 'marketplace', services: 'marketplace', freelancer: 'marketplace', freelancers: 'marketplace',
   opportunity: 'marketplace', opportunities: 'marketplace',
   job: 'marketplace', jobs: 'marketplace', work: 'marketplace', works: 'marketplace',
   creator: 'connect', creators: 'connect',
@@ -1199,16 +1210,21 @@ function EmergencyCategoryGateButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-// Guest/Creator/Creator+'s permanent Opportunity cap -- an inline locked
-// section, not a button, since there's no further page to send these tiers
-// to (per the Opportunity browsing limit spec: "Do not expose the
-// remaining opportunities through ... /search/category/opportunities").
-function OpportunityLockedNotice({ onClick }: { onClick: () => void }) {
+// Guest/Creator/Creator+'s permanent Marketplace results cap -- an inline
+// locked section, not a button, since there's no further page to send
+// these tiers to. Originally Opportunity-only (per the Opportunity
+// browsing limit spec: "Do not expose the remaining opportunities through
+// ... /search/category/opportunities"); now shared by every Marketplace
+// category section (Rental/Sale/Service/Studios/Opportunities) in search
+// results, per the later "show max 5 listing results + upgrade CTA for
+// Creator accounts" request -- same cap, same upgrade path, generalized
+// beyond Opportunities.
+function MarketplaceLockedNotice({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <div className="mx-4 mb-1 rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-4 text-center space-y-2">
-      <p className="text-sm font-black text-gray-900">Unlock all opportunities</p>
+      <p className="text-sm font-black text-gray-900">Unlock all {label}</p>
       <p className="text-xs text-gray-600">
-        You're seeing {OPPORTUNITY_LOCKED_LIMIT} available opportunities. Upgrade to a Professional or Business account to browse all Opportunity listings.
+        You're seeing {OPPORTUNITY_LOCKED_LIMIT} results. Upgrade to a Professional or Business account to browse all Marketplace listings.
       </p>
       <button onClick={onClick} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs mt-1">
         Upgrade account
@@ -1444,7 +1460,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const { user, isAuthenticated } = useAuth();
   const { openPortfolioPreview } = usePortfolioPreview();
   const canBrowseOpportunities = isProfessional(user?.accountType);
-  const [showOpportunityGate, setShowOpportunityGate] = useState(false);
+  const [showMarketplaceGate, setShowMarketplaceGate] = useState(false);
   // Same Professional-or-Business rule as Home.tsx's canBrowseEmergency --
   // isProfessional() already covers both, deliberately never Creator+ alone
   // (see the emergency-listing spec's explicit "Creator+ status alone does
@@ -1452,7 +1468,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const canBrowseEmergency = isProfessional(user?.accountType);
   // Shared across every category section (Rental/Sales/Services/Studios) --
   // whichever one's "See more emergency listings" button was tapped opens
-  // the same modal, same as showOpportunityGate above.
+  // the same modal, same as showMarketplaceGate above.
   const [showEmergencyCategoryGate, setShowEmergencyCategoryGate] = useState(false);
   const emergencyLimit = canBrowseEmergency ? Infinity : EMERGENCY_LIMIT_RESTRICTED;
 
@@ -1599,19 +1615,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      // Under Opportunity/Job/Work intent, Connect/Learning should be
-      // scoped to whatever's LEFT of the query after the intent word is
-      // stripped ("cinematographer" from "cinematographer jobs") -- per
-      // spec, relevant to the remainder, never "every post/course" just
-      // because the literal word "job" was typed. A bare intent query
-      // ("jobs" alone) has no remainder to score by, so Portfolio/Posts
-      // stay correctly empty on their own (searchMatchingPortfolio/Posts
-      // already return [] for an empty query) -- only getCourses needs an
-      // explicit guard here, since an empty query string there means "no
-      // filter", not "no results" (see coursesApi.ts).
-      const { isOpportunity, remainder } = detectOpportunityIntent(query);
-      const textQuery = isOpportunity ? remainder : query;
-      const coursesQuery = isOpportunity && !remainder.trim() ? null : textQuery;
+      // Under any Marketplace intent (Rental/Sale/Service/Opportunity),
+      // Connect/Learning should be scoped to whatever's LEFT of the query
+      // after the intent word is stripped ("camera" from "camera
+      // rental") -- per spec, relevant to the remainder, never "every
+      // post/course" just because an intent word was typed. A bare intent
+      // query ("rental" alone) has no remainder to score by, so
+      // Portfolio/Posts stay correctly empty on their own
+      // (searchMatchingPortfolio/Posts already return [] for an empty
+      // query) -- only getCourses needs an explicit guard here, since an
+      // empty query string there means "no filter", not "no results" (see
+      // coursesApi.ts).
+      const { intents, remainder } = detectMarketplaceIntent(query);
+      const hasIntent = intents.length > 0;
+      const textQuery = hasIntent ? remainder : query;
+      const coursesQuery = hasIntent && !remainder.trim() ? null : textQuery;
       Promise.all([
         searchAll(query),
         // Fetched alongside listings/creators regardless of which of the
@@ -2191,10 +2209,19 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </>
               ) : (
                 <>
+                  {/* Rental/Sale/Studios/Services: a signed-in Creator-tier
+                      account (below Professional/Business) sees the same 5-
+                      result preview as everyone else, but "View more" opens
+                      the upgrade gate instead of the full unrestricted
+                      category page -- same treatment Opportunities already
+                      had, now applied uniformly across Marketplace search
+                      results. Guests keep their existing sign-up prompt
+                      (handleGuestSeeMore) -- a guest isn't an account yet,
+                      so "upgrade" doesn't apply the same way. */}
                   {visibleRental.length > 0 && (
                     <ResultSection label="📦 Rental" count={Math.min(visibleRental.length, PREVIEW_LIMIT)} grid
                       footer={visibleRental.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : handleViewMoreCategory('rental')}/>
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('rental') : !canBrowseOpportunities ? setShowMarketplaceGate(true) : handleViewMoreCategory('rental')}/>
                         : hiddenEmergencyRental > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                       {visibleRental.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                     </ResultSection>
@@ -2202,7 +2229,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleSale.length > 0 && (
                     <ResultSection label="🏷️ Sales" count={Math.min(visibleSale.length, PREVIEW_LIMIT)} grid
                       footer={visibleSale.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : handleViewMoreCategory('sale')}/>
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('sale') : !canBrowseOpportunities ? setShowMarketplaceGate(true) : handleViewMoreCategory('sale')}/>
                         : hiddenEmergencySale > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                       {visibleSale.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                     </ResultSection>
@@ -2210,7 +2237,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleStudios.length > 0 && (
                     <ResultSection label="🏢 Studios" count={Math.min(visibleStudios.length, PREVIEW_LIMIT)} grid
                       footer={visibleStudios.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : handleViewMoreCategory('studios')}/>
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('studios') : !canBrowseOpportunities ? setShowMarketplaceGate(true) : handleViewMoreCategory('studios')}/>
                         : hiddenEmergencyStudios > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                       {visibleStudios.slice(0, PREVIEW_LIMIT).map(l => <MarketplaceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                     </ResultSection>
@@ -2218,7 +2245,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visibleServices.length > 0 && (
                     <ResultSection label="🛠️ Services" count={Math.min(visibleServices.length, PREVIEW_LIMIT)}
                       footer={visibleServices.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : handleViewMoreCategory('services')}/>
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('services') : !canBrowseOpportunities ? setShowMarketplaceGate(true) : handleViewMoreCategory('services')}/>
                         : hiddenEmergencyServices > 0 ? <EmergencyCategoryGateButton onClick={() => setShowEmergencyCategoryGate(true)}/> : undefined}>
                       {visibleServices.slice(0, PREVIEW_LIMIT).map(l => <ServiceCard key={l.id} l={l} onNavigate={handleResultNavigate}/>)}
                     </ResultSection>
@@ -2227,7 +2254,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     <ResultSection label="💼 Opportunities" count={Math.min(visibleOpportunities.length, canBrowseOpportunities ? PREVIEW_LIMIT : OPPORTUNITY_LOCKED_LIMIT)}
                       footer={canBrowseOpportunities
                         ? (visibleOpportunities.length > PREVIEW_LIMIT ? <ViewMoreButton onClick={() => handleViewMoreCategory('opportunities')}/> : undefined)
-                        : (visibleOpportunities.length > OPPORTUNITY_LOCKED_LIMIT ? <OpportunityLockedNotice onClick={() => setShowOpportunityGate(true)}/> : undefined)}>
+                        : (visibleOpportunities.length > OPPORTUNITY_LOCKED_LIMIT ? <MarketplaceLockedNotice label="opportunities" onClick={() => setShowMarketplaceGate(true)}/> : undefined)}>
                       {/* Opportunities has its own, stricter permanent cap for
                           Guest/Creator/Creator+ (!canBrowseOpportunities, which
                           covers a guest too since isProfessional(undefined) is
@@ -2467,22 +2494,28 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── "Upgrade account" past OPPORTUNITY_LOCKED_LIMIT (5) Opportunity
-           listings -- Professional or Business required for the rest, for
-           Guest/Creator/Creator+ alike. Never fetches or reveals anything
-           further, just explains why and offers real next steps directly.
-           A guest gets an extra "Sign up" button and "Explore" (not
-           "Upgrade") wording on the plan buttons -- both plan buttons
-           still route through the same login-first flow either way
-           (setPendingReturnUrl to the auto-checkout URL, then /login,
+      {/* ── "Upgrade account" past the 5-result Marketplace search preview
+           (Rental/Sale/Service/Studios/Opportunities alike) -- Professional
+           or Business required for the rest, for Guest/Creator/Creator+
+           alike. Never fetches or reveals anything further, just explains
+           why and offers real next steps directly. Rental/Sale/Service/
+           Studios route a guest to handleGuestSeeMore's own sign-up prompt
+           instead of this gate (isProfessional(undefined) is false, so a
+           guest simply never satisfies canBrowseOpportunities for those,
+           same as a Creator-tier account); Opportunities' own permanent cap
+           has no separate guest branch and sends a guest here directly --
+           hence this modal still needs the !isAuthenticated "Sign up"
+           button and "Explore" (not "Upgrade") wording on the plan
+           buttons, both routing through the same login-first flow either
+           way (setPendingReturnUrl to the auto-checkout URL, then /login,
            which itself bridges to signup for someone with no account). ── */}
       <AnimatePresence>
-        {showOpportunityGate && (
+        {showMarketplaceGate && (
           <>
             <motion.div variants={backdropV} initial="hidden" animate="visible" exit="exit"
               transition={{ duration: 0.2 }}
               className="fixed inset-0 z-[120] bg-black/50"
-              onClick={() => setShowOpportunityGate(false)}/>
+              onClick={() => setShowMarketplaceGate(false)}/>
             <motion.div variants={sheetV} initial="hidden" animate="visible" exit="exit"
               transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
               className="fixed inset-x-0 bottom-0 z-[125] bg-white rounded-t-3xl shadow-2xl px-5 pt-6"
@@ -2491,24 +2524,24 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
                   <Lock className="w-6 h-6 text-indigo-600"/>
                 </div>
-                <p className="text-base font-black text-gray-900">Unlock all opportunities</p>
+                <p className="text-base font-black text-gray-900">Unlock all Marketplace results</p>
                 <p className="text-sm text-gray-500">
-                  You're seeing {OPPORTUNITY_LOCKED_LIMIT} available opportunities.{' '}
-                  {isAuthenticated ? 'Upgrade to a Professional or Business account to browse all Opportunity listings.'
-                                    : 'Sign up and upgrade to a Professional or Business account to browse all Opportunity listings.'}
+                  You're seeing the first {OPPORTUNITY_LOCKED_LIMIT} results.{' '}
+                  {isAuthenticated ? 'Upgrade to a Professional or Business account to browse all Marketplace listings.'
+                                    : 'Sign up and upgrade to a Professional or Business account to browse all Marketplace listings.'}
                 </p>
               </div>
               <div className="flex flex-col gap-2">
                 {!isAuthenticated && (
                   <button
-                    onClick={() => { setShowOpportunityGate(false); navigate('/create-account'); }}
+                    onClick={() => { setShowMarketplaceGate(false); navigate('/create-account'); }}
                     className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:opacity-80">
                     Sign up
                   </button>
                 )}
                 <button
                   onClick={() => {
-                    setShowOpportunityGate(false);
+                    setShowMarketplaceGate(false);
                     if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=professional'); navigate('/login'); return; }
                     navigate('/account/upgrade?auto=professional');
                   }}
@@ -2517,14 +2550,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 </button>
                 <button
                   onClick={() => {
-                    setShowOpportunityGate(false);
+                    setShowMarketplaceGate(false);
                     if (!isAuthenticated) { setPendingReturnUrl('/account/upgrade?auto=business'); navigate('/login'); return; }
                     navigate('/account/upgrade?auto=business');
                   }}
                   className={`w-full py-3.5 rounded-2xl font-bold text-sm active:opacity-80 ${isAuthenticated ? 'bg-gray-900 text-white' : 'border border-gray-200 text-gray-700'}`}>
                   {isAuthenticated ? 'Upgrade to Business' : 'Explore Business'}
                 </button>
-                <button onClick={() => setShowOpportunityGate(false)}
+                <button onClick={() => setShowMarketplaceGate(false)}
                   className="w-full py-3 text-gray-500 font-semibold text-sm">
                   Not Now
                 </button>

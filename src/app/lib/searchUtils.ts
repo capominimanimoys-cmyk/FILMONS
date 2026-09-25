@@ -60,27 +60,101 @@ export function extractLocation(rawQ: string): { city?: string; province?: strin
   return { city, province, nearMe: nearMe || undefined };
 }
 
-// ── Opportunity/Job/Work intent detection ──────────────────────────────────────
-// "I'm looking for work" intent, distinct from a literal keyword match --
-// tokenized (never substring-matched, so "workshop"/"artwork"/"workflow"/
-// "workstation"/"network" never false-positive on containing "work") and
-// checked at ANY token position, not just the first word, so
-// "cinematographer jobs" is recognized the same as "jobs" alone.
-const OPPORTUNITY_INTENT_TERMS = new Set(['opportunity', 'opportunities', 'job', 'jobs', 'work', 'works']);
+// ── Marketplace intent detection ─────────────────────────────────────────────
+// Rental/Sale/Service/Opportunity words behave as search INTENT, not
+// ordinary keywords -- "camera rental" means "Rental listings about
+// cameras", not "listings whose title/description literally contains the
+// word rental". Tokenized (never substring-matched, so "workshop"/
+// "artwork"/"workflow"/"workstation"/"network"/"serviceable" never false-
+// positive on containing "work"/"service") and checked at ANY token
+// position, not just the first word.
+export type MarketplaceIntentType = 'rental' | 'sale' | 'service' | 'opportunity';
+
+// Multi-word phrases matched as whole phrases (so "for sale"/"hire
+// someone"/"second hand"/"professional service" consume their full
+// phrase, never just a fragment); single words matched as whole tokens.
+// "hire" is deliberately NOT listed under any type here -- it's ambiguous
+// on its own ("hire camera" vs "hire a photographer" vs "hiring a
+// photographer" all mean different things) and gets special-cased below.
+const MARKETPLACE_INTENT_PHRASES: Record<MarketplaceIntentType, string[]> = {
+  rental:      ['rental', 'rentals', 'rent', 'renting'],
+  sale:        ['sale', 'sales', 'for sale', 'buy', 'buying', 'purchase', 'used', 'second hand'],
+  service:     ['service', 'services', 'freelancer', 'freelancers', 'professional service', 'hire someone'],
+  opportunity: ['opportunity', 'opportunities', 'job', 'jobs', 'work', 'works'],
+};
+
+// Equipment/gear nouns -- used only to disambiguate a bare "hire" (see
+// detectMarketplaceIntent below): "hire camera" means Rental (the OBJECT
+// of "hire" is equipment), "hire a photographer" means Service (the
+// object is a person/role).
+const EQUIPMENT_TERMS = new Set([
+  'camera', 'cameras', 'lens', 'lenses', 'gimbal', 'stabilizer', 'tripod',
+  'light', 'lights', 'lighting', 'led', 'drone', 'drones', 'mic', 'microphone',
+  'audio', 'recorder', 'monitor', 'grip', 'slider', 'dolly', 'jib', 'crane',
+  'softbox', 'strobe', 'flash', 'reflector', 'cstand', 'gear', 'equipment', 'kit', 'rig',
+]);
+
+const MARKETPLACE_STOP_WORDS = new Set(['a', 'an', 'the']);
 
 /**
- * "cinematographer jobs" -> { isOpportunity: true, remainder: "cinematographer" }
- * "jobs"                 -> { isOpportunity: true, remainder: "" }
- * "workshop"              -> { isOpportunity: false, remainder: "workshop" }
- * Every matching token is stripped from the remainder, not just the first
- * one found, so "job opportunities" (two intent words) still leaves an
- * empty remainder rather than one leftover intent word.
+ * "camera rental"        -> { intents: ['rental'], remainder: "camera" }
+ * "Sony FX3 for sale"    -> { intents: ['sale'], remainder: "sony fx3" }
+ * "editing services"     -> { intents: ['service'], remainder: "editing" }
+ * "cinematographer jobs" -> { intents: ['opportunity'], remainder: "cinematographer" }
+ * "hire camera"          -> { intents: ['rental'], remainder: "camera" }
+ * "hire a photographer"  -> { intents: ['service'], remainder: "photographer" }
+ * "hiring a photographer"-> { intents: ['opportunity'], remainder: "photographer" }
+ * "rental or sale camera"-> { intents: ['rental','sale'], remainder: "camera" }
+ * "workshop"              -> { intents: [], remainder: "workshop" }
+ * Every matching phrase/token is stripped from the remainder, and more
+ * than one intent can be detected at once (e.g. "rental or sale camera").
  */
+export function detectMarketplaceIntent(rawQ: string): { intents: MarketplaceIntentType[]; remainder: string } {
+  let text = ` ${normalize(rawQ).trim()} `;
+  if (text.trim().length === 0) return { intents: [], remainder: rawQ.trim() };
+
+  const found = new Set<MarketplaceIntentType>();
+
+  // Multi-word phrases first, so they consume their full phrase before
+  // single-word matching below could otherwise pick off a component word
+  // out of context (e.g. "for" alone means nothing, but must not leave a
+  // dangling "for" in the remainder once "for sale" is removed).
+  for (const type of Object.keys(MARKETPLACE_INTENT_PHRASES) as MarketplaceIntentType[]) {
+    for (const phrase of MARKETPLACE_INTENT_PHRASES[type].filter(p => p.includes(' '))) {
+      const needle = ` ${phrase} `;
+      if (text.includes(needle)) { found.add(type); text = text.split(needle).join(' '); }
+    }
+  }
+
+  const singleWordMap = new Map<string, MarketplaceIntentType>();
+  for (const type of Object.keys(MARKETPLACE_INTENT_PHRASES) as MarketplaceIntentType[]) {
+    for (const phrase of MARKETPLACE_INTENT_PHRASES[type].filter(p => !p.includes(' '))) singleWordMap.set(phrase, type);
+  }
+
+  const kept: string[] = [];
+  let pendingHire: 'hire' | 'hiring' | null = null;
+  for (const w of text.trim().split(/\s+/).filter(Boolean)) {
+    if (w === 'hire' || w === 'hiring') { pendingHire = w; continue; }
+    const mapped = singleWordMap.get(w);
+    if (mapped) { found.add(mapped); continue; }
+    kept.push(w);
+  }
+
+  if (pendingHire === 'hiring') {
+    found.add('opportunity');
+  } else if (pendingHire === 'hire') {
+    found.add(kept.some(w => EQUIPMENT_TERMS.has(w)) ? 'rental' : 'service');
+  }
+
+  const remainder = kept.filter(w => !MARKETPLACE_STOP_WORDS.has(w)).join(' ');
+  return { intents: Array.from(found), remainder };
+}
+
+/** Back-compat single-intent view for callers that only care about
+ * Opportunity specifically. */
 export function detectOpportunityIntent(rawQ: string): { isOpportunity: boolean; remainder: string } {
-  const words = normalize(rawQ).trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return { isOpportunity: false, remainder: rawQ.trim() };
-  const kept = words.filter(w => !OPPORTUNITY_INTENT_TERMS.has(w));
-  return { isOpportunity: kept.length !== words.length, remainder: kept.join(' ') };
+  const { intents, remainder } = detectMarketplaceIntent(rawQ);
+  return { isOpportunity: intents.includes('opportunity'), remainder };
 }
 
 // ── Alias groups ──────────────────────────────────────────────────────────────

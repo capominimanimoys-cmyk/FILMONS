@@ -53,11 +53,11 @@ import { fetchEmergencyListings } from '../lib/emergencyListings';
 import { savedListingsApi } from '../lib/api';
 import { toast } from 'sonner';
 import {
-  searchMatchingListings, searchMatchingCreators, searchOpportunityListings,
+  searchMatchingListings, searchMatchingCreators, searchListingsByIntent,
   isRentalListing, isSaleListing, isServiceListing, isOpportunityListing, isStudioListing,
   SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
-import { detectOpportunityIntent } from '../lib/searchUtils';
+import { detectMarketplaceIntent } from '../lib/searchUtils';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 const CATEGORY_IDS: CategoryTab[] = ['rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
@@ -2135,15 +2135,22 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
     if (!term) { setSharedMatched(null); return; }
     let cancelled = false;
     setSharedMatched(null);
-    // Opportunity/Job/Work intent ("cinematographer jobs" arriving here
-    // via View All from SearchOverlay, query preserved) means every
-    // eligible Opportunity listing, not just ones whose title literally
-    // contains the intent word -- same branch searchAll() in
-    // SearchOverlay.tsx uses.
-    const { isOpportunity, remainder } = detectOpportunityIntent(term);
+    // Marketplace intent ("camera rental"/"cinematographer jobs" arriving
+    // here via View All from SearchOverlay, query preserved) means every
+    // eligible listing of the detected type(s), not just ones whose title
+    // literally contains the intent word -- same branch searchAll() in
+    // SearchOverlay.tsx uses. Multiple intents ("rental or sale camera")
+    // union their results, deduped by id.
+    const { intents, remainder } = detectMarketplaceIntent(term);
+    const hasIntent = intents.length > 0;
     Promise.all([
-      isOpportunity ? searchOpportunityListings(remainder) : searchMatchingListings(term),
-      searchMatchingCreators(isOpportunity ? remainder : term),
+      hasIntent
+        ? Promise.all(intents.map(t => searchListingsByIntent(t, remainder))).then(sets => {
+            const seen = new Set<string>();
+            return sets.flat().filter(l => (l?.id && !seen.has(l.id)) ? (seen.add(l.id), true) : false);
+          })
+        : searchMatchingListings(term),
+      searchMatchingCreators(hasIntent ? remainder : term),
     ]).then(([listings, creators]) => {
       if (!cancelled) setSharedMatched({ listings, creators });
     });
