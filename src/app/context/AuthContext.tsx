@@ -105,6 +105,47 @@ function cache(u: User | null) {
   else   localStorage.removeItem(SESSION_KEY);
 }
 
+// ── Cross-origin session handoff (filmons.app <-> learning.filmons.app) ──
+// Filmons Learning is a real separate subdomain/origin (see
+// learningOrigin.ts), so localStorage's SESSION_KEY above never crosses on
+// its own -- a logged-in user would otherwise land on Learning looking
+// signed out. LearningTransitionContext's enterLearning/leaveLearning wrap
+// the destination URL in buildHandoffUrl() below before the cross-origin
+// navigate; the receiving AuthProvider consumes it on its very first mount
+// (ahead of its own, origin-local loadCached()) and immediately strips it
+// from the address bar via replaceState so it never lingers in history or
+// gets bookmarked/shared. This carries the exact same profile fields a
+// `profiles` row already returns to anyone who queries it (this app has no
+// server session/JWT -- see this file's header comment), so it widens
+// nothing beyond what's already readable.
+const HANDOFF_PARAM = '_fh';
+
+export function buildHandoffUrl(url: string): string {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return url;
+    const encoded = encodeURIComponent(btoa(encodeURIComponent(raw)));
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}${HANDOFF_PARAM}=${encoded}`;
+  } catch { return url; }
+}
+
+function consumeHandoff(): User | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get(HANDOFF_PARAM);
+    if (!encoded) return null;
+    const raw = decodeURIComponent(atob(decodeURIComponent(encoded)));
+    const parsed = sanitizeUser(JSON.parse(raw));
+    if (parsed) cache(parsed);
+    params.delete(HANDOFF_PARAM);
+    const qs = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+    return parsed;
+  } catch { return null; }
+}
+
 // ── Context ───────────────────────────────────────────────────────────────────
 // Provide a safe no-op default so components rendered outside AuthProvider
 // (e.g. Figma Make's isolated component preview) don't throw.
@@ -136,8 +177,11 @@ const defaultCtx: AuthContextType = {
 const AuthContext = createContext<AuthContextType>(defaultCtx);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Initialise from localStorage so the UI never flashes "logged out"
-  const [user, setUser] = useState<User | null>(() => loadCached());
+  // Initialise from localStorage so the UI never flashes "logged out" --
+  // a cross-origin handoff param (see consumeHandoff above) takes priority
+  // over whatever's already cached on THIS origin, since arriving via one
+  // means the user just crossed products and should see that identity.
+  const [user, setUser] = useState<User | null>(() => consumeHandoff() ?? loadCached());
 
   // New Browser / First Sign-In Verification — re-checked on every mount
   // where a user is present, same cadence as the existing "refresh

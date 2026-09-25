@@ -14,6 +14,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { FilmonsLearningTransition } from '../components/learning/FilmonsLearningTransition';
 import { learningOrigin, filmonsOrigin } from '../lib/learningOrigin';
+import { buildHandoffUrl } from './AuthContext';
 
 interface LearningOrigin {
   route: string;
@@ -59,7 +60,7 @@ export function LearningTransitionProvider({ children }: { children: ReactNode }
     // of whatever's currently rendered (never gated behind the animation
     // finishing, per spec). `path` is relative to Learning's own root
     // ('/course/xyz', not '/learning/course/xyz').
-    window.location.href = learningOrigin() + path;
+    window.location.href = buildHandoffUrl(learningOrigin() + path);
   };
 
   const leaveLearning = (path?: string) => {
@@ -74,7 +75,7 @@ export function LearningTransitionProvider({ children }: { children: ReactNode }
       if (origin?.scrollY) sessionStorage.setItem(RESTORE_SCROLL_KEY, String(origin.scrollY));
     } catch {}
     setMode('exit');
-    window.location.href = filmonsOrigin() + (path ?? origin?.route ?? '/home');
+    window.location.href = buildHandoffUrl(filmonsOrigin() + (path ?? origin?.route ?? '/home'));
   };
 
   return (
