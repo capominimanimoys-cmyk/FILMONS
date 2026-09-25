@@ -58,6 +58,7 @@ import {
   SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
 import { detectMarketplaceIntent } from '../lib/searchUtils';
+import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 const CATEGORY_IDS: CategoryTab[] = ['rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
@@ -2141,6 +2142,18 @@ function CourseDiscoveryRow({ courses }: { courses: Course[] }) {
 function AllGroupedResults({ navState: initialNavState, product }: { navState: NavState; product?: 'marketplace' | 'connect' | 'learning' }) {
   const navigate = useNavigate();
 
+  // "Content-first" scroll mode, per the Search Results mobile flow spec:
+  // scrolling down collapses the header (result count, Filters/Sort row)
+  // to a compact sticky search+pills bar and hides MobileBottomNav
+  // (Root.tsx/MobileBottomNav.tsx already listen for the same
+  // 'filmons:home-bars-hidden' event this dispatches -- built for Home's
+  // Portfolio feed, reused as-is); scrolling up or landing back at the top
+  // restores both immediately. Window-scoped since this page has no inner
+  // bounded scroll container of its own (a plain min-h-screen page).
+  // lg: (desktop) never sees this collapse -- MobileBottomNav is already
+  // lg:hidden, and every conditional block below keeps its lg: override.
+  const { hidden: chromeHidden } = useMobileScrollChrome({ mode: 'window' });
+
   const [searchText, setSearchText] = useState(initialNavState.query ?? '');
   const [debouncedQuery, setDebouncedQuery] = useState(searchText);
   useEffect(() => { const t = setTimeout(() => setDebouncedQuery(searchText), 350); return () => clearTimeout(t); }, [searchText]);
@@ -2384,7 +2397,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
         {/* Same DESKTOP_SECTION_PAD as every category row below it, so this
             bar's content lines up with them -- not a separate narrower
             max-width container. */}
-        <div className="flex items-center gap-3 px-4 lg:px-8 xl:px-10" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+        <div className="flex items-center gap-3 px-4 lg:px-8 xl:px-10 transition-[padding] duration-200" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: chromeHidden ? '8px' : '12px' }}>
           {/* Always back to Browse Search itself, not browser history --
               this page is reachable from a modal that never had its own
               route (Root.tsx's search icon), so navigate(-1) could land
@@ -2397,8 +2410,15 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
               {initialNavState.pageTitle
                 || (product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results')}
             </p>
+            {/* Result-count subtitle -- part of the "large header" the spec
+                collapses on scroll-down (content-first mode), lg: always
+                keeps it since this collapse is mobile-only (see
+                useMobileScrollChrome's own dispatch -- MobileBottomNav is
+                already lg:hidden, so it's a no-op there regardless). */}
             {product === 'marketplace' && term && (
-              <p className="text-xs text-gray-400 font-semibold">{marketplaceUnified.length.toLocaleString()} results for "{term}"</p>
+              <p className={`text-xs text-gray-400 font-semibold overflow-hidden transition-all duration-200 lg:!max-h-none lg:!opacity-100 ${chromeHidden ? 'max-h-0 opacity-0' : 'max-h-4 opacity-100'}`}>
+                {marketplaceUnified.length.toLocaleString()} results for "{term}"
+              </p>
             )}
           </div>
         </div>
@@ -2424,7 +2444,9 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           </div>
         )}
 
-        {/* ── Mobile: search input + Filters/Sort row ─────────────────────── */}
+        {/* ── Mobile: search input (always visible, even in content-first
+             mode -- per spec, the user should never have to scroll back to
+             top just to search) + collapsible Filters/Sort row ──────────── */}
         <div className="lg:hidden px-4 pb-3 space-y-2.5">
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
@@ -2434,24 +2456,29 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
               className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowMobileFilters(true); }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5"/> Filters{activeChips.length > 0 ? ` (${activeChips.length})` : ''}
-            </button>
-            <div onClick={e => e.stopPropagation()}>
-              <DropdownButton label={`Sort: ${ALL_SORT_LABEL[allSort]}`} active={allSort !== 'relevance'} isOpen={openMenu === 'sort'} onToggle={() => toggleMenu('sort')}>
-                {sortMenu}
-              </DropdownButton>
+          {/* Content-first mode (scrolled down) collapses this whole block
+              -- Filters stays reachable via the compact icon-only button
+              rendered next to the search field instead (see above). */}
+          <div className={`overflow-hidden transition-all duration-200 space-y-2.5 ${chromeHidden ? 'max-h-0 opacity-0' : 'max-h-24 opacity-100'}`}>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowMobileFilters(true); }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5"/> Filters{activeChips.length > 0 ? ` (${activeChips.length})` : ''}
+              </button>
+              <div onClick={e => e.stopPropagation()}>
+                <DropdownButton label={`Sort: ${ALL_SORT_LABEL[allSort]}`} active={allSort !== 'relevance'} isOpen={openMenu === 'sort'} onToggle={() => toggleMenu('sort')}>
+                  {sortMenu}
+                </DropdownButton>
+              </div>
             </div>
+            {(location || distance) && (
+              <p className="text-xs text-gray-500 font-semibold">
+                {location}{location && distance ? ' • ' : ''}{distance ? `Within ${distance} km` : ''}
+              </p>
+            )}
           </div>
-          {(location || distance) && (
-            <p className="text-xs text-gray-500 font-semibold">
-              {location}{location && distance ? ' • ' : ''}{distance ? `Within ${distance} km` : ''}
-            </p>
-          )}
         </div>
 
         {/* ── Desktop: compact dropdown row + active-filter chips ─────────── */}
