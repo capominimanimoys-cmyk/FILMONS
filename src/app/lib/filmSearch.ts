@@ -249,6 +249,41 @@ export async function searchMatchingListings(rawQuery: string): Promise<SearchLi
   return listings;
 }
 
+// Opportunity/Job/Work intent (detectOpportunityIntent in searchUtils.ts)
+// means "show me Opportunity listings", not "find listings whose title
+// literally contains the word job/work" -- searchMatchingListings above
+// requires a text match on every result, which is exactly wrong here: a
+// listing titled "Looking for a Cinematographer" is a real Opportunity
+// that would never match a literal "jobs" search. This filters by
+// listing_type='opportunity' directly (every eligible Opportunity,
+// regardless of title) and only ADDS text relevance on top when a
+// remainder term exists (e.g. "cinematographer" from "cinematographer
+// jobs") -- an empty remainder returns every current Opportunity,
+// newest first.
+export async function searchOpportunityListings(remainder: string): Promise<SearchListingRow[]> {
+  const terms = remainder.trim() ? expandSearchTerms(remainder) : [];
+  const res = await withModerationFilter((filterActive) => {
+    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true).eq('listing_type', 'opportunity');
+    if (filterActive) q = q.eq('moderation_status', 'active');
+    if (terms.length) {
+      const clauses = terms.flatMap(term => [
+        `title.ilike.%${term}%`, `description.ilike.%${term}%`,
+        `service_category.ilike.%${term}%`, `city.ilike.%${term}%`,
+      ]);
+      q = q.or(clauses.join(','));
+    }
+    return q.order('created_at', { ascending: false }).limit(LISTING_TEXT_LIMIT);
+  });
+  if (res.error) console.error('[filmSearch] opportunity listings error:', res.error.message);
+  const listings = (res.data ?? []) as unknown as SearchListingRow[];
+  if (terms.length) {
+    listings.sort((a, b) =>
+      scoreResult(remainder, b.title, b.description ?? '', b.city ?? '') -
+      scoreResult(remainder, a.title, a.description ?? '', a.city ?? ''));
+  }
+  return listings;
+}
+
 export async function searchMatchingCreators(rawQuery: string): Promise<SearchProfileRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];

@@ -53,10 +53,11 @@ import { fetchEmergencyListings } from '../lib/emergencyListings';
 import { savedListingsApi } from '../lib/api';
 import { toast } from 'sonner';
 import {
-  searchMatchingListings, searchMatchingCreators,
+  searchMatchingListings, searchMatchingCreators, searchOpportunityListings,
   isRentalListing, isSaleListing, isServiceListing, isOpportunityListing, isStudioListing,
   SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
+import { detectOpportunityIntent } from '../lib/searchUtils';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 const CATEGORY_IDS: CategoryTab[] = ['rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
@@ -2134,7 +2135,16 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
     if (!term) { setSharedMatched(null); return; }
     let cancelled = false;
     setSharedMatched(null);
-    Promise.all([searchMatchingListings(term), searchMatchingCreators(term)]).then(([listings, creators]) => {
+    // Opportunity/Job/Work intent ("cinematographer jobs" arriving here
+    // via View All from SearchOverlay, query preserved) means every
+    // eligible Opportunity listing, not just ones whose title literally
+    // contains the intent word -- same branch searchAll() in
+    // SearchOverlay.tsx uses.
+    const { isOpportunity, remainder } = detectOpportunityIntent(term);
+    Promise.all([
+      isOpportunity ? searchOpportunityListings(remainder) : searchMatchingListings(term),
+      searchMatchingCreators(isOpportunity ? remainder : term),
+    ]).then(([listings, creators]) => {
       if (!cancelled) setSharedMatched({ listings, creators });
     });
     return () => { cancelled = true; };

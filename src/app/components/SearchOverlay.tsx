@@ -12,7 +12,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import {
-  expandQuery, normalize, extractLocation,
+  expandQuery, normalize, extractLocation, detectOpportunityIntent,
 } from '../lib/searchUtils';
 import { withModerationFilter, postsApi } from '../lib/api';
 import { PostCard } from './PostCard';
@@ -30,6 +30,7 @@ import { getCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from './courses/CourseCard';
 import {
   searchMatchingListings, searchMatchingCreators, searchMatchingPortfolio, searchMatchingPosts,
+  searchOpportunityListings,
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
   type SearchPortfolioRow, type SearchPostRow,
 } from '../lib/filmSearch';
@@ -471,9 +472,17 @@ async function searchAll(rawQ: string): Promise<{ users: ProfileRow[]; listings:
   const q = rawQ.trim();
   if (!q) return { users: [], listings: [] };
 
+  // Opportunity/Job/Work intent means "show me Opportunity listings",
+  // not "find listings whose title literally contains the word job" --
+  // searchOpportunityListings returns every eligible Opportunity
+  // (optionally relevance-scoped by whatever's left of the query after
+  // stripping the intent word, e.g. "cinematographer" from
+  // "cinematographer jobs"), never requiring the literal intent word to
+  // appear in a listing's own text.
+  const { isOpportunity, remainder } = detectOpportunityIntent(rawQ);
   const [listings, users] = await Promise.all([
-    searchMatchingListings(rawQ),
-    searchMatchingCreators(rawQ),
+    isOpportunity ? searchOpportunityListings(remainder) : searchMatchingListings(rawQ),
+    searchMatchingCreators(isOpportunity ? remainder : rawQ),
   ]);
 
   console.log(`[Search] "${q}" → ${listings.length} listings | ${users.length} profiles`);
@@ -566,6 +575,7 @@ const CATEGORY_KEYWORDS: Record<string, TabId> = {
   emergency: 'marketplace',
   service: 'marketplace', services: 'marketplace',
   opportunity: 'marketplace', opportunities: 'marketplace',
+  job: 'marketplace', jobs: 'marketplace', work: 'marketplace', works: 'marketplace',
   creator: 'connect', creators: 'connect',
   course: 'learning', courses: 'learning', learning: 'learning',
 };
@@ -1589,16 +1599,29 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
+      // Under Opportunity/Job/Work intent, Connect/Learning should be
+      // scoped to whatever's LEFT of the query after the intent word is
+      // stripped ("cinematographer" from "cinematographer jobs") -- per
+      // spec, relevant to the remainder, never "every post/course" just
+      // because the literal word "job" was typed. A bare intent query
+      // ("jobs" alone) has no remainder to score by, so Portfolio/Posts
+      // stay correctly empty on their own (searchMatchingPortfolio/Posts
+      // already return [] for an empty query) -- only getCourses needs an
+      // explicit guard here, since an empty query string there means "no
+      // filter", not "no results" (see coursesApi.ts).
+      const { isOpportunity, remainder } = detectOpportunityIntent(query);
+      const textQuery = isOpportunity ? remainder : query;
+      const coursesQuery = isOpportunity && !remainder.trim() ? null : textQuery;
       Promise.all([
         searchAll(query),
         // Fetched alongside listings/creators regardless of which of the
         // four top-level modes is active, so switching modes never needs a
         // second round trip -- the visible* derivations below decide what
         // actually renders per mode.
-        searchMatchingPortfolio(query).catch(() => []),
-        searchMatchingPosts(query).catch(() => []),
-        searchHashtagSuggestions(query, 6).catch(() => []),
-        getCourses({ query, limit: 24 }).catch(() => []),
+        searchMatchingPortfolio(textQuery).catch(() => []),
+        searchMatchingPosts(textQuery).catch(() => []),
+        searchHashtagSuggestions(textQuery, 6).catch(() => []),
+        coursesQuery ? getCourses({ query: coursesQuery, limit: 24 }).catch(() => []) : Promise.resolve([]),
       ])
         .then(([{ users: u, listings: l }, portfolio, posts, hashtags, courses]) => {
           setRawUsers(u); setRawListings(l);

@@ -60,6 +60,29 @@ export function extractLocation(rawQ: string): { city?: string; province?: strin
   return { city, province, nearMe: nearMe || undefined };
 }
 
+// ── Opportunity/Job/Work intent detection ──────────────────────────────────────
+// "I'm looking for work" intent, distinct from a literal keyword match --
+// tokenized (never substring-matched, so "workshop"/"artwork"/"workflow"/
+// "workstation"/"network" never false-positive on containing "work") and
+// checked at ANY token position, not just the first word, so
+// "cinematographer jobs" is recognized the same as "jobs" alone.
+const OPPORTUNITY_INTENT_TERMS = new Set(['opportunity', 'opportunities', 'job', 'jobs', 'work', 'works']);
+
+/**
+ * "cinematographer jobs" -> { isOpportunity: true, remainder: "cinematographer" }
+ * "jobs"                 -> { isOpportunity: true, remainder: "" }
+ * "workshop"              -> { isOpportunity: false, remainder: "workshop" }
+ * Every matching token is stripped from the remainder, not just the first
+ * one found, so "job opportunities" (two intent words) still leaves an
+ * empty remainder rather than one leftover intent word.
+ */
+export function detectOpportunityIntent(rawQ: string): { isOpportunity: boolean; remainder: string } {
+  const words = normalize(rawQ).trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return { isOpportunity: false, remainder: rawQ.trim() };
+  const kept = words.filter(w => !OPPORTUNITY_INTENT_TERMS.has(w));
+  return { isOpportunity: kept.length !== words.length, remainder: kept.join(' ') };
+}
+
 // ── Alias groups ──────────────────────────────────────────────────────────────
 // Any term in a group matches all others in that group bidirectionally.
 const ALIAS_GROUPS: string[][] = [
