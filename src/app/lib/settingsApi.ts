@@ -107,7 +107,7 @@ export const notificationSettingsApi = {
     notif_dms: true, email_messages: true, sms_messages: false,
     notif_msg_requests: true, notif_collab_reqs: true,
     notif_mentions: true, notif_replies: true, notif_reactions: false,
-    notif_new_followers: true, notif_comments: true, notif_shares: false, notif_saves: false,
+    notif_new_followers: true, notif_comments: true, notif_shares: false, notif_saves: false, notif_reposts: true,
     notif_booking_reqs: true, notif_casting_calls: true, notif_project_invites: true, notif_file_requests: false,
     notif_new_orders: true, notif_payments: true, notif_rental_reqs: true,
     notif_portfolio_views: true, notif_project_saves: true, notif_contact_requests: true,

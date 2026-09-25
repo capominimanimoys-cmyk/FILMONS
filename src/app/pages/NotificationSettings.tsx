@@ -87,6 +87,7 @@ export function NotificationSettings() {
       setNewFollowers(s.notif_new_followers ?? true);
       setComments(s.notif_comments ?? true);
       setShares(s.notif_shares ?? false);
+      setReposts(s.notif_reposts ?? true);
       setSaves(s.notif_saves ?? false);
       setBookingReqs(s.notif_booking_reqs ?? true);
       setCastingCalls(s.notif_casting_calls ?? true);
@@ -141,6 +142,7 @@ export function NotificationSettings() {
   const [newFollowers,setNewFollowers]= useState(true);
   const [comments,    setComments]    = useState(true);
   const [shares,      setShares]      = useState(false);
+  const [reposts,     setReposts]     = useState(true);
   const [saves,       setSaves]       = useState(false);
 
   // Push — Collaboration
@@ -194,7 +196,7 @@ export function NotificationSettings() {
         notif_dms: dms, notif_msg_requests: msgRequests, notif_collab_reqs: collabReqs,
         notif_mentions: mentions, notif_replies: replies, notif_reactions: reactions,
         notif_new_followers: newFollowers, notif_comments: comments,
-        notif_shares: shares, notif_saves: saves,
+        notif_shares: shares, notif_saves: saves, notif_reposts: reposts,
         notif_booking_reqs: bookingReqs, notif_casting_calls: castingCalls,
         notif_project_invites: projectInvites, notif_file_requests: fileRequests,
         notif_new_orders: newOrders, notif_payments: payments, notif_rental_reqs: rentalReqs,
@@ -278,6 +280,7 @@ export function NotificationSettings() {
         <Section title={t('notif.social')} icon={<Users className="w-4 h-4"/>}>
           <Toggle on={newFollowers} onChange={() => setNewFollowers(!newFollowers)} label="New Followers"         sub="Someone followed you"/>
           <Toggle on={comments}     onChange={() => setComments(!comments)}          label="Comments"             sub="Comments on your posts"/>
+          <Toggle on={reposts}      onChange={() => setReposts(!reposts)}            label="Reposts"              sub="Someone reposts your post, with or without their thoughts"/>
           <Toggle on={shares}       onChange={() => setShares(!shares)}              label="Shares"               sub="Someone shared your content"/>
           <Toggle on={saves}        onChange={() => setSaves(!saves)}                label="Saves"                sub="Someone saved your post"/>
         </Section>

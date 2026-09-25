@@ -164,6 +164,18 @@ if (typeof window !== 'undefined') {
   (window as any).filmons = { ...((window as any).filmons || {}), testNotif };
 }
 
+// Repost notifications (content_repost / content_repost_thoughts) are the
+// only type gated by a recipient-side setting today (Settings ->
+// Notifications -> Reposts, notification_settings.notif_reposts) -- every
+// other toggle on that page is still decorative (never read anywhere), a
+// pre-existing gap this doesn't attempt to close. Gating requires reading
+// the RECIPIENT's row (not the pusher's own localStorage cache, which is
+// scoped to whoever's browser is currently open), hence the extra async
+// hop only these two types take -- default is "notify" (row missing, or
+// notif_reposts not explicitly false) so this never silently breaks the
+// existing always-on behavior for anyone who hasn't touched the toggle.
+const REPOST_GATED_TYPES = new Set(['content_repost', 'content_repost_thoughts']);
+
 // ── Push (fire-and-forget to server + optimistic localStorage write) ──────────
 export function push(
   toUserId: string,
@@ -173,6 +185,22 @@ export function push(
   // Don't notify yourself
   if (toUserId === notif.fromUserId) return;
 
+  if (REPOST_GATED_TYPES.has(notif.type)) {
+    supabase.from('notification_settings').select('notif_reposts').eq('user_id', toUserId).maybeSingle()
+      .then(({ data }) => {
+        if (data && data.notif_reposts === false) return;
+        _pushNow(toUserId, notif);
+      })
+      .catch(() => _pushNow(toUserId, notif));
+    return;
+  }
+  _pushNow(toUserId, notif);
+}
+
+function _pushNow(
+  toUserId: string,
+  notif: Omit<Notification, 'id' | 'toUserId' | 'read' | 'createdAt'>,
+): void {
   const title = _notifTitle(notif.type, notif.fromUserName || 'Someone', { listingTitle: (notif as any).listingTitle });
 
   // Optimistic local write so the recipient sees it immediately on the same device
