@@ -101,6 +101,10 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // Same removable-attachment treatment as repostOfPost above, for a
   // Portfolio album repost.
   const [repostOfAlbum, setRepostOfAlbum] = useState<NonNullable<Post['repostOfAlbum']> | undefined>(initialRepostOfAlbum);
+  // The poster's OWN album, attached via the ordinary "+ Portfolio" picker
+  // (Work/Album tabs) -- not a repost, so no registerPortfolioRepost call
+  // on publish, just extraMeta.ownAlbum written straight through.
+  const [ownAlbum, setOwnAlbum] = useState<NonNullable<Post['ownAlbum']> | undefined>(undefined);
   const [selectedListings, setSelectedListings] = useState<Listing[]>([]);
   const [location, setLocation] = useState<LocationResult | null>(null);
   const [link, setLink] = useState('');
@@ -234,7 +238,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // attached original doesn't count as "your own content" for this gate.
   const hasContent = (repostOfPost || repostOfAlbum)
     ? caption.trim().length > 0
-    : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || selectedListings.length > 0;
+    : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || !!ownAlbum || selectedListings.length > 0;
 
   // ── Publish ─────────────────────────────────────────────────────────────
   const publish = async () => {
@@ -302,6 +306,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           portfolioItemCategory: selectedPortfolioItem?.category,
           portfolioItemThumb: selectedPortfolioItem?.thumbnail_url,
           repostOfAlbum: repostOfAlbum,
+          ownAlbum: ownAlbum,
           visibility,
         },
       );
@@ -628,6 +633,23 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           </div>
         )}
 
+        {ownAlbum && (
+          <div className="px-4 pt-3">
+            <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {ownAlbum.coverUrl && <img src={ownAlbum.coverUrl} className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black text-blue-600">View album →</p>
+                <p className="text-sm font-bold text-gray-900 truncate">{ownAlbum.title}</p>
+              </div>
+              <button onClick={() => setOwnAlbum(undefined)} className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                <X className="w-3.5 h-3.5 text-gray-600" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {selectedListings.length > 0 && (
           <div className="px-4 pt-3 space-y-2">
             {selectedListings.map(listing => (
@@ -777,8 +799,16 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
       {/* Portfolio / Listing browsers */}
       {showPortfolioBrowser && (
         <PortfolioBrowser
-          selectedId={selectedPortfolioItem?.id}
-          onSelect={item => { setSelectedPortfolioItem(item); setShowPortfolioBrowser(false); }}
+          selectedId={selectedPortfolioItem?.id ?? ownAlbum?.albumId}
+          onSelect={item => { setSelectedPortfolioItem(item); setOwnAlbum(undefined); setShowPortfolioBrowser(false); }}
+          onSelectAlbum={album => {
+            setOwnAlbum({
+              albumId: album.id, userId: user!.id, userName: user!.name || user!.username || '',
+              userAvatar: user!.avatar || undefined, title: album.title, coverUrl: album.cover_url, itemCount: album.item_count,
+            });
+            setSelectedPortfolioItem(null);
+            setShowPortfolioBrowser(false);
+          }}
           onClose={() => setShowPortfolioBrowser(false)}
         />
       )}

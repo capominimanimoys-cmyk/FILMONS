@@ -1543,6 +1543,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     link:            meta.link            || undefined,
     repostOf:        meta.repostOf        || undefined,
     repostOfAlbum:   meta.repostOfAlbum   || undefined,
+    ownAlbum:        meta.ownAlbum        || undefined,
     isArchived:      row.is_archived      || false,
     isPinned:        row.is_pinned        || false,
     // Audio metadata for PostCard audio section
@@ -1988,6 +1989,10 @@ export const postsApi = {
       // "+ Portfolio" self-attach flow) -- reuses the flexible metadata
       // JSON instead of a new migration.
       repostOfAlbum?: Post['repostOfAlbum'];
+      // Same shape and reasoning as repostOfAlbum above, but for the
+      // poster's OWN album -- "Share to Connect" from Portfolio, not a
+      // repost of someone else's work. Written into metadata.ownAlbum.
+      ownAlbum?: Post['ownAlbum'];
       visibility?: Visibility;
     },
   ): Promise<Post> => {
@@ -2015,6 +2020,7 @@ export const postsApi = {
       likes:           [],
       repostOf:        repostOf || null,
       repostOfAlbum:   extraMeta?.repostOfAlbum || null,
+      ownAlbum:        extraMeta?.ownAlbum      || null,
     };
 
     // Direct Supabase insert — only columns that exist in posts table

@@ -1613,6 +1613,26 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </div>
           )}
 
+          {/* Own album attached (Portfolio -> Create Post's "+ Portfolio" ->
+              Album tab) -- the poster's own work, not a repost, so no
+              "Repost from" label and no repost registration on publish. */}
+          {localPost.ownAlbum && (
+            <div className="mx-3 mt-2">
+              <button
+                onClick={() => openPortfolioPreview(localPost.ownAlbum!.userId, localPost.ownAlbum!.albumId)}
+                className="w-full border border-gray-200 rounded-xl overflow-hidden flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">
+                  {localPost.ownAlbum.coverUrl && <img src={localPost.ownAlbum.coverUrl} alt="" className="w-full h-full object-cover"/>}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{localPost.ownAlbum.title}</p>
+                  <p className="text-xs text-gray-400">{localPost.ownAlbum.itemCount ?? 0} portfolio item{localPost.ownAlbum.itemCount === 1 ? '' : 's'}</p>
+                </div>
+              </button>
+            </div>
+          )}
+
           {/* ══ 4. ACTIONS ══ */}
           <div className="flex items-center px-1 pt-0.5 pb-0.5">
             {/* Like */}

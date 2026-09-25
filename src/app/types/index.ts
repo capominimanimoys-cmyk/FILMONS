@@ -141,6 +141,14 @@ export interface Post {
     albumId: string; userId: string; userName: string; userAvatar?: string;
     title: string; coverUrl?: string; itemCount?: number;
   };
+  /** The poster's OWN album, attached to a fresh post they're publishing --
+   * distinct from repostOfAlbum (someone else's album, reposted). Same live
+   * reference shape (albumId + owner, never a content copy) so edits to the
+   * album keep showing up on the postcard. */
+  ownAlbum?: {
+    albumId: string; userId: string; userName: string; userAvatar?: string;
+    title: string; coverUrl?: string; itemCount?: number;
+  };
   /** Whether the CURRENT viewer has already (plain-)reposted this post --
    * batched in alongside likes at fetch time (see fetchRepostedPostIds in
    * api.ts) so the "Reposted" state is correct everywhere a post is
