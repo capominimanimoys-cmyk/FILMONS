@@ -3,7 +3,7 @@
 // courses, and listings.
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Hash, BadgeCheck, Star, Users } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Star, Users } from 'lucide-react';
 import { getHashtag, getHashtagContent, type HashtagContent } from '../lib/hashtagsApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
@@ -33,24 +33,23 @@ export function HashtagPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-          <ArrowLeft className="w-4 h-4 text-gray-700" />
-        </button>
-        <p className="text-sm font-bold text-gray-900 truncate">#{tag}</p>
+      {/* Same header shape as /search/category/:tab's CategoryHeader --
+          "← (category)" IS the page's own header, no separate FILMONS
+          chrome underneath it (see Root.tsx's hideTopBar, which now also
+          matches on /hashtag/). */}
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-100">
+        <div className="max-w-5xl mx-auto flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+          <button onClick={() => navigate(-1)} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+            <ArrowLeft className="w-5 h-5 text-gray-700" />
+          </button>
+          <div className="min-w-0">
+            <p className="text-base md:text-xl font-black text-gray-900 truncate">#{tag}</p>
+            <p className="text-sm text-gray-400 mt-0.5">{usageCount === null ? '…' : `${formatCount(usageCount)} post${usageCount === 1 ? '' : 's'}`}</p>
+          </div>
+        </div>
       </div>
 
       <div className="lg:max-w-3xl lg:mx-auto px-4 py-5 space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
-            <Hash className="w-6 h-6 text-blue-500" />
-          </div>
-          <div>
-            <p className="text-xl font-black text-gray-900">#{tag}</p>
-            <p className="text-sm text-gray-400">{usageCount === null ? '…' : `${formatCount(usageCount)} post${usageCount === 1 ? '' : 's'}`}</p>
-          </div>
-        </div>
-
         {content === null ? (
           <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Loading" /></div>
         ) : nothingYet ? (
