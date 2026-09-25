@@ -127,6 +127,12 @@ interface NavState {
   // above) so the personalization itself carries over too, not just the
   // label.
   pageTitle?: string;
+  // "View all" from one specific Marketplace landing-page discovery row
+  // (Top listings / Latest listings / Listings nearby -- see
+  // MarketplaceDiscoveryRow in SearchOverlay.tsx) -- scopes this page's own
+  // empty-query landing (ProductDiscoveryGroups) down to that ONE list
+  // instead of showing Latest+Top+"Because you're a {role}" all together.
+  discoveryView?: 'top' | 'latest' | 'nearby';
 }
 
 interface CreatorRow {
@@ -1930,6 +1936,64 @@ async function fetchTopMarketplaceListings(limit: number): Promise<Listing[]> {
   return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
 }
 
+// Same city-substring match SearchOverlay's landing page uses for its own
+// "Listings nearby" row (nearbyListings) -- no lat/lng in this schema, so
+// this is a real text match against the viewer's own saved city, not a
+// distance calculation. Mirrors fetchLatestMarketplaceListings's shape
+// (fetch a wider pool, filter+slice client-side) since the city match
+// itself can't be pushed server-side without also excluding NULL-city rows
+// via an ilike the same way is_emergency's NULL rows already get handled
+// elsewhere in this file.
+async function fetchNearbyMarketplaceListings(city: string, limit: number): Promise<Listing[]> {
+  const res = await withModerationFilter((filterActive) => {
+    let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true).ilike('city', `%${city}%`);
+    if (filterActive) q = q.eq('moderation_status', 'active');
+    return q.order('created_at', { ascending: false }).limit(limit * 2);
+  });
+  return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
+}
+
+// "View all" from ONE specific landing-page discovery row (Top/Latest/
+// Nearby) -- a single flat grid of just that list, not the full
+// ProductDiscoveryGroups (Latest+Top+role all together). A real page, not
+// a capped preview row, so this fetches a much larger batch than the
+// DISCOVERY_GROUP_LIMIT-capped landing rows use.
+const DISCOVERY_VIEW_PAGE_LIMIT = 60;
+
+function MarketplaceDiscoverySingleList({ view }: { view: 'top' | 'latest' | 'nearby' }) {
+  const { user } = useAuth();
+  const [listings, setListings] = useState<Listing[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setListings(null);
+    const fetcher =
+      view === 'top'    ? fetchTopMarketplaceListings(DISCOVERY_VIEW_PAGE_LIMIT) :
+      view === 'latest' ? fetchLatestMarketplaceListings(DISCOVERY_VIEW_PAGE_LIMIT) :
+      user?.city ? fetchNearbyMarketplaceListings(user.city, DISCOVERY_VIEW_PAGE_LIMIT) : Promise.resolve([]);
+    fetcher.then(r => { if (!cancelled) setListings(r); });
+    return () => { cancelled = true; };
+  }, [view, user?.city]);
+
+  if (listings === null) return <DiscoveryLoading />;
+  if (listings.length === 0) {
+    return (
+      <div className="px-4 lg:px-8 py-10 text-center">
+        <p className="text-sm font-bold text-gray-700">
+          {view === 'nearby' && !user?.city ? 'Add your city to your profile to see listings nearby.' : 'No listings found.'}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 lg:px-8 xl:px-10">
+      {listings.map(listing => (
+        <PreviewListingCard key={listing.id} listing={listing} gridMode/>
+      ))}
+    </div>
+  );
+}
+
 function DiscoveryRow({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   if (count === 0) return null;
   return (
@@ -2438,7 +2502,9 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
             back to the normal rendering below -- this is the ONLY branch
             that skips it. The unscoped "All" tab (product undefined) never
             takes this path -- see ProductDiscoveryGroups's own comment. */}
-        {product && !term && categoryFilter === 'all' ? (
+        {product === 'marketplace' && !term && initialNavState.discoveryView ? (
+          <MarketplaceDiscoverySingleList view={initialNavState.discoveryView} />
+        ) : product && !term && categoryFilter === 'all' ? (
           <ProductDiscoveryGroups product={product} />
         ) : (
           <>
@@ -2573,6 +2639,7 @@ export function CategoryResults() {
       accountLevel: (searchParams.get('level') as AccountTier | null) || null,
     },
     pageTitle: stateNav.pageTitle,
+    discoveryView: stateNav.discoveryView,
   };
 
   if (!isAuthenticated) return null;

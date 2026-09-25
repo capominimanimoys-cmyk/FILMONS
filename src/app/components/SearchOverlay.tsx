@@ -1568,6 +1568,21 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     });
   }, [closeAndNavigate, user?.primaryRole, filters, sort]);
 
+  // Same idea as handleViewAllRole above, for the OTHER two Marketplace
+  // landing-page discovery rows (Top listings / Latest listings / Listings
+  // nearby -- see topListings/latestListings/nearbyListings below). All
+  // three used to share handleViewMoreCategory('marketplace'), which lands
+  // on a blank-query page showing every discovery row again (Latest+Top+
+  // role) instead of scoping down to the ONE row the viewer actually
+  // tapped -- discoveryView (CategoryResults.tsx's NavState field) is what
+  // makes that page render just this one list.
+  const DISCOVERY_VIEW_TITLE = { top: 'Top listings', latest: 'Latest listings', nearby: 'Listings nearby' } as const;
+  const handleViewAllDiscovery = useCallback((view: 'top' | 'latest' | 'nearby') => {
+    closeAndNavigate('/search/category/marketplace', {
+      query: '', filters, sort, discoveryView: view, pageTitle: DISCOVERY_VIEW_TITLE[view],
+    });
+  }, [closeAndNavigate, filters, sort]);
+
   // Backfills oppOwnerTypes for any Opportunity-listing owner in the
   // current results not already cached -- one small profiles lookup per
   // newly-seen batch of owners, never re-fetching one already known.
@@ -2192,11 +2207,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               {activeTab !== 'all' && (showMarketplaceLanding ? (
                 <>
                   <MarketplaceDiscoveryRow title="Top listings" listings={topListings}
-                    onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                    onNavigate={handleResultNavigate} onViewAll={() => handleViewAllDiscovery('top')}/>
                   <MarketplaceDiscoveryRow title="Latest listings" listings={latestListings}
-                    onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                    onNavigate={handleResultNavigate} onViewAll={() => handleViewAllDiscovery('latest')}/>
                   <MarketplaceDiscoveryRow title="Listings nearby" listings={nearbyListings}
-                    onNavigate={handleResultNavigate} onViewAll={() => handleViewMoreCategory('marketplace')}/>
+                    onNavigate={handleResultNavigate} onViewAll={() => handleViewAllDiscovery('nearby')}/>
                   {/* Always the viewer's real saved primaryRole, never a
                       guessed one -- MarketplaceDiscoveryRow already hides
                       itself when `listings` is empty, and roleListings is
