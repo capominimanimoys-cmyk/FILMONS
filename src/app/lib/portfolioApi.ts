@@ -511,11 +511,11 @@ export async function getAlbum(id: string): Promise<(PortfolioAlbum & { creator:
     const { data: album, error } = await supabase.from('portfolio_albums').select('*').eq('id', id).maybeSingle();
     if (error || !album) return null;
     const { data: p } = await supabase.from('profiles')
-      .select('id, name, username, avatar_url, primary_role, city, is_verified')
+      .select('id, name, username, avatar_url, primary_role, business_industry, account_type, city, is_verified')
       .eq('id', album.user_id).maybeSingle();
     const creator: PortfolioFeedCreator = {
       id: album.user_id, name: p?.name ?? 'Creator', username: p?.username ?? null,
-      avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+      avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, business_industry: p?.business_industry ?? null, account_type: p?.account_type ?? null, city: p?.city ?? null,
       is_verified: !!p?.is_verified,
     };
     return { ...(album as PortfolioAlbum), creator };
@@ -1086,7 +1086,7 @@ export async function registerPortfolioRepost(
 // label + relevance ordering the Posts sheet already has.
 export interface PortfolioRepostListEntry {
   userId: string; userName: string; userAvatar?: string; userUsername?: string;
-  primaryRole?: string | null; city?: string | null;
+  primaryRole?: string | null; businessIndustry?: string | null; accountType?: string | null; city?: string | null;
   viewerRelation: 'connection' | 'following' | 'none';
   type: 'plain' | 'thoughts';
   createdAt: string;
@@ -1106,7 +1106,7 @@ export async function getPortfolioReposts(
     const userIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
     const [{ data: profiles }, relations] = await Promise.all([
       userIds.length
-        ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', userIds)
+        ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, business_industry, account_type, city').in('id', userIds)
         : Promise.resolve({ data: [] as any[] }),
       viewerId ? fetchViewerConnectionsAndFollows(viewerId) : Promise.resolve({ connections: new Set<string>(), following: new Set<string>() }),
     ]);
@@ -1121,7 +1121,7 @@ export async function getPortfolioReposts(
     for (const r of (quoteRows ?? []) as any[]) {
       byUser.set(r.author_id, {
         userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
-        primaryRole: profileMap.get(r.author_id)?.primary_role, city: profileMap.get(r.author_id)?.city,
+        primaryRole: profileMap.get(r.author_id)?.primary_role, businessIndustry: profileMap.get(r.author_id)?.business_industry, accountType: profileMap.get(r.author_id)?.account_type, city: profileMap.get(r.author_id)?.city,
         viewerRelation: relationOf(r.author_id),
         type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
       });
@@ -1130,7 +1130,7 @@ export async function getPortfolioReposts(
       if (byUser.has(r.user_id)) continue;
       byUser.set(r.user_id, {
         userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
-        primaryRole: profileMap.get(r.user_id)?.primary_role, city: profileMap.get(r.user_id)?.city,
+        primaryRole: profileMap.get(r.user_id)?.primary_role, businessIndustry: profileMap.get(r.user_id)?.business_industry, accountType: profileMap.get(r.user_id)?.account_type, city: profileMap.get(r.user_id)?.city,
         viewerRelation: relationOf(r.user_id),
         type: 'plain', createdAt: r.created_at,
       });
@@ -1328,7 +1328,8 @@ export async function getPortfolioInteractionStats(creatorId: string): Promise<P
 // would be much harder to diagnose blind than the equivalent JS.
 export interface PortfolioFeedCreator {
   id: string; name: string; username: string | null; avatar_url: string | null;
-  primary_role: string | null; city: string | null; is_verified: boolean;
+  primary_role: string | null; business_industry?: string | null; account_type?: string | null;
+  city: string | null; is_verified: boolean;
 }
 export interface PortfolioFeedPreviewItem {
   id: string; media_type: MediaType; url: string | null; aspect_ratio: number | null;
@@ -1492,7 +1493,7 @@ export async function getPortfolioFeed(opts: {
     // assumed to already be in that slice.
     const coverLookupIds = albums.filter(a => !a.cover_url && a.cover_item_id).map(a => a.cover_item_id!);
     const [{ data: profileRows }, coverRes] = await Promise.all([
-      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds),
+      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, business_industry, account_type, city, is_verified').in('id', authorIds),
       coverLookupIds.length
         ? supabase.from('portfolio_items').select('id, thumbnail_url, media_url, aspect_ratio, width, height').in('id', coverLookupIds)
         : Promise.resolve({ data: [] as any[] }),
@@ -1508,7 +1509,7 @@ export async function getPortfolioFeed(opts: {
       const p = profiles.get(userId);
       return {
         id: userId, name: p?.name ?? 'Creator', username: p?.username ?? null,
-        avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+        avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, business_industry: p?.business_industry ?? null, account_type: p?.account_type ?? null, city: p?.city ?? null,
         is_verified: !!p?.is_verified,
       };
     };
@@ -1600,7 +1601,7 @@ export async function getPortfolioEntriesByIds(
     // -- run together instead of as two sequential round trips.
     const authorIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
     const [{ data: profileRows }, albumItemsRes] = await Promise.all([
-      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city, is_verified').in('id', authorIds),
+      supabase.from('profiles').select('id, name, username, avatar_url, primary_role, business_industry, account_type, city, is_verified').in('id', authorIds),
       albums.length
         ? supabase.from('portfolio_album_items')
             .select('album_id, sort_order, portfolio_items(id, media_type, media_url, thumbnail_url, aspect_ratio, width, height)')
@@ -1614,7 +1615,7 @@ export async function getPortfolioEntriesByIds(
       const p = profiles.get(userId);
       return {
         id: userId, name: p?.name ?? 'Creator', username: p?.username ?? null,
-        avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, city: p?.city ?? null,
+        avatar_url: p?.avatar_url ?? null, primary_role: p?.primary_role ?? null, business_industry: p?.business_industry ?? null, account_type: p?.account_type ?? null, city: p?.city ?? null,
         is_verified: !!p?.is_verified,
       };
     };

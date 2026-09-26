@@ -17,6 +17,7 @@ import {
   getTopInstructors,
   type Course, type EnrolledCourse, type TopInstructor,
 } from '../lib/coursesApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { listConnections } from '../lib/connectionsApi';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { CourseCard } from '../components/courses/CourseCard';
@@ -125,7 +126,11 @@ function InstructorCard({ instructor }: { instructor: TopInstructor }) {
         <p className="text-sm font-black text-gray-900 truncate">{instructor.name}</p>
         {instructor.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
       </div>
-      {instructor.primary_role && <p className="text-xs text-gray-400 truncate w-full mt-0.5">{instructor.primary_role}</p>}
+      {getDisplayIdentity({ accountType: instructor.account_type, primaryRole: instructor.primary_role, businessIndustry: instructor.business_industry }) && (
+        <p className="text-xs text-gray-400 truncate w-full mt-0.5">
+          {getDisplayIdentity({ accountType: instructor.account_type, primaryRole: instructor.primary_role, businessIndustry: instructor.business_industry })}
+        </p>
+      )}
       {instructor.studentCount > 0 && (
         <p className="text-[11px] font-semibold text-gray-400 mt-1">{instructor.studentCount.toLocaleString()} learner{instructor.studentCount === 1 ? '' : 's'}</p>
       )}

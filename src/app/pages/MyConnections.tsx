@@ -15,6 +15,7 @@ import { getSuggestedCreators, type SuggestedCreator } from '../lib/portfolioApi
 import { searchMatchingCreators, type SearchProfileRow } from '../lib/filmSearch';
 import { getConnectFeed, formatReposterNames, type ConnectFeedItem } from '../lib/connectFeed';
 import { getActivitySentence } from '../lib/activityApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
 import { ConnectionsPageHeader } from '../components/connect/ConnectionsPageHeader';
@@ -60,7 +61,7 @@ function SearchResultRow({ u }: { u: SearchProfileRow }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
-        <p className="text-xs text-gray-400 truncate">{[u.primary_role, u.city].filter(Boolean).join(' · ')}</p>
+        <p className="text-xs text-gray-400 truncate">{[getDisplayIdentity({ accountType: u.account_type, primaryRole: u.primary_role, businessIndustry: u.business_industry }), u.city].filter(Boolean).join(' · ')}</p>
       </div>
     </button>
   );

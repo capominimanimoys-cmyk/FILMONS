@@ -16,6 +16,7 @@ import {
   getLessonProgressMap, getCourseReviews, submitCourseReview,
   type Course, type CourseSection, type CourseReview,
 } from '../lib/coursesApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { getTrustLevelCached, type TrustLevel } from '../lib/trustApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { TrustBadge } from '../components/trust/TrustBadge';
@@ -199,7 +200,9 @@ export function CourseDetail() {
                 {course.instructor?.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {course.instructor?.primary_role && <p className="text-xs text-gray-400">{course.instructor.primary_role}</p>}
+                {course.instructor && getDisplayIdentity({ accountType: course.instructor.account_type, primaryRole: course.instructor.primary_role, businessIndustry: course.instructor.business_industry }) && (
+                  <p className="text-xs text-gray-400">{getDisplayIdentity({ accountType: course.instructor.account_type, primaryRole: course.instructor.primary_role, businessIndustry: course.instructor.business_industry })}</p>
+                )}
                 {instructorTrust && <TrustBadge level={instructorTrust} size="sm" />}
               </div>
             </div>
@@ -330,7 +333,9 @@ export function CourseDetail() {
                   {course.instructor?.name}
                   {course.instructor?.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
                 </p>
-                {course.instructor?.primary_role && <p className="text-xs text-gray-400">{course.instructor.primary_role}</p>}
+                {course.instructor && getDisplayIdentity({ accountType: course.instructor.account_type, primaryRole: course.instructor.primary_role, businessIndustry: course.instructor.business_industry }) && (
+                  <p className="text-xs text-gray-400">{getDisplayIdentity({ accountType: course.instructor.account_type, primaryRole: course.instructor.primary_role, businessIndustry: course.instructor.business_industry })}</p>
+                )}
               </div>
             </div>
           </div>

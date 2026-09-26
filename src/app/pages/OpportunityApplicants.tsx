@@ -17,6 +17,7 @@ import { listingsApi, authApi, chatApi } from '../lib/api';
 import { applicationApi, opportunityPaymentApi, OpportunityApplicationRow } from '../lib/applicationApi';
 import { supabase } from '../../lib/supabase';
 import { Listing, User } from '../types';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { BottomSheet } from '../components/BottomSheet';
 
 type Row = OpportunityApplicationRow & { profile: User | null };
@@ -372,7 +373,7 @@ function ApplicantRow({ a, active, bulkMode, checked, onToggleBulk, onOpen, onMe
           <p className="text-sm font-bold text-gray-900 truncate flex items-center gap-1">
             {a.profile?.name || 'Applicant'} {a.profile?.isVerified && <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
           </p>
-          <p className="text-xs text-gray-400 truncate">{[a.profile?.primaryRole, a.profile?.city].filter(Boolean).join(' · ')}</p>
+          <p className="text-xs text-gray-400 truncate">{[a.profile && getDisplayIdentity(a.profile), a.profile?.city].filter(Boolean).join(' · ')}</p>
         </div>
         <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${badge.color}`}>{badge.label}</span>
         <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
@@ -441,7 +442,7 @@ function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist,
             <Link to={`/host/${a.applicant_id}`} className="text-sm font-bold text-gray-900 flex items-center gap-1 hover:text-indigo-600">
               {a.profile?.name || 'Applicant'} {a.profile?.isVerified && <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />}
             </Link>
-            <p className="text-xs text-gray-400">{[a.profile?.primaryRole, a.profile?.city].filter(Boolean).join(' · ')}</p>
+            <p className="text-xs text-gray-400">{[a.profile && getDisplayIdentity(a.profile), a.profile?.city].filter(Boolean).join(' · ')}</p>
           </div>
           <span className={`text-[10px] font-black px-2 py-1 rounded-full shrink-0 ${badge.color}`}>{badge.label.toUpperCase()}</span>
         </div>

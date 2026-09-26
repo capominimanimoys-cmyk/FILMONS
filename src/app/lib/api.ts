@@ -1611,7 +1611,7 @@ async function filterPostsByVisibility(posts: Post[], viewerId?: string): Promis
 // post (quotePostId is that post's own id, openable on its own).
 export interface RepostListEntry {
   userId: string; userName: string; userAvatar?: string; userUsername?: string;
-  primaryRole?: string | null; city?: string | null;
+  primaryRole?: string | null; businessIndustry?: string | null; accountType?: string | null; city?: string | null;
   /** The SHEET VIEWER's own relationship to this reposter -- 'connection'/
    * 'following' drive the "Connection"/"Following" label and the sheet's
    * relevance ordering; 'none' shows no label (not a random-user callout). */
@@ -1861,7 +1861,7 @@ export const postsApi = {
       const userIds = [...new Set([...(plainRows ?? []).map((r: any) => r.user_id), ...(quoteRows ?? []).map((r: any) => r.author_id)])];
       const [{ data: profiles }, relations] = await Promise.all([
         userIds.length
-          ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, city').in('id', userIds)
+          ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, business_industry, account_type, city').in('id', userIds)
           : Promise.resolve({ data: [] as any[] }),
         viewerId ? fetchViewerConnectionsAndFollows(viewerId) : Promise.resolve({ connections: new Set<string>(), following: new Set<string>() }),
       ]);
@@ -1877,7 +1877,7 @@ export const postsApi = {
       for (const r of (quoteRows ?? []) as any[]) {
         byUser.set(r.author_id, {
           userId: r.author_id, userName: nameOf(r.author_id), userAvatar: avatarOf(r.author_id), userUsername: usernameOf(r.author_id),
-          primaryRole: profileMap.get(r.author_id)?.primary_role, city: profileMap.get(r.author_id)?.city,
+          primaryRole: profileMap.get(r.author_id)?.primary_role, businessIndustry: profileMap.get(r.author_id)?.business_industry, accountType: profileMap.get(r.author_id)?.account_type, city: profileMap.get(r.author_id)?.city,
           viewerRelation: relationOf(r.author_id),
           type: 'thoughts', createdAt: r.created_at, quotePostId: r.id,
         });
@@ -1886,7 +1886,7 @@ export const postsApi = {
         if (byUser.has(r.user_id)) continue;
         byUser.set(r.user_id, {
           userId: r.user_id, userName: nameOf(r.user_id), userAvatar: avatarOf(r.user_id), userUsername: usernameOf(r.user_id),
-          primaryRole: profileMap.get(r.user_id)?.primary_role, city: profileMap.get(r.user_id)?.city,
+          primaryRole: profileMap.get(r.user_id)?.primary_role, businessIndustry: profileMap.get(r.user_id)?.business_industry, accountType: profileMap.get(r.user_id)?.account_type, city: profileMap.get(r.user_id)?.city,
           viewerRelation: relationOf(r.user_id),
           type: 'plain', createdAt: r.created_at,
         });

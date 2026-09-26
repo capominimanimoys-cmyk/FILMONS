@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router';
 import { ArrowLeft, Film, MapPin, Package, User, Loader2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 
 export function LikedItems({ type }: { type: 'listing' | 'creator' }) {
   const { user, isAuthenticated } = useAuth();
@@ -94,7 +95,11 @@ export function LikedItems({ type }: { type: 'listing' | 'creator' }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{c.name || 'Creator'}</p>
-                    {c.primary_role && <p className="text-xs text-blue-600 truncate">{c.primary_role}</p>}
+                    {getDisplayIdentity({ accountType: c.account_type, primaryRole: c.primary_role, businessIndustry: c.business_industry }) && (
+                      <p className="text-xs text-blue-600 truncate">
+                        {getDisplayIdentity({ accountType: c.account_type, primaryRole: c.primary_role, businessIndustry: c.business_industry })}
+                      </p>
+                    )}
                     {c.city && <p className="text-xs text-gray-400 flex items-center gap-0.5"><MapPin className="w-3 h-3 shrink-0" /> {c.city}</p>}
                   </div>
                 </button>

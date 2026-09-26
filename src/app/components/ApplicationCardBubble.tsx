@@ -4,6 +4,7 @@ import { Briefcase, MapPin, ShieldCheck, ExternalLink, CheckCircle2, XCircle, St
 import { toast } from 'sonner';
 import { ChatMessage, Listing, User } from '../types';
 import { listingsApi, authApi } from '../lib/api';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { applicationApi, opportunityPaymentApi, OpportunityApplicationRow, OpportunityTransactionRow } from '../lib/applicationApi';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -174,7 +175,7 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
             <p className="text-xs font-bold text-gray-900 truncate flex items-center gap-1">
               {applicant?.name || 'Applicant'} {applicant?.isVerified && <ShieldCheck className="w-3 h-3 text-blue-500 shrink-0" />}
             </p>
-            <p className="text-[11px] text-gray-400 truncate">{[applicant?.primaryRole, applicant?.city].filter(Boolean).join(' · ')}</p>
+            <p className="text-[11px] text-gray-400 truncate">{[applicant && getDisplayIdentity(applicant), applicant?.city].filter(Boolean).join(' · ')}</p>
           </div>
         </div>
       )}
@@ -317,7 +318,7 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-bold text-gray-900 flex items-center gap-1">{applicant?.name || 'Applicant'} {applicant?.isVerified && <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />}</p>
-                <p className="text-xs text-gray-400">{[applicant?.primaryRole, applicant?.city].filter(Boolean).join(' · ')}</p>
+                <p className="text-xs text-gray-400">{[applicant && getDisplayIdentity(applicant), applicant?.city].filter(Boolean).join(' · ')}</p>
               </div>
             </div>
 

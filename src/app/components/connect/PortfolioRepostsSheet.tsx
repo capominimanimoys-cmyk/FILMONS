@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { X, Repeat2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { getPortfolioReposts, type PortfolioRepostListEntry, type PortfolioSaveTargetType } from '../../lib/portfolioApi';
+import { getDisplayIdentity } from '../../lib/displayIdentity';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
 
@@ -74,9 +75,9 @@ export function PortfolioRepostsSheet({ targetId, targetType, onClose }: {
                 <UserAvatar user={{ id: e.userId, name: e.userName, avatar: e.userAvatar }} size={44} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{e.userName}</p>
-                  {(e.primaryRole || e.city) && (
+                  {(getDisplayIdentity({ accountType: e.accountType, primaryRole: e.primaryRole, businessIndustry: e.businessIndustry }) || e.city) && (
                     <p className="text-xs text-gray-500 truncate">
-                      {[e.primaryRole, e.city].filter(Boolean).join(' · ')}
+                      {[getDisplayIdentity({ accountType: e.accountType, primaryRole: e.primaryRole, businessIndustry: e.businessIndustry }), e.city].filter(Boolean).join(' · ')}
                     </p>
                   )}
                   <p className="text-xs text-gray-400 flex items-center gap-1">

@@ -14,6 +14,7 @@ import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
+import { getDisplayIdentity } from '../../lib/displayIdentity';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './PostMoreMenu';
@@ -188,7 +189,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
             {creator.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
           </button>
           <p className="text-xs text-gray-400 mt-0.5">
-            {[creator.primary_role, creator.city].filter(Boolean).join(' · ')}{(creator.primary_role || creator.city) ? ' · ' : ''}{timeAgo(entry.created_at)}
+            {[getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }), creator.city].filter(Boolean).join(' · ')}{(getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }) || creator.city) ? ' · ' : ''}{timeAgo(entry.created_at)}
           </p>
           {trustLevel && (
             <div className="mt-1">

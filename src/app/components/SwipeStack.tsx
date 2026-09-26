@@ -18,6 +18,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { isProfessional, normalizeTier } from '../lib/reliabilityApi';
 import { swipeApi } from '../lib/swipeApi';
 import { ENTITLEMENTS } from '../lib/entitlements';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 
 // Guests (no account at all) get the same 10/day ceiling as Creator, but
 // there's no user_id to enforce it against server-side -- there's no
@@ -45,6 +46,8 @@ export type CreatorProfile = {
   city: string | null;
   province?: string | null;
   primary_role: string | null;
+  business_industry?: string | null;
+  account_type?: string | null;
   bio: string | null;
   is_verified: boolean | null;
 };
@@ -182,8 +185,10 @@ function CreatorContent({ profile }: { profile: CreatorProfile }) {
 
       <div className="px-4 lg:px-6 py-3.5 lg:py-5">
         <h3 className="text-[16px] lg:text-xl font-black text-gray-900 mb-0.5 lg:mb-1">{profile.name}</h3>
-        {profile.primary_role && (
-          <p className="text-sm lg:text-base text-blue-600 font-semibold mb-1">{profile.primary_role}</p>
+        {getDisplayIdentity({ accountType: profile.account_type, primaryRole: profile.primary_role, businessIndustry: profile.business_industry }) && (
+          <p className="text-sm lg:text-base text-blue-600 font-semibold mb-1">
+            {getDisplayIdentity({ accountType: profile.account_type, primaryRole: profile.primary_role, businessIndustry: profile.business_industry })}
+          </p>
         )}
         {profile.bio && (
           <p className="text-[13px] lg:text-sm text-gray-500 line-clamp-2 mb-2 leading-snug">{profile.bio}</p>
@@ -537,7 +542,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         } else {
           await supabase.from('favorites').upsert({
             user_id: user.id, item_id: item.data.id, item_type: 'creator',
-            item_data: { id: item.data.id, name: item.data.name, username: item.data.username, avatar_url: item.data.avatar_url, city: item.data.city, primary_role: item.data.primary_role },
+            item_data: { id: item.data.id, name: item.data.name, username: item.data.username, avatar_url: item.data.avatar_url, city: item.data.city, primary_role: item.data.primary_role, business_industry: item.data.business_industry, account_type: item.data.account_type },
           }, { onConflict: 'user_id,item_id' }).then(undefined, () => {});
           toast.success(`❤️ Liked: ${item.data.name}`);
           if (item.data.id && item.data.id !== user.id) {

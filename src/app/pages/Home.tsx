@@ -645,7 +645,7 @@ export function Home() {
       listingsApi.getOpportunities().catch(() => [] as Listing[]),
       supabase
         .from('profiles')
-        .select('id, name, username, avatar_url, city, primary_role, bio, is_verified')
+        .select('id, name, username, avatar_url, city, primary_role, business_industry, account_type, bio, is_verified')
         .not('name', 'is', null)
         .neq('name', '')
         .not('primary_role', 'is', null)

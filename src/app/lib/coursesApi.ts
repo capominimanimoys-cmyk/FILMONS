@@ -17,6 +17,7 @@ export interface CourseInstructor {
   is_verified: boolean;
   account_type: string | null;
   primary_role: string | null;
+  business_industry?: string | null;
 }
 
 export interface Course {
@@ -78,7 +79,7 @@ export function canCreateCourses(accountType?: string | null): boolean {
   return accountType === 'professional' || accountType === 'business';
 }
 
-const INSTRUCTOR_SELECT = 'id, name, username, avatar_url, is_verified, account_type, primary_role';
+const INSTRUCTOR_SELECT = 'id, name, username, avatar_url, is_verified, account_type, primary_role, business_industry';
 
 function rowToCourse(row: any, instructor?: any): Course {
   return {
@@ -88,6 +89,7 @@ function rowToCourse(row: any, instructor?: any): Course {
       id: instructor.id, name: instructor.name, username: instructor.username,
       avatar_url: instructor.avatar_url, is_verified: !!instructor.is_verified,
       account_type: instructor.account_type, primary_role: instructor.primary_role,
+      business_industry: instructor.business_industry,
     } : undefined,
     title: row.title,
     shortDescription: row.short_description,
@@ -453,7 +455,8 @@ export async function getCoursesFromInstructors(instructorIds: string[], limit =
 
 export interface TopInstructor {
   id: string; name: string; avatar_url: string | null; is_verified: boolean;
-  primary_role: string | null; studentCount: number; courseCount: number;
+  primary_role: string | null; business_industry?: string | null; account_type?: string | null;
+  studentCount: number; courseCount: number;
 }
 
 /** Learning Home's "Top instructors" -- ranked by real student_count summed
@@ -474,13 +477,14 @@ export async function getTopInstructors(limit = 6): Promise<TopInstructor[]> {
   }
   const ranked = [...stats.entries()].sort((a, b) => b[1].students - a[1].students || b[1].courses - a[1].courses).slice(0, limit);
   const ids = ranked.map(([id]) => id);
-  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url, is_verified, primary_role').in('id', ids);
+  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url, is_verified, primary_role, business_industry, account_type').in('id', ids);
   const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
   return ranked.map(([id, s]) => {
     const p = profileMap.get(id);
     return {
       id, name: p?.name ?? 'Filmons instructor', avatar_url: p?.avatar_url ?? null,
       is_verified: !!p?.is_verified, primary_role: p?.primary_role ?? null,
+      business_industry: p?.business_industry ?? null, account_type: p?.account_type ?? null,
       studentCount: s.students, courseCount: s.courses,
     };
   });
