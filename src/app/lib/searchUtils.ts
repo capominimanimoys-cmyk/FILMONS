@@ -159,97 +159,106 @@ export function detectOpportunityIntent(rawQ: string): { isOpportunity: boolean;
 
 // ── Alias groups ──────────────────────────────────────────────────────────────
 // Any term in a group matches all others in that group bidirectionally.
-const ALIAS_GROUPS: string[][] = [
+// `kind` classifies the group for recognizeQuery's source-priority decision
+// below -- 'gear' (equipment/brand/model -> Marketplace-leaning), 'role'
+// (a person's profession/skill -> Connect-leaning), 'context' (everything
+// else: venues, event types, genres -- doesn't push priority either way).
+// This is purely a recognition-layer addition; expandQuery's own retrieval
+// behavior (every term in a matched group still expands the search) is
+// unchanged -- it just reads `.terms` now instead of the group directly.
+type AliasGroupKind = 'gear' | 'role' | 'context';
+interface AliasGroup { kind: AliasGroupKind; terms: string[]; }
+const ALIAS_GROUPS: AliasGroup[] = [
   // DJI & Drones
-  [
+  { kind: 'gear', terms: [
     'dji', 'drone', 'drones', 'fpv', 'mavic', 'phantom', 'inspire',
     'aerial', 'aerials', 'air2s', 'mini3', 'rs4', 'rs3',
     'drone pilot', 'drone operator', 'drone service', 'aerial filming',
     'aerial photography', 'aerial video',
-  ],
+  ] },
   // Cameras — general
-  ['camera', 'cam', 'dslr', 'mirrorless', 'cinemagear', 'digicam'],
+  { kind: 'gear', terms: ['camera', 'cam', 'dslr', 'mirrorless', 'cinemagear', 'digicam'] },
   // Sony
-  ['sony', 'fx3', 'fx6', 'fx9', 'a7siii', 'a7s', 'a7iii', 'a7', 'a1', 'a6400', 'a6600', 'zv'],
+  { kind: 'gear', terms: ['sony', 'fx3', 'fx6', 'fx9', 'a7siii', 'a7s', 'a7iii', 'a7', 'a1', 'a6400', 'a6600', 'zv'] },
   // Canon
-  ['canon', 'eos', 'c70', 'c300', 'c500', 'c70', 'r5', 'r6', '5d', '6d', 'rebel'],
+  { kind: 'gear', terms: ['canon', 'eos', 'c70', 'c300', 'c500', 'c70', 'r5', 'r6', '5d', '6d', 'rebel'] },
   // Blackmagic
-  ['blackmagic', 'bmpcc', 'ursa', 'braw', 'pocket cinema', 'resolve'],
+  { kind: 'gear', terms: ['blackmagic', 'bmpcc', 'ursa', 'braw', 'pocket cinema', 'resolve'] },
   // RED
-  ['red', 'komodo', 'monstro', 'helium', 'raven', 'v-raptor', 'gemini'],
+  { kind: 'gear', terms: ['red', 'komodo', 'monstro', 'helium', 'raven', 'v-raptor', 'gemini'] },
   // Fujifilm
-  ['fuji', 'fujifilm', 'xt4', 'xt5', 'gfx', 'xh2'],
+  { kind: 'gear', terms: ['fuji', 'fujifilm', 'xt4', 'xt5', 'gfx', 'xh2'] },
   // Arri
-  ['arri', 'alexa', 'amira', 'mini lf', 'alexa mini'],
+  { kind: 'gear', terms: ['arri', 'alexa', 'amira', 'mini lf', 'alexa mini'] },
   // Gimbal / Stabilizer
-  ['gimbal', 'stabilizer', 'ronin', 'zhiyun', 'crane', 'weebill', 'smooth', 'handheld rig'],
+  { kind: 'gear', terms: ['gimbal', 'stabilizer', 'ronin', 'zhiyun', 'crane', 'weebill', 'smooth', 'handheld rig'] },
   // Lenses
-  ['lens', 'lenses', 'prime', 'anamorphic', 'sigma', 'zeiss', 'rokinon', 'samyang', 'voigtlander', 'cooke'],
+  { kind: 'gear', terms: ['lens', 'lenses', 'prime', 'anamorphic', 'sigma', 'zeiss', 'rokinon', 'samyang', 'voigtlander', 'cooke'] },
   // Grip / Support
-  ['grip', 'tripod', 'monopod', 'cstand', 'slider', 'jib', 'dolly', 'track', 'rig', 'follow focus'],
+  { kind: 'gear', terms: ['grip', 'tripod', 'monopod', 'cstand', 'slider', 'jib', 'dolly', 'track', 'rig', 'follow focus'] },
   // Lighting
-  [
+  { kind: 'gear', terms: [
     'light', 'lighting', 'led', 'aputure', 'godox', 'nanlite', 'nanlux',
     'strobe', 'flash', 'softbox', 'reflector', 'tungsten', 'hmi', 'rgblight',
     'aperture', 'profoto',
-  ],
+  ] },
   // Audio / Sound
-  [
+  { kind: 'gear', terms: [
     'audio', 'sound', 'mic', 'microphone', 'recorder', 'boom', 'lavalier', 'lav',
     'rode', 'sennheiser', 'shure', 'zoom', 'tascam', 'xlr', 'podcast',
     'voiceover', 'shotgun', 'wireless mic', 'audio engineer', 'sound design',
-  ],
+  ] },
   // Music Production
-  [
+  { kind: 'role', terms: [
     'music', 'producer', 'beat', 'beats', 'mixing', 'mastering', 'daw',
     'ableton', 'logic', 'flstudio', 'protools', 'musician', 'composer',
     'soundtrack', 'score', 'session musician',
-  ],
+  ] },
   // Streaming / Broadcast
-  ['stream', 'streaming', 'broadcast', 'live', 'elgato', 'capturecard', 'obs', 'twitch', 'youtube live'],
+  { kind: 'context', terms: ['stream', 'streaming', 'broadcast', 'live', 'elgato', 'capturecard', 'obs', 'twitch', 'youtube live'] },
   // Videography / Film
-  [
+  { kind: 'role', terms: [
     'video', 'videographer', 'videography', 'filming', 'film', 'filmmaker',
     'cinematographer', 'cinematography', 'dp', 'dop', 'director of photography',
     'camera operator', 'camop', 'shoot', 'production',
-  ],
+  ] },
   // Photography
-  [
+  { kind: 'role', terms: [
     'photo', 'photography', 'photographer', 'photoshoot', 'portrait',
     'headshot', 'boudoir', 'event photography', 'wedding photo', 'product photo',
     'fashion photo', 'real estate photo',
-  ],
+  ] },
   // Editing / Post Production
-  [
+  { kind: 'role', terms: [
     'editor', 'editing', 'post', 'postproduction', 'colorist', 'colorgrade',
     'colourgrade', 'davinci', 'premiere', 'finalcut', 'avid', 'motiondesign',
     'motiongraphics', 'vfx', 'visualeffects', 'animation', '3d', 'cgi',
-  ],
+  ] },
   // Studio / Space
-  [
+  { kind: 'context', terms: [
     'studio', 'soundstage', 'greenscreen', 'cycwall', 'shootingspace',
     'photostudio', 'filmstudio', 'productionspace', 'creative space',
-  ],
+  ] },
   // Services / Weddings / Events
-  [
+  { kind: 'context', terms: [
     'wedding', 'weddings', 'event', 'events', 'corporate', 'commercial',
     'interview', 'documentary', 'musicvideo', 'advert', 'advertisement', 'promo',
-  ],
+  ] },
   // Streaming / Podcast
-  [
+  { kind: 'context', terms: [
     'podcast', 'podcasting', 'podcaststudio', 'podcastsetup', 'podcastproduction',
     'interview setup', 'talk show',
-  ],
+  ] },
   // Gaming / Esports
-  ['gaming', 'game', 'gamer', 'esport', 'esports', 'twitch', 'streamer', 'fps', 'speedrun'],
+  { kind: 'context', terms: ['gaming', 'game', 'gamer', 'esport', 'esports', 'twitch', 'streamer', 'fps', 'speedrun'] },
   // Fashion / Wardrobe / Talent
-  ['model', 'talent', 'actor', 'actress', 'influencer', 'ugc', 'brand deal', 'content creator'],
+  { kind: 'role', terms: ['model', 'talent', 'actor', 'actress', 'influencer', 'ugc', 'brand deal', 'content creator'] },
   // Props / Set Design
-  ['prop', 'props', 'costume', 'wardrobe', 'setdressing', 'setdesign', 'art director'],
+  { kind: 'context', terms: ['prop', 'props', 'costume', 'wardrobe', 'setdressing', 'setdesign', 'art director'] },
   // Real Estate
-  ['real estate', 'property', 'realestate', 'matterport', 'virtual tour', 'floor plan'],
+  { kind: 'context', terms: ['real estate', 'property', 'realestate', 'matterport', 'virtual tour', 'floor plan'] },
   // Aerial / Location scouting
-  ['location', 'scout', 'locationscout', 'permit', 'permit scout'],
+  { kind: 'context', terms: ['location', 'scout', 'locationscout', 'permit', 'permit scout'] },
 ];
 
 // ── Core expansion ────────────────────────────────────────────────────────────
@@ -291,20 +300,130 @@ export function expandQuery(rawQ: string): string[] {
 
   const words = q.split(/\s+/).filter(w => w.length >= 2);
   const expanded = new Set<string>([q, ...words]);
+  const matchedWords = new Set<string>();
 
   for (const group of ALIAS_GROUPS) {
     for (const word of words) {
-      if (group.some(alias => termMatchesAlias(word, normalize(alias)))) {
-        group.forEach(term => expanded.add(normalize(term)));
+      if (group.terms.some(alias => termMatchesAlias(word, normalize(alias)))) {
+        group.terms.forEach(term => expanded.add(normalize(term)));
+        matchedWords.add(word);
         // don't break — a query can match multiple groups (e.g. "sony camera")
       }
     }
   }
 
-  const result = Array.from(expanded).slice(0, 16);
+  // Typo tolerance: only for words the alias scan above didn't already
+  // recognize -- a real hit already means the word was understood
+  // correctly, so there's nothing to "correct." ADDS the near-match
+  // alongside the original word, never replaces it (spec: search both the
+  // original query and the likely corrected form).
+  for (const word of words) {
+    if (matchedWords.has(word) || word.length < 4) continue;
+    const corrected = suggestCorrection(word);
+    if (corrected) expanded.add(corrected);
+  }
+
+  const result = Array.from(expanded).slice(0, 20);
   lastExpandInput = rawQ;
   lastExpandResult = result;
   return result;
+}
+
+// ── Typo tolerance ────────────────────────────────────────────────────────────
+// A small, bounded Levenshtein distance -- cheap here because it only ever
+// runs against the fixed, in-memory alias vocabulary (a few hundred short
+// strings), never against the database, and only for words the alias scan
+// above found no match for at all.
+function editDistance(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+let typoVocabCache: string[] | null = null;
+function typoVocabulary(): string[] {
+  if (typoVocabCache) return typoVocabCache;
+  const set = new Set<string>();
+  for (const group of ALIAS_GROUPS) for (const term of group.terms) if (!term.includes(' ')) set.add(normalize(term));
+  return (typoVocabCache = Array.from(set));
+}
+
+/** Finds a close vocabulary term for a word with no exact/alias match
+ *  (e.g. "cinamatographer" -> "cinematographer", "soni" -> "sony").
+ *  Returns null rather than guessing when nothing is close enough --
+ *  never silently rewrites the user's query, only suggests an addition. */
+export function suggestCorrection(word: string): string | null {
+  const w = normalize(word);
+  if (w.length < 4) return null;
+  const maxDist = w.length <= 6 ? 1 : 2;
+  let best: string | null = null, bestDist = maxDist + 1;
+  for (const term of typoVocabulary()) {
+    if (Math.abs(term.length - w.length) > maxDist) continue;
+    const d = editDistance(w, term);
+    if (d < bestDist) { bestDist = d; best = term; if (d === 0) break; }
+  }
+  return bestDist <= maxDist ? best : null;
+}
+
+// ── Universal query recognition ──────────────────────────────────────────────
+// Generalizes detectMarketplaceIntent (rental/sale/service/opportunity) into
+// a broader recognizer covering gear/brand/model (ALIAS_GROUPS 'gear'
+// groups), role/skill (ALIAS_GROUPS 'role' groups), hashtags, and location
+// (extractLocation) -- then decides which of Marketplace/Connect/Learning is
+// most likely relevant FIRST for this query, so result sections can render
+// in that order instead of a fixed one. Never narrows retrieval itself
+// (every existing search function keeps working exactly as it did); this
+// only decides ordering/priority on top of what's already fetched.
+export type SearchSource = 'marketplace' | 'connect' | 'learning';
+
+export interface QueryRecognition {
+  marketplaceIntents: MarketplaceIntentType[];
+  gearMatch: boolean;
+  roleMatch: boolean;
+  hashtags: string[];
+  location: { city?: string; province?: string; nearMe?: boolean };
+  /** Leftover text after stripping intent phrases -- same convention
+   *  detectMarketplaceIntent's own `remainder` already uses. */
+  remainder: string;
+  sourcePriority: SearchSource[];
+}
+
+const LEARNING_CONTENT_TERMS = new Set(['course', 'courses', 'learning', 'tutorial', 'tutorials', 'class', 'classes', 'lesson', 'lessons']);
+const DEFAULT_SOURCE_PRIORITY: SearchSource[] = ['marketplace', 'connect', 'learning'];
+
+export function recognizeQuery(rawQ: string): QueryRecognition {
+  const hashtags: string[] = [];
+  const withoutHashtags = rawQ.replace(/#(\w+)/g, (_m, tag: string) => { hashtags.push(tag.toLowerCase()); return tag; });
+
+  const { intents: marketplaceIntents, remainder } = detectMarketplaceIntent(withoutHashtags);
+  const location = extractLocation(remainder);
+
+  const words = normalize(remainder).split(/\s+/).filter(Boolean);
+  let gearMatch = false, roleMatch = false, learningMatch = false;
+  for (const group of ALIAS_GROUPS) {
+    if (words.some(w => group.terms.some(alias => termMatchesAlias(w, normalize(alias))))) {
+      if (group.kind === 'gear') gearMatch = true;
+      if (group.kind === 'role') roleMatch = true;
+    }
+  }
+  if (words.some(w => LEARNING_CONTENT_TERMS.has(w))) learningMatch = true;
+
+  // Explicit intent/content-type words always win first; role vs. gear only
+  // decides ordering when neither of those fired. Ties keep today's
+  // existing fixed order (Marketplace, Connect, Learning).
+  let sourcePriority: SearchSource[];
+  if (marketplaceIntents.length > 0) sourcePriority = ['marketplace', 'connect', 'learning'];
+  else if (learningMatch) sourcePriority = ['learning', 'connect', 'marketplace'];
+  else if (roleMatch && !gearMatch) sourcePriority = ['connect', 'marketplace', 'learning'];
+  else sourcePriority = DEFAULT_SOURCE_PRIORITY;
+
+  return { marketplaceIntents, gearMatch, roleMatch, hashtags, location, remainder, sourcePriority };
 }
 
 // ── Client-side matching ──────────────────────────────────────────────────────

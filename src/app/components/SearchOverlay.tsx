@@ -2,7 +2,7 @@
  * Filmons — Universal AI Search Overlay
  * Instant typeahead suggestions + ranked results + filter sheet + sort picker.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -13,6 +13,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { supabase } from '../../lib/supabase';
 import {
   expandQuery, normalize, extractLocation, detectMarketplaceIntent, type MarketplaceIntentType,
+  recognizeQuery, type SearchSource,
 } from '../lib/searchUtils';
 import { withModerationFilter, postsApi } from '../lib/api';
 import { PostCard } from './PostCard';
@@ -1484,6 +1485,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const resultsRef  = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const suggRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Guards a slow, now-stale runSearch response from overwriting a newer
+  // query's results -- confirmed missing before this (no AbortController,
+  // no version check), so a slower earlier response could silently clobber
+  // a faster later one. Same query-version-ref pattern already used this
+  // session in SharePostSheet.tsx's recipient search.
+  const searchVersionRef = useRef(0);
 
   const handleClose = useCallback(() => { setClosing(true); setTimeout(onClose, 280); }, [onClose]);
 
@@ -1636,6 +1643,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     }
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
+    const myVersion = ++searchVersionRef.current;
     debounceRef.current = setTimeout(() => {
       // Under any Marketplace intent (Rental/Sale/Service/Opportunity),
       // Connect/Learning should be scoped to whatever's LEFT of the query
@@ -1664,6 +1672,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         coursesQuery ? getCourses({ query: coursesQuery, limit: 24 }).catch(() => []) : Promise.resolve([]),
       ])
         .then(([{ users: u, listings: l }, portfolio, posts, hashtags, courses]) => {
+          if (searchVersionRef.current !== myVersion) return; // a newer query already superseded this one
           setRawUsers(u); setRawListings(l);
           setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags); setRawCourses(courses);
           setResultsReady(true);
@@ -1675,8 +1684,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
             } catch {}
           }
         })
-        .catch(() => { setResultsReady(true); })
-        .finally(() => setLoading(false));
+        .catch(() => { if (searchVersionRef.current === myVersion) setResultsReady(true); })
+        .finally(() => { if (searchVersionRef.current === myVersion) setLoading(false); });
     }, 400);
   }, []);
 
@@ -1919,6 +1928,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // its own tab/section regardless of what underlying type it is.
   const emergencyListings = filteredListings.filter(l => !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date())
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+  // Which product is most likely relevant FIRST for this query -- drives
+  // the 'all' tab's Marketplace/Connect/Learning section order below (e.g.
+  // "sony fx3" -> Marketplace first, "cinematographer" -> Connect first,
+  // "lighting course" -> Learning first). Purely an ordering decision;
+  // retrieval itself (what each section actually contains) is unchanged.
+  const recognition = useMemo(() => recognizeQuery(q), [q]);
 
   // Four top-level modes, All a universal layer over the other three (per
   // spec section 15, "All is not a fourth product") -- Marketplace =
@@ -2164,10 +2180,10 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   this tab -- the Marketplace/Connect/Learning tabs' own
                   typed search below is completely untouched, still the
                   full per-category breakdown. */}
-              {activeTab === 'all' && (
-                <>
-                  {allMarketplaceCombined.length > 0 && (
-                    <AllResultsSection title="Marketplace" totalCount={allMarketplaceCombined.length}
+              {activeTab === 'all' && (() => {
+                const sections: Partial<Record<SearchSource, ReactNode>> = {
+                  marketplace: allMarketplaceCombined.length > 0 && (
+                    <AllResultsSection key="marketplace" title="Marketplace" totalCount={allMarketplaceCombined.length}
                       moreLabel="Marketplace"
                       onViewAll={() => handleViewMoreCategory('marketplace')}
                       onViewMore={() => handleViewMoreCategory('marketplace')}>
@@ -2177,9 +2193,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                         ))}
                       </div>
                     </AllResultsSection>
-                  )}
-                  {allConnectCombined.length > 0 && (
-                    <AllResultsSection title="Connect" totalCount={allConnectTotal}
+                  ),
+                  connect: allConnectCombined.length > 0 && (
+                    <AllResultsSection key="connect" title="Connect" totalCount={allConnectTotal}
                       moreLabel="Connect"
                       onViewAll={() => handleViewMoreCategory('connect')}
                       onViewMore={() => handleViewMoreCategory('connect')}>
@@ -2193,9 +2209,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                         ))}
                       </div>
                     </AllResultsSection>
-                  )}
-                  {visibleCourses.length > 0 && (
-                    <AllResultsSection title="FILMONS Learning" totalCount={visibleCourses.length}
+                  ),
+                  learning: visibleCourses.length > 0 && (
+                    <AllResultsSection key="learning" title="FILMONS Learning" totalCount={visibleCourses.length}
                       moreLabel="Learning"
                       onViewAll={() => handleViewMoreCategory('courses')}
                       onViewMore={() => handleViewMoreCategory('courses')}>
@@ -2203,9 +2219,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                         {visibleCourses.slice(0, 6).map(c => <CourseCard key={c.id} course={c}/>)}
                       </div>
                     </AllResultsSection>
-                  )}
-                </>
-              )}
+                  ),
+                };
+                // Rendered in recognition.sourcePriority order (e.g. "sony
+                // fx3" -> Marketplace first, "cinematographer" -> Connect
+                // first, "lighting course" -> Learning first) instead of a
+                // fixed Marketplace/Connect/Learning order every time.
+                return <>{recognition.sourcePriority.map(src => sections[src] || null)}</>;
+              })()}
               {/* Search -> Marketplace, empty query: a discovery landing
                   page (Top/Latest/Nearby, mixed types + badges), NOT the
                   per-category preview list below -- that stays exactly as
