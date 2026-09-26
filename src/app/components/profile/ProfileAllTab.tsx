@@ -25,7 +25,7 @@ import type { ConnectionSummary } from '../../lib/connectionsApi';
 
 export function ProfileAllTab({
   userId, isOwner, viewerId, accountType, isVerified, verificationStatus,
-  bio, primaryRole, secondaryRoles, location, openTo, languages, onEditAbout,
+  bio, primaryRole, businessIndustry, secondaryRoles, location, openTo, languages, onEditAbout,
   posts, onViewAllPosts, onPostDeleted, onPostLikeToggled,
   skills, onEditSkills,
   education, onEditEducation,
@@ -53,6 +53,7 @@ export function ProfileAllTab({
   verificationStatus?: string;
   bio?: string;
   primaryRole?: string;
+  businessIndustry?: string;
   secondaryRoles?: string[];
   location?: string;
   openTo?: string[];
@@ -112,7 +113,7 @@ export function ProfileAllTab({
   return (
     <div className="py-4 space-y-3">
       <AboutSection
-        bio={bio} primaryRole={primaryRole} secondaryRoles={secondaryRoles}
+        bio={bio} primaryRole={primaryRole} businessIndustry={businessIndustry} accountType={accountType} secondaryRoles={secondaryRoles}
         location={location} openTo={openTo} languages={languages}
         isOwner={isOwner} onEdit={onEditAbout}
       />

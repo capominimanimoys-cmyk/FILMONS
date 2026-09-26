@@ -29,6 +29,7 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { PostCard } from '../components/PostCard';
 import { ReliabilityCard, ReliabilityBadge } from '../components/ReliabilityScore';
 import { reliabilityApi, ReputationScore, isCreatorPlus, normalizeTier } from '../lib/reliabilityApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { AvatarActionSheet, AvatarFullScreen } from '../components/AvatarActionSheet';
 import { CreatePostSheet } from '../components/CreatePostSheet';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
@@ -685,6 +686,7 @@ export function Profile() {
   const [youtube,     setYoutube]     = useState('');
   const [tiktok,      setTiktok]      = useState('');
   const [primaryRole, setPrimaryRole] = useState('');
+  const [businessIndustry, setBusinessIndustry] = useState('');
   const [secondaryRoles, setSecondaryRoles] = useState<string[]>([]);
   const [skills,      setSkills]      = useState<string[]>([]);
   const [gear,        setGear]        = useState<string[]>([]);
@@ -798,6 +800,7 @@ export function Profile() {
     setTiktok((user as any).tiktok      || meta.tiktok     || '');
     setLocation((user as any).location  || user.city ? `${user.city}${user.province ? ', ' + user.province : ''}` : '');
     setPrimaryRole((user as any).primaryRole    || meta.primaryRole    || '');
+    setBusinessIndustry((user as any).businessIndustry || '');
     setSecondaryRoles(toStringArray((user as any).secondaryRoles || meta.secondaryRoles));
     setSkills(toStringArray((user as any).skills || meta.skills));
     setGear(toStringArray((user as any).gear || meta.gear));
@@ -1179,6 +1182,7 @@ export function Profile() {
         instagram:      instagram.trim()      || undefined,
         yearsExp:       yearsExp              || undefined,
         primaryRole:    primaryRole           || undefined,
+        businessIndustry: businessIndustry    || undefined,
         secondaryRoles: secondaryRoles,
         skills:         skills,
         gear:           gear,
@@ -1302,7 +1306,7 @@ export function Profile() {
         username={user.username}
         isVerified={user.isVerified}
         accountType={user.accountType}
-        primaryRole={primaryRole}
+        primaryRole={getDisplayIdentity({ accountType: user.accountType, primaryRole, businessIndustry })}
         bio={user.bio}
         location={locationDisplay}
         trustLevel={trust?.trustLevel}
@@ -1347,6 +1351,7 @@ export function Profile() {
               verificationStatus={user.verificationStatus}
               bio={user.bio}
               primaryRole={primaryRole}
+              businessIndustry={businessIndustry}
               secondaryRoles={secondaryRoles}
               location={locationDisplay}
               openTo={collab}
@@ -1876,6 +1881,7 @@ export function Profile() {
               youtube={youtube} setYoutube={setYoutube}
               tiktok={tiktok} setTiktok={setTiktok}
               primaryRole={primaryRole} setPrimaryRole={setPrimaryRole}
+              businessIndustry={businessIndustry} setBusinessIndustry={setBusinessIndustry}
               secondaryRoles={secondaryRoles} setSecondaryRoles={setSecondaryRoles}
               skills={skills} setSkills={setSkills}
               gear={gear} setGear={setGear}
@@ -1896,7 +1902,7 @@ export function Profile() {
               focusSection={showEditProfile}
             />
             <div className="hidden lg:block">
-              <ProfilePreviewCard avatar={user.avatar} name={displayName} primaryRole={primaryRole} location={location} />
+              <ProfilePreviewCard avatar={user.avatar} name={displayName} primaryRole={getDisplayIdentity({ accountType: user.accountType, primaryRole, businessIndustry })} location={location} />
             </div>
           </div>
         </div>

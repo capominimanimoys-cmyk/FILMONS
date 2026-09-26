@@ -34,6 +34,15 @@ export interface User {
   contactPublic?: boolean;
   createdAt?: string;
   primaryRole?: string;
+  /** Business accounts only -- resolves in place of primaryRole for the
+   * "what defines this account professionally" identity line everywhere.
+   * See getDisplayIdentity in lib/identity.ts. Never used to overwrite or
+   * clear primaryRole itself, which every account type keeps intact. */
+  businessIndustry?: string;
+  /** Last time the Business Industry completion reminder was shown/
+   * dismissed -- drives its ~6h cooldown. Only meaningful while
+   * businessIndustry is empty; irrelevant once it's set. */
+  lastBusinessIndustryPromptAt?: string;
   profileSetupCompleted?: boolean;
   profileSetupPercentage?: number;
   emailVerified?:  boolean;

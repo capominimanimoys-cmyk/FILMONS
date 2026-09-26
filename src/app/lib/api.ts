@@ -181,6 +181,8 @@ function profileRowToUser(data: Record<string, any>): User {
     phone:                data.phone,
     province:             data.province,
     primaryRole:          data.primary_role,
+    businessIndustry:     data.business_industry || undefined,
+    lastBusinessIndustryPromptAt: data.last_business_industry_prompt_at || undefined,
     // Written by updateUser({education}) to a real top-level column (see
     // updateUser's payload builder) but this mapper never read it back --
     // the owner's own session never noticed (AuthContext optimistically
@@ -486,7 +488,7 @@ export const authApi = {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end, subscription_downgraded_from, subscription_downgrade_acknowledged')
+        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, business_industry, last_business_industry_prompt_at, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end, subscription_downgraded_from, subscription_downgrade_acknowledged')
         .eq('id', cached.id)
         .single();
       if (data) {
@@ -517,6 +519,8 @@ export const authApi = {
           city:                 data.city                || cached.city,
           province:             data.province            || cached.province,
           primaryRole:          data.primary_role        || cached.primaryRole,
+          businessIndustry:     data.business_industry   || cached.businessIndustry,
+          lastBusinessIndustryPromptAt: data.last_business_industry_prompt_at || cached.lastBusinessIndustryPromptAt,
           profileSetupCompleted: !!(data.onboarding_completed) || !!(getMeMeta.onboarding_completed) || cached.profileSetupCompleted,
           emailVerified:        data.email_verified  ?? cached.emailVerified  ?? true,
           phoneVerified:        data.phone_verified  ?? cached.phoneVerified,
@@ -625,6 +629,8 @@ export const authApi = {
     if ((updates as any).yearsExp     !== undefined) payload.years_exp   = parseInt((updates as any).yearsExp) || null;
     if ((updates as any).profileMeta    !== undefined) payload.profile_meta    = (updates as any).profileMeta;
     if ((updates as any).primaryRole    !== undefined) payload.primary_role    = (updates as any).primaryRole;
+    if ((updates as any).businessIndustry !== undefined) payload.business_industry = (updates as any).businessIndustry;
+    if ((updates as any).lastBusinessIndustryPromptAt !== undefined) payload.last_business_industry_prompt_at = (updates as any).lastBusinessIndustryPromptAt;
     if ((updates as any).secondaryRoles !== undefined) payload.secondary_roles = (updates as any).secondaryRoles;
     if ((updates as any).skills         !== undefined) payload.skills          = (updates as any).skills;
     if ((updates as any).gear           !== undefined) payload.gear            = (updates as any).gear;

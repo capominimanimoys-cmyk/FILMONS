@@ -56,6 +56,7 @@ export interface SearchListingRow {
 export interface SearchProfileRow {
   id: string; name: string; username: string | null; avatar_url: string | null;
   city: string | null; location: string | null; primary_role: string | null;
+  business_industry?: string | null;
   bio: string | null; is_verified: boolean | null;
   secondary_roles?: string[] | null;
   skills?: string[] | null;
@@ -63,7 +64,7 @@ export interface SearchProfileRow {
 }
 
 const LISTING_SELECT = LISTING_COLUMNS;
-const PROFILE_SELECT = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified, secondary_roles, skills, account_type';
+const PROFILE_SELECT = 'id, name, username, avatar_url, city, location, primary_role, business_industry, bio, is_verified, secondary_roles, skills, account_type';
 
 // Portfolio Works/Albums and Posts -- previously not searchable at all (no
 // function existed; buildPortfolioFilters() in searchUtils.ts was dead
@@ -195,6 +196,7 @@ async function searchProfilesByTerms(terms: string[]): Promise<SearchProfileRow[
         `name.ilike.%${term}%`,
         `username.ilike.%${term}%`,
         `primary_role.ilike.%${term}%`,
+        `business_industry.ilike.%${term}%`,
         `bio.ilike.%${term}%`,
         `city.ilike.%${term}%`,
       ]).join(','))
@@ -304,8 +306,8 @@ export async function searchMatchingCreators(rawQuery: string): Promise<SearchPr
   if (!terms.length) return [];
   const users = await searchProfilesByTerms(terms);
   users.sort((a, b) =>
-    scoreResult(rawQuery, b.name, b.primary_role ?? '', b.bio ?? '') -
-    scoreResult(rawQuery, a.name, a.primary_role ?? '', a.bio ?? ''));
+    scoreResult(rawQuery, b.name, b.primary_role || b.business_industry || '', b.bio ?? '') -
+    scoreResult(rawQuery, a.name, a.primary_role || a.business_industry || '', a.bio ?? ''));
   return users;
 }
 

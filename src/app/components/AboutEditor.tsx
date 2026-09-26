@@ -3,6 +3,8 @@ import { Search, X, Check, Plus, Loader2, MapPin, ChevronDown, ChevronRight, Mor
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { ProfessionPicker } from './ProfessionPicker';
+import { BusinessIndustryPicker } from './BusinessIndustryPicker';
+import { normalizeTier } from '../lib/reliabilityApi';
 import { BottomSheet } from './BottomSheet';
 import { EditProfileFieldPanel } from './EditProfileFieldPanel';
 import {
@@ -702,6 +704,7 @@ interface Props {
   youtube: string; setYoutube: (v:string)=>void;
   tiktok: string; setTiktok: (v:string)=>void;
   primaryRole: string; setPrimaryRole: (v:string)=>void;
+  businessIndustry: string; setBusinessIndustry: (v:string)=>void;
   secondaryRoles: string[]; setSecondaryRoles: (v:string[])=>void;
   skills: string[]; setSkills: (v:string[])=>void;
   gear: string[]; setGear: (v:string[])=>void;
@@ -896,16 +899,28 @@ export function AboutEditor(props: Props) {
         </SField>
       </Accordion>
 
-      {/* 3. Professional Identity */}
+      {/* 3. Professional Identity -- Business accounts show Business
+          Industry instead of Primary Role (per spec: a Business represents
+          an organization, not a person with a role). primaryRole itself is
+          never touched here for a Business account -- it stays intact,
+          just not shown/edited in this accordion. */}
       <Accordion number="3" title="Professional Identity">
-        <ProfessionPicker
-          primaryRole={props.primaryRole}
-          onPrimaryChange={props.setPrimaryRole}
-          secondaryRoles={props.secondaryRoles}
-          onSecondaryChange={props.setSecondaryRoles}
-          variant="light"
-          useSheetOnMobile
-        />
+        {normalizeTier(user.accountType) === 'business' ? (
+          <BusinessIndustryPicker
+            value={props.businessIndustry}
+            onChange={props.setBusinessIndustry}
+            variant="light"
+          />
+        ) : (
+          <ProfessionPicker
+            primaryRole={props.primaryRole}
+            onPrimaryChange={props.setPrimaryRole}
+            secondaryRoles={props.secondaryRoles}
+            onSecondaryChange={props.setSecondaryRoles}
+            variant="light"
+            useSheetOnMobile
+          />
+        )}
       </Accordion>
 
       {/* 4. Skills & Specialties */}

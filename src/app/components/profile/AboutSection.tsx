@@ -4,6 +4,7 @@
 // Edit links) as a full-screen overlay instead of tab content.
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
+import { normalizeTier } from '../../lib/reliabilityApi';
 
 // secondaryRoles/openTo/languages come from the free-form profile_meta
 // jsonb blob (see AboutEditor/Profile.tsx/HostProfile.tsx) -- nothing
@@ -24,10 +25,17 @@ function toList(v: unknown): string[] {
 }
 
 export function AboutSection({
-  bio, primaryRole, secondaryRoles, location, openTo, languages, isOwner, onEdit,
+  bio, primaryRole, businessIndustry, accountType, secondaryRoles, location, openTo, languages, isOwner, onEdit,
 }: {
   bio?: string;
   primaryRole?: string;
+  /** Business accounts only -- shown instead of primaryRole. See
+   *  getDisplayIdentity in lib/identity.ts for the shared resolution rule;
+   *  this component needs the raw pair (not a pre-resolved string) because
+   *  the LABEL itself changes too ("Business Industry" vs "Primary Role"),
+   *  not just the value. */
+  businessIndustry?: string;
+  accountType?: string;
   secondaryRoles?: string[];
   location?: string;
   openTo?: string[];
@@ -36,17 +44,25 @@ export function AboutSection({
   onEdit?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isBusiness = normalizeTier(accountType) === 'business';
   // Empty means null/undefined/""/whitespace-only, all treated identically.
   const trimmedBio = (bio ?? '').trim();
   const hasBio = trimmedBio.length > 0;
   const longBio = trimmedBio.length > 180;
   const shownBio = expanded || !longBio ? trimmedBio : `${trimmedBio.slice(0, 180)}…`;
 
+  // Business: never falls back to primaryRole -- a Business account with no
+  // Business Industry set yet shows neither ("neutral until completed" per
+  // spec), not a misleading personal-role fallback.
+  const identityValue = isBusiness ? businessIndustry : primaryRole;
+  const identityLabel = isBusiness ? 'Business Industry' : 'Primary Role';
+  const secondaryLabel = isBusiness ? 'Specialties / Services' : 'Also Works As';
+
   const secondaryRolesList = toList(secondaryRoles);
   const openToList = toList(openTo);
   const languagesList = toList(languages);
 
-  const hasAnything = hasBio || primaryRole || secondaryRolesList.length || location || openToList.length || languagesList.length;
+  const hasAnything = hasBio || identityValue || secondaryRolesList.length || location || openToList.length || languagesList.length;
   if (!hasAnything && !isOwner) return null;
 
   return (
@@ -79,13 +95,13 @@ export function AboutSection({
           </button>
         ) : null}
 
-        {(!!primaryRole || !!secondaryRolesList.length || !!location || !!openToList.length || !!languagesList.length) && (
+        {(!!identityValue || !!secondaryRolesList.length || !!location || !!openToList.length || !!languagesList.length) && (
           // Single column on narrow phones -- two cramped columns there
           // made every value truncate. sm: and up (tablet-width+) is where
           // there's actually room for two.
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 pt-1">
-            {primaryRole && <Field label="Primary Role" value={primaryRole} />}
-            {!!secondaryRolesList.length && <Field label="Also Works As" value={secondaryRolesList.join(', ')} />}
+            {identityValue && <Field label={identityLabel} value={identityValue} />}
+            {!!secondaryRolesList.length && <Field label={secondaryLabel} value={secondaryRolesList.join(', ')} />}
             {location && <Field label="Location" value={location} />}
             {!!openToList.length && <Field label="Open To" value={openToList.join(', ')} />}
             {!!languagesList.length && <Field label="Languages" value={languagesList.join(', ')} />}

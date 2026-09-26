@@ -9,6 +9,7 @@ import { NotificationBannerProvider } from '../components/NotificationBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { GuestBanner } from '../components/GuestBanner';
 import { SubscriptionDowngradeBanner } from '../components/SubscriptionDowngradeBanner';
+import { BusinessIndustryPrompt } from '../components/BusinessIndustryPrompt';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { CookieConsent } from '../components/CookieConsent';
 import { RouteProgressBar } from '../components/RouteProgressBar';
@@ -213,6 +214,7 @@ export function Root() {
         {/* Guest mode banner — shown above everything when browsing without account */}
         {isGuest && !isAuthenticated && <GuestBanner />}
         {isAuthenticated && <SubscriptionDowngradeBanner />}
+        {isAuthenticated && <BusinessIndustryPrompt />}
 
         {sidebarOpen && <SideDrawer onClose={() => setSidebarOpen(false)} />}
 

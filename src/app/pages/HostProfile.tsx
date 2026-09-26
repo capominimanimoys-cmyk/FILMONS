@@ -32,6 +32,7 @@ import { RecommendationComposeSheet } from '../components/profile/Recommendation
 import { socialLinksFromUser } from '../components/profile/SocialLinksSection';
 import { toStringArray } from '../lib/normalizeList';
 import { getTrustProfile, type TrustProfile } from '../lib/trustApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { TrustDetailsSheet } from '../components/trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../components/trust/TrustProfileOverlay';
 import {
@@ -412,6 +413,8 @@ export function HostProfile() {
   const avgRating   = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
   const isVerified  = host.isVerified;
   const primaryRole = meta.primaryRole || (host as any).primaryRole || '';
+  const businessIndustry = (host as any).businessIndustry || '';
+  const displayIdentity = getDisplayIdentity({ accountType: host.accountType, primaryRole, businessIndustry });
   const location    = (host as any).location || [host.city, (host as any).province].filter(Boolean).join(', ');
   const ig  = meta.instagram  || (host as any).instagram;
   const yt  = meta.youtube    || (host as any).youtube;
@@ -440,7 +443,7 @@ export function HostProfile() {
         username={host.username}
         isVerified={isVerified}
         accountType={host.accountType}
-        primaryRole={primaryRole}
+        primaryRole={displayIdentity}
         bio={host.bio}
         location={location}
         trustLevel={trust?.trustLevel}
@@ -505,6 +508,7 @@ export function HostProfile() {
               isVerified={isVerified}
               bio={host.bio}
               primaryRole={primaryRole}
+              businessIndustry={businessIndustry}
               secondaryRoles={toStringArray(meta.secondaryRoles || (host as any).secondaryRoles)}
               location={location}
               openTo={toStringArray(meta.collabPrefs || meta.collab || (host as any).collabPrefs)}
