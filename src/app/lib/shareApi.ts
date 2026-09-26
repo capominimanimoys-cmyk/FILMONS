@@ -28,6 +28,10 @@ export function getSharedContentDeepLink(snapshot: Pick<SharedContentSnapshot, '
       return `${origin}/portfolio/${snapshot.creatorId}`;
     case 'connection':
       return `${origin}/host/${snapshot.creatorId}`;
+    case 'listing':
+    case 'opportunity':
+    case 'service':
+      return `${origin}/listing/${snapshot.contentId}`;
     case 'course':
       return `${origin}/learning/course/${snapshot.contentId}`;
     default:

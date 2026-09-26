@@ -7,15 +7,20 @@
 // path ShareListingModal.tsx already uses for listings -- just generalized
 // to multiple recipients and to shareApi.ts's content-type-agnostic
 // SharedContentSnapshot instead of a Listing-shaped message.
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowLeft, Search, Check, Link2, Share2 as ShareIcon, Mail, Send, CheckCircle2 } from 'lucide-react';
+import { X, ArrowLeft, Search, Check, Link2, Share2 as ShareIcon, Mail, Send, CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
-import { UserAvatar, AccountTypeBadge } from '../AccountTypeBadge';
-import { listConnections, type ConnectionSummary } from '../../lib/connectionsApi';
+import { UserAvatar } from '../AccountTypeBadge';
 import { getSharedContentDeepLink, shareContentToRecipients } from '../../lib/shareApi';
+import { getShareRecipientsBrowse, searchShareRecipients, type ShareRecipient } from '../../lib/shareRecipientsApi';
+import { getDisplayIdentity } from '../../lib/displayIdentity';
 import type { SharedContentSnapshot } from '../../types';
+
+// Debounce for server-side search once the user actually types -- separate
+// from browse mode, which loads once on mount with no debounce needed.
+const SEARCH_DEBOUNCE_MS = 300;
 
 type Step = 'main' | 'recipients' | 'message' | 'success';
 
@@ -48,21 +53,75 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
   const [show, setShow] = useState(false);
   const closedRef = useRef(false);
 
-  const [connections, setConnections] = useState<ConnectionSummary[]>([]);
-  const [loadingConnections, setLoadingConnections] = useState(true);
+  // Browse mode (no query) -- a bounded, useful initial subset (Connections,
+  // recent conversation partners, following, then other real profiles),
+  // loaded once. Search mode (query typed) -- server-side, paginated,
+  // debounced, replacing the browse list entirely while active.
+  const [browseRecipients, setBrowseRecipients] = useState<ShareRecipient[]>([]);
+  const [loadingBrowse, setLoadingBrowse] = useState(true);
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<ConnectionSummary[]>([]);
+  const [searchResults, setSearchResults] = useState<ShareRecipient[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchCursor, setSearchCursor] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [selected, setSelected] = useState<ShareRecipient[]>([]);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Guards a slow, now-stale debounced response from overwriting a newer
+  // query's results (e.g. typing "sony" then quickly "sony fx3").
+  const searchVersionRef = useRef(0);
 
   useEffect(() => {
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
   }, []);
   useEffect(() => {
-    if (!user) { setLoadingConnections(false); return; }
-    listConnections(user.id).then(rows => { setConnections(rows); setLoadingConnections(false); });
+    if (!user) { setLoadingBrowse(false); return; }
+    getShareRecipientsBrowse(user.id).then(rows => { setBrowseRecipients(rows); setLoadingBrowse(false); });
   }, [user?.id]);
+
+  // Debounced server-side search -- resets to page 0 on every new query.
+  useEffect(() => {
+    const q = search.trim();
+    if (!q || !user) { setSearchResults([]); setSearchCursor(null); setSearchLoading(false); return; }
+    const myVersion = ++searchVersionRef.current;
+    setSearchLoading(true);
+    const t = setTimeout(() => {
+      searchShareRecipients(user.id, q, 0).then(({ recipients, nextCursor }) => {
+        if (searchVersionRef.current !== myVersion) return; // a newer query already superseded this one
+        setSearchResults(recipients);
+        setSearchCursor(nextCursor);
+        setSearchLoading(false);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search, user?.id]);
+
+  const loadMoreSearchResults = () => {
+    const q = search.trim();
+    if (!q || !user || searchCursor == null || loadingMore) return;
+    setLoadingMore(true);
+    const myVersion = searchVersionRef.current;
+    searchShareRecipients(user.id, q, searchCursor).then(({ recipients, nextCursor }) => {
+      setLoadingMore(false);
+      if (searchVersionRef.current !== myVersion) return;
+      setSearchResults(prev => [...prev, ...recipients]);
+      setSearchCursor(nextCursor);
+    });
+  };
+
+  // Infinite scroll for search results only -- browse mode is a single
+  // bounded fetch, per spec ("a useful subset," not the whole directory).
+  useEffect(() => {
+    if (!search.trim()) return;
+    const el = sentinelRef.current;
+    if (!el || searchCursor == null) return;
+    const io = new IntersectionObserver(entries => { if (entries[0].isIntersecting) loadMoreSearchResults(); }, { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, searchCursor]);
 
   const close = () => {
     if (closedRef.current) return;
@@ -105,15 +164,9 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
-  const filteredConnections = useMemo(() => {
-    if (!search.trim()) return connections;
-    const q = search.toLowerCase();
-    return connections.filter(c =>
-      c.otherUser.name.toLowerCase().includes(q) || (c.otherUser.username ?? '').toLowerCase().includes(q),
-    );
-  }, [connections, search]);
+  const visibleRecipients = search.trim() ? searchResults : browseRecipients;
 
-  const toggleRecipient = (c: ConnectionSummary) => {
+  const toggleRecipient = (c: ShareRecipient) => {
     setSelected(prev => prev.some(s => s.id === c.id) ? prev.filter(s => s.id !== c.id) : [...prev, c]);
   };
 
@@ -122,7 +175,7 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
     setSending(true);
     const { sentCount, failedCount } = await shareContentToRecipients({
       snapshot, senderId: user.id, senderName: user.name, senderAvatar: user.avatar,
-      recipientIds: selected.map(s => s.otherUser.id), message: message.trim() || undefined,
+      recipientIds: selected.map(s => s.id), message: message.trim() || undefined,
     });
     setSending(false);
     if (sentCount === 0) { toast.error('Could not send'); return; }
@@ -168,14 +221,14 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
             <div className="px-4 py-3 space-y-4">
               <ContentPreview snapshot={snapshot} />
 
-              {!!connections.length && (
+              {!!browseRecipients.length && (
                 <div>
                   <p className="text-xs font-bold text-gray-500 mb-2">Send to people on Filmons</p>
                   <div className="flex items-center gap-3 overflow-x-auto pb-1">
-                    {connections.slice(0, 8).map(c => (
+                    {browseRecipients.slice(0, 8).map(c => (
                       <button key={c.id} onClick={() => { toggleRecipient(c); setStep('recipients'); }} className="flex flex-col items-center gap-1 shrink-0 w-14">
-                        <UserAvatar user={{ id: c.otherUser.id, name: c.otherUser.name, avatar: c.otherUser.avatar_url }} size={48} />
-                        <span className="text-[10px] font-semibold text-gray-600 truncate w-full text-center">{c.otherUser.name.split(' ')[0]}</span>
+                        <UserAvatar user={{ id: c.id, name: c.name, avatar: c.avatar_url }} size={48} />
+                        <span className="text-[10px] font-semibold text-gray-600 truncate w-full text-center">{c.name.split(' ')[0]}</span>
                       </button>
                     ))}
                     <button onClick={() => setStep('recipients')} className="flex flex-col items-center gap-1 shrink-0 w-14">
@@ -188,7 +241,7 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
               <div className="space-y-1 pt-1">
                 <button onClick={() => setStep('recipients')} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 text-left">
                   <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0"><Send className="w-4 h-4 text-blue-600" /></div>
-                  <div className="min-w-0"><p className="text-sm font-bold text-gray-900">Send in Filmons</p><p className="text-xs text-gray-400">Share directly with your connections</p></div>
+                  <div className="min-w-0"><p className="text-sm font-bold text-gray-900">Send in Filmons</p><p className="text-xs text-gray-400">Share directly with anyone on Filmons</p></div>
                 </button>
                 <button onClick={handleCopyLink} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 text-left">
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${linkCopied ? 'bg-green-50' : 'bg-gray-100'}`}>
@@ -214,7 +267,7 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
                 <div className="flex items-center gap-1.5 flex-wrap mb-3">
                   {selected.map(s => (
                     <span key={s.id} className="flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full">
-                      {s.otherUser.name.split(' ')[0]}
+                      {s.name.split(' ')[0]}
                       <button onClick={() => toggleRecipient(s)}><X className="w-3 h-3" /></button>
                     </span>
                   ))}
@@ -223,26 +276,30 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
               <div className="relative mb-3">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
-                  value={search} onChange={e => setSearch(e.target.value)} placeholder="Search connections..."
+                  value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people..."
                   className="w-full bg-gray-100 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none"
                 />
               </div>
-              {loadingConnections ? (
+              {(search.trim() ? searchLoading && searchResults.length === 0 : loadingBrowse) ? (
                 <p className="text-center text-xs text-gray-400 py-8">Loading…</p>
-              ) : filteredConnections.length === 0 ? (
+              ) : visibleRecipients.length === 0 ? (
                 <p className="text-center text-xs text-gray-400 py-8">
-                  {connections.length === 0 ? 'Connect with people on Filmons to share with them' : 'No results'}
+                  {search.trim() ? 'No results' : 'No FILMONS profiles to show yet'}
                 </p>
               ) : (
                 <div className="space-y-1">
-                  {filteredConnections.map(c => {
+                  {visibleRecipients.map(c => {
                     const isSelected = selected.some(s => s.id === c.id);
+                    const identity = getDisplayIdentity(c);
                     return (
                       <button key={c.id} onClick={() => toggleRecipient(c)} className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-gray-50">
-                        <UserAvatar user={{ id: c.otherUser.id, name: c.otherUser.name, avatar: c.otherUser.avatar_url }} size={40} />
+                        <UserAvatar user={{ id: c.id, name: c.name, avatar: c.avatar_url }} size={40} />
                         <div className="flex-1 min-w-0 text-left">
-                          <p className="text-sm font-bold text-gray-900 truncate">{c.otherUser.name}</p>
-                          <AccountTypeBadge type={c.otherUser.account_type as any} size="sm" />
+                          <p className="text-sm font-bold text-gray-900 truncate flex items-center gap-1">
+                            {c.name}
+                            {c.is_verified && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
+                          </p>
+                          {identity && <p className="text-xs text-gray-400 truncate">{identity}</p>}
                         </div>
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
                           {isSelected && <Check className="w-3 h-3 text-white" />}
@@ -250,6 +307,11 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
                       </button>
                     );
                   })}
+                  {search.trim() && searchCursor != null && (
+                    <div ref={sentinelRef} className="flex justify-center py-3">
+                      {loadingMore && <Loader2 className="w-4 h-4 text-gray-300 animate-spin" />}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -259,7 +321,7 @@ export function SharePostSheet({ snapshot, onClose }: { snapshot: SharedContentS
             <div className="px-4 py-3 space-y-3">
               <div className="flex items-center gap-1.5 flex-wrap">
                 {selected.map(s => (
-                  <span key={s.id} className="bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full">{s.otherUser.name.split(' ')[0]}</span>
+                  <span key={s.id} className="bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full">{s.name.split(' ')[0]}</span>
                 ))}
               </div>
               <textarea

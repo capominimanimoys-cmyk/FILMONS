@@ -333,7 +333,7 @@ export interface OpportunityDetails {
  *  always re-fetched by (contentType, contentId) when opened, so it never
  *  goes stale or leaks a since-restricted post. */
 export interface SharedContentSnapshot {
-  contentType: 'post' | 'portfolio_item' | 'portfolio_album' | 'connection';
+  contentType: 'post' | 'portfolio_item' | 'portfolio_album' | 'connection' | 'listing' | 'opportunity' | 'service' | 'course';
   contentId: string;
   /** portfolio_item/portfolio_album only -- the item/album's owning
    *  creator, distinct from the post author for a reposted/attached case. */

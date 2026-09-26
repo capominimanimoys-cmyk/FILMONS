@@ -2,8 +2,9 @@ import { useNavigate } from 'react-router';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users, Lock } from 'lucide-react';
-import { Listing } from '../types';
-import { savedListingsApi, invalidateListingsCache } from '../lib/api';
+import { Listing, SharedContentSnapshot } from '../types';
+import { savedListingsApi, invalidateListingsCache, authApi } from '../lib/api';
+import { SharePostSheet } from './connect/SharePostSheet';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -82,12 +83,37 @@ function distanceLabel(km: number) {
   return km < 1 ? `${(km*1000).toFixed(0)} m` : `${km.toFixed(1)} km`;
 }
 
+// Builds the universal Share sheet's snapshot for a listing -- Rental/Sale
+// share as 'listing', Service/Opportunity keep their own contentType so
+// SharedContentBubble/shareApi's deep-link both stay type-accurate, even
+// though all three resolve to the same /listing/:id route today. Owner
+// name/avatar come from the sync cache (best-effort, instant -- same
+// pattern Notifications.tsx already uses) rather than an extra async
+// round trip just to open the sheet; SharedContentBubble re-resolves the
+// real listing before letting a recipient open it regardless.
+function listingShareSnapshot(listing: Listing): SharedContentSnapshot {
+  const owner = authApi.getUserByIdSync(listing.userId);
+  const thumb = listing.image ||
+    (Array.isArray(listing.images) ? listing.images.find((i: any) => typeof i === 'string') : undefined);
+  return {
+    contentType: listing.listingType === 'opportunity' ? 'opportunity' : listing.listingType === 'service' ? 'service' : 'listing',
+    contentId: listing.id,
+    creatorId: listing.userId,
+    creatorName: owner?.name || 'Filmons Host',
+    creatorAvatar: owner?.avatar,
+    creatorVerified: owner?.isVerified,
+    title: listing.title,
+    caption: `$${listing.price} CAD`,
+    thumbnailUrl: thumb || undefined,
+  };
+}
+
 // ── Bottom sheet menu — three-dot click and mobile long-press both open this ──
-function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants, locked, onShowLock }: {
+function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants, locked, onShowLock, onShare }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
   isEmergency: boolean; onEmergency: () => void; onViewApplicants?: () => void;
-  locked?: boolean; onShowLock?: () => void;
+  locked?: boolean; onShowLock?: () => void; onShare: () => void;
 }) {
   const sheetRef   = useRef<HTMLDivElement>(null);
   const backdropRef= useRef<HTMLDivElement>(null);
@@ -130,13 +156,6 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
     dragging.current = false;
     if (dragY > 100) { close(); return; }
     setDragY(0);
-  };
-
-  const share = async () => {
-    const url = `${window.location.origin}/listing/${listing.id}`;
-    if (navigator.share) { try { await navigator.share({ title: listing.title, url }); } catch {} }
-    else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
-    close();
   };
 
   const cover = listing.image ||
@@ -210,7 +229,7 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
               { icon: <Trash2 className="w-5 h-5"/>, label: 'Delete Listing', sub: 'Remove this listing permanently', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
             ] : []),
             { icon: <Bookmark className="w-5 h-5"/>, label: saved ? 'Remove from saved' : 'Save listing', sub: saved ? 'Remove from your saved listings' : 'Add to your saved listings', color: 'text-gray-900', action: () => { onSave(); close(); } },
-            { icon: <Share2 className="w-5 h-5"/>,   label: 'Share listing',   sub: 'Send the link to someone', color: 'text-gray-900', action: share },
+            { icon: <Share2 className="w-5 h-5"/>,   label: 'Share listing',   sub: 'Send in Filmons, or copy link', color: 'text-gray-900', action: () => { close(); onShare(); } },
             ...(isOwn ? [] : [
               { icon: <EyeOff className="w-5 h-5"/>,   label: 'Hide listing',    sub: "Don't show this listing again", color: 'text-gray-600', action: () => { toast('Listing hidden'); close(); } },
               { icon: <Flag className="w-5 h-5"/>,     label: 'Report listing',  sub: 'Scam, inappropriate, or misleading', color: 'text-red-500', action: () => { toast.info('Report submitted — thank you'); close(); } },
@@ -245,11 +264,11 @@ function BottomMenuSheet({ listing, saved, onSave, onClose, isOwn, onEdit, onDel
 // desktop dropdown. Fade + slight downward move + scale, per the FILMONS
 // desktop menu motion spec (opacity 0->1, scale 0.96->1, y -4px->0,
 // 160-200ms in; closing reverses slightly faster). ──
-function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants, locked, onShowLock }: {
+function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, onDeleteRequest, isEmergency, onEmergency, onViewApplicants, locked, onShowLock, onShare }: {
   listing: Listing; saved: boolean; onSave: () => void; onClose: () => void;
   isOwn: boolean; onEdit: () => void; onDeleteRequest: () => void;
   isEmergency: boolean; onEmergency: () => void; onViewApplicants?: () => void;
-  locked?: boolean; onShowLock?: () => void;
+  locked?: boolean; onShowLock?: () => void; onShare: () => void;
 }) {
   const [show, setShow] = useState(false);
 
@@ -261,13 +280,6 @@ function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, on
     setShow(false);
     setTimeout(onClose, 120);
   }, [onClose]);
-
-  const share = async () => {
-    const url = `${window.location.origin}/listing/${listing.id}`;
-    if (navigator.share) { try { await navigator.share({ title: listing.title, url }); } catch {} }
-    else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
-    close();
-  };
 
   const actions = [
     ...(isOwn ? [
@@ -283,7 +295,7 @@ function DesktopListingMenu({ listing, saved, onSave, onClose, isOwn, onEdit, on
       { icon: <Trash2 className="w-4 h-4"/>, label: 'Delete Listing', color: 'text-red-500', action: () => { close(); onDeleteRequest(); } },
     ] : []),
     { icon: <Bookmark className="w-4 h-4"/>, label: saved ? 'Remove from saved' : 'Save listing', color: 'text-gray-700', action: () => { onSave(); close(); } },
-    { icon: <Share2 className="w-4 h-4"/>,   label: 'Share listing', color: 'text-gray-700', action: share },
+    { icon: <Share2 className="w-4 h-4"/>,   label: 'Share listing', color: 'text-gray-700', action: () => { close(); onShare(); } },
     ...(isOwn ? [] : [
       { icon: <EyeOff className="w-4 h-4"/>, label: 'Hide listing',   color: 'text-gray-600', action: () => { toast('Listing hidden'); close(); } },
       { icon: <Flag className="w-4 h-4"/>,   label: 'Report listing', color: 'text-red-500', action: () => { toast.info('Report submitted — thank you'); close(); } },
@@ -401,6 +413,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
   const [sheet,   setSheet]   = useState(false);   // three-dot click + long-press both open this
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLockModal, setShowLockModal] = useState(false);
+  const [showSharePostSheet, setShowSharePostSheet] = useState(false);
   const boosted = !!listing.boosted;
   // Same "trust the expiry timestamp, not just the flag" check Home.tsx's
   // feed-recycling logic uses -- is_emergency isn't cleared until the
@@ -542,6 +555,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
     isEmergency, onEmergency: () => navigate(`/listing/${listing.id}/emergency`),
     onViewApplicants: isOpportunity ? () => navigate(`/listing/${listing.id}/applicants`) : undefined,
     locked: isOwn && locked, onShowLock: () => setShowLockModal(true),
+    onShare: () => setShowSharePostSheet(true),
   };
 
   return (
@@ -561,6 +575,9 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
         />
       )}
       {showLockModal && <OpportunityLockModal onClose={() => setShowLockModal(false)} />}
+      {showSharePostSheet && (
+        <SharePostSheet snapshot={listingShareSnapshot(listing)} onClose={() => setShowSharePostSheet(false)} />
+      )}
 
       {/* Plain div, deliberately NOT a motion component -- a whileTap scale
           on an ANCESTOR of the layoutId'd image below fights with Framer

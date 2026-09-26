@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { CheckCircle2, Layers, FileText } from 'lucide-react';
 import { toast } from 'sonner';
-import { postsApi } from '../../lib/api';
+import { postsApi, listingsApi } from '../../lib/api';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import { useLearningTransition } from '../../context/LearningTransitionContext';
 import type { SharedContentSnapshot } from '../../types';
@@ -41,6 +41,14 @@ export function SharedContentBubble({ content, isOwn }: { content: SharedContent
     }
     if (content.contentType === 'course') {
       enterLearning(`/course/${content.contentId}`, { route: location.pathname + location.search });
+      return;
+    }
+    if (content.contentType === 'listing' || content.contentType === 'opportunity' || content.contentType === 'service') {
+      setChecking(true);
+      const listing = await listingsApi.getOne(content.contentId).catch(() => null);
+      setChecking(false);
+      if (!listing) { toast.error('This listing is no longer available'); return; }
+      navigate(`/listing/${content.contentId}`);
       return;
     }
     navigate(`/host/${content.creatorId}`);
