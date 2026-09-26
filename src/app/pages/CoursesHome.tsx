@@ -1,4 +1,5 @@
-// FILMONS Learning Home -- learning.filmons.app. Cinematic, creator-
+// FILMONS Learning Home -- filmons.app/learning for now (see
+// learningOrigin.ts). Cinematic, creator-
 // focused redesign inspired by LinkedIn Learning's information
 // architecture (personalized rails, role/tool-based recommendations,
 // continue-learning, instructor discovery) without copying its visual

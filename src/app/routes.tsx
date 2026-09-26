@@ -76,6 +76,7 @@ import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
 import { LikedItems } from './pages/LikedItems';
+import { SavedLikedPosts } from './pages/SavedLikedPosts';
 
 export const router = createBrowserRouter([
   {
@@ -90,6 +91,8 @@ export const router = createBrowserRouter([
       { path: 'wallet', Component: Wallet },
       { path: 'liked-listings', element: <LikedItems type="listing" /> },
       { path: 'liked-creators', element: <LikedItems type="creator" /> },
+      { path: 'saved-posts', element: <SavedLikedPosts type="saved" /> },
+      { path: 'liked-posts', element: <SavedLikedPosts type="liked" /> },
       { path: 'wallet/payout-method', Component: PayoutMethodSetup },
       { path: 'notifications', Component: Notifications },
       { path: 'settings/notifications',  Component: NotificationSettings  },
@@ -129,16 +132,17 @@ export const router = createBrowserRouter([
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
-      // NOTE: FILMONS Learning is NOT a route in this router at all, and
-      // there is no filmons.app/learning path anymore either — it's a
-      // true separate product, reachable ONLY at learning.filmons.app
-      // (an entirely separate Rollup bundle, learning.html, built from
-      // src/app/learningRoutes.tsx + LearningApp.tsx; see vercel.json's
-      // host-based rewrite once that DNS record exists). This app's JS
-      // never imports any Learning page/component. Crossing into it is a
-      // real cross-origin navigation via useLearningTransition()'s
+      // NOTE: FILMONS Learning is NOT a route in this router at all -- it's
+      // a true separate product/Rollup bundle (learning.html, built from
+      // src/app/learningRoutes.tsx + LearningApp.tsx), never imported by
+      // this app's JS. It's served at filmons.app/learning today (a
+      // Vercel path rewrite to learning.html, see vercel.json -- that's
+      // the one actually in use for now) and will ALSO be reachable at
+      // learning.filmons.app once that domain's DNS is added; both point
+      // at this exact same bundle. Crossing into it is always a real
+      // cross-origin/full-page navigation via useLearningTransition()'s
       // enterLearning() (see learningOrigin.ts), never a route in this
-      // tree and never a filmons.app/learning redirect.
+      // tree.
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
       { path: 'hashtag/:tag', Component: HashtagPage },

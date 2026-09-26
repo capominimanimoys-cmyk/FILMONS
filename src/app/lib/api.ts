@@ -1815,6 +1815,29 @@ export const postsApi = {
     }
   },
 
+  // Posts `userId` has liked (post_likes table), most-recently-liked
+  // first -- distinct from savedPostsApi.getSaved (the `favorites` table,
+  // an explicit "save for later" a viewer opts into separately from
+  // liking). Re-fetches the real, live posts via getByIds (which already
+  // applies visibility filtering + liked/reposted state) rather than
+  // trusting any cached snapshot, so a since-deleted/hidden post never
+  // lingers here.
+  getLikedPosts: async (userId: string, limit = 50): Promise<Post[]> => {
+    try {
+      const { data } = await supabase
+        .from('post_likes').select('post_id, created_at')
+        .eq('user_id', userId).order('created_at', { ascending: false }).limit(limit);
+      const ids = (data ?? []).map((r: any) => r.post_id).filter(Boolean);
+      if (!ids.length) return [];
+      const posts = await postsApi.getByIds(ids);
+      const order = new Map(ids.map((id, i) => [id, i]));
+      return posts.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    } catch (e) {
+      console.error('[getLikedPosts] error:', e);
+      return [];
+    }
+  },
+
   // Registers the (user_id, post_id) repost relationship -- the SAME
   // `reposts` table row handleRepost's plain-repost path already writes,
   // now also called from CreatePostSheet.publish() when a "repost with

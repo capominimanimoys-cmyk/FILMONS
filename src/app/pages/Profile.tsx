@@ -15,7 +15,7 @@ import {
   FileText, ThumbsUp, Package, Info, Grid3X3,
   Plus, Trash2, ChevronDown, ChevronUp, Check,
   Instagram, Youtube, Edit3, Share2, Repeat2,
-  Film, Music2, User, ExternalLink, MoreVertical, AlertTriangle,
+  Film, Music2, User, ExternalLink, MoreVertical, AlertTriangle, Heart,
 } from 'lucide-react';
 import { reviewsApi, listingsApi, postsApi, savedPostsApi } from '../lib/api';
 import { authApi } from '../lib/api';
@@ -560,7 +560,7 @@ export function Profile() {
   const TABS = PROFILE_TABS;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getAllPosts, mergePosts, updatePost } = usePostStore();
+  const { mergePosts, updatePost } = usePostStore();
 
   // 'all' is the default landing tab (was 'listings') -- the All tab is now
   // the full vertical overview, not just a bio display, so it's the right
@@ -869,11 +869,6 @@ export function Profile() {
     } finally { setLoading(false); }
   }
 
-  async function loadLiked() {
-    const all = getAllPosts();
-    setLikedPosts(all.filter(p => p?.userName && p.likes?.includes(user!.id)));
-  }
-
   const SAVED_CACHE_KEY = user?.id ? `filmons_saved_favs_${user.id}` : null;
 
   async function loadSaved() {
@@ -898,7 +893,7 @@ export function Profile() {
     // that sequential await added a full extra round-trip of latency to
     // the Liked Listings/Creators sections for a fetch this tab doesn't
     // even display first.
-    const [sp, listingFavs, creatorFavs] = await Promise.all([
+    const [sp, listingFavs, creatorFavs, lp] = await Promise.all([
       savedPostsApi.getSaved(user.id).catch(() => []),
       supabase.from('favorites').select('id, item_id, item_data')
         .eq('user_id', user.id).eq('item_type', 'listing').order('created_at', { ascending: false })
@@ -906,10 +901,12 @@ export function Profile() {
       supabase.from('favorites').select('id, item_id, item_data')
         .eq('user_id', user.id).eq('item_type', 'creator').order('created_at', { ascending: false })
         .then(r => r.data || [], () => []),
+      postsApi.getLikedPosts(user.id).catch(() => []),
     ]);
     setSavedPosts(sp.filter((p: any) => p?.id && p?.userName));
     setSavedListings(listingFavs);
     setLikedCreators(creatorFavs);
+    setLikedPosts(lp);
     setSavedLoading(false);
     setSavedFetchedOnce(true);
     if (SAVED_CACHE_KEY) {
@@ -1667,6 +1664,121 @@ export function Profile() {
                     className="w-full py-3 text-center text-sm font-bold text-blue-600 hover:bg-gray-50 border-t border-gray-50"
                   >
                     See all liked creators ({likedCreators.length})
+                  </button>
+                )}
+              </div>
+
+              {/* Saved Posts -- already-fetched via savedPostsApi.getSaved
+                  (favorites, item_type='post') but was never actually
+                  rendered anywhere on this page until now. Distinct from
+                  Liked Posts below: saving is an explicit "keep for later"
+                  bookmark, separate from liking. */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><Bookmark className="w-4 h-4"/> Saved Posts</p>
+                  <span className="text-xs text-gray-400">{savedPosts.length}</span>
+                </div>
+                {savedLoading && savedPosts.length === 0 ? (
+                  <div className="px-4 py-3 space-y-3 animate-pulse">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gray-100 shrink-0"/>
+                        <div className="flex-1 space-y-1.5"><div className="h-3 bg-gray-100 rounded w-2/3"/><div className="h-2.5 bg-gray-100 rounded w-1/3"/></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : savedPosts.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-gray-400">
+                    <Bookmark className="w-8 h-8 mx-auto mb-2 text-gray-300"/>
+                    Save posts to find them here later.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {savedPosts.slice(0, 3).map(p => {
+                      const thumb = p.images?.[0] || p.thumbnailUrl;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => navigate(`/post/${p.id}`)}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+                        >
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                            {thumb
+                              ? <img src={thumb} className="w-full h-full object-cover" alt=""/>
+                              : <div className="w-full h-full flex items-center justify-center"><FileText className="w-5 h-5 text-gray-300"/></div>
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{p.userName}</p>
+                            {p.content && <p className="text-xs text-gray-400 truncate">{p.content}</p>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {savedPosts.length > 3 && (
+                  <button
+                    onClick={() => navigate('/saved-posts')}
+                    className="w-full py-3 text-center text-sm font-bold text-blue-600 hover:bg-gray-50 border-t border-gray-50"
+                  >
+                    See all saved posts ({savedPosts.length})
+                  </button>
+                )}
+              </div>
+
+              {/* Liked Posts -- post_likes table (the heart button), distinct
+                  from Saved Posts above. */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <p className="font-bold text-sm text-gray-900 flex items-center gap-1.5"><Heart className="w-4 h-4"/> Liked Posts</p>
+                  <span className="text-xs text-gray-400">{likedPosts.length}</span>
+                </div>
+                {savedLoading && likedPosts.length === 0 ? (
+                  <div className="px-4 py-3 space-y-3 animate-pulse">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gray-100 shrink-0"/>
+                        <div className="flex-1 space-y-1.5"><div className="h-3 bg-gray-100 rounded w-2/3"/><div className="h-2.5 bg-gray-100 rounded w-1/3"/></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : likedPosts.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-gray-400">
+                    <Heart className="w-8 h-8 mx-auto mb-2 text-gray-300"/>
+                    Posts you like will show up here.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {likedPosts.slice(0, 3).map(p => {
+                      const thumb = p.images?.[0] || p.thumbnailUrl;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => navigate(`/post/${p.id}`)}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+                        >
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                            {thumb
+                              ? <img src={thumb} className="w-full h-full object-cover" alt=""/>
+                              : <div className="w-full h-full flex items-center justify-center"><FileText className="w-5 h-5 text-gray-300"/></div>
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{p.userName}</p>
+                            {p.content && <p className="text-xs text-gray-400 truncate">{p.content}</p>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {likedPosts.length > 3 && (
+                  <button
+                    onClick={() => navigate('/liked-posts')}
+                    className="w-full py-3 text-center text-sm font-bold text-blue-600 hover:bg-gray-50 border-t border-gray-50"
+                  >
+                    See all liked posts ({likedPosts.length})
                   </button>
                 )}
               </div>
