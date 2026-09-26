@@ -18,6 +18,7 @@ import { UserAvatar } from './AccountTypeBadge';
 import { BottomSheet, SheetAction, SheetCancel } from './BottomSheet';
 import { toast } from 'sonner';
 import { type SuggestedCreator } from '../lib/portfolioApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 
 function SuggestedCreatorCard({ creator, onNotInterested }: { creator: SuggestedCreator; onNotInterested: () => void }) {
   const navigate = useNavigate();
@@ -61,7 +62,11 @@ function SuggestedCreatorCard({ creator, onNotInterested }: { creator: Suggested
             <p className="text-sm font-black text-gray-900 truncate">{creator.name}</p>
             {creator.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
           </div>
-          {creator.primary_role && <p className="text-xs text-blue-600 font-bold truncate w-full mt-0.5">{creator.primary_role}</p>}
+          {getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }) && (
+            <p className="text-xs text-blue-600 font-bold truncate w-full mt-0.5">
+              {getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry })}
+            </p>
+          )}
           {creator.secondary_roles[0] && <p className="text-[11px] text-gray-400 truncate w-full">{creator.secondary_roles[0]}</p>}
           {creator.city && (
             <p className="text-[11px] text-gray-400 flex items-center gap-0.5 truncate w-full justify-center mt-1">

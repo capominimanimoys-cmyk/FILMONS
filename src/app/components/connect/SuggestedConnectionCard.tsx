@@ -13,6 +13,7 @@ import { sendConnectionRequest } from '../../lib/connectionsApi';
 import type { SuggestedCreator } from '../../lib/portfolioApi';
 import { ConnectFlowSheet } from '../ConnectFlowSheet';
 import { BottomSheet, SheetAction, SheetCancel } from '../BottomSheet';
+import { getDisplayIdentity } from '../../lib/displayIdentity';
 
 // The one real "why" signal this app can honestly claim without a dedicated
 // reasons engine: a shared Primary Role (the exact phrasing the spec's own
@@ -88,7 +89,7 @@ export function SuggestedConnectionCard({ creator, onConnected, onDismiss, width
           {creator.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
         </div>
         <p className="text-xs text-gray-400 truncate">
-          {[creator.primary_role, creator.city].filter(Boolean).join(' · ')}
+          {[getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }), creator.city].filter(Boolean).join(' · ')}
         </p>
       </button>
 

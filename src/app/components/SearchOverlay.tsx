@@ -19,6 +19,7 @@ import { PostCard } from './PostCard';
 import type { Post } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { isProfessional } from '../lib/reliabilityApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
@@ -83,6 +84,7 @@ function interleave3<A, B, C>(a: A[], b: B[], c: C[]): (A | B | C)[] {
 interface ProfileRow {
   id: string; name: string; username: string | null; avatar_url: string | null;
   city: string | null; location: string | null; primary_role: string | null;
+  business_industry?: string | null; account_type?: string | null;
   bio: string | null; is_verified: boolean | null;
   available_for_hire?: boolean | null;
   available_remotely?: boolean | null;
@@ -443,7 +445,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
   for (const u of (uRes.data ?? [])) {
     if (!u.name || seen.has(u.name)) continue;
     seen.add(u.name);
-    results.push({ id:`db-u-${u.id}`, text:u.name, subtext:u.primary_role||'Creator', icon:'👤', kind:'creator', action:u.name });
+    results.push({ id:`db-u-${u.id}`, text:u.name, subtext:getDisplayIdentity({ accountType: u.account_type, primaryRole: u.primary_role, businessIndustry: u.business_industry })||'Creator', icon:'👤', kind:'creator', action:u.name });
   }
   for (const s of generateSmartSuggestions(rawQ)) {
     if (!seen.has(s.text)) { seen.add(s.text); results.push(s); }
@@ -454,7 +456,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
 // ── Universal search ───────────────────────────────────────────────────────────
 // Columns confirmed to exist in DB (matches api.ts getAll select — no province)
 const LISTING_SELECT  = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, created_at, is_active, is_emergency, emergency_expires_at, boosted';
-const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, bio, is_verified';
+const PROFILE_SELECT  = 'id, name, username, avatar_url, city, location, primary_role, business_industry, account_type, bio, is_verified';
 
 // ── Category classification + core matching ──────────────────────────────────
 // Both now live in filmSearch.ts, imported below -- shared with
@@ -517,8 +519,12 @@ async function fetchCategoryBrowse(category: TabId): Promise<{ users: ProfileRow
 
   if (category === 'connect') {
     // Creators only -- Services/Opportunities are Marketplace's.
+    // Business accounts may have no primary_role at all (identified by
+    // business_industry instead, per spec) -- requiring primary_role alone
+    // would silently exclude them from Browse Connect entirely.
     const res = await supabase.from('profiles').select(PROFILE_SELECT)
-      .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+      .not('name', 'is', null).neq('name', '')
+      .or('primary_role.not.is.null,business_industry.not.is.null')
       .order('created_at', { ascending: false }).limit(24);
     if (res.error) console.error('[Search] browse connect creators error:', res.error.message);
     return { users: (res.data ?? []) as ProfileRow[], listings: [], courses: [] };
@@ -838,7 +844,8 @@ function CreatorCard({ u, onNavigate }: { u: ProfileRow; onNavigate: (url: strin
           {u.is_verified && <span className="text-[9px] font-black text-green-600 bg-green-50 px-1 py-0.5 rounded">✓</span>}
           {u.username && <span className="text-[11px] text-gray-400 shrink-0">@{u.username}</span>}
         </div>
-        {u.primary_role && <p className="text-xs text-blue-600 font-medium truncate">{u.primary_role}</p>}
+        {(() => { const identity = getDisplayIdentity({ accountType: u.account_type, primaryRole: u.primary_role, businessIndustry: u.business_industry });
+          return identity && <p className="text-xs text-blue-600 font-medium truncate">{identity}</p>; })()}
         {(u.city ?? u.location) && (
           <p className="text-[11px] text-gray-400 flex items-center gap-0.5 mt-0.5">
             <MapPin className="w-2.5 h-2.5 shrink-0"/>{u.city ?? u.location}

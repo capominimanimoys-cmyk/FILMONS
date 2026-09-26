@@ -22,6 +22,7 @@ import { ConnectFlowSheet } from '../ConnectFlowSheet';
 import { getConnectionStatus, sendConnectionRequest, type ConnectionStatus } from '../../lib/connectionsApi';
 import { isActivityEventLiked, toggleActivityEventLike, type ActivityEntry, type ActivityActor } from '../../lib/activityApi';
 import { PostMoreMenu } from './PostMoreMenu';
+import { getDisplayIdentity } from '../../lib/displayIdentity';
 import { SharePostSheet } from './SharePostSheet';
 
 function timeAgo(iso: string): string {
@@ -76,7 +77,11 @@ function PersonColumn({ person }: { person: ActivityActor }) {
         </div>
       )}
 
-      {person.primary_role && <p className="text-xs text-gray-500 font-semibold mt-1 truncate">{person.primary_role}</p>}
+      {getDisplayIdentity({ accountType: person.account_type, primaryRole: person.primary_role, businessIndustry: person.business_industry }) && (
+        <p className="text-xs text-gray-500 font-semibold mt-1 truncate">
+          {getDisplayIdentity({ accountType: person.account_type, primaryRole: person.primary_role, businessIndustry: person.business_industry })}
+        </p>
+      )}
       {person.city && (
         <p className="text-[11px] text-gray-400 flex items-center gap-0.5 justify-center md:justify-start mt-0.5 truncate">
           <MapPin className="w-3 h-3 shrink-0" /> {person.city}

@@ -31,6 +31,7 @@ export interface ActivityActor {
    * pay for these extra columns. */
   account_type?: string | null;
   primary_role?: string | null;
+  business_industry?: string | null;
   city?: string | null;
 }
 
@@ -120,7 +121,7 @@ const PAGE_FETCH_MULTIPLIER = 2; // over-fetch to absorb rows filtered out by th
 async function fetchProfilesAndTrust(ids: string[]): Promise<Map<string, ActivityActor>> {
   if (!ids.length) return new Map();
   const { data } = await supabase.from('profiles')
-    .select('id, name, username, avatar_url, is_verified, account_type, primary_role, city').in('id', ids);
+    .select('id, name, username, avatar_url, is_verified, account_type, primary_role, business_industry, city').in('id', ids);
   return new Map((data ?? []).map((p: any) => [p.id, p as ActivityActor]));
 }
 

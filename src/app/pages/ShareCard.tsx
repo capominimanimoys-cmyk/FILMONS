@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { authApi } from '../lib/api';
 import { normalizeTier } from '../lib/reliabilityApi';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import {
   EW, SF, NEUE, Photo, VBar, Stat, tierBadgeFor, shareCardNavBtn,
   shareCardTransitionCss, shareCardTransitionStyle,
@@ -188,7 +189,7 @@ export function ShareCard() {
     username:    user?.username    || 'username',
     avatar:      user?.avatar      || '',
     bio:         user?.bio         || '',
-    primaryRole: user?.primaryRole || 'Creator',
+    primaryRole: getDisplayIdentity({ accountType: user?.accountType, primaryRole: user?.primaryRole, businessIndustry: (user as any)?.businessIndustry }) || 'Creator',
     isVerified:  !!user?.isVerified,
     location:    user?.location || user?.city || '',
     accountType: user?.accountType,

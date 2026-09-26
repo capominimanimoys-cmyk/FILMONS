@@ -6,6 +6,7 @@ import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { authApi, socialApi } from '../lib/api';
 import { setSettingsReturnTo } from '../lib/settingsReturnTo';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { WorkEditor } from '../components/WorkEditor';
 import { ShareSheet } from '../components/ShareSheet';
@@ -124,7 +125,7 @@ function FollowSheet({
 
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, name, username, avatar, primary_role, is_verified')
+      .select('id, name, username, avatar, primary_role, business_industry, account_type, is_verified')
       .in('id', ids);
 
     setUsers(profiles ?? []);
@@ -216,7 +217,11 @@ function FollowSheet({
                         {u.is_verified && <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 fill-blue-500 shrink-0" />}
                       </div>
                       {u.username && <p className="text-xs text-gray-400 truncate">@{u.username}</p>}
-                      {u.primary_role && <p className="text-[11px] text-blue-600 truncate">{u.primary_role}</p>}
+                      {getDisplayIdentity({ accountType: u.account_type, primaryRole: u.primary_role, businessIndustry: u.business_industry }) && (
+                        <p className="text-[11px] text-blue-600 truncate">
+                          {getDisplayIdentity({ accountType: u.account_type, primaryRole: u.primary_role, businessIndustry: u.business_industry })}
+                        </p>
+                      )}
                     </div>
                     {!isMe && meId && (
                       <button
@@ -1598,7 +1603,7 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
             )}
           </div>
           {profile.username && <p className="text-sm text-gray-400 break-words">@{profile.username}</p>}
-          {profile.primaryRole && <p className="text-xs font-bold text-blue-600 mt-0.5">{profile.primaryRole}</p>}
+          {getDisplayIdentity(profile) && <p className="text-xs font-bold text-blue-600 mt-0.5">{getDisplayIdentity(profile)}</p>}
         </div>
 
         {profile.bio && (

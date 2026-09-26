@@ -1674,7 +1674,8 @@ export async function getPortfolioEntriesByIds(
 // follows table, not a placeholder. ──────────────────────────────────────
 export interface SuggestedCreator {
   id: string; name: string; username: string | null; avatar_url: string | null;
-  primary_role: string | null; secondary_roles: string[]; city: string | null; is_verified: boolean;
+  primary_role: string | null; business_industry?: string | null; account_type?: string | null;
+  secondary_roles: string[]; city: string | null; is_verified: boolean;
   /** Up to a few of the candidate's own skills, for the Connection Card's
    * "Sony FX6 · RED · Commercial"-style relevance row. */
   skills: string[];
@@ -1713,9 +1714,13 @@ export async function getSuggestedCreators(
       // Dismissed ("x") suggestions stay hidden -- see connectionsApi.ts's
       // dismissSuggestion/connection_dismissals.
       supabase.from('connection_dismissals').select('dismissed_user_id').eq('user_id', userId),
+      // Business accounts may have no primary_role at all (identified by
+      // business_industry instead, per spec) -- requiring primary_role
+      // alone would silently exclude them from this discovery surface.
       supabase.from('profiles')
-        .select('id, name, username, avatar_url, primary_role, secondary_roles, city, is_verified, skills')
-        .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+        .select('id, name, username, avatar_url, primary_role, business_industry, account_type, secondary_roles, city, is_verified, skills')
+        .not('name', 'is', null).neq('name', '')
+        .or('primary_role.not.is.null,business_industry.not.is.null')
         .order('is_verified', { ascending: false }).limit(limit * 6),
     ]);
     const alreadyConnectedOrPending = new Set(
@@ -1792,7 +1797,8 @@ export async function getSuggestedCreators(
 
     const suggestions: SuggestedCreator[] = eligible.map((c: any) => ({
       id: c.id, name: c.name, username: c.username, avatar_url: c.avatar_url,
-      primary_role: c.primary_role, secondary_roles: toStringArray(c.secondary_roles),
+      primary_role: c.primary_role, business_industry: c.business_industry, account_type: c.account_type,
+      secondary_roles: toStringArray(c.secondary_roles),
       city: c.city, is_verified: !!c.is_verified, skills: toStringArray(c.skills),
       mutualCount: mutualCounts.get(c.id) ?? 0,
       mutualAvatars: (mutualIdsByCandidate.get(c.id) ?? []).map(id => mutualProfileMap.get(id)).filter((p): p is { id: string; name: string; avatar_url: string | null } => !!p),

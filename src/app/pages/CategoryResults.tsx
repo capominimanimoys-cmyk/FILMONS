@@ -59,6 +59,7 @@ import {
 } from '../lib/filmSearch';
 import { detectMarketplaceIntent } from '../lib/searchUtils';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
+import { getDisplayIdentity } from '../lib/displayIdentity';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 const CATEGORY_IDS: CategoryTab[] = ['rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
@@ -142,6 +143,12 @@ interface CreatorRow {
   secondary_roles?: string[] | null;
   skills?: string[] | null;
   account_type?: string | null;
+  business_industry?: string | null;
+}
+// Business accounts show Business Industry instead of Primary Role
+// everywhere -- see getDisplayIdentity in lib/displayIdentity.ts.
+function creatorIdentity(u: CreatorRow): string | undefined {
+  return getDisplayIdentity({ accountType: u.account_type, primaryRole: u.primary_role, businessIndustry: u.business_industry });
 }
 
 function useGuestGuard() {
@@ -255,7 +262,7 @@ function classifyListingsPage(
 // available_for_hire -- it isn't a real column on `profiles` (see
 // filmSearch.ts's own comment); selecting a nonexistent column fails this
 // entire query, not just that one field.
-const CREATOR_SELECT = 'id, name, username, avatar_url, city, location, primary_role, is_verified, secondary_roles, skills, account_type';
+const CREATOR_SELECT = 'id, name, username, avatar_url, city, location, primary_role, business_industry, is_verified, secondary_roles, skills, account_type';
 // Same order of magnitude as filmSearch.ts's own per-term cap -- once a
 // term or any creator filter is active, there's no single DB query that
 // can push every one of these fields at once (skills-contains-all,
@@ -297,7 +304,11 @@ async function fetchCreatorsForCategory(navState: NavState, from: number, to: nu
     // Plain browse, no term, no filters -- cheap, exact DB-level pagination.
     const { data, count } = await supabase.from('profiles')
       .select(CREATOR_SELECT, { count: 'exact' })
-      .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+      // Business accounts may have no primary_role at all (identified by
+      // business_industry instead, per spec) -- requiring primary_role
+      // alone would silently exclude them from this whole page.
+      .not('name', 'is', null).neq('name', '')
+      .or('primary_role.not.is.null,business_industry.not.is.null')
       .order(nameSort ? 'name' : 'created_at', { ascending: nameSort })
       .range(from, to);
     return { creators: (data ?? []) as CreatorRow[], total: count ?? (data?.length ?? 0) };
@@ -311,7 +322,11 @@ async function fetchCreatorsForCategory(navState: NavState, from: number, to: nu
   } else {
     const { data } = await supabase.from('profiles')
       .select(CREATOR_SELECT)
-      .not('name', 'is', null).neq('name', '').not('primary_role', 'is', null)
+      // Business accounts may have no primary_role at all (identified by
+      // business_industry instead, per spec) -- requiring primary_role
+      // alone would silently exclude them from this whole page.
+      .not('name', 'is', null).neq('name', '')
+      .or('primary_role.not.is.null,business_industry.not.is.null')
       .order('created_at', { ascending: false })
       .limit(CREATOR_BROWSE_FETCH_LIMIT);
     rows = (data ?? []) as CreatorRow[];
@@ -1038,7 +1053,7 @@ function PreviewCreatorCard({ u }: { u: CreatorRow }) {
       </div>
       <div className="p-3 flex-1 min-h-0 flex flex-col justify-center items-center text-center gap-0.5 w-full">
         <p className="text-xs font-bold text-gray-900 truncate w-full leading-snug">{u.name}</p>
-        {u.primary_role && <p className="text-[10px] text-blue-600 truncate w-full">{u.primary_role}</p>}
+        {creatorIdentity(u) && <p className="text-[10px] text-blue-600 truncate w-full">{creatorIdentity(u)}</p>}
         {(u.city ?? u.location) && (
           <p className="text-[10px] text-gray-400 flex items-center gap-0.5 truncate w-full justify-center"><MapPin className="w-2.5 h-2.5 shrink-0"/>{u.city ?? u.location}</p>
         )}
@@ -1062,7 +1077,7 @@ function CreatorResultRow({ u, onClick }: { u: CreatorRow; onClick: () => void }
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-bold text-gray-900 truncate">{u.name}</p>
-        {u.primary_role && <p className="text-xs text-blue-600 truncate">{u.primary_role}</p>}
+        {creatorIdentity(u) && <p className="text-xs text-blue-600 truncate">{creatorIdentity(u)}</p>}
         {(u.city ?? u.location) && (
           <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
         )}
@@ -1118,7 +1133,7 @@ function CreatorCardMobile({ u, onView }: { u: CreatorRow; onView: () => void })
           <p className="text-base font-black text-gray-900 truncate">{u.name}</p>
           {u.is_verified && <CheckCircle className="w-4 h-4 text-blue-500 fill-blue-50 shrink-0"/>}
         </div>
-        {u.primary_role && <p className="text-sm text-blue-600 font-semibold truncate">{u.primary_role}</p>}
+        {creatorIdentity(u) && <p className="text-sm text-blue-600 font-semibold truncate">{creatorIdentity(u)}</p>}
         {(u.city ?? u.location) && (
           <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3.5 h-3.5 shrink-0"/>{u.city ?? u.location}</p>
         )}
@@ -1592,7 +1607,7 @@ function DesktopCreatorCard({ u }: { u: CreatorRow }) {
           <p className="text-sm font-bold text-gray-900 truncate leading-tight">{u.name}</p>
           {u.is_verified && <CheckCircle className="w-3.5 h-3.5 text-blue-500 fill-blue-50 shrink-0"/>}
         </div>
-        {u.primary_role && <p className="text-xs text-blue-600 font-semibold truncate leading-tight">{u.primary_role}</p>}
+        {creatorIdentity(u) && <p className="text-xs text-blue-600 font-semibold truncate leading-tight">{creatorIdentity(u)}</p>}
         {(u.city ?? u.location) && (
           <p className="text-xs text-gray-400 flex items-center gap-1 truncate leading-tight"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
         )}
