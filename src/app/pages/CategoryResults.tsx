@@ -19,7 +19,7 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -57,7 +57,7 @@ import {
   isRentalListing, isSaleListing, isServiceListing, isOpportunityListing, isStudioListing,
   SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
-import { detectMarketplaceIntent } from '../lib/searchUtils';
+import { recognizeQuery, type SearchSource } from '../lib/searchUtils';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 
@@ -2212,6 +2212,13 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
   const showConnectExtras = !product || product === 'connect';
   const showLearningExtras = !product || product === 'learning';
   const term = navState.query?.trim();
+  // Only meaningful on the unscoped /search/category/all page (product
+  // undefined) -- a product-scoped page already IS one product, so there's
+  // nothing to reorder. Drives which of Marketplace/Connect/Learning
+  // renders first below, same recognizeQuery SearchOverlay.tsx's 'all' tab
+  // already uses, so a query means the same thing (and orders sections the
+  // same way) on both surfaces.
+  const sourcePriority = useMemo(() => (term ? recognizeQuery(term).sourcePriority : ['marketplace', 'connect', 'learning'] as SearchSource[]), [term]);
 
   // The ONE shared searchMatchingListings/searchMatchingCreators call for
   // this whole page -- fetched here, once, and handed to every non-
@@ -2233,7 +2240,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
     // literally contains the intent word -- same branch searchAll() in
     // SearchOverlay.tsx uses. Multiple intents ("rental or sale camera")
     // union their results, deduped by id.
-    const { intents, remainder } = detectMarketplaceIntent(term);
+    const { marketplaceIntents: intents, remainder } = recognizeQuery(term);
     const hasIntent = intents.length > 0;
     Promise.all([
       hasIntent
@@ -2548,71 +2555,88 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           <MarketplaceDiscoverySingleList view={initialNavState.discoveryView} />
         ) : product && !term && categoryFilter === 'all' ? (
           <ProductDiscoveryGroups product={product} />
-        ) : (
-          <>
-            {/* Grouped under its product (Marketplace/Connect/Learning) only on
-                the unscoped /search/category/all page -- a product-scoped page
-                (product set) already IS that one group, so a repeated header
-                would be redundant. */}
-            {!product && marketplaceCats.length > 0 && (
-              <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
-            )}
-            {product === 'marketplace' ? (
-              term ? (
-                marketplaceUnified.length === 0 ? (
-                  <div className="px-4 lg:px-8 py-10 text-center">
-                    <p className="text-sm font-bold text-gray-700">
-                      No {categoryFilter === 'all' ? 'Marketplace' : CATEGORY_LABEL[categoryFilter]} listings found for "{term}".
-                    </p>
-                    {categoryFilter !== 'all' && (
-                      <button onClick={() => setCategoryFilter('all')} className="mt-3 text-sm font-bold text-blue-600 hover:text-blue-700">
-                        Clear {CATEGORY_LABEL[categoryFilter]} filter
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 lg:px-8 xl:px-10">
-                      {marketplaceUnified.slice(0, marketplaceVisibleCount).map(({ listing, badge }) => (
-                        <PreviewListingCard key={listing.id} listing={listing} badge={badge} gridMode/>
-                      ))}
-                    </div>
-                    {marketplaceVisibleCount < marketplaceUnified.length && (
+        ) : (() => {
+          // Grouped under its product (Marketplace/Connect/Learning) only on
+          // the unscoped /search/category/all page -- a product-scoped page
+          // (product set) already IS that one group, so a repeated header
+          // would be redundant. On /search/category/all specifically, the
+          // three groups render in sourcePriority order (same recognizeQuery
+          // SearchOverlay.tsx's 'all' tab uses) instead of a fixed
+          // Marketplace/Connect/Learning sequence every time; a product-
+          // scoped page keeps the plain fixed order since only one group is
+          // ever non-empty there anyway.
+          const blocks: Record<SearchSource, React.ReactNode> = {
+            marketplace: (
+              <>
+                {!product && marketplaceCats.length > 0 && (
+                  <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Marketplace</p>
+                )}
+                {product === 'marketplace' ? (
+                  term ? (
+                    marketplaceUnified.length === 0 ? (
+                      <div className="px-4 lg:px-8 py-10 text-center">
+                        <p className="text-sm font-bold text-gray-700">
+                          No {categoryFilter === 'all' ? 'Marketplace' : CATEGORY_LABEL[categoryFilter]} listings found for "{term}".
+                        </p>
+                        {categoryFilter !== 'all' && (
+                          <button onClick={() => setCategoryFilter('all')} className="mt-3 text-sm font-bold text-blue-600 hover:text-blue-700">
+                            Clear {CATEGORY_LABEL[categoryFilter]} filter
+                          </button>
+                        )}
+                      </div>
+                    ) : (
                       <>
-                        <div ref={marketplaceSentinelRef} className="h-1"/>
-                        <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-gray-300 animate-spin"/></div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 lg:px-8 xl:px-10">
+                          {marketplaceUnified.slice(0, marketplaceVisibleCount).map(({ listing, badge }) => (
+                            <PreviewListingCard key={listing.id} listing={listing} badge={badge} gridMode/>
+                          ))}
+                        </div>
+                        {marketplaceVisibleCount < marketplaceUnified.length && (
+                          <>
+                            <div ref={marketplaceSentinelRef} className="h-1"/>
+                            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-gray-300 animate-spin"/></div>
+                          </>
+                        )}
                       </>
-                    )}
-                  </>
-                )
-              ) : (
-                // No query typed but a specific type pill is selected --
-                // falls back to that one category's own existing browse
-                // view (CategorySection, unchanged) rather than a second,
-                // separate "combined browse-mode pool" data path; the
-                // unified mixed grid above covers every typed-search case,
-                // which is this page's primary scenario.
-                <CategorySection category={categoryFilter as Exclude<CategoryTab, 'creators' | 'emergency'>} navState={navState} matched={undefined}/>
-              )
-            ) : (
-              marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)
-            )}
-
-            {!product && (connectCats.length > 0 || showConnectExtras) && (
-              <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
-            )}
-            {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
-            {categoryFilter === 'all' && showConnectExtras && <LocationsAllSection query={term} />}
-            {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
-            {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
-            {categoryFilter === 'all' && showConnectExtras && <HashtagsAllSection query={term} />}
-
-            {!product && showLearningExtras && (
-              <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Learning</p>
-            )}
-            {categoryFilter === 'all' && showLearningExtras && <CoursesAllSection query={term} />}
-          </>
-        )}
+                    )
+                  ) : (
+                    // No query typed but a specific type pill is selected --
+                    // falls back to that one category's own existing browse
+                    // view (CategorySection, unchanged) rather than a second,
+                    // separate "combined browse-mode pool" data path; the
+                    // unified mixed grid above covers every typed-search case,
+                    // which is this page's primary scenario.
+                    <CategorySection category={categoryFilter as Exclude<CategoryTab, 'creators' | 'emergency'>} navState={navState} matched={undefined}/>
+                  )
+                ) : (
+                  marketplaceCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)
+                )}
+              </>
+            ),
+            connect: (
+              <>
+                {!product && (connectCats.length > 0 || showConnectExtras) && (
+                  <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
+                )}
+                {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+                {categoryFilter === 'all' && showConnectExtras && <LocationsAllSection query={term} />}
+                {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
+                {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
+                {categoryFilter === 'all' && showConnectExtras && <HashtagsAllSection query={term} />}
+              </>
+            ),
+            learning: (
+              <>
+                {!product && showLearningExtras && (
+                  <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Learning</p>
+                )}
+                {categoryFilter === 'all' && showLearningExtras && <CoursesAllSection query={term} />}
+              </>
+            ),
+          };
+          const order: SearchSource[] = !product ? sourcePriority : ['marketplace', 'connect', 'learning'];
+          return <>{order.map(src => <Fragment key={src}>{blocks[src]}</Fragment>)}</>;
+        })()}
       </div>
 
       {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}
