@@ -16,6 +16,8 @@
     },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/admin/(.*)", "destination": "/admin.html" },
+    { "source": "/learning", "destination": "/learning.html" },
+    { "source": "/learning/(.*)", "destination": "/learning.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
