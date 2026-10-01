@@ -145,6 +145,11 @@ export const router = createBrowserRouter([
       // tree.
       { path: 'search', Component: SearchPage },
       { path: 'search/category/:tab', Component: CategoryResults },
+      // Posts/Portfolio/Profiles nested under Connect in the URL (per
+      // spec: they're Connect content, not top-level Search products) --
+      // same CategoryResults component, which reads the extra :subTab
+      // segment via useParams and only ever acts on it when tab==='connect'.
+      { path: 'search/category/:tab/:subTab', Component: CategoryResults },
       { path: 'hashtag/:tag', Component: HashtagPage },
       { path: 'search/location/:key', Component: LocationPage },
       { path: 'portfolio', Component: Portfolio },

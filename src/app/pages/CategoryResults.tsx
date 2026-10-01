@@ -38,12 +38,14 @@ import { PostsCategoryResults } from './PostsCategoryResults';
 import { CoursesCategoryResults } from './CoursesCategoryResults';
 import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locationsApi';
-import { searchMatchingPortfolio, searchMatchingPosts, searchAndHydratePosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
+import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
 import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from '../components/courses/CourseCard';
 import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
+import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
+import { fetchConnectDiscovery, type ConnectDiscovery } from '../lib/connectDiscovery';
 import { Hash, MapPin } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
@@ -63,13 +65,17 @@ import { getDisplayIdentity } from '../lib/displayIdentity';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
 const CATEGORY_IDS: CategoryTab[] = ['rental', 'sale', 'services', 'creators', 'studios', 'opportunities', 'emergency'];
+// 'creators' is a display/routing alias for "Profiles" per spec (Connect's
+// People/creator-discovery sub-category) -- the CategoryTab id itself
+// stays 'creators' everywhere internally; only the label users see and the
+// URL segment (categoryUrl, routes.tsx's nested connect/:subTab) changed.
 const CATEGORY_LABEL: Record<CategoryTab, string> = {
   rental: 'Rentals', sale: 'Sales', services: 'Services',
-  creators: 'Creators', studios: 'Studios', opportunities: 'Opportunities', emergency: 'Emergency',
+  creators: 'Profiles', studios: 'Studios', opportunities: 'Opportunities', emergency: 'Emergency',
 };
 const CATEGORY_SEARCH_PLACEHOLDER: Record<CategoryTab, string> = {
   rental: 'Search rentals...', sale: 'Search sales...', services: 'Search services...',
-  creators: 'Search creators...', studios: 'Search studios...',
+  creators: 'Search profiles...', studios: 'Search studios...',
   opportunities: 'Search opportunities...', emergency: 'Search emergency listings...',
 };
 // Same permanent cap as SearchOverlay.tsx's OPPORTUNITY_LOCKED_LIMIT --
@@ -1265,7 +1271,12 @@ function categoryUrl(category: CategoryTab | 'all', navState: NavState): string 
   if (navState.filters?.verifiedOnly) params.set('verified', '1');
   if (navState.filters?.accountLevel) params.set('level', navState.filters.accountLevel);
   const qs = params.toString();
-  return `/search/category/${category}${qs ? `?${qs}` : ''}`;
+  // Profiles ("creators" internally -- see CategoryTab's own comment) is
+  // nested under Connect in the URL per spec, while every other category
+  // keeps its existing flat path -- a display/routing choice only, the
+  // CategoryTab id itself is untouched.
+  const path = category === 'creators' ? 'connect/profiles' : category;
+  return `/search/category/${path}${qs ? `?${qs}` : ''}`;
 }
 
 // Horizontal padding shared by every section's header row AND its card
@@ -1803,7 +1814,7 @@ function PortfolioAllSection({ query }: { query?: string }) {
       <div className="flex items-center justify-between mb-2.5">
         <p className="text-sm lg:text-base font-black text-gray-900">Portfolio</p>
         {matches.length > 6 && (
-          <button onClick={() => navigate('/search/category/portfolio', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+          <button onClick={() => navigate('/search/category/connect/portfolio', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
             View all <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}
@@ -1857,7 +1868,7 @@ function PostsAllSection({ query }: { query?: string }) {
       <div className="flex items-center justify-between mb-2.5">
         <p className="text-sm lg:text-base font-black text-gray-900">Posts</p>
         {results.length > 5 && (
-          <button onClick={() => navigate('/search/category/posts', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+          <button onClick={() => navigate('/search/category/connect/posts', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
             View all <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}
@@ -2010,7 +2021,7 @@ function MarketplaceDiscoverySingleList({ view }: { view: 'top' | 'latest' | 'ne
   );
 }
 
-function DiscoveryRow({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+function DiscoveryRow({ title, count, onViewAll, children }: { title: string; count: number; onViewAll?: () => void; children: React.ReactNode }) {
   if (count === 0) return null;
   return (
     <section className="mb-6 lg:mb-8">
@@ -2018,7 +2029,14 @@ function DiscoveryRow({ title, count, children }: { title: string; count: number
           every size, up to lg:px-8/xl:px-10) -- same padding the row
           content below already uses on desktop, so the title lines up
           with it without a separate mobile-only variant. */}
-      <p className={`text-sm lg:text-base font-black text-gray-900 mb-2.5 lg:mb-3 ${DESKTOP_SECTION_PAD}`}>{title}</p>
+      <div className={`flex items-center justify-between mb-2.5 lg:mb-3 ${DESKTOP_SECTION_PAD}`}>
+        <p className="text-sm lg:text-base font-black text-gray-900">{title}</p>
+        {onViewAll && (
+          <button onClick={onViewAll} className="flex items-center gap-0.5 text-xs lg:text-sm font-bold text-blue-600 hover:text-blue-700">
+            View all <ArrowRight className="w-3.5 h-3.5"/>
+          </button>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -2026,15 +2044,14 @@ function DiscoveryRow({ title, count, children }: { title: string; count: number
 
 function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect' | 'learning' }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const primaryRole = user?.primaryRole?.trim() || null;
 
   const [latestListings, setLatestListings] = useState<Listing[] | null>(null);
   const [topListings, setTopListings] = useState<Listing[] | null>(null);
   const [roleListings, setRoleListings] = useState<Listing[] | null>(null);
 
-  const [latestPosts, setLatestPosts] = useState<Post[] | null>(null);
-  const [topPosts, setTopPosts] = useState<Post[] | null>(null);
-  const [rolePosts, setRolePosts] = useState<Post[] | null>(null);
+  const [connectDiscovery, setConnectDiscovery] = useState<ConnectDiscovery | null>(null);
 
   const [latestCourses, setLatestCourses] = useState<Course[] | null>(null);
   const [topCourses, setTopCourses] = useState<Course[] | null>(null);
@@ -2049,11 +2066,10 @@ function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect
         searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
       } else setRoleListings([]);
     } else if (product === 'connect') {
-      postsApi.getAll(DISCOVERY_GROUP_LIMIT, 0).then(r => { if (!cancelled) setLatestPosts(r); });
-      postsApi.getTopPosts(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopPosts(r); });
-      if (primaryRole) {
-        searchAndHydratePosts(primaryRole, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setRolePosts(r); });
-      } else setRolePosts([]);
+      // Same shared discovery source SearchOverlay.tsx's own Connect
+      // landing uses (fetchConnectDiscovery) -- one implementation, not a
+      // second posts-only version living here.
+      fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); });
     } else if (product === 'learning') {
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); });
       getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); });
@@ -2062,7 +2078,7 @@ function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect
       } else setRoleCourses([]);
     }
     return () => { cancelled = true; };
-  }, [product, primaryRole]);
+  }, [product, primaryRole, user?.id]);
 
   const roleTitle = `Because you're a ${primaryRole}`;
 
@@ -2087,21 +2103,32 @@ function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect
   }
 
   if (product === 'connect') {
-    const loading = latestPosts === null || topPosts === null || rolePosts === null;
-    if (loading) return <DiscoveryLoading />;
+    if (!connectDiscovery) return <DiscoveryLoading />;
+    const { trendingPosts, featuredPortfolio, profilesYouMayLike } = connectDiscovery;
     return (
       <>
-        <DiscoveryRow title="Latest" count={latestPosts.length}>
-          <div className="px-4 lg:px-0 space-y-3">{latestPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
+        <DiscoveryRow title="Trending Posts" count={trendingPosts.length} onViewAll={() => navigate('/search/category/connect/posts')}>
+          <div className="px-4 lg:px-0 space-y-3">{trendingPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
         </DiscoveryRow>
-        <DiscoveryRow title="Top" count={topPosts.length}>
-          <div className="px-4 lg:px-0 space-y-3">{topPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
+        <DiscoveryRow title="Featured Portfolio" count={featuredPortfolio.length} onViewAll={() => navigate('/search/category/connect/portfolio')}>
+          <div className="px-4 lg:px-0 space-y-3">
+            {featuredPortfolio.map(entry => entry.type === 'item'
+              ? <PortfolioProjectCard key={`item-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
+              : <PortfolioAlbumCard key={`album-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
+          </div>
         </DiscoveryRow>
-        {primaryRole && (
-          <DiscoveryRow title={roleTitle} count={rolePosts.length}>
-            <div className="px-4 lg:px-0 space-y-3">{rolePosts.map(p => <PostCard key={p.id} post={p} />)}</div>
-          </DiscoveryRow>
-        )}
+        <DiscoveryRow title="Profiles You May Like" count={profilesYouMayLike.length} onViewAll={() => navigate('/search/category/connect/profiles')}>
+          <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
+            {profilesYouMayLike.map(c => (
+              <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-[172px] shrink-0 snap-start"/>
+            ))}
+          </div>
+          <div className={`hidden lg:flex flex-wrap gap-3 ${DESKTOP_SECTION_PAD}`}>
+            {profilesYouMayLike.map(c => (
+              <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-64"/>
+            ))}
+          </div>
+        </DiscoveryRow>
       </>
     );
   }
@@ -2677,7 +2704,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 export function CategoryResults() {
-  const { tab } = useParams<{ tab: string }>();
+  const { tab, subTab } = useParams<{ tab: string; subTab?: string }>();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -2711,6 +2738,16 @@ export function CategoryResults() {
   if (!isAuthenticated) return null;
 
   if (tab === 'all') return <AllGroupedResults navState={navState}/>;
+  // Connect's own sub-categories, nested in the URL (per spec: Posts/
+  // Portfolio/Profiles are Connect content, not top-level Search products)
+  // -- same dedicated pages the old flat /search/category/posts etc. used,
+  // just reached through /search/category/connect/* now. "profiles" is a
+  // display/routing alias for the 'creators' CategoryTab -- see
+  // CATEGORY_LABEL and categoryUrl's own comments for why the internal id
+  // stays 'creators'.
+  if (tab === 'connect' && subTab === 'posts')     return <PostsCategoryResults query={navState.query} />;
+  if (tab === 'connect' && subTab === 'portfolio') return <PortfolioCategoryResults query={navState.query} />;
+  if (tab === 'connect' && subTab === 'profiles')  return <SingleCategoryResults category="creators" navState={navState}/>;
   // Top-level Marketplace/Connect/Learning modes -- the "View all results"
   // destination from SearchOverlay for a non-'all' tab. Same AllGroupedResults
   // grouped-sections view, just scoped to one product's categories.

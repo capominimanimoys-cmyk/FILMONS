@@ -25,7 +25,7 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
-import { searchHashtagSuggestions, getTopHashtags, type HashtagSuggestion, type Hashtag } from '../lib/hashtagsApi';
+import { searchHashtagSuggestions, type HashtagSuggestion, type Hashtag } from '../lib/hashtagsApi';
 import { searchLocationSuggestions } from '../lib/locationsApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
@@ -36,7 +36,8 @@ import {
   isOpportunityListing, isStudioListing, isRentalListing, isSaleListing, isServiceListing,
   type SearchPortfolioRow, type SearchPostRow,
 } from '../lib/filmSearch';
-import { getSuggestedCreators, getPortfolioFeed, type SuggestedCreator, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import type { SuggestedCreator, PortfolioFeedEntry } from '../lib/portfolioApi';
+import { fetchConnectDiscovery } from '../lib/connectDiscovery';
 import { getActivityFeed, getActivitySentence, type ActivityEntry } from '../lib/activityApi';
 import { dismissSuggestion } from '../lib/connectionsApi';
 import { SuggestedConnectionCard } from './connect/SuggestedConnectionCard';
@@ -1774,17 +1775,17 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     if (!(activeTab === 'connect' && !hasTyped)) return;
     let cancelled = false;
     Promise.all([
-      user?.id ? getSuggestedCreators(user.id, { limit: 10 }).catch(() => []) : Promise.resolve([]),
-      postsApi.getTopPosts(10).catch(() => []),
-      getPortfolioFeed({ limit: 10, viewerId: user?.id }).catch(() => []),
-      getTopHashtags(12).catch(() => []),
+      fetchConnectDiscovery(user?.id, 10),
+      // Creator Activity stays SearchOverlay-only (no dedicated full page
+      // exists yet -- see ConnectDiscoveryRow's own comment below), so it's
+      // not part of the shared fetchConnectDiscovery module.
       getActivityFeed({ tab: 'foryou', limit: 10 }).catch(() => ({ entries: [] as ActivityEntry[] })),
-    ]).then(([creators, posts, portfolio, hashtags, activity]) => {
+    ]).then(([discovery, activity]) => {
       if (cancelled) return;
-      setConnectSuggested(creators);
-      setConnectTrendingPosts(posts);
-      setConnectFeaturedPortfolio(portfolio);
-      setConnectPopularHashtags(hashtags);
+      setConnectSuggested(discovery.profilesYouMayLike);
+      setConnectTrendingPosts(discovery.trendingPosts);
+      setConnectFeaturedPortfolio(discovery.featuredPortfolio);
+      setConnectPopularHashtags(discovery.popularHashtags);
       setConnectActivity(activity.entries);
     });
     return () => { cancelled = true; };
@@ -2331,7 +2332,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               {activeTab !== 'all' && (showConnectLanding ? (
                 <>
                   {connectSuggested.length > 0 && (
-                    <ConnectDiscoveryRow title="People you may know" onViewAll={() => closeAndNavigate('/connections/suggested')}>
+                    <ConnectDiscoveryRow title="Profiles You May Like" onViewAll={() => closeAndNavigate('/connections/suggested')}>
                       {connectSuggested.map(c => (
                         <SuggestedConnectionCard key={c.id} creator={c} showMenu
                           widthClassName="w-[172px] shrink-0 snap-start"
@@ -2356,7 +2357,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     <section className="mb-4">
                       <div className="flex items-center justify-between px-4 py-2">
                         <p className="text-[13px] font-black text-gray-900">Trending in Connect</p>
-                        <ViewAllLink onClick={() => handleViewMoreCategory('posts')}/>
+                        <ViewAllLink onClick={() => handleViewMoreCategory('connect/posts')}/>
                       </div>
                       <div className="px-4 space-y-3">
                         {connectTrendingPosts.map(p => <PostCard key={p.id} post={p}/>)}
@@ -2367,7 +2368,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     <section className="mb-4">
                       <div className="flex items-center justify-between px-4 py-2">
                         <p className="text-[13px] font-black text-gray-900">Featured Portfolio</p>
-                        <ViewAllLink onClick={() => handleViewMoreCategory('portfolio')}/>
+                        <ViewAllLink onClick={() => handleViewMoreCategory('connect/portfolio')}/>
                       </div>
                       <div className="px-4 space-y-3">
                         {connectFeaturedPortfolio.map(entry => entry.type === 'item'
@@ -2410,16 +2411,16 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               ) : (
                 <>
                   {visibleUsers.length > 0 && (
-                    <ResultSection label="👤 Creators" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
+                    <ResultSection label="👤 Profiles" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
                       footer={visibleUsers.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('creators')}/> : undefined}>
+                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('connect/profiles')}/> : undefined}>
                       {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
                     </ResultSection>
                   )}
                   {visiblePortfolio.length > 0 && (
                     <ResultSection label="🎬 Portfolio" count={Math.min(visiblePortfolio.length, PREVIEW_LIMIT)} grid
                       footer={visiblePortfolio.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => handleViewMoreCategory('portfolio')}/> : undefined}>
+                        ? <ViewMoreButton onClick={() => handleViewMoreCategory('connect/portfolio')}/> : undefined}>
                       {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
                         <button
                           key={`${r.type}-${r.id}`}
@@ -2440,7 +2441,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   {visiblePosts.length > 0 && (
                     <ResultSection label="📝 Posts" count={Math.min(visiblePosts.length, PREVIEW_LIMIT)}
                       footer={visiblePosts.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => handleViewMoreCategory('posts')}/> : undefined}>
+                        ? <ViewMoreButton onClick={() => handleViewMoreCategory('connect/posts')}/> : undefined}>
                       <div className="px-4 space-y-3 py-1">
                         {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
                       </div>
