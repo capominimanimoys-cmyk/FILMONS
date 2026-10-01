@@ -1417,6 +1417,19 @@ function CategorySection({ category, navState, matched }: {
 
   const mobileListings = listings.slice(0, ALL_PAGE_PREVIEW_LIMIT);
   const mobileCreators = creators.slice(0, ALL_PAGE_PREVIEW_LIMIT);
+  // Every listing in THIS section already belongs to exactly one category
+  // (that's what classifyListingsPage/fetchCategoryPage filtered for), so
+  // the RENTAL/SALE/SERVICE/OPPORTUNITY badge is simply the section's own
+  // category -- no second per-listing classifier needed, and it can never
+  // disagree with which section the card is actually sitting in. Studios
+  // fold into RENTAL (same precedent as the pill filter below -- there's
+  // no separate STUDIO badge).
+  const sectionBadge: MarketplaceBadge | undefined =
+    category === 'rental' || category === 'studios' ? 'RENTAL'
+    : category === 'sale' ? 'SALE'
+    : category === 'services' ? 'SERVICE'
+    : category === 'opportunities' ? 'OPPORTUNITY'
+    : undefined;
 
   return (
     <section className="mb-6 lg:mb-8">
@@ -1486,7 +1499,7 @@ function CategorySection({ category, navState, matched }: {
           <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
             {category === 'creators'
               ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
-              : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l}/>)
+              : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l} badge={sectionBadge}/>)
             }
           </div>
           {/* ── Desktop row: exactly 5 fluid-width cards fill the row;
@@ -1499,7 +1512,7 @@ function CategorySection({ category, navState, matched }: {
           >
             {category === 'creators'
               ? creators.map(u => <DesktopCreatorCard key={u.id} u={u}/>)
-              : listings.map(l => <DesktopListingCard key={l.id} listing={l}/>)
+              : listings.map(l => <DesktopListingCard key={l.id} listing={l} badge={sectionBadge}/>)
             }
           </div>
         </>
@@ -1536,7 +1549,7 @@ const DESKTOP_CARD_STYLE: React.CSSProperties = {
 // photo is cropped to this box via object-fit: cover, never the reverse.
 const DESKTOP_CARD_IMAGE_STYLE: React.CSSProperties = { height: '58%' };
 
-function DesktopListingCard({ listing }: { listing: Listing }) {
+function DesktopListingCard({ listing, badge }: { listing: Listing; badge?: MarketplaceBadge }) {
   const navigate = useNavigate();
   const { user, showGuestPrompt } = useAuth();
   const isOpp = listing.listingType === 'opportunity';
@@ -1564,13 +1577,23 @@ function DesktopListingCard({ listing }: { listing: Listing }) {
         {listing.images?.[0]
           ? <img src={listing.images[0]} className="w-full h-full object-cover object-center" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
+        {/* Opportunity's own Paid/Unpaid tag already conveys its type
+            (plus the section header already says "Opportunities") -- the
+            generic RENTAL/SALE/SERVICE badge only adds value for the
+            other 3 categories, so it skips isOpp rather than stacking a
+            redundant second tag in the same corner. */}
+        {badge && !isOpp && (
+          <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[badge]}`}>
+            {badge}
+          </span>
+        )}
         {isOpp && (
           <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full shadow-sm ${listing.opportunity?.paid ? 'bg-green-600 text-white' : 'bg-gray-700 text-white'}`}>
             {listing.opportunity?.paid ? 'Paid' : 'Unpaid'}
           </span>
         )}
         {isEmergencyActive && (
-          <span className="absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm">
+          <span className={`absolute top-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5 shadow-sm ${badge || isOpp ? 'right-1.5' : 'left-1.5'}`}>
             <AlertTriangle className="w-2.5 h-2.5 fill-white"/> Emergency
           </span>
         )}
@@ -2465,22 +2488,32 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                 useMobileScrollChrome's own dispatch -- MobileBottomNav is
                 already lg:hidden, so it's a no-op there regardless). */}
             {product === 'marketplace' && term && (
-              <p className={`text-xs text-gray-400 font-semibold overflow-hidden transition-all duration-200 lg:!max-h-none lg:!opacity-100 ${chromeHidden ? 'max-h-0 opacity-0' : 'max-h-4 opacity-100'}`}>
+              <p className="text-xs text-gray-400 font-semibold overflow-hidden lg:!max-h-none lg:!opacity-100 lg:!transform-none"
+                style={{
+                  maxHeight: chromeHidden ? 0 : 16,
+                  opacity: chromeHidden ? 0 : 1,
+                  transform: chromeHidden ? 'translateY(-6px)' : 'translateY(0)',
+                  transition: 'max-height 220ms ease-out, transform 220ms ease-out, opacity 180ms ease-out',
+                }}>
                 {marketplaceUnified.length.toLocaleString()} results for "{term}"
               </p>
             )}
           </div>
         </div>
 
-        {/* Marketplace View All's type pills -- All/Rental/Sale/Service/
-            Opportunity, replacing the shared dropdown category picker for
-            this product specifically (every other product keeps it). Studio
-            listings aren't their own pill (same precedent as
-            marketplaceTypeBadge/SearchOverlay's own listingTypeBadge --
+        {/* Marketplace type pills -- All/Rental/Sale/Service/Opportunity.
+            Shown on the Marketplace-scoped page (replacing the shared
+            dropdown category picker there -- every other product keeps
+            it) AND on the unscoped /search/category/all page, where it's
+            an ADDITIONAL quick filter alongside the generic category
+            dropdown -- mobile has no other visible way to narrow by
+            marketplace type there otherwise (only the buried Filters
+            sheet). Studio listings aren't their own pill (same precedent
+            as marketplaceTypeBadge/SearchOverlay's own listingTypeBadge --
             they fold into RENTAL/SALE), so selecting one of these 4 pills
             filters by marketplaceTypeBadge, never CATEGORY_CLASSIFIER
             directly -- guarantees the pill and the badge always agree. */}
-        {product === 'marketplace' && (
+        {(product === 'marketplace' || !product) && (
           <div className="px-4 lg:px-8 xl:px-10 pb-3 flex gap-1.5 overflow-x-auto no-scrollbar">
             {(['all', 'rental', 'sale', 'services', 'opportunities'] as AllCategoryFilter[]).map(id => (
               <button key={id} onClick={() => setCategoryFilter(id)}
@@ -2508,7 +2541,13 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           {/* Content-first mode (scrolled down) collapses this whole block
               -- Filters stays reachable via the compact icon-only button
               rendered next to the search field instead (see above). */}
-          <div className={`overflow-hidden transition-all duration-200 space-y-2.5 ${chromeHidden ? 'max-h-0 opacity-0' : 'max-h-24 opacity-100'}`}>
+          <div className="overflow-hidden space-y-2.5"
+            style={{
+              maxHeight: chromeHidden ? 0 : 100,
+              opacity: chromeHidden ? 0 : 1,
+              transform: chromeHidden ? 'translateY(-10px)' : 'translateY(0)',
+              transition: 'max-height 220ms ease-out, transform 220ms ease-out, opacity 180ms ease-out',
+            }}>
             <div className="flex items-center gap-2">
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMobileFilters(true); }}
