@@ -1,4 +1,4 @@
-// FILMONS -- /search/location/:key. Real content across every content
+// FILMONS -- /search/locations/:slug. Real content across every content
 // type that actually supports locations today (posts, Portfolio items/
 // albums, listings/services/opportunities -- all one `listings` table).
 import { useEffect, useState } from 'react';
@@ -10,18 +10,21 @@ import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
 export function LocationPage() {
-  const { key } = useParams();
+  const { slug } = useParams();
   const navigate = useNavigate();
   const { openPortfolioPreview } = usePortfolioPreview();
   const [displayName, setDisplayName] = useState<string | null>(null);
-  const [mentionCount, setMentionCount] = useState<number | null>(null);
   const [content, setContent] = useState<LocationContent | null>(null);
+  // The real, accurate total -- `locations.uses` only ever counts post
+  // mentions despite being shown as if it were the whole entity's count,
+  // so it's never used here; this sums the actual sections rendered below.
+  const totalCount = content ? content.posts.length + content.portfolio.length + content.listings.length : null;
 
   useEffect(() => {
-    if (!key) return;
-    getLocation(key).then(l => { setDisplayName(l?.displayName ?? key); setMentionCount(l?.mentionCount ?? 0); });
-    getLocationContent(key).then(setContent);
-  }, [key]);
+    if (!slug) return;
+    getLocation(slug).then(l => setDisplayName(l?.displayName ?? slug));
+    getLocationContent(slug).then(setContent);
+  }, [slug]);
 
   const nothingYet = content && !content.posts.length && !content.portfolio.length && !content.listings.length;
 
@@ -41,7 +44,7 @@ export function LocationPage() {
           </div>
           <div>
             <p className="text-xl font-black text-gray-900">{displayName ?? '…'}</p>
-            <p className="text-sm text-gray-400">{mentionCount === null ? '…' : `${mentionCount} result${mentionCount === 1 ? '' : 's'}`}</p>
+            <p className="text-sm text-gray-400">{totalCount === null ? '…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</p>
           </div>
         </div>
 

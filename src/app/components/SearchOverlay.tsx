@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Search, X, ArrowLeft, MapPin, Loader2, ChevronRight,
+  Search, X, ArrowLeft, MapPin, Loader2, ChevronRight, Hash,
   TrendingUp, Clock, SlidersHorizontal, ArrowUpDown, Lock, AlertTriangle,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -27,7 +27,7 @@ import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { matchDestinations, type SearchDestination } from '../lib/searchDestinations';
-import { searchLocationSuggestions } from '../lib/locationsApi';
+import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locationsApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from './courses/CourseCard';
@@ -1481,6 +1481,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // Home uses without paying for post bodies it never shows.
   const [shownPosts,     setShownPosts]     = useState<Post[]>([]);
   const [rawHashtags,    setRawHashtags]    = useState<HashtagSuggestion[]>([]);
+  // Locations/Hashtags are both global, cross-product entities (never
+  // Connect-only) -- rendered as their own sections on the 'all' tab only,
+  // see the typed-results IIFE below. Fetched alongside everything else so
+  // switching to 'all' never needs a second round trip.
+  const [rawLocations,   setRawLocations]   = useState<LocationSuggestion[]>([]);
   // Learning -- courses, distinct top-level mode from Connect/Marketplace.
   const [rawCourses,     setRawCourses]     = useState<Course[]>([]);
   // Cached account_type per Opportunity-listing owner, used to exclude
@@ -1683,7 +1688,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const runSearch = useCallback((query: string) => {
     if (!query.trim()) {
-      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawCourses([]); setResultsReady(false); return;
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawLocations([]); setRawCourses([]); setResultsReady(false); return;
     }
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
@@ -1713,12 +1718,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         searchMatchingPortfolio(textQuery).catch(() => []),
         searchMatchingPosts(textQuery).catch(() => []),
         searchHashtagSuggestions(textQuery, 6).catch(() => []),
+        searchLocationSuggestions(textQuery, 6).catch(() => []),
         coursesQuery ? getCourses({ query: coursesQuery, limit: 24 }).catch(() => []) : Promise.resolve([]),
       ])
-        .then(([{ users: u, listings: l }, portfolio, posts, hashtags, courses]) => {
+        .then(([{ users: u, listings: l }, portfolio, posts, hashtags, locations, courses]) => {
           if (searchVersionRef.current !== myVersion) return; // a newer query already superseded this one
           setRawUsers(u); setRawListings(l);
-          setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags); setRawCourses(courses);
+          setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags); setRawLocations(locations); setRawCourses(courses);
           setResultsReady(true);
           if (u.length > 0 || l.length > 0) {
             try {
@@ -1784,7 +1790,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
       // Hashtags equivalent yet (those only ever come from a typed
       // search) -- cleared here so switching from a typed Connect search
       // to tapping Connect fresh doesn't leave stale matches showing.
-      setRawPortfolio([]); setRawPosts([]); setRawHashtags([]);
+      setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawLocations([]);
       setResultsReady(true); setLoading(false);
     });
     return () => { cancelled = true; };
@@ -1860,7 +1866,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setQ(val); setResultsReady(false);
     if (!val.trim()) {
       setSuggestions([]); clearTimeout(suggRef.current); clearTimeout(debounceRef.current);
-      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawCourses([]);
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawLocations([]); setRawCourses([]);
       setLoading(false); setSuggLoading(false); return;
     }
     setSuggLoading(true);
@@ -1876,8 +1882,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const handleSelectSuggestion = (s: Suggestion) => {
     if (s.kind === 'destination') { setSuggestions([]); handleResultNavigate(s.action); return; }
-    if (s.kind === 'hashtag') { setSuggestions([]); handleResultNavigate(`/hashtag/${s.action}`); return; }
-    if (s.kind === 'location-real') { setSuggestions([]); handleResultNavigate(`/search/location/${encodeURIComponent(s.action)}`); return; }
+    if (s.kind === 'hashtag') { setSuggestions([]); handleResultNavigate(`/search/hashtags/${s.action}`); return; }
+    if (s.kind === 'location-real') { setSuggestions([]); handleResultNavigate(`/search/locations/${encodeURIComponent(s.action)}`); return; }
     setQ(s.action); setSuggestions([]); runSearch(s.action);
   };
 
@@ -2000,7 +2006,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const visibleEmergency    = showMarketplace ? emergencyListings    : [];
   const visiblePortfolio    = showConnect     ? rawPortfolio         : [];
   const visiblePosts        = showConnect     ? rawPosts             : [];
-  const visibleHashtags     = showConnect     ? rawHashtags          : [];
   const visibleCourses      = showLearning    ? rawCourses           : [];
 
   // Emergency-flagged items within each of these four categories are
@@ -2067,15 +2072,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // typed-search/'all'-tab behavior" pattern as showMarketplaceLanding.
   const showConnectLanding = activeTab === 'connect' && !hasTyped;
 
+  // Hashtags/Locations/Settings/Support are all 'all'-tab-only surfaces
+  // (global entities/destinations, never shown under a product tab) -- so
+  // they only count toward "are there any results" on that tab, same
+  // reasoning destinationMatches already used.
+  const allOnlyMatches = activeTab === 'all' && (rawHashtags.length > 0 || rawLocations.length > 0 || destinationMatches.length > 0);
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
-    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0 && rawCourses.length === 0
-    && (activeTab !== 'all' || destinationMatches.length === 0);
+    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawCourses.length === 0 && !allOnlyMatches;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
-    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawHashtags.length > 0 || rawCourses.length > 0
-    || (activeTab === 'all' && destinationMatches.length > 0);
+    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawCourses.length > 0 || allOnlyMatches;
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
     || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0
-    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0 || visibleCourses.length > 0;
+    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleCourses.length > 0 || allOnlyMatches;
   const showSuggestions = hasTyped && !resultsReady && !loading && (suggestions.length > 0 || suggLoading);
 
   const activeFilterCount = countActiveFilters(filters);
@@ -2276,6 +2284,37 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 // fixed Marketplace/Connect/Learning order every time.
                 return <>{recognition.sourcePriority.map(src => sections[src] || null)}</>;
               })()}
+              {/* Locations/Hashtags -- global, cross-product entities,
+                  discovered only contextually, never nested under Connect
+                  (that was a bug -- hashtags used to render only inside
+                  the Connect tab's own typed-results block above). Only on
+                  'all', same reasoning as Settings/Support below. */}
+              {activeTab === 'all' && rawLocations.length > 0 && (
+                <section className="mb-1">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4 py-2 mt-1">📍 Locations</p>
+                  <div className="flex flex-wrap gap-2 px-4">
+                    {rawLocations.slice(0, PREVIEW_LIMIT).map(l => (
+                      <button key={l.key} onClick={() => handleResultNavigate(`/search/locations/${encodeURIComponent(l.key)}`)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+                        <MapPin className="w-3.5 h-3.5 text-blue-500"/> {l.displayName}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {activeTab === 'all' && rawHashtags.length > 0 && (
+                <section className="mb-1">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4 py-2 mt-1"># Hashtags</p>
+                  <div className="flex flex-wrap gap-2 px-4">
+                    {rawHashtags.slice(0, PREVIEW_LIMIT).map(h => (
+                      <button key={h.tag} onClick={() => handleResultNavigate(`/search/hashtags/${h.tag}`)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+                        <Hash className="w-3.5 h-3.5 text-blue-500"/> {h.tag}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
               {/* Settings/Support navigation matches -- destinations, not
                   content, always last (content takes priority whenever any
                   exists; a clear help/problem query like "payout failed"
@@ -2488,26 +2527,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                         {shownPosts.map(p => <PostCard key={p.id} post={p} />)}
                       </div>
                     </ResultSection>
-                  )}
-                  {visibleHashtags.length > 0 && (
-                    <section className="mb-1">
-                      <div className="flex items-center justify-between px-4 py-2 mt-1">
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest"># Hashtags</p>
-                        {visibleHashtags.length > PREVIEW_LIMIT ? (
-                          <button onClick={() => handleViewMoreCategory('hashtags')} className="text-[10px] font-bold text-blue-600">View all</button>
-                        ) : (
-                          <span className="text-[10px] text-gray-400">{visibleHashtags.length}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2 px-4">
-                        {visibleHashtags.slice(0, PREVIEW_LIMIT).map(h => (
-                          <button key={h.tag} onClick={() => handleResultNavigate(`/hashtag/${h.tag}`)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
-                            #{h.tag}
-                          </button>
-                        ))}
-                      </div>
-                    </section>
                   )}
                 </>
               ))}

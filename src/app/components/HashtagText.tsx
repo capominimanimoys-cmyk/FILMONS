@@ -20,7 +20,7 @@ export function HashtagText({ text, className }: { text: string; className?: str
         i % 2 === 1 ? (
           <button
             key={i}
-            onClick={e => { e.stopPropagation(); navigate(`/hashtag/${part.slice(1).toLowerCase()}`); }}
+            onClick={e => { e.stopPropagation(); navigate(`/search/hashtags/${part.slice(1).toLowerCase()}`); }}
             className="text-blue-600 font-semibold hover:underline"
           >
             {part}

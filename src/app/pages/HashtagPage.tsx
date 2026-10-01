@@ -1,31 +1,28 @@
-// FILMONS -- /hashtag/:tag. Real content across every content type that
-// actually supports hashtags today: posts, Portfolio items/albums,
-// courses, and listings.
+// FILMONS -- /search/hashtags/:tag. Real content across every content
+// type that actually supports hashtags today: posts, Portfolio items/
+// albums, courses, and listings.
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft, BadgeCheck, Star, Users } from 'lucide-react';
-import { getHashtag, getHashtagContent, type HashtagContent } from '../lib/hashtagsApi';
+import { getHashtagContent, type HashtagContent } from '../lib/hashtagsApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
 import { CourseCard } from '../components/courses/CourseCard';
 import { ListingCard } from '../components/ListingCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
-function formatCount(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K`;
-  return String(n);
-}
-
 export function HashtagPage() {
   const { tag } = useParams();
   const navigate = useNavigate();
-  const [usageCount, setUsageCount] = useState<number | null>(null);
   const [content, setContent] = useState<HashtagContent | null>(null);
   const [openPortfolio, setOpenPortfolio] = useState<{ creatorId: string; albumId?: string } | null>(null);
+  // hashtags.post_count only ever counts post mentions despite the name,
+  // so it's never used as "the" count here (same reasoning as LocationPage's
+  // totalCount) -- this sums the actual sections rendered below.
+  const totalCount = content ? content.posts.length + content.portfolio.length + content.courses.length + content.listings.length : null;
 
   useEffect(() => {
     if (!tag) return;
-    getHashtag(tag).then(h => setUsageCount(h?.usageCount ?? 0));
     getHashtagContent(tag).then(setContent);
   }, [tag]);
 
@@ -44,7 +41,7 @@ export function HashtagPage() {
           </button>
           <div className="min-w-0">
             <p className="text-base md:text-xl font-black text-gray-900 truncate">#{tag}</p>
-            <p className="text-sm text-gray-400 mt-0.5">{usageCount === null ? '…' : `${formatCount(usageCount)} post${usageCount === 1 ? '' : 's'}`}</p>
+            <p className="text-sm text-gray-400 mt-0.5">{totalCount === null ? '…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</p>
           </div>
         </div>
       </div>
@@ -58,7 +55,7 @@ export function HashtagPage() {
           <>
             {content.posts.length > 0 && (
               <div className="space-y-2.5">
-                <p className="text-sm font-black text-gray-900">Posts</p>
+                <p className="text-sm font-black text-gray-900">Posts <span className="text-gray-400 font-semibold">· {content.posts.length}</span></p>
                 <div className="space-y-2">
                   {content.posts.map(p => (
                     <button key={p.id} onClick={() => navigate(`/post/${p.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
@@ -79,7 +76,7 @@ export function HashtagPage() {
 
             {content.portfolio.length > 0 && (
               <div className="space-y-2.5">
-                <p className="text-sm font-black text-gray-900">Portfolio</p>
+                <p className="text-sm font-black text-gray-900">Portfolio <span className="text-gray-400 font-semibold">· {content.portfolio.length}</span></p>
                 <div className="grid grid-cols-3 gap-1.5">
                   {content.portfolio.map(entry => (
                     <button
@@ -99,7 +96,7 @@ export function HashtagPage() {
 
             {content.courses.length > 0 && (
               <div className="space-y-2.5">
-                <p className="text-sm font-black text-gray-900">Courses</p>
+                <p className="text-sm font-black text-gray-900">Courses <span className="text-gray-400 font-semibold">· {content.courses.length}</span></p>
                 <div className="flex gap-3 overflow-x-auto no-scrollbar">
                   {content.courses.map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
                 </div>
@@ -108,7 +105,7 @@ export function HashtagPage() {
 
             {content.listings.length > 0 && (
               <div className="space-y-2.5">
-                <p className="text-sm font-black text-gray-900">Listings</p>
+                <p className="text-sm font-black text-gray-900">Listings <span className="text-gray-400 font-semibold">· {content.listings.length}</span></p>
                 <div className="grid grid-cols-2 gap-3">
                   {content.listings.map(l => (
                     <ListingCard key={l.id} listing={l} onClick={() => navigate(`/listing/${l.id}`)} />

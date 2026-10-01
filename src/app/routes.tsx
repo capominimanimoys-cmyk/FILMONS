@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import { Root } from './pages/Root';
 import { HardRedirect } from './components/HardRedirect';
+import { LegacyHashtagRedirect, LegacyLocationRedirect } from './components/LegacyEntityRedirects';
 import { Home } from './pages/Home';
 import { Login }         from './pages/Login';
 import { CreateAccount }  from './pages/CreateAccount';
@@ -150,8 +151,14 @@ export const router = createBrowserRouter([
       // same CategoryResults component, which reads the extra :subTab
       // segment via useParams and only ever acts on it when tab==='connect'.
       { path: 'search/category/:tab/:subTab', Component: CategoryResults },
-      { path: 'hashtag/:tag', Component: HashtagPage },
-      { path: 'search/location/:key', Component: LocationPage },
+      // Locations/Hashtags are global, cross-product entities -- the ONLY
+      // valid route for one is /search/hashtags/:tag or
+      // /search/locations/:slug. The old bare /hashtag/:tag and singular
+      // /search/location/:key paths redirect here instead of 404ing.
+      { path: 'search/hashtags/:tag', Component: HashtagPage },
+      { path: 'search/locations/:slug', Component: LocationPage },
+      { path: 'hashtag/:tag', Component: LegacyHashtagRedirect },
+      { path: 'search/location/:key', Component: LegacyLocationRedirect },
       { path: 'portfolio', Component: Portfolio },
       { path: 'portfolio/:userId', Component: Portfolio },
       { path: 'edit-portfolio-item/:itemId', Component: EditPortfolioItem },

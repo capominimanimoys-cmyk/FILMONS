@@ -10,11 +10,35 @@
 // Content's free-text location field is always "City, Province" (see
 // SmartAddressInput's mode="city"), so matching/creating a `locations` row
 // by its `city` column (case-insensitive) is the right join key -- no new
-// column needed.
+// column needed. Matching is city+province together (not city alone) --
+// two different real cities sharing a name (e.g. "Vancouver, WA" vs
+// "Vancouver, BC") must never collide into the same entity.
 import { supabase } from '../../lib/supabase';
 
 export function normalizeLocationKey(input: string): string {
   return input.trim().split(',')[0].trim().toLowerCase();
+}
+
+/** Splits "City, Province" into its parts -- the format every free-text
+ *  location field in this app already uses (SmartAddressInput's
+ *  mode="city"). Province is null when the text has no comma. */
+export function parseLocationFreeText(text: string): { city: string; province: string | null } {
+  const [city, province] = text.split(',').map(s => s.trim());
+  return { city: city ?? '', province: province || null };
+}
+
+function slugifyPart(s: string): string {
+  return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** The ONE place a location route param (/search/locations/:slug) gets
+ *  built -- province-qualified whenever known, so two different real
+ *  cities sharing a name never collide. Falls back to city-only when no
+ *  province is known (never block on a missing province). */
+export function buildLocationSlug(city: string, province?: string | null): string {
+  const c = slugifyPart(city || '');
+  const p = province ? slugifyPart(province) : '';
+  return p ? `${c}-${p}` : c;
 }
 
 export type LocationContentType = 'post' | 'portfolio_item' | 'portfolio_album' | 'listing';
@@ -31,20 +55,24 @@ export async function indexContentLocation(contentType: LocationContentType, con
     await supabase.from('location_mentions').delete().eq('content_type', contentType).eq('content_id', contentId);
     const text = (locationText ?? '').trim();
     if (!text) return;
-    const cityKey = normalizeLocationKey(text);
-    if (!cityKey) return;
+    const { city, province } = parseLocationFreeText(text);
+    if (!city) return;
 
-    let { data: loc } = await supabase.from('locations').select('id').ilike('city', cityKey).limit(1).maybeSingle();
-    if (!loc) {
+    // Match by city AND province together (see file header) -- fetch
+    // every row whose city matches case-insensitively, then pick the one
+    // whose province (if any) matches too.
+    const { data: candidates } = await supabase.from('locations').select('id, province').ilike('city', city);
+    let locId = (candidates ?? []).find(r => (r.province ?? null) === province)?.id;
+    if (!locId) {
       const { data: created } = await supabase.from('locations')
-        .insert({ name: text, city: text.split(',')[0].trim(), country: 'Canada' })
+        .insert({ name: text, city, province, country: 'Canada' })
         .select('id').maybeSingle();
-      loc = created;
+      locId = created?.id;
     }
-    if (!loc) return;
+    if (!locId) return;
 
     await supabase.from('location_mentions').upsert(
-      { location_id: loc.id, content_type: contentType, content_id: contentId },
+      { location_id: locId, content_type: contentType, content_id: contentId },
       { onConflict: 'content_type,content_id', ignoreDuplicates: true },
     );
   } catch (e) {
@@ -58,12 +86,40 @@ export interface LocationSuggestion {
   mentionCount: number;
 }
 
+interface LocationRow { id: string; city: string | null; province: string | null; name: string | null; uses: number }
+
+function toSuggestion(row: LocationRow): LocationSuggestion {
+  const city = row.city ?? '';
+  return {
+    key: buildLocationSlug(city, row.province),
+    displayName: row.name || (row.province ? `${city}, ${row.province}` : city),
+    mentionCount: row.uses,
+  };
+}
+
+/** Resolves a `/search/locations/:slug` param (province-qualified, e.g.
+ *  "surrey-bc") -- or a legacy bare-city key ("surrey") from an old
+ *  redirected link -- back to its real `locations` row. Never splits the
+ *  slug itself on '-' to recover city/province (city names can contain
+ *  dashes) -- instead regenerates each candidate's slug and compares. */
+async function resolveLocationRow(slugInput: string): Promise<LocationRow | null> {
+  const cityGuess = normalizeLocationKey(slugInput).split('-')[0];
+  if (!cityGuess) return null;
+  const { data } = await supabase.from('locations').select('id, city, province, name, uses')
+    .ilike('city', `${cityGuess}%`).limit(50);
+  const rows = (data ?? []) as LocationRow[];
+  const exact = rows.find(r => buildLocationSlug(r.city ?? '', r.province) === slugInput);
+  if (exact) return exact;
+  // Legacy fallback: an old bare-city key with no province segment at all.
+  return rows.find(r => (r.city ?? '').toLowerCase() === normalizeLocationKey(slugInput)) ?? null;
+}
+
 /** Ranking: exact match, then startsWith, then contains, ordered by usage/
  *  recency within each tier -- same convention as searchHashtagSuggestions. */
 export async function searchLocationSuggestions(query: string, limit = 10): Promise<LocationSuggestion[]> {
   const q = normalizeLocationKey(query);
   if (!q) return [];
-  const { data, error } = await supabase.from('locations').select('city, name, uses')
+  const { data, error } = await supabase.from('locations').select('city, province, name, uses')
     .ilike('city', `%${q}%`)
     .order('uses', { ascending: false })
     .limit(50);
@@ -71,13 +127,12 @@ export async function searchLocationSuggestions(query: string, limit = 10): Prom
 
   const tier = (city: string) => city.toLowerCase() === q ? 0 : city.toLowerCase().startsWith(q) ? 1 : 2;
   const ranked = [...data].sort((a: any, b: any) => tier(a.city ?? '') - tier(b.city ?? '') || b.uses - a.uses);
-  return ranked.slice(0, limit).map((l: any) => ({ key: (l.city ?? '').toLowerCase(), displayName: l.name || l.city, mentionCount: l.uses }));
+  return ranked.slice(0, limit).map((l: any) => toSuggestion(l));
 }
 
 export async function getLocation(keyInput: string): Promise<LocationSuggestion | null> {
-  const key = normalizeLocationKey(keyInput);
-  const { data } = await supabase.from('locations').select('city, name, uses').ilike('city', key).limit(1).maybeSingle();
-  return data ? { key: (data.city ?? '').toLowerCase(), displayName: data.name || data.city, mentionCount: data.uses } : null;
+  const row = await resolveLocationRow(keyInput);
+  return row ? toSuggestion(row) : null;
 }
 
 export interface LocationPost {
@@ -101,8 +156,7 @@ export interface LocationContent {
 /** Location results page content -- posts/Portfolio items+albums/listings,
  *  visibility-respecting (same pattern as getHashtagContent). */
 export async function getLocationContent(keyInput: string, limit = 30): Promise<LocationContent> {
-  const key = normalizeLocationKey(keyInput);
-  const { data: locRow } = await supabase.from('locations').select('id').ilike('city', key).limit(1).maybeSingle();
+  const locRow = await resolveLocationRow(keyInput);
   if (!locRow) return { posts: [], portfolio: [], listings: [] };
 
   const { data: mentions } = await supabase.from('location_mentions')

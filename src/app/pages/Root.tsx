@@ -129,7 +129,7 @@ export function Root() {
   // marketplace/connect/learning" tabs) -- both are `sticky top-0`,
   // meaning they were already designed to be the page's own topmost bar,
   // not to sit below the global one.
-  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections') || location.pathname.startsWith('/portfolio') || location.pathname.startsWith('/search/category') || location.pathname.startsWith('/hashtag/');
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections') || location.pathname.startsWith('/portfolio') || location.pathname.startsWith('/search/category') || location.pathname.startsWith('/search/hashtags/') || location.pathname.startsWith('/search/locations/');
   const showFooter   = location.pathname === '/';
   // /inbox wants the full viewport on mobile too, matching a dedicated
   // messaging app (no bottom tab bar under the conversation list OR an

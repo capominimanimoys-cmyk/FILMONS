@@ -1707,21 +1707,17 @@ function HashtagsAllSection({ query }: { query?: string }) {
   }, [query]);
 
   if (!query?.trim() || !results?.length) return null;
+  // No "View all" -- Hashtags is a global entity, discovered only
+  // contextually (one specific tag at a time); there's no generic
+  // "browse every hashtag" landing page per the final search spec.
   const shown = results.slice(0, 5);
 
   return (
     <div className="px-4 lg:px-0 mb-6">
-      <div className="flex items-center justify-between mb-2.5">
-        <p className="text-sm lg:text-base font-black text-gray-900">Hashtags</p>
-        {results.length > 5 && (
-          <button onClick={() => navigate('/search/category/hashtags', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
-            View all <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
+      <p className="text-sm lg:text-base font-black text-gray-900 mb-2.5">Hashtags</p>
       <div className="flex flex-wrap gap-2">
         {shown.map(h => (
-          <button key={h.tag} onClick={() => navigate(`/hashtag/${h.tag}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+          <button key={h.tag} onClick={() => navigate(`/search/hashtags/${h.tag}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
             <Hash className="w-3.5 h-3.5 text-blue-500" /> {h.tag}
           </button>
         ))}
@@ -1730,7 +1726,8 @@ function HashtagsAllSection({ query }: { query?: string }) {
   );
 }
 
-// Same "max 5, View all when more exist" rule as HashtagsAllSection above.
+// Same rule as HashtagsAllSection above -- including no "View all" (see
+// its comment; Locations is a global entity too).
 function LocationsAllSection({ query }: { query?: string }) {
   const navigate = useNavigate();
   const [results, setResults] = useState<LocationSuggestion[] | null>(null);
@@ -1747,17 +1744,10 @@ function LocationsAllSection({ query }: { query?: string }) {
 
   return (
     <div className="px-4 lg:px-0 mb-6">
-      <div className="flex items-center justify-between mb-2.5">
-        <p className="text-sm lg:text-base font-black text-gray-900">Locations</p>
-        {results.length > 5 && (
-          <button onClick={() => navigate('/search/category/locations', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
-            View all <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
+      <p className="text-sm lg:text-base font-black text-gray-900 mb-2.5">Locations</p>
       <div className="flex flex-wrap gap-2">
         {shown.map(l => (
-          <button key={l.key} onClick={() => navigate(`/search/location/${encodeURIComponent(l.key)}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
+          <button key={l.key} onClick={() => navigate(`/search/locations/${encodeURIComponent(l.key)}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm font-bold text-gray-700 hover:border-blue-300">
             <MapPin className="w-3.5 h-3.5 text-blue-500" /> {l.displayName}
           </button>
         ))}
@@ -2656,10 +2646,8 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                   <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
                 )}
                 {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
-                {categoryFilter === 'all' && showConnectExtras && <LocationsAllSection query={term} />}
                 {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
                 {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
-                {categoryFilter === 'all' && showConnectExtras && <HashtagsAllSection query={term} />}
               </>
             ),
             learning: (
@@ -2674,6 +2662,13 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           const order: SearchSource[] = !product ? sourcePriority : ['marketplace', 'connect', 'learning'];
           return <>{order.map(src => <Fragment key={src}>{blocks[src]}</Fragment>)}</>;
         })()}
+        {/* Locations/Hashtags -- global, cross-product entities, never
+            nested under a Connect heading (that was a bug -- they used to
+            render inside the `connect:` block above, including on
+            /search/category/connect itself). Only on the unscoped 'all'
+            page, same !product gate as Settings/Support below. */}
+        {!product && categoryFilter === 'all' && <LocationsAllSection query={term} />}
+        {!product && categoryFilter === 'all' && <HashtagsAllSection query={term} />}
         {/* Settings/Support navigation matches -- destinations, not
             content, only on the unscoped /search/category/all page (see
             destinationMatches above). Same registry SearchOverlay.tsx's
