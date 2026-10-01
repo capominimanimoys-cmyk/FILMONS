@@ -39,6 +39,8 @@ import { PortfolioMedia } from './PortfolioMedia';
 import { PortfolioItemFocusView } from './PortfolioItemFocusView';
 import { PortfolioCommentSheet, timeAgo } from './PortfolioCommentSheet';
 import { ViewPortfolioLink } from './connect/ViewPortfolioLink';
+import { normalizeHashtag } from '../lib/hashtagsApi';
+import { buildLocationSlug } from '../lib/locationsApi';
 
 function timeAgoShort(iso: string): string { return timeAgo(iso); }
 function EngagementRow({
@@ -87,11 +89,13 @@ function ClampedText({ text, lines = 3 }: { text: string; lines?: number }) {
 }
 
 function TagRow({ tags }: { tags: string[] }) {
+  const navigate = useNavigate();
   if (!tags.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
       {tags.slice(0, 6).map(t => (
-        <span key={t} className="text-[10px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">{t}</span>
+        <button key={t} onClick={e => { e.stopPropagation(); navigate(`/search/hashtags/${normalizeHashtag(t)}`); }}
+          className="text-[10px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full hover:text-blue-600">{t}</button>
       ))}
     </div>
   );
@@ -111,7 +115,7 @@ function CreatorHeader({
     setTimeout(() => { setTrustProfileOpen(false); setTrustProfileClosing(false); }, 260);
   };
   const c = entry.creator;
-  const subline = [c.username ? `@${c.username}` : null, c.city].filter(Boolean).join(' · ');
+  const identity = c.username ? `@${c.username}` : null;
   const following = isFollowing(c.id);
 
   const handleFollowClick = (e: React.MouseEvent) => {
@@ -137,7 +141,16 @@ function CreatorHeader({
             <p className="text-sm font-bold text-gray-900 truncate">{c.name}</p>
             {c.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
           </div>
-          {subline && <p className="text-xs text-gray-400 truncate">{subline}</p>}
+          {(identity || c.city) && (
+            <p className="text-xs text-gray-400 truncate flex items-center gap-1">
+              {identity && <span>{identity}</span>}
+              {identity && c.city && <span>·</span>}
+              {c.city && (
+                <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(c.city))}`); }}
+                  className="hover:text-blue-600 hover:underline truncate">{c.city}</button>
+              )}
+            </p>
+          )}
           {trustLevel && (
             <div className="mt-0.5" onClick={e => e.stopPropagation()}>
               <TrustBadge level={trustLevel} size="sm" onClick={() => setShowTrustDetails(true)} />

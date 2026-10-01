@@ -1,4 +1,5 @@
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router';
+import { buildLocationSlug } from '../lib/locationsApi';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'motion/react';
 import { listingsApi, authApi, reviewsApi, chatApi } from '../lib/api';
@@ -543,7 +544,11 @@ export function ListingDetail() {
               {listing.city && (
                 <div className="flex items-center gap-1.5 text-sm text-gray-500">
                   <MapPin className="w-4 h-4" />
-                  {[listing.streetAddress, listing.city, listing.province].filter(Boolean).join(', ')}
+                  {listing.streetAddress && <span>{listing.streetAddress}, </span>}
+                  <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(listing.city, listing.province))}`); }}
+                    className="hover:text-blue-600 hover:underline">
+                    {[listing.city, listing.province].filter(Boolean).join(', ')}
+                  </button>
                 </div>
               )}
               {listing.tags && listing.tags.length > 0 && (
@@ -788,7 +793,14 @@ export function ListingDetail() {
                   <div className="mb-4 space-y-2.5 text-sm">
                     {(listing.city || listing.opportunity.workArrangement) && (
                       <div className="flex items-center gap-2 text-gray-700"><MapPin className="w-3.5 h-3.5 text-gray-400" />
-                        {[listing.city && [listing.city, listing.province].filter(Boolean).join(', '), workArrangementLabel(listing.opportunity.workArrangement)].filter(Boolean).join(' · ')}
+                        {listing.city && (
+                          <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(listing.city, listing.province))}`); }}
+                            className="hover:text-blue-600 hover:underline">
+                            {[listing.city, listing.province].filter(Boolean).join(', ')}
+                          </button>
+                        )}
+                        {listing.city && listing.opportunity.workArrangement && <span>·</span>}
+                        {listing.opportunity.workArrangement && <span>{workArrangementLabel(listing.opportunity.workArrangement)}</span>}
                       </div>
                     )}
                     <div>

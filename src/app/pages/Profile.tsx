@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { usePostStore } from '../context/PostContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useNavigate, Link, useSearchParams } from 'react-router';
+import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
 import {
   Star, StarOff, MapPin, ShieldCheck, Loader2, Camera,
   Globe, Link as LinkIcon, X, Settings, Bookmark,
@@ -1417,12 +1418,20 @@ export function Profile() {
                       </span>
                     </div>
                   )}
-                  {(user.location || user.city) && (
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                      <MapPin className="w-3 h-3 shrink-0" />
-                      <span>{user.location || [user.city, user.province].filter(Boolean).join(', ')}</span>
-                    </div>
-                  )}
+                  {(user.location || user.city) && (() => {
+                    // Prefer the structured city/province fields for the slug --
+                    // user.location is free text and may not reliably split.
+                    const { city, province } = user.city ? { city: user.city, province: user.province } : parseLocationFreeText(user.location!);
+                    return (
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(city, province))}`); }}
+                          className="hover:text-blue-600 hover:underline text-left">
+                          {user.location || [user.city, user.province].filter(Boolean).join(', ')}
+                        </button>
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={() => switchTab('about')}
                     className="text-xs text-blue-600 font-semibold hover:underline"

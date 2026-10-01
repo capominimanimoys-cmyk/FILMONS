@@ -18,6 +18,7 @@ import { TrustBadge } from './trust/TrustBadge';
 import { TrustDetailsSheet } from './trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from './trust/TrustProfileOverlay';
 import { getTrustLevelCached, type TrustLevel } from '../lib/trustApi';
+import { buildLocationSlug } from '../lib/locationsApi';
 
 interface ListingCardProps {
   listing: Listing & { distance?: number };
@@ -693,9 +694,10 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm text-gray-900 truncate leading-snug">{listing.title}</p>
               {listing.city && (
-                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(listing.city, listing.province))}`); }}
+                  className="text-xs text-gray-400 mt-0.5 truncate text-left hover:text-blue-600 hover:underline">
                   {listing.city}{listing.province ? `, ${listing.province}` : ''}
-                </p>
+                </button>
               )}
             </div>
             <div className="flex items-center gap-0.5 shrink-0">

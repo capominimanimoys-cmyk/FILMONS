@@ -15,6 +15,7 @@ import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { getDisplayIdentity } from '../../lib/displayIdentity';
+import { buildLocationSlug } from '../../lib/locationsApi';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './PostMoreMenu';
@@ -188,9 +189,21 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
             <p className="text-sm font-bold text-gray-900">{creator.name}</p>
             {creator.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
           </button>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {[getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }), creator.city].filter(Boolean).join(' · ')}{(getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }) || creator.city) ? ' · ' : ''}{timeAgo(entry.created_at)}
-          </p>
+          {(() => {
+            const identity = getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry });
+            return (
+              <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                {identity && <span>{identity}</span>}
+                {identity && creator.city && <span>·</span>}
+                {creator.city && (
+                  <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(creator.city))}`); }}
+                    className="hover:text-blue-600 hover:underline">{creator.city}</button>
+                )}
+                {(identity || creator.city) && <span>·</span>}
+                <span>{timeAgo(entry.created_at)}</span>
+              </p>
+            );
+          })()}
           {trustLevel && (
             <div className="mt-1">
               <TrustBadge level={trustLevel} size="sm" onClick={() => setShowTrustDetails(true)} />

@@ -14,6 +14,7 @@ import type { SuggestedCreator } from '../../lib/portfolioApi';
 import { ConnectFlowSheet } from '../ConnectFlowSheet';
 import { BottomSheet, SheetAction, SheetCancel } from '../BottomSheet';
 import { getDisplayIdentity } from '../../lib/displayIdentity';
+import { buildLocationSlug } from '../../lib/locationsApi';
 
 // The one real "why" signal this app can honestly claim without a dedicated
 // reasons engine: a shared Primary Role (the exact phrasing the spec's own
@@ -65,6 +66,7 @@ export function SuggestedConnectionCard({ creator, onConnected, onDismiss, width
   };
 
   const reason = recommendationReason(creator, user?.primaryRole);
+  const identity = getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry });
 
   return (
     <div className={`relative bg-white border border-gray-100 rounded-2xl p-4 flex flex-col gap-2.5 ${widthClassName}`}>
@@ -83,15 +85,24 @@ export function SuggestedConnectionCard({ creator, onConnected, onDismiss, width
           : <div className="w-full h-full flex items-center justify-center text-lg font-bold text-gray-400">{creator.name?.[0]?.toUpperCase() || '?'}</div>}
       </button>
 
-      <button onClick={openProfile} className="text-left">
+      {/* A `<div role="button">`, not a real <button> -- the city below
+          needs its own independent tap target, and a <button> can't
+          legally contain another <button>. */}
+      <div role="button" tabIndex={0} onClick={openProfile} onKeyDown={e => { if (e.key === 'Enter') openProfile(); }}
+        className="text-left cursor-pointer">
         <div className="flex items-center gap-1">
           <p className="text-sm font-black text-gray-900 truncate">{creator.name}</p>
           {creator.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
         </div>
-        <p className="text-xs text-gray-400 truncate">
-          {[getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }), creator.city].filter(Boolean).join(' · ')}
+        <p className="text-xs text-gray-400 truncate flex items-center gap-1">
+          {identity && <span>{identity}</span>}
+          {identity && creator.city && <span>·</span>}
+          {creator.city && (
+            <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(creator.city))}`); }}
+              className="hover:text-blue-600 hover:underline">{creator.city}</button>
+          )}
         </p>
-      </button>
+      </div>
 
       {creator.mutualAvatars.length > 0 && (
         <div className="flex items-center gap-1.5">

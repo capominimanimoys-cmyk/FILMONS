@@ -18,6 +18,7 @@ import { PortfolioCommentSheet, timeAgo } from '../PortfolioCommentSheet';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
+import { buildLocationSlug } from '../../lib/locationsApi';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
@@ -219,9 +220,15 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
       </button>
 
       <div className="flex flex-wrap gap-1.5 mt-3">
-        {[item.category, item.subcategory, creator.city].filter(Boolean).map(tag => (
+        {[item.category, item.subcategory].filter(Boolean).map(tag => (
           <span key={tag} className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">{tag}</span>
         ))}
+        {creator.city && (
+          <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(creator.city))}`); }}
+            className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full hover:border-blue-300 hover:text-blue-600">
+            {creator.city}
+          </button>
+        )}
       </div>
 
       {/* Lightweight action, not a big CTA -- shouldn't compete with the
