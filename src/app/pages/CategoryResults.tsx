@@ -60,6 +60,7 @@ import {
   SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
 import { recognizeQuery, type SearchSource } from '../lib/searchUtils';
+import { matchDestinations } from '../lib/searchDestinations';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 
@@ -2183,6 +2184,7 @@ function CourseDiscoveryRow({ courses }: { courses: Course[] }) {
 
 function AllGroupedResults({ navState: initialNavState, product }: { navState: NavState; product?: 'marketplace' | 'connect' | 'learning' }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // "Content-first" scroll mode, per the Search Results mobile flow spec:
   // scrolling down collapses the header (result count, Filters/Sort row)
@@ -2246,6 +2248,14 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
   // already uses, so a query means the same thing (and orders sections the
   // same way) on both surfaces.
   const sourcePriority = useMemo(() => (term ? recognizeQuery(term).sourcePriority : ['marketplace', 'connect', 'learning'] as SearchSource[]), [term]);
+  // Settings/Support navigation matches -- destinations, not content, only
+  // on the unscoped /search/category/all page (a product-scoped page like
+  // /search/category/marketplace already IS one product, Settings/Support
+  // aren't part of any product). Same registry/matcher SearchOverlay.tsx's
+  // 'all' tab uses, so the two surfaces never disagree.
+  const destinationMatches = useMemo(() => (!product && term ? matchDestinations(term, user?.accountType) : []), [product, term, user?.accountType]);
+  const settingsMatches = useMemo(() => destinationMatches.filter(d => d.type === 'settings'), [destinationMatches]);
+  const supportMatches  = useMemo(() => destinationMatches.filter(d => d.type === 'support'),  [destinationMatches]);
 
   // The ONE shared searchMatchingListings/searchMatchingCreators call for
   // this whole page -- fetched here, once, and handed to every non-
@@ -2664,6 +2674,50 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           const order: SearchSource[] = !product ? sourcePriority : ['marketplace', 'connect', 'learning'];
           return <>{order.map(src => <Fragment key={src}>{blocks[src]}</Fragment>)}</>;
         })()}
+        {/* Settings/Support navigation matches -- destinations, not
+            content, only on the unscoped /search/category/all page (see
+            destinationMatches above). Same registry SearchOverlay.tsx's
+            'all' tab uses. */}
+        {!product && (settingsMatches.length > 0 || supportMatches.length > 0) && (
+          <div className="px-4 lg:px-0">
+            {settingsMatches.length > 0 && (
+              <section className="mb-5">
+                <p className="pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Settings</p>
+                <div className="divide-y divide-gray-50 lg:border lg:border-gray-100 lg:rounded-2xl lg:overflow-hidden">
+                  {settingsMatches.map(d => (
+                    <button key={d.route} onClick={() => navigate(d.route)}
+                      className="w-full flex items-center gap-3 py-2.5 lg:px-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
+                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-base shrink-0">⚙️</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-gray-900 truncate">{d.title}</p>
+                        <p className="text-[11px] text-gray-400 truncate">{d.description}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+            {supportMatches.length > 0 && (
+              <section className="mb-5">
+                <p className="pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Support</p>
+                <div className="divide-y divide-gray-50 lg:border lg:border-gray-100 lg:rounded-2xl lg:overflow-hidden">
+                  {supportMatches.map(d => (
+                    <button key={d.route} onClick={() => navigate(d.route)}
+                      className="w-full flex items-center gap-3 py-2.5 lg:px-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
+                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-base shrink-0">🆘</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-gray-900 truncate">{d.title}</p>
+                        <p className="text-[11px] text-gray-400 truncate">{d.description}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Mobile filter bottom sheet ───────────────────────────────────── */}

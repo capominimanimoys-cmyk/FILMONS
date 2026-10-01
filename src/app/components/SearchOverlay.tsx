@@ -26,6 +26,7 @@ import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
 import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
+import { matchDestinations, type SearchDestination } from '../lib/searchDestinations';
 import { searchLocationSuggestions } from '../lib/locationsApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
@@ -111,7 +112,7 @@ interface ListingRow {
 
 interface Suggestion {
   id: string; text: string; subtext?: string;
-  icon: string; kind: 'listing' | 'creator' | 'service' | 'smart' | 'location' | 'location-real' | 'hashtag'; action: string;
+  icon: string; kind: 'listing' | 'creator' | 'service' | 'smart' | 'location' | 'location-real' | 'hashtag' | 'destination'; action: string;
 }
 
 // ── Filter state ───────────────────────────────────────────────────────────────
@@ -394,10 +395,18 @@ function generateSmartSuggestions(rawQ: string): Suggestion[] {
   return results.slice(0, 6);
 }
 
-async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
+async function fetchSuggestions(rawQ: string, accountType?: string): Promise<Suggestion[]> {
   const q = rawQ.trim();
   if (q.length < 1) return [];
   const ql = normalize(q).replace(/[%_\\,]/g, '');
+
+  // Settings/Support navigation matches -- e.g. "notifi" -> Notification
+  // Settings, tappable to navigate straight there instead of running a
+  // content search. Local/sync, so no need to join the Promise.all below.
+  const destinationMatches = matchDestinations(rawQ, accountType).slice(0, 3).map(d => ({
+    id: `dest-${d.route}`, text: d.title, subtext: d.description,
+    icon: d.type === 'support' ? '🆘' : '⚙️', kind: 'destination' as const, action: d.route,
+  }));
 
   const [lRes, uRes, hashtags, locations] = await Promise.all([
     supabase.from('listings').select('id, title, listing_type, listing_mode')
@@ -416,7 +425,7 @@ async function fetchSuggestions(rawQ: string): Promise<Suggestion[]> {
     searchLocationSuggestions(rawQ, 3),
   ]);
 
-  const results: Suggestion[] = [];
+  const results: Suggestion[] = [...destinationMatches];
   const seen = new Set<string>();
 
   for (const l of locations) {
@@ -1178,6 +1187,41 @@ function AllResultsSection({ title, totalCount, onViewAll, onViewMore, moreLabel
   );
 }
 
+// Settings/Support navigation matches -- a destination, not content, so
+// it's a compact row (icon + title + description + chevron) that
+// navigates directly on tap, never a Marketplace/Post/Course card. No
+// "View all" -- there's no generic Settings/Support landing page (every
+// route here is a real, specific destination from routes.tsx).
+function DestinationRow({ d, onNavigate }: { d: SearchDestination; onNavigate: (url: string) => void }) {
+  return (
+    <motion.button whileTap={{ scale: 0.98 }} onClick={() => onNavigate(d.route)}
+      className="w-full flex items-center gap-3 px-4 py-2.5 active:bg-gray-50 text-left">
+      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-base shrink-0">
+        {d.type === 'support' ? '🆘' : '⚙️'}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-gray-900 truncate">{d.title}</p>
+        <p className="text-[11px] text-gray-400 truncate">{d.description}</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+    </motion.button>
+  );
+}
+
+function DestinationSection({ title, destinations, onNavigate }: {
+  title: string; destinations: SearchDestination[]; onNavigate: (url: string) => void;
+}) {
+  if (!destinations.length) return null;
+  return (
+    <section className="mb-5">
+      <div className="px-4 py-2">
+        <p className="text-[13px] font-black text-gray-900">{title}</p>
+      </div>
+      {destinations.map(d => <DestinationRow key={d.route} d={d} onNavigate={onNavigate}/>)}
+    </section>
+  );
+}
+
 // One cell of All Results' Connect section -- three differently-shaped
 // result types share this one 2-column layout (see AllResultsConnectItem/
 // interleave3), each rendered through its own REAL existing component
@@ -1822,7 +1866,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     setSuggLoading(true);
     clearTimeout(suggRef.current);
     suggRef.current = setTimeout(() => {
-      fetchSuggestions(val)
+      fetchSuggestions(val, user?.accountType)
         .then(setSuggestions)
         .catch(() => setSuggestions(generateSmartSuggestions(val)))
         .finally(() => setSuggLoading(false));
@@ -1831,6 +1875,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   };
 
   const handleSelectSuggestion = (s: Suggestion) => {
+    if (s.kind === 'destination') { setSuggestions([]); handleResultNavigate(s.action); return; }
     if (s.kind === 'hashtag') { setSuggestions([]); handleResultNavigate(`/hashtag/${s.action}`); return; }
     if (s.kind === 'location-real') { setSuggestions([]); handleResultNavigate(`/search/location/${encodeURIComponent(s.action)}`); return; }
     setQ(s.action); setSuggestions([]); runSearch(s.action);
@@ -1934,6 +1979,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // "lighting course" -> Learning first). Purely an ordering decision;
   // retrieval itself (what each section actually contains) is unchanged.
   const recognition = useMemo(() => recognizeQuery(q), [q]);
+  const destinationMatches = useMemo(() => matchDestinations(q, user?.accountType), [q, user?.accountType]);
+  const settingsMatches = useMemo(() => destinationMatches.filter(d => d.type === 'settings'), [destinationMatches]);
+  const supportMatches  = useMemo(() => destinationMatches.filter(d => d.type === 'support'),  [destinationMatches]);
 
   // Four top-level modes, All a universal layer over the other three (per
   // spec section 15, "All is not a fourth product") -- Marketplace =
@@ -2020,9 +2068,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const showConnectLanding = activeTab === 'connect' && !hasTyped;
 
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
-    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0 && rawCourses.length === 0;
+    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawHashtags.length === 0 && rawCourses.length === 0
+    && (activeTab !== 'all' || destinationMatches.length === 0);
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
-    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawHashtags.length > 0 || rawCourses.length > 0;
+    || rawPortfolio.length > 0 || rawPosts.length > 0 || rawHashtags.length > 0 || rawCourses.length > 0
+    || (activeTab === 'all' && destinationMatches.length > 0);
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
     || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0
     || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleHashtags.length > 0 || visibleCourses.length > 0;
@@ -2226,6 +2276,17 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                 // fixed Marketplace/Connect/Learning order every time.
                 return <>{recognition.sourcePriority.map(src => sections[src] || null)}</>;
               })()}
+              {/* Settings/Support navigation matches -- destinations, not
+                  content, always last (content takes priority whenever any
+                  exists; a clear help/problem query like "payout failed"
+                  usually has no competing Marketplace/Connect/Learning
+                  content anyway, so it still lands first in practice). */}
+              {activeTab === 'all' && (
+                <>
+                  <DestinationSection title="Settings" destinations={settingsMatches} onNavigate={handleResultNavigate}/>
+                  <DestinationSection title="Support" destinations={supportMatches} onNavigate={handleResultNavigate}/>
+                </>
+              )}
               {/* Search -> Marketplace, empty query: a discovery landing
                   page (Top/Latest/Nearby, mixed types + badges), NOT the
                   per-category preview list below -- that stays exactly as
@@ -2488,7 +2549,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         </div>
 
         {/* ── Result count bar ── */}
-        {resultsReady && hasResults && (
+        {resultsReady && hasResults && (filteredUsers.length > 0 || filteredListings.length > 0) && (
           <div className="shrink-0 border-t border-gray-100 px-4 py-2.5">
             <p className="text-xs text-gray-400">
               <span className="font-semibold text-gray-700">{filteredUsers.length + filteredListings.length}</span> results
