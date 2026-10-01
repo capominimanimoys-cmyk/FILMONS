@@ -410,6 +410,16 @@ export function Home() {
     setConnectTabState(tab);
     try { sessionStorage.setItem(CONNECT_TAB_KEY, tab); } catch {}
   };
+  // "Following" has no meaning for a guest -- the tab UI never offers it
+  // to one, but a signed-out session can still carry a stale 'following'
+  // value in sessionStorage from a PREVIOUS logged-in session on this
+  // browser (or from logging out mid-session). Corrects the STATE itself
+  // (not just the fetch, see loadConnect's own guard) so every read site
+  // -- including the "no results" empty-state copy below -- stays
+  // consistent without needing its own guest check.
+  useEffect(() => {
+    if (!user && connectTab === 'following') setConnectTab('foryou');
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Most relevant"/"Most recent" sort has a chooser only on desktop (per
   // the desktop Connect spec) -- mobile always uses the default 'relevant'
   // with no UI to change it, per the mobile Connect mockup (no sort control
@@ -456,8 +466,15 @@ export function Home() {
     setConnectError(false);
     const isCategoryTab = tab !== 'foryou' && tab !== 'following';
     const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
+    // "Following" has no meaning for a guest (no authenticated following
+    // graph) -- the tab UI itself never offers it to a guest (see the
+    // Connect mode row below), but a signed-out session can still carry a
+    // stale 'following' value in sessionStorage from a PREVIOUS logged-in
+    // session on this browser, so this is a defensive fallback to the
+    // public discovery feed, never a fake/empty "Following" result.
+    const effectiveTab = !user && tab === 'following' ? 'foryou' : tab;
     getConnectFeed({
-      tab: tab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
+      tab: effectiveTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
       category: resolved?.category, subcategory: resolved?.subcategory, sort,
     })
       .then(page => {
@@ -1244,32 +1261,40 @@ export function Home() {
             className={`lg:hidden ${homeMode === 'portfolio' ? 'block' : 'hidden'} h-full flex flex-col overflow-y-auto overscroll-contain`}
           >
             <>
-                {/* For You / Following -- operate on the ENTIRE unified
-                    feed now, not a per-content-type selection. Any
-                    connectTab value other than 'following' counts as For
-                    You, including a specific category selected below. */}
-                <div className="shrink-0 px-4 pt-1 pb-2">
-                  <div role="tablist" aria-label="Connect mode" className="flex gap-2">
-                    <button
-                      role="tab" aria-selected={connectTab !== 'following'}
-                      onClick={() => setConnectTab('foryou')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                        connectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                      }`}
-                    >
-                      For You
-                    </button>
-                    <button
-                      role="tab" aria-selected={connectTab === 'following'}
-                      onClick={() => setConnectTab('following')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                        connectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                      }`}
-                    >
-                      Following
-                    </button>
+                {/* For You / Following -- authenticated-only. "Following"
+                    has no meaning for a guest (no following graph), and
+                    "For You" implies account-level personalization a
+                    guest doesn't have either -- per spec, these controls
+                    simply don't exist in Guest Mode (never shown
+                    disabled, never a lock icon), not just hidden content.
+                    Operates on the ENTIRE unified feed now, not a per-
+                    content-type selection -- any connectTab value other
+                    than 'following' counts as For You, including a
+                    specific category selected below. */}
+                {user && (
+                  <div className="shrink-0 px-4 pt-1 pb-2">
+                    <div role="tablist" aria-label="Connect mode" className="flex gap-2">
+                      <button
+                        role="tab" aria-selected={connectTab !== 'following'}
+                        onClick={() => setConnectTab('foryou')}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                          connectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        For You
+                      </button>
+                      <button
+                        role="tab" aria-selected={connectTab === 'following'}
+                        onClick={() => setConnectTab('following')}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                          connectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        Following
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Creative-interest categories -- content TYPE (Portfolio/
                     Activity/Services/...) is never a filter option here,
@@ -1403,26 +1428,32 @@ export function Home() {
         <div className="hidden lg:block bg-gray-100 min-h-screen">
           <div className="max-w-[900px] mx-auto px-8 py-5">
             <div className="flex items-center justify-between mb-4">
-              <div role="tablist" aria-label="Connect feed" className="flex gap-2">
-                <button
-                  role="tab" aria-selected={connectTab !== 'following'}
-                  onClick={() => setConnectTab('foryou')}
-                  className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
-                    connectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  For You
-                </button>
-                <button
-                  role="tab" aria-selected={connectTab === 'following'}
-                  onClick={() => setConnectTab('following')}
-                  className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
-                    connectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  Following
-                </button>
-              </div>
+              {/* Authenticated-only, same as the mobile Connect mode row
+                  above -- Following/For You simply don't exist for a
+                  guest. The sort control to the right stays available for
+                  a guest's public feed. */}
+              {user ? (
+                <div role="tablist" aria-label="Connect feed" className="flex gap-2">
+                  <button
+                    role="tab" aria-selected={connectTab !== 'following'}
+                    onClick={() => setConnectTab('foryou')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                      connectTab !== 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                    }`}
+                  >
+                    For You
+                  </button>
+                  <button
+                    role="tab" aria-selected={connectTab === 'following'}
+                    onClick={() => setConnectTab('following')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                      connectTab === 'following' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
+                    }`}
+                  >
+                    Following
+                  </button>
+                </div>
+              ) : <div />}
 
               <div className="relative">
                 <button
