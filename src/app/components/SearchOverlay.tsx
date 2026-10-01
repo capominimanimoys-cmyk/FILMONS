@@ -25,7 +25,7 @@ import { getLockedOpportunityIds } from '../lib/entitlements';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
 import { EmergencyUpgradeModal } from './EmergencyLockedState';
 import { saveSearchState, consumeSearchState } from '../lib/searchStatePersist';
-import { searchHashtagSuggestions, type HashtagSuggestion, type Hashtag } from '../lib/hashtagsApi';
+import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions } from '../lib/locationsApi';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
@@ -1424,7 +1424,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [connectSuggested,        setConnectSuggested]        = useState<SuggestedCreator[]>([]);
   const [connectTrendingPosts,    setConnectTrendingPosts]    = useState<Post[]>([]);
   const [connectFeaturedPortfolio,setConnectFeaturedPortfolio]= useState<PortfolioFeedEntry[]>([]);
-  const [connectPopularHashtags,  setConnectPopularHashtags]  = useState<Hashtag[]>([]);
   const [connectActivity,         setConnectActivity]         = useState<ActivityEntry[]>([]);
   // Portfolio/Posts/Hashtags -- only ever populated for a typed search on
   // the 'all' tab (no dedicated tab UI for these yet, unlike
@@ -1785,7 +1784,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
       setConnectSuggested(discovery.profilesYouMayLike);
       setConnectTrendingPosts(discovery.trendingPosts);
       setConnectFeaturedPortfolio(discovery.featuredPortfolio);
-      setConnectPopularHashtags(discovery.popularHashtags);
       setConnectActivity(activity.entries);
     });
     return () => { cancelled = true; };
@@ -2015,8 +2013,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const allConnectTotal = visibleUsers.length + visiblePortfolio.length + visiblePosts.length;
 
   const showMarketplaceLanding = activeTab === 'marketplace' && !hasTyped;
-  // Search -> Connect, empty query: the 5-section discovery landing page
-  // (People you may know/Trending/Featured Portfolio/Popular Hashtags/
+  // Search -> Connect, empty query: the 4-section discovery landing page
+  // (Profiles You May Like/Trending Posts/Featured Portfolio/
   // Creator Activity) -- same "own empty-query landing state, untouched
   // typed-search/'all'-tab behavior" pattern as showMarketplaceLanding.
   const showConnectLanding = activeTab === 'connect' && !hasTyped;
@@ -2323,9 +2321,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   )}
                 </>
               ))}
-              {/* Search -> Connect, empty query: the 5-section discovery
-                  landing page -- People you may know/Trending in Connect/
-                  Featured Portfolio/Popular Hashtags/Creator Activity, NOT
+              {/* Search -> Connect, empty query: the 4-section discovery
+                  landing page -- Profiles You May Like/Trending Posts/
+                  Featured Portfolio/Creator Activity, NOT
                   the generic Creators/Portfolio/Posts/Hashtags preview list
                   below. That list stays exactly as it was for the 'all' tab
                   and for Connect once the viewer actually types something. */}
@@ -2374,23 +2372,6 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                         {connectFeaturedPortfolio.map(entry => entry.type === 'item'
                           ? <PortfolioProjectCard key={`item-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
                           : <PortfolioAlbumCard key={`album-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
-                      </div>
-                    </section>
-                  )}
-                  {connectPopularHashtags.length > 0 && (
-                    <section className="mb-4">
-                      <div className="flex items-center justify-between px-4 py-2">
-                        <p className="text-[13px] font-black text-gray-900">Popular Hashtags</p>
-                        <ViewAllLink onClick={() => handleViewMoreCategory('hashtags')}/>
-                      </div>
-                      <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory scroll-pl-4">
-                        {connectPopularHashtags.map(h => (
-                          <button key={h.id} onClick={() => handleResultNavigate(`/hashtag/${h.tag}`)}
-                            className="shrink-0 snap-start flex flex-col items-start gap-0.5 px-3.5 py-2 rounded-2xl bg-white border border-gray-100 shadow-sm">
-                            <span className="text-sm font-black text-blue-600">#{h.tag}</span>
-                            <span className="text-[10px] text-gray-400 font-bold">{h.post_count} post{h.post_count === 1 ? '' : 's'}</span>
-                          </button>
-                        ))}
                       </div>
                     </section>
                   )}
