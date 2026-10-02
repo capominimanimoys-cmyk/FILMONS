@@ -13,6 +13,7 @@ import { EditListing } from './pages/EditListing';
 import { MyListings } from './pages/MyListings';
 import { ListingDetail } from './pages/ListingDetail';
 import { Profile } from './pages/Profile';
+import { CompleteProfilePage } from './pages/CompleteProfilePage';
 import { RefundPolicy } from './pages/RefundPolicy';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsConditions } from './pages/TermsConditions';
@@ -163,6 +164,7 @@ export const router = createBrowserRouter([
       { path: 'portfolio/:userId', Component: Portfolio },
       { path: 'edit-portfolio-item/:itemId', Component: EditPortfolioItem },
       { path: 'profile', Component: Profile },
+      { path: 'profile/complete', Component: CompleteProfilePage },
       { path: 'share-card', Component: ShareCard },
       { path: 'verification', Component: Verification },
       { path: 'connections', Component: MyConnections },

@@ -37,6 +37,7 @@ import { CreatePostTrigger } from '../components/CreatePostTrigger';
 import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
+import { ProfileStrengthCard } from '../components/ProfileStrengthCard';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, getPortfolioEntriesByIds, type PortfolioItem } from '../lib/portfolioApi';
 import { getUserRepostActivity, type ActivityEntry } from '../lib/activityApi';
@@ -776,13 +777,19 @@ export function Profile() {
     if (t && TABS.find(x => x.id === t)) setTab(t);
   }, [searchParams.get('tab')]);
 
-  // /profile?edit=about|identity|skills|gear|social|education|location —
+  // /profile?edit=about|bio|identity|skills|gear|social|education|location —
   // opens the full-screen AboutEditor overlay straight to that section,
   // e.g. Settings' "Account" row links here instead of the old
   // (now-removed) About tab, and ProfileCompletionCard's CTA links here too.
+  // 'photo' is a separate case -- there's no AboutEditor accordion for it,
+  // it opens the existing AvatarActionSheet instead (same sheet the
+  // manual avatar-tap already uses).
   useEffect(() => {
     const e = searchParams.get('edit');
-    if (e === 'about' || e === 'identity' || e === 'skills' || e === 'gear' || e === 'social' || e === 'education' || e === 'location') {
+    if (e === 'photo') {
+      setShowAvatarSheet(true);
+      setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
+    } else if (e === 'about' || e === 'bio' || e === 'identity' || e === 'skills' || e === 'gear' || e === 'social' || e === 'education' || e === 'location') {
       setEditProfileSection(e);
       setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
     }
@@ -1324,6 +1331,8 @@ export function Profile() {
         onTapFollowers={() => setShowFollowers('followers')}
         onTapFollowing={() => setShowFollowers('following')}
       />
+
+      <ProfileStrengthCard />
 
       <ProfileTabNav tab={tab} onChange={switchTab} />
 
