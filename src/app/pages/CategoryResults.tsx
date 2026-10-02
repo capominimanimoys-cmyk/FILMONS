@@ -62,7 +62,8 @@ import {
 import { recognizeQuery, normalize, type SearchSource } from '../lib/searchUtils';
 import { matchDestinations } from '../lib/searchDestinations';
 import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
-import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
+import { useSearchChromeVisibility } from '../lib/useSearchChromeVisibility';
+import { SlideHeader } from '../components/SlideHeader';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 
 type CategoryTab = 'rental' | 'sale' | 'services' | 'creators' | 'studios' | 'opportunities' | 'emergency';
@@ -464,6 +465,8 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
   const [searchText, setSearchText] = useState(initialNavState.query ?? '');
   const [debouncedQuery, setDebouncedQuery] = useState(searchText);
   useEffect(() => { const t = setTimeout(() => setDebouncedQuery(searchText), 350); return () => clearTimeout(t); }, [searchText]);
+  const [searchInputFocused, setSearchInputFocused] = useState(false);
+  const { headerVisible } = useSearchChromeVisibility({ inputFocused: searchInputFocused });
 
   const [sort, setSort] = useState<SortOption>(initialNavState.sort ?? 'recent');
   const [priceMin, setPriceMin] = useState<string>(initialNavState.filters?.priceRange?.min != null ? String(initialNavState.filters.priceRange.min) : '');
@@ -627,16 +630,18 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
           </div>
         </>
       ) : (
-        <>
-          <CategoryHeader category={category} onBack={goBackToAll}/>
+        <div className="sticky top-0 z-40 bg-white">
+        <SlideHeader visible={headerVisible}>
+          <CategoryHeaderContent category={category} onBack={goBackToAll}/>
 
           {/* ── Search + quick filters (both breakpoints) ───────────────── */}
-          <div className="sticky top-[52px] md:static z-[9] bg-gray-50 border-b border-gray-100 md:border-b-0 px-4 py-3 space-y-2.5">
+          <div className="bg-gray-50 border-b border-gray-100 md:border-b-0 px-4 py-3 space-y-2.5">
             <div className="flex items-center gap-2 max-w-5xl mx-auto w-full">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
                 <input
                   value={searchText} onChange={e => setSearchText(e.target.value)}
+                  onFocus={() => setSearchInputFocused(true)} onBlur={() => setSearchInputFocused(false)}
                   placeholder={CATEGORY_SEARCH_PLACEHOLDER[category]}
                   className="w-full bg-white border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
                 />
@@ -664,7 +669,8 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
               </div>
             )}
           </div>
-        </>
+        </SlideHeader>
+        </div>
       )}
 
       <div className="flex-1 max-w-5xl mx-auto w-full md:flex md:gap-8 md:px-4 md:py-6">
@@ -788,20 +794,31 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
 }
 
 // ── Shared header (mobile + desktop) ─────────────────────────────────────────
+// Inner row only, no sticky wrapper of its own -- CategoryHeader below
+// wraps it for the one standalone (non-scrolling EmergencyBlockedNotice)
+// use; SingleCategoryResults' main return wraps it together with the
+// search/quick-filters row in ONE combined sticky+SlideHeader container
+// instead, so the whole thing slides as a single unit on scroll.
+function CategoryHeaderContent({ category, onBack }: { category: CategoryTab; onBack: () => void }) {
+  return (
+    <div className="max-w-5xl mx-auto flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+      <button onClick={onBack} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+        <ArrowLeft className="w-5 h-5 text-gray-700"/>
+      </button>
+      <div className="min-w-0">
+        <p className="text-base md:text-xl font-black text-gray-900 truncate">{CATEGORY_LABEL[category]}</p>
+        <p className="hidden md:block text-sm text-gray-400 mt-0.5">
+          {category === 'opportunities' ? 'Find projects and creative opportunities.' : `Browse ${CATEGORY_LABEL[category].toLowerCase()} on Filmons.`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function CategoryHeader({ category, onBack }: { category: CategoryTab; onBack: () => void }) {
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
-      <div className="max-w-5xl mx-auto flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
-        <button onClick={onBack} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
-          <ArrowLeft className="w-5 h-5 text-gray-700"/>
-        </button>
-        <div className="min-w-0">
-          <p className="text-base md:text-xl font-black text-gray-900 truncate">{CATEGORY_LABEL[category]}</p>
-          <p className="hidden md:block text-sm text-gray-400 mt-0.5">
-            {category === 'opportunities' ? 'Find projects and creative opportunities.' : `Browse ${CATEGORY_LABEL[category].toLowerCase()} on Filmons.`}
-          </p>
-        </div>
-      </div>
+      <CategoryHeaderContent category={category} onBack={onBack}/>
     </div>
   );
 }
@@ -2347,7 +2364,8 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
   // bounded scroll container of its own (a plain min-h-screen page).
   // lg: (desktop) never sees this collapse -- MobileBottomNav is already
   // lg:hidden, and every conditional block below keeps its lg: override.
-  const { hidden: chromeHidden } = useMobileScrollChrome({ mode: 'window' });
+  const [searchInputFocused, setSearchInputFocused] = useState(false);
+  const { headerVisible } = useSearchChromeVisibility({ inputFocused: searchInputFocused });
 
   const [searchText, setSearchText] = useState(initialNavState.query ?? '');
   const [debouncedQuery, setDebouncedQuery] = useState(searchText);
@@ -2653,11 +2671,12 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
       {product === 'connect' ? (
         <ConnectCategoryHeader activeCategory="all" query={searchText} onQueryChange={setSearchText} placeholder="Search Connect..."/>
       ) : (
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-100">
+      <SlideHeader visible={headerVisible}>
         {/* Same DESKTOP_SECTION_PAD as every category row below it, so this
             bar's content lines up with them -- not a separate narrower
             max-width container. */}
-        <div className="flex items-center gap-3 px-4 lg:px-8 xl:px-10 transition-[padding] duration-200" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: chromeHidden ? '8px' : '12px' }}>
+        <div className="flex items-center gap-3 px-4 lg:px-8 xl:px-10" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
           {/* Always back to Browse Search itself, not browser history --
               this page is reachable from a modal that never had its own
               route (Root.tsx's search icon), so navigate(-1) could land
@@ -2670,19 +2689,8 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
               {initialNavState.pageTitle
                 || (product === 'marketplace' ? 'Marketplace' : product === 'connect' ? 'Connect' : product === 'learning' ? 'Learning' : 'All Results')}
             </p>
-            {/* Result-count subtitle -- part of the "large header" the spec
-                collapses on scroll-down (content-first mode), lg: always
-                keeps it since this collapse is mobile-only (see
-                useMobileScrollChrome's own dispatch -- MobileBottomNav is
-                already lg:hidden, so it's a no-op there regardless). */}
             {product === 'marketplace' && term && (
-              <p className="text-xs text-gray-400 font-semibold overflow-hidden lg:!max-h-none lg:!opacity-100 lg:!transform-none"
-                style={{
-                  maxHeight: chromeHidden ? 0 : 16,
-                  opacity: chromeHidden ? 0 : 1,
-                  transform: chromeHidden ? 'translateY(-6px)' : 'translateY(0)',
-                  transition: 'max-height 220ms ease-out, transform 220ms ease-out, opacity 180ms ease-out',
-                }}>
+              <p className="text-xs text-gray-400 font-semibold">
                 {marketplaceUnified.length.toLocaleString()} results for "{term}"
               </p>
             )}
@@ -2714,28 +2722,18 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           </div>
         )}
 
-        {/* ── Mobile: search input (always visible, even in content-first
-             mode -- per spec, the user should never have to scroll back to
-             top just to search) + collapsible Filters/Sort row ──────────── */}
+        {/* ── Mobile: search input + Filters/Sort row ──────────────────── */}
         <div className="lg:hidden px-4 pb-3 space-y-2.5">
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
             <input
               value={searchText} onChange={e => setSearchText(e.target.value)}
+              onFocus={() => setSearchInputFocused(true)} onBlur={() => setSearchInputFocused(false)}
               placeholder="Search results..."
               className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
             />
           </div>
-          {/* Content-first mode (scrolled down) collapses this whole block
-              -- Filters stays reachable via the compact icon-only button
-              rendered next to the search field instead (see above). */}
-          <div className="overflow-hidden space-y-2.5"
-            style={{
-              maxHeight: chromeHidden ? 0 : 100,
-              opacity: chromeHidden ? 0 : 1,
-              transform: chromeHidden ? 'translateY(-10px)' : 'translateY(0)',
-              transition: 'max-height 220ms ease-out, transform 220ms ease-out, opacity 180ms ease-out',
-            }}>
+          <div className="space-y-2.5">
             <div className="flex items-center gap-2">
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMobileFilters(true); }}
@@ -2794,6 +2792,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
             </div>
           )}
         </div>
+      </SlideHeader>
       </div>
       )}
 

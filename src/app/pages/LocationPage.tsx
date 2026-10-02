@@ -8,6 +8,8 @@ import { getLocation, getLocationContent, type LocationContent } from '../lib/lo
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useSearchChromeVisibility } from '../lib/useSearchChromeVisibility';
+import { SlideHeader } from '../components/SlideHeader';
 
 export function LocationPage() {
   const { slug } = useParams();
@@ -27,14 +29,19 @@ export function LocationPage() {
   }, [slug]);
 
   const nothingYet = content && !content.posts.length && !content.portfolio.length && !content.listings.length;
+  const { headerVisible } = useSearchChromeVisibility();
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-100">
+      <SlideHeader visible={headerVisible}>
+      <div className="px-4 py-3 flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
         <p className="text-sm font-bold text-gray-900 truncate">{displayName ?? '…'}</p>
+      </div>
+      </SlideHeader>
       </div>
 
       <div className="lg:max-w-3xl lg:mx-auto px-4 py-5 space-y-6">

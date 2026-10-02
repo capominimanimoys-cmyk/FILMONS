@@ -10,6 +10,8 @@ import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolio
 import { CourseCard } from '../components/courses/CourseCard';
 import { ListingCard } from '../components/ListingCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { useSearchChromeVisibility } from '../lib/useSearchChromeVisibility';
+import { SlideHeader } from '../components/SlideHeader';
 
 export function HashtagPage() {
   const { tag } = useParams();
@@ -27,23 +29,28 @@ export function HashtagPage() {
   }, [tag]);
 
   const nothingYet = content && !content.posts.length && !content.portfolio.length && !content.courses.length && !content.listings.length;
+  const { headerVisible } = useSearchChromeVisibility();
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Same header shape as /search/category/:tab's CategoryHeader --
           "← (category)" IS the page's own header, no separate FILMONS
           chrome underneath it (see Root.tsx's hideTopBar, which now also
-          matches on /hashtag/). */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100">
-        <div className="max-w-5xl mx-auto flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
-          <button onClick={() => navigate(-1)} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
-          <div className="min-w-0">
-            <p className="text-base md:text-xl font-black text-gray-900 truncate">#{tag}</p>
-            <p className="text-sm text-gray-400 mt-0.5">{totalCount === null ? '…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</p>
+          matches on /hashtag/). z-40 (not z-20) for the same reason
+          ConnectCategoryHeader uses it -- PostCard's own-post menu button
+          sits at z-30. */}
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-100">
+        <SlideHeader visible={headerVisible}>
+          <div className="max-w-5xl mx-auto flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
+            <button onClick={() => navigate(-1)} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+              <ArrowLeft className="w-5 h-5 text-gray-700" />
+            </button>
+            <div className="min-w-0">
+              <p className="text-base md:text-xl font-black text-gray-900 truncate">#{tag}</p>
+              <p className="text-sm text-gray-400 mt-0.5">{totalCount === null ? '…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</p>
+            </div>
           </div>
-        </div>
+        </SlideHeader>
       </div>
 
       <div className="lg:max-w-3xl lg:mx-auto px-4 py-5 space-y-6">
