@@ -253,8 +253,13 @@ function SchoolFinder({ value, onChange }: {
       </div>
 
       {/* Suggestions dropdown -- slides open from the input (dropdown-pop-in,
-          styles/motion.css) instead of appearing instantly. */}
-      {results.length > 0 && (
+          styles/motion.css) instead of appearing instantly. Opens whenever
+          there's enough of a query to have searched (same length.>= 2
+          threshold onInput uses), not just when results.length > 0 -- the
+          "Add manually" row previously lived INSIDE the results.length > 0
+          block, so a school that genuinely isn't in CA_SCHOOLS (zero
+          matches) made that row completely unreachable. */}
+      {q.trim().length >= 2 && (
         <div className="dropdown-pop-in absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
           {results.map((s, i) => (
             <button key={i} type="button" onMouseDown={() => pick(s)}
@@ -267,7 +272,11 @@ function SchoolFinder({ value, onChange }: {
               </div>
             </button>
           ))}
-          {/* Not found option */}
+          {results.length === 0 && (
+            <p className="px-4 py-2.5 text-xs text-gray-400">No matches for &ldquo;{q}&rdquo;</p>
+          )}
+          {/* Not found option -- now always reachable once there's a query,
+              regardless of whether any school matched it. */}
           <button type="button" onMouseDown={() => { setResults([]); setManual(true); }}
             className="w-full text-left px-4 py-2.5 flex items-center gap-2 bg-gray-50
                        text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-colors">
