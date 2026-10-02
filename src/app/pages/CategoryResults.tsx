@@ -1906,7 +1906,7 @@ function PostsAllSection({ query }: { query?: string }) {
   );
 }
 
-function CoursesAllSection({ query }: { query?: string }) {
+function CoursesAllSection({ query, target = '/search/category/courses' }: { query?: string; target?: string }) {
   const navigate = useNavigate();
   const [results, setResults] = useState<Course[] | null>(null);
 
@@ -1925,7 +1925,7 @@ function CoursesAllSection({ query }: { query?: string }) {
       <div className="flex items-center justify-between mb-2.5">
         <p className="text-sm lg:text-base font-black text-gray-900">Courses</p>
         {results.length > 5 && (
-          <button onClick={() => navigate('/search/category/courses', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+          <button onClick={() => navigate(target, { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
             View all <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}
@@ -2064,6 +2064,10 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [roleListings, setRoleListings] = useState<Listing[] | null>(null);
 
   const [connectDiscovery, setConnectDiscovery] = useState<ConnectDiscovery | null>(null);
+  // Courses stays a Learning product (never reclassified as Connect data,
+  // per spec) but is surfaced here too so creators can discover
+  // educational work from other creators without leaving Connect.
+  const [connectCourses, setConnectCourses] = useState<Course[] | null>(null);
 
   const [latestCourses, setLatestCourses] = useState<Course[] | null>(null);
   const [topCourses, setTopCourses] = useState<Course[] | null>(null);
@@ -2087,6 +2091,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
       // second posts-only version living here.
       fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); });
+      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); });
     } else if (product === 'learning') {
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); });
       getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); });
@@ -2125,32 +2130,51 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   }
 
   if (product === 'connect') {
-    if (!connectDiscovery) return <DiscoveryLoading />;
+    if (!connectDiscovery || !connectCourses) return <DiscoveryLoading />;
     const { trendingPosts, featuredPortfolio, profilesYouMayLike } = connectDiscovery;
+    // Default Connect "All" landing -- Posts/Portfolio/Profiles/Courses,
+    // max 5 cards per section, "View all" only when a 6th actually
+    // exists (same rule Marketplace's own default landing above uses).
+    // 0 results hides the section entirely -- never a fake placeholder.
     return (
       <>
-        <DiscoveryRow title="Trending Posts" count={trendingPosts.length} onViewAll={() => navigate('/search/category/connect/posts')}>
-          <div className="px-4 lg:px-0 space-y-3">{trendingPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
-        </DiscoveryRow>
-        <DiscoveryRow title="Featured Portfolio" count={featuredPortfolio.length} onViewAll={() => navigate('/search/category/connect/portfolio')}>
-          <div className="px-4 lg:px-0 space-y-3">
-            {featuredPortfolio.map(entry => entry.type === 'item'
-              ? <PortfolioProjectCard key={`item-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
-              : <PortfolioAlbumCard key={`album-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
-          </div>
-        </DiscoveryRow>
-        <DiscoveryRow title="Profiles You May Like" count={profilesYouMayLike.length} onViewAll={() => navigate('/search/category/connect/profiles')}>
-          <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
-            {profilesYouMayLike.map(c => (
-              <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-[172px] shrink-0 snap-start"/>
-            ))}
-          </div>
-          <div className={`hidden lg:flex flex-wrap gap-3 ${DESKTOP_SECTION_PAD}`}>
-            {profilesYouMayLike.map(c => (
-              <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-64"/>
-            ))}
-          </div>
-        </DiscoveryRow>
+        {trendingPosts.length > 0 && (
+          <DiscoveryRow title="Posts" count={trendingPosts.length}
+            onViewAll={trendingPosts.length > 5 ? () => navigate('/search/category/connect/posts') : undefined}>
+            <div className="px-4 lg:px-0 space-y-3">{trendingPosts.slice(0, 5).map(p => <PostCard key={p.id} post={p} />)}</div>
+          </DiscoveryRow>
+        )}
+        {featuredPortfolio.length > 0 && (
+          <DiscoveryRow title="Portfolio" count={featuredPortfolio.length}
+            onViewAll={featuredPortfolio.length > 5 ? () => navigate('/search/category/connect/portfolio') : undefined}>
+            <div className="px-4 lg:px-0 space-y-3">
+              {featuredPortfolio.slice(0, 5).map(entry => entry.type === 'item'
+                ? <PortfolioProjectCard key={`item-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
+                : <PortfolioAlbumCard key={`album-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
+            </div>
+          </DiscoveryRow>
+        )}
+        {profilesYouMayLike.length > 0 && (
+          <DiscoveryRow title="Profiles" count={profilesYouMayLike.length}
+            onViewAll={profilesYouMayLike.length > 5 ? () => navigate('/search/category/connect/profiles') : undefined}>
+            <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
+              {profilesYouMayLike.slice(0, 5).map(c => (
+                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-[172px] shrink-0 snap-start"/>
+              ))}
+            </div>
+            <div className={`hidden lg:flex flex-wrap gap-3 ${DESKTOP_SECTION_PAD}`}>
+              {profilesYouMayLike.slice(0, 5).map(c => (
+                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-64"/>
+              ))}
+            </div>
+          </DiscoveryRow>
+        )}
+        {connectCourses.length > 0 && (
+          <DiscoveryRow title="Courses" count={connectCourses.length}
+            onViewAll={connectCourses.length > 5 ? () => navigate('/search/category/connect/courses') : undefined}>
+            <CourseDiscoveryRow courses={connectCourses.slice(0, 5)} />
+          </DiscoveryRow>
+        )}
       </>
     );
   }
@@ -2781,6 +2805,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                 {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
                 {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
                 {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
+                {categoryFilter === 'all' && showConnectExtras && <CoursesAllSection query={term} target="/search/category/connect/courses" />}
               </>
             ),
             learning: (
@@ -2929,6 +2954,7 @@ export function CategoryResults() {
   if (tab === 'connect' && subTab === 'posts')     return <PostsCategoryResults query={navState.query} />;
   if (tab === 'connect' && subTab === 'portfolio') return <PortfolioCategoryResults query={navState.query} />;
   if (tab === 'connect' && subTab === 'profiles')  return <SingleCategoryResults category="creators" navState={navState}/>;
+  if (tab === 'connect' && subTab === 'courses')   return <CoursesCategoryResults query={navState.query} />;
   // Top-level Marketplace/Connect/Learning modes -- the "View all results"
   // destination from SearchOverlay for a non-'all' tab. Same AllGroupedResults
   // grouped-sections view, just scoped to one product's categories.
