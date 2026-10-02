@@ -776,12 +776,13 @@ export function Profile() {
     if (t && TABS.find(x => x.id === t)) setTab(t);
   }, [searchParams.get('tab')]);
 
-  // /profile?edit=about|skills|gear|social — opens the full-screen
-  // AboutEditor overlay straight to that section, e.g. Settings' "Account"
-  // row links here instead of the old (now-removed) About tab.
+  // /profile?edit=about|skills|gear|social|education — opens the
+  // full-screen AboutEditor overlay straight to that section, e.g.
+  // Settings' "Account" row links here instead of the old (now-removed)
+  // About tab, and ProfileCompletionCard's CTA links here too.
   useEffect(() => {
     const e = searchParams.get('edit');
-    if (e === 'about' || e === 'skills' || e === 'gear' || e === 'social') {
+    if (e === 'about' || e === 'skills' || e === 'gear' || e === 'social' || e === 'education') {
       setEditProfileSection(e);
       setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
     }

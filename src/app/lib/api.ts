@@ -183,12 +183,13 @@ function profileRowToUser(data: Record<string, any>): User {
     primaryRole:          data.primary_role,
     businessIndustry:     data.business_industry || undefined,
     lastBusinessIndustryPromptAt: data.last_business_industry_prompt_at || undefined,
-    // Written by updateUser({education}) to a real top-level column (see
-    // updateUser's payload builder) but this mapper never read it back --
-    // the owner's own session never noticed (AuthContext optimistically
-    // merges whatever was just saved into local state without a re-fetch
-    // through this function), but any OTHER viewer fetching this profile
-    // via getUserById/getUserByUsername got nothing back for it at all.
+    // skills/gear/education are all real columns AboutEditor.tsx's own
+    // accordions already write (via updateUser), but this mapper never
+    // read skills/gear back at all -- getUserById/getUserByUsername
+    // already select('*') so they're covered by this mapper fix alone;
+    // getMe()'s own explicit column list needed updating too (see there).
+    skills:               data.skills,
+    gear:                 data.gear,
     education:            data.education,
     following:            parsePgArray(data.following),
     followers:            parsePgArray(data.followers),
@@ -488,7 +489,7 @@ export const authApi = {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, business_industry, last_business_industry_prompt_at, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end, subscription_downgraded_from, subscription_downgrade_acknowledged')
+        .select('id, name, username, email, avatar_url, account_type, account_mode, is_verified, verification_status, bio, location, city, province, primary_role, business_industry, last_business_industry_prompt_at, skills, gear, education, profile_meta, followers, following, email_verified, phone_verified, onboarding_completed, subscription_status, subscription_current_period_end, subscription_cancel_at_period_end, subscription_downgraded_from, subscription_downgrade_acknowledged')
         .eq('id', cached.id)
         .single();
       if (data) {
@@ -521,6 +522,9 @@ export const authApi = {
           primaryRole:          data.primary_role        || cached.primaryRole,
           businessIndustry:     data.business_industry   || cached.businessIndustry,
           lastBusinessIndustryPromptAt: data.last_business_industry_prompt_at || cached.lastBusinessIndustryPromptAt,
+          skills:                data.skills    ?? cached.skills,
+          gear:                  data.gear      ?? cached.gear,
+          education:             data.education ?? cached.education,
           profileSetupCompleted: !!(data.onboarding_completed) || !!(getMeMeta.onboarding_completed) || cached.profileSetupCompleted,
           emailVerified:        data.email_verified  ?? cached.emailVerified  ?? true,
           phoneVerified:        data.phone_verified  ?? cached.phoneVerified,

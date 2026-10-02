@@ -43,6 +43,16 @@ export interface User {
    * dismissed -- drives its ~6h cooldown. Only meaningful while
    * businessIndustry is empty; irrelevant once it's set. */
   lastBusinessIndustryPromptAt?: string;
+  /** All three real DB columns already (AboutEditor.tsx's Skills/Gear/
+   * Education accordions already write them), but profileRowToUser never
+   * mapped them back onto this typed object before -- only reachable via
+   * an untyped (user as any).gear-style cast. Added for
+   * profileCompletion.ts's getMissingProfileFields() and the new
+   * personalized discovery rows (CategoryResults.tsx's
+   * ProductDiscoveryGroups) to read reliably. */
+  skills?: string[];
+  gear?: string[];
+  education?: import('../lib/education').EduEntry[];
   profileSetupCompleted?: boolean;
   profileSetupPercentage?: number;
   emailVerified?:  boolean;
