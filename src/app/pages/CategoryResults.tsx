@@ -208,6 +208,18 @@ function marketplaceTypeBadge(l: SearchListingRow): MarketplaceBadge {
   return isSaleListing(l) ? 'SALE' : 'RENTAL';
 }
 
+// Same classification as marketplaceTypeBadge above, but for the mapped
+// camelCase Listing type -- needed wherever a row already went through
+// mapListingRow/fetchTopMarketplaceListings etc. before it gets here (the
+// Marketplace landing's Top/Latest/Nearby/role rows, which mix every
+// marketplace type together with no per-section category to fall back on,
+// unlike CategorySection's single-category sectionBadge).
+function marketplaceTypeBadgeForListing(l: Listing): MarketplaceBadge {
+  if (l.listingType === 'opportunity') return 'OPPORTUNITY';
+  if (l.listingType === 'service') return 'SERVICE';
+  return l.listingMode === 'sale' ? 'SALE' : 'RENTAL';
+}
+
 // Pure (no fetch): classify/filter/sort/paginate an already-fetched shared
 // match set for one category. Pulled out of fetchCategoryPage so
 // /search/category/all can fetch the shared match set ONCE for the whole
@@ -1188,6 +1200,11 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
         {listing.images?.[0]
           ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-3xl opacity-25">🎬</div>}
+        {!isOpp && (
+          <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[marketplaceTypeBadgeForListing(listing)]}`}>
+            {marketplaceTypeBadgeForListing(listing)}
+          </span>
+        )}
         {isOpp && (
           <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full shadow-sm ${listing.opportunity?.paid ? 'bg-green-600 text-white' : 'bg-gray-700 text-white'}`}>
             {listing.opportunity?.paid ? 'Paid' : 'Unpaid'}
@@ -2029,7 +2046,7 @@ function MarketplaceDiscoverySingleList({ view }: { view: 'top' | 'latest' | 'ne
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 lg:px-8 xl:px-10">
       {listings.map(listing => (
-        <PreviewListingCard key={listing.id} listing={listing} gridMode/>
+        <PreviewListingCard key={listing.id} listing={listing} badge={marketplaceTypeBadgeForListing(listing)} gridMode/>
       ))}
     </div>
   );
@@ -2178,10 +2195,10 @@ function ListingDiscoveryRow({ listings }: { listings: Listing[] }) {
   return (
     <>
       <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
-        {listings.map(l => <PreviewListingCard key={l.id} listing={l} />)}
+        {listings.map(l => <PreviewListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
       </div>
       <div className={`hidden lg:flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}>
-        {listings.map(l => <DesktopListingCard key={l.id} listing={l} />)}
+        {listings.map(l => <DesktopListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
       </div>
     </>
   );
