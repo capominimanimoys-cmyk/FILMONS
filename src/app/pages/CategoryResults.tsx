@@ -2656,7 +2656,17 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                 )}
                 {product === 'marketplace' ? (
                   term ? (
-                    marketplaceUnified.length === 0 ? (
+                    // sharedMatched is null exactly while the shared fetch
+                    // for this term is still in flight (the effect resets
+                    // it to null the instant `term` changes, before the
+                    // query resolves) -- without this check,
+                    // marketplaceUnified's own `!sharedMatched ? [] : ...`
+                    // fallback makes an in-flight search look identical to
+                    // a genuinely empty one, flashing "No listings found"
+                    // before the real results ever get a chance to render.
+                    sharedMatched === null ? (
+                      <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-gray-300 animate-spin"/></div>
+                    ) : marketplaceUnified.length === 0 ? (
                       <div className="px-4 lg:px-8 py-10 text-center">
                         <p className="text-sm font-bold text-gray-700">
                           No {categoryFilter === 'all' ? 'Marketplace' : CATEGORY_LABEL[categoryFilter]} listings found for "{term}".
