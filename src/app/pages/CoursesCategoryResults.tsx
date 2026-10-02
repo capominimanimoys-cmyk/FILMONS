@@ -7,8 +7,14 @@ import { ArrowLeft, Search } from 'lucide-react';
 import { getCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from '../components/courses/CourseCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 
-export function CoursesCategoryResults({ query: initialQuery }: { query?: string }) {
+// Reached two ways: /search/category/courses (a Learning-scoped page,
+// own standalone header -- unchanged) and /search/category/connect/courses
+// (Courses as Connect's 5th category, per spec -- gets the shared Connect
+// header+pill bar instead). `inConnect` is all that distinguishes them;
+// everything else (fetch, results, cards) is identical either way.
+export function CoursesCategoryResults({ query: initialQuery, inConnect = false }: { query?: string; inConnect?: boolean }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery ?? '');
   const [results, setResults] = useState<Course[] | null>(null);
@@ -22,21 +28,27 @@ export function CoursesCategoryResults({ query: initialQuery }: { query?: string
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-          <ArrowLeft className="w-4 h-4 text-gray-700" />
-        </button>
-        <p className="text-sm font-bold text-gray-900">Courses</p>
-      </div>
+      {inConnect ? (
+        <ConnectCategoryHeader activeCategory="courses" query={query} onQueryChange={setQuery} placeholder="Search courses..."/>
+      ) : (
+        <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
+          </button>
+          <p className="text-sm font-bold text-gray-900">Courses</p>
+        </div>
+      )}
 
       <div className="lg:max-w-4xl lg:mx-auto px-4 py-4 space-y-4">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={query} onChange={e => setQuery(e.target.value)} placeholder="Search courses…"
-            className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-300"
-          />
-        </div>
+        {!inConnect && (
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={query} onChange={e => setQuery(e.target.value)} placeholder="Search courses…"
+              className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-300"
+            />
+          </div>
+        )}
 
         {!query.trim() ? (
           <p className="text-center text-sm text-gray-400 py-16">Search courses to get started.</p>

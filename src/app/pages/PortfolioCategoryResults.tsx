@@ -8,13 +8,12 @@
 // through the existing draggable-page behavior (usePortfolioPreview),
 // unchanged -- these cards already do that internally.
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { ArrowLeft, Search } from 'lucide-react';
 import { searchMatchingPortfolio, type SearchPortfolioRow } from '../lib/filmSearch';
 import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 import { useAuth } from '../context/AuthContext';
 
 // Splits an already-ordered list into 2 columns by alternating index --
@@ -26,7 +25,6 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
 }
 
 export function PortfolioCategoryResults({ query: initialQuery }: { query?: string }) {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const [query, setQuery] = useState(initialQuery ?? '');
   const [matches, setMatches] = useState<SearchPortfolioRow[] | null>(null);
@@ -56,22 +54,9 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-          <ArrowLeft className="w-4 h-4 text-gray-700" />
-        </button>
-        <p className="text-sm font-bold text-gray-900">Portfolio</p>
-      </div>
+      <ConnectCategoryHeader activeCategory="portfolio" query={query} onQueryChange={setQuery} placeholder="Search portfolio work..."/>
 
       <div className="lg:max-w-3xl lg:mx-auto px-4 py-4 space-y-4">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={query} onChange={e => setQuery(e.target.value)} placeholder="Search portfolio work…"
-            className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-300"
-          />
-        </div>
-
         {!query.trim() ? (
           <p className="text-center text-sm text-gray-400 py-16">Search Portfolio work to get started.</p>
         ) : entries === null ? (

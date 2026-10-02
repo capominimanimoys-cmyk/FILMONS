@@ -3,11 +3,10 @@
 // Home uses (full like/comment/repost/share interactions) -- no
 // search-specific post card, per spec.
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { ArrowLeft, Search } from 'lucide-react';
 import { searchAndHydratePosts } from '../lib/filmSearch';
 import { PostCard } from '../components/PostCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 import type { Post } from '../types';
 
 // Splits an already-ordered list into 2 columns by alternating index --
@@ -18,7 +17,6 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
 }
 
 export function PostsCategoryResults({ query: initialQuery }: { query?: string }) {
-  const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery ?? '');
   const [results, setResults] = useState<Post[] | null>(null);
 
@@ -31,22 +29,9 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-          <ArrowLeft className="w-4 h-4 text-gray-700" />
-        </button>
-        <p className="text-sm font-bold text-gray-900">Posts</p>
-      </div>
+      <ConnectCategoryHeader activeCategory="posts" query={query} onQueryChange={setQuery} placeholder="Search posts..."/>
 
       <div className="lg:max-w-4xl lg:mx-auto px-4 py-4 space-y-4">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={query} onChange={e => setQuery(e.target.value)} placeholder="Search posts…"
-            className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-300"
-          />
-        </div>
-
         {!query.trim() ? (
           <p className="text-center text-sm text-gray-400 py-16">Search posts to get started.</p>
         ) : results === null ? (

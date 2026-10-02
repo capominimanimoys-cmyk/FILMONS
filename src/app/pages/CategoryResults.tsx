@@ -61,6 +61,7 @@ import {
 } from '../lib/filmSearch';
 import { recognizeQuery, normalize, type SearchSource } from '../lib/searchUtils';
 import { matchDestinations } from '../lib/searchDestinations';
+import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 
@@ -586,42 +587,62 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <CategoryHeader category={category} onBack={goBackToAll}/>
+      {category === 'creators' ? (
+        <>
+          {/* Profiles IS Connect's 5th-category-minus-one -- gets the
+              shared Connect header+pill bar (own search box included)
+              instead of the generic CategoryHeader + second search row
+              below, which every other (Marketplace) category keeps. */}
+          <ConnectCategoryHeader activeCategory="profiles" query={searchText} onQueryChange={setSearchText} placeholder={CATEGORY_SEARCH_PLACEHOLDER[category]}/>
+          <div className="px-4 py-2.5 md:hidden">
+            <button
+              onClick={() => setShowMobileFilters(true)}
+              className="w-full flex items-center justify-center gap-1.5 h-10 rounded-2xl border border-gray-200 bg-white text-xs font-bold text-gray-700 active:scale-[0.99] transition-transform"
+            >
+              <SlidersHorizontal className="w-4 h-4"/> Filters
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <CategoryHeader category={category} onBack={goBackToAll}/>
 
-      {/* ── Search + quick filters (both breakpoints) ───────────────────── */}
-      <div className="sticky top-[52px] md:static z-[9] bg-gray-50 border-b border-gray-100 md:border-b-0 px-4 py-3 space-y-2.5">
-        <div className="flex items-center gap-2 max-w-5xl mx-auto w-full">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
-            <input
-              value={searchText} onChange={e => setSearchText(e.target.value)}
-              placeholder={CATEGORY_SEARCH_PLACEHOLDER[category]}
-              className="w-full bg-white border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
-            />
-          </div>
-          <button
-            onClick={() => setShowMobileFilters(true)}
-            aria-label="Filters"
-            className="md:hidden w-10 h-10 shrink-0 rounded-2xl border border-gray-200 bg-white flex items-center justify-center active:scale-90 transition-transform"
-          >
-            <SlidersHorizontal className="w-4 h-4 text-gray-600"/>
-          </button>
-        </div>
-        {showQuickChips && (
-          <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-5xl mx-auto w-full">
-            {QUICK_CHIPS.map(c => (
+          {/* ── Search + quick filters (both breakpoints) ───────────────── */}
+          <div className="sticky top-[52px] md:static z-[9] bg-gray-50 border-b border-gray-100 md:border-b-0 px-4 py-3 space-y-2.5">
+            <div className="flex items-center gap-2 max-w-5xl mx-auto w-full">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
+                <input
+                  value={searchText} onChange={e => setSearchText(e.target.value)}
+                  placeholder={CATEGORY_SEARCH_PLACEHOLDER[category]}
+                  className="w-full bg-white border border-gray-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
+                />
+              </div>
               <button
-                key={c.id} onClick={() => setChip(c.id)}
-                className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                  chip === c.id ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100'
-                }`}
+                onClick={() => setShowMobileFilters(true)}
+                aria-label="Filters"
+                className="md:hidden w-10 h-10 shrink-0 rounded-2xl border border-gray-200 bg-white flex items-center justify-center active:scale-90 transition-transform"
               >
-                {c.label}
+                <SlidersHorizontal className="w-4 h-4 text-gray-600"/>
               </button>
-            ))}
+            </div>
+            {showQuickChips && (
+              <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-5xl mx-auto w-full">
+                {QUICK_CHIPS.map(c => (
+                  <button
+                    key={c.id} onClick={() => setChip(c.id)}
+                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                      chip === c.id ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       <div className="flex-1 max-w-5xl mx-auto w-full md:flex md:gap-8 md:px-4 md:py-6">
         {/* ── Desktop sidebar ──────────────────────────────────────────── */}
@@ -2573,6 +2594,16 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
 
   return (
     <div className="min-h-screen bg-gray-50" onClick={() => openMenu && setOpenMenu(null)}>
+      {/* Connect gets the shared /search/category/connect header+pill bar
+          (same component every dedicated Connect category page uses) --
+          lighter than the generic dropdown-row header below, per spec
+          ("All should remain relatively lightweight rather than exposing
+          every category-specific filter at once"). Marketplace/Learning
+          and the unscoped /search/category/all page keep the existing
+          header untouched. */}
+      {product === 'connect' ? (
+        <ConnectCategoryHeader activeCategory="all" query={searchText} onQueryChange={setSearchText} placeholder="Search Connect..."/>
+      ) : (
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
         {/* Same DESKTOP_SECTION_PAD as every category row below it, so this
             bar's content lines up with them -- not a separate narrower
@@ -2715,6 +2746,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
           )}
         </div>
       </div>
+      )}
 
       <div className="py-4 lg:py-6">
         {/* Empty search field, on one of the 3 product-scoped tabs, no
@@ -2978,7 +3010,7 @@ export function CategoryResults() {
   if (tab === 'connect' && subTab === 'posts')     return <PostsCategoryResults query={navState.query} />;
   if (tab === 'connect' && subTab === 'portfolio') return <PortfolioCategoryResults query={navState.query} />;
   if (tab === 'connect' && subTab === 'profiles')  return <SingleCategoryResults category="creators" navState={navState}/>;
-  if (tab === 'connect' && subTab === 'courses')   return <CoursesCategoryResults query={navState.query} />;
+  if (tab === 'connect' && subTab === 'courses')   return <CoursesCategoryResults query={navState.query} inConnect />;
   // Top-level Marketplace/Connect/Learning modes -- the "View all results"
   // destination from SearchOverlay for a non-'all' tab. Same AllGroupedResults
   // grouped-sections view, just scoped to one product's categories.
