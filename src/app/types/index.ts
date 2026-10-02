@@ -52,7 +52,11 @@ export interface User {
    * ProductDiscoveryGroups) to read reliably. */
   skills?: string[];
   gear?: string[];
-  education?: import('../lib/education').EduEntry[];
+  /** Real shape is EduState ({entries, training}), not a bare array --
+   *  the DB column stores both traditional entries AND non-traditional
+   *  training as equally first-class (see education.ts). Use
+   *  parseEducation(user.education) to read it safely. */
+  education?: import('../lib/education').EduState;
   /** Field -> ISO timestamp it was last shown in a ProfileCompletionCard --
    * generalizes lastBusinessIndustryPromptAt to all 5 completion fields,
    * so the card doesn't re-prompt the same field every session. */

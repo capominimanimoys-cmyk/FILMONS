@@ -15,6 +15,7 @@
 import type { User } from '../types';
 import { normalizeTier } from './reliabilityApi';
 import { toStringArray } from './normalizeList';
+import { parseEducation } from './education';
 
 export type ProfileField = 'identity' | 'skills' | 'location' | 'gear' | 'education' | 'photo' | 'bio' | 'secondaryRoles' | 'languages';
 
@@ -86,7 +87,17 @@ const FIELDS: FieldDef[] = [
   { id: 'location', weight: 15, complete: u => !!u.city },
   { id: 'skills', weight: 15, complete: u => !!u.skills?.length },
   { id: 'gear', weight: 15, complete: u => !!u.gear?.length },
-  { id: 'education', weight: 15, complete: u => !!u.education?.length },
+  // education is stored as EduState ({entries, training}), not a bare
+  // array -- a plain `u.education?.length` check silently evaluates to
+  // undefined against that shape (object has no .length), so this field
+  // could never register as complete even for an account with real
+  // training recorded. parseEducation is the same safe reader
+  // AboutEditor.tsx already uses; training counts equally to entries,
+  // matching education.ts's "equally first-class" design.
+  { id: 'education', weight: 15, complete: u => {
+    const edu = parseEducation(u.education);
+    return edu.entries.length > 0 || edu.training.length > 0;
+  } },
   { id: 'photo', weight: 10, complete: u => !!u.avatar },
   { id: 'bio', weight: 5, complete: u => !!u.bio?.trim() },
   { id: 'secondaryRoles', weight: 2.5, complete: u => !!toStringArray((u as any).profileMeta?.secondaryRoles).length },
