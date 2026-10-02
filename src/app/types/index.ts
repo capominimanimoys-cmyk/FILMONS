@@ -53,6 +53,10 @@ export interface User {
   skills?: string[];
   gear?: string[];
   education?: import('../lib/education').EduEntry[];
+  /** Field -> ISO timestamp it was last shown in a ProfileCompletionCard --
+   * generalizes lastBusinessIndustryPromptAt to all 5 completion fields,
+   * so the card doesn't re-prompt the same field every session. */
+  profileCompletionPrompts?: Record<string, string>;
   profileSetupCompleted?: boolean;
   profileSetupPercentage?: number;
   emailVerified?:  boolean;

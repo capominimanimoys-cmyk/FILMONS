@@ -35,6 +35,8 @@ import type { PortfolioItem } from '../lib/portfolioApi';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
+import { ProfileCompletionCard } from '../components/ProfileCompletionCard';
+import { getMissingProfileFields } from '../lib/profileCompletion';
 import { ConnectionRequestsCard } from '../components/ConnectionRequestsCard';
 import { listPendingReceived, respondToConnectionRequest, type ConnectionSummary } from '../lib/connectionsApi';
 import * as notifs from '../lib/notifications';
@@ -584,8 +586,21 @@ export function Home() {
 
   const PEOPLE_YOU_MAY_KNOW_INDEX = 4;
   const PORTFOLIO_SUGGESTION_INDEX = 12;
+  // Profile completion card -- unlike the two fixed-index rows above, per
+  // spec this should NOT sit at the same position every load ("insert it
+  // naturally... so it feels like part of discovery rather than an
+  // onboarding interruption"). A random 2-4 computed once per mount
+  // (not re-rolled every render) is "first appearance after 2-4 feed
+  // items" without needing to track prior appearances' positions.
+  // sessionStorage caps it to once per session regardless of how many
+  // times Home re-mounts (switching tabs and back, etc.) -- "avoid
+  // showing multiple completion cards during the same short feed session."
+  const completionCardIndexRef = useRef(2 + Math.floor(Math.random() * 3));
+  const [completionCardShownThisSession] = useState(() => {
+    try { return !!sessionStorage.getItem('filmons_profile_completion_shown_session'); } catch { return false; }
+  });
   const connectRenderItems = useMemo(() => {
-    type RenderItem = ConnectFeedItem | { kind: 'suggested' } | { kind: 'portfolio-suggested' };
+    type RenderItem = ConnectFeedItem | { kind: 'suggested' } | { kind: 'portfolio-suggested' } | { kind: 'profile-completion' };
     const list: RenderItem[] = [...connectItems];
     // Never the very first thing in the feed, and only once (not
     // re-inserted every few entries) -- simplest way to satisfy "avoid
@@ -599,8 +614,13 @@ export function Home() {
     if (recommendedPortfolio.length > 0 && list.length > PORTFOLIO_SUGGESTION_INDEX) {
       list.splice(PORTFOLIO_SUGGESTION_INDEX, 0, { kind: 'portfolio-suggested' as const });
     }
+    const completionIdx = completionCardIndexRef.current;
+    if (!completionCardShownThisSession && getMissingProfileFields(user).length > 0 && list.length > completionIdx) {
+      list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
+      try { sessionStorage.setItem('filmons_profile_completion_shown_session', '1'); } catch {}
+    }
     return list;
-  }, [connectItems, suggestedCreators, recommendedPortfolio]);
+  }, [connectItems, suggestedCreators, recommendedPortfolio, user, completionCardShownThisSession]);
 
   // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -1395,6 +1415,8 @@ export function Home() {
                           entries={recommendedPortfolio}
                           trustLevels={connectTrustLevels}
                         />
+                      ) : item.kind === 'profile-completion' ? (
+                        <ProfileCompletionCard key="profile-completion"/>
                       ) : (
                         <ConnectFeedCard
                           key={connectFeedItemKey(item)}
@@ -1592,6 +1614,8 @@ export function Home() {
                       entries={recommendedPortfolio}
                       trustLevels={connectTrustLevels}
                     />
+                  ) : item.kind === 'profile-completion' ? (
+                    <ProfileCompletionCard key="profile-completion"/>
                   ) : (
                     <ConnectFeedCard
                       key={connectFeedItemKey(item)}

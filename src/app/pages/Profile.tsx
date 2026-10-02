@@ -703,7 +703,7 @@ export function Profile() {
   // form opened as a full-screen overlay (not a tab anymore) -- focusSection
   // opens straight to the accordion matching whichever section's Edit
   // link was tapped.
-  const [showEditProfile, setEditProfileSection] = useState<'about' | 'bio' | 'skills' | 'gear' | 'social' | 'education' | null>(null);
+  const [showEditProfile, setEditProfileSection] = useState<'about' | 'bio' | 'identity' | 'skills' | 'gear' | 'social' | 'education' | 'location' | null>(null);
   const [showActionSheet, setShowActionSheet]     = useState(false);
   // Native-feeling push/pop transition for the Edit Profile overlay
   // (push-page-enter/exit, styles/motion.css) -- same delayed-unmount
@@ -776,13 +776,13 @@ export function Profile() {
     if (t && TABS.find(x => x.id === t)) setTab(t);
   }, [searchParams.get('tab')]);
 
-  // /profile?edit=about|skills|gear|social|education — opens the
-  // full-screen AboutEditor overlay straight to that section, e.g.
-  // Settings' "Account" row links here instead of the old (now-removed)
-  // About tab, and ProfileCompletionCard's CTA links here too.
+  // /profile?edit=about|identity|skills|gear|social|education|location —
+  // opens the full-screen AboutEditor overlay straight to that section,
+  // e.g. Settings' "Account" row links here instead of the old
+  // (now-removed) About tab, and ProfileCompletionCard's CTA links here too.
   useEffect(() => {
     const e = searchParams.get('edit');
-    if (e === 'about' || e === 'skills' || e === 'gear' || e === 'social' || e === 'education') {
+    if (e === 'about' || e === 'identity' || e === 'skills' || e === 'gear' || e === 'social' || e === 'education' || e === 'location') {
       setEditProfileSection(e);
       setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
     }

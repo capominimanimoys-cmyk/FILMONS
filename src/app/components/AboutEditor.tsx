@@ -715,7 +715,7 @@ interface Props {
   /** Opens straight to one accordion instead of always defaulting to
    * Personal Details -- used when AboutEditor is opened from a specific
    * Profile All-tab section's Edit link (e.g. Top Skills -> 'skills'). */
-  focusSection?: 'about' | 'bio' | 'skills' | 'gear' | 'social' | 'education';
+  focusSection?: 'about' | 'bio' | 'identity' | 'skills' | 'gear' | 'social' | 'education' | 'location';
   newBirthdate: string; setNewBirthdate: (v:string)=>void;
   editEmail: boolean; setEditEmail: (v:boolean)=>void;
   editPhone: boolean; setEditPhone: (v:boolean)=>void;
@@ -904,7 +904,7 @@ export function AboutEditor(props: Props) {
           an organization, not a person with a role). primaryRole itself is
           never touched here for a Business account -- it stays intact,
           just not shown/edited in this accordion. */}
-      <Accordion number="3" title="Professional Identity">
+      <Accordion number="3" title="Professional Identity" defaultOpen={focusSection === 'identity'}>
         {normalizeTier(user.accountType) === 'business' ? (
           <BusinessIndustryPicker
             value={props.businessIndustry}
@@ -947,7 +947,7 @@ export function AboutEditor(props: Props) {
       </Accordion>
 
       {/* 6. Location */}
-      <Accordion number="6" title="Location">
+      <Accordion number="6" title="Location" defaultOpen={focusSection === 'location'}>
         <p className="text-xs text-gray-400 mb-1">Where you're based in Canada</p>
         <LocationSearch value={props.location} onChange={props.setLocation}/>
       </Accordion>
