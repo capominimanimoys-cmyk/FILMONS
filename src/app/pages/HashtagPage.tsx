@@ -10,9 +10,9 @@
 // Search (hashtagsApi) decides WHAT is shown; those components decide HOW.
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, Share2 } from 'lucide-react';
+import { ArrowLeft, Share2, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import { getHashtagContent, getHashtagCreators, type HashtagContent } from '../lib/hashtagsApi';
+import { getHashtagContent, getHashtagCreators, isHashtagFollowed, followHashtag, unfollowHashtag, type HashtagContent } from '../lib/hashtagsApi';
 import type { PortfolioFeedEntry, SuggestedCreator } from '../lib/portfolioApi';
 import { PostCard } from '../components/PostCard';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
@@ -66,19 +66,29 @@ function EmptyTab({ label }: { label: string }) {
 export function HashtagPage() {
   const { tag } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, showGuestPrompt } = useAuth();
   const [content, setContent] = useState<HashtagContent | null>(null);
   const [creators, setCreators] = useState<SuggestedCreator[] | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [marketplaceFilter, setMarketplaceFilter] = useState<MarketplaceBadge | 'all'>('all');
+  const [followed, setFollowed] = useState(false);
   const { headerVisible } = useSearchChromeVisibility();
 
   useEffect(() => {
     if (!tag) return;
-    setContent(null); setCreators(null); setActiveTab('all'); setMarketplaceFilter('all');
+    setContent(null); setCreators(null); setActiveTab('all'); setMarketplaceFilter('all'); setFollowed(false);
     getHashtagContent(tag, 30, user?.id).then(setContent);
     getHashtagCreators(tag, user?.id, 20).then(setCreators);
+    if (user) isHashtagFollowed(user.id, tag).then(setFollowed);
   }, [tag, user?.id]);
+
+  const toggleFollow = async () => {
+    if (!user) { showGuestPrompt('Create an account to follow hashtags'); return; }
+    if (!tag) return;
+    const next = !followed;
+    setFollowed(next);
+    if (next) await followHashtag(user.id, tag); else await unfollowHashtag(user.id, tag);
+  };
 
   // hashtags.post_count only ever counts post mentions despite the name,
   // so it's never used as "the" count here -- this sums the actual
@@ -121,6 +131,12 @@ export function HashtagPage() {
               <p className="text-base md:text-xl font-black text-gray-900 truncate">#{tag}</p>
               <p className="text-sm text-gray-400 mt-0.5">{totalCount === null ? '…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</p>
             </div>
+            <button onClick={toggleFollow}
+              className={`shrink-0 inline-flex items-center gap-1 px-3.5 h-9 rounded-full text-xs font-bold transition-colors active:scale-95 ${
+                followed ? 'bg-gray-100 text-gray-700' : 'bg-gray-900 text-white'
+              }`}>
+              {followed ? <><Check className="w-3.5 h-3.5"/> Following</> : <><Plus className="w-3.5 h-3.5"/> Follow</>}
+            </button>
             <button onClick={share} aria-label="Share" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
               <Share2 className="w-5 h-5 text-gray-700" />
             </button>

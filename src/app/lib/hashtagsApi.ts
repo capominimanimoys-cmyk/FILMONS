@@ -64,6 +64,39 @@ export async function upsertHashtag(tag: string): Promise<string | null> {
   return data as string;
 }
 
+// ── Follow #hashtag (supabase/migrations/20240609000000_hashtag_follows.sql)
+// -- per spec, following becomes a personalization signal for Home/Connect/
+// Marketplace/Learning, not just a bookmarking feature. ────────────────────
+
+export async function isHashtagFollowed(userId: string, tagInput: string): Promise<boolean> {
+  const hashtagId = await upsertHashtag(tagInput);
+  if (!hashtagId) return false;
+  const { data } = await supabase.from('hashtag_follows').select('id').eq('user_id', userId).eq('hashtag_id', hashtagId).maybeSingle();
+  return !!data;
+}
+
+export async function followHashtag(userId: string, tagInput: string): Promise<void> {
+  const hashtagId = await upsertHashtag(tagInput);
+  if (!hashtagId) return;
+  await supabase.from('hashtag_follows').upsert({ user_id: userId, hashtag_id: hashtagId }, { onConflict: 'user_id,hashtag_id', ignoreDuplicates: true });
+}
+
+export async function unfollowHashtag(userId: string, tagInput: string): Promise<void> {
+  const tag = normalizeHashtag(tagInput);
+  const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
+  if (!hashtagRow) return;
+  await supabase.from('hashtag_follows').delete().eq('user_id', userId).eq('hashtag_id', hashtagRow.id);
+}
+
+/** Most recently followed hashtag's tag -- drives the single "From
+ *  hashtags you follow" discovery row (ProductDiscoveryGroups), same
+ *  bounded one-signal approach the gear/skills rows already use rather
+ *  than a full followed-hashtags feed. */
+export async function getMostRecentFollowedHashtag(userId: string): Promise<string | null> {
+  const { data } = await supabase.from('hashtag_follows').select('hashtags(tag)').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  return (data as any)?.hashtags?.tag ?? null;
+}
+
 /** Associate hashtag strings (no '#') with a post -- called right after
  *  post creation by the composer. Delegates to the same generic indexer
  *  everything else uses, so a post's mentions live in ONE place

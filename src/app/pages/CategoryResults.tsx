@@ -36,7 +36,7 @@ import { LocationCategoryResults } from './LocationCategoryResults';
 import { PortfolioCategoryResults } from './PortfolioCategoryResults';
 import { PostsCategoryResults } from './PostsCategoryResults';
 import { CoursesCategoryResults } from './CoursesCategoryResults';
-import { searchHashtagSuggestions, type HashtagSuggestion } from '../lib/hashtagsApi';
+import { searchHashtagSuggestions, getMostRecentFollowedHashtag, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locationsApi';
 import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
 import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
@@ -2172,6 +2172,8 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [nearbyListings, setNearbyListings] = useState<Listing[] | null>(null);
   const [roleListings, setRoleListings] = useState<Listing[] | null>(null);
   const [gearListings, setGearListings] = useState<Listing[] | null>(null);
+  const [followedHashtag, setFollowedHashtag] = useState<string | null | undefined>(undefined);
+  const [followedHashtagListings, setFollowedHashtagListings] = useState<Listing[] | null>(null);
 
   const [connectDiscovery, setConnectDiscovery] = useState<ConnectDiscovery | null>(null);
   const [nearbyCreators, setNearbyCreators] = useState<SuggestedCreator[] | null>(null);
@@ -2184,6 +2186,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [topCourses, setTopCourses] = useState<Course[] | null>(null);
   const [roleCourses, setRoleCourses] = useState<Course[] | null>(null);
   const [skillCourses, setSkillCourses] = useState<Course[] | null>(null);
+  const [followedHashtagCourses, setFollowedHashtagCourses] = useState<Course[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2205,6 +2208,19 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       if (user?.gear?.length) {
         searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
       } else setGearListings([]);
+      // "From #tag you follow" -- the viewer's single most recently
+      // followed hashtag (Phase C of the Hashtag Page Flow spec), searched
+      // the same way the role/gear rows already are. Bounded to one
+      // signal, same precedent as those two -- not a full followed-
+      // hashtags feed.
+      if (user?.id) {
+        getMostRecentFollowedHashtag(user.id).then(tag => {
+          if (cancelled) return;
+          setFollowedHashtag(tag);
+          if (tag) searchMatchingListings(tag).then(rows => { if (!cancelled) setFollowedHashtagListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
+          else setFollowedHashtagListings([]);
+        });
+      } else { setFollowedHashtag(null); setFollowedHashtagListings([]); }
     } else if (product === 'connect') {
       // Same shared discovery source SearchOverlay.tsx's own Connect
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
@@ -2227,6 +2243,14 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       if (user?.skills?.length) {
         getCourses({ query: user.skills[0], limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setSkillCourses(r); });
       } else setSkillCourses([]);
+      if (user?.id) {
+        getMostRecentFollowedHashtag(user.id).then(tag => {
+          if (cancelled) return;
+          setFollowedHashtag(tag);
+          if (tag) getCourses({ query: tag, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setFollowedHashtagCourses(r); });
+          else setFollowedHashtagCourses([]);
+        });
+      } else { setFollowedHashtag(null); setFollowedHashtagCourses([]); }
     }
     return () => { cancelled = true; };
   }, [product, primaryRole, user?.id, user?.city, user?.gear?.[0], user?.skills?.[0]]);
@@ -2255,6 +2279,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         {section('Listings Nearby', nearbyListings, 'Nearby')}
         {primaryRole && section(roleTitle, roleListings, primaryRole)}
         {user?.gear?.[0] && section(`Because you use ${user.gear[0]}`, gearListings, user.gear[0])}
+        {followedHashtag && followedHashtagListings && section(`From #${followedHashtag} you follow`, followedHashtagListings, followedHashtag)}
       </>
     );
   }
@@ -2342,6 +2367,11 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       {!!user?.skills?.[0] && (
         <DiscoveryRow title={`Based on your skills in ${user.skills[0]}`} count={skillCourses.length}>
           <CourseDiscoveryRow courses={skillCourses} />
+        </DiscoveryRow>
+      )}
+      {!!followedHashtag && !!followedHashtagCourses?.length && (
+        <DiscoveryRow title={`From #${followedHashtag} you follow`} count={followedHashtagCourses.length}>
+          <CourseDiscoveryRow courses={followedHashtagCourses} />
         </DiscoveryRow>
       )}
     </>
