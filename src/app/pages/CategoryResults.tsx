@@ -2258,20 +2258,23 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const roleTitle = `Because you're a ${primaryRole}`;
 
   if (product === 'marketplace') {
-    const loading = latestListings === null || topListings === null || nearbyListings === null || roleListings === null || gearListings === null;
-    if (loading) return <DiscoveryLoading />;
     // Default Marketplace "All" landing -- max 5 cards per section (never
     // more, regardless of how many were fetched), "View all" only when a
     // 6th actually exists, tapping it sets the search box to the exact
     // phrase recognizeMarketplaceDiscoveryQuery (above) recognizes --
     // stays on this same page, runs through the real search pipeline,
-    // never a dedicated per-section view.
-    const section = (title: string, listings: Listing[], query: string) => listings.length > 0 && (
-      <DiscoveryRow key={title} title={title} count={listings.length}
-        onViewAll={listings.length > 5 ? () => onSearchText?.(query) : undefined}>
-        <ListingDiscoveryRow listings={listings.slice(0, 5)} />
-      </DiscoveryRow>
-    );
+    // never a dedicated per-section view. Each row renders the moment its
+    // OWN query resolves (a skeleton until then) rather than every row
+    // waiting on all 5 fetches together.
+    const section = (title: string, listings: Listing[] | null, query: string) => {
+      if (listings === null) return <DiscoveryRowSkeleton key={title} title={title} />;
+      return listings.length > 0 && (
+        <DiscoveryRow key={title} title={title} count={listings.length}
+          onViewAll={listings.length > 5 ? () => onSearchText?.(query) : undefined}>
+          <ListingDiscoveryRow listings={listings.slice(0, 5)} />
+        </DiscoveryRow>
+      );
+    };
     return (
       <>
         {section('Latest Listings', latestListings, 'Latest listings')}
@@ -2285,21 +2288,29 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   }
 
   if (product === 'connect') {
-    if (!connectDiscovery || !connectCourses || !nearbyCreators) return <DiscoveryLoading />;
-    const { trendingPosts, featuredPortfolio, profilesYouMayLike } = connectDiscovery;
+    // Posts/Portfolio/Profiles come from one bundled fetchConnectDiscovery
+    // call (genuinely one round trip for all 3), while Courses and Nearby
+    // creators are their own independent fetches -- each group now
+    // appears as soon as ITS OWN fetch resolves instead of a single gate
+    // that previously waited on whichever of the 3 fetches was slowest.
+    // `??` (not `||`) so an already-resolved-but-genuinely-empty array
+    // stays distinguishable from "still loading" (null).
+    const trendingPosts = connectDiscovery?.trendingPosts ?? null;
+    const featuredPortfolio = connectDiscovery?.featuredPortfolio ?? null;
+    const profilesYouMayLike = connectDiscovery?.profilesYouMayLike ?? null;
     // Default Connect "All" landing -- Posts/Portfolio/Profiles/Courses,
     // max 5 cards per section, "View all" only when a 6th actually
     // exists (same rule Marketplace's own default landing above uses).
     // 0 results hides the section entirely -- never a fake placeholder.
     return (
       <>
-        {trendingPosts.length > 0 && (
+        {trendingPosts === null ? <DiscoveryRowSkeleton title="Posts" /> : trendingPosts.length > 0 && (
           <DiscoveryRow title="Posts" count={trendingPosts.length}
             onViewAll={trendingPosts.length > 5 ? () => navigate('/search/category/connect/posts') : undefined}>
             <div className="px-4 lg:px-0 space-y-3">{trendingPosts.slice(0, 5).map(p => <PostCard key={p.id} post={p} />)}</div>
           </DiscoveryRow>
         )}
-        {featuredPortfolio.length > 0 && (
+        {featuredPortfolio === null ? <DiscoveryRowSkeleton title="Portfolio" /> : featuredPortfolio.length > 0 && (
           <DiscoveryRow title="Portfolio" count={featuredPortfolio.length}
             onViewAll={featuredPortfolio.length > 5 ? () => navigate('/search/category/connect/portfolio') : undefined}>
             <div className="px-4 lg:px-0 space-y-3">
@@ -2309,7 +2320,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
             </div>
           </DiscoveryRow>
         )}
-        {profilesYouMayLike.length > 0 && (
+        {profilesYouMayLike === null ? <DiscoveryRowSkeleton title="Profiles" /> : profilesYouMayLike.length > 0 && (
           <DiscoveryRow title="Profiles" count={profilesYouMayLike.length}
             onViewAll={profilesYouMayLike.length > 5 ? () => navigate('/search/category/connect/profiles') : undefined}>
             <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
@@ -2324,13 +2335,13 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
             </div>
           </DiscoveryRow>
         )}
-        {connectCourses.length > 0 && (
+        {connectCourses === null ? <DiscoveryRowSkeleton title="Courses" /> : connectCourses.length > 0 && (
           <DiscoveryRow title="Courses" count={connectCourses.length}
             onViewAll={connectCourses.length > 5 ? () => navigate('/search/category/connect/courses') : undefined}>
             <CourseDiscoveryRow courses={connectCourses.slice(0, 5)} />
           </DiscoveryRow>
         )}
-        {!!user?.city && nearbyCreators.length > 0 && (
+        {!!user?.city && (nearbyCreators === null ? <DiscoveryRowSkeleton title={`Popular near ${user.city}`} /> : nearbyCreators.length > 0 && (
           <DiscoveryRow title={`Popular near ${user.city}`} count={nearbyCreators.length}>
             <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
               {nearbyCreators.slice(0, 5).map(c => (
@@ -2343,32 +2354,35 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
               ))}
             </div>
           </DiscoveryRow>
-        )}
+        ))}
       </>
     );
   }
 
-  // learning
-  const loading = latestCourses === null || topCourses === null || roleCourses === null || skillCourses === null;
-  if (loading) return <DiscoveryLoading />;
+  // learning -- each row renders as soon as its own course query
+  // resolves, same reasoning as marketplace/connect above.
   return (
     <>
-      <DiscoveryRow title="Latest" count={latestCourses.length}>
-        <CourseDiscoveryRow courses={latestCourses} />
-      </DiscoveryRow>
-      <DiscoveryRow title="Top" count={topCourses.length}>
-        <CourseDiscoveryRow courses={topCourses} />
-      </DiscoveryRow>
-      {primaryRole && (
+      {latestCourses === null ? <DiscoveryRowSkeleton title="Latest" /> : (
+        <DiscoveryRow title="Latest" count={latestCourses.length}>
+          <CourseDiscoveryRow courses={latestCourses} />
+        </DiscoveryRow>
+      )}
+      {topCourses === null ? <DiscoveryRowSkeleton title="Top" /> : (
+        <DiscoveryRow title="Top" count={topCourses.length}>
+          <CourseDiscoveryRow courses={topCourses} />
+        </DiscoveryRow>
+      )}
+      {primaryRole && (roleCourses === null ? <DiscoveryRowSkeleton title={roleTitle} /> : (
         <DiscoveryRow title={roleTitle} count={roleCourses.length}>
           <CourseDiscoveryRow courses={roleCourses} />
         </DiscoveryRow>
-      )}
-      {!!user?.skills?.[0] && (
+      ))}
+      {!!user?.skills?.[0] && (skillCourses === null ? <DiscoveryRowSkeleton title={`Based on your skills in ${user.skills[0]}`} /> : (
         <DiscoveryRow title={`Based on your skills in ${user.skills[0]}`} count={skillCourses.length}>
           <CourseDiscoveryRow courses={skillCourses} />
         </DiscoveryRow>
-      )}
+      ))}
       {!!followedHashtag && !!followedHashtagCourses?.length && (
         <DiscoveryRow title={`From #${followedHashtag} you follow`} count={followedHashtagCourses.length}>
           <CourseDiscoveryRow courses={followedHashtagCourses} />
@@ -2378,8 +2392,22 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   );
 }
 
-function DiscoveryLoading() {
-  return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+// A single still-loading row's placeholder -- lets each DiscoveryRow
+// appear as soon as ITS OWN fetch resolves instead of the whole group
+// waiting on whichever one happens to be slowest (previously a single
+// `latestListings === null || topListings === null || ...` gate blocked
+// every row, including already-ready ones, until the last query landed).
+function DiscoveryRowSkeleton({ title }: { title: string }) {
+  return (
+    <section className="mb-6 lg:mb-8">
+      <div className={`flex items-center justify-between mb-2.5 lg:mb-3 ${DESKTOP_SECTION_PAD}`}>
+        <p className="text-sm lg:text-base font-black text-gray-900">{title}</p>
+      </div>
+      <div className={`flex gap-3 overflow-x-hidden ${DESKTOP_SECTION_PAD}`}>
+        {[0, 1, 2].map(i => <div key={i} className="shrink-0 w-40 h-48 rounded-2xl bg-gray-100 animate-pulse"/>)}
+      </div>
+    </section>
+  );
 }
 
 // Same mobile-fixed-card / desktop-fluid-card split as CategorySection's

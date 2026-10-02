@@ -614,8 +614,14 @@ export function Home() {
     if (recommendedPortfolio.length > 0 && list.length > PORTFOLIO_SUGGESTION_INDEX) {
       list.splice(PORTFOLIO_SUGGESTION_INDEX, 0, { kind: 'portfolio-suggested' as const });
     }
-    const completionIdx = completionCardIndexRef.current;
-    if (!completionCardShownThisSession && getMissingProfileFields(user).length > 0 && list.length > completionIdx) {
+    // Clamped (not gated) to the list's actual length -- a short/new-
+    // account feed (fewer than the random 2-4 target) previously never
+    // got the card at all, since `list.length > completionIdx` required
+    // strictly more items than the target index. Clamping means it still
+    // appears (nearer the end) on a short feed instead of silently never
+    // showing.
+    const completionIdx = Math.min(completionCardIndexRef.current, list.length);
+    if (!completionCardShownThisSession && getMissingProfileFields(user).length > 0 && list.length > 0) {
       list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
       try { sessionStorage.setItem('filmons_profile_completion_shown_session', '1'); } catch {}
     }

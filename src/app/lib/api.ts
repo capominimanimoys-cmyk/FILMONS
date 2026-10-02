@@ -1709,18 +1709,21 @@ export const postsApi = {
       if (error) throw error;
       const rows = data || [];
       const userIds = [...new Set(rows.map((r:any)=>r.author_id).filter(Boolean))];
-      let profileMap: Record<string,any> = {};
-      if (userIds.length) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, name, username, avatar_url, account_type, primary_role')
-          .in('id', userIds);
-        (profiles||[]).forEach((p:any) => { profileMap[p.id] = p; });
-      }
       const postIds = rows.map((r:any) => r.id);
-      const [likedIds, repostedIds, repostContextMap] = currentUser
-        ? await Promise.all([fetchLikedPostIds(postIds, currentUser.id), fetchRepostedPostIds(postIds, currentUser.id), fetchRepostContext(postIds, currentUser.id)])
-        : [new Set<string>(), new Set<string>(), new Map<string, RepostContextEntry[]>()];
+      // Profiles and the liked/reposted/repost-context lookups only
+      // depend on postIds/userIds, not on each other -- run all 4 in one
+      // Promise.all instead of awaiting profiles first, which previously
+      // added a full extra round trip to every "Top posts" load.
+      const [profilesRes, likedIds, repostedIds, repostContextMap] = await Promise.all([
+        userIds.length
+          ? supabase.from('profiles').select('id, name, username, avatar_url, account_type, primary_role').in('id', userIds)
+          : Promise.resolve({ data: [] as any[] }),
+        currentUser ? fetchLikedPostIds(postIds, currentUser.id) : Promise.resolve(new Set<string>()),
+        currentUser ? fetchRepostedPostIds(postIds, currentUser.id) : Promise.resolve(new Set<string>()),
+        currentUser ? fetchRepostContext(postIds, currentUser.id) : Promise.resolve(new Map<string, RepostContextEntry[]>()),
+      ]);
+      const profileMap: Record<string,any> = {};
+      (profilesRes.data||[]).forEach((p:any) => { profileMap[p.id] = p; });
       const mapped = rows.map((row:any) => {
         const prof = profileMap[row.author_id] || {};
         return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds, repostContextMap);
