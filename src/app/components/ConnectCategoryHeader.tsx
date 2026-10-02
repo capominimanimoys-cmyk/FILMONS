@@ -42,7 +42,13 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
   };
 
   return (
-    <div className="sticky top-0 z-20 bg-white border-b border-gray-100">
+    // z-40, not z-20 -- PostCard's own-post "..." menu button sits at z-30
+    // (absolutely positioned inside the card), so a lower header z-index
+    // let it visually poke in front of this sticky header whenever a post
+    // scrolled partway underneath it. z-40 matches TopBar.tsx's own
+    // precedent for "the header sits above everything in the content
+    // below it," not an arbitrary bump.
+    <div className="sticky top-0 z-40 bg-white border-b border-gray-100">
       <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '10px' }}>
         <button onClick={() => navigate(-1)} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
           <ArrowLeft className="w-5 h-5 text-gray-700"/>

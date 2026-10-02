@@ -343,14 +343,52 @@ export async function searchMatchingPortfolio(rawQuery: string): Promise<SearchP
   return rows;
 }
 
+// A query like "cinematography" previously only matched posts whose
+// CAPTION literally contained the word -- missing a post tagged
+// #cinematography with a caption that never says it, and missing posts
+// by a cinematographer the query is clearly trying to find (per spec:
+// Posts search should match caption, hashtags, AND creator context, not
+// caption text alone). Widened to three independent id sources, unioned:
+// content ilike (unchanged), hashtag match via the real hashtags/
+// hashtag_mentions tables (built earlier this session), and author match
+// (name/username/primary_role) via profiles.
+async function findPostIdsByHashtagTerms(terms: string[]): Promise<string[]> {
+  const { data: tagRows } = await supabase.from('hashtags').select('id')
+    .or(terms.map(t => `tag.ilike.%${t}%`).join(','));
+  const hashtagIds = (tagRows ?? []).map((r: any) => r.id);
+  if (!hashtagIds.length) return [];
+  const { data: mentionRows } = await supabase.from('hashtag_mentions').select('content_id')
+    .eq('content_type', 'post').in('hashtag_id', hashtagIds).limit(POST_LIMIT);
+  return [...new Set((mentionRows ?? []).map((r: any) => r.content_id as string))];
+}
+async function findPostIdsByAuthorTerms(terms: string[]): Promise<string[]> {
+  const { data: authorRows } = await supabase.from('profiles').select('id')
+    .or(terms.map(t => `name.ilike.%${t}%,username.ilike.%${t}%,primary_role.ilike.%${t}%`).join(','));
+  const authorIds = (authorRows ?? []).map((r: any) => r.id);
+  if (!authorIds.length) return [];
+  const { data } = await supabase.from('posts').select('id').eq('visibility', 'public').in('author_id', authorIds).limit(POST_LIMIT);
+  return (data ?? []).map((r: any) => r.id as string);
+}
+
 async function searchPostsByTerms(terms: string[]): Promise<SearchPostRow[]> {
-  const { data, error } = await supabase.from('posts').select(POST_SELECT)
-    .eq('visibility', 'public')
-    .or(terms.map(t => `content.ilike.%${t}%`).join(','))
-    .order('created_at', { ascending: false })
-    .limit(POST_LIMIT);
-  if (error) console.error('[filmSearch] posts error:', error.message);
-  return (data ?? []) as SearchPostRow[];
+  const [contentRes, hashtagIds, authorIds] = await Promise.all([
+    supabase.from('posts').select(POST_SELECT)
+      .eq('visibility', 'public')
+      .or(terms.map(t => `content.ilike.%${t}%`).join(','))
+      .order('created_at', { ascending: false })
+      .limit(POST_LIMIT),
+    findPostIdsByHashtagTerms(terms),
+    findPostIdsByAuthorTerms(terms),
+  ]);
+  if (contentRes.error) console.error('[filmSearch] posts error:', contentRes.error.message);
+  const byId = new Map<string, SearchPostRow>();
+  (contentRes.data ?? []).forEach((r: any) => byId.set(r.id, r));
+  const missingIds = [...new Set([...hashtagIds, ...authorIds])].filter(id => !byId.has(id));
+  if (missingIds.length) {
+    const { data } = await supabase.from('posts').select(POST_SELECT).eq('visibility', 'public').in('id', missingIds);
+    (data ?? []).forEach((r: any) => byId.set(r.id, r));
+  }
+  return [...byId.values()];
 }
 
 export async function searchMatchingPosts(rawQuery: string): Promise<SearchPostRow[]> {
