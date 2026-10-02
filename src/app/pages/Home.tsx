@@ -617,28 +617,17 @@ export function Home() {
   // Following, per spec ("Following should remain focused on actual
   // creators the user follows").
   //
-  // Snapshotted ONCE per user.id (computed inline during render, not in a
-  // useMemo keyed on the live `user` object) rather than re-derived every
-  // render -- ProfileCompletionCard's own mount effect writes a fresh
-  // timestamp into user.profileCompletionPrompts the instant it renders,
-  // which changes the `user` object's identity. A useMemo that depended
-  // on `user` would immediately re-run, see that brand-new timestamp, and
-  // conclude the card is no longer due -- un-splicing it on the very next
-  // render, often before the browser even paints the first one. The card
-  // would "work" (its own write succeeds) but look like it never showed
-  // at all. This ref freezes the due/field decision for the lifetime of
-  // this mount so the card's own write can't retroactively undo its own
-  // reason for existing.
+  // `due` is now computed FRESH on every run of this memo (no more frozen
+  // ref) -- safe because ProfileCompletionCard's mount effect no longer
+  // calls setUserDirectly (server-only write, see that file), so `user`
+  // never changes identity as a side effect of the card rendering itself.
+  // It CAN still change for genuine reasons (the real getMe() sync
+  // landing after the cached localStorage user was used for first paint,
+  // or an unrelated profile edit elsewhere) -- insertedRef below is what
+  // keeps the card from vanishing if one of those legitimate changes
+  // triggers a recompute AFTER it's already been shown once this mount.
   const completionCardIndexRef = useRef(2 + Math.floor(Math.random() * 3));
-  const completionEligibilityRef = useRef<{ userId: string; due: boolean } | null>(null);
-  if (user && completionEligibilityRef.current?.userId !== user.id) {
-    completionEligibilityRef.current = {
-      userId: user.id,
-      due: isProfileCompletionDue(user, getProfileCompletion(user).nextRecommendedField),
-    };
-  } else if (!user) {
-    completionEligibilityRef.current = null;
-  }
+  const connectCompletionInsertedRef = useRef(false);
   const connectRenderItems = useMemo(() => {
     type RenderItem = ConnectFeedItem | { kind: 'suggested' } | { kind: 'portfolio-suggested' } | { kind: 'profile-completion' };
     const list: RenderItem[] = [...connectItems];
@@ -665,27 +654,29 @@ export function Home() {
     // without this, this memo still runs even while Marketplace is on
     // screen (hooks always run), and could claim the one-per-session slot
     // for a surface the viewer never actually sees.
-    const willInsert = homeMode === 'portfolio' && connectTab === 'foryou' && !!completionEligibilityRef.current?.due
+    const due = user ? isProfileCompletionDue(user, getProfileCompletion(user).nextRecommendedField) : false;
+    const eligible = homeMode === 'portfolio' && connectTab === 'foryou' && due
         && !completionShownThisSession() && list.length > 0;
+    // Once inserted, stays inserted for the rest of this mount regardless
+    // of what triggers a later recompute -- otherwise an unrelated `user`
+    // change (any setUserDirectly call anywhere in the app) would make
+    // this memo re-run, see shownThisSession()===true (not due to insert
+    // again), and silently drop the ALREADY-displayed card from the
+    // returned list, unmounting it mid-session.
+    const willInsert = connectCompletionInsertedRef.current || eligible;
     // TEMP DEBUG -- remove once the "card not visible" report is resolved.
     console.log('[connectRenderItems] profile-completion gate', {
-      homeMode, connectTab, listLength: list.length,
-      eligibility: completionEligibilityRef.current,
+      homeMode, connectTab, listLength: list.length, due,
       shownThisSession: completionShownThisSession(),
-      willInsert,
+      alreadyInserted: connectCompletionInsertedRef.current,
+      eligible, willInsert,
     });
-    if (willInsert) {
+    if (willInsert && list.length > 0) {
       list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
-      markCompletionShown();
+      if (!connectCompletionInsertedRef.current) { connectCompletionInsertedRef.current = true; markCompletionShown(); }
     }
     return list;
-    // Deliberately `user?.id` (a stable primitive), not `user` itself --
-    // the whole user OBJECT gets a new identity every time the card's own
-    // mount effect writes profileCompletionPrompts, which would otherwise
-    // re-run this memo mid-mount and immediately un-splice the card (see
-    // completionEligibilityRef's comment above).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectItems, suggestedCreators, recommendedPortfolio, user?.id, connectTab, homeMode]);
+  }, [connectItems, suggestedCreators, recommendedPortfolio, user, connectTab, homeMode]);
 
   // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -856,12 +847,12 @@ export function Home() {
   // whose own mockup example shows a Rental → completion card →
   // Opportunity sequence), never the single-category or Creators/
   // Opportunity-only tabs, and never for guests.
+  const marketplaceCompletionInsertedRef = useRef(false);
   const swipeDeck = useMemo(() => {
-    // Shares completionEligibilityRef with Connect's gate above (same
-    // "frozen once per user.id" reasoning -- the card's own mount effect
-    // mutates `user`, which must NOT retroactively flip this memo's own
-    // gate back to false mid-mount). Deliberately `user?.id`, not `user`,
-    // in the dependency array below for the same reason.
+    // `due` computed fresh each run -- see connectRenderItems' comment
+    // above for why this is now safe (the card no longer mutates `user`).
+    // marketplaceCompletionInsertedRef gives the same "stays inserted once
+    // shown" stability connectRenderItems' ref provides.
     //
     // Every category tab except Creators (a people-only deck, not
     // "Marketplace listings") -- per spec, filtering to Rentals/Sales/
@@ -877,16 +868,18 @@ export function Home() {
     // -- without this, this memo still runs while Connect is on screen
     // (hooks always run) and could claim the one-per-session slot for a
     // surface the viewer never sees.
-    const blocked = filter === 'creators' || homeMode !== 'listings' || !user || deck.length === 0
-        || !completionEligibilityRef.current?.due || completionShownThisSession();
+    const due = user ? isProfileCompletionDue(user, getProfileCompletion(user).nextRecommendedField) : false;
+    const eligible = filter !== 'creators' && homeMode === 'listings' && !!user && deck.length > 0
+        && due && !completionShownThisSession();
+    const willInsert = marketplaceCompletionInsertedRef.current || eligible;
     // TEMP DEBUG -- remove once the "card not visible" report is resolved.
     console.log('[swipeDeck] profile-completion gate', {
-      filter, homeMode, hasUser: !!user, deckLength: deck.length,
-      eligibility: completionEligibilityRef.current,
+      filter, homeMode, hasUser: !!user, deckLength: deck.length, due,
       shownThisSession: completionShownThisSession(),
-      blocked,
+      alreadyInserted: marketplaceCompletionInsertedRef.current,
+      eligible, willInsert,
     });
-    if (blocked) return deck;
+    if (!willInsert || deck.length === 0) return deck;
     const next = [...deck];
     // Insert ahead of wherever the viewer's persisted swipe position
     // already is (SwipeStack's own sessionStorage idx for this filter),
@@ -899,10 +892,9 @@ export function Home() {
     // already working structurally from this same clamp.
     const insertAt = Math.min(Math.max(3, readPersistedIdx(filter) + 1), next.length);
     next.splice(insertAt, 0, { kind: 'profile-completion' as const, endOfQueue: insertAt >= next.length });
-    markCompletionShown();
+    if (!marketplaceCompletionInsertedRef.current) { marketplaceCompletionInsertedRef.current = true; markCompletionShown(); }
     return next;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deck, filter, user?.id, homeMode]);
+  }, [deck, filter, user, homeMode]);
 
   // How many emergency items got held back from the CURRENT filter's deck
   // -- computed independently of buildDeck (which only returns the deck

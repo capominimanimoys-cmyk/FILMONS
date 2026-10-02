@@ -21,7 +21,7 @@ const FIELD_ICON: Record<ProfileField, typeof Briefcase> = {
 };
 
 export function ProfileCompletionCard() {
-  const { user, setUserDirectly } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
   const { percentage, nextRecommendedField: field } = getProfileCompletion(user);
@@ -32,14 +32,18 @@ export function ProfileCompletionCard() {
   // Marks this field as shown the moment the card actually renders (not
   // on mount of some always-present wrapper) -- Home.tsx only mounts this
   // component when isProfileCompletionDue() already said yes, so this
-  // write both records the impression AND starts that field's next
-  // cooldown window.
+  // write starts that field's next cooldown window. Server-only -- does
+  // NOT also update the local `user` object (no setUserDirectly). That
+  // local echo was the actual cause of an earlier "card un-splices
+  // itself the instant it mounts" bug: giving `user` a new identity here
+  // fed back into Home.tsx's gates, which depended on `user` and
+  // immediately recomputed as "no longer due." The DB write alone is
+  // enough -- the next real page load's getMe() picks it up naturally.
   useEffect(() => {
     if (!user || !field) return;
     console.log('[ProfileCompletionCard] mount effect firing -- writing cooldown timestamp for field:', field);
     const now = new Date().toISOString();
     const next = { ...(user.profileCompletionPrompts || {}), [field]: now };
-    setUserDirectly({ ...user, profileCompletionPrompts: next });
     supabase.from('profiles').update({ profile_completion_prompts: next }).eq('id', user.id).then(() => {}, () => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, user?.id]);
