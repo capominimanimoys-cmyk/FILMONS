@@ -25,6 +25,9 @@ export function ProfileCompletionCard() {
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
   const { percentage, nextRecommendedField: field } = getProfileCompletion(user);
+  // TEMP DEBUG -- confirms this COMPONENT (not just the array slot) is
+  // actually being instantiated/re-rendered, and why.
+  console.log('[ProfileCompletionCard] render', { hasUser: !!user, field, dismissed, percentage });
 
   // Marks this field as shown the moment the card actually renders (not
   // on mount of some always-present wrapper) -- Home.tsx only mounts this
@@ -33,6 +36,7 @@ export function ProfileCompletionCard() {
   // cooldown window.
   useEffect(() => {
     if (!user || !field) return;
+    console.log('[ProfileCompletionCard] mount effect firing -- writing cooldown timestamp for field:', field);
     const now = new Date().toISOString();
     const next = { ...(user.profileCompletionPrompts || {}), [field]: now };
     setUserDirectly({ ...user, profileCompletionPrompts: next });
@@ -42,7 +46,7 @@ export function ProfileCompletionCard() {
 
   // Dismissing hides this render; Home's cooldown-based gate (not a
   // session cap any more) decides when it's eligible to resurface.
-  if (!user || !field || dismissed) return null;
+  if (!user || !field || dismissed) { console.log('[ProfileCompletionCard] returning null', { hasUser: !!user, field, dismissed }); return null; }
   const copy = PROFILE_FIELD_COPY[field];
   const Icon = FIELD_ICON[field];
 

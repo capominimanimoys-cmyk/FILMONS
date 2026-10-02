@@ -224,6 +224,8 @@ function ProfileCompletionContent({ onNotNow, endOfQueue }: { onNotNow: () => vo
   const navigate = useNavigate();
   const completion = getProfileCompletion(user);
   const nextCopy = completion.nextRecommendedField ? PROFILE_FIELD_COPY[completion.nextRecommendedField] : null;
+  // TEMP DEBUG -- confirms this COMPONENT is actually being instantiated.
+  console.log('[ProfileCompletionContent] render (Marketplace swipe card)', { hasUser: !!user, nextField: completion.nextRecommendedField, endOfQueue });
 
   const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
   const continueSetup = (e: React.MouseEvent) => {
