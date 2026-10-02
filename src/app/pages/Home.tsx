@@ -36,7 +36,7 @@ import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
 import { ProfileCompletionCard } from '../components/ProfileCompletionCard';
-import { getProfileCompletion, isProfileCompletionDue } from '../lib/profileCompletion';
+import { getProfileCompletion, isProfileCompletionDue, PROFILE_FIELD_COPY } from '../lib/profileCompletion';
 import { ConnectionRequestsCard } from '../components/ConnectionRequestsCard';
 import { listPendingReceived, respondToConnectionRequest, type ConnectionSummary } from '../lib/connectionsApi';
 import * as notifs from '../lib/notifications';
@@ -218,6 +218,23 @@ function readCompleted(filter: FilterId): boolean {
 }
 function writeCompleted(filter: FilterId, done: boolean): void {
   try { done ? sessionStorage.setItem(completedKey(filter), 'true') : sessionStorage.removeItem(completedKey(filter)); } catch {}
+}
+
+// Profile Completion's cross-surface "shown once per session" flag --
+// shared by Marketplace's swipeDeck and Connect's connectRenderItems, so
+// whichever surface the viewer is actually looking at claims the single
+// per-session slot, and the other one doesn't also show it afterward.
+// Written directly inside each memo's factory (same shape this file
+// already used before today's cooldown rework) rather than inside the
+// card component's own mount effect -- sessionStorage writes don't
+// change `user`'s identity, so they can't retrigger the self-defeating
+// re-render loop a `user`-based write caused.
+const COMPLETION_SHOWN_KEY = 'filmons_profile_completion_shown_session';
+function completionShownThisSession(): boolean {
+  try { return sessionStorage.getItem(COMPLETION_SHOWN_KEY) === '1'; } catch { return false; }
+}
+function markCompletionShown(): void {
+  try { sessionStorage.setItem(COMPLETION_SHOWN_KEY, '1'); } catch {}
 }
 
 // Activity's "For You" empty state -- shown when there's genuinely no
@@ -644,8 +661,14 @@ export function Home() {
     // appears (nearer the end) on a short feed instead of silently never
     // showing.
     const completionIdx = Math.min(completionCardIndexRef.current, list.length);
-    if (connectTab === 'foryou' && completionEligibilityRef.current?.due && list.length > 0) {
+    // homeMode==='portfolio' (Connect is actually the visible surface) --
+    // without this, this memo still runs even while Marketplace is on
+    // screen (hooks always run), and could claim the one-per-session slot
+    // for a surface the viewer never actually sees.
+    if (homeMode === 'portfolio' && connectTab === 'foryou' && completionEligibilityRef.current?.due
+        && !completionShownThisSession() && list.length > 0) {
       list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
+      markCompletionShown();
     }
     return list;
     // Deliberately `user?.id` (a stable primitive), not `user` itself --
@@ -654,7 +677,7 @@ export function Home() {
     // re-run this memo mid-mount and immediately un-splice the card (see
     // completionEligibilityRef's comment above).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectItems, suggestedCreators, recommendedPortfolio, user?.id, connectTab]);
+  }, [connectItems, suggestedCreators, recommendedPortfolio, user?.id, connectTab, homeMode]);
 
   // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -831,19 +854,39 @@ export function Home() {
     // mutates `user`, which must NOT retroactively flip this memo's own
     // gate back to false mid-mount). Deliberately `user?.id`, not `user`,
     // in the dependency array below for the same reason.
-    if (filter !== 'all' || !user || deck.length === 0 || !completionEligibilityRef.current?.due) return deck;
+    //
+    // Every category tab except Creators (a people-only deck, not
+    // "Marketplace listings") -- per spec, filtering to Rentals/Sales/
+    // Services/Studios/Opportunities/Emergency must not remove the card.
+    // Emergency needs no special-casing here: EmergencyPreviewGate (the
+    // restricted-tier preview) reads `deck` directly, never `swipeDeck`,
+    // so a completion card spliced in here is only ever reachable by
+    // Professional/Business viewers who skip that gate and render
+    // <SwipeStack items={swipeDeck}> normally -- exactly "where the user
+    // has access."
+    //
+    // homeMode==='listings' (Marketplace is actually the visible surface)
+    // -- without this, this memo still runs while Connect is on screen
+    // (hooks always run) and could claim the one-per-session slot for a
+    // surface the viewer never sees.
+    if (filter === 'creators' || homeMode !== 'listings' || !user || deck.length === 0
+        || !completionEligibilityRef.current?.due || completionShownThisSession()) return deck;
     const next = [...deck];
     // Insert ahead of wherever the viewer's persisted swipe position
     // already is (SwipeStack's own sessionStorage idx for this filter),
     // not always at a fixed index 3 -- someone who already swiped past
     // position 3 earlier in this session would otherwise never see a
     // card inserted there, since SwipeStack only ever renders items[idx]
-    // onward.
+    // onward. Clamping to next.length means a short deck appends it as
+    // the literal last item -- the viewer must swipe past it before
+    // reaching "All Swiped," which is the end-of-queue flow (below),
+    // already working structurally from this same clamp.
     const insertAt = Math.min(Math.max(3, readPersistedIdx(filter) + 1), next.length);
-    next.splice(insertAt, 0, { kind: 'profile-completion' as const });
+    next.splice(insertAt, 0, { kind: 'profile-completion' as const, endOfQueue: insertAt >= next.length });
+    markCompletionShown();
     return next;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deck, filter, user?.id]);
+  }, [deck, filter, user?.id, homeMode]);
 
   // How many emergency items got held back from the CURRENT filter's deck
   // -- computed independently of buildDeck (which only returns the deck
@@ -997,6 +1040,24 @@ export function Home() {
         className="mt-5 bg-blue-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl active:opacity-80">
         + List your gear
       </button>
+      {/* Secondary completion CTA -- there's no deck at all here (no
+          SwipeStack mounted), so the system card has nowhere to appear;
+          this is just a small link, not a competing card, and isn't
+          gated by the session/cooldown flags those use. */}
+      {user && !getProfileCompletion(user).isComplete && (() => {
+        const next = getProfileCompletion(user).nextRecommendedField;
+        const copy = next ? PROFILE_FIELD_COPY[next] : null;
+        return copy && (
+          <div className="mt-6 pt-5 border-t border-gray-100 w-full max-w-xs">
+            <p className="text-xs text-gray-400 mb-2">Complete your profile to improve future recommendations.</p>
+            <button
+              onClick={() => navigate(`/profile?edit=${copy.editSection}`)}
+              className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors">
+              Continue setup →
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 

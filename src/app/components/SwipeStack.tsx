@@ -56,7 +56,7 @@ export type CreatorProfile = {
 export type DeckItem =
   | { kind: 'listing'; data: EnrichedListing }
   | { kind: 'creator'; data: CreatorProfile }
-  | { kind: 'profile-completion' };
+  | { kind: 'profile-completion'; endOfQueue?: boolean };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SWIPE_X = 80;
@@ -219,7 +219,7 @@ const CORE_FIELD_LABEL: Record<string, string> = {
   gear: 'Gear / tools', education: 'Education & training',
 };
 
-function ProfileCompletionContent({ onNotNow }: { onNotNow: () => void }) {
+function ProfileCompletionContent({ onNotNow, endOfQueue }: { onNotNow: () => void; endOfQueue?: boolean }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const completion = getProfileCompletion(user);
@@ -236,7 +236,11 @@ function ProfileCompletionContent({ onNotNow }: { onNotNow: () => void }) {
       <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-blue-600 to-purple-600 overflow-hidden flex flex-col items-center justify-center text-center px-6">
         <Sparkles className="w-9 h-9 text-white/90 mb-3"/>
         <h3 className="text-xl lg:text-2xl font-black text-white mb-1.5">Complete your profile</h3>
-        <p className="text-sm text-white/80 max-w-xs leading-relaxed">Help FILMONS find gear, services and opportunities that fit what you do.</p>
+        <p className="text-sm text-white/80 max-w-xs leading-relaxed">
+          {endOfQueue
+            ? "You've seen all available listings right now. Help FILMONS improve what we recommend to you."
+            : 'Help FILMONS find gear, services and opportunities that fit what you do.'}
+        </p>
       </div>
 
       <div className="px-4 lg:px-6 py-3.5 lg:py-5">
@@ -399,7 +403,7 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
           ? <ListingContent listing={item.data}/>
           : item.kind === 'creator'
           ? <CreatorContent profile={item.data}/>
-          : <ProfileCompletionContent onNotNow={onSwipeLeft}/>
+          : <ProfileCompletionContent onNotNow={onSwipeLeft} endOfQueue={item.endOfQueue}/>
         }
       </div>
 
@@ -702,6 +706,14 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
   const current = items[idx];
   const cards   = items.slice(idx, idx + 3);
 
+  // Real-listing-only counts for the display counters below -- the
+  // profile-completion system card must never count as a listing (not in
+  // "N of M", not in "N opportunities left"), even though it does occupy
+  // one real slot in `items`/`idx` for advancement purposes.
+  const realTotal = items.filter(i => i.kind !== 'profile-completion').length;
+  const realRemaining = items.slice(idx).filter(i => i.kind !== 'profile-completion').length;
+  const realPosition = Math.min(realTotal - realRemaining + 1, realTotal);
+
   // The card stack container used to reserve a hand-picked fixed height
   // (previously 580px, then 560px) that never quite matched the top card's
   // actual rendered height (it varies -- opportunity vs. listing vs.
@@ -892,9 +904,9 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
           interrupting with a modal. */}
       <div className="hidden lg:flex items-center gap-3 mt-3 mb-3">
         <p className="text-[11px] text-gray-400 font-medium">
-          {idx + 1} of {items.length}
-          {items.length - idx <= 3 && (
-            <span className="text-amber-500 font-semibold"> · {items.length - idx} opportunit{items.length - idx === 1 ? 'y' : 'ies'} left</span>
+          {realPosition} of {realTotal}
+          {realRemaining <= 3 && realRemaining > 0 && (
+            <span className="text-amber-500 font-semibold"> · {realRemaining} opportunit{realRemaining === 1 ? 'y' : 'ies'} left</span>
           )}
         </p>
         {dailyLimit !== null && (
