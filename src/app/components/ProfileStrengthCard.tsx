@@ -13,6 +13,29 @@ export function ProfileStrengthCard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const completion = getProfileCompletion(user);
+  // TEMP DEBUG -- remove once the "Profile Strength not visible" report is
+  // resolved. Logs every render so we can see exactly what the resolver
+  // saw for this user (percentage/missing fields) and which guard, if
+  // any, returned null instead of rendering the card.
+  console.log('[ProfileStrengthCard]', {
+    hasUser: !!user,
+    userId: user?.id,
+    percentage: completion.percentage,
+    completedFields: completion.completedFields,
+    missingFields: completion.missingFields,
+    nextRecommendedField: completion.nextRecommendedField,
+    isComplete: completion.isComplete,
+    willRender: !!user && !completion.isComplete,
+    rawEducation: user?.education,
+    rawAvatar: user?.avatar,
+    rawBio: user?.bio,
+    rawSkills: user?.skills,
+    rawGear: user?.gear,
+    rawCity: user?.city,
+    rawPrimaryRole: user?.primaryRole,
+    rawBusinessIndustry: user?.businessIndustry,
+    rawAccountType: user?.accountType,
+  });
   if (!user || completion.isComplete) return null;
 
   return (
