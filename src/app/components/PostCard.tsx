@@ -31,6 +31,7 @@ import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './connect/PostMoreMenu';
 import { SharePostSheet } from './connect/SharePostSheet';
 import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
+import { normalizeHashtag } from '../lib/hashtagsApi';
 import { LikesSheet } from './LikesSheet';
 import { RepostsSheet } from './RepostsSheet';
 import { RepostMenuSheet } from './RepostMenuSheet';
@@ -1279,7 +1280,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                   className={`text-gray-900 ${captionSizeClass}`}
                   expanded={captionExpanded}
                   onExpand={() => setCaptionExpanded(true)}
-                  onHashtagTap={tag => navigate(`/search/hashtags/${tag}`)}
+                  onHashtagTap={tag => navigate(`/search/hashtags/${normalizeHashtag(tag)}`)}
                 />
               )}
 

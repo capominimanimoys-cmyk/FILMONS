@@ -1819,7 +1819,7 @@ function PortfolioAllSection({ query }: { query?: string }) {
   }, [query]);
 
   useEffect(() => {
-    const shown = (matches ?? []).slice(0, 6);
+    const shown = (matches ?? []).slice(0, 5);
     const itemIds = shown.filter(r => r.type === 'item').map(r => r.id);
     const albumIds = shown.filter(r => r.type === 'album').map(r => r.id);
     if (!itemIds.length && !albumIds.length) { setEntries([]); return; }
@@ -1838,7 +1838,7 @@ function PortfolioAllSection({ query }: { query?: string }) {
     <div className="px-4 lg:px-0 mb-6">
       <div className="flex items-center justify-between mb-2.5">
         <p className="text-sm lg:text-base font-black text-gray-900">Portfolio</p>
-        {matches.length > 6 && (
+        {matches.length > 5 && (
           <button onClick={() => navigate('/search/category/connect/portfolio', { state: { query } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
             View all <ArrowRight className="w-3.5 h-3.5" />
           </button>
@@ -2802,7 +2802,31 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                 {!product && (connectCats.length > 0 || showConnectExtras) && (
                   <p className="px-4 lg:px-0 pt-2 pb-1 text-xs font-black text-gray-300 uppercase tracking-widest">Connect</p>
                 )}
-                {connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+                {/* Profiles goes through the dedicated 5-max preview below
+                    when browsing "All" (matching Posts/Portfolio/Courses'
+                    own pattern) -- the generic CategorySection carousel
+                    (full per-category browse, no 5-cap) only renders here
+                    when the viewer explicitly filtered down to Profiles
+                    via the category dropdown. */}
+                {categoryFilter !== 'all' && connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
+                {categoryFilter === 'all' && showConnectExtras && sharedMatched && sharedMatched.creators.length > 0 && (
+                  <div className="px-4 lg:px-0 mb-6">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <p className="text-sm lg:text-base font-black text-gray-900">Profiles</p>
+                      {sharedMatched.creators.length > 5 && (
+                        <button onClick={() => navigate('/search/category/connect/profiles', { state: { query: term } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
+                          View all <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="lg:hidden flex flex-col gap-3">
+                      {(sharedMatched.creators as CreatorRow[]).slice(0, 5).map(u => <CreatorCardMobile key={u.id} u={u} onView={() => navigate(`/host/${u.id}`)}/>)}
+                    </div>
+                    <div className="hidden lg:flex lg:flex-col gap-3">
+                      {(sharedMatched.creators as CreatorRow[]).slice(0, 5).map(u => <CreatorResultRow key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
+                    </div>
+                  </div>
+                )}
                 {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
                 {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
                 {categoryFilter === 'all' && showConnectExtras && <CoursesAllSection query={term} target="/search/category/connect/courses" />}
