@@ -41,7 +41,7 @@ import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locat
 import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
 import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from '../components/courses/CourseCard';
-import { getPortfolioEntriesByIds, getMutualConnectionsBatch, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { getPortfolioEntriesByIds, getMutualConnectionsBatch, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
@@ -2092,6 +2092,28 @@ async function fetchNearbyMarketplaceListings(city: string, limit: number): Prom
   return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
 }
 
+// "Popular near {city}" for Connect -- mirrors fetchNearbyMarketplaceListings's
+// city-substring approach (no lat/lng in this schema), but for creators
+// instead of listings. Deliberately a plain, real query (no mutual-
+// connections lookup) -- this row is about location, not the viewer's
+// social graph, same distinction SuggestedCreator's own mutualCount
+// already draws for the "Profiles You May Like" row above it.
+async function fetchNearbyCreators(city: string, limit: number): Promise<SuggestedCreator[]> {
+  const { data } = await supabase.from('profiles')
+    .select('id, name, username, avatar_url, primary_role, business_industry, account_type, secondary_roles, city, is_verified, skills')
+    .ilike('city', `%${city}%`)
+    .not('name', 'is', null).neq('name', '')
+    .or('primary_role.not.is.null,business_industry.not.is.null')
+    .order('is_verified', { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((c: any) => ({
+    id: c.id, name: c.name, username: c.username, avatar_url: c.avatar_url,
+    primary_role: c.primary_role, business_industry: c.business_industry, account_type: c.account_type,
+    secondary_roles: c.secondary_roles ?? [], city: c.city, is_verified: !!c.is_verified, skills: c.skills ?? [],
+    mutualCount: 0, mutualAvatars: [],
+  }));
+}
+
 // "View all" from ONE specific landing-page discovery row (Top/Latest/
 // Nearby) now stays on this same page and simply sets the search box to
 // one of these exact phrases (see handleViewAllDiscovery in
@@ -2149,8 +2171,10 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [topListings, setTopListings] = useState<Listing[] | null>(null);
   const [nearbyListings, setNearbyListings] = useState<Listing[] | null>(null);
   const [roleListings, setRoleListings] = useState<Listing[] | null>(null);
+  const [gearListings, setGearListings] = useState<Listing[] | null>(null);
 
   const [connectDiscovery, setConnectDiscovery] = useState<ConnectDiscovery | null>(null);
+  const [nearbyCreators, setNearbyCreators] = useState<SuggestedCreator[] | null>(null);
   // Courses stays a Learning product (never reclassified as Connect data,
   // per spec) but is surfaced here too so creators can discover
   // educational work from other creators without leaving Connect.
@@ -2159,6 +2183,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [latestCourses, setLatestCourses] = useState<Course[] | null>(null);
   const [topCourses, setTopCourses] = useState<Course[] | null>(null);
   const [roleCourses, setRoleCourses] = useState<Course[] | null>(null);
+  const [skillCourses, setSkillCourses] = useState<Course[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2173,26 +2198,43 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       if (primaryRole) {
         searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
       } else setRoleListings([]);
+      // "Because you use {gear}" -- the user's own first saved gear item
+      // (AboutEditor.tsx's Gear & Tools accordion), searched the same way
+      // the role row already is -- real equipment they actually use,
+      // never a fabricated/generic suggestion.
+      if (user?.gear?.length) {
+        searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
+      } else setGearListings([]);
     } else if (product === 'connect') {
       // Same shared discovery source SearchOverlay.tsx's own Connect
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
       // second posts-only version living here.
       fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); });
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); });
+      // Hidden entirely (not a fake/empty section) when the viewer has no
+      // saved city -- same precedent as Marketplace's own nearbyListings.
+      if (user?.city) {
+        fetchNearbyCreators(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyCreators(r); });
+      } else setNearbyCreators([]);
     } else if (product === 'learning') {
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); });
       getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); });
       if (primaryRole) {
         getCourses({ query: primaryRole, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setRoleCourses(r); });
       } else setRoleCourses([]);
+      // "Based on your skills in {skill}" -- the user's own first saved
+      // skill (AboutEditor.tsx's Skills & Specialties accordion).
+      if (user?.skills?.length) {
+        getCourses({ query: user.skills[0], limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setSkillCourses(r); });
+      } else setSkillCourses([]);
     }
     return () => { cancelled = true; };
-  }, [product, primaryRole, user?.id, user?.city]);
+  }, [product, primaryRole, user?.id, user?.city, user?.gear?.[0], user?.skills?.[0]]);
 
   const roleTitle = `Because you're a ${primaryRole}`;
 
   if (product === 'marketplace') {
-    const loading = latestListings === null || topListings === null || nearbyListings === null || roleListings === null;
+    const loading = latestListings === null || topListings === null || nearbyListings === null || roleListings === null || gearListings === null;
     if (loading) return <DiscoveryLoading />;
     // Default Marketplace "All" landing -- max 5 cards per section (never
     // more, regardless of how many were fetched), "View all" only when a
@@ -2212,12 +2254,13 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         {section('Top Listings', topListings, 'Top listings')}
         {section('Listings Nearby', nearbyListings, 'Nearby')}
         {primaryRole && section(roleTitle, roleListings, primaryRole)}
+        {user?.gear?.[0] && section(`Because you use ${user.gear[0]}`, gearListings, user.gear[0])}
       </>
     );
   }
 
   if (product === 'connect') {
-    if (!connectDiscovery || !connectCourses) return <DiscoveryLoading />;
+    if (!connectDiscovery || !connectCourses || !nearbyCreators) return <DiscoveryLoading />;
     const { trendingPosts, featuredPortfolio, profilesYouMayLike } = connectDiscovery;
     // Default Connect "All" landing -- Posts/Portfolio/Profiles/Courses,
     // max 5 cards per section, "View all" only when a 6th actually
@@ -2262,12 +2305,26 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
             <CourseDiscoveryRow courses={connectCourses.slice(0, 5)} />
           </DiscoveryRow>
         )}
+        {!!user?.city && nearbyCreators.length > 0 && (
+          <DiscoveryRow title={`Popular near ${user.city}`} count={nearbyCreators.length}>
+            <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
+              {nearbyCreators.slice(0, 5).map(c => (
+                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-[172px] shrink-0 snap-start"/>
+              ))}
+            </div>
+            <div className={`hidden lg:flex flex-wrap gap-3 ${DESKTOP_SECTION_PAD}`}>
+              {nearbyCreators.slice(0, 5).map(c => (
+                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-64"/>
+              ))}
+            </div>
+          </DiscoveryRow>
+        )}
       </>
     );
   }
 
   // learning
-  const loading = latestCourses === null || topCourses === null || roleCourses === null;
+  const loading = latestCourses === null || topCourses === null || roleCourses === null || skillCourses === null;
   if (loading) return <DiscoveryLoading />;
   return (
     <>
@@ -2280,6 +2337,11 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       {primaryRole && (
         <DiscoveryRow title={roleTitle} count={roleCourses.length}>
           <CourseDiscoveryRow courses={roleCourses} />
+        </DiscoveryRow>
+      )}
+      {!!user?.skills?.[0] && (
+        <DiscoveryRow title={`Based on your skills in ${user.skills[0]}`} count={skillCourses.length}>
+          <CourseDiscoveryRow courses={skillCourses} />
         </DiscoveryRow>
       )}
     </>
