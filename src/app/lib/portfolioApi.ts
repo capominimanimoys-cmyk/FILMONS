@@ -1811,3 +1811,54 @@ export async function getSuggestedCreators(
     return [];
   }
 }
+
+/** Real accepted-Professional-Connections mutual lookup for an arbitrary
+ *  list of candidate profile ids, batched (2 queries total, never N+1) --
+ *  same computation getSuggestedCreators uses internally for its own
+ *  suggestions, pulled out so other result lists (e.g. a Profiles search
+ *  page) can show the same real "N mutual connections" row instead of a
+ *  second implementation. Avatars capped at 3 (the stack never needs
+ *  more); `count` is the real uncapped total. */
+export async function getMutualConnectionsBatch(
+  viewerId: string, candidateIds: string[],
+): Promise<Map<string, { count: number; avatars: { id: string; name: string; avatar_url: string | null }[] }>> {
+  const result = new Map<string, { count: number; avatars: { id: string; name: string; avatar_url: string | null }[] }>();
+  if (!viewerId || !candidateIds.length) return result;
+  try {
+    const { data: connectionRows } = await supabase.from('professional_connections').select('user_a_id, user_b_id')
+      .eq('status', 'accepted').or(`user_a_id.eq.${viewerId},user_b_id.eq.${viewerId}`);
+    const viewerConnections = new Set((connectionRows ?? []).map((r: any) => r.user_a_id === viewerId ? r.user_b_id : r.user_a_id));
+    if (!viewerConnections.size) return result;
+
+    const idList = candidateIds.join(',');
+    const { data: candidateConnRows } = await supabase.from('professional_connections').select('user_a_id, user_b_id')
+      .eq('status', 'accepted').or(`user_a_id.in.(${idList}),user_b_id.in.(${idList})`);
+    const mutualCounts = new Map<string, number>();
+    const mutualIdsByCandidate = new Map<string, string[]>();
+    (candidateConnRows ?? []).forEach((r: any) => {
+      [[r.user_a_id, r.user_b_id], [r.user_b_id, r.user_a_id]].forEach(([candidateId, otherId]) => {
+        if (candidateIds.includes(candidateId) && viewerConnections.has(otherId)) {
+          mutualCounts.set(candidateId, (mutualCounts.get(candidateId) ?? 0) + 1);
+          const list = mutualIdsByCandidate.get(candidateId) ?? [];
+          if (list.length < 3) { list.push(otherId); mutualIdsByCandidate.set(candidateId, list); }
+        }
+      });
+    });
+    const allMutualIds = [...new Set([...mutualIdsByCandidate.values()].flat())];
+    const mutualProfileMap = new Map<string, { id: string; name: string; avatar_url: string | null }>();
+    if (allMutualIds.length) {
+      const { data: mutualProfiles } = await supabase.from('profiles').select('id, name, avatar_url').in('id', allMutualIds);
+      (mutualProfiles ?? []).forEach((p: any) => mutualProfileMap.set(p.id, { id: p.id, name: p.name, avatar_url: p.avatar_url }));
+    }
+    for (const id of candidateIds) {
+      result.set(id, {
+        count: mutualCounts.get(id) ?? 0,
+        avatars: (mutualIdsByCandidate.get(id) ?? []).map(mid => mutualProfileMap.get(mid)).filter((p): p is { id: string; name: string; avatar_url: string | null } => !!p),
+      });
+    }
+    return result;
+  } catch (e) {
+    console.warn('[discovery] mutual connections batch error:', e);
+    return result;
+  }
+}

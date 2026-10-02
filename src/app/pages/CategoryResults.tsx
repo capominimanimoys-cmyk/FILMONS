@@ -41,7 +41,7 @@ import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locat
 import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
 import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from '../components/courses/CourseCard';
-import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { getPortfolioEntriesByIds, getMutualConnectionsBatch, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
@@ -146,6 +146,11 @@ interface CreatorRow {
   skills?: string[] | null;
   account_type?: string | null;
   business_industry?: string | null;
+  // Real accepted Professional Connections only -- undefined (not fetched
+  // yet) and 0 (fetched, genuinely none) are both "don't show the row";
+  // only a real match renders it, never "0 mutual connections" as text.
+  mutualCount?: number;
+  mutualAvatars?: { id: string; name: string; avatar_url: string | null }[];
 }
 // Business accounts show Business Industry instead of Primary Role
 // everywhere -- see getDisplayIdentity in lib/displayIdentity.ts.
@@ -529,6 +534,24 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
     io.observe(el);
     return () => io.disconnect();
   }, [loading, loadingMore, hasMore, page, loadPage]);
+
+  // Real accepted-Professional-Connections mutuals for the Profiles page,
+  // batched (not N+1) -- same computation getSuggestedCreators uses for
+  // its own suggestions. Keyed on the actual ids present (not the array
+  // itself) so merging the result back into `creators` below doesn't
+  // re-trigger this effect.
+  useEffect(() => {
+    if (category !== 'creators' || !user?.id || !creators.length) return;
+    const idsNeedingMutuals = creators.filter(c => c.mutualCount === undefined).map(c => c.id);
+    if (!idsNeedingMutuals.length) return;
+    let cancelled = false;
+    getMutualConnectionsBatch(user.id, idsNeedingMutuals).then(byId => {
+      if (cancelled) return;
+      setCreators(prev => prev.map(c => byId.has(c.id) ? { ...c, mutualCount: byId.get(c.id)!.count, mutualAvatars: byId.get(c.id)!.avatars } : c));
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, user?.id, creators.map(c => c.id).join(',')]);
 
   const count = category === 'creators' ? creators.length : listings.length;
   const noun = count === 1 ? CATEGORY_LABEL[category].replace(/s$/, '') : CATEGORY_LABEL[category];
@@ -1115,6 +1138,19 @@ function CreatorResultRow({ u, onClick }: { u: CreatorRow; onClick: () => void }
         {(u.city ?? u.location) && (
           <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3 h-3 shrink-0"/>{u.city ?? u.location}</p>
         )}
+        {!!u.mutualAvatars?.length && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className="flex -space-x-2">
+              {u.mutualAvatars.map(m => (
+                <div key={m.id} className="w-5 h-5 rounded-full overflow-hidden bg-gray-200 border-2 border-white shrink-0">
+                  {m.avatar_url ? <img src={m.avatar_url} alt={m.name} className="w-full h-full object-cover"/>
+                    : <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-gray-400">{m.name?.[0]?.toUpperCase() ?? '?'}</div>}
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400">{u.mutualCount} mutual connection{u.mutualCount === 1 ? '' : 's'}</p>
+          </div>
+        )}
       </div>
     </button>
   );
@@ -1126,7 +1162,7 @@ function CreatorResultRow({ u, onClick }: { u: CreatorRow; onClick: () => void }
 // simpler than desktop: one big card per creator, no side-by-side info
 // crammed into a small row. Follow doubles as this card's "save" action --
 // there's no separate saved-creators concept in this app, unlike listings.
-const CREATOR_CARD_HEIGHT = 392;       // spec: ~360-420px
+const CREATOR_CARD_HEIGHT = 416;       // spec: ~360-420px -- bumped from 392 to fit the mutual-connections row below without crowding
 const CREATOR_CARD_IMAGE_HEIGHT = 236; // spec: ~220-250px
 
 function CreatorCardMobile({ u, onView }: { u: CreatorRow; onView: () => void }) {
@@ -1170,6 +1206,19 @@ function CreatorCardMobile({ u, onView }: { u: CreatorRow; onView: () => void })
         {creatorIdentity(u) && <p className="text-sm text-blue-600 font-semibold truncate">{creatorIdentity(u)}</p>}
         {(u.city ?? u.location) && (
           <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin className="w-3.5 h-3.5 shrink-0"/>{u.city ?? u.location}</p>
+        )}
+        {!!u.mutualAvatars?.length && (
+          <div className="flex items-center gap-1.5">
+            <div className="flex -space-x-2">
+              {u.mutualAvatars.map(m => (
+                <div key={m.id} className="w-5 h-5 rounded-full overflow-hidden bg-gray-200 border-2 border-white shrink-0">
+                  {m.avatar_url ? <img src={m.avatar_url} alt={m.name} className="w-full h-full object-cover"/>
+                    : <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-gray-400">{m.name?.[0]?.toUpperCase() ?? '?'}</div>}
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400">{u.mutualCount} mutual connection{u.mutualCount === 1 ? '' : 's'}</p>
+          </div>
         )}
         {tags.length > 0 && <p className="text-xs text-gray-500 truncate mt-0.5">{tags.join(' • ')}</p>}
         <button
