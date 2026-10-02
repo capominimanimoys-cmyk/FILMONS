@@ -599,7 +599,29 @@ export function Home() {
   // (it has no timestamp of its own yet). Only on the For You tab, never
   // Following, per spec ("Following should remain focused on actual
   // creators the user follows").
+  //
+  // Snapshotted ONCE per user.id (computed inline during render, not in a
+  // useMemo keyed on the live `user` object) rather than re-derived every
+  // render -- ProfileCompletionCard's own mount effect writes a fresh
+  // timestamp into user.profileCompletionPrompts the instant it renders,
+  // which changes the `user` object's identity. A useMemo that depended
+  // on `user` would immediately re-run, see that brand-new timestamp, and
+  // conclude the card is no longer due -- un-splicing it on the very next
+  // render, often before the browser even paints the first one. The card
+  // would "work" (its own write succeeds) but look like it never showed
+  // at all. This ref freezes the due/field decision for the lifetime of
+  // this mount so the card's own write can't retroactively undo its own
+  // reason for existing.
   const completionCardIndexRef = useRef(2 + Math.floor(Math.random() * 3));
+  const completionEligibilityRef = useRef<{ userId: string; due: boolean } | null>(null);
+  if (user && completionEligibilityRef.current?.userId !== user.id) {
+    completionEligibilityRef.current = {
+      userId: user.id,
+      due: isProfileCompletionDue(user, getProfileCompletion(user).nextRecommendedField),
+    };
+  } else if (!user) {
+    completionEligibilityRef.current = null;
+  }
   const connectRenderItems = useMemo(() => {
     type RenderItem = ConnectFeedItem | { kind: 'suggested' } | { kind: 'portfolio-suggested' } | { kind: 'profile-completion' };
     const list: RenderItem[] = [...connectItems];
@@ -622,12 +644,17 @@ export function Home() {
     // appears (nearer the end) on a short feed instead of silently never
     // showing.
     const completionIdx = Math.min(completionCardIndexRef.current, list.length);
-    const completion = getProfileCompletion(user);
-    if (connectTab === 'foryou' && isProfileCompletionDue(user, completion.nextRecommendedField) && list.length > 0) {
+    if (connectTab === 'foryou' && completionEligibilityRef.current?.due && list.length > 0) {
       list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
     }
     return list;
-  }, [connectItems, suggestedCreators, recommendedPortfolio, user, connectTab]);
+    // Deliberately `user?.id` (a stable primitive), not `user` itself --
+    // the whole user OBJECT gets a new identity every time the card's own
+    // mount effect writes profileCompletionPrompts, which would otherwise
+    // re-run this memo mid-mount and immediately un-splice the card (see
+    // completionEligibilityRef's comment above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectItems, suggestedCreators, recommendedPortfolio, user?.id, connectTab]);
 
   // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -799,9 +826,12 @@ export function Home() {
   // Opportunity sequence), never the single-category or Creators/
   // Opportunity-only tabs, and never for guests.
   const swipeDeck = useMemo(() => {
-    if (filter !== 'all' || !user || deck.length === 0) return deck;
-    const completion = getProfileCompletion(user);
-    if (!isProfileCompletionDue(user, completion.nextRecommendedField)) return deck;
+    // Shares completionEligibilityRef with Connect's gate above (same
+    // "frozen once per user.id" reasoning -- the card's own mount effect
+    // mutates `user`, which must NOT retroactively flip this memo's own
+    // gate back to false mid-mount). Deliberately `user?.id`, not `user`,
+    // in the dependency array below for the same reason.
+    if (filter !== 'all' || !user || deck.length === 0 || !completionEligibilityRef.current?.due) return deck;
     const next = [...deck];
     // Insert ahead of wherever the viewer's persisted swipe position
     // already is (SwipeStack's own sessionStorage idx for this filter),
@@ -812,7 +842,8 @@ export function Home() {
     const insertAt = Math.min(Math.max(3, readPersistedIdx(filter) + 1), next.length);
     next.splice(insertAt, 0, { kind: 'profile-completion' as const });
     return next;
-  }, [deck, filter, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck, filter, user?.id]);
 
   // How many emergency items got held back from the CURRENT filter's deck
   // -- computed independently of buildDeck (which only returns the deck
