@@ -494,7 +494,12 @@ interface SwipeStackProps {
   persistKey?: string;
 }
 
-function readPersistedIdx(key: string): number {
+// Exported so Home.tsx can insert the profile-completion system card
+// AHEAD of wherever the viewer already is in a persisted deck -- a fixed
+// low insertion index would otherwise silently never be seen by anyone
+// who already swiped past that position earlier in the same session
+// (sessionStorage persists this across remounts, filter-tab switches, etc).
+export function readPersistedIdx(key: string): number {
   try { return Math.max(0, parseInt(sessionStorage.getItem(`filmons_swipe_idx_${key}`) || '0', 10) || 0); }
   catch { return 0; }
 }

@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { useFollow } from '../context/FollowContext';
 import { Listing, type Post } from '../types';
-import { SwipeStack, clearPersistedSwipeIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
+import { SwipeStack, clearPersistedSwipeIdx, readPersistedIdx, type DeckItem, type CreatorProfile, type EnrichedListing } from '../components/SwipeStack';
 import { swipeApi } from '../lib/swipeApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { setPendingReturnUrl } from '../lib/authReturnUrl';
@@ -803,7 +803,14 @@ export function Home() {
     const completion = getProfileCompletion(user);
     if (!isProfileCompletionDue(user, completion.nextRecommendedField)) return deck;
     const next = [...deck];
-    next.splice(Math.min(3, next.length), 0, { kind: 'profile-completion' as const });
+    // Insert ahead of wherever the viewer's persisted swipe position
+    // already is (SwipeStack's own sessionStorage idx for this filter),
+    // not always at a fixed index 3 -- someone who already swiped past
+    // position 3 earlier in this session would otherwise never see a
+    // card inserted there, since SwipeStack only ever renders items[idx]
+    // onward.
+    const insertAt = Math.min(Math.max(3, readPersistedIdx(filter) + 1), next.length);
+    next.splice(insertAt, 0, { kind: 'profile-completion' as const });
     return next;
   }, [deck, filter, user]);
 
