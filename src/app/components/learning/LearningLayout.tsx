@@ -13,14 +13,25 @@
 // in-Learning navigation (Course -> Lesson, Discover -> Course, etc.)
 // never replays it.
 import { useEffect, useState } from 'react';
-import { Outlet } from 'react-router';
+import { Outlet, useLocation } from 'react-router';
 import { LearningHeader } from './LearningHeader';
 import { FilmonsLearningTransition } from './FilmonsLearningTransition';
 
 const ENTERED_KEY = 'filmons_learning_entered';
 const ORIGIN_KEY = 'filmons_learning_origin';
 
+// Course Detail gets an immersive layout -- global FILMONS chrome was
+// already never mounted here (separate bundle), and per spec this
+// bundle's OWN header is hidden too, leaving just the course's own local
+// sticky header + Enroll/Continue CTA. Matches exactly `course/:courseId`
+// (useLocation().pathname is already basename-relative), not its
+// `/content` or `/lesson/:lessonId` children -- those keep the shared
+// header, only the detail page itself goes immersive.
+const COURSE_DETAIL_PATH = /^\/course\/[^/]+\/?$/;
+
 export function LearningLayout() {
+  const location = useLocation();
+  const hideHeader = COURSE_DETAIL_PATH.test(location.pathname);
   const [showStartup, setShowStartup] = useState(() => {
     try { return !sessionStorage.getItem(ENTERED_KEY) && !sessionStorage.getItem(ORIGIN_KEY); } catch { return false; }
   });
@@ -32,7 +43,7 @@ export function LearningLayout() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <LearningHeader />
+      {!hideHeader && <LearningHeader />}
       <div className="flex-1">
         <Outlet />
       </div>

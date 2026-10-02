@@ -149,7 +149,10 @@ export function CourseDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 lg:top-14 z-20 bg-white/90 backdrop-blur-sm border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+      {/* top-0 always, not lg:top-14 -- LearningLayout hides the shared
+          LearningHeader entirely on this page now, so there's no longer
+          anything above this to offset against. */}
+      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-sm border-b border-gray-100 px-4 py-3 flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
