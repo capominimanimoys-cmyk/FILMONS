@@ -36,7 +36,7 @@ import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
 import { ProfileCompletionCard } from '../components/ProfileCompletionCard';
-import { getMissingProfileFields } from '../lib/profileCompletion';
+import { getProfileCompletion, isProfileCompletionDue } from '../lib/profileCompletion';
 import { ConnectionRequestsCard } from '../components/ConnectionRequestsCard';
 import { listPendingReceived, respondToConnectionRequest, type ConnectionSummary } from '../lib/connectionsApi';
 import * as notifs from '../lib/notifications';
@@ -592,13 +592,14 @@ export function Home() {
   // onboarding interruption"). A random 2-4 computed once per mount
   // (not re-rolled every render) is "first appearance after 2-4 feed
   // items" without needing to track prior appearances' positions.
-  // sessionStorage caps it to once per session regardless of how many
-  // times Home re-mounts (switching tabs and back, etc.) -- "avoid
-  // showing multiple completion cards during the same short feed session."
+  // Eligibility is cooldown-based (isProfileCompletionDue, same 6h window
+  // BusinessIndustryPrompt.tsx uses), not a blunt once-per-session cap --
+  // that's what lets a dismissed prompt resurface later, and a newly-
+  // completed field's *next* missing field become eligible immediately
+  // (it has no timestamp of its own yet). Only on the For You tab, never
+  // Following, per spec ("Following should remain focused on actual
+  // creators the user follows").
   const completionCardIndexRef = useRef(2 + Math.floor(Math.random() * 3));
-  const [completionCardShownThisSession] = useState(() => {
-    try { return !!sessionStorage.getItem('filmons_profile_completion_shown_session'); } catch { return false; }
-  });
   const connectRenderItems = useMemo(() => {
     type RenderItem = ConnectFeedItem | { kind: 'suggested' } | { kind: 'portfolio-suggested' } | { kind: 'profile-completion' };
     const list: RenderItem[] = [...connectItems];
@@ -621,12 +622,12 @@ export function Home() {
     // appears (nearer the end) on a short feed instead of silently never
     // showing.
     const completionIdx = Math.min(completionCardIndexRef.current, list.length);
-    if (!completionCardShownThisSession && getMissingProfileFields(user).length > 0 && list.length > 0) {
+    const completion = getProfileCompletion(user);
+    if (connectTab === 'foryou' && isProfileCompletionDue(user, completion.nextRecommendedField) && list.length > 0) {
       list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
-      try { sessionStorage.setItem('filmons_profile_completion_shown_session', '1'); } catch {}
     }
     return list;
-  }, [connectItems, suggestedCreators, recommendedPortfolio, user, completionCardShownThisSession]);
+  }, [connectItems, suggestedCreators, recommendedPortfolio, user, connectTab]);
 
   // ── Connect scroll position -- survives navigating away entirely (e.g.
   // "View Portfolio" -> a creator's profile) and coming back, not just
@@ -788,6 +789,23 @@ export function Home() {
   // telling "genuinely nothing exists" apart from "you've already seen/
   // swiped everything" (see the deckDone-promotion effect below).
   const rawDeck = useMemo(() => buildDeck(rawListings, rawCreators, filter), [rawListings, rawCreators, filter]);
+
+  // Profile completion swipe card -- a separate memo (not folded into
+  // `deck` itself) so the caught-up screen, "N new listings" toast, and
+  // the Emergency preview gate above all keep counting/reading REAL
+  // listings only; this is the only thing SwipeStack's `items` prop
+  // actually uses. Only on the mixed "All"/For You deck (the one tab
+  // whose own mockup example shows a Rental → completion card →
+  // Opportunity sequence), never the single-category or Creators/
+  // Opportunity-only tabs, and never for guests.
+  const swipeDeck = useMemo(() => {
+    if (filter !== 'all' || !user || deck.length === 0) return deck;
+    const completion = getProfileCompletion(user);
+    if (!isProfileCompletionDue(user, completion.nextRecommendedField)) return deck;
+    const next = [...deck];
+    next.splice(Math.min(3, next.length), 0, { kind: 'profile-completion' as const });
+    return next;
+  }, [deck, filter, user]);
 
   // How many emergency items got held back from the CURRENT filter's deck
   // -- computed independently of buildDeck (which only returns the deck
@@ -1252,7 +1270,7 @@ export function Home() {
                     : showNewBanner ? newOpportunitiesScreen : (
                   <SwipeStack
                     key={filterKey}
-                    items={deck}
+                    items={swipeDeck}
                     persistKey={filter}
                     onDone={() => { setDeckDone(true); writeCompleted(filter, true); }}
                   />

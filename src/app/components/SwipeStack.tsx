@@ -6,7 +6,7 @@
  * doesn't advance the deck; the same card is shown again on return).
  */
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock, AlertTriangle } from 'lucide-react';
+import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock, AlertTriangle, Sparkles, CheckCircle2, Circle } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,7 @@ import { isProfessional, normalizeTier } from '../lib/reliabilityApi';
 import { swipeApi } from '../lib/swipeApi';
 import { ENTITLEMENTS } from '../lib/entitlements';
 import { getDisplayIdentity } from '../lib/displayIdentity';
+import { getProfileCompletion, PROFILE_FIELD_COPY, CORE_FIELDS } from '../lib/profileCompletion';
 
 // Guests (no account at all) get the same 10/day ceiling as Creator, but
 // there's no user_id to enforce it against server-side -- there's no
@@ -54,7 +55,8 @@ export type CreatorProfile = {
 
 export type DeckItem =
   | { kind: 'listing'; data: EnrichedListing }
-  | { kind: 'creator'; data: CreatorProfile };
+  | { kind: 'creator'; data: CreatorProfile }
+  | { kind: 'profile-completion' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SWIPE_X = 80;
@@ -202,6 +204,74 @@ function CreatorContent({ profile }: { profile: CreatorProfile }) {
   );
 }
 
+// ── Profile completion system card ──────────────────────────────────────────
+// A system recommendation card, not a real listing -- no price/badge/
+// owner/save-listing chrome, per spec. Its own buttons stopPropagation on
+// pointerDown so a tap on them never reaches SwipeCard's drag/tap-to-view
+// handler on the outer div (which otherwise treats ANY short tap anywhere
+// on the card as "onView", intercepting the click before it reaches these
+// nested buttons). Swiping the card itself (not tapping a button) still
+// works as a normal gesture -- fly() below just no-ops the favorites/
+// recordSwipe side effects for this item kind rather than disabling the
+// gesture.
+const CORE_FIELD_LABEL: Record<string, string> = {
+  identity: 'Professional identity', location: 'Location', skills: 'Skills & specialties',
+  gear: 'Gear / tools', education: 'Education & training',
+};
+
+function ProfileCompletionContent({ onNotNow }: { onNotNow: () => void }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const completion = getProfileCompletion(user);
+  const nextCopy = completion.nextRecommendedField ? PROFILE_FIELD_COPY[completion.nextRecommendedField] : null;
+
+  const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
+  const continueSetup = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (nextCopy) navigate(`/profile?edit=${nextCopy.editSection}`);
+  };
+
+  return (
+    <>
+      <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-blue-600 to-purple-600 overflow-hidden flex flex-col items-center justify-center text-center px-6">
+        <Sparkles className="w-9 h-9 text-white/90 mb-3"/>
+        <h3 className="text-xl lg:text-2xl font-black text-white mb-1.5">Complete your profile</h3>
+        <p className="text-sm text-white/80 max-w-xs leading-relaxed">Help FILMONS find gear, services and opportunities that fit what you do.</p>
+      </div>
+
+      <div className="px-4 lg:px-6 py-3.5 lg:py-5">
+        <div className="flex items-center gap-2 mb-3.5">
+          <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full rounded-full bg-blue-600" style={{ width: `${completion.percentage}%` }}/>
+          </div>
+          <span className="text-xs font-bold text-gray-500 shrink-0">{completion.percentage}% complete</span>
+        </div>
+
+        <div className="space-y-1.5 mb-4">
+          {CORE_FIELDS.map(f => {
+            const done = completion.completedFields.includes(f);
+            return (
+              <div key={f} className="flex items-center gap-2">
+                {done ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0"/> : <Circle className="w-4 h-4 text-gray-300 shrink-0"/>}
+                <span className={`text-xs font-semibold ${done ? 'text-gray-400' : 'text-gray-700'}`}>{CORE_FIELD_LABEL[f]}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <button type="button" onPointerDown={stop} onClick={continueSetup}
+          className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors">
+          Continue setup →
+        </button>
+        <button type="button" onPointerDown={stop} onClick={e => { e.stopPropagation(); onNotNow(); }}
+          className="w-full mt-2 py-2 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors">
+          Not now
+        </button>
+      </div>
+    </>
+  );
+}
+
 // ── Draggable card shell ──────────────────────────────────────────────────────
 // Drag here only ever Likes or Passes; a plain tap (no drag) acts exactly
 // like the "See Listing" button below -- same onView callback, so it never
@@ -305,7 +375,7 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
     style = { transition:'transform 0.28s ease', zIndex: 30 - stackPos * 10, touchAction:'none' };
   }
 
-  const saveLabel = item.kind === 'creator' ? 'FOLLOW' : 'LIKE';
+  const saveLabel = item.kind === 'creator' ? 'FOLLOW' : item.kind === 'profile-completion' ? 'OK' : 'LIKE';
 
   return (
     <div
@@ -327,7 +397,9 @@ function SwipeCard({ item, stackPos, isTop, exitDir, onSwipeLeft, onSwipeRight, 
       <div className="pop-in">
         {item.kind === 'listing'
           ? <ListingContent listing={item.data}/>
-          : <CreatorContent profile={item.data}/>
+          : item.kind === 'creator'
+          ? <CreatorContent profile={item.data}/>
+          : <ProfileCompletionContent onNotNow={onSwipeLeft}/>
         }
       </div>
 
@@ -508,16 +580,19 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
 
   const fly = (dir: 'L' | 'R') => {
     if (exitDir) return;
+    const item = items[idx];
     // Local count is the fast UX gate (blocks before the card even
     // animates); record-swipe below is the real, server-enforced one --
     // this can only under-block, never let a swipe through the server
-    // wouldn't also allow.
-    if (dailyLimit !== null && swipesUsed >= dailyLimit) { setShowDailyLimit(true); return; }
-    const item = items[idx];
+    // wouldn't also allow. Exempt the system card -- it's not a real
+    // browse action and must always stay dismissible regardless of the
+    // daily limit, per spec ("swipe left/right... should continue the
+    // normal queue," never blocked).
+    if (item?.kind !== 'profile-completion' && dailyLimit !== null && swipesUsed >= dailyLimit) { setShowDailyLimit(true); return; }
     setExitDir(dir);
 
     setTimeout(async () => {
-      if (dir === 'R' && user && item) {
+      if (dir === 'R' && user && item && item.kind !== 'profile-completion') {
         if (item.kind === 'listing') {
           // Trimmed shape only — matches ListingCard.tsx's handleSave.
           // Storing the full listing (images/videos arrays, sometimes
@@ -561,7 +636,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
       // is recorded too so Undo can reverse a like, not just a pass. This
       // is also the real, server-enforced daily-limit check -- the local
       // gate above is just the fast path for the common case.
-      if (user && item && (dir === 'L' || dir === 'R')) {
+      if (user && item && item.kind !== 'profile-completion' && (dir === 'L' || dir === 'R')) {
         const res = await swipeApi.recordSwipe(user.id, item.data.id, item.kind, dir === 'L' ? 'left' : 'right');
         if (res.ok) {
           // Only a confirmed write bumps the displayed count -- counting
@@ -583,7 +658,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         // else: network/server error recording the swipe -- don't count it
         // against the local daily-limit display; the `swipes` table (and
         // getTodaySwipeCount on next load) stays the source of truth.
-      } else if (!user && item && (dir === 'L' || dir === 'R')) {
+      } else if (!user && item && item.kind !== 'profile-completion' && (dir === 'L' || dir === 'R')) {
         // No account to persist against (no favorites, no swipe history) --
         // just the local guest counter, which is the whole enforcement for
         // this tier anyway (see GUEST_DAILY_LIMIT above).
@@ -646,6 +721,9 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
     return () => ro.disconnect();
   }, [idx, items.length]);
   const viewItem = (target: DeckItem) => {
+    // No detail page for a system card -- "Continue setup"/"Not now" (its
+    // own in-card buttons, stopPropagation-guarded) are its only actions.
+    if (target.kind === 'profile-completion') return;
     if (target.kind === 'listing') {
       const listing = target.data;
       // Snapshots the deck card's [data-animate-id] image (see
@@ -719,7 +797,7 @@ export function SwipeStack({ items = [], onDone, persistKey = 'default' }: Swipe
         {[...cards].reverse().map((item, rIdx) => {
           const stackPos = cards.length - 1 - rIdx;
           const isTop    = stackPos === 0;
-          const key = item.kind === 'listing' ? `l-${item.data.id}` : `c-${item.data.id}`;
+          const key = item.kind === 'listing' ? `l-${item.data.id}` : item.kind === 'creator' ? `c-${item.data.id}` : 'profile-completion';
           return (
             <SwipeCard
               key={key}

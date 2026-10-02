@@ -75,14 +75,16 @@ function hasIdentity(user: User): boolean {
 
 interface FieldDef { id: ProfileField; weight: number; complete: (user: User) => boolean }
 
-// Order = priority order (missingFields[0] is what gets prompted next).
-// Weight = contribution to the percentage; identity/skills/location/gear/
-// education (80 of 100 points total) are the "meaningful weight" fields
-// the spec calls out, the rest make up the remaining 20.
+// Order = priority order (missingFields[0] is what gets prompted next) --
+// identity, location, skills, gear, education per the Home Profile
+// Completion spec's explicit 1-5 priority list. Weight = contribution to
+// the percentage, independent of this ordering; identity/location/skills/
+// gear/education (80 of 100 points total) are the "meaningful weight"
+// fields the spec calls out, the rest make up the remaining 20.
 const FIELDS: FieldDef[] = [
   { id: 'identity', weight: 20, complete: hasIdentity },
-  { id: 'skills', weight: 15, complete: u => !!u.skills?.length },
   { id: 'location', weight: 15, complete: u => !!u.city },
+  { id: 'skills', weight: 15, complete: u => !!u.skills?.length },
   { id: 'gear', weight: 15, complete: u => !!u.gear?.length },
   { id: 'education', weight: 15, complete: u => !!u.education?.length },
   { id: 'photo', weight: 10, complete: u => !!u.avatar },
@@ -130,4 +132,27 @@ export function getProfileCompletion(user: User | null | undefined): ProfileComp
  *  getProfileCompletion's own missingFields. */
 export function getMissingProfileFields(user: User | null | undefined): ProfileField[] {
   return getProfileCompletion(user).missingFields;
+}
+
+/** The 5 "meaningful weight" fields (identity/location/skills/gear/
+ *  education) -- used by the Marketplace swipe card's checklist, which
+ *  per spec only ever shows these 5, not the bonus photo/bio/
+ *  secondaryRoles/languages fields. */
+export const CORE_FIELDS: ProfileField[] = ['identity', 'location', 'skills', 'gear', 'education'];
+
+/** Cooldown-based resurfacing, modeled directly on
+ *  BusinessIndustryPrompt.tsx's isDue()/COOLDOWN_MS -- same 6h window,
+ *  reused here instead of this morning's blunt "once ever per session"
+ *  gate. Both Home surfaces (Marketplace swipe deck, Connect feed) call
+ *  this with the SAME field's timestamp (profile_completion_prompts is
+ *  shared, not per-surface), so showing the card on one surface also
+ *  cools the other down for the same window -- satisfies "never show
+ *  large prompts back-to-back across Marketplace + Connect" without a
+ *  separate cross-surface tracker. */
+const COMPLETION_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+export function isProfileCompletionDue(user: User | null | undefined, field: ProfileField | null, cooldownMs = COMPLETION_COOLDOWN_MS): boolean {
+  if (!user || !field) return false;
+  const last = user.profileCompletionPrompts?.[field];
+  if (!last) return true;
+  return Date.now() - new Date(last).getTime() > cooldownMs;
 }
