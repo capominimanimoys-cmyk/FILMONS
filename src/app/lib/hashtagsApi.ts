@@ -53,6 +53,9 @@ export async function searchHashtags(query: string, limit = 20): Promise<Hashtag
   return data ?? [];
 }
 
+/** Real popular-hashtags fallback for the hashtag page's "no content yet"
+ *  empty state -- same function the compose-time suggestion list already
+ *  uses, never a fabricated list. */
 export async function getTopHashtags(limit = 20): Promise<Hashtag[]> {
   const { data } = await supabase.from('hashtags').select('id, tag, post_count').order('post_count', { ascending: false }).limit(limit);
   return data ?? [];

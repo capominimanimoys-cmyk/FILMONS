@@ -12,7 +12,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft, Share2, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import { getHashtagContent, getHashtagCreators, getRelatedHashtags, isHashtagFollowed, followHashtag, unfollowHashtag, type HashtagContent, type RelatedHashtag } from '../lib/hashtagsApi';
+import { getHashtagContent, getHashtagCreators, getRelatedHashtags, getTopHashtags, isHashtagFollowed, followHashtag, unfollowHashtag, type HashtagContent, type RelatedHashtag, type Hashtag } from '../lib/hashtagsApi';
+import type { Post, Listing } from '../types';
 import type { PortfolioFeedEntry, SuggestedCreator } from '../lib/portfolioApi';
 import { PostCard } from '../components/PostCard';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
@@ -44,6 +45,34 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
   return [items.filter((_, i) => i % 2 === 0), items.filter((_, i) => i % 2 === 1)];
 }
 
+// "Top" sort -- real engagement/quality signals each content type already
+// has, never a fabricated composite score. "Latest" (the default fetch
+// order from getHashtagContent) is mention recency.
+function postEngagement(p: Post): number {
+  return (p.likesCount ?? 0) + (p.commentCount ?? 0) * 2 + (p.repostCount ?? 0) * 2;
+}
+function portfolioEngagement(e: PortfolioFeedEntry): number {
+  const base = e.type === 'item' ? e.item : e.album;
+  return (base.likes_count ?? 0) + (base.comments_count ?? 0) * 2 + (base.reposts_count ?? 0) * 2;
+}
+function listingTopCompare(a: Listing, b: Listing): number {
+  return (b.boosted ? 1 : 0) - (a.boosted ? 1 : 0) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+}
+
+type SortMode = 'top' | 'latest';
+function SortToggle({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode) => void }) {
+  return (
+    <div className="flex gap-2">
+      {(['top', 'latest'] as SortMode[]).map(m => (
+        <button key={m} onClick={() => onChange(m)}
+          className={`px-3.5 py-1.5 rounded-full text-xs font-bold capitalize transition-colors ${mode === m ? 'bg-gray-900 text-white' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
+          {m}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function PortfolioEntryCard({ entry }: { entry: PortfolioFeedEntry }) {
   return entry.type === 'item'
     ? <PortfolioProjectCard entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>} />
@@ -73,14 +102,17 @@ export function HashtagPage() {
   const [marketplaceFilter, setMarketplaceFilter] = useState<MarketplaceBadge | 'all'>('all');
   const [followed, setFollowed] = useState(false);
   const [related, setRelated] = useState<RelatedHashtag[] | null>(null);
+  const [popularHashtags, setPopularHashtags] = useState<Hashtag[] | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('top');
   const { headerVisible } = useSearchChromeVisibility();
 
   useEffect(() => {
     if (!tag) return;
-    setContent(null); setCreators(null); setActiveTab('all'); setMarketplaceFilter('all'); setFollowed(false); setRelated(null);
+    setContent(null); setCreators(null); setActiveTab('all'); setMarketplaceFilter('all'); setFollowed(false); setRelated(null); setSortMode('top');
     getHashtagContent(tag, 30, user?.id).then(setContent);
     getHashtagCreators(tag, user?.id, 20).then(setCreators);
     getRelatedHashtags(tag, 10).then(setRelated);
+    getTopHashtags(10).then(hs => setPopularHashtags(hs.filter(h => h.tag !== tag)));
     if (user) isHashtagFollowed(user.id, tag).then(setFollowed);
   }, [tag, user?.id]);
 
@@ -100,11 +132,20 @@ export function HashtagPage() {
   const nothingYet = content !== null && creators !== null
     && !content.posts.length && !content.portfolio.length && !content.courses.length && !content.listings.length && !creators.length;
 
+  // "Top" previews (used for All's capped sections unconditionally, per
+  // spec: "default Top results should NOT be date-only") -- real
+  // engagement signals, computed once per content fetch.
+  const topPosts = useMemo(() => content ? [...content.posts].sort((a, b) => postEngagement(b) - postEngagement(a)) : [], [content]);
+  const topPortfolio = useMemo(() => content ? [...content.portfolio].sort((a, b) => portfolioEngagement(b) - portfolioEngagement(a)) : [], [content]);
+  const topListings = useMemo(() => content ? [...content.listings].sort(listingTopCompare) : [], [content]);
+  const topCourses = useMemo(() => content ? [...content.courses].sort((a, b) => b.studentCount - a.studentCount) : [], [content]);
+
   const filteredListings = useMemo(() => {
     if (!content) return [];
-    if (marketplaceFilter === 'all') return content.listings;
-    return content.listings.filter(l => marketplaceTypeBadgeForListing(l) === marketplaceFilter);
-  }, [content, marketplaceFilter]);
+    const base = sortMode === 'top' ? topListings : content.listings;
+    if (marketplaceFilter === 'all') return base;
+    return base.filter(l => marketplaceTypeBadgeForListing(l) === marketplaceFilter);
+  }, [content, topListings, sortMode, marketplaceFilter]);
 
   const dismissCreator = (id: string) => setCreators(cs => cs ? cs.filter(c => c.id !== id) : cs);
 
@@ -161,18 +202,46 @@ export function HashtagPage() {
         {content === null ? (
           <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Loading" /></div>
         ) : nothingYet ? (
-          <p className="text-center text-sm text-gray-400 py-16">No results for #{tag} yet.</p>
+          <div className="space-y-6">
+            <p className="text-center text-sm text-gray-400 py-8">No results for #{tag} yet.</p>
+            {!!related?.length && (
+              <div className="space-y-2.5">
+                <p className="text-sm font-black text-gray-900">Related hashtags</p>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                  {related.map(r => (
+                    <button key={r.tag} onClick={() => navigate(`/search/hashtags/${r.tag}`)}
+                      className="shrink-0 px-3.5 py-2 rounded-full bg-white border border-gray-200 text-xs font-bold text-gray-700 hover:border-gray-300 transition-colors">
+                      #{r.tag} <span className="text-gray-400 font-semibold">· {r.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!!popularHashtags?.length && (
+              <div className="space-y-2.5">
+                <p className="text-sm font-black text-gray-900">Popular hashtags</p>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                  {popularHashtags.map(h => (
+                    <button key={h.id} onClick={() => navigate(`/search/hashtags/${h.tag}`)}
+                      className="shrink-0 px-3.5 py-2 rounded-full bg-white border border-gray-200 text-xs font-bold text-gray-700 hover:border-gray-300 transition-colors">
+                      #{h.tag} <span className="text-gray-400 font-semibold">· {h.post_count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ) : activeTab === 'all' ? (
           <>
             {content.posts.length > 0 && (
               <div className="space-y-2.5">
                 <SectionHeader label="Posts" count={content.posts.length} onViewAll={content.posts.length > PREVIEW_CAP ? () => setActiveTab('posts') : undefined} />
-                <div className="space-y-3">{content.posts.slice(0, PREVIEW_CAP).map(p => <PostCard key={p.id} post={p} />)}</div>
+                <div className="space-y-3">{topPosts.slice(0, PREVIEW_CAP).map(p => <PostCard key={p.id} post={p} />)}</div>
               </div>
             )}
 
             {content.portfolio.length > 0 && (() => {
-              const [left, right] = splitTwoColumns(content.portfolio.slice(0, PREVIEW_CAP));
+              const [left, right] = splitTwoColumns(topPortfolio.slice(0, PREVIEW_CAP));
               return (
                 <div className="space-y-2.5">
                   <SectionHeader label="Portfolio" count={content.portfolio.length} onViewAll={content.portfolio.length > PREVIEW_CAP ? () => setActiveTab('portfolio') : undefined} />
@@ -187,7 +256,7 @@ export function HashtagPage() {
             {content.listings.length > 0 && (
               <div className="space-y-2.5">
                 <SectionHeader label="Marketplace" count={content.listings.length} onViewAll={content.listings.length > PREVIEW_CAP ? () => setActiveTab('marketplace') : undefined} />
-                <div className="grid grid-cols-2 gap-3">{content.listings.slice(0, PREVIEW_CAP).map(l => <ListingCard key={l.id} listing={l} />)}</div>
+                <div className="grid grid-cols-2 gap-3">{topListings.slice(0, PREVIEW_CAP).map(l => <ListingCard key={l.id} listing={l} />)}</div>
               </div>
             )}
 
@@ -195,7 +264,7 @@ export function HashtagPage() {
               <div className="space-y-2.5">
                 <SectionHeader label="Courses" count={content.courses.length} onViewAll={content.courses.length > PREVIEW_CAP ? () => setActiveTab('courses') : undefined} />
                 <div className="flex gap-3 overflow-x-auto no-scrollbar">
-                  {content.courses.slice(0, PREVIEW_CAP).map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
+                  {topCourses.slice(0, PREVIEW_CAP).map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
                 </div>
               </div>
             )}
@@ -226,37 +295,49 @@ export function HashtagPage() {
             )}
           </>
         ) : activeTab === 'posts' ? (
-          content.posts.length === 0 ? <EmptyTab label="posts" /> : (
-            <div className="space-y-3">{content.posts.map(p => <PostCard key={p.id} post={p} />)}</div>
-          )
+          <div className="space-y-3">
+            {content.posts.length > 1 && <SortToggle mode={sortMode} onChange={setSortMode} />}
+            {content.posts.length === 0 ? <EmptyTab label="posts" /> : (
+              <div className="space-y-3">{(sortMode === 'top' ? topPosts : content.posts).map(p => <PostCard key={p.id} post={p} />)}</div>
+            )}
+          </div>
         ) : activeTab === 'portfolio' ? (
-          content.portfolio.length === 0 ? <EmptyTab label="portfolio work" /> : (() => {
-            const [left, right] = splitTwoColumns(content.portfolio);
-            return (
-              <div className="grid grid-cols-2 gap-3 items-start">
-                <div className="space-y-3">{left.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
-                <div className="space-y-3">{right.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
-              </div>
-            );
-          })()
+          <div className="space-y-3">
+            {content.portfolio.length > 1 && <SortToggle mode={sortMode} onChange={setSortMode} />}
+            {content.portfolio.length === 0 ? <EmptyTab label="portfolio work" /> : (() => {
+              const [left, right] = splitTwoColumns(sortMode === 'top' ? topPortfolio : content.portfolio);
+              return (
+                <div className="grid grid-cols-2 gap-3 items-start">
+                  <div className="space-y-3">{left.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
+                  <div className="space-y-3">{right.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
+                </div>
+              );
+            })()}
+          </div>
         ) : activeTab === 'marketplace' ? (
           <div className="space-y-3">
-            <div className="flex gap-2 overflow-x-auto no-scrollbar">
-              {MARKETPLACE_SUBFILTERS.map(f => (
-                <button key={f.id} onClick={() => setMarketplaceFilter(f.id)}
-                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${marketplaceFilter === f.id ? 'bg-gray-900 text-white' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
-                  {f.label}
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {MARKETPLACE_SUBFILTERS.map(f => (
+                  <button key={f.id} onClick={() => setMarketplaceFilter(f.id)}
+                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${marketplaceFilter === f.id ? 'bg-gray-900 text-white' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {content.listings.length > 1 && <SortToggle mode={sortMode} onChange={setSortMode} />}
             </div>
             {filteredListings.length === 0 ? <EmptyTab label="marketplace listings" /> : (
               <div className="grid grid-cols-2 gap-3">{filteredListings.map(l => <ListingCard key={l.id} listing={l} />)}</div>
             )}
           </div>
         ) : activeTab === 'courses' ? (
-          content.courses.length === 0 ? <EmptyTab label="courses" /> : (
-            <div className="grid grid-cols-2 gap-3">{content.courses.map(c => <CourseCard key={c.id} course={c} />)}</div>
-          )
+          <div className="space-y-3">
+            {content.courses.length > 1 && <SortToggle mode={sortMode} onChange={setSortMode} />}
+            {content.courses.length === 0 ? <EmptyTab label="courses" /> : (
+              <div className="grid grid-cols-2 gap-3">{(sortMode === 'top' ? topCourses : content.courses).map(c => <CourseCard key={c.id} course={c} />)}</div>
+            )}
+          </div>
         ) : (
           creators === null ? (
             <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Loading" /></div>
