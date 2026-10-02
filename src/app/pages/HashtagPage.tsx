@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft, Share2, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import { getHashtagContent, getHashtagCreators, isHashtagFollowed, followHashtag, unfollowHashtag, type HashtagContent } from '../lib/hashtagsApi';
+import { getHashtagContent, getHashtagCreators, getRelatedHashtags, isHashtagFollowed, followHashtag, unfollowHashtag, type HashtagContent, type RelatedHashtag } from '../lib/hashtagsApi';
 import type { PortfolioFeedEntry, SuggestedCreator } from '../lib/portfolioApi';
 import { PostCard } from '../components/PostCard';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
@@ -72,13 +72,15 @@ export function HashtagPage() {
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [marketplaceFilter, setMarketplaceFilter] = useState<MarketplaceBadge | 'all'>('all');
   const [followed, setFollowed] = useState(false);
+  const [related, setRelated] = useState<RelatedHashtag[] | null>(null);
   const { headerVisible } = useSearchChromeVisibility();
 
   useEffect(() => {
     if (!tag) return;
-    setContent(null); setCreators(null); setActiveTab('all'); setMarketplaceFilter('all'); setFollowed(false);
+    setContent(null); setCreators(null); setActiveTab('all'); setMarketplaceFilter('all'); setFollowed(false); setRelated(null);
     getHashtagContent(tag, 30, user?.id).then(setContent);
     getHashtagCreators(tag, user?.id, 20).then(setCreators);
+    getRelatedHashtags(tag, 10).then(setRelated);
     if (user) isHashtagFollowed(user.id, tag).then(setFollowed);
   }, [tag, user?.id]);
 
@@ -204,6 +206,20 @@ export function HashtagPage() {
                 <div className="flex gap-3 overflow-x-auto no-scrollbar">
                   {creators.slice(0, PREVIEW_CAP).map(c => (
                     <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => dismissCreator(c.id)} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!!related?.length && (
+              <div className="space-y-2.5">
+                <p className="text-sm font-black text-gray-900">Related hashtags</p>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                  {related.map(r => (
+                    <button key={r.tag} onClick={() => navigate(`/search/hashtags/${r.tag}`)}
+                      className="shrink-0 px-3.5 py-2 rounded-full bg-white border border-gray-200 text-xs font-bold text-gray-700 hover:border-gray-300 transition-colors">
+                      #{r.tag} <span className="text-gray-400 font-semibold">· {r.count}</span>
+                    </button>
                   ))}
                 </div>
               </div>

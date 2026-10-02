@@ -97,6 +97,35 @@ export async function getMostRecentFollowedHashtag(userId: string): Promise<stri
   return (data as any)?.hashtags?.tag ?? null;
 }
 
+export interface RelatedHashtag { tag: string; count: number }
+
+/** Hashtags that co-occur with `tag` on the same content -- a lightweight
+ *  co-occurrence count against the existing hashtag_mentions table, no
+ *  new precomputed table. content_id is a uuid shared across every
+ *  content type's own table, practically unique across them, so matching
+ *  on it alone (without also pinning content_type) is safe here. */
+export async function getRelatedHashtags(tagInput: string, limit = 10): Promise<RelatedHashtag[]> {
+  const tag = normalizeHashtag(tagInput);
+  const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
+  if (!hashtagRow) return [];
+
+  const { data: mentions } = await supabase.from('hashtag_mentions').select('content_id').eq('hashtag_id', hashtagRow.id).limit(200);
+  const contentIds = [...new Set((mentions ?? []).map((r: any) => r.content_id))];
+  if (!contentIds.length) return [];
+
+  const { data: coMentions } = await supabase.from('hashtag_mentions').select('hashtag_id').in('content_id', contentIds).neq('hashtag_id', hashtagRow.id);
+  const rows = coMentions ?? [];
+  if (!rows.length) return [];
+
+  const counts = new Map<string, number>();
+  rows.forEach((r: any) => counts.set(r.hashtag_id, (counts.get(r.hashtag_id) ?? 0) + 1));
+  const { data: hashtagRows } = await supabase.from('hashtags').select('id, tag').in('id', [...counts.keys()]);
+  return (hashtagRows ?? [])
+    .map((h: any) => ({ tag: h.tag, count: counts.get(h.id) ?? 0 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
 /** Associate hashtag strings (no '#') with a post -- called right after
  *  post creation by the composer. Delegates to the same generic indexer
  *  everything else uses, so a post's mentions live in ONE place
