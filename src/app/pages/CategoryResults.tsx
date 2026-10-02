@@ -59,7 +59,7 @@ import {
   isRentalListing, isSaleListing, isServiceListing, isOpportunityListing, isStudioListing,
   SearchListingRow, SearchProfileRow,
 } from '../lib/filmSearch';
-import { recognizeQuery, type SearchSource } from '../lib/searchUtils';
+import { recognizeQuery, normalize, type SearchSource } from '../lib/searchUtils';
 import { matchDestinations } from '../lib/searchDestinations';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { getDisplayIdentity } from '../lib/displayIdentity';
@@ -136,12 +136,6 @@ interface NavState {
   // above) so the personalization itself carries over too, not just the
   // label.
   pageTitle?: string;
-  // "View all" from one specific Marketplace landing-page discovery row
-  // (Top listings / Latest listings / Listings nearby -- see
-  // MarketplaceDiscoveryRow in SearchOverlay.tsx) -- scopes this page's own
-  // empty-query landing (ProductDiscoveryGroups) down to that ONE list
-  // instead of showing Latest+Top+"Because you're a {role}" all together.
-  discoveryView?: 'top' | 'latest' | 'nearby';
 }
 
 interface CreatorRow {
@@ -2012,44 +2006,30 @@ async function fetchNearbyMarketplaceListings(city: string, limit: number): Prom
 }
 
 // "View all" from ONE specific landing-page discovery row (Top/Latest/
-// Nearby) -- a single flat grid of just that list, not the full
-// ProductDiscoveryGroups (Latest+Top+role all together). A real page, not
-// a capped preview row, so this fetches a much larger batch than the
-// DISCOVERY_GROUP_LIMIT-capped landing rows use.
+// Nearby) now stays on this same page and simply sets the search box to
+// one of these exact phrases (see handleViewAllDiscovery in
+// SearchOverlay.tsx) -- AllGroupedResults' own sharedMatched/
+// marketplaceUnified pipeline recognizes it and fetches via the same
+// fetchTop/Latest/NearbyMarketplaceListings below, a much larger batch
+// than the DISCOVERY_GROUP_LIMIT-capped landing rows use. No dedicated
+// view/route per section, now or for any future one -- a future section
+// just needs its own entry here plus a fetchXListings data source.
 const DISCOVERY_VIEW_PAGE_LIMIT = 60;
 
-function MarketplaceDiscoverySingleList({ view }: { view: 'top' | 'latest' | 'nearby' }) {
-  const { user } = useAuth();
-  const [listings, setListings] = useState<Listing[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setListings(null);
-    const fetcher =
-      view === 'top'    ? fetchTopMarketplaceListings(DISCOVERY_VIEW_PAGE_LIMIT) :
-      view === 'latest' ? fetchLatestMarketplaceListings(DISCOVERY_VIEW_PAGE_LIMIT) :
-      user?.city ? fetchNearbyMarketplaceListings(user.city, DISCOVERY_VIEW_PAGE_LIMIT) : Promise.resolve([]);
-    fetcher.then(r => { if (!cancelled) setListings(r); });
-    return () => { cancelled = true; };
-  }, [view, user?.city]);
-
-  if (listings === null) return <DiscoveryLoading />;
-  if (listings.length === 0) {
-    return (
-      <div className="px-4 lg:px-8 py-10 text-center">
-        <p className="text-sm font-bold text-gray-700">
-          {view === 'nearby' && !user?.city ? 'Add your city to your profile to see listings nearby.' : 'No listings found.'}
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 lg:px-8 xl:px-10">
-      {listings.map(listing => (
-        <PreviewListingCard key={listing.id} listing={listing} badge={marketplaceTypeBadgeForListing(listing)} gridMode/>
-      ))}
-    </div>
-  );
+// Deliberately exact-phrase (via normalize()), not substring -- an
+// ordinary keyword search that happens to contain "latest" or "top"
+// (e.g. "latest canon lens") must never be mistaken for this special
+// browse mode. Kept local to this file, not folded into searchUtils.ts's
+// general recognizeQuery -- this is a Marketplace-browse-specific
+// concept, not something Connect/Learning/the "All" tab should ever
+// interpret the same way.
+const DISCOVERY_QUERY_MATCH: Record<string, 'top' | 'latest' | 'nearby'> = {
+  'top listings': 'top', 'top': 'top',
+  'latest listings': 'latest', 'latest': 'latest', 'newest': 'latest',
+  'nearby': 'nearby', 'near me': 'nearby', 'listings nearby': 'nearby',
+};
+function recognizeMarketplaceDiscoveryQuery(term: string): 'top' | 'latest' | 'nearby' | null {
+  return DISCOVERY_QUERY_MATCH[normalize(term).trim()] ?? null;
 }
 
 function DiscoveryRow({ title, count, onViewAll, children }: { title: string; count: number; onViewAll?: () => void; children: React.ReactNode }) {
@@ -2073,13 +2053,14 @@ function DiscoveryRow({ title, count, onViewAll, children }: { title: string; co
   );
 }
 
-function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect' | 'learning' }) {
+function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketplace' | 'connect' | 'learning'; onSearchText?: (text: string) => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const primaryRole = user?.primaryRole?.trim() || null;
 
   const [latestListings, setLatestListings] = useState<Listing[] | null>(null);
   const [topListings, setTopListings] = useState<Listing[] | null>(null);
+  const [nearbyListings, setNearbyListings] = useState<Listing[] | null>(null);
   const [roleListings, setRoleListings] = useState<Listing[] | null>(null);
 
   const [connectDiscovery, setConnectDiscovery] = useState<ConnectDiscovery | null>(null);
@@ -2093,6 +2074,11 @@ function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect
     if (product === 'marketplace') {
       fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setLatestListings(r); });
       fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); });
+      // Hidden entirely (not a fake/empty section) when the viewer has no
+      // saved city -- same precedent as SearchOverlay's own nearbyListings.
+      if (user?.city) {
+        fetchNearbyMarketplaceListings(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyListings(r); });
+      } else setNearbyListings([]);
       if (primaryRole) {
         searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
       } else setRoleListings([]);
@@ -2109,26 +2095,31 @@ function ProductDiscoveryGroups({ product }: { product: 'marketplace' | 'connect
       } else setRoleCourses([]);
     }
     return () => { cancelled = true; };
-  }, [product, primaryRole, user?.id]);
+  }, [product, primaryRole, user?.id, user?.city]);
 
   const roleTitle = `Because you're a ${primaryRole}`;
 
   if (product === 'marketplace') {
-    const loading = latestListings === null || topListings === null || roleListings === null;
+    const loading = latestListings === null || topListings === null || nearbyListings === null || roleListings === null;
     if (loading) return <DiscoveryLoading />;
+    // Default Marketplace "All" landing -- max 5 cards per section (never
+    // more, regardless of how many were fetched), "View all" only when a
+    // 6th actually exists, tapping it sets the search box to the exact
+    // phrase recognizeMarketplaceDiscoveryQuery (above) recognizes --
+    // stays on this same page, runs through the real search pipeline,
+    // never a dedicated per-section view.
+    const section = (title: string, listings: Listing[], query: string) => listings.length > 0 && (
+      <DiscoveryRow key={title} title={title} count={listings.length}
+        onViewAll={listings.length > 5 ? () => onSearchText?.(query) : undefined}>
+        <ListingDiscoveryRow listings={listings.slice(0, 5)} />
+      </DiscoveryRow>
+    );
     return (
       <>
-        <DiscoveryRow title="Latest" count={latestListings.length}>
-          <ListingDiscoveryRow listings={latestListings} />
-        </DiscoveryRow>
-        <DiscoveryRow title="Top" count={topListings.length}>
-          <ListingDiscoveryRow listings={topListings} />
-        </DiscoveryRow>
-        {primaryRole && (
-          <DiscoveryRow title={roleTitle} count={roleListings.length}>
-            <ListingDiscoveryRow listings={roleListings} />
-          </DiscoveryRow>
-        )}
+        {section('Latest Listings', latestListings, 'Latest listings')}
+        {section('Top Listings', topListings, 'Top listings')}
+        {section('Listings Nearby', nearbyListings, 'Nearby')}
+        {primaryRole && section(roleTitle, roleListings, primaryRole)}
       </>
     );
   }
@@ -2190,15 +2181,51 @@ function DiscoveryLoading() {
 
 // Same mobile-fixed-card / desktop-fluid-card split as CategorySection's
 // listings rows above -- reusing PreviewListingCard/DesktopListingCard
-// rather than a third listing-card design.
+// rather than a third listing-card design. Desktop gets the same
+// canScrollLeft/Right + arrow-button pattern CategorySection's own
+// desktop row already uses -- shown only "when appropriate" (i.e. the
+// row actually overflows at the current viewport width; with the 5-card
+// cap this caller already applies, that's the narrower end of lg:, not
+// every desktop width).
 function ListingDiscoveryRow({ listings }: { listings: Listing[] }) {
+  const desktopScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const updateScrollState = useCallback(() => {
+    const el = desktopScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+  useEffect(() => { updateScrollState(); }, [listings, updateScrollState]);
+  const scrollByPage = (dir: 1 | -1) => {
+    desktopScrollRef.current?.scrollBy({ left: dir * (desktopScrollRef.current.clientWidth || 0), behavior: 'smooth' });
+  };
+
   return (
     <>
       <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
         {listings.map(l => <PreviewListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
       </div>
-      <div className={`hidden lg:flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}>
-        {listings.map(l => <DesktopListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
+      <div className="hidden lg:block relative">
+        <div
+          ref={desktopScrollRef} onScroll={updateScrollState}
+          className={`flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}
+        >
+          {listings.map(l => <DesktopListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
+        </div>
+        {canScrollLeft && (
+          <button onClick={() => scrollByPage(-1)} aria-label="Previous"
+            className="absolute left-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-md border border-gray-100 flex items-center justify-center text-gray-700 hover:bg-gray-50 z-10">
+            <ChevronLeft className="w-4 h-4"/>
+          </button>
+        )}
+        {canScrollRight && (
+          <button onClick={() => scrollByPage(1)} aria-label="Next"
+            className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-md border border-gray-100 flex items-center justify-center text-gray-700 hover:bg-gray-50 z-10">
+            <ChevronRight className="w-4 h-4"/>
+          </button>
+        )}
       </div>
     </>
   );
@@ -2296,9 +2323,15 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
   // slow to load. `null` while in flight, so sections can tell "no term"
   // (undefined, handled per-section) apart from "term active, still
   // loading" (null).
+  // Recognized BEFORE the shared-match effect below so that effect can
+  // skip itself entirely for a discovery phrase -- otherwise it would
+  // still fire a wasted, irrelevant searchMatchingListings("top listings")
+  // call every time, whose result nothing ever reads.
+  const discoveryIntent = product === 'marketplace' ? recognizeMarketplaceDiscoveryQuery(term ?? '') : null;
+
   const [sharedMatched, setSharedMatched] = useState<{ listings: SearchListingRow[]; creators: SearchProfileRow[] } | null>(null);
   useEffect(() => {
-    if (!term) { setSharedMatched(null); return; }
+    if (!term || discoveryIntent) { setSharedMatched(null); return; }
     let cancelled = false;
     setSharedMatched(null);
     // Marketplace intent ("camera rental"/"cinematographer jobs" arriving
@@ -2321,9 +2354,28 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
       if (!cancelled) setSharedMatched({ listings, creators });
     });
     return () => { cancelled = true; };
-  }, [term]);
+  }, [term, discoveryIntent]);
 
   const matchedFor = (cat: CategoryTab) => (term && cat !== 'emergency') ? sharedMatched : undefined;
+
+  // "Top listings"/"Latest listings"/"Nearby" typed (or set by a View All
+  // tap, see handleViewAllDiscovery/the Marketplace landing's own View All
+  // below) -- real data from the same fetchTop/Latest/NearbyMarketplaceListings
+  // the dedicated discovery rows already use, not the generic keyword
+  // matcher (which would just ilike-match the literal words "top"/
+  // "listings" and return near nothing).
+  const [discoveryListings, setDiscoveryListings] = useState<Listing[] | null>(null);
+  useEffect(() => {
+    if (!discoveryIntent) { setDiscoveryListings(null); return; }
+    let cancelled = false;
+    setDiscoveryListings(null);
+    const fetcher =
+      discoveryIntent === 'top'    ? fetchTopMarketplaceListings(DISCOVERY_VIEW_PAGE_LIMIT) :
+      discoveryIntent === 'latest' ? fetchLatestMarketplaceListings(DISCOVERY_VIEW_PAGE_LIMIT) :
+      user?.city ? fetchNearbyMarketplaceListings(user.city, DISCOVERY_VIEW_PAGE_LIMIT) : Promise.resolve([]);
+    fetcher.then(r => { if (!cancelled) setDiscoveryListings(r); });
+    return () => { cancelled = true; };
+  }, [discoveryIntent, user?.city]);
 
   // Marketplace View All -- every listing type mixed into ONE grid (per
   // spec: "Do NOT create separate sections for Rentals/Sales/Services/
@@ -2333,23 +2385,38 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
   // literal same marketplaceTypeBadge() call, so a listing's badge can
   // never disagree with which pill it's currently filtered under.
   const marketplaceUnified = useMemo((): { listing: Listing; badge: MarketplaceBadge }[] => {
-    if (product !== 'marketplace' || !sharedMatched) return [];
-    const marketplaceCats: Exclude<CategoryTab, 'creators' | 'emergency'>[] = ['rental', 'sale', 'services', 'opportunities', 'studios'];
-    let rows = sharedMatched.listings.filter(l => marketplaceCats.some(c => CATEGORY_CLASSIFIER[c](l)));
-    if (categoryFilter === 'rental')        rows = rows.filter(l => marketplaceTypeBadge(l) === 'RENTAL');
-    else if (categoryFilter === 'sale')     rows = rows.filter(l => marketplaceTypeBadge(l) === 'SALE');
-    else if (categoryFilter === 'services') rows = rows.filter(l => marketplaceTypeBadge(l) === 'SERVICE');
-    else if (categoryFilter === 'opportunities') rows = rows.filter(l => marketplaceTypeBadge(l) === 'OPPORTUNITY');
+    if (product !== 'marketplace') return [];
+
+    let base: { listing: Listing; badge: MarketplaceBadge }[];
+    if (discoveryIntent) {
+      if (!discoveryListings) return [];
+      base = discoveryListings.map(listing => ({ listing, badge: marketplaceTypeBadgeForListing(listing) }));
+    } else {
+      if (!sharedMatched) return [];
+      const marketplaceCats: Exclude<CategoryTab, 'creators' | 'emergency'>[] = ['rental', 'sale', 'services', 'opportunities', 'studios'];
+      const rows = sharedMatched.listings.filter(l => marketplaceCats.some(c => CATEGORY_CLASSIFIER[c](l)));
+      base = rows.map(row => ({ listing: mapListingRow(row), badge: marketplaceTypeBadge(row) }));
+    }
+
+    // From here, identical post-processing regardless of source -- the
+    // category pill filter compares against the already-computed `badge`
+    // (never re-derives it), so a discovery-mode listing's pill and badge
+    // can't disagree with a normal-search one's.
+    let out = base;
+    if (categoryFilter === 'rental')        out = out.filter(r => r.badge === 'RENTAL');
+    else if (categoryFilter === 'sale')     out = out.filter(r => r.badge === 'SALE');
+    else if (categoryFilter === 'services') out = out.filter(r => r.badge === 'SERVICE');
+    else if (categoryFilter === 'opportunities') out = out.filter(r => r.badge === 'OPPORTUNITY');
     const price = navState.filters?.priceRange;
-    if (price?.min != null) rows = rows.filter(l => (l.price ?? 0) >= price.min!);
-    if (price?.max != null) rows = rows.filter(l => (l.price ?? 0) <= price.max!);
+    if (price?.min != null) out = out.filter(r => (r.listing.price ?? 0) >= price.min!);
+    if (price?.max != null) out = out.filter(r => (r.listing.price ?? 0) <= price.max!);
     const loc = navState.filters?.location?.toLowerCase();
-    if (loc) rows = rows.filter(l => (l.city ?? '').toLowerCase().includes(loc));
+    if (loc) out = out.filter(r => (r.listing.city ?? '').toLowerCase().includes(loc));
     if (allSort === 'newest') {
-      rows = [...rows].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-    } // 'relevance'/'nearest' (no real distance data -- see Distance dropdown's own comment) leave the shared matcher's own ranking as-is.
-    return rows.map(row => ({ listing: mapListingRow(row), badge: marketplaceTypeBadge(row) }));
-  }, [product, sharedMatched, categoryFilter, navState.filters?.priceRange, navState.filters?.location, allSort]);
+      out = [...out].sort((a, b) => new Date(b.listing.createdAt || 0).getTime() - new Date(a.listing.createdAt || 0).getTime());
+    } // 'relevance'/'nearest' (no real distance data -- see Distance dropdown's own comment) leave the shared matcher's/fetcher's own ranking as-is.
+    return out;
+  }, [product, discoveryIntent, discoveryListings, sharedMatched, categoryFilter, navState.filters?.priceRange, navState.filters?.location, allSort]);
 
   // Client-side incremental reveal (the full set is already in memory from
   // one shared fetch, so this is a render-window, not a real paginated
@@ -2629,15 +2696,15 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
         {/* Empty search field, on one of the 3 product-scoped tabs, no
             category narrowed -- per spec, replace the usual mixed browse
             with exactly Latest / Top / "Because you're a {role}" instead
-            of showing everything. Typing anything (term becomes truthy) or
-            picking a specific category from the filter bar falls straight
-            back to the normal rendering below -- this is the ONLY branch
-            that skips it. The unscoped "All" tab (product undefined) never
-            takes this path -- see ProductDiscoveryGroups's own comment. */}
-        {product === 'marketplace' && !term && initialNavState.discoveryView ? (
-          <MarketplaceDiscoverySingleList view={initialNavState.discoveryView} />
-        ) : product && !term && categoryFilter === 'all' ? (
-          <ProductDiscoveryGroups product={product} />
+            of showing everything. Typing anything (term becomes truthy,
+            including a View All tap setting the search box to "Top
+            listings" -- see discoveryIntent above) or picking a specific
+            category from the filter bar falls straight back to the normal
+            rendering below. The unscoped "All" tab (product undefined)
+            never takes this path -- see ProductDiscoveryGroups's own
+            comment. */}
+        {product && !term && categoryFilter === 'all' ? (
+          <ProductDiscoveryGroups product={product} onSearchText={setSearchText} />
         ) : (() => {
           // Grouped under its product (Marketplace/Connect/Learning) only on
           // the unscoped /search/category/all page -- a product-scoped page
@@ -2664,7 +2731,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                     // fallback makes an in-flight search look identical to
                     // a genuinely empty one, flashing "No listings found"
                     // before the real results ever get a chance to render.
-                    sharedMatched === null ? (
+                    (discoveryIntent ? discoveryListings === null : sharedMatched === null) ? (
                       <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-gray-300 animate-spin"/></div>
                     ) : marketplaceUnified.length === 0 ? (
                       <div className="px-4 lg:px-8 py-10 text-center">
@@ -2847,7 +2914,6 @@ export function CategoryResults() {
       accountLevel: (searchParams.get('level') as AccountTier | null) || null,
     },
     pageTitle: stateNav.pageTitle,
-    discoveryView: stateNav.discoveryView,
   };
 
   if (!isAuthenticated) return null;

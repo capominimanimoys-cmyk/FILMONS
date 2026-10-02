@@ -1633,16 +1633,18 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   // Same idea as handleViewAllRole above, for the OTHER two Marketplace
   // landing-page discovery rows (Top listings / Latest listings / Listings
-  // nearby -- see topListings/latestListings/nearbyListings below). All
-  // three used to share handleViewMoreCategory('marketplace'), which lands
-  // on a blank-query page showing every discovery row again (Latest+Top+
-  // role) instead of scoping down to the ONE row the viewer actually
-  // tapped -- discoveryView (CategoryResults.tsx's NavState field) is what
-  // makes that page render just this one list.
+  // nearby -- see topListings/latestListings/nearbyListings below). Sets
+  // the destination page's search box to the exact phrase
+  // recognizeMarketplaceDiscoveryQuery (CategoryResults.tsx) matches, so
+  // it runs through the real search pipeline -- same fetchTop/Latest/
+  // NearbyMarketplaceListings data these rows themselves use -- instead
+  // of a separate dedicated view.
   const DISCOVERY_VIEW_TITLE = { top: 'Top listings', latest: 'Latest listings', nearby: 'Listings nearby' } as const;
+  const DISCOVERY_VIEW_QUERY = { top: 'Top listings', latest: 'Latest listings', nearby: 'Nearby' } as const;
   const handleViewAllDiscovery = useCallback((view: 'top' | 'latest' | 'nearby') => {
-    closeAndNavigate('/search/category/marketplace', {
-      query: '', filters, sort, discoveryView: view, pageTitle: DISCOVERY_VIEW_TITLE[view],
+    const q = DISCOVERY_VIEW_QUERY[view];
+    closeAndNavigate(`/search/category/marketplace?q=${encodeURIComponent(q)}`, {
+      query: q, filters, sort, pageTitle: DISCOVERY_VIEW_TITLE[view],
     });
   }, [closeAndNavigate, filters, sort]);
 
