@@ -665,8 +665,16 @@ export function Home() {
     // without this, this memo still runs even while Marketplace is on
     // screen (hooks always run), and could claim the one-per-session slot
     // for a surface the viewer never actually sees.
-    if (homeMode === 'portfolio' && connectTab === 'foryou' && completionEligibilityRef.current?.due
-        && !completionShownThisSession() && list.length > 0) {
+    const willInsert = homeMode === 'portfolio' && connectTab === 'foryou' && !!completionEligibilityRef.current?.due
+        && !completionShownThisSession() && list.length > 0;
+    // TEMP DEBUG -- remove once the "card not visible" report is resolved.
+    console.log('[connectRenderItems] profile-completion gate', {
+      homeMode, connectTab, listLength: list.length,
+      eligibility: completionEligibilityRef.current,
+      shownThisSession: completionShownThisSession(),
+      willInsert,
+    });
+    if (willInsert) {
       list.splice(completionIdx, 0, { kind: 'profile-completion' as const });
       markCompletionShown();
     }
@@ -869,8 +877,16 @@ export function Home() {
     // -- without this, this memo still runs while Connect is on screen
     // (hooks always run) and could claim the one-per-session slot for a
     // surface the viewer never sees.
-    if (filter === 'creators' || homeMode !== 'listings' || !user || deck.length === 0
-        || !completionEligibilityRef.current?.due || completionShownThisSession()) return deck;
+    const blocked = filter === 'creators' || homeMode !== 'listings' || !user || deck.length === 0
+        || !completionEligibilityRef.current?.due || completionShownThisSession();
+    // TEMP DEBUG -- remove once the "card not visible" report is resolved.
+    console.log('[swipeDeck] profile-completion gate', {
+      filter, homeMode, hasUser: !!user, deckLength: deck.length,
+      eligibility: completionEligibilityRef.current,
+      shownThisSession: completionShownThisSession(),
+      blocked,
+    });
+    if (blocked) return deck;
     const next = [...deck];
     // Insert ahead of wherever the viewer's persisted swipe position
     // already is (SwipeStack's own sessionStorage idx for this filter),
