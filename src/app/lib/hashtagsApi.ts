@@ -11,8 +11,9 @@
 // See supabase/migrations/20240518000000_hashtags.sql.
 import { supabase } from '../../lib/supabase';
 import { getCoursesByIds, type Course } from './coursesApi';
-import { LISTING_COLUMNS, mapListingRow } from './api';
-import type { Listing } from '../types';
+import { LISTING_COLUMNS, mapListingRow, postsApi } from './api';
+import { getPortfolioEntriesByIds, getMutualConnectionsBatch, type PortfolioFeedEntry, type SuggestedCreator } from './portfolioApi';
+import type { Listing, Post } from '../types';
 
 const HASHTAG_RE = /#([a-zA-Z0-9_]+)/g;
 
@@ -143,18 +144,9 @@ export async function getHashtag(tagInput: string): Promise<HashtagSuggestion | 
   return data ? { tag: data.tag, usageCount: data.post_count } : null;
 }
 
-export interface HashtagPost {
-  id: string; authorId: string; authorName: string; authorAvatar: string | null; authorVerified: boolean;
-  content: string; thumbnailUrl: string | null; createdAt: string;
-}
-export interface HashtagPortfolioEntry {
-  id: string; type: 'item' | 'album'; creatorId: string; creatorName: string; creatorAvatar: string | null;
-  title: string; thumbnailUrl: string | null;
-}
-
 export interface HashtagContent {
-  posts: HashtagPost[];
-  portfolio: HashtagPortfolioEntry[];
+  posts: Post[];
+  portfolio: PortfolioFeedEntry[];
   courses: Course[];
   listings: Listing[];
 }
@@ -163,8 +155,16 @@ export interface HashtagContent {
  *  indexes hashtags for (see this file's indexContentHashtags/
  *  attachHashtagsToPost call sites), and only publicly-visible rows (this
  *  is a discovery page, not gated by follow/connection like a
- *  personalized feed). */
-export async function getHashtagContent(tagInput: string, limit = 30): Promise<HashtagContent> {
+ *  personalized feed).
+ *
+ *  Per the FILMONS Hashtag Page Flow's "IMPORTANT CARD RULE" -- this page
+ *  must never invent its own lighter content shape, since every card is
+ *  rendered through Home's own real components (PostCard,
+ *  PortfolioProjectCard/PortfolioAlbumCard). So this returns the exact
+ *  same hydrated Post[]/PortfolioFeedEntry[] those components already
+ *  consume elsewhere (postsApi.getByIds, getPortfolioEntriesByIds), not a
+ *  hashtag-specific summary row. */
+export async function getHashtagContent(tagInput: string, limit = 30, viewerId?: string): Promise<HashtagContent> {
   const tag = normalizeHashtag(tagInput);
   const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
   if (!hashtagRow) return { posts: [], portfolio: [], courses: [], listings: [] };
@@ -177,16 +177,24 @@ export async function getHashtagContent(tagInput: string, limit = 30): Promise<H
   const rows = mentions ?? [];
 
   const idsFor = (type: HashtagContentType) => rows.filter(r => r.content_type === type).map(r => r.content_id);
+  const postIds = idsFor('post').slice(0, limit);
+  const itemIds = idsFor('portfolio_item').slice(0, limit);
+  const albumIds = idsFor('portfolio_album').slice(0, limit);
 
-  const [posts, items, albums, courses, listings] = await Promise.all([
-    fetchHashtagPosts(idsFor('post'), limit),
-    fetchHashtagPortfolioItems(idsFor('portfolio_item'), limit),
-    fetchHashtagPortfolioAlbums(idsFor('portfolio_album'), limit),
+  const [postsRaw, portfolioById, courses, listings] = await Promise.all([
+    postsApi.getByIds(postIds),
+    getPortfolioEntriesByIds(itemIds, albumIds, viewerId),
     getCoursesByIds(idsFor('course')),
     fetchHashtagListings(idsFor('listing'), limit),
   ]);
 
-  return { posts, portfolio: [...items, ...albums], courses, listings };
+  // Neither getByIds nor getPortfolioEntriesByIds preserve input order --
+  // re-sort back into the mention-recency order already computed above.
+  const postOrder = new Map(postIds.map((id, i) => [id, i]));
+  const posts = [...postsRaw].sort((a, b) => (postOrder.get(a.id) ?? 0) - (postOrder.get(b.id) ?? 0));
+  const portfolio = [...itemIds, ...albumIds].map(id => portfolioById.get(id)).filter((e): e is PortfolioFeedEntry => !!e);
+
+  return { posts, portfolio, courses, listings };
 }
 
 async function fetchHashtagListings(ids: string[], limit: number): Promise<Listing[]> {
@@ -197,55 +205,59 @@ async function fetchHashtagListings(ids: string[], limit: number): Promise<Listi
   return (data ?? []).map(mapListingRow);
 }
 
-async function fetchHashtagPosts(ids: string[], limit: number): Promise<HashtagPost[]> {
-  if (!ids.length) return [];
-  const { data } = await supabase.from('posts')
-    .select('id, author_id, content, media_urls, visibility, created_at')
-    .in('id', ids).eq('visibility', 'public')
-    .order('created_at', { ascending: false }).limit(limit);
-  const rows = data ?? [];
-  if (!rows.length) return [];
-  const authorIds = [...new Set(rows.map((r: any) => r.author_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url, is_verified').in('id', authorIds);
-  const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
-  return rows.map((r: any) => {
-    const p = profileMap.get(r.author_id);
-    const media = Array.isArray(r.media_urls) ? r.media_urls : [];
+const CREATOR_PROFILE_COLUMNS = 'id, name, username, avatar_url, primary_role, business_industry, account_type, secondary_roles, city, is_verified, skills';
+
+/** People tab -- creators/businesses who posted hashtagged content, in the
+ *  exact SuggestedCreator shape SuggestedConnectionCard already renders
+ *  (mutual connections included via the same batched helper Connect's own
+ *  Profiles rows use), never a new profile card. hashtag_mentions has no
+ *  author column of its own (confirmed against its schema), so this reads
+ *  each content type's own author/creator column directly -- the same
+ *  two-step content-then-author pattern getHashtagContent's own fetchers
+ *  already use for Portfolio. */
+export async function getHashtagCreators(tagInput: string, viewerId?: string, limit = 20): Promise<SuggestedCreator[]> {
+  const tag = normalizeHashtag(tagInput);
+  const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
+  if (!hashtagRow) return [];
+
+  const { data: mentions } = await supabase.from('hashtag_mentions')
+    .select('content_type, content_id')
+    .eq('hashtag_id', hashtagRow.id)
+    .limit(400);
+  const rows = mentions ?? [];
+  const idsFor = (type: HashtagContentType) => rows.filter(r => r.content_type === type).map(r => r.content_id);
+
+  const [postRows, itemRows, albumRows, courseRows, listingRows] = await Promise.all([
+    idsFor('post').length ? supabase.from('posts').select('author_id').in('id', idsFor('post')).eq('visibility', 'public') : Promise.resolve({ data: [] as any[] }),
+    idsFor('portfolio_item').length ? supabase.from('portfolio_items').select('user_id').in('id', idsFor('portfolio_item')) : Promise.resolve({ data: [] as any[] }),
+    idsFor('portfolio_album').length ? supabase.from('portfolio_albums').select('user_id').in('id', idsFor('portfolio_album')).eq('visibility', 'public') : Promise.resolve({ data: [] as any[] }),
+    idsFor('course').length ? supabase.from('courses').select('instructor_id').in('id', idsFor('course')) : Promise.resolve({ data: [] as any[] }),
+    idsFor('listing').length ? supabase.from('listings').select('user_id').in('id', idsFor('listing')).eq('is_active', true) : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const creatorIds = [...new Set([
+    ...(postRows.data ?? []).map((r: any) => r.author_id),
+    ...(itemRows.data ?? []).map((r: any) => r.user_id),
+    ...(albumRows.data ?? []).map((r: any) => r.user_id),
+    ...(courseRows.data ?? []).map((r: any) => r.instructor_id),
+    ...(listingRows.data ?? []).map((r: any) => r.user_id),
+  ])].filter((id): id is string => !!id && id !== viewerId);
+  if (!creatorIds.length) return [];
+
+  const [{ data: profiles }, mutuals] = await Promise.all([
+    supabase.from('profiles').select(CREATOR_PROFILE_COLUMNS).in('id', creatorIds).not('name', 'is', null).limit(limit * 2),
+    viewerId ? getMutualConnectionsBatch(viewerId, creatorIds) : Promise.resolve(new Map()),
+  ]);
+
+  const ranked = [...(profiles ?? [])].sort((a: any, b: any) =>
+    (mutuals.get(b.id)?.count ?? 0) - (mutuals.get(a.id)?.count ?? 0) || (b.is_verified ? 1 : 0) - (a.is_verified ? 1 : 0));
+
+  return ranked.slice(0, limit).map((p: any) => {
+    const m = mutuals.get(p.id);
     return {
-      id: r.id, authorId: r.author_id, authorName: p?.name ?? 'Filmons user', authorAvatar: p?.avatar_url ?? null,
-      authorVerified: !!p?.is_verified, content: r.content ?? '', thumbnailUrl: media[0] ?? null, createdAt: r.created_at,
-    };
-  });
-}
-
-async function fetchHashtagPortfolioItems(ids: string[], limit: number): Promise<HashtagPortfolioEntry[]> {
-  if (!ids.length) return [];
-  const { data } = await supabase.from('portfolio_items')
-    .select('id, user_id, title, media_url, thumbnail_url, visibility, created_at')
-    .in('id', ids).order('created_at', { ascending: false }).limit(limit);
-  const rows = (data ?? []).filter((r: any) => !r.visibility || r.visibility === 'public');
-  return attachCreatorsToPortfolioRows(rows, 'item');
-}
-
-async function fetchHashtagPortfolioAlbums(ids: string[], limit: number): Promise<HashtagPortfolioEntry[]> {
-  if (!ids.length) return [];
-  const { data } = await supabase.from('portfolio_albums')
-    .select('id, user_id, title, cover_url, visibility, created_at')
-    .in('id', ids).order('created_at', { ascending: false }).limit(limit);
-  const rows = (data ?? []).filter((r: any) => !r.visibility || r.visibility === 'public');
-  return attachCreatorsToPortfolioRows(rows, 'album');
-}
-
-async function attachCreatorsToPortfolioRows(rows: any[], type: 'item' | 'album'): Promise<HashtagPortfolioEntry[]> {
-  if (!rows.length) return [];
-  const userIds = [...new Set(rows.map(r => r.user_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url').in('id', userIds);
-  const map = new Map((profiles ?? []).map((p: any) => [p.id, p]));
-  return rows.map(r => {
-    const p = map.get(r.user_id);
-    return {
-      id: r.id, type, creatorId: r.user_id, creatorName: p?.name ?? 'Filmons user', creatorAvatar: p?.avatar_url ?? null,
-      title: r.title, thumbnailUrl: r.thumbnail_url || r.media_url || r.cover_url || null,
+      id: p.id, name: p.name, username: p.username, avatar_url: p.avatar_url,
+      primary_role: p.primary_role, business_industry: p.business_industry, account_type: p.account_type,
+      secondary_roles: p.secondary_roles ?? [], city: p.city, is_verified: !!p.is_verified, skills: p.skills ?? [],
+      mutualCount: m?.count ?? 0, mutualAvatars: m?.avatars ?? [],
     };
   });
 }

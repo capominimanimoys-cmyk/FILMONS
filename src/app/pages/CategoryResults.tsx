@@ -194,7 +194,7 @@ const CATEGORY_CLASSIFIER: Record<Exclude<CategoryTab, 'creators' | 'emergency'>
 // type (same precedent as SearchOverlay.tsx's own listingTypeBadge: a
 // Studio listing falls back to RENTAL/SALE by listingMode), so every
 // listing lands on exactly one of the 4 badges the spec's pills use.
-type MarketplaceBadge = 'RENTAL' | 'SALE' | 'SERVICE' | 'OPPORTUNITY';
+export type MarketplaceBadge = 'RENTAL' | 'SALE' | 'SERVICE' | 'OPPORTUNITY';
 const MARKETPLACE_BADGE_STYLE: Record<MarketplaceBadge, string> = {
   RENTAL: 'bg-blue-600', SALE: 'bg-emerald-600', SERVICE: 'bg-teal-600', OPPORTUNITY: 'bg-purple-600',
 };
@@ -215,7 +215,7 @@ function marketplaceTypeBadge(l: SearchListingRow): MarketplaceBadge {
 // Marketplace landing's Top/Latest/Nearby/role rows, which mix every
 // marketplace type together with no per-section category to fall back on,
 // unlike CategorySection's single-category sectionBadge).
-function marketplaceTypeBadgeForListing(l: Listing): MarketplaceBadge {
+export function marketplaceTypeBadgeForListing(l: Listing): MarketplaceBadge {
   if (l.listingType === 'opportunity') return 'OPPORTUNITY';
   if (l.listingType === 'service') return 'SERVICE';
   return l.listingMode === 'sale' ? 'SALE' : 'RENTAL';
