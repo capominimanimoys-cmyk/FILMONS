@@ -38,6 +38,7 @@ import { PortfolioYouMayLikeRow } from '../components/PortfolioYouMayLikeRow';
 import { ProfileCompletionCard } from '../components/ProfileCompletionCard';
 import { getProfileCompletion, isProfileCompletionDue, PROFILE_FIELD_COPY } from '../lib/profileCompletion';
 import { ConnectionRequestsCard } from '../components/ConnectionRequestsCard';
+import { HomeWorkCards } from '../components/work/WorkSections';
 import { listPendingReceived, respondToConnectionRequest, type ConnectionSummary } from '../lib/connectionsApi';
 import * as notifs from '../lib/notifications';
 import { BottomSheet } from '../components/BottomSheet';
@@ -1499,6 +1500,7 @@ export function Home() {
                   transition: 'padding-bottom 280ms ease-out',
                 }}
               >
+                <HomeWorkCards />
                 <ConnectionRequestsCard
                   requests={pendingConnectionRequests}
                   onAccept={acceptConnectionRequest}
@@ -1635,6 +1637,7 @@ export function Home() {
               </div>
             </div>
 
+            <div className="mb-4 empty:hidden"><HomeWorkCards /></div>
             {pendingConnectionRequests.length > 0 && (
               <div className="mb-4">
                 <ConnectionRequestsCard

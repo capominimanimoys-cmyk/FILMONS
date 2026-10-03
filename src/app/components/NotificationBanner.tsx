@@ -35,6 +35,10 @@ const PRIORITY: Record<string, 'high' | 'medium' | 'low'> = {
   booking_rejected:      'high',
   payment_received:      'high',
   payment_released:      'high',
+  work_submitted:        'high',
+  work_approved:         'high',
+  work_payment_available:'high',
+  work_approval_reminder:'medium',
   application_received:  'high',
   application_accepted:  'high',
   application_rejected:  'high',
@@ -223,7 +227,9 @@ function BannerRenderer({ item, compact, onDismiss }: {
     dismiss();
     if (user?.id) notifStore.markRead(user.id, primary.id);
     const isMsg = ['message', 'new_message', 'message_received', 'message_reply'].includes(primary.type);
-    if (isMsg) {
+    if (primary.applicationId && primary.type.startsWith('work_')) {
+      navigate(`/work/${primary.applicationId}`);
+    } else if (isMsg) {
       navigate(primary.conversationId
         ? `/inbox?conv=${primary.conversationId}&with=${primary.fromUserId}`
         : `/inbox?with=${primary.fromUserId}`);
@@ -507,6 +513,15 @@ function bannerCfg(n: Notification): {
       return { gradient: 'from-emerald-500 to-green-600', Icon: DollarSign,     action: '',                            title: '💰 Payment Received', emoji: '💰', rich: true,  barColor: '#10b981,#16a34a' };
     case 'payment_released':
       return { gradient: 'from-green-500 to-teal-500',    Icon: DollarSign,     action: '',                            title: '💰 Payment Released', emoji: '💰', rich: true,  barColor: '#22c55e,#14b8a6' };
+    // Paid Opportunity work approval
+    case 'work_submitted':
+      return { gradient: 'from-amber-400 to-orange-500',  Icon: CheckCircle,    action: 'marked their work as submitted. Review and approve.', title: 'Work submitted', emoji: '📋', rich: false, barColor: '#fbbf24,#f97316' };
+    case 'work_approval_reminder':
+      return { gradient: 'from-amber-400 to-orange-500',  Icon: Bell,           action: 'is waiting for you to approve their work', title: 'Approval reminder', emoji: '⏰', rich: false, barColor: '#fbbf24,#f97316' };
+    case 'work_approved':
+      return { gradient: 'from-indigo-500 to-blue-600',   Icon: CheckCircle,    action: 'approved your work',          title: 'Work approved',       emoji: '✅', rich: false, barColor: '#6366f1,#2563eb' };
+    case 'work_payment_available':
+      return { gradient: 'from-green-500 to-emerald-600', Icon: DollarSign,     action: 'moved your earnings to your FILMONS wallet', title: 'Earnings available', emoji: '💰', rich: false, barColor: '#22c55e,#059669' };
     // System
     case 'account_verified':
       return { gradient: 'from-blue-500 to-indigo-600',   Icon: CheckCircle,    action: '',                            title: '✅ Account Verified',  emoji: '✅', rich: true,  barColor: '#3b82f6,#4f46e5' };

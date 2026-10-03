@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase';
 import { Listing, User } from '../types';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { BottomSheet } from '../components/BottomSheet';
+import { WorkRecordInline } from '../components/work/WorkSections';
 
 type Row = OpportunityApplicationRow & { profile: User | null };
 type TabKey = 'all' | 'new' | 'shortlisted' | 'accepted' | 'closed';
@@ -397,6 +398,10 @@ function ApplicantRow({ a, active, bulkMode, checked, onToggleBulk, onOpen, onMe
         {a.resume_url && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Resume ✓</span>}
         {a.expected_rate && <span className="text-[10px] font-semibold text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">{a.expected_rate}</span>}
       </div>
+      {/* Each hired applicant is its own work record with its own approval controls. */}
+      {(a.status === 'hired' || a.status === 'completed') && (
+        <div onClick={e => e.stopPropagation()}><WorkRecordInline applicationId={a.id} /></div>
+      )}
       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
         <button onClick={onMessage} className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1.5 rounded-full"><MessageCircle className="w-3 h-3" /> Message</button>
         {nonTerminal && a.status !== 'shortlisted' && <button onClick={onShortlist} className="flex-1 text-xs font-semibold text-purple-700 bg-purple-50 px-2.5 py-1.5 rounded-full">Shortlist</button>}
@@ -542,10 +547,7 @@ function ApplicantDetail({ a, listing, onBack, showBack, onMessage, onShortlist,
               </>
             )}
             {(a.status === 'hired' || a.status === 'completed') && (
-              <>
-                <span className="flex-1 py-2.5 rounded-xl bg-green-50 text-green-700 text-sm font-bold text-center">{badge.label}</span>
-                <button onClick={onMessage} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">Message</button>
-              </>
+              <div className="flex-1 min-w-0"><WorkRecordInline applicationId={a.id} /></div>
             )}
             {(a.status === 'rejected' || a.status === 'withdrawn') && (
               <span className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-bold text-center">{badge.label}</span>

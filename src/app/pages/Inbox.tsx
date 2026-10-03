@@ -12,6 +12,7 @@ import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { useMinVisibleLoading } from '../lib/useMinVisibleLoading';
 import { ApplicationCardBubble, SystemMessageDivider } from '../components/ApplicationCardBubble';
+import { ConversationWorkBanner } from '../components/work/WorkSections';
 import { HireRequestCardBubble } from '../components/HireRequestCardBubble';
 import { applicationApi } from '../lib/applicationApi';
 import { toast } from 'sonner';
@@ -3208,6 +3209,9 @@ export function Inbox() {
                   )}
                 </div>
               )}
+
+              {/* Paid opportunity work banner(s) for this pair of users */}
+              <ConversationWorkBanner conversationId={activeConv.id} otherUserId={otherUserId} />
 
               {/* Pinned messages banner */}
               {pinnedMsgs.length > 0 && (

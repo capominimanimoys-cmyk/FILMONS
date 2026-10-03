@@ -15,6 +15,7 @@
 // fn_release_pending_earnings itself refuses to release anything still
 // flagged payout_availability_status = 'pending', regardless of date.
 import { fetchStripeAvailability, fetchBalanceTransaction } from '../_shared/stripeBalanceAvailability.ts';
+import { releaseOpportunityEarning } from '../_shared/opportunityRelease.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -78,6 +79,9 @@ async function selectOne(table: string, filter: string) {
   const rows = await res.json();
   return Array.isArray(rows) ? rows[0] : null;
 }
+async function deleteNotifications(filter: string) {
+  await fetch(rest(`/notifications?${filter}`), { method: 'DELETE', headers: { ...H, Prefer: 'return=minimal' } }).catch(() => {});
+}
 async function insertNotification(row: Record<string, unknown>) {
   await fetch(rest('/notifications'), { method: 'POST', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ is_read: false, ...row }) }).catch(() => {});
 }
@@ -101,15 +105,46 @@ async function sendEmail(toEmail: string | null | undefined, toName: string | nu
   } catch (e) { console.warn('Auto-release email threw:', e); }
 }
 
+// Auto-approval only ever happens under the explicit opportunity_payment_config
+// policy (auto_approval_enabled + auto_release_days). Each auto-approved
+// record goes through the same provider release step as a manual approval.
 async function notifyOpportunityReleased(rows: any[]) {
+  for (const r of rows) {
+    const releaseStatus = await releaseOpportunityEarning(r.order_id);
+    const listing = await selectOne('listings', `id=eq.${r.listing_id}`);
+    const app = await selectOne('opportunity_applications', `id=eq.${r.application_id}`);
+    const title = listing?.title || 'your opportunity';
+    await deleteNotifications(`user_id=eq.${r.owner_id}&application_id=eq.${r.application_id}&type=in.(work_submitted,work_approval_reminder)`);
+    await insertNotification({
+      user_id: r.worker_id, actor_id: null, actor_name: 'Filmons', type: 'work_approved',
+      title: releaseStatus === 'available'
+        ? `Your work for ${title} was approved automatically. $${Number(r.net_amount).toFixed(2)} is available in your FILMONS wallet.`
+        : `Your work for ${title} was approved automatically. Payment processing.`,
+      application_id: r.application_id, listing_id: r.listing_id, conversation_id: app?.conversation_id || null,
+    });
+    await insertNotification({
+      user_id: r.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification',
+      title: `Work for ${title} was approved automatically under the FILMONS approval policy`,
+      application_id: r.application_id, listing_id: r.listing_id, conversation_id: app?.conversation_id || null,
+    });
+  }
+}
+// Fires once per work record when its earning actually becomes
+// withdrawable, whichever path released it.
+async function notifyOpportunityAvailable(rows: any[]) {
   for (const r of rows) {
     const listing = await selectOne('listings', `id=eq.${r.listing_id}`);
     const worker = await selectOne('profiles', `id=eq.${r.worker_id}`);
+    const app = await selectOne('opportunity_applications', `id=eq.${r.application_id}`);
     const title = listing?.title || 'your opportunity';
-    await insertNotification({ user_id: r.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_released', title: `$${Number(r.net_amount).toFixed(2)} from ${title} is now available` });
-    await insertNotification({ user_id: r.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Funds for ${title} were automatically released` });
-    sendEmail(worker?.email, worker?.name, 'Funds released — FILMONS',
-      `$${Number(r.net_amount).toFixed(2)} CAD from "${title}" is now available in your Filmons Wallet.\n\nThis was released automatically after the owner didn't confirm or report an issue within the review window.`,
+    const net = Number(r.net_amount).toFixed(2);
+    await insertNotification({
+      user_id: r.worker_id, actor_id: null, actor_name: 'Filmons', type: 'work_payment_available',
+      title: `$${net} from ${title} is available in your FILMONS wallet`,
+      application_id: r.application_id, listing_id: r.listing_id, conversation_id: app?.conversation_id || null,
+    });
+    sendEmail(worker?.email, worker?.name, 'Earnings available — FILMONS',
+      `$${net} CAD from "${title}" is now available in your FILMONS wallet and can be withdrawn.`,
     ).catch(() => {});
   }
 }
@@ -127,9 +162,25 @@ async function notifyHireReleased(rows: any[]) {
 }
 async function notifyOpportunityReminders(rows: any[]) {
   for (const r of rows) {
-    const listing = await selectOne('listings', `id=eq.${r.listing_id}`);
+    const [listing, worker, app] = await Promise.all([
+      selectOne('listings', `id=eq.${r.listing_id}`),
+      selectOne('profiles', `id=eq.${r.worker_id}`),
+      selectOne('opportunity_applications', `id=eq.${r.application_id}`),
+    ]);
     const title = listing?.title || 'your opportunity';
-    await insertNotification({ user_id: r.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Confirm completion for ${title} — funds release automatically in ${r.days_left} day` });
+    const name = worker?.name || 'Your applicant';
+    let suffix = '';
+    if (r.auto_release_at) {
+      const days = Math.max(0, Math.ceil((new Date(r.auto_release_at).getTime() - Date.now()) / 86_400_000));
+      suffix = days > 0
+        ? ` Under the FILMONS approval policy it will be approved automatically in ${days} day${days === 1 ? '' : 's'}.`
+        : ' Under the FILMONS approval policy it will be approved automatically soon.';
+    }
+    await insertNotification({
+      user_id: r.owner_id, actor_id: r.worker_id, actor_name: name, type: 'work_approval_reminder',
+      title: `Reminder: ${name} is waiting for you to approve their work on ${title}.${suffix}`,
+      application_id: r.application_id, listing_id: r.listing_id, conversation_id: app?.conversation_id || null,
+    });
   }
 }
 async function notifyHireReminders(rows: any[]) {
@@ -151,15 +202,22 @@ Deno.serve(async (req) => {
 
     const released = await rpc('fn_release_pending_earnings');
 
-    const [oppReleased, hireReleased, oppReminders, hireReminders] = await Promise.all([
-      rpc('fn_auto_release_opportunity_payments'),
+    // Auto-approval runs before reminders so a record approved this tick
+    // never also gets an "awaiting approval" reminder.
+    const oppReleased = await rpc('fn_auto_release_opportunity_payments');
+    const [hireReleased, oppReminders, hireReminders] = await Promise.all([
       rpc('fn_auto_release_hire_payments'),
-      rpc('fn_opportunity_auto_release_reminders'),
+      rpc('fn_opportunity_approval_reminders'),
       rpc('fn_hire_auto_release_reminders'),
     ]);
 
+    // After auto-approval + its immediate release attempt, so a record
+    // released this tick is announced in the same run.
+    await notifyOpportunityReleased(oppReleased);
+    const oppAvailable = await rpc('fn_claim_opportunity_available_notifications');
+
     await Promise.all([
-      notifyOpportunityReleased(oppReleased),
+      notifyOpportunityAvailable(oppAvailable),
       notifyHireReleased(hireReleased),
       notifyOpportunityReminders(oppReminders),
       notifyHireReminders(hireReminders),
@@ -168,6 +226,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: true, released, stripeSync,
       autoReleased: { opportunity: oppReleased.length, hire: hireReleased.length },
+      opportunityAvailable: oppAvailable.length,
       reminders: { opportunity: oppReminders.length, hire: hireReminders.length },
     }), { headers: { ...cors, 'Content-Type': 'application/json' } });
   } catch (e) {

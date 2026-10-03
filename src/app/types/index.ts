@@ -484,6 +484,8 @@ export type NotificationType =
   // Applications
   | 'application_received' | 'application_accepted' | 'application_rejected'
   | 'application_shortlisted' | 'application_withdrawn'
+  // Paid Opportunity work approval
+  | 'work_submitted' | 'work_approval_reminder' | 'work_approved' | 'work_payment_available'
   // Messages
   | 'message' | 'new_message' | 'message_received' | 'message_reply' | 'message_reaction'
   // Marketplace
@@ -544,6 +546,10 @@ export interface Notification {
   // server-side as more people view the same unread batch, rather than a
   // new notification per viewer.
   viewCount?: number;
+  // Paid Opportunity work records -- opens /work/:applicationId.
+  applicationId?: string;
+  // Server-written headline (notifications.title), when the row has one.
+  title?: string;
   // Meta
   read: boolean;
   readAt?: string;

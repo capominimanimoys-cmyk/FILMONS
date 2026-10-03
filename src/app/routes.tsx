@@ -77,6 +77,7 @@ import { ListingShareCard }   from './pages/ListingShareCard';
 import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
 import { CreateOpportunity } from './pages/CreateOpportunity';
 import { OpportunityApplicants } from './pages/OpportunityApplicants';
+import { WorkRecord } from './pages/WorkRecord';
 import { LikedItems } from './pages/LikedItems';
 import { SavedLikedPosts } from './pages/SavedLikedPosts';
 
@@ -130,6 +131,7 @@ export const router = createBrowserRouter([
       { path: 'listing/:id', Component: ListingDetail },
       { path: 'listing/:id/share-card', Component: ListingShareCard },
       { path: 'listing/:id/applicants', Component: OpportunityApplicants },
+      { path: 'work/:applicationId', Component: WorkRecord },
       { path: 'listing/:id/emergency', Component: EmergencyListingFlow },
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,

@@ -351,20 +351,20 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               id: crypto.randomUUID(), conversation_id: app.conversation_id, sender_id: 'system', sender_name: 'Filmons',
               content: null, type: 'system',
-              metadata: { systemText: `Payment secured ✓ — $${netAmount.toFixed(2)} is held for the creator and becomes available once the opportunity is confirmed complete.` },
+              metadata: { systemText: `Payment confirmed ✓ — work in progress. $${netAmount.toFixed(2)} stays pending until the client approves the submitted work.` },
               created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_deleted: false, is_pinned: false,
             }),
           }).catch(() => {});
         }
-        await insertNotification({ user_id: meta.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Payment secured ✓ — held for creator on ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
-        await insertNotification({ user_id: meta.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `$${netAmount.toFixed(2)} on hold for ${meta.listing_title || 'your opportunity'}`, conversation_id: app?.conversation_id || null, is_read: false });
+        await insertNotification({ user_id: meta.owner_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', title: `Payment confirmed for ${meta.listing_title || 'your opportunity'} — work in progress`, conversation_id: app?.conversation_id || null, application_id: meta.application_id || null, listing_id: meta.listing_id || null, is_read: false });
+        await insertNotification({ user_id: meta.worker_id, actor_id: null, actor_name: 'Filmons', type: 'payment_received', title: `Payment confirmed for ${meta.listing_title || 'your opportunity'} — work in progress. Mark your work as submitted once you've delivered it.`, conversation_id: app?.conversation_id || null, application_id: meta.application_id || null, listing_id: meta.listing_id || null, is_read: false });
 
         const workerProfile = await selectOne('profiles', `id=eq.${meta.worker_id}`);
         if (workerProfile?.email) {
           sendGenericNotificationEmail(
             workerProfile.email, workerProfile.name,
             'Payment secured — you can start your FILMONS opportunity',
-            `Your opportunity is officially confirmed!\n\nPayment for "${meta.listing_title || 'your opportunity'}" has been successfully secured.\n\nService Amount: $${netAmount.toFixed(2)} CAD\nPayment: Secured\nWallet Status: On Hold\n\nThe full service amount is now shown in your Filmons Wallet as On Hold. Complete the agreed work and mark it complete when finished — funds move to Available once the owner confirms completion.`,
+            `Your opportunity is officially confirmed!\n\nPayment for "${meta.listing_title || 'your opportunity'}" has been successfully secured.\n\nService Amount: $${netAmount.toFixed(2)} CAD\nStatus: Work in progress\nPayment: Pending until the client approves your work\n\nDeliver the agreed work however you've arranged with the client — you don't need to upload files to FILMONS. When it's delivered, tap "Mark work as submitted". Your payment is released once the client approves.`,
           ).catch(() => {});
         }
       }

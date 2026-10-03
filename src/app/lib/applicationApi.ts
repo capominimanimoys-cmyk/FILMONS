@@ -37,7 +37,10 @@ export interface OpportunityApplicationRow {
   conversation_id?: string | null;
 }
 
-async function call(action: string, body: Record<string, unknown>): Promise<{ success?: boolean; error?: string; application?: OpportunityApplicationRow; results?: any[] }> {
+async function call(action: string, body: Record<string, unknown>): Promise<{
+  success?: boolean; error?: string; application?: OpportunityApplicationRow; results?: any[];
+  transaction?: OpportunityTransactionRow | null; duplicate?: boolean;
+}> {
   const res = await fetch(`https://${projectId}.supabase.co/functions/v1/manage-application`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
@@ -64,8 +67,10 @@ export const applicationApi = {
   // Paid Opportunity hire/fund/completion flow.
   sendOffer: (applicationId: string, userId: string) => call('send_offer', { applicationId, userId }),
   respondOffer: (applicationId: string, userId: string, decision: 'accept' | 'decline') => call('respond_offer', { applicationId, userId, decision }),
-  markWorkCompleted: (applicationId: string, userId: string) => call('mark_work_completed', { applicationId, userId }),
-  confirmCompletion: (applicationId: string, userId: string) => call('confirm_completion', { applicationId, userId }),
+  // Work approval flow — use workApi.submitWork/approveWork from UI code so
+  // every surface's shared state updates together.
+  submitWork: (applicationId: string, userId: string) => call('submit_work', { applicationId, userId }),
+  approveWork: (applicationId: string, userId: string) => call('approve_work', { applicationId, userId }),
   reportProblem: (applicationId: string, userId: string) => call('report_problem', { applicationId, userId }),
 };
 
@@ -88,6 +93,10 @@ export interface OpportunityTransactionRow {
   hold_released_at: string | null;
   payment_status: 'pending' | 'funded' | 'completed' | 'refunded' | 'cancelled';
   work_status: 'in_progress' | 'marked_complete_by_worker' | 'completed';
+  release_status?: 'held' | 'processing' | 'available';
+  marked_complete_at?: string | null;
+  approved_at?: string | null;
+  approval_method?: 'client' | 'auto' | null;
   funded_at: string | null;
   completed_at: string | null;
 }

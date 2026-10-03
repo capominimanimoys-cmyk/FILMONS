@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, ElementType, MouseEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, ElementType, MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Bell, Heart, MessageCircle, UserPlus, DollarSign,
@@ -15,6 +15,7 @@ import { Notification, User } from '../types';
 import { authApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { respondToConnectionRequest } from '../lib/connectionsApi';
+import { useWorkRecords, getWorkStage } from '../lib/workApi';
 import { toast } from 'sonner';
 
 // ── Time helper ───────────────────────────────────────────────────────────────
@@ -27,10 +28,13 @@ function timeAgo(d: string) {
   return new Date(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
 }
 
+// Paid Opportunity work approval -- all open the work record (/work/:applicationId).
+const WORK_TYPES = ['work_submitted', 'work_approval_reminder', 'work_approved', 'work_payment_available'];
+
 // ── Priority sort ─────────────────────────────────────────────────────────────
 function priorityOf(type: string): number {
   if (['message','new_message','message_received','message_reply','message_reaction'].includes(type)) return 0;
-  if (['payment_received','payment_released'].includes(type)) return 1;
+  if (['payment_received','payment_released',...WORK_TYPES].includes(type)) return 1;
   if (['service_booked','booking_accepted','booking_rejected','marketplace_order','marketplace_booking'].includes(type)) return 2;
   if (['application_received','application_shortlisted','application_accepted','application_rejected'].includes(type)) return 3;
   if (['connection_request','follow_request','connection_accepted','follow_accepted','new_follower'].includes(type)) return 4;
@@ -199,6 +203,14 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Zap,           gradient: 'from-emerald-500 to-green-600',   iconColor: 'text-white', ringColor: 'ring-emerald-100', label: () => 'Payment received' };
     case 'payment_released':
       return { icon: Zap,           gradient: 'from-green-500 to-teal-500',      iconColor: 'text-white', ringColor: 'ring-green-100',   label: () => 'Your payment has been released' };
+    case 'work_submitted':
+      return { icon: Check,         gradient: 'from-amber-400 to-orange-500',    iconColor: 'text-white', ringColor: 'ring-amber-100',   label: () => 'marked their work as submitted. Review and approve.' };
+    case 'work_approval_reminder':
+      return { icon: Bell,          gradient: 'from-amber-400 to-orange-500',    iconColor: 'text-white', ringColor: 'ring-amber-100',   label: (n) => n.title || 'Work is waiting for your approval' };
+    case 'work_approved':
+      return { icon: PartyPopper,   gradient: 'from-indigo-500 to-blue-600',     iconColor: 'text-white', ringColor: 'ring-indigo-100',  label: (n) => n.title || 'Your work was approved' };
+    case 'work_payment_available':
+      return { icon: Zap,           gradient: 'from-green-500 to-emerald-600',   iconColor: 'text-white', ringColor: 'ring-green-100',   label: (n) => n.title || 'Your earnings are available in your FILMONS wallet' };
     case 'payout_requested':
       return { icon: Zap,           gradient: 'from-blue-400 to-indigo-500',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your payout request was received' };
     case 'payout_approved':
@@ -235,7 +247,7 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Bell,          gradient: 'from-red-500 to-rose-600',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Important notice about your account' };
     case 'system_announcement':
     case 'system_notification':
-      return { icon: Rocket,        gradient: 'from-gray-600 to-gray-700',       iconColor: 'text-white', ringColor: 'ring-gray-100',    label: () => 'New announcement from Filmons' };
+      return { icon: Rocket,        gradient: 'from-gray-600 to-gray-700',       iconColor: 'text-white', ringColor: 'ring-gray-100',    label: (n) => n.title || 'New announcement from Filmons' };
     default:
       return { icon: Bell,          gradient: 'from-gray-400 to-gray-500',       iconColor: 'text-white', ringColor: 'ring-gray-100',    label: () => '' };
   }
@@ -248,6 +260,7 @@ const SYSTEM_TYPES: string[] = [
   'payment_released','application_accepted','application_rejected',
   'payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed',
   'support_reply','portfolio_view',
+  'work_approval_reminder','work_approved','work_payment_available',
 ];
 function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
 function systemIcon(type: string): ElementType {
@@ -271,6 +284,9 @@ function systemIcon(type: string): ElementType {
     case 'payout_failed':        return X;
     case 'support_reply':        return MessageCircle;
     case 'application_accepted': return PartyPopper;
+    case 'work_approval_reminder': return Bell;
+    case 'work_approved':        return PartyPopper;
+    case 'work_payment_available': return Zap;
     case 'application_rejected': return Bell;
     default:                     return Wrench;
   }
@@ -613,8 +629,8 @@ type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payment
 
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction','message_request_accepted'];
 const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','listing_liked','followed_creator_posted'];
-const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
-const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
+const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected','work_submitted','work_approval_reminder'];
+const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','work_approved','work_payment_available','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','content_repost_thoughts','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view','course_published'];
 const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
 
@@ -664,7 +680,7 @@ export function Notifications() {
   const navigate   = useNavigate();
   const { enterLearning } = useLearningTransition();
   const {
-    notifications: notifs,
+    notifications: allNotifs,
     loading: refreshing,
     refresh: load,
     markRead,
@@ -672,6 +688,16 @@ export function Notifications() {
     markAllRead: ctxMarkAllRead,
     clearAll: ctxClearAll,
   } = useNotifications();
+
+  // Approval reminders disappear as soon as the work is approved (live via
+  // the shared work-record store), even before the server-side delete
+  // reaches this device's cached list.
+  const { records: workRecords } = useWorkRecords(user?.id);
+  const notifs = useMemo(() => {
+    const settled = new Set(workRecords.filter(r => getWorkStage(r) !== 'awaiting_approval').map(r => r.applicationId));
+    return allNotifs.filter(n => !(n.applicationId && settled.has(n.applicationId)
+      && (n.type === 'work_submitted' || n.type === 'work_approval_reminder')));
+  }, [allNotifs, workRecords]);
 
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [activeTab,   setActiveTab]   = useState<Tab>('all');
@@ -698,7 +724,10 @@ export function Notifications() {
 
   const handleNavigate = (n: Notification) => {
     markRead(n.id);
-    if (MESSAGE_TYPES.includes(n.type)) {
+    if (n.applicationId && (WORK_TYPES.includes(n.type) || n.type === 'payment_received' || n.type === 'system_notification')) {
+      // Every approval and payment update opens the one work record.
+      navigate(`/work/${n.applicationId}`);
+    } else if (MESSAGE_TYPES.includes(n.type)) {
       navigate(n.conversationId
         ? `/inbox?conv=${n.conversationId}&with=${n.fromUserId}`
         : `/inbox?with=${n.fromUserId}`);

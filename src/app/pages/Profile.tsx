@@ -38,6 +38,7 @@ import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
 import { ProfileStrengthCard } from '../components/ProfileStrengthCard';
+import { ProfileWorkSections } from '../components/work/WorkSections';
 import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, getPortfolioEntriesByIds, type PortfolioItem } from '../lib/portfolioApi';
 import { getUserRepostActivity, type ActivityEntry } from '../lib/activityApi';
@@ -1333,6 +1334,9 @@ export function Profile() {
       />
 
       <ProfileStrengthCard />
+
+      {/* Private: Pending approvals (as client) / My active opportunities (as applicant). */}
+      <ProfileWorkSections />
 
       <ProfileTabNav tab={tab} onChange={switchTab} />
 

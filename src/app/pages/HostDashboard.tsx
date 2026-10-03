@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabase';
 import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier, normalizeTier } from '../lib/reliabilityApi';
 import { getOpportunityUsage, getEntitlement, resetLabel, getLockedOpportunityIds } from '../lib/entitlements';
 import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
+import { DashboardWorkOverview, WorkRecordInline } from '../components/work/WorkSections';
 import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 
 function getStoredListings(): Listing[] {
@@ -375,6 +376,9 @@ function MyApplicationsSection({ userId, showCreatorUpsell }: { userId: string; 
                         )}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">Posted by {app.ownerName} · Applied {new Date(app.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      {(app.status === 'hired' || app.status === 'completed') && (
+                        <div className="mt-2"><WorkRecordInline applicationId={app.id} /></div>
+                      )}
                       <div className="flex items-center gap-3 mt-2">
                         <button onClick={() => navigate(`/listing/${app.listing_id}`)} className="text-xs font-semibold text-blue-600 hover:underline">View Opportunity</button>
                         {app.conversation_id && (
@@ -505,6 +509,8 @@ function CreatorDashboard({ user }: { user: any }) {
             </button>
           );
         })()}
+        {/* Paid opportunity work: active hires, pending approvals, active work, earnings status */}
+        <DashboardWorkOverview />
         {/* Become a Host CTA */}
         <div className="bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg shadow-purple-200">
           <div className="flex items-start gap-4">
@@ -936,6 +942,8 @@ function HostDashboardContent({ user }: { user: any }) {
                 <div><p className="text-blue-200 text-xs">Transactions</p><p className="text-white font-bold text-sm">{dbTransactions.length}</p></div>
               </div>
             </div>
+            {/* Paid opportunity work: active hires, pending approvals, active work, earnings status */}
+            <DashboardWorkOverview />
             {/* Reliability score card */}
             {rep && (() => {
               const composite = rep.reliability_score ?? 0;

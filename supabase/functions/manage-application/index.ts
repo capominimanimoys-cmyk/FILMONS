@@ -56,7 +56,18 @@ async function insertReturning(table: string, row: Record<string, unknown>) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 
+async function deleteWhere(table: string, filter: string) {
+  await fetch(rest(`/${table}?${filter}`), { method: 'DELETE', headers: { ...H, Prefer: 'return=minimal' } }).catch(() => {});
+}
+async function rpcRows(fn: string, args: Record<string, unknown>): Promise<any[]> {
+  const res = await fetch(rest(`/rpc/${fn}`), { method: 'POST', headers: H, body: JSON.stringify(args) });
+  if (!res.ok) { console.error(`${fn} failed:`, res.status, await res.text()); throw new Error(`${fn} failed`); }
+  const rows = await res.json().catch(() => []);
+  return Array.isArray(rows) ? rows : [];
+}
+
 import { computeBreakdown } from '../_shared/pricing.ts';
+import { releaseOpportunityEarning } from '../_shared/opportunityRelease.ts';
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
 import {
   sendOpportunityDeclinedEmail, sendApplicationShortlistedEmail, sendApplicationAcceptedEmail,
@@ -71,7 +82,7 @@ function oppTitle(listingTitle: string | null | undefined) {
 
 async function pushNotification(row: {
   user_id: string; actor_id?: string | null; actor_name?: string; type: string;
-  title: string; conversation_id?: string | null; application_id?: string | null;
+  title: string; conversation_id?: string | null; application_id?: string | null; listing_id?: string | null;
 }) {
   if (!row.user_id || row.user_id === row.actor_id) return;
   // Unique violation from idx_notifications_application_dedup means this
@@ -86,6 +97,7 @@ async function pushNotification(row: {
     title: row.title,
     conversation_id: row.conversation_id || null,
     application_id: row.application_id || null,
+    listing_id: row.listing_id || null,
     is_read: false,
   });
 }
@@ -116,13 +128,13 @@ async function applyAction(
   action: string,
   userId: string,
   payload: Record<string, any>,
-): Promise<{ ok: true; application: any } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; application: any; transaction?: any; duplicate?: boolean } | { ok: false; status: number; error: string }> {
   const listing = await selectOne('listings', `id=eq.${encodeURIComponent(app.listing_id)}`);
   const listingTitle: string | undefined = listing?.title;
   const isOwner = !!listing && listing.user_id === userId;
   const isApplicant = app.applicant_id === userId;
 
-  const APPLICANT_GATED = new Set(['withdraw', 'respond_offer', 'mark_work_completed']);
+  const APPLICANT_GATED = new Set(['withdraw', 'respond_offer', 'mark_work_completed', 'submit_work']);
   const EITHER_GATED = new Set(['report_problem']);
   if (APPLICANT_GATED.has(action)) {
     if (!isApplicant) return { ok: false, status: 403, error: 'You do not own this application' };
@@ -272,25 +284,76 @@ async function applyAction(
       await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'application_rejected', title: `Your offer for ${oppTitle(listingTitle)} was declined`, conversation_id: app.conversation_id, application_id: app.id });
       return { ok: true, application: { ...app, status: 'rejected' } };
     }
-    case 'mark_work_completed': {
-      if (app.status !== 'hired') return { ok: false, status: 400, error: 'This opportunity has not been funded yet' };
-      await updateOne('opportunity_transactions', `application_id=eq.${app.id}`, { work_status: 'marked_complete_by_worker', marked_complete_at: now, auto_release_reminder_sent: false, updated_at: now });
-      await insertSystemMessage(app.conversation_id, 'The worker marked this Opportunity as completed — awaiting owner confirmation.');
-      await pushNotification({ user_id: listing.user_id, actor_id: userId, actor_name: '', type: 'system_notification', title: `Marked complete — confirm completion for ${oppTitle(listingTitle)}`, conversation_id: app.conversation_id, application_id: app.id });
-      return { ok: true, application: app };
+    // ── Work approval (see 20240610000000_opportunity_work_approval.sql) ──
+    // Both transitions are a single conditional UPDATE in SQL, so a double
+    // tap / retry / second tab matches nothing and is a no-op here: no
+    // second notification, no second release.
+    case 'mark_work_completed':
+    case 'submit_work': {
+      const rows = await rpcRows('fn_submit_opportunity_work', { p_application_id: app.id, p_worker_id: userId });
+      const txn = rows[0];
+      if (!txn) {
+        const current = await selectOne('opportunity_transactions', `application_id=eq.${app.id}`);
+        if (!current || !['funded', 'completed'].includes(current.payment_status)) {
+          return { ok: false, status: 400, error: 'This hire has not been paid yet' };
+        }
+        if (current.worker_id !== userId) return { ok: false, status: 403, error: 'Only the hired applicant can submit this work' };
+        return { ok: true, application: app, transaction: current, duplicate: true };
+      }
+      const worker = await selectOne('profiles', `id=eq.${userId}`);
+      const workerName = worker?.name || 'The applicant';
+      await insertSystemMessage(app.conversation_id, `${workerName} marked their work as submitted — awaiting client approval.`);
+      await pushNotification({
+        user_id: txn.owner_id, actor_id: userId, actor_name: workerName, type: 'work_submitted',
+        title: `${workerName} marked their work as submitted. Review and approve.`,
+        conversation_id: app.conversation_id, application_id: app.id, listing_id: app.listing_id,
+      });
+      return { ok: true, application: app, transaction: txn };
     }
-    case 'confirm_completion': {
-      const txn = await selectOne('opportunity_transactions', `application_id=eq.${app.id}`);
-      if (!txn || txn.payment_status !== 'funded') return { ok: false, status: 400, error: 'No funded payment to release' };
-      await updateOne('opportunity_transactions', `id=eq.${txn.id}`, { work_status: 'completed', completed_at: now, hold_released_at: now, updated_at: now });
-      // Flip the held wallet_transactions row's available_at to now — the
-      // existing hourly fn_release_pending_earnings cron does the rest,
-      // exactly like every other pending->available release in this app.
-      await updateOne('wallet_transactions', `order_id=eq.${txn.order_id}&transaction_type=eq.opportunity_earning&balance_type=eq.pending`, { available_at: now });
-      await updateOne('opportunity_applications', `id=eq.${app.id}`, { status: 'completed' });
-      await insertSystemMessage(app.conversation_id, `Opportunity completed — the remaining $${Number(txn.held_amount).toFixed(2)} is now available.`);
-      await pushNotification({ user_id: txn.worker_id, actor_id: userId, actor_name: '', type: 'payment_released', title: `Your remaining earnings for ${oppTitle(listingTitle)} are now available`, conversation_id: app.conversation_id, application_id: app.id });
-      return { ok: true, application: { ...app, status: 'completed' } };
+    case 'confirm_completion':
+    case 'approve_work': {
+      const rows = await rpcRows('fn_approve_opportunity_work', { p_application_id: app.id, p_owner_id: userId });
+      let txn = rows[0];
+      if (!txn) {
+        const current = await selectOne('opportunity_transactions', `application_id=eq.${app.id}`);
+        if (!current || !['funded', 'completed'].includes(current.payment_status)) {
+          return { ok: false, status: 400, error: 'This hire has not been paid yet' };
+        }
+        if (current.owner_id !== userId) return { ok: false, status: 403, error: 'Only the paying client can approve this work' };
+        if (current.work_status === 'in_progress') return { ok: false, status: 400, error: 'The applicant has not marked this work as submitted yet' };
+        return { ok: true, application: { ...app, status: 'completed' }, transaction: current, duplicate: true };
+      }
+
+      // Approval itself is done; release is best-effort here and finished
+      // by the hourly pass if Stripe hasn't settled the charge yet.
+      const releaseStatus = await releaseOpportunityEarning(txn.order_id);
+      txn = { ...txn, release_status: releaseStatus };
+
+      await deleteWhere('notifications',
+        `user_id=eq.${txn.owner_id}&application_id=eq.${app.id}&type=in.(work_submitted,work_approval_reminder)`);
+
+      const owner = await selectOne('profiles', `id=eq.${userId}`);
+      const ownerName = owner?.name || 'The client';
+      const net = Number(txn.net_amount).toFixed(2);
+      await insertSystemMessage(app.conversation_id, releaseStatus === 'available'
+        ? `Work approved — $${net} is available in the applicant's FILMONS wallet.`
+        : 'Work approved — payment processing.');
+      await pushNotification({
+        user_id: txn.worker_id, actor_id: userId, actor_name: ownerName, type: 'work_approved',
+        title: releaseStatus === 'available'
+          ? `${ownerName} approved your work for ${oppTitle(listingTitle)}. $${net} is available in your FILMONS wallet.`
+          : `${ownerName} approved your work for ${oppTitle(listingTitle)}. Payment processing.`,
+        conversation_id: app.conversation_id, application_id: app.id, listing_id: app.listing_id,
+      });
+      if (releaseStatus === 'available') {
+        await updateOne('opportunity_transactions', `id=eq.${txn.id}&available_notified_at=is.null`, { available_notified_at: new Date().toISOString() });
+        await pushNotification({
+          user_id: txn.worker_id, actor_id: null, actor_name: 'Filmons', type: 'work_payment_available',
+          title: `$${net} from ${oppTitle(listingTitle)} is available in your FILMONS wallet`,
+          conversation_id: app.conversation_id, application_id: app.id, listing_id: app.listing_id,
+        });
+      }
+      return { ok: true, application: { ...app, status: 'completed' }, transaction: txn };
     }
     case 'report_problem': {
       const txn = await selectOne('opportunity_transactions', `application_id=eq.${app.id}`);
@@ -364,7 +427,7 @@ Deno.serve(async (req) => {
 
     const result = await applyAction(app, action, userId, payload);
     if (!result.ok) return json({ error: result.error }, result.status);
-    return json({ success: true, application: result.application });
+    return json({ success: true, application: result.application, transaction: result.transaction ?? null, duplicate: !!result.duplicate });
   } catch (e) {
     console.error('manage-application error:', e);
     return json({ error: 'Internal error' }, 500);

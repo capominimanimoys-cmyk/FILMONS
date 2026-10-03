@@ -9,6 +9,7 @@ import { applicationApi, opportunityPaymentApi, OpportunityApplicationRow, Oppor
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
+import { getWorkStage, workStatusLabel, WORK_STAGE_TONE } from '../lib/workApi';
 
 const OWNER_STATUS_LABEL: Record<string, { label: string; color: string }> = {
   pending:     { label: 'NEW APPLICATION', color: 'bg-indigo-100 text-indigo-700' },
@@ -131,9 +132,6 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
     await applicationApi.respondOffer(app.id, user!.id, decision);
     toast.success(decision === 'accept' ? 'Offer accepted' : 'Offer declined');
   });
-  const doMarkComplete = () => run(async () => { await applicationApi.markWorkCompleted(app.id, user!.id); toast.success('Marked as completed — awaiting owner confirmation'); });
-  const doConfirmCompletion = () => run(async () => { await applicationApi.confirmCompletion(app.id, user!.id); toast.success('Completion confirmed — remaining funds released'); });
-  const doReportProblem = () => run(async () => { await applicationApi.reportProblem(app.id, user!.id); toast.success('Problem reported — held funds are frozen'); });
   const doFund = () => run(async () => {
     const origin = window.location.origin;
     const { url } = await opportunityPaymentApi.startFunding(
@@ -197,14 +195,19 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
           <div className="flex justify-between"><span className="text-gray-400">Pay</span><span className="font-bold text-gray-900">${txn.gross_amount.toFixed(2)}</span></div>
           <div className="flex justify-between"><span className="text-gray-400">Filmons Fee ({(txn.fee_rate * 100).toFixed(0)}%)</span><span className="text-gray-500">-${txn.fee_amount.toFixed(2)}</span></div>
           <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">{isOwnerView ? 'Worker Earnings' : "You'll Earn"}</span><span className="font-black text-gray-900">${txn.net_amount.toFixed(2)}</span></div>
-          {txn.payment_status === 'funded' && (
-            <div className="flex justify-between border-t border-gray-200 pt-1">
-              <span className="text-gray-400">Status</span>
-              {txn.work_status === 'completed'
-                ? <span className="font-bold text-green-600">${txn.net_amount.toFixed(2)} Available</span>
-                : <span className="font-bold text-amber-600">{isOwnerView ? 'Held for Creator' : 'On Hold'}</span>}
-            </div>
-          )}
+          {/* Same shared status as every other surface; the controls live in
+              the work banner pinned above this conversation. */}
+          {(txn.payment_status === 'funded' || txn.payment_status === 'completed') && (() => {
+            const stage = getWorkStage({ workStatus: txn.work_status, releaseStatus: txn.release_status || 'held' });
+            return (
+              <div className="flex justify-between items-center gap-2 border-t border-gray-200 pt-1">
+                <span className="text-gray-400">Status</span>
+                <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full ${WORK_STAGE_TONE[stage]}`}>
+                  {workStatusLabel(stage, isOwnerView ? 'client' : 'applicant')}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -237,14 +240,8 @@ export function ApplicationCardBubble({ msg }: { msg: ChatMessage }) {
         {isOwnerView && app.status === 'payment_pending' && txn?.payment_status === 'pending' && (
           <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Retry Payment</button>
         )}
-        {!isOwnerView && app.status === 'hired' && txn?.work_status === 'in_progress' && (
-          <button disabled={busy} onClick={doMarkComplete} className="flex-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50">Mark Work Completed</button>
-        )}
-        {isOwnerView && app.status === 'hired' && txn?.work_status === 'marked_complete_by_worker' && (
-          <button disabled={busy} onClick={doConfirmCompletion} className="flex-1 text-xs font-bold text-white bg-green-600 rounded-xl py-2 disabled:opacity-50">Confirm Completion</button>
-        )}
-        {app.status === 'hired' && (
-          <button disabled={busy} onClick={doReportProblem} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50"><AlertTriangle className="w-3 h-3" /> Report a Problem</button>
+        {(app.status === 'hired' || app.status === 'completed') && (
+          <button onClick={() => navigate(`/work/${app.id}`)} className="flex-1 text-xs font-bold text-indigo-700 bg-indigo-50 rounded-xl py-2">View Work Record</button>
         )}
         {!isOwnerView && nonTerminal && !PAYMENT_FLOW.has(app.status) && (
           <button disabled={busy} onClick={() => { setSheetOpen(true); setConfirmingWithdraw(true); }} className="flex-1 text-xs font-bold text-gray-500 bg-gray-100 rounded-xl py-2 disabled:opacity-50">Withdraw</button>
