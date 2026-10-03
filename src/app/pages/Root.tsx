@@ -15,7 +15,7 @@ import { CookieConsent } from '../components/CookieConsent';
 import { RouteProgressBar } from '../components/RouteProgressBar';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getPendingReturnUrl } from '../lib/authReturnUrl';
+import { getPendingReturnUrl, isOnboardingIncomplete } from '../lib/authReturnUrl';
 import { PortfolioPreviewContext, type PortfolioPreviewRequest } from '../context/PortfolioPreviewContext';
 import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../context/LearningTransitionContext';
 import { RepostComposeProvider } from '../context/RepostComposeContext';
@@ -32,15 +32,6 @@ const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card
 // EmergencyListingFlow's sticky CTA and OpportunityApplicants -- all under
 // the /listing/:id prefix.
 const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio', '/listing', '/edit-portfolio-item'];
-
-function isOnboardingIncomplete(user: User | null): boolean {
-  if (!user) return false;
-  // Trust the explicit flag first — set by Onboarding on save and by getMe from DB column
-  if (user.profileSetupCompleted) return false;
-  // A user with a username has definitely been through onboarding at least once
-  if (user.username) return false;
-  return true;
-}
 
 export function Root() {
   const location = useLocation();

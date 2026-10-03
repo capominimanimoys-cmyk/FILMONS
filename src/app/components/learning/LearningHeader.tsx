@@ -13,6 +13,7 @@ import { ArrowLeft, Search, GraduationCap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isProfessional } from '../../lib/reliabilityApi';
 import { useLearningTransition } from '../../context/LearningTransitionContext';
+import { learningLoginPath } from '../../lib/learningAuth';
 
 export function LearningHeader() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export function LearningHeader() {
   const { user } = useAuth();
   const { leaveLearning } = useLearningTransition();
   const canTeach = isProfessional(user?.accountType);
+  const signIn = () => navigate(learningLoginPath(location.pathname + location.search));
 
   const navItems = [
     { label: 'Home', path: '/' },
@@ -40,6 +42,9 @@ export function LearningHeader() {
         <button onClick={() => leaveLearning('/search?tab=learning')} className="ml-auto w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0" aria-label="Search Learning">
           <Search className="w-4 h-4 text-gray-700" />
         </button>
+        {!user && (
+          <button onClick={signIn} className="shrink-0 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700">Sign in</button>
+        )}
       </div>
       {/* Mobile secondary nav -- no bottom tab bar exists for this bundle
           (Root.tsx's MobileBottomNav never renders here), so this is the
@@ -86,7 +91,11 @@ export function LearningHeader() {
           <button onClick={() => leaveLearning('/search?tab=learning')} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100" aria-label="Search Learning">
             <Search className="w-4 h-4 text-gray-700" />
           </button>
-          <button onClick={() => leaveLearning('/profile')} className="text-xs font-bold text-gray-500 hover:text-gray-800">Profile</button>
+          {user ? (
+            <button onClick={() => leaveLearning('/profile')} className="text-xs font-bold text-gray-500 hover:text-gray-800">Profile</button>
+          ) : (
+            <button onClick={signIn} className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">Sign in</button>
+          )}
         </div>
       </div>
     </div>
