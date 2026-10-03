@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { sendVerificationCode, verifyDeviceCode } from '../lib/deviceVerification';
-import { consumePendingReturnUrl } from '../lib/authReturnUrl';
+import { consumePendingReturnUrl, getPendingReturnUrl } from '../lib/authReturnUrl';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
@@ -85,8 +85,12 @@ export function VerifyDevice() {
       return;
     }
     setDeviceVerified(true);
-    consumePendingReturnUrl(); // the stashed value, if any, has now served its purpose via `from`
-    navigate(safeDestination(location.state?.from), { replace: true });
+    // `from` (Root's guard) wins; a flow that reached this page by a full
+    // page load (FILMONS Learning sign-in, see learningAuth.ts) can't
+    // carry router state, so its stashed return URL is the fallback.
+    const pending = getPendingReturnUrl();
+    consumePendingReturnUrl(); // the stashed value, if any, has now served its purpose
+    navigate(safeDestination(location.state?.from ?? pending), { replace: true });
   };
 
   const useAnotherAccount = async () => {

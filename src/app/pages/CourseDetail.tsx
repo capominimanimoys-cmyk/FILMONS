@@ -5,7 +5,7 @@
 // checkout needs its own Stripe wiring (see stripe-charge/stripe-webhook,
 // built for a different flow) that's out of scope for this pass.
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Star, Users, Clock, Play, ChevronDown, ChevronUp, FileText,
@@ -25,6 +25,7 @@ import { HashtagText } from '../components/HashtagText';
 import { SharePostSheet } from '../components/connect/SharePostSheet';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
+import { learningLoginPath } from '../lib/learningAuth';
 
 function formatDuration(totalSeconds: number): string {
   if (!totalSeconds) return '';
@@ -60,6 +61,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
 export function CourseDetail() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { leaveLearning } = useLearningTransition();
   const { user } = useAuth();
   const [course, setCourse] = useState<Course | null | undefined>(undefined);
@@ -117,7 +119,7 @@ export function CourseDetail() {
   const firstIncompleteLesson = () => allLessons.find(l => !lessonProgress[l.id]) ?? allLessons[allLessons.length - 1];
 
   const handleEnroll = async () => {
-    if (!user) { leaveLearning('/login'); return; }
+    if (!user) { navigate(learningLoginPath(location.pathname + location.search)); return; }
     if (!course.isFree && course.price > 0) { toast('Course checkout is coming soon', { description: 'Paid enrollment isn\'t live yet.' }); return; }
     setEnrolling(true);
     const ok = await enrollInFreeCourse(user.id, course.id);

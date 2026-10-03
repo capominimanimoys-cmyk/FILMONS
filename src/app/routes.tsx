@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import { Root } from './pages/Root';
 import { HardRedirect } from './components/HardRedirect';
+import { LearningReturn } from './components/LearningReturn';
 import { LegacyHashtagRedirect, LegacyLocationRedirect } from './components/LegacyEntityRedirects';
 import { Home } from './pages/Home';
 import { Login }         from './pages/Login';
@@ -220,4 +221,8 @@ export const router = createBrowserRouter([
   { path: '/email-already-exists', Component: EmailAlreadyExists },
   { path: '/signup/phone',         Component: SignupPhone        },
   { path: '/phone-already-exists', Component: PhoneAlreadyExists },
+  // FILMONS Learning is its own bundle (see the NOTE above) -- this only
+  // catches a client-side navigate() into it (e.g. an auth flow finishing
+  // with a Learning return URL) and turns it into a real page load.
+  { path: '/learning/*', Component: LearningReturn },
 ]);

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { ArrowLeft, Plus, Star, Users, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { learningLoginPath } from '../lib/learningAuth';
 import {
   getMyEnrollments, getCoursesByInstructor, setCourseStatus, publishCourse,
   type EnrolledCourse, type Course,
@@ -101,7 +102,15 @@ export function MyLearning() {
   useEffect(() => { if (user) getMyEnrollments(user.id).then(setEnrolled); }, [user?.id]);
   useEffect(() => { if (tab === 'mine' && mine === null) loadMine(); }, [tab]); // eslint-disable-line
 
-  if (!user) return <div className="min-h-screen flex items-center justify-center text-sm text-gray-400">Sign in to see your Learning</div>;
+  if (!user) return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-6 text-center">
+      <p className="text-sm text-gray-500">Log in to see your courses and progress.</p>
+      <button onClick={() => navigate(learningLoginPath('/my-learning'))}
+        className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700">
+        Log in
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">

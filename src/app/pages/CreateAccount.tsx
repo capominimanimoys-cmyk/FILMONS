@@ -9,28 +9,14 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { motion } from 'motion/react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
-import { EMAILJS_CONFIG, sendEmail } from '../lib/emailjs-config';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
-import { authApi } from '../lib/api';
+import { startEmailSignup, PENDING_SIGNUP_KEY, PW_RULES } from '../lib/emailSignup';
 
-export const PENDING_SIGNUP_KEY = 'filmons_pending_signup';
-
-function genCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-const PW_RULES = [
-  { id: 'len',     label: 'At least 8 characters',         test: (p: string) => p.length >= 8 },
-  { id: 'upper',   label: 'At least one uppercase letter',  test: (p: string) => /[A-Z]/.test(p) },
-  { id: 'lower',   label: 'At least one lowercase letter',  test: (p: string) => /[a-z]/.test(p) },
-  { id: 'num',     label: 'At least one number',            test: (p: string) => /[0-9]/.test(p) },
-  { id: 'special', label: 'At least one special character', test: (p: string) => /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>/?]/.test(p) },
-  { id: 'space',   label: 'No spaces',                      test: (p: string) => p.length > 0 && !/\s/.test(p) },
-];
+export { PENDING_SIGNUP_KEY };
 
 function pwStrength(password: string): { label: string; color: string; pct: number } | null {
   if (!password) return null;
@@ -97,66 +83,17 @@ export function CreateAccount() {
     if (!canSubmit || loading) return;
     setLoading(true);
     try {
-      const normalEmail = email.trim().toLowerCase();
+      const res = await startEmailSignup(name, email, password);
 
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('id, profile_meta')
-        .eq('email', normalEmail)
-        .maybeSingle();
-
-      if (existing) {
-        // Detect the original signup provider from profile_meta (never guess)
-        const meta     = existing.profile_meta as any;
-        const provider = meta?.provider as string | undefined;
-        const knownProvider = provider === 'google' || provider === 'apple' ? provider : null;
-
-        const params = new URLSearchParams({ email: normalEmail });
-        if (knownProvider) params.set('provider', knownProvider);
+      if (res.status === 'exists') {
+        const params = new URLSearchParams({ email: res.email });
+        if (res.provider) params.set('provider', res.provider);
         navigate(`/email-already-exists?${params.toString()}`);
         setLoading(false);
         return;
       }
 
-      // No profiles row -- but that alone doesn't mean the email is free.
-      // A previous signup attempt can leave a real auth.users row with no
-      // matching profile (e.g. the tab closed, or a network drop, between
-      // supabase.auth.signUp() succeeding in VerifyEmail.tsx and the
-      // profile insert that follows it). Without this check, that person
-      // would sail through here, verify a brand new code, and only THEN
-      // discover the problem when VerifyEmail's own auth.signUp() call
-      // fails with "User already registered" -- a much more confusing
-      // dead end than catching it here, before any code is even sent.
-      // checkAuthMethods reads the real auth.users/identities record
-      // (never guessed), same ground-truth check signin() already uses.
-      const authCheck = await authApi.checkAuthMethods(normalEmail);
-      if (authCheck.exists) {
-        const knownProvider = authCheck.providers.includes('google') ? 'google'
-          : authCheck.providers.includes('apple') ? 'apple' : null;
-        const params = new URLSearchParams({ email: normalEmail });
-        if (knownProvider) params.set('provider', knownProvider);
-        navigate(`/email-already-exists?${params.toString()}`);
-        setLoading(false);
-        return;
-      }
-
-      const code      = genCode();
-      const expiresAt = Date.now() + 10 * 60 * 1000;
-
-      sessionStorage.setItem(PENDING_SIGNUP_KEY, JSON.stringify({
-        name: name.trim(), email: normalEmail, password, code, expiresAt,
-      }));
-
-      const { success } = await sendEmail(EMAILJS_CONFIG.templates.emailVerification, {
-        to_email:          normalEmail,
-        to_name:           name.trim(),
-        verification_code: code,
-        user_email:        normalEmail,
-        expires_in:        '10 minutes',
-        subject:           'Verify your Filmons email',
-      });
-
-      if (!success) {
+      if (res.status === 'send_failed') {
         toast.error('Could not send verification email. Please try again.');
         setLoading(false);
         return;

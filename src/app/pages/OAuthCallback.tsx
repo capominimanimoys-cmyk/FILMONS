@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
-import { consumePendingReturnUrl } from '../lib/authReturnUrl';
+import { consumePendingReturnUrl, getPendingReturnUrl } from '../lib/authReturnUrl';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { Lock, Link2, X } from 'lucide-react';
 import { claimIdentity } from '../lib/identity';
@@ -70,6 +70,17 @@ function rowToUser(row: any): User {
     following:          pgArr(row.following),
     followers:          pgArr(row.followers),
   };
+}
+
+// Where "Cancel"/"Back to sign in" goes -- back to the FILMONS Learning
+// sign-in page when this OAuth flow started there (its destination is
+// stashed as a /learning/* return URL, see learningAuth.ts), otherwise
+// the main sign-in page.
+function signInPath(): string {
+  const pending = getPendingReturnUrl();
+  if (!pending || !/^\/learning(\/|\?|#|$)/.test(pending)) return '/login';
+  const rest = pending.replace(/^\/learning/, '') || '/';
+  return rest === '/' ? '/learning/login' : `/learning/login?returnTo=${encodeURIComponent(rest)}`;
 }
 
 function isComplete(user: User): boolean {
@@ -243,7 +254,7 @@ export function OAuthCallback() {
   // ── Google-link confirmation flow ────────────────────────────────────────
   const cancelLinkPrompt = () => {
     setLinkPrompt(null);
-    navigate('/login', { replace: true });
+    navigate(signInPath(), { replace: true });
   };
 
   const startResendCooldown = (ms: number) => {
@@ -541,7 +552,7 @@ export function OAuthCallback() {
             Choose Another Google Account
           </button>
           <button
-            onClick={() => navigate('/login', { replace: true })}
+            onClick={() => navigate(signInPath(), { replace: true })}
             className="text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
           >
             Cancel
@@ -560,7 +571,7 @@ export function OAuthCallback() {
           <FilmonsLogo iconSize={32} theme="dark"/>
           <p className="text-white/60 text-sm text-center max-w-xs">{loadError}</p>
           <button
-            onClick={() => navigate('/login')}
+            onClick={() => navigate(signInPath())}
             className="text-blue-400 text-sm font-semibold hover:underline"
           >
             Back to sign in

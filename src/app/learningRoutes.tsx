@@ -6,6 +6,8 @@ import { CreateCourse } from './pages/CreateCourse';
 import { CourseDetail } from './pages/CourseDetail';
 import { CourseContent } from './pages/CourseContent';
 import { LearningPlayer } from './pages/LearningPlayer';
+import { LearningLogin } from './pages/LearningLogin';
+import { LearningSignup } from './pages/LearningSignup';
 
 // Every path below is written RELATIVE TO THE BASENAME -- never hardcode
 // '/learning' anywhere in this tree, in LearningHeader's nav, or in any
@@ -29,6 +31,11 @@ const learningRouteTree = [
       { path: 'course/:courseId/lesson/:lessonId', Component: LearningPlayer },
     ],
   },
+  // Sign in / create account -- full-screen, outside LearningLayout's
+  // header. Both sign into the one shared FILMONS account (see
+  // lib/learningAuth.ts).
+  { path: '/login', Component: LearningLogin },
+  { path: '/signup', Component: LearningSignup },
 ];
 
 // Basename is decided once at router-creation time from the hostname

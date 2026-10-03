@@ -7,6 +7,7 @@ import { PostProvider } from './context/PostContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { NotificationBannerProvider } from './components/NotificationBanner';
 import { LearningTransitionProvider } from './context/LearningTransitionContext';
+import { LearningSessionProvider } from './context/LearningSessionContext';
 
 // Filmons Learning's whole React tree, a real separate Rollup entry (see
 // learning.html) -- unlike AdminApp.tsx, this DOES wrap the normal
@@ -28,6 +29,10 @@ const router = createLearningRouter();
 export default function LearningApp() {
   return (
     <AuthProvider>
+      {/* Learning has its own sign-in step on top of the shared FILMONS
+          account -- everything below sees the user only once they've
+          signed in to Learning (see LearningSessionContext). */}
+      <LearningSessionProvider>
       <FollowProvider>
         <PostProvider>
           <NotificationsProvider>
@@ -40,6 +45,7 @@ export default function LearningApp() {
           </NotificationsProvider>
         </PostProvider>
       </FollowProvider>
+      </LearningSessionProvider>
     </AuthProvider>
   );
 }

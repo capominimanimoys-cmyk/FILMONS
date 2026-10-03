@@ -3,6 +3,7 @@
  * Reads pending signup from sessionStorage, lets the user enter the 6-digit code,
  * then creates the auth user + profile row and redirects to /onboarding.
  */
+import { consumePendingReturnUrl } from '../lib/authReturnUrl';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { Loader2, LoaderCircle, Mail, ArrowLeft, Check } from 'lucide-react';
@@ -109,7 +110,7 @@ export function VerifyEmail() {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
           body: JSON.stringify({ emailVerified: true }),
         }).catch(() => {});
-        navigate('/', { replace: true });
+        navigate(consumePendingReturnUrl(), { replace: true });
       } else {
         navigate('/create-account', { replace: true });
       }
