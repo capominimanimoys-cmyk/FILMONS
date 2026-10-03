@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { isProfessional } from '../../lib/reliabilityApi';
 import { useLearningTransition } from '../../context/LearningTransitionContext';
 import { learningLoginPath } from '../../lib/learningAuth';
+import { useLearningSession } from '../../context/LearningSessionContext';
 
 export function LearningHeader() {
   const navigate = useNavigate();
@@ -21,7 +22,12 @@ export function LearningHeader() {
   const { user } = useAuth();
   const { leaveLearning } = useLearningTransition();
   const canTeach = isProfessional(user?.accountType);
-  const signIn = () => navigate(learningLoginPath(location.pathname + location.search));
+  const { endLearningSession } = useLearningSession();
+  // Learning has its own sign-in (see LearningSessionContext): logging in
+  // here goes through Learning's login page, logging out ends only the
+  // Learning session -- FILMONS itself stays signed in.
+  const logIn = () => navigate(learningLoginPath(location.pathname + location.search));
+  const logOut = () => { endLearningSession(); navigate('/', { replace: true }); };
 
   const navItems = [
     { label: 'Home', path: '/' },
@@ -43,7 +49,7 @@ export function LearningHeader() {
           <Search className="w-4 h-4 text-gray-700" />
         </button>
         {!user && (
-          <button onClick={signIn} className="shrink-0 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700">Sign in</button>
+          <button onClick={logIn} className="shrink-0 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700">Log in</button>
         )}
       </div>
       {/* Mobile secondary nav -- no bottom tab bar exists for this bundle
@@ -63,6 +69,9 @@ export function LearningHeader() {
             </button>
           );
         })}
+        {user && (
+          <button onClick={logOut} className="ml-auto shrink-0 text-xs font-bold text-gray-400 pb-1 border-b-2 border-transparent hover:text-gray-700">Log out</button>
+        )}
       </div>
 
       {/* Desktop */}
@@ -92,9 +101,12 @@ export function LearningHeader() {
             <Search className="w-4 h-4 text-gray-700" />
           </button>
           {user ? (
-            <button onClick={() => leaveLearning('/profile')} className="text-xs font-bold text-gray-500 hover:text-gray-800">Profile</button>
+            <>
+              <button onClick={() => leaveLearning('/profile')} className="text-xs font-bold text-gray-500 hover:text-gray-800">Profile</button>
+              <button onClick={logOut} className="text-xs font-bold text-gray-500 hover:text-gray-800">Log out</button>
+            </>
           ) : (
-            <button onClick={signIn} className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">Sign in</button>
+            <button onClick={logIn} className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">Log in</button>
           )}
         </div>
       </div>

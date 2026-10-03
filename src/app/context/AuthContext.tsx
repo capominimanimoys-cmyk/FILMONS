@@ -174,7 +174,10 @@ const defaultCtx: AuthContextType = {
   logout:           _noop,
 };
 
-const AuthContext = createContext<AuthContextType>(defaultCtx);
+// Exported so FILMONS Learning can re-provide a gated view of it (see
+// LearningSessionContext.tsx).
+export type { AuthContextType };
+export const AuthContext = createContext<AuthContextType>(defaultCtx);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Initialise from localStorage so the UI never flashes "logged out" --

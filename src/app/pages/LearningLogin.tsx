@@ -4,7 +4,8 @@
  * Signs into the one shared FILMONS account (no separate Learning
  * account). Three ways in:
  *   - Continue with FILMONS: "Continue as [Name]" when this browser is
- *     already signed in; otherwise the main FILMONS sign-in page, with
+ *     already signed in to FILMONS (never applied automatically -- see
+ *     LearningSessionContext); otherwise the main FILMONS sign-in page, with
  *     every method it offers (email, phone, Google, Apple).
  *   - Continue with Google: main app's OAuth callback, which also handles
  *     new Google accounts and verified linking onto an existing account.
@@ -17,7 +18,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeft, ArrowRight, Eye, EyeOff, Mail } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuth } from '../context/AuthContext';
+import { useFilmonsSession, useLearningSession } from '../context/LearningSessionContext';
 import { User } from '../types';
 import { pendingAuthStep } from '../lib/authReturnUrl';
 import {
@@ -45,7 +46,9 @@ export function LearningLogin() {
   const [searchParams] = useSearchParams();
   const returnTo = resolveLearningReturnTo(searchParams.get('returnTo'));
   const prefillEmail = searchParams.get('email') ?? '';
-  const { user, deviceVerified, login, logout } = useAuth();
+  // The real FILMONS session -- Learning pages only see it after sign-in here.
+  const { user, deviceVerified, login, logout } = useFilmonsSession();
+  const { startLearningSession } = useLearningSession();
 
   const [redirecting] = useState(() => redirectToCanonicalLearningAuth());
   const [view, setView] = useState<View>(prefillEmail ? 'email' : 'options');
@@ -65,6 +68,7 @@ export function LearningLogin() {
   const finish = (u: User) => {
     const step = pendingAuthStep(u, deviceVerified);
     if (step) { continueInFilmons(step, returnTo); return; }
+    startLearningSession(u.id);
     navigate(returnTo, { replace: true });
   };
 

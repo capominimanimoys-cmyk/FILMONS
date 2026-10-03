@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../../lib/supabase', () => ({ supabase: { auth: {} } }));
 vi.mock('../../app/context/AuthContext', () => ({ buildHandoffUrl: (u: string) => u }));
 
-import { resolveLearningReturnTo, toFilmonsLearningPath, learningLoginPath } from '../../app/lib/learningAuth';
+import { resolveLearningReturnTo, toFilmonsLearningPath, learningLoginPath, consumeLearningSignInHandoff } from '../../app/lib/learningAuth';
 import { sanitizeReturnUrl, pendingAuthStep } from '../../app/lib/authReturnUrl';
 
 describe('Learning sign-in return URLs', () => {
@@ -40,5 +40,13 @@ describe('Learning sign-in return URLs', () => {
     expect(pendingAuthStep(done, false)).toBe('/verify-device');
     expect(pendingAuthStep({ username: 'maya', emailVerified: false }, true)).toBe('/verify-email');
     expect(pendingAuthStep({ emailVerified: true }, true)).toBe('/onboarding');
+  });
+
+  it('only completes a Learning sign-in handed off recently, and only once', () => {
+    sessionStorage.setItem('filmons_learning_signin', String(Date.now()));
+    expect(consumeLearningSignInHandoff()).toBe(true);
+    expect(consumeLearningSignInHandoff()).toBe(false);
+    sessionStorage.setItem('filmons_learning_signin', String(Date.now() - 2 * 60 * 60 * 1000));
+    expect(consumeLearningSignInHandoff()).toBe(false);
   });
 });

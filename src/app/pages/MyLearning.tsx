@@ -104,10 +104,10 @@ export function MyLearning() {
 
   if (!user) return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-6 text-center">
-      <p className="text-sm text-gray-500">Sign in to see your courses and progress.</p>
+      <p className="text-sm text-gray-500">Log in to see your courses and progress.</p>
       <button onClick={() => navigate(learningLoginPath('/my-learning'))}
         className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700">
-        Sign in
+        Log in
       </button>
     </div>
   );

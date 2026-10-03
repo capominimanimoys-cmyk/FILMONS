@@ -19,6 +19,25 @@ export const LEARNING_LOGIN_PATH  = '/login';
 export const LEARNING_SIGNUP_PATH = '/signup';
 const LEARNING_AUTH_PATHS = [LEARNING_LOGIN_PATH, LEARNING_SIGNUP_PATH];
 
+// Marks "a Learning sign-in is in progress in this tab" while it runs
+// through FILMONS pages, so LearningSessionContext starts the Learning
+// session when the person lands back in Learning. Expires so an
+// abandoned attempt can't sign a later FILMONS session into Learning.
+const SIGN_IN_HANDOFF_KEY = 'filmons_learning_signin';
+const SIGN_IN_HANDOFF_TTL_MS = 60 * 60 * 1000;
+
+function markLearningSignInHandoff() {
+  try { sessionStorage.setItem(SIGN_IN_HANDOFF_KEY, String(Date.now())); } catch {}
+}
+
+export function consumeLearningSignInHandoff(): boolean {
+  try {
+    const at = Number(sessionStorage.getItem(SIGN_IN_HANDOFF_KEY));
+    sessionStorage.removeItem(SIGN_IN_HANDOFF_KEY);
+    return !!at && Date.now() - at < SIGN_IN_HANDOFF_TTL_MS;
+  } catch { return false; }
+}
+
 const CANONICAL_LEARNING_ORIGIN = 'https://filmons.app/learning';
 const EXPECTED_EMAIL_KEY = 'fm_expected_login_email'; // read by OAuthCallback.tsx
 
@@ -57,6 +76,7 @@ export function learningSignupPath(returnTo?: string): string {
  *  once it finishes. */
 export function continueInFilmons(mainAppPath: string, learningReturnTo: string) {
   setPendingReturnUrl(toFilmonsLearningPath(learningReturnTo));
+  markLearningSignInHandoff();
   window.location.assign(mainAppPath);
 }
 
@@ -68,6 +88,7 @@ export function continueInFilmons(mainAppPath: string, learningReturnTo: string)
  *  return URL set here. */
 export async function startLearningGoogleAuth(learningReturnTo: string, expectedEmail?: string): Promise<string | null> {
   setPendingReturnUrl(toFilmonsLearningPath(learningReturnTo));
+  markLearningSignInHandoff();
   try {
     if (expectedEmail) sessionStorage.setItem(EXPECTED_EMAIL_KEY, expectedEmail.toLowerCase());
     else sessionStorage.removeItem(EXPECTED_EMAIL_KEY);

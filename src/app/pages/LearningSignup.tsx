@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router';
 import { ArrowLeft, Check, Eye, EyeOff, Mail } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuth } from '../context/AuthContext';
+import { useFilmonsSession } from '../context/LearningSessionContext';
 import { PW_RULES, startEmailSignup } from '../lib/emailSignup';
 import {
   continueInFilmons,
@@ -31,7 +31,7 @@ const inputCls =
 export function LearningSignup() {
   const [searchParams] = useSearchParams();
   const returnTo = resolveLearningReturnTo(searchParams.get('returnTo'));
-  const { user } = useAuth();
+  const { user } = useFilmonsSession();
 
   const [redirecting] = useState(() => redirectToCanonicalLearningAuth());
   const [view, setView] = useState<'options' | 'email'>('options');
