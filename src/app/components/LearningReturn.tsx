@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { pendingAuthStep, setPendingReturnUrl } from '../lib/authReturnUrl';
+import { consumePendingReturnUrl, pendingAuthStep, setPendingReturnUrl } from '../lib/authReturnUrl';
 
 // Main-app router entry for any /learning/* path. FILMONS Learning is a
 // separate bundle (learning.html), so a client-side navigate() there --
@@ -21,6 +21,9 @@ export function LearningReturn() {
 
   useEffect(() => {
     if (waitingOnDeviceCheck || step) return;
+    // The auth flow that brought us here is done -- drop its stashed
+    // destination so it can't redirect some later, unrelated sign-in.
+    consumePendingReturnUrl();
     // A full page load is what lets the host's /learning/* rewrite serve
     // learning.html. If this exact URL already reloaded a moment ago, the
     // host served index.html again (no rewrite in this environment) --
