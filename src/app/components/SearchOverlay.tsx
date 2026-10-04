@@ -31,6 +31,8 @@ import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locat
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from './courses/CourseCard';
+import { PortfolioPinGrid } from './connect/PortfolioPinGrid';
+import { getTrendingPortfolio, isPortfolioIntent } from '../lib/portfolioTrending';
 import {
   searchMatchingListings, searchMatchingCreators, searchMatchingPortfolio, searchMatchingPosts,
   searchListingsByIntent,
@@ -1488,6 +1490,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [rawLocations,   setRawLocations]   = useState<LocationSuggestion[]>([]);
   // Learning -- courses, distinct top-level mode from Connect/Marketplace.
   const [rawCourses,     setRawCourses]     = useState<Course[]>([]);
+  // "portfolio" / "portfolios" typed on its own: the top trending work.
+  const [portfolioIntent, setPortfolioIntent] = useState<PortfolioFeedEntry[]>([]);
   // Cached account_type per Opportunity-listing owner, used to exclude
   // locked (over-tier) listings from every result surface here -- grows
   // as new owners show up in results, never refetches one already known.
@@ -1690,7 +1694,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const runSearch = useCallback((query: string) => {
     if (!query.trim()) {
-      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawLocations([]); setRawCourses([]); setResultsReady(false); return;
+      setRawUsers([]); setRawListings([]); setRawPortfolio([]); setRawPosts([]); setRawHashtags([]); setRawLocations([]); setRawCourses([]); setPortfolioIntent([]); setResultsReady(false); return;
     }
     setLoading(true); setResultsReady(false);
     clearTimeout(debounceRef.current);
@@ -1722,9 +1726,11 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         searchHashtagSuggestions(textQuery, 6).catch(() => []),
         searchLocationSuggestions(textQuery, 6).catch(() => []),
         coursesQuery ? getCourses({ query: coursesQuery, limit: 24 }).catch(() => []) : Promise.resolve([]),
+        isPortfolioIntent(query) ? getTrendingPortfolio(PREVIEW_LIMIT).catch(() => [] as PortfolioFeedEntry[]) : Promise.resolve([] as PortfolioFeedEntry[]),
       ])
-        .then(([{ users: u, listings: l }, portfolio, posts, hashtags, locations, courses]) => {
+        .then(([{ users: u, listings: l }, portfolio, posts, hashtags, locations, courses, trendingPortfolio]) => {
           if (searchVersionRef.current !== myVersion) return; // a newer query already superseded this one
+          setPortfolioIntent(trendingPortfolio);
           setRawUsers(u); setRawListings(l);
           setRawPortfolio(portfolio); setRawPosts(posts); setRawHashtags(hashtags); setRawLocations(locations); setRawCourses(courses);
           setResultsReady(true);
@@ -2079,8 +2085,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // they only count toward "are there any results" on that tab, same
   // reasoning destinationMatches already used.
   const allOnlyMatches = activeTab === 'all' && (rawHashtags.length > 0 || rawLocations.length > 0 || destinationMatches.length > 0);
+  const showPortfolioIntent = hasTyped && (activeTab === 'all' || activeTab === 'connect') && portfolioIntent.length > 0;
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
-    && rawPortfolio.length === 0 && rawPosts.length === 0 && rawCourses.length === 0 && !allOnlyMatches;
+    && !showPortfolioIntent && rawPortfolio.length === 0 && rawPosts.length === 0 && rawCourses.length === 0 && !allOnlyMatches;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
     || rawPortfolio.length > 0 || rawPosts.length > 0 || rawCourses.length > 0 || allOnlyMatches;
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
@@ -2239,6 +2246,26 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   this tab -- the Marketplace/Connect/Learning tabs' own
                   typed search below is completely untouched, still the
                   full per-category breakdown. */}
+              {/* Typed "portfolio(s)": the top trending portfolio work first,
+                  max 5, with View all to the full trending page. */}
+              {showPortfolioIntent && (
+                <section className="mb-4">
+                  <div className="flex items-center justify-between px-4 py-2">
+                    <p className="text-[13px] font-black text-gray-900">🎬 Trending portfolios</p>
+                    <ViewAllLink onClick={() => closeAndNavigate('/search/category/connect/portfolio')}/>
+                  </div>
+                  <div className="px-4">
+                    <PortfolioPinGrid entries={portfolioIntent.slice(0, PREVIEW_LIMIT)}
+                      onOpenItem={e => { handleClose(); openPortfolioItem(e, portfolioIntent); }} />
+                  </div>
+                  <div className="px-4 pt-3">
+                    <button onClick={() => closeAndNavigate('/search/category/connect/portfolio')}
+                      className="w-full rounded-2xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-800 hover:bg-gray-50 active:scale-[0.99] transition-transform">
+                      View all portfolios
+                    </button>
+                  </div>
+                </section>
+              )}
               {activeTab === 'all' && (() => {
                 const sections: Partial<Record<SearchSource, ReactNode>> = {
                   marketplace: allMarketplaceCombined.length > 0 && (
