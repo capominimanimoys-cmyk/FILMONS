@@ -52,7 +52,7 @@ export function PortfolioPinGrid({ entries, onOpenItem }: {
     <>
       <div className="flex items-start gap-3">
         {columns.map((col, ci) => (
-          <div key={ci} className="flex min-w-0 flex-1 flex-col gap-4">
+          <div key={ci} data-pop-list className="flex min-w-0 flex-1 flex-col gap-4">
             {col.map(e => (
               <PinTile key={`${e.type}-${e.id}`} entry={e}
                 onOpen={() => (onOpenItem ? onOpenItem(e) : openPortfolioItem(e, entries))} />

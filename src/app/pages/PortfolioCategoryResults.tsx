@@ -214,7 +214,7 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
 
         <div className="flex-1 min-w-0 px-4 md:px-0 py-4 md:py-0 space-y-4">
           {browsing && (
-            <div>
+            <div data-pop>
               <p className="text-lg font-black text-gray-900">Trending portfolios</p>
               <p className="text-xs text-gray-500">Popular work from creators on FILMONS right now</p>
             </div>
@@ -229,12 +229,12 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
             <PortfolioPinGrid entries={filtered} />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-              <div className="space-y-3">
+              <div data-pop-list className="space-y-3">
                 {left.map(e => e.type === 'item'
                   ? <PortfolioProjectCard key={`item-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
                   : <PortfolioAlbumCard key={`album-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
               </div>
-              <div className="space-y-3">
+              <div data-pop-list className="space-y-3">
                 {right.map(e => e.type === 'item'
                   ? <PortfolioProjectCard key={`item-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
                   : <PortfolioAlbumCard key={`album-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}

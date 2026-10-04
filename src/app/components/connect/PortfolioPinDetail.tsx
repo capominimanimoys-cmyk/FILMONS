@@ -8,6 +8,7 @@
 // PortfolioCommentSheet, SharePostSheet), never a second system.
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router';
 import { BadgeCheck, ChevronLeft, ChevronRight, ExternalLink, Flag, Heart, Layers, Link2, MessageCircle, MoreHorizontal, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -113,6 +114,7 @@ export function PortfolioPinDetail({ entry: first, seed, onClose }: {
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }); }, [entry.type, entry.id]);
 
   const closingRef = useRef(false);
+  const exit = () => { if (!closingRef.current) { closingRef.current = true; setShow(false); setTimeout(onClose, 280); } };
   const back = () => {
     setStack(s => {
       if (s.length > 1) return s.slice(0, -1);
@@ -139,7 +141,7 @@ export function PortfolioPinDetail({ entry: first, seed, onClose }: {
         style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))', touchAction: 'pan-y' }}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touch.current = null; setAnimating(true); setSlideX(0); }}>
         <div style={{ transform: `translateX(${slideX}px)`, transition: animating ? 'transform 220ms cubic-bezier(0.22,1,0.36,1)' : 'none' }}>
-          <PinBody key={`${entry.type}-${entry.id}`} entry={entry} seed={seed} onBack={back} onRelated={onRelated}
+          <PinBody key={`${entry.type}-${entry.id}`} entry={entry} seed={seed} onBack={back} onExit={exit} onRelated={onRelated}
             onOpenItem={(e, related) => setStack(s => [...s, { entry: e, list: itemsOf(related) }])} />
         </div>
       </div>
@@ -150,13 +152,14 @@ export function PortfolioPinDetail({ entry: first, seed, onClose }: {
   );
 }
 
-function PinBody({ entry, seed, onBack, onOpenItem, onRelated }: {
+function PinBody({ entry, seed, onBack, onExit, onOpenItem, onRelated }: {
   entry: PortfolioPinEntry; seed: PortfolioFeedEntry[];
-  onBack: () => void; onOpenItem: (e: PortfolioPinEntry, related: PortfolioFeedEntry[]) => void;
+  onBack: () => void; onExit: () => void; onOpenItem: (e: PortfolioPinEntry, related: PortfolioFeedEntry[]) => void;
   onRelated: (related: PortfolioFeedEntry[]) => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
   const { openPortfolioPreview } = usePortfolioPreview();
+  const navigate = useNavigate();
   const { creator } = entry;
   const item = entry.type === 'item' ? entry.item : null;
   const album = entry.type === 'album' ? entry.album : null;
@@ -316,7 +319,11 @@ function PinBody({ entry, seed, onBack, onOpenItem, onRelated }: {
 
       {/* More to explore */}
       <div className="px-3 pt-8">
-        <h2 className="px-2 pb-3 text-[22px] font-bold text-gray-900">More to explore</h2>
+        <button type="button" onClick={() => { navigate('/search/category/connect/portfolio'); onExit(); }}
+          className="flex w-full items-center gap-1 px-2 pb-3 text-left">
+          <h2 className="text-[22px] font-bold text-gray-900">More to explore</h2>
+          <ChevronRight className="h-6 w-6 text-gray-900" />
+        </button>
         {related === null
           ? <div className="grid grid-cols-2 gap-3">{[0, 1, 2, 3].map(i => <div key={i} className="animate-pulse rounded-2xl bg-gray-100" style={{ aspectRatio: i % 3 ? '3 / 4' : '1' }} />)}</div>
           : related.length === 0

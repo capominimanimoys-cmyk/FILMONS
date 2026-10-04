@@ -6,13 +6,39 @@
 // className on re-render, which would hide a popped element again.
 // Elements that become visible in the same frame are staggered
 // top-to-bottom, left-to-right, so a grid or rail cascades in.
+//
+// `autoScope` (used outside Learning, e.g. Search's Connect pages): inside
+// elements matching that selector, card-level elements are tagged
+// [data-pop] automatically -- every <article>, every child of a
+// [data-pop-list], plus list/grid children that don't wrap other cards -- so a
+// page whose cards come from many components pops without editing each one.
 import { useEffect } from 'react';
+
+const STRONG = 'article, [data-pop], [data-pop-list] > *';
+const WEAK = 'ul > li, .grid > *, .space-y-2 > *, .space-y-3 > *, .divide-y > *';
+
+function autoTag(scope: string) {
+  document.querySelectorAll(scope).forEach(root => {
+    const tagged = (el: Element) => {
+      for (let p = el.parentElement; p && p !== root; p = p.parentElement) if (p.hasAttribute('data-pop')) return true;
+      return false;
+    };
+    const skip = (el: Element) => !!el.closest('header, .fixed, [data-no-pop]');
+    root.querySelectorAll(STRONG).forEach(el => { if (!skip(el) && !tagged(el)) el.setAttribute('data-pop', ''); });
+    root.querySelectorAll(WEAK).forEach(el => {
+      if (el.hasAttribute('data-pop') || skip(el) || tagged(el)) return;
+      if (el.querySelector(`${STRONG}, ${WEAK}`)) return; // a layout column, not a card
+      el.setAttribute('data-pop', '');
+    });
+  });
+}
 
 const STAGGER_MS = 55;
 const MAX_STAGGER_STEPS = 8;
 
-export function usePopIn() {
+export function usePopIn({ enabled = true, autoScope }: { enabled?: boolean; autoScope?: string } = {}) {
   useEffect(() => {
+    if (!enabled) return;
     if (typeof IntersectionObserver === 'undefined' || typeof MutationObserver === 'undefined') return;
     const html = document.documentElement;
 
@@ -41,6 +67,7 @@ export function usePopIn() {
     let frame = 0;
     const scanNow = () => {
       frame = 0;
+      if (autoScope) autoTag(autoScope);
       document.querySelectorAll('[data-pop]').forEach(el => {
         if (watched.has(el)) return;
         watched.add(el);
@@ -61,5 +88,5 @@ export function usePopIn() {
       if (frame) cancelAnimationFrame(frame);
       html.classList.remove('lp-ready');
     };
-  }, []);
+  }, [enabled, autoScope]);
 }

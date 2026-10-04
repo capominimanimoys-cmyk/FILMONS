@@ -19,6 +19,7 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
+import { usePopIn } from '../lib/usePopIn';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
@@ -738,10 +739,10 @@ function SingleCategoryResults({ category, navState: initialNavState }: { catego
             // (CreatorResultRow, unchanged) -- two lists, one hidden per
             // breakpoint, same pattern CategorySection uses on /all.
             <>
-              <div className="flex flex-col gap-3.5 md:hidden">
+              <div data-pop-list className="flex flex-col gap-3.5 md:hidden">
                 {creators.map(u => <CreatorCardMobile key={u.id} u={u} onView={() => navigate(`/host/${u.id}`)}/>)}
               </div>
-              <div className="hidden md:flex md:flex-col gap-3">
+              <div data-pop-list className="hidden md:flex md:flex-col gap-3">
                 {creators.map(u => <CreatorResultRow key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
               </div>
             </>
@@ -3136,6 +3137,8 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
 // ── Entry point ───────────────────────────────────────────────────────────────
 export function CategoryResults() {
   const { tab, subTab } = useParams<{ tab: string; subTab?: string }>();
+  // Connect pages (/search/category/connect/*): cards pop in as they appear.
+  usePopIn({ enabled: tab === 'connect', autoScope: '[data-connect-page]' });
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -3175,15 +3178,15 @@ export function CategoryResults() {
   // display/routing alias for the 'creators' CategoryTab -- see
   // CATEGORY_LABEL and categoryUrl's own comments for why the internal id
   // stays 'creators'.
-  if (tab === 'connect' && subTab === 'posts')     return <PostsCategoryResults query={navState.query} />;
-  if (tab === 'connect' && subTab === 'portfolio') return <PortfolioCategoryResults query={navState.query} />;
-  if (tab === 'connect' && subTab === 'profiles')  return <SingleCategoryResults category="creators" navState={navState}/>;
-  if (tab === 'connect' && subTab === 'courses')   return <CoursesCategoryResults query={navState.query} inConnect />;
+  if (tab === 'connect' && subTab === 'posts')     return <div data-connect-page><PostsCategoryResults query={navState.query} /></div>;
+  if (tab === 'connect' && subTab === 'portfolio') return <div data-connect-page><PortfolioCategoryResults query={navState.query} /></div>;
+  if (tab === 'connect' && subTab === 'profiles')  return <div data-connect-page><SingleCategoryResults category="creators" navState={navState}/></div>;
+  if (tab === 'connect' && subTab === 'courses')   return <div data-connect-page><CoursesCategoryResults query={navState.query} inConnect /></div>;
   // Top-level Marketplace/Connect/Learning modes -- the "View all results"
   // destination from SearchOverlay for a non-'all' tab. Same AllGroupedResults
   // grouped-sections view, just scoped to one product's categories.
   if (tab === 'marketplace') return <AllGroupedResults navState={navState} product="marketplace"/>;
-  if (tab === 'connect') return <AllGroupedResults navState={navState} product="connect"/>;
+  if (tab === 'connect') return <div data-connect-page><AllGroupedResults navState={navState} product="connect"/></div>;
   if (tab === 'learning') return <AllGroupedResults navState={navState} product="learning"/>;
   if (tab === 'hashtags') return <HashtagCategoryResults query={navState.query} />;
   if (tab === 'locations') return <LocationCategoryResults query={navState.query} />;
