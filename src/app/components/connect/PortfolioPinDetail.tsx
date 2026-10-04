@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { BadgeCheck, ChevronLeft, ExternalLink, Flag, Heart, Link2, MessageCircle, MoreHorizontal, Send } from 'lucide-react';
+import { BadgeCheck, ChevronLeft, ChevronRight, ExternalLink, Flag, Heart, Link2, MessageCircle, MoreHorizontal, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -26,21 +26,81 @@ import { PortfolioPinGrid } from './PortfolioPinGrid';
 
 export type PortfolioItemEntry = Extract<PortfolioFeedEntry, { type: 'item' }>;
 
+type Frame = { entry: PortfolioItemEntry; list: PortfolioItemEntry[] };
+const itemsOf = (es: PortfolioFeedEntry[]) => es.filter((e): e is PortfolioItemEntry => e.type === 'item');
+const SWIPE_DISTANCE = 70;
+
 export function PortfolioPinDetail({ entry: first, seed, onClose }: {
   entry: PortfolioItemEntry;
-  /** What was on screen when it opened -- shown in More to explore while related work loads. */
+  /** What was on screen when it opened: swipe order, and More to explore while related work loads. */
   seed: PortfolioFeedEntry[];
   onClose: () => void;
 }) {
-  const [stack, setStack] = useState<PortfolioItemEntry[]>([first]);
+  // Each frame is one opened piece plus the list it was opened from, which
+  // is what swiping left/right walks through. Opening something from More
+  // to explore pushes a new frame; Back pops frames before closing.
+  const [stack, setStack] = useState<Frame[]>(() => {
+    const list = itemsOf(seed);
+    return [{ entry: first, list: list.some(e => e.id === first.id) ? list : [first] }];
+  });
   const [show, setShow] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
-  const entry = stack[stack.length - 1];
+  const frame = stack[stack.length - 1];
+  const entry = frame.entry;
+  const idx = frame.list.findIndex(e => e.id === entry.id);
+  const prev = idx > 0 ? frame.list[idx - 1] : null;
+  const next = idx >= 0 && idx < frame.list.length - 1 ? frame.list[idx + 1] : null;
+
+  // Horizontal slide: follows the finger while dragging, then animates out
+  // and the neighbour slides in from the other side.
+  const [slideX, setSlideX] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const busy = useRef(false);
+  const go = (dir: 1 | -1) => {
+    const target = dir === 1 ? next : prev;
+    if (!target || busy.current) { setAnimating(true); setSlideX(0); return; }
+    busy.current = true;
+    const w = window.innerWidth;
+    setAnimating(true); setSlideX(-dir * w);
+    setTimeout(() => {
+      setStack(s => [...s.slice(0, -1), { ...s[s.length - 1], entry: target }]);
+      setAnimating(false); setSlideX(dir * w);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        setAnimating(true); setSlideX(0);
+        setTimeout(() => { busy.current = false; }, 240);
+      }));
+    }, 200);
+  };
+  const goRef = useRef(go); goRef.current = go;
+
+  const touch = useRef<{ x: number; y: number; dir: 'h' | 'v' | null } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (busy.current || e.touches.length !== 1) return;
+    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dir: null };
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const t = touch.current; if (!t) return;
+    const dx = e.touches[0].clientX - t.x, dy = e.touches[0].clientY - t.y;
+    if (!t.dir) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; t.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'; }
+    if (t.dir !== 'h') return;
+    const edge = (dx > 0 && !prev) || (dx < 0 && !next);
+    setAnimating(false); setSlideX(edge ? dx * 0.25 : dx);
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const t = touch.current; touch.current = null;
+    if (!t || t.dir !== 'h') return;
+    const dx = e.changedTouches[0].clientX - t.x;
+    if (dx <= -SWIPE_DISTANCE) go(1); else if (dx >= SWIPE_DISTANCE) go(-1); else { setAnimating(true); setSlideX(0); }
+  };
 
   useEffect(() => {
     requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)));
     window.dispatchEvent(new CustomEvent('filmons:home-bars-hidden', { detail: { hidden: true } }));
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') back(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') back();
+      else if (e.key === 'ArrowRight') goRef.current(1);
+      else if (e.key === 'ArrowLeft') goRef.current(-1);
+    };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
@@ -59,20 +119,39 @@ export function PortfolioPinDetail({ entry: first, seed, onClose }: {
     });
   };
 
+  // Opened on its own (no list around it): once related work loads, swiping
+  // continues into it.
+  const onRelated = (related: PortfolioFeedEntry[]) => {
+    setStack(s => {
+      const top = s[s.length - 1];
+      if (top.list.length > 1 || top.entry.id !== entry.id) return s;
+      return [...s.slice(0, -1), { ...top, list: [top.entry, ...itemsOf(related)] }];
+    });
+  };
+
+  const arrow = 'absolute top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 shadow-md hover:bg-white md:flex';
   return createPortal(
-    <div className="fixed inset-0 z-[70] bg-white"
+    <div className="fixed inset-0 z-[70] overflow-hidden bg-white"
       style={{ transform: show ? 'translateY(0)' : 'translateY(6%)', opacity: show ? 1 : 0, transition: 'transform 300ms cubic-bezier(0.22,1,0.36,1), opacity 260ms ease-out' }}>
-      <div ref={scroller} className="h-full overflow-y-auto overscroll-contain" style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}>
-        <PinBody key={entry.id} entry={entry} seed={seed} onBack={back} onOpenItem={e => setStack(s => [...s, e])} />
+      <div ref={scroller} className="h-full overflow-y-auto overflow-x-hidden overscroll-contain"
+        style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))', touchAction: 'pan-y' }}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touch.current = null; setAnimating(true); setSlideX(0); }}>
+        <div style={{ transform: `translateX(${slideX}px)`, transition: animating ? 'transform 220ms cubic-bezier(0.22,1,0.36,1)' : 'none' }}>
+          <PinBody key={entry.id} entry={entry} seed={seed} onBack={back} onRelated={onRelated}
+            onOpenItem={(e, related) => setStack(s => [...s, { entry: e, list: itemsOf(related) }])} />
+        </div>
       </div>
+      {prev && <button type="button" onClick={() => go(-1)} aria-label="Previous" className={`${arrow} left-4`}><ChevronLeft className="h-6 w-6 text-gray-900" /></button>}
+      {next && <button type="button" onClick={() => go(1)} aria-label="Next" className={`${arrow} right-4`}><ChevronRight className="h-6 w-6 text-gray-900" /></button>}
     </div>,
     document.body,
   );
 }
 
-function PinBody({ entry, seed, onBack, onOpenItem }: {
+function PinBody({ entry, seed, onBack, onOpenItem, onRelated }: {
   entry: PortfolioItemEntry; seed: PortfolioFeedEntry[];
-  onBack: () => void; onOpenItem: (e: PortfolioItemEntry) => void;
+  onBack: () => void; onOpenItem: (e: PortfolioItemEntry, related: PortfolioFeedEntry[]) => void;
+  onRelated: (related: PortfolioFeedEntry[]) => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
@@ -106,6 +185,7 @@ function PinBody({ entry, seed, onBack, onOpenItem }: {
         const seen = new Set<string>();
         const out = [...same, ...seed].filter(e => notThis(e) && !seen.has(`${e.type}-${e.id}`) && !!seen.add(`${e.type}-${e.id}`));
         setRelated(out);
+        onRelated(out);
       });
     return () => { cancelled = true; };
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -201,7 +281,7 @@ function PinBody({ entry, seed, onBack, onOpenItem }: {
           ? <div className="grid grid-cols-2 gap-3">{[0, 1, 2, 3].map(i => <div key={i} className="animate-pulse rounded-2xl bg-gray-100" style={{ aspectRatio: i % 3 ? '3 / 4' : '1' }} />)}</div>
           : related.length === 0
             ? <p className="py-10 text-center text-sm text-gray-400">Nothing else to explore yet.</p>
-            : <PortfolioPinGrid entries={related} onOpenItem={onOpenItem} />}
+            : <PortfolioPinGrid entries={related} onOpenItem={e => onOpenItem(e, related)} />}
       </div>
 
       {showComments && createPortal(
