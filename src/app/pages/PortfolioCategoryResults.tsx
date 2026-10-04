@@ -10,12 +10,13 @@
 // already do that internally. Filters (Creative category/Media type/
 // Location/Date) apply client-side over the already-fetched match set --
 // same precedent PostsCategoryResults/Marketplace's dedicated page use.
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { searchMatchingPortfolio, type SearchPortfolioRow } from '../lib/filmSearch';
-import { getPortfolioEntriesByIds, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry } from '../lib/portfolioApi';
+import { getPortfolioEntriesByIds, getPortfolioFeed, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
+import { PortfolioPinGrid } from '../components/connect/PortfolioPinGrid';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 import { useAuth } from '../context/AuthContext';
@@ -65,6 +66,19 @@ function entryMatchesMedia(e: PortfolioFeedEntry, media: MediaFilter): boolean {
   return e.type === 'item' ? e.item.media_type === media : e.previewItems.some(p => p.media_type === media);
 }
 
+// Trending = engagement weighted by freshness, so a well-liked piece from
+// this week outranks an older one with the same likes. Ranked per loaded
+// batch: each scroll page brings the next (older) batch, best first.
+const TRENDING_BATCH = 30;
+function trendingScore(e: PortfolioFeedEntry, now: number): number {
+  const m: any = e.type === 'item' ? e.item : e.album;
+  const engagement = (m.likes_count ?? 0) * 3 + (m.comments_count ?? 0) * 4 + (m.reposts_count ?? 0) * 5
+    + (m.saves_count ?? 0) * 4 + (m.views_count ?? 0) * 0.2 + 1;
+  const ageHours = Math.max(0, (now - new Date(e.created_at).getTime()) / 3_600_000);
+  return engagement / Math.pow(ageHours + 2, 1.3);
+}
+const entryKey = (e: PortfolioFeedEntry) => `${e.type}-${e.id}`;
+
 export function PortfolioCategoryResults({ query: initialQuery }: { query?: string }) {
   const { user } = useAuth();
   const [query, setQuery] = useState(initialQuery ?? '');
@@ -93,17 +107,54 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
     return () => { cancelled = true; };
   }, [matches, user?.id]);
 
+  // Nothing typed: trending portfolio work, loaded page by page as you scroll.
+  const browsing = !query.trim();
+  const [trending, setTrending] = useState<PortfolioFeedEntry[] | null>(null);
+  const [trendingDone, setTrendingDone] = useState(false);
+  const cursor = useRef<string | undefined>(undefined);
+  const loadingMore = useRef(false);
+  const loadTrending = useCallback(async (reset = false) => {
+    if (loadingMore.current) return;
+    loadingMore.current = true;
+    if (reset) cursor.current = undefined;
+    try {
+      const batch = await getPortfolioFeed({ before: cursor.current, limit: TRENDING_BATCH, viewerId: user?.id });
+      if (batch.length) cursor.current = batch.reduce((min, e) => (e.created_at < min ? e.created_at : min), batch[0].created_at);
+      const now = Date.now();
+      const ranked = [...batch].sort((a, b) => trendingScore(b, now) - trendingScore(a, now));
+      setTrending(prev => {
+        const base = reset || !prev ? [] : prev;
+        const seen = new Set(base.map(entryKey));
+        return [...base, ...ranked.filter(e => !seen.has(entryKey(e)))];
+      });
+      setTrendingDone(batch.length === 0);
+    } catch {
+      setTrending(prev => prev ?? []); setTrendingDone(true);
+    } finally { loadingMore.current = false; }
+  }, [user?.id]);
+  useEffect(() => { if (browsing && trending === null) loadTrending(true); }, [browsing, trending, loadTrending]);
+
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !browsing || trendingDone || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) loadTrending(); }, { rootMargin: '600px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  });
+
   useEffect(() => { try { sessionStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch {} }, [filters]);
 
   const filtered = useMemo(() => {
-    if (!entries) return null;
-    return entries.filter(e =>
+    const source = browsing ? trending : entries;
+    if (!source) return null;
+    return source.filter(e =>
       (!filters.category || entryCategory(e) === filters.category)
       && entryMatchesMedia(e, filters.media)
       && (!filters.location.trim() || (entryLocation(e) ?? '').toLowerCase().includes(filters.location.trim().toLowerCase()))
       && withinDatePreset(e.created_at, filters.date)
     );
-  }, [entries, filters]);
+  }, [browsing, trending, entries, filters]);
 
   const clearFilters = () => setFilters(DEFAULT_FILTERS);
   const activeFilterCount = (filters.category ? 1 : 0) + (filters.media !== 'any' ? 1 : 0) + (filters.location.trim() ? 1 : 0) + (filters.date !== 'any' ? 1 : 0);
@@ -172,12 +223,20 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
         </aside>
 
         <div className="flex-1 min-w-0 px-4 md:px-0 py-4 md:py-0 space-y-4">
-          {!query.trim() ? (
-            <p className="text-center text-sm text-gray-400 py-16">Search Portfolio work to get started.</p>
-          ) : filtered === null ? (
-            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Searching" /></div>
-          ) : filtered.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-16">No portfolio work matching "{query}"</p>
+          {browsing && (
+            <div>
+              <p className="text-lg font-black text-gray-900">Trending portfolios</p>
+              <p className="text-xs text-gray-500">Popular work from creators on FILMONS right now</p>
+            </div>
+          )}
+          {filtered === null ? (
+            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label={browsing ? 'Loading' : 'Searching'} /></div>
+          ) : filtered.length === 0 && (!browsing || trendingDone) ? (
+            <p className="text-center text-sm text-gray-400 py-16">
+              {browsing ? (activeFilterCount ? 'No trending work matches these filters.' : 'No portfolio work yet.') : `No portfolio work matching "${query}"`}
+            </p>
+          ) : browsing ? (
+            <PortfolioPinGrid entries={filtered} />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
               <div className="space-y-3">
@@ -191,6 +250,9 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
                   : <PortfolioAlbumCard key={`album-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
               </div>
             </div>
+          )}
+          {browsing && filtered !== null && !trendingDone && (
+            <div ref={sentinel} className="flex justify-center py-6"><FilmonsBrandLoader size="sm" label="Loading more" /></div>
           )}
         </div>
       </div>
