@@ -1640,6 +1640,33 @@ export interface RepostContextEntry {
 // ============================================
 // POSTS API
 // ============================================
+const TRENDING_WINDOW_DAYS = 7;
+
+// Shared row -> Post hydration for the discovery feeds (getTopPosts /
+// getTrendingPosts): author profiles plus the viewer's liked/reposted/
+// repost-context lookups, all in one Promise.all round trip.
+async function hydrateDiscoveryPostRows(rows: any[]): Promise<Post[]> {
+  const currentUser = authApi.getCurrentUser();
+  if (!rows.length) return [];
+  const userIds = [...new Set(rows.map((r:any)=>r.author_id).filter(Boolean))];
+  const postIds = rows.map((r:any) => r.id);
+  const [profilesRes, likedIds, repostedIds, repostContextMap] = await Promise.all([
+    userIds.length
+      ? supabase.from('profiles').select('id, name, username, avatar_url, account_type, primary_role').in('id', userIds)
+      : Promise.resolve({ data: [] as any[] }),
+    currentUser ? fetchLikedPostIds(postIds, currentUser.id) : Promise.resolve(new Set<string>()),
+    currentUser ? fetchRepostedPostIds(postIds, currentUser.id) : Promise.resolve(new Set<string>()),
+    currentUser ? fetchRepostContext(postIds, currentUser.id) : Promise.resolve(new Map<string, RepostContextEntry[]>()),
+  ]);
+  const profileMap: Record<string,any> = {};
+  (profilesRes.data||[]).forEach((p:any) => { profileMap[p.id] = p; });
+  const mapped = rows.map((row:any) => {
+    const prof = profileMap[row.author_id] || {};
+    return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds, repostContextMap);
+  });
+  return filterPostsByVisibility(mapped, currentUser?.id);
+}
+
 export const postsApi = {
   getAll: async (limit = 30, offset = 0): Promise<Post[]> => {
     const currentUser = authApi.getCurrentUser();
@@ -1698,7 +1725,6 @@ export const postsApi = {
   // getAll above, just ordered by the real, trigger-synced likes_count
   // column instead of recency.
   getTopPosts: async (limit = 10): Promise<Post[]> => {
-    const currentUser = authApi.getCurrentUser();
     try {
       const { data, error } = await supabase
         .from('posts')
@@ -1707,31 +1733,46 @@ export const postsApi = {
         .order('likes_count', { ascending: false })
         .limit(limit);
       if (error) throw error;
-      const rows = data || [];
-      const userIds = [...new Set(rows.map((r:any)=>r.author_id).filter(Boolean))];
-      const postIds = rows.map((r:any) => r.id);
-      // Profiles and the liked/reposted/repost-context lookups only
-      // depend on postIds/userIds, not on each other -- run all 4 in one
-      // Promise.all instead of awaiting profiles first, which previously
-      // added a full extra round trip to every "Top posts" load.
-      const [profilesRes, likedIds, repostedIds, repostContextMap] = await Promise.all([
-        userIds.length
-          ? supabase.from('profiles').select('id, name, username, avatar_url, account_type, primary_role').in('id', userIds)
-          : Promise.resolve({ data: [] as any[] }),
-        currentUser ? fetchLikedPostIds(postIds, currentUser.id) : Promise.resolve(new Set<string>()),
-        currentUser ? fetchRepostedPostIds(postIds, currentUser.id) : Promise.resolve(new Set<string>()),
-        currentUser ? fetchRepostContext(postIds, currentUser.id) : Promise.resolve(new Map<string, RepostContextEntry[]>()),
-      ]);
-      const profileMap: Record<string,any> = {};
-      (profilesRes.data||[]).forEach((p:any) => { profileMap[p.id] = p; });
-      const mapped = rows.map((row:any) => {
-        const prof = profileMap[row.author_id] || {};
-        return rowToPostClient({...row, _pname: prof.name, _pusername: prof.username, _pavatar: prof.avatar_url, _paccount: prof.account_type, _prole: prof.primary_role}, currentUser?.id, likedIds, repostedIds, repostContextMap);
-      });
-      return filterPostsByVisibility(mapped, currentUser?.id);
+      return await hydrateDiscoveryPostRows(data || []);
     } catch(e) {
       console.error('[getTopPosts] error:', e);
       return [];
+    }
+  },
+
+  // Twitter-style "Trending" for Browse Search's Connect empty state --
+  // what's hot right now, not the all-time most-liked. Pulls the recent
+  // window (TRENDING_WINDOW_DAYS) and ranks it by engagement decayed by
+  // age (Hacker News-style gravity), so a post with 20 likes from this
+  // morning outranks one with 200 likes from last month. Topped up from
+  // getTopPosts when the window is too quiet to fill `limit`, so a low-
+  // traffic period never renders an empty section.
+  getTrendingPosts: async (limit = 10): Promise<Post[]> => {
+    try {
+      const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 86_400_000).toISOString();
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .or('is_archived.eq.false,is_archived.is.null')
+        .gte('created_at', since)
+        .order('likes_count', { ascending: false })
+        .limit(Math.max(limit * 4, 40));
+      if (error) throw error;
+      const now = Date.now();
+      const score = (r: any) => {
+        const engagement = (r.likes_count ?? 0) + 2 * (r.comments_count ?? 0) + 3 * (r.reposts_count ?? 0);
+        const ageHours = Math.max(0, (now - new Date(r.created_at).getTime()) / 3_600_000);
+        return (engagement + 1) / Math.pow(ageHours + 2, 1.5);
+      };
+      const ranked = [...(data || [])].sort((a, b) => score(b) - score(a)).slice(0, limit);
+      const trending = await hydrateDiscoveryPostRows(ranked);
+      if (trending.length >= limit) return trending;
+      const seen = new Set(trending.map(p => p.id));
+      const fill = (await postsApi.getTopPosts(limit * 2)).filter(p => !seen.has(p.id));
+      return [...trending, ...fill].slice(0, limit);
+    } catch(e) {
+      console.error('[getTrendingPosts] error:', e);
+      return postsApi.getTopPosts(limit);
     }
   },
 

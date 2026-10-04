@@ -37,7 +37,7 @@ import { LocationCategoryResults } from './LocationCategoryResults';
 import { PortfolioCategoryResults } from './PortfolioCategoryResults';
 import { PostsCategoryResults } from './PostsCategoryResults';
 import { CoursesCategoryResults } from './CoursesCategoryResults';
-import { searchHashtagSuggestions, getMostRecentFollowedHashtag, type HashtagSuggestion } from '../lib/hashtagsApi';
+import { searchHashtagSuggestions, getMostRecentFollowedHashtag, getTrendingHashtags, type Hashtag, type HashtagSuggestion } from '../lib/hashtagsApi';
 import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locationsApi';
 import { searchMatchingPortfolio, searchMatchingPosts, type SearchPortfolioRow, type SearchPostRow } from '../lib/filmSearch';
 import { getCourses, getPopularCourses, type Course } from '../lib/coursesApi';
@@ -47,7 +47,7 @@ import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
 import { fetchConnectDiscovery, type ConnectDiscovery } from '../lib/connectDiscovery';
-import { Hash, MapPin } from 'lucide-react';
+import { Hash, MapPin, TrendingUp } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
 import { ALL_PROFESSIONS } from '../components/ProfessionPicker';
@@ -2177,6 +2177,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [followedHashtagListings, setFollowedHashtagListings] = useState<Listing[] | null>(null);
 
   const [connectDiscovery, setConnectDiscovery] = useState<ConnectDiscovery | null>(null);
+  const [trendingTags, setTrendingTags] = useState<Hashtag[] | null>(null);
   const [nearbyCreators, setNearbyCreators] = useState<SuggestedCreator[] | null>(null);
   // Courses stays a Learning product (never reclassified as Connect data,
   // per spec) but is surfaced here too so creators can discover
@@ -2227,6 +2228,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
       // second posts-only version living here.
       fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); });
+      getTrendingHashtags(5).then(r => { if (!cancelled) setTrendingTags(r); }).catch(() => { if (!cancelled) setTrendingTags([]); });
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); });
       // Hidden entirely (not a fake/empty section) when the viewer has no
       // saved city -- same precedent as Marketplace's own nearbyListings.
@@ -2299,16 +2301,43 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
     const trendingPosts = connectDiscovery?.trendingPosts ?? null;
     const featuredPortfolio = connectDiscovery?.featuredPortfolio ?? null;
     const profilesYouMayLike = connectDiscovery?.profilesYouMayLike ?? null;
-    // Default Connect "All" landing -- Posts/Portfolio/Profiles/Courses,
+    // Default Connect "All" landing -- Trending topics + Trending posts (a
+    // full feed of up to DISCOVERY_GROUP_LIMIT, like Twitter's Explore),
+    // then Portfolio/Profiles/Courses,
     // max 5 cards per section, "View all" only when a 6th actually
     // exists (same rule Marketplace's own default landing above uses).
     // 0 results hides the section entirely -- never a fake placeholder.
     return (
       <>
-        {trendingPosts === null ? <DiscoveryRowSkeleton title="Posts" /> : trendingPosts.length > 0 && (
-          <DiscoveryRow title="Posts" count={trendingPosts.length}
+        {/* Twitter-style "Trending" -- what's hot right now (hashtags
+            used this week, then time-decayed top posts, see
+            getTrendingHashtags / postsApi.getTrendingPosts) leads the
+            empty-search landing. Each topic opens its hashtag page. */}
+        {trendingTags === null ? <TrendingTopicsSkeleton /> : trendingTags.length > 0 && (
+          <DiscoveryRow title="Trending" count={trendingTags.length}>
+            <div className={`${DESKTOP_SECTION_PAD}`}>
+              <div className="rounded-2xl border border-gray-100 bg-white divide-y divide-gray-100 overflow-hidden">
+                {trendingTags.map((t, i) => (
+                  <button key={t.id} onClick={() => navigate(`/search/hashtags/${t.tag}`)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <p className="flex items-center gap-1 text-[11px] font-semibold text-gray-400">
+                        {i + 1} · <TrendingUp className="w-3 h-3"/> Trending
+                      </p>
+                      <p className="text-sm font-black text-gray-900 truncate">#{t.tag}</p>
+                      <p className="text-[11px] text-gray-400">{t.post_count.toLocaleString()} post{t.post_count === 1 ? '' : 's'}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </DiscoveryRow>
+        )}
+        {trendingPosts === null ? <DiscoveryRowSkeleton title="Trending posts" /> : trendingPosts.length > 0 && (
+          <DiscoveryRow title="Trending posts" count={trendingPosts.length}
             onViewAll={trendingPosts.length > 5 ? () => navigate('/search/category/connect/posts') : undefined}>
-            <div className="px-4 lg:px-0 space-y-3">{trendingPosts.slice(0, 5).map(p => <PostCard key={p.id} post={p} />)}</div>
+            <div className="px-4 lg:px-0 space-y-3">{trendingPosts.map(p => <PostCard key={p.id} post={p} />)}</div>
           </DiscoveryRow>
         )}
         {featuredPortfolio === null ? <DiscoveryRowSkeleton title="Portfolio" /> : featuredPortfolio.length > 0 && (
@@ -2398,6 +2427,19 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
 // waiting on whichever one happens to be slowest (previously a single
 // `latestListings === null || topListings === null || ...` gate blocked
 // every row, including already-ready ones, until the last query landed).
+function TrendingTopicsSkeleton() {
+  return (
+    <section className="mb-6 lg:mb-8">
+      <div className={`mb-2.5 lg:mb-3 ${DESKTOP_SECTION_PAD}`}>
+        <p className="text-sm lg:text-base font-black text-gray-900">Trending</p>
+      </div>
+      <div className={`space-y-2 ${DESKTOP_SECTION_PAD}`}>
+        {[0, 1, 2].map(i => <div key={i} className="h-14 rounded-2xl bg-gray-100 animate-pulse"/>)}
+      </div>
+    </section>
+  );
+}
+
 function DiscoveryRowSkeleton({ title }: { title: string }) {
   return (
     <section className="mb-6 lg:mb-8">

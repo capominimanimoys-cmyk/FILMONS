@@ -61,6 +61,20 @@ export async function getTopHashtags(limit = 20): Promise<Hashtag[]> {
   return data ?? [];
 }
 
+/** Twitter-style "Trending" topics for Browse Search's Connect empty
+ *  state -- the most-posted hashtags among those used in the last week
+ *  (last_used_at bumps on every mention), falling back to the all-time
+ *  top list when nothing was used recently. */
+export async function getTrendingHashtags(limit = 5): Promise<Hashtag[]> {
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const { data, error } = await supabase.from('hashtags').select('id, tag, post_count')
+    .gte('last_used_at', since).gt('post_count', 0)
+    .order('post_count', { ascending: false }).limit(limit);
+  if (error) console.error('[hashtagsApi] getTrendingHashtags:', error.message);
+  if (data?.length) return data;
+  return getTopHashtags(limit);
+}
+
 export async function upsertHashtag(tag: string): Promise<string | null> {
   const { data, error } = await supabase.rpc('upsert_hashtag', { p_tag: tag });
   if (error) { console.error('[hashtagsApi] upsert_hashtag:', error.message); return null; }

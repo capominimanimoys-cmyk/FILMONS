@@ -6,8 +6,8 @@
 // search engine," same principle the Marketplace intent system and
 // recognizeQuery already established this session. Real signals only,
 // never a fabricated/newest-only substitute: getSuggestedCreators (same
-// signal set as the Connections hub), postsApi.getTopPosts (real
-// likes_count), getPortfolioFeed (already public-only). Hashtags are
+// signal set as the Connections hub), postsApi.getTrendingPosts (real
+// engagement, time-decayed), getPortfolioFeed (already public-only). Hashtags are
 // deliberately NOT part of Connect discovery -- they're a global,
 // cross-product entity (see /search/hashtags/:slug), never Connect content.
 import { postsApi } from './api';
@@ -26,7 +26,7 @@ export interface ConnectDiscovery {
 export async function fetchConnectDiscovery(userId?: string, limit = 10): Promise<ConnectDiscovery> {
   const [profilesYouMayLike, trendingPosts, featuredPortfolio] = await Promise.all([
     userId ? getSuggestedCreators(userId, { limit }).catch(() => []) : Promise.resolve([]),
-    postsApi.getTopPosts(limit).catch(() => []),
+    postsApi.getTrendingPosts(limit).catch(() => []),
     getPortfolioFeed({ limit, viewerId: userId }).catch(() => []),
   ]);
   return { trendingPosts, featuredPortfolio, profilesYouMayLike };
