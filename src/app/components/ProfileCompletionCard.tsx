@@ -20,7 +20,7 @@ const FIELD_ICON: Record<ProfileField, typeof Briefcase> = {
   photo: Image, bio: FileText, secondaryRoles: Layers, languages: Globe2,
 };
 
-export function ProfileCompletionCard() {
+export function ProfileCompletionCard({ className = 'mx-4 my-2' }: { className?: string } = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
@@ -55,7 +55,7 @@ export function ProfileCompletionCard() {
   const Icon = FIELD_ICON[field];
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mx-4 my-2 relative">
+    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-4 relative ${className}`}>
       <button onClick={() => setDismissed(true)} aria-label="Dismiss"
         className="absolute top-3 right-3 w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
         <X className="w-3.5 h-3.5"/>
