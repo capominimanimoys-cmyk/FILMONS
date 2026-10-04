@@ -1,6 +1,8 @@
 /**
  * GuestAuthPrompt — bottom sheet shown when a guest tries a protected action.
  * Rendered once in Root.tsx; triggered via AuthContext.showGuestPrompt(msg).
+ * Layered above every app overlay/sheet (Browse Search is z-[100], stories
+ * z-[300]) so it is never hidden behind whatever screen triggered it.
  */
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
@@ -21,14 +23,14 @@ export function GuestAuthPrompt() {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-[90] bg-black/60"
+        className="fixed inset-0 z-[400] bg-black/60"
         style={{ backdropFilter: 'blur(4px)' }}
         onClick={hideGuestPrompt}
       />
 
       {/* Sheet */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-[91] bg-gray-900 rounded-t-3xl px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-2xl"
+        className="fixed bottom-0 left-0 right-0 z-[401] bg-gray-900 rounded-t-3xl px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-2xl"
         style={{ animation: 'slideUp 0.28s cubic-bezier(0.32,0.72,0,1)' }}
       >
         <style>{`
