@@ -5,10 +5,16 @@
 // post card, per spec. Filters (Date/Content type/Location) apply
 // client-side over the already-fetched match set -- searchAndHydratePosts
 // is already internally capped, same precedent Marketplace's own
-// dedicated page filters (price/location) use.
+// dedicated page filters (price/location) use. With nothing typed, the
+// page shows a Twitter-style Trending view instead of an empty prompt:
+// trending hashtags on top, then time-decayed trending posts
+// (postsApi.getTrendingPosts), with the same filters applied.
 import { useEffect, useState, useMemo } from 'react';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { SlidersHorizontal, X, TrendingUp, ChevronRight } from 'lucide-react';
 import { searchAndHydratePosts } from '../lib/filmSearch';
+import { postsApi } from '../lib/api';
+import { getTrendingHashtags, type Hashtag } from '../lib/hashtagsApi';
 import { PostCard } from '../components/PostCard';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
@@ -35,6 +41,7 @@ function withinDatePreset(iso: string | undefined, preset: DatePreset): boolean 
 interface PostsFilters { contentType: PostType | 'any'; location: string; date: DatePreset }
 const DEFAULT_FILTERS: PostsFilters = { contentType: 'any', location: '', date: 'any' };
 const FILTERS_KEY = 'connect:posts:filters';
+const TRENDING_POSTS_LIMIT = 30;
 function loadFilters(): PostsFilters {
   try {
     const raw = sessionStorage.getItem(FILTERS_KEY);
@@ -47,13 +54,27 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
   const [results, setResults] = useState<Post[] | null>(null);
   const [filters, setFilters] = useState<PostsFilters>(loadFilters);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [trendingTags, setTrendingTags] = useState<Hashtag[]>([]);
+  const navigate = useNavigate();
+  const isTrending = !query.trim();
 
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
+    let cancelled = false;
     setResults(null);
-    const t = setTimeout(() => { searchAndHydratePosts(query).then(setResults); }, 250);
-    return () => clearTimeout(t);
-  }, [query]);
+    if (isTrending) {
+      postsApi.getTrendingPosts(TRENDING_POSTS_LIMIT).then(r => { if (!cancelled) setResults(r); });
+      return () => { cancelled = true; };
+    }
+    const t = setTimeout(() => { searchAndHydratePosts(query).then(r => { if (!cancelled) setResults(r); }); }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query, isTrending]);
+
+  useEffect(() => {
+    if (!isTrending || trendingTags.length) return;
+    let cancelled = false;
+    getTrendingHashtags(5).then(r => { if (!cancelled) setTrendingTags(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isTrending, trendingTags.length]);
 
   // "Preserve when practical" -- filter STATE persists across a remount
   // (e.g. switching to another Connect category and back); the fetched
@@ -126,12 +147,35 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
         </aside>
 
         <div className="flex-1 min-w-0 px-4 md:px-0 py-4 md:py-0 space-y-4">
-          {!query.trim() ? (
-            <p className="text-center text-sm text-gray-400 py-16">Search posts to get started.</p>
-          ) : filtered === null ? (
-            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Searching" /></div>
+          {isTrending && trendingTags.length > 0 && (
+            <section>
+              <p className="flex items-center gap-1.5 text-sm font-black text-gray-900 mb-2.5">
+                <TrendingUp className="w-4 h-4"/> Trending
+              </p>
+              <div className="rounded-2xl border border-gray-100 bg-white divide-y divide-gray-100 overflow-hidden">
+                {trendingTags.map((t, i) => (
+                  <button key={t.id} onClick={() => navigate(`/search/hashtags/${t.tag}`)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold text-gray-400">{i + 1} · Trending</p>
+                      <p className="text-sm font-black text-gray-900 truncate">#{t.tag}</p>
+                      <p className="text-[11px] text-gray-400">{t.post_count.toLocaleString()} post{t.post_count === 1 ? '' : 's'}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          {isTrending && filtered !== null && filtered.length > 0 && (
+            <p className="text-sm font-black text-gray-900 pt-1">Trending posts</p>
+          )}
+          {filtered === null ? (
+            <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label={isTrending ? 'Loading' : 'Searching'} /></div>
           ) : filtered.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-16">No posts matching "{query}"</p>
+            <p className="text-center text-sm text-gray-400 py-16">
+              {isTrending ? (activeFilterCount > 0 ? 'No trending posts match these filters.' : 'No trending posts yet.') : `No posts matching "${query}"`}
+            </p>
           ) : (
             (() => {
               const [left, right] = splitTwoColumns(filtered);
