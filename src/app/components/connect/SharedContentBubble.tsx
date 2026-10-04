@@ -22,13 +22,13 @@ import type { SharedContentSnapshot } from '../../types';
 export function SharedContentBubble({ content, isOwn }: { content: SharedContentSnapshot; isOwn: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioItem } = usePortfolioPreview();
   const { enterLearning } = useLearningTransition();
   const [checking, setChecking] = useState(false);
 
   const handleTap = async () => {
     if (content.contentType === 'portfolio_item' || content.contentType === 'portfolio_album') {
-      openPortfolioPreview(content.creatorId, content.contentType === 'portfolio_album' ? content.contentId : undefined);
+      openPortfolioItem(content.contentId, [], content.contentType === 'portfolio_album' ? 'album' : 'item');
       return;
     }
     if (content.contentType === 'post') {

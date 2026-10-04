@@ -21,7 +21,7 @@ const RAIL_HEIGHT = 160;
 
 function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEntry; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioItem } = usePortfolioPreview();
   const { user, showGuestPrompt } = useAuth();
   const [saved, setSaved] = useState(false);
 
@@ -35,7 +35,7 @@ function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEn
 
   useEffect(() => { if (user) isPortfolioSaved(user.id, targetId, targetType).then(setSaved); }, [targetId, user?.id]);
 
-  const openCreatorPortfolio = () => openPortfolioPreview(entry.creator.id, isAlbum ? entry.album.id : undefined);
+  const openCreatorPortfolio = () => openPortfolioItem(entry);
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation();

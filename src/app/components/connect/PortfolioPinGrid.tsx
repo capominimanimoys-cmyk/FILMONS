@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Heart, Layers, Play } from 'lucide-react';
 import type { PortfolioFeedEntry } from '../../lib/portfolioApi';
-import type { PortfolioItemEntry } from './PortfolioPinDetail';
+import type { PortfolioPinEntry } from './PortfolioPinDetail';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 
 function useColumnCount() {
@@ -32,10 +32,10 @@ function tileRatio(e: PortfolioFeedEntry): number {
 export function PortfolioPinGrid({ entries, onOpenItem }: {
   entries: PortfolioFeedEntry[];
   /** Inside an open detail page: open the piece there instead of a new page. */
-  onOpenItem?: (e: PortfolioItemEntry) => void;
+  onOpenItem?: (e: PortfolioPinEntry) => void;
 }) {
   const cols = useColumnCount();
-  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
+  const { openPortfolioItem } = usePortfolioPreview();
 
   const columns = useMemo(() => {
     const out: PortfolioFeedEntry[][] = Array.from({ length: cols }, () => []);
@@ -55,7 +55,7 @@ export function PortfolioPinGrid({ entries, onOpenItem }: {
           <div key={ci} className="flex min-w-0 flex-1 flex-col gap-4">
             {col.map(e => (
               <PinTile key={`${e.type}-${e.id}`} entry={e}
-                onOpen={() => (e.type === 'item' ? (onOpenItem ? onOpenItem(e) : openPortfolioItem(e, entries)) : openPortfolioPreview(e.creator.id, e.id))} />
+                onOpen={() => (onOpenItem ? onOpenItem(e) : openPortfolioItem(e, entries))} />
             ))}
           </div>
         ))}
