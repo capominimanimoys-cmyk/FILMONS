@@ -7,6 +7,7 @@ import { ArrowLeft, CheckCircle2, PlayCircle, Circle } from 'lucide-react';
 import { getCourse, getCourseCurriculum, isEnrolled, getLessonProgressMap, type Course, type CourseSection } from '../lib/coursesApi';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { useAuth } from '../context/AuthContext';
+import { useLearningBack } from '../lib/useLearningBack';
 
 function formatDuration(totalSeconds: number | null): string {
   if (!totalSeconds) return '';
@@ -17,6 +18,7 @@ function formatDuration(totalSeconds: number | null): string {
 
 export function CourseContent() {
   const { courseId } = useParams();
+  const goBack = useLearningBack(courseId ? `/course/${courseId}` : '/');
   const { lessonId: currentLessonId } = (useLocation().state as { lessonId?: string }) ?? {};
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -47,7 +49,7 @@ export function CourseContent() {
   return (
     <div className="min-h-screen bg-white pb-24">
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+        <button onClick={goBack} aria-label="Back" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
         <p className="text-sm font-bold text-gray-900 truncate">Course Content</p>

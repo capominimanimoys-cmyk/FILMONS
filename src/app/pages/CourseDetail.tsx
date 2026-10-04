@@ -27,6 +27,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { learningLoginPath } from '../lib/learningAuth';
 import { recordCourseView, isCourseSaved, setCourseSaved } from '../lib/topicsApi';
+import { useLearningBack } from '../lib/useLearningBack';
 import { learningServer, isItemDone, type Curriculum, type ViewerSection } from '../lib/learningServer';
 
 function formatDuration(totalSeconds: number): string {
@@ -63,6 +64,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
 export function CourseDetail() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const goBack = useLearningBack('/');
   const location = useLocation();
   const { leaveLearning } = useLearningTransition();
   const { user } = useAuth();
@@ -175,7 +177,7 @@ export function CourseDetail() {
           LearningHeader entirely on this page now, so there's no longer
           anything above this to offset against. */}
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-sm border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+        <button onClick={goBack} aria-label="Back" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
         <p className="flex-1 text-sm font-bold text-gray-900 truncate">{course.category}{course.subcategory ? ` · ${course.subcategory}` : ''}</p>
