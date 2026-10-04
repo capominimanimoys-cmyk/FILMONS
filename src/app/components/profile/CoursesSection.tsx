@@ -7,15 +7,17 @@
 // functions. Hidden entirely for a creator with no published courses
 // (never an empty placeholder), per this app's no-hardcoded-example-data
 // rule. Course editing/management never happens here -- "Manage courses"
-// deep-links into Filmons Learning's own My Learning/instructor view,
-// same as every other Learning action in the main app.
+// deep-links into Filmons Learning's Instructor dashboard, same as every
+// other Learning action in the main app.
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { getCourses, type Course } from '../../lib/coursesApi';
 import { CourseCard } from '../courses/CourseCard';
 import { useLearningTransition } from '../../context/LearningTransitionContext';
 
 export function CoursesSection({ userId, isOwner }: { userId: string; isOwner: boolean }) {
   const { enterLearning } = useLearningTransition();
+  const location = useLocation();
   const [courses, setCourses] = useState<Course[] | null>(null);
 
   useEffect(() => {
@@ -31,7 +33,7 @@ export function CoursesSection({ userId, isOwner }: { userId: string; isOwner: b
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-black text-gray-900">Courses</p>
         {isOwner && (
-          <button onClick={() => enterLearning('/my-learning')} className="text-xs font-semibold text-blue-600 hover:underline">
+          <button onClick={() => enterLearning('/instructor', { route: location.pathname + location.search })} className="text-xs font-semibold text-blue-600 hover:underline">
             Manage courses
           </button>
         )}

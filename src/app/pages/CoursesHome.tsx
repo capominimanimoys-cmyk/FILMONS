@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Search, ChevronRight, GraduationCap, ArrowRight, PlayCircle,
-  Users2, BookOpen, Award, Globe2, BadgeCheck,
+  Users2, BadgeCheck,
 } from 'lucide-react';
 import {
   getCourses, getPopularCourses, getMyEnrollments, getCoursesFromInstructors,
@@ -22,6 +22,7 @@ import { getDisplayIdentity } from '../lib/displayIdentity';
 import { listConnections } from '../lib/connectionsApi';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { CourseCard } from '../components/courses/CourseCard';
+import { LearningHero } from '../components/learning/LearningHero';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { useAuth } from '../context/AuthContext';
@@ -238,38 +239,8 @@ export function CoursesHome() {
 
       {!query.trim() && (
         <>
-          {/* ── Hero ── */}
-          <div className="relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#0b0f19,#111827 60%,#1f2937)' }}>
-            <div className="lg:max-w-5xl lg:mx-auto px-4 lg:px-0 py-10 lg:py-16">
-              <p data-pop className="text-[11px] font-black tracking-[0.2em] text-blue-400 uppercase mb-3">Filmons Learning</p>
-              <h1 data-pop className="text-3xl lg:text-5xl font-black text-white leading-[1.1] max-w-lg">
-                Real skills<br />for real <span className="text-blue-400">creators.</span>
-              </h1>
-              <p data-pop className="text-sm lg:text-base text-gray-300 mt-4 max-w-md leading-relaxed">
-                Learn from industry professionals. Practical skills. Real projects.
-                A stronger future for creators.
-              </p>
-              <button
-                onClick={() => document.getElementById('learning-discover')?.scrollIntoView({ behavior: 'smooth' })}
-                data-pop className="mt-6 flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 text-white text-sm font-black hover:bg-blue-700 transition-colors"
-              >
-                Start Learning <ArrowRight className="w-4 h-4" />
-              </button>
-
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-8 pt-6 border-t border-white/10">
-                {[
-                  { icon: Award, label: 'Industry experts' },
-                  { icon: BookOpen, label: 'Practical lessons' },
-                  { icon: GraduationCap, label: 'Certificates' },
-                  { icon: Globe2, label: 'Global community' },
-                ].map(v => (
-                  <span key={v.label} data-pop className="flex items-center gap-1.5 text-xs font-semibold text-gray-300">
-                    <v.icon className="w-3.5 h-3.5 text-blue-400" /> {v.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
+          {/* ── Hero (own motion design -- see LearningHero) ── */}
+          <LearningHero onStart={() => document.getElementById('learning-discover')?.scrollIntoView({ behavior: 'smooth' })} />
 
           {/* ── Discovery chips ── */}
           <div id="learning-discover" className="bg-white border-b border-gray-100 py-3">
