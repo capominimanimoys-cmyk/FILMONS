@@ -328,7 +328,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     return () => clearInterval(interval);
   }, [(localPost as any).location, (localPost as any).audioTitle]); // eslint-disable-line
   const [showEditModal,  setShowEditModal]  = useState(false);
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
   const [showLikesSheet, setShowLikesSheet] = useState(false);
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
@@ -1605,7 +1605,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 <Repeat2 className="w-3 h-3 shrink-0"/> Repost from {localPost.repostOfAlbum.userName}'s album
               </p>
               <button
-                onClick={() => openPortfolioPreview(localPost.repostOfAlbum!.userId, localPost.repostOfAlbum!.albumId)}
+                onClick={() => openPortfolioItem(localPost.repostOfAlbum!.albumId, [], 'album')}
                 className="w-full border border-gray-200 rounded-xl overflow-hidden flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors"
               >
                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">
@@ -1625,7 +1625,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
           {localPost.ownAlbum && (
             <div className="mx-3 mt-2">
               <button
-                onClick={() => openPortfolioPreview(localPost.ownAlbum!.userId, localPost.ownAlbum!.albumId)}
+                onClick={() => openPortfolioItem(localPost.ownAlbum!.albumId, [], 'album')}
                 className="w-full border border-gray-200 rounded-xl overflow-hidden flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors"
               >
                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 shrink-0">

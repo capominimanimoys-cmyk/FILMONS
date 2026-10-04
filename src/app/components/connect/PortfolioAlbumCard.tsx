@@ -49,7 +49,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
   const { album, creator, coverUrl, coverAspectRatio, itemCount } = entry;
   const isOwn = !!user && user.id === creator.id;
 
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioItem } = usePortfolioPreview();
   const { requestAlbumRepostCompose } = usePostRepostCompose();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
@@ -149,7 +149,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
   // Opens the draggable Portfolio overlay straight into THIS album (spec
   // §1/§11) rather than navigating away to /portfolio -- keeps /connect's
   // scroll position intact underneath.
-  const openAlbum = () => openPortfolioPreview(creator.id, album.id);
+  const openAlbum = () => openPortfolioItem(entry);
 
   const shareSnapshot = {
     contentType: 'portfolio_album' as const,

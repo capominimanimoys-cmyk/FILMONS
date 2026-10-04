@@ -319,7 +319,10 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
   const navigate = useNavigate();
   const [showComments, setShowComments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [viewingItem, setViewingItem] = useState(false);
+  // Opening the piece goes to the shared Pinterest-style page (Root).
+  const { openPortfolioItem } = usePortfolioPreview();
+  const viewingItem = false;
+  const setViewingItem = (open: boolean) => { if (open) openPortfolioItem(entry); };
   const isOwn = !!user && user.id === entry.creator.id;
 
   // Engagement belongs to whichever entity the card actually represents --

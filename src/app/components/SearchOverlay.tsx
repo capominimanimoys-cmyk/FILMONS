@@ -2263,7 +2263,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                           <AllResultsConnectCard
                             key={item.kind === 'creator' ? `c-${item.row.id}` : item.kind === 'portfolio' ? `p-${item.row.type}-${item.row.id}` : `post-${item.post.id}`}
                             item={item} onNavigate={handleResultNavigate}
-                            onOpenPortfolio={(userId, albumId, itemId) => { handleClose(); if (itemId) openPortfolioItem(itemId); else openPortfolioPreview(userId, albumId); }}
+                            onOpenPortfolio={(userId, albumId, itemId) => { handleClose(); if (itemId) openPortfolioItem(itemId); else if (albumId) openPortfolioItem(albumId, [], 'album'); else openPortfolioPreview(userId); }}
                           />
                         ))}
                       </div>
@@ -2507,7 +2507,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                       {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
                         <button
                           key={`${r.type}-${r.id}`}
-                          onClick={() => { handleClose(); if (r.type === 'item') openPortfolioItem(r.id); else openPortfolioPreview(r.user_id, r.id); }}
+                          onClick={() => { handleClose(); openPortfolioItem(r.id, [], r.type === 'album' ? 'album' : 'item'); }}
                           className="relative rounded-xl overflow-hidden bg-gray-100"
                           style={{ aspectRatio: 4 / 5 }}
                         >

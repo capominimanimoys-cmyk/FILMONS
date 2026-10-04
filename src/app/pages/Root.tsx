@@ -21,7 +21,7 @@ import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../cont
 import { RepostComposeProvider } from '../context/RepostComposeContext';
 import { PostRepostComposeProvider, GlobalPostRepostComposer } from '../context/PostRepostComposeContext';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
-import { PortfolioPinDetail, type PortfolioItemEntry } from '../components/connect/PortfolioPinDetail';
+import { PortfolioPinDetail } from '../components/connect/PortfolioPinDetail';
 import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfolioApi';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
@@ -48,16 +48,19 @@ export function Root() {
   }, []);
   // Global portfolio item detail page (Pinterest-style) -- same reasoning
   // as the preview above: it must outlive whichever card or overlay opened it.
-  const [portfolioPin, setPortfolioPin] = useState<{ entry: PortfolioItemEntry; seed: PortfolioFeedEntry[] } | null>(null);
-  const openPortfolioItem = useCallback((item: string | PortfolioItemEntry, seed: PortfolioFeedEntry[] = []) => {
+  const [portfolioPin, setPortfolioPin] = useState<{ entry: PortfolioFeedEntry; seed: PortfolioFeedEntry[] } | null>(null);
+  const openPortfolioItem = useCallback((item: string | PortfolioFeedEntry, seed: PortfolioFeedEntry[] = [], kind: 'item' | 'album' = 'item') => {
     if (typeof item !== 'string') { setPortfolioPin({ entry: item, seed }); return; }
-    getPortfolioEntriesByIds([item], [], user?.id).then(map => {
+    getPortfolioEntriesByIds(kind === 'item' ? [item] : [], kind === 'album' ? [item] : [], user?.id).then(map => {
       const e = map.get(item);
-      if (e && e.type === 'item') setPortfolioPin({ entry: e, seed });
+      if (e && e.type === kind) setPortfolioPin({ entry: e, seed });
     }).catch(() => {});
   }, [user?.id]);
+  // Leaving the page (e.g. the preview expanding into /portfolio/:id)
+  // closes the detail page so it never sits over the new route.
+  useEffect(() => { setPortfolioPin(null); }, [location.pathname]);
   const portfolioPinView = portfolioPin && (
-    <PortfolioPinDetail key={portfolioPin.entry.id} entry={portfolioPin.entry} seed={portfolioPin.seed} onClose={() => setPortfolioPin(null)} />
+    <PortfolioPinDetail key={`${portfolioPin.entry.type}-${portfolioPin.entry.id}`} entry={portfolioPin.entry} seed={portfolioPin.seed} onClose={() => setPortfolioPin(null)} />
   );
   // Inbox reports whether an active conversation is open on mobile —
   // same window CustomEvent pattern api.ts already uses for
