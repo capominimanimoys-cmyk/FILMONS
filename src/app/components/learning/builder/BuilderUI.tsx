@@ -8,12 +8,12 @@ export const inputCls =
   'w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors';
 
 export function Card({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) {
-  return <section id={id} className={`rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 ${className}`}>{children}</section>;
+  return <section data-pop id={id} className={`rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 ${className}`}>{children}</section>;
 }
 
 export function StepHeading({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="mb-5">
+    <div data-pop className="mb-5">
       <h1 className="text-xl sm:text-2xl font-black tracking-tight text-gray-900">{title}</h1>
       {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
     </div>
