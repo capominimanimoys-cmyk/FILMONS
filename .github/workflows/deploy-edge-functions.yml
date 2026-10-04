@@ -15,7 +15,9 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned: "latest" makes an unauthenticated GitHub API call to look
+          # up the newest release, which fails when rate-limited.
+          version: 2.119.0
 
       - name: Prepare function directory
         run: |

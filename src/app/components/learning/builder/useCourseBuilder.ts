@@ -56,7 +56,11 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
       r.doc.sections.forEach(s => s.items.forEach(i => { if (i.kind === 'video' && i.videoStatus === 'processing' && i.videoUrl) reprocess(`video:${i.id}`, i.videoUrl); }));
       if (r.doc.presentation.introVideoStatus === 'processing' && r.doc.presentation.introVideoUrl) reprocess('intro', r.doc.presentation.introVideoUrl);
     } catch (e: any) {
-      setLoadError(e?.status === 403 ? "You can't edit this course." : e?.status === 404 ? 'This course no longer exists.' : (e?.message || "Couldn't load the course"));
+      setLoadError(
+        e?.status === 404 && !e?.data?.error ? 'Course creation is being set up on our servers. Please try again in a little while -- your course is saved.'
+        : e?.status === 403 ? "You can't edit this course."
+        : e?.status === 404 ? 'This course no longer exists.'
+        : (e?.message || "Couldn't load the course"));
       setLoadState('error');
     }
   }, [courseId, instructorId]); // eslint-disable-line react-hooks/exhaustive-deps
