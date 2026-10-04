@@ -408,6 +408,51 @@ export async function setCourseStatus(courseId: string, instructorId: string, st
   return !error && !!data;
 }
 
+/** What would be lost if this course were deleted: deleting the row
+ *  cascades to enrollments, lesson progress, reviews and payment records
+ *  (see the courses migration), so any of those blocks a permanent delete. */
+export async function getCourseDeletionBlockers(courseId: string): Promise<{ students: number; payments: number }> {
+  const [enrollments, payments] = await Promise.all([
+    supabase.from('course_enrollments').select('id', { count: 'exact', head: true }).eq('course_id', courseId),
+    supabase.from('course_transactions').select('id', { count: 'exact', head: true }).eq('course_id', courseId),
+  ]);
+  if (enrollments.error || payments.error) throw new Error(enrollments.error?.message || payments.error?.message);
+  // An unknown count must never read as "nobody enrolled" -- that would
+  // allow a delete that erases learners' courses and payment records.
+  if (enrollments.count == null || payments.count == null) throw new Error('Could not count enrollments');
+  return { students: enrollments.count, payments: payments.count };
+}
+
+export type DeleteCourseResult =
+  | { ok: true }
+  | { ok: false; reason: 'has_students'; students: number; payments: number }
+  | { ok: false; reason: 'error' };
+
+/** Permanently deletes one of the instructor's own courses with its
+ *  sections, lessons, resources, views and saves. Refused while anyone is
+ *  enrolled or any payment exists -- archive those instead, so learners
+ *  keep access and payment records survive. */
+export async function deleteCourse(courseId: string, instructorId: string): Promise<DeleteCourseResult> {
+  try {
+    const blockers = await getCourseDeletionBlockers(courseId);
+    if (blockers.students > 0 || blockers.payments > 0) return { ok: false, reason: 'has_students', ...blockers };
+  } catch (e: any) {
+    console.warn('[coursesApi] deleteCourse check failed:', e?.message);
+    return { ok: false, reason: 'error' };
+  }
+  const { data, error } = await supabase.from('courses').delete()
+    .eq('id', courseId).eq('instructor_id', instructorId).select('id');
+  if (error || !data?.length) {
+    if (error) console.warn('[coursesApi] deleteCourse error:', error.message);
+    return { ok: false, reason: 'error' };
+  }
+  // hashtag_mentions has no foreign key to courses -- clean up by hand so
+  // the deleted course stops counting toward its topics.
+  supabase.from('hashtag_mentions').delete().eq('content_type', 'course').eq('content_id', courseId)
+    .then(({ error: e }) => { if (e) console.warn('[coursesApi] hashtag cleanup failed:', e.message); });
+  return { ok: true };
+}
+
 export interface CourseReview {
   id: string;
   userId: string;

@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { Bookmark, GraduationCap, Star, Users, MoreHorizontal } from 'lucide-react';
+import { Bookmark, GraduationCap, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
   getMyEnrollments, setCourseStatus, publishCourse,
@@ -16,6 +16,7 @@ import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { CourseCard } from '../components/courses/CourseCard';
 import { EmptyState, LearningPage, ListSkeleton, PageTitle, SignInPrompt } from '../components/learning/LearningPageParts';
 import { PostMoreMenu } from '../components/connect/PostMoreMenu';
+import { DeleteCourseSheet } from '../components/learning/DeleteCourseSheet';
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   draft: { label: 'Draft', className: 'bg-gray-100 text-gray-500' },
@@ -48,6 +49,7 @@ export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: 
   const navigate = useNavigate();
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const status = STATUS_LABEL[course.status] ?? STATUS_LABEL.draft;
 
   const handlePublish = async () => {
@@ -84,7 +86,11 @@ export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: 
           actions={course.status === 'published'
             ? [{ icon: Star, label: 'Move to draft', onClick: () => { setMenuOpen(false); handleUnpublish(); } }]
             : [{ icon: Star, label: 'Publish', onClick: () => { setMenuOpen(false); handlePublish(); } }]}
+          destructiveActions={[{ icon: Trash2, label: 'Delete course', onClick: () => { setMenuOpen(false); setConfirmDelete(true); } }]}
         />
+      )}
+      {confirmDelete && user && (
+        <DeleteCourseSheet course={course} instructorId={user.id} onClose={() => setConfirmDelete(false)} onChanged={onChanged} />
       )}
     </div>
   );
