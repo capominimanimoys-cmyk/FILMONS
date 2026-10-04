@@ -17,6 +17,7 @@ import { getPortfolioEntriesByIds, getPortfolioFeed, PORTFOLIO_CATEGORIES, type 
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { PortfolioPinGrid } from '../components/connect/PortfolioPinGrid';
+import { rankTrending } from '../lib/portfolioTrending';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 import { useAuth } from '../context/AuthContext';
@@ -66,17 +67,7 @@ function entryMatchesMedia(e: PortfolioFeedEntry, media: MediaFilter): boolean {
   return e.type === 'item' ? e.item.media_type === media : e.previewItems.some(p => p.media_type === media);
 }
 
-// Trending = engagement weighted by freshness, so a well-liked piece from
-// this week outranks an older one with the same likes. Ranked per loaded
-// batch: each scroll page brings the next (older) batch, best first.
 const TRENDING_BATCH = 30;
-function trendingScore(e: PortfolioFeedEntry, now: number): number {
-  const m: any = e.type === 'item' ? e.item : e.album;
-  const engagement = (m.likes_count ?? 0) * 3 + (m.comments_count ?? 0) * 4 + (m.reposts_count ?? 0) * 5
-    + (m.saves_count ?? 0) * 4 + (m.views_count ?? 0) * 0.2 + 1;
-  const ageHours = Math.max(0, (now - new Date(e.created_at).getTime()) / 3_600_000);
-  return engagement / Math.pow(ageHours + 2, 1.3);
-}
 const entryKey = (e: PortfolioFeedEntry) => `${e.type}-${e.id}`;
 
 export function PortfolioCategoryResults({ query: initialQuery }: { query?: string }) {
@@ -120,8 +111,7 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
     try {
       const batch = await getPortfolioFeed({ before: cursor.current, limit: TRENDING_BATCH, viewerId: user?.id });
       if (batch.length) cursor.current = batch.reduce((min, e) => (e.created_at < min ? e.created_at : min), batch[0].created_at);
-      const now = Date.now();
-      const ranked = [...batch].sort((a, b) => trendingScore(b, now) - trendingScore(a, now));
+      const ranked = rankTrending(batch);
       setTrending(prev => {
         const base = reset || !prev ? [] : prev;
         const seen = new Set(base.map(entryKey));
