@@ -14,7 +14,7 @@ import { SlideHeader } from '../components/SlideHeader';
 export function LocationPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [content, setContent] = useState<LocationContent | null>(null);
   // The real, accurate total -- `locations.uses` only ever counts post
@@ -89,7 +89,7 @@ export function LocationPage() {
                   {content.portfolio.map(entry => (
                     <button
                       key={`${entry.type}-${entry.id}`}
-                      onClick={() => openPortfolioPreview(entry.creatorId, entry.type === 'album' ? entry.id : undefined)}
+                      onClick={() => (entry.type === 'item' ? openPortfolioItem(entry.id) : openPortfolioPreview(entry.creatorId, entry.id))}
                       className="relative rounded-xl overflow-hidden bg-gray-100"
                       style={{ aspectRatio: 4 / 5 }}
                     >

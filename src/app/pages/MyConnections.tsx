@@ -69,14 +69,14 @@ function SearchResultRow({ u }: { u: SearchProfileRow }) {
 
 function ActivityPreviewRow({ item }: { item: ConnectFeedItem }) {
   const navigate = useNavigate();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
 
   if (item.kind === 'portfolio') {
     const { entry } = item;
     const title = entry.type === 'item' ? entry.item.title : entry.album.title;
     return (
       <button
-        onClick={() => openPortfolioPreview(entry.creator.id, entry.type === 'album' ? entry.id : undefined)}
+        onClick={() => (entry.type === 'item' ? openPortfolioItem(entry) : openPortfolioPreview(entry.creator.id, entry.id))}
         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left"
       >
         <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200 shrink-0">

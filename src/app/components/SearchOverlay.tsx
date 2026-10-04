@@ -1231,14 +1231,14 @@ function DestinationSection({ title, destinations, onNavigate }: {
 function AllResultsConnectCard({ item, onNavigate, onOpenPortfolio }: {
   item: AllResultsConnectItem;
   onNavigate: (url: string) => void;
-  onOpenPortfolio: (userId: string, albumId?: string) => void;
+  onOpenPortfolio: (userId: string, albumId?: string, itemId?: string) => void;
 }) {
   if (item.kind === 'creator') return <CreatorCard u={item.row} onNavigate={onNavigate}/>;
   if (item.kind === 'portfolio') {
     const r = item.row;
     return (
       <button
-        onClick={() => onOpenPortfolio(r.user_id, r.type === 'album' ? r.id : undefined)}
+        onClick={() => onOpenPortfolio(r.user_id, r.type === 'album' ? r.id : undefined, r.type === 'item' ? r.id : undefined)}
         className="relative w-full rounded-xl overflow-hidden bg-gray-100"
         style={{ aspectRatio: 4 / 5 }}
       >
@@ -1515,7 +1515,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // reveal anything further. isProfessional() covers both unlimited
   // tiers, and defaults false for a guest (no user) or any lower tier.
   const { user, isAuthenticated } = useAuth();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
   const canBrowseOpportunities = isProfessional(user?.accountType);
   const [showMarketplaceGate, setShowMarketplaceGate] = useState(false);
   // Same Professional-or-Business rule as Home.tsx's canBrowseEmergency --
@@ -2263,7 +2263,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                           <AllResultsConnectCard
                             key={item.kind === 'creator' ? `c-${item.row.id}` : item.kind === 'portfolio' ? `p-${item.row.type}-${item.row.id}` : `post-${item.post.id}`}
                             item={item} onNavigate={handleResultNavigate}
-                            onOpenPortfolio={(userId, albumId) => { handleClose(); openPortfolioPreview(userId, albumId); }}
+                            onOpenPortfolio={(userId, albumId, itemId) => { handleClose(); if (itemId) openPortfolioItem(itemId); else openPortfolioPreview(userId, albumId); }}
                           />
                         ))}
                       </div>
@@ -2507,7 +2507,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                       {visiblePortfolio.slice(0, PREVIEW_LIMIT).map(r => (
                         <button
                           key={`${r.type}-${r.id}`}
-                          onClick={() => { handleClose(); openPortfolioPreview(r.user_id, r.type === 'album' ? r.id : undefined); }}
+                          onClick={() => { handleClose(); if (r.type === 'item') openPortfolioItem(r.id); else openPortfolioPreview(r.user_id, r.id); }}
                           className="relative rounded-xl overflow-hidden bg-gray-100"
                           style={{ aspectRatio: 4 / 5 }}
                         >

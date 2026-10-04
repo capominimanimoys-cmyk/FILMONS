@@ -55,7 +55,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
 }) {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
   const { item, creator } = entry;
   const isOwn = !!user && user.id === creator.id;
 
@@ -151,7 +151,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
   // destination -- creator.id is the actual owner's id regardless of who's
   // viewing, so it never routes to the VIEWER's own /portfolio unless they
   // really are the owner.
-  const openItemDetail = () => setShowItemDetail(true);
+  const openItemDetail = () => openPortfolioItem(entry);
 
   const shareSnapshot = {
     contentType: 'portfolio_item' as const,
