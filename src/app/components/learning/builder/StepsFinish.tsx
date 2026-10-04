@@ -26,8 +26,8 @@ export function StepCertificate({ b, doc, instructorName }: StepProps) {
       <Card className="space-y-3">
         <p className="text-sm font-bold text-gray-900">How students complete this course</p>
         <ul className="space-y-2 text-sm text-gray-600">
-          <li className="flex gap-2"><Video className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /> Watch at least 90% of every video lesson{videos ? ` (${videos})` : ''}. Opening a lesson alone doesn’t count.</li>
-          <li className="flex gap-2"><ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" /> Pass every required quiz{quizzes ? ` (${quizzes})` : ''}. Optional quizzes don’t block completion.</li>
+          <li data-pop className="flex gap-2"><Video className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /> Watch at least 90% of every video lesson{videos ? ` (${videos})` : ''}. Opening a lesson alone doesn’t count.</li>
+          <li data-pop className="flex gap-2"><ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" /> Pass every required quiz{quizzes ? ` (${quizzes})` : ''}. Optional quizzes don’t block completion.</li>
         </ul>
       </Card>
       <Card className="space-y-4">
@@ -66,7 +66,7 @@ export function StepPricing({ b, doc }: StepProps) {
       <div className="grid gap-3 sm:grid-cols-2" id="field-pricing" role="radiogroup" aria-label="Price">
         {[{ free: true, title: 'Free', body: 'Anyone with a FILMONS account can enroll.' }, { free: false, title: 'Paid', body: 'Students buy once for lifetime access to the full course.' }].map(o => (
           <button key={o.title} type="button" role="radio" aria-checked={pr.isFree === o.free} onClick={() => set({ isFree: o.free })}
-            className={`rounded-2xl border-2 bg-white p-4 text-left transition-colors ${pr.isFree === o.free ? 'border-blue-600' : 'border-gray-100 hover:border-gray-200'}`}>
+            data-pop className={`rounded-2xl border-2 bg-white p-4 text-left transition-colors ${pr.isFree === o.free ? 'border-blue-600' : 'border-gray-100 hover:border-gray-200'}`}>
             <p className="text-base font-black text-gray-900">{o.title}</p>
             <p className="mt-1 text-xs text-gray-500">{o.body}</p>
           </button>
@@ -122,7 +122,7 @@ export function StepReview({ b, doc, instructorName, goTo }: StepProps & { goTo:
 export function Checklist({ problems, goTo }: { problems: Problem[]; goTo: (step: number, target?: string) => void }) {
   if (!problems.length) {
     return (
-      <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-4">
+      <div data-pop className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-4">
         <CheckCircle2 className="h-6 w-6 text-emerald-600" />
         <div>
           <p className="text-sm font-black text-emerald-900">Ready to publish</p>
@@ -132,7 +132,7 @@ export function Checklist({ problems, goTo }: { problems: Problem[]; goTo: (step
     );
   }
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+    <div data-pop className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
       <p className="flex items-center gap-2 text-sm font-black text-amber-900"><AlertCircle className="h-4 w-4" /> {problems.length} thing{problems.length === 1 ? '' : 's'} to finish before publishing</p>
       <ul className="mt-2 divide-y divide-amber-100">
         {problems.map((p, i) => (
@@ -155,7 +155,7 @@ export function CoursePreview({ doc, instructorName }: { doc: CourseDoc; instruc
   const level = LEVELS.find(l => l.id === doc.basics.level)?.label;
   const pr = doc.pricing;
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
+    <div data-pop className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
       <div className="relative bg-black" style={{ aspectRatio: '16/9' }}>
         {doc.presentation.introVideoUrl && doc.presentation.introVideoStatus === 'ready'
           ? <video src={doc.presentation.introVideoUrl} poster={doc.presentation.coverUrl || undefined} controls playsInline className="h-full w-full object-contain" />
@@ -185,7 +185,7 @@ export function CoursePreview({ doc, instructorName }: { doc: CourseDoc; instruc
           <div>
             <p className="text-sm font-black text-gray-900">What you’ll learn</p>
             <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">{doc.outcomes.outcomes.filter(o => o.text.trim()).map(o => (
-              <li key={o.id} className="flex gap-2 text-sm text-gray-700"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />{o.text}</li>
+              <li data-pop key={o.id} className="flex gap-2 text-sm text-gray-700"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />{o.text}</li>
             ))}</ul>
           </div>
         )}
@@ -203,7 +203,7 @@ export function CoursePreview({ doc, instructorName }: { doc: CourseDoc; instruc
                 {s.description && <p className="text-xs text-gray-500">{s.description}</p>}
                 <ul className="mt-1.5 space-y-1">
                   {s.items.map(i => (
-                    <li key={i.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <li data-pop key={i.id} className="flex items-center gap-2 text-sm text-gray-700">
                       {i.kind === 'quiz' ? <ClipboardCheck className="h-4 w-4 shrink-0 text-violet-600" /> : i.isPreview ? <PlayCircle className="h-4 w-4 shrink-0 text-emerald-600" /> : <Lock className="h-4 w-4 shrink-0 text-gray-300" />}
                       <span className="min-w-0 flex-1 truncate">{i.title || 'Untitled'}</span>
                       {i.kind !== 'quiz' && i.isPreview && <span className="text-xs font-bold text-emerald-600">Preview</span>}
@@ -242,7 +242,7 @@ export function StepPublish({ b, doc, goTo, onPublish, publishing, serverProblem
           </span>
         </label>
         <button type="button" onClick={onPublish} disabled={!confirmed || problems.length > 0 || publishing || blockedByUploads}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50">
+          data-pop className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50">
           {publishing ? 'Publishing…' : <><ShieldCheck className="h-4 w-4" /> {published ? 'Publish changes' : 'Publish course'}</>}
         </button>
         {blockedByUploads && <p className="text-center text-xs text-gray-500">Wait for uploads to finish.</p>}

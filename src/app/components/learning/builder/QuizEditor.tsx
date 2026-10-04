@@ -90,7 +90,7 @@ export function QuizEditor({ b, quiz, onClose }: { b: CourseBuilderState; quiz: 
         </Card>
 
         {(showProblems || quiz.questions.length > 0) && problems.length > 0 && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" role="alert">
+          <div data-pop className="rounded-2xl border border-amber-200 bg-amber-50 p-4" role="alert">
             <p className="flex items-center gap-2 text-sm font-bold text-amber-900"><AlertCircle className="h-4 w-4" /> Finish this quiz before publishing</p>
             <ul className="mt-1.5 list-disc space-y-0.5 pl-6 text-xs text-amber-900">{problems.map(p => <li key={p}>{p}</li>)}</ul>
             {showProblems && <button type="button" onClick={onClose} className="mt-2 text-xs font-bold text-amber-900 underline">Back to outline anyway</button>}

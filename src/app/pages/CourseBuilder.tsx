@@ -60,7 +60,7 @@ function CreateDraft() {
   return (
     <LearningPage>
       {error ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
+        <div data-pop className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
           <p className="text-sm font-bold text-red-700">We couldn’t start a new course.</p>
           <button onClick={create} className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-sm font-bold text-gray-800 border border-gray-200"><RotateCcw className="h-4 w-4" /> Try again</button>
         </div>
@@ -157,7 +157,7 @@ function Builder({ userId }: { userId: string }) {
   if (b.loadState === 'error' || !b.doc) {
     return (
       <LearningPage>
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
+        <div data-pop className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
           <p className="text-sm font-bold text-red-700">{b.loadError}</p>
           <div className="mt-3 flex justify-center gap-2">
             <button onClick={() => b.reload()} className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-sm font-bold text-gray-800 border border-gray-200"><RotateCcw className="h-4 w-4" /> Retry</button>
@@ -190,13 +190,13 @@ function Builder({ userId }: { userId: string }) {
       <div className="mx-auto flex max-w-6xl gap-8 px-4 py-5 md:px-8">
         {/* Desktop: step list */}
         <aside className="sticky top-6 hidden h-fit w-60 shrink-0 lg:block">
-          <p className="truncate text-sm font-black text-gray-900">{doc.basics.title || 'Untitled course'}</p>
+          <p data-pop className="truncate text-sm font-black text-gray-900">{doc.basics.title || 'Untitled course'}</p>
           <div className="mt-1 mb-4"><SaveStatus b={b} /></div>
           <ol className="space-y-0.5">
             {STEPS.map((name, i) => {
               const n = i + 1, active = n === step, issue = stepsWithProblems.has(n);
               return (
-                <li key={name}>
+                <li data-pop key={name}>
                   <button type="button" onClick={() => goTo(n)} aria-current={active ? 'step' : undefined}
                     className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-bold ${active ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
                     <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] ${active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>{n}</span>

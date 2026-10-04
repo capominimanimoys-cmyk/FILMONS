@@ -105,7 +105,7 @@ export function StepLessons({ b, doc }: { b: CourseBuilderState; doc: CourseDoc 
   return (
     <div className="space-y-4">
       <StepHeading title="Build your lessons" subtitle="Organize your course into sections of video lessons and quizzes." />
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-gray-500" id="field-lessons">
+      <div data-pop className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-gray-500" id="field-lessons">
         <span>{doc.sections.length} section{doc.sections.length === 1 ? '' : 's'}</span>
         <span>{counts.videos} video lesson{counts.videos === 1 ? '' : 's'}</span>
         <span>{counts.quizzes} quiz{counts.quizzes === 1 ? '' : 'zes'}</span>
@@ -154,7 +154,7 @@ export function StepLessons({ b, doc }: { b: CourseBuilderState; doc: CourseDoc 
         </Card>
       ))}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div data-pop className="flex flex-col gap-2 sm:flex-row">
         <button type="button" onClick={addSection} className="flex flex-1 items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gray-200 bg-white py-3 text-sm font-bold text-gray-700 hover:border-blue-300 hover:text-blue-700">
           <Plus className="h-4 w-4" /> Add section
         </button>
@@ -195,12 +195,12 @@ function AddContent({ onAdd }: { onAdd: (kind: 'video' | 'quiz') => void }) {
   }
   return (
     <div className="grid grid-cols-2 gap-2">
-      <button type="button" onClick={() => { setOpen(false); onAdd('video'); }} className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40">
+      <button type="button" data-pop onClick={() => { setOpen(false); onAdd('video'); }} className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40">
         <Video className="h-5 w-5 text-blue-600" />
         <span className="text-sm font-bold text-gray-900">Video lesson</span>
         <span className="text-xs text-gray-500">Teach course material</span>
       </button>
-      <button type="button" onClick={() => { setOpen(false); onAdd('quiz'); }} className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40">
+      <button type="button" data-pop onClick={() => { setOpen(false); onAdd('quiz'); }} className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40">
         <ClipboardCheck className="h-5 w-5 text-blue-600" />
         <span className="text-sm font-bold text-gray-900">Quiz</span>
         <span className="text-xs text-gray-500">Assess understanding</span>
@@ -277,7 +277,7 @@ function OutlineItem({ item, index, count, sections, sectionId, onUp, onDown, on
   } else meta = <span>Older {item.type} lesson</span>;
 
   return (
-    <li ref={setNodeRef} style={style} id={`field-item:${item.id}`}
+    <li data-pop ref={setNodeRef} style={style} id={`field-item:${item.id}`}
       className={`flex items-center gap-2 rounded-xl border bg-white p-2.5 scroll-mt-28 ${isDragging ? 'border-blue-300 shadow-lg' : 'border-gray-100'}`}>
       <button type="button" {...attributes} {...listeners} disabled={locked} aria-label="Drag to reorder"
         className={`shrink-0 touch-none rounded-lg p-1 text-gray-300 ${locked ? 'opacity-30' : 'cursor-grab hover:bg-gray-100 hover:text-gray-500'}`}>

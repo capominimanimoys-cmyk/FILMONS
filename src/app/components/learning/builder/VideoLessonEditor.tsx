@@ -82,7 +82,7 @@ export function VideoLessonEditor({ b, lesson, onClose }: { b: CourseBuilderStat
             const t = `res:${lesson.id}:${r.id}`;
             const up = b.uploads[t];
             return (
-              <div key={r.id} className="space-y-2 rounded-xl border border-gray-100 p-3">
+              <div data-pop key={r.id} className="space-y-2 rounded-xl border border-gray-100 p-3">
                 <div className="flex items-center gap-2">
                   <FileDown className="h-4 w-4 shrink-0 text-gray-400" />
                   <input value={r.name} onChange={e => patchResource(r.id, { name: e.target.value })} placeholder="Resource name" aria-label="Resource name" className={`${inputCls} !py-2`} />
