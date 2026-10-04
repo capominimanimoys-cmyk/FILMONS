@@ -47,7 +47,7 @@ function CourseRow({ title, subtitle, courses, trustLevels, onSeeAll, highlight 
   if (!courses.length) return null;
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between px-4 lg:px-0">
+      <div data-pop className="flex items-center justify-between px-4 lg:px-0">
         <div className="min-w-0">
           <p className="text-base font-black text-gray-900 truncate">
             {highlight ? (
@@ -64,7 +64,7 @@ function CourseRow({ title, subtitle, courses, trustLevels, onSeeAll, highlight 
       </div>
       <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 lg:px-0">
         {courses.map(c => (
-          <div key={c.id} className="shrink-0 w-56">
+          <div key={c.id} data-pop className="shrink-0 w-56">
             <CourseCard course={c} trustLevel={trustLevels.get(c.instructorId)} />
           </div>
         ))}
@@ -78,7 +78,7 @@ function ContinueLearningRow({ courses, onSeeAll }: { courses: EnrolledCourse[];
   if (!courses.length) return null;
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between px-4 lg:px-0">
+      <div data-pop className="flex items-center justify-between px-4 lg:px-0">
         <div>
           <p className="text-base font-black text-gray-900">Continue learning</p>
           <p className="text-xs text-gray-400 mt-0.5">Pick up where you left off.</p>
@@ -87,7 +87,7 @@ function ContinueLearningRow({ courses, onSeeAll }: { courses: EnrolledCourse[];
       </div>
       <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 lg:px-0">
         {courses.map(c => (
-          <div key={c.id} className="shrink-0 w-64 bg-white rounded-2xl border border-gray-100 p-3">
+          <div key={c.id} data-pop className="shrink-0 w-64 bg-white rounded-2xl border border-gray-100 p-3">
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0">
                 {c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-lg">🎬</div>}
@@ -119,7 +119,7 @@ function InstructorCard({ instructor }: { instructor: TopInstructor }) {
   const isSelf = user?.id === instructor.id;
 
   return (
-    <div className="shrink-0 w-40 bg-white rounded-2xl border border-gray-100 p-4 flex flex-col items-center text-center">
+    <div data-pop className="shrink-0 w-40 bg-white rounded-2xl border border-gray-100 p-4 flex flex-col items-center text-center">
       <button onClick={() => navigate(`/host/${instructor.id}`)}>
         <UserAvatar user={{ id: instructor.id, name: instructor.name, avatar: instructor.avatar_url ?? undefined }} size={64} />
       </button>
@@ -241,17 +241,17 @@ export function CoursesHome() {
           {/* ── Hero ── */}
           <div className="relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#0b0f19,#111827 60%,#1f2937)' }}>
             <div className="lg:max-w-5xl lg:mx-auto px-4 lg:px-0 py-10 lg:py-16">
-              <p className="text-[11px] font-black tracking-[0.2em] text-blue-400 uppercase mb-3">Filmons Learning</p>
-              <h1 className="text-3xl lg:text-5xl font-black text-white leading-[1.1] max-w-lg">
+              <p data-pop className="text-[11px] font-black tracking-[0.2em] text-blue-400 uppercase mb-3">Filmons Learning</p>
+              <h1 data-pop className="text-3xl lg:text-5xl font-black text-white leading-[1.1] max-w-lg">
                 Real skills<br />for real <span className="text-blue-400">creators.</span>
               </h1>
-              <p className="text-sm lg:text-base text-gray-300 mt-4 max-w-md leading-relaxed">
+              <p data-pop className="text-sm lg:text-base text-gray-300 mt-4 max-w-md leading-relaxed">
                 Learn from industry professionals. Practical skills. Real projects.
                 A stronger future for creators.
               </p>
               <button
                 onClick={() => document.getElementById('learning-discover')?.scrollIntoView({ behavior: 'smooth' })}
-                className="mt-6 flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 text-white text-sm font-black hover:bg-blue-700 transition-colors"
+                data-pop className="mt-6 flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 text-white text-sm font-black hover:bg-blue-700 transition-colors"
               >
                 Start Learning <ArrowRight className="w-4 h-4" />
               </button>
@@ -263,7 +263,7 @@ export function CoursesHome() {
                   { icon: GraduationCap, label: 'Certificates' },
                   { icon: Globe2, label: 'Global community' },
                 ].map(v => (
-                  <span key={v.label} className="flex items-center gap-1.5 text-xs font-semibold text-gray-300">
+                  <span key={v.label} data-pop className="flex items-center gap-1.5 text-xs font-semibold text-gray-300">
                     <v.icon className="w-3.5 h-3.5 text-blue-400" /> {v.label}
                   </span>
                 ))}
@@ -274,13 +274,13 @@ export function CoursesHome() {
           {/* ── Discovery chips ── */}
           <div id="learning-discover" className="bg-white border-b border-gray-100 py-3">
             <div className="lg:max-w-5xl lg:mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar px-4 lg:px-0">
-              <button className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-black bg-blue-600 text-white">All</button>
+              <button data-pop className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-black bg-blue-600 text-white">All</button>
               {TOPIC_TAGS.map(tag => (
-                <button key={tag} onClick={() => navigate(`/topic/${tag}`)} className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+                <button key={tag} data-pop onClick={() => navigate(`/topic/${tag}`)} className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
                   #{tag}
                 </button>
               ))}
-              <button onClick={() => navigate('/create')} className="shrink-0 flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white border border-gray-200 text-gray-600">
+              <button data-pop onClick={() => navigate('/create')} className="shrink-0 flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white border border-gray-200 text-gray-600">
                 <Users2 className="w-3.5 h-3.5" /> Creators
               </button>
             </div>
@@ -296,13 +296,13 @@ export function CoursesHome() {
             <p className="text-center text-sm text-gray-400 py-16">No courses matching "{query}"</p>
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-4 lg:px-0">
-              {searchResults.map(c => <CourseCard key={c.id} course={c} trustLevel={trustLevels.get(c.instructorId)} />)}
+              {searchResults.map(c => <div key={c.id} data-pop><CourseCard course={c} trustLevel={trustLevels.get(c.instructorId)} /></div>)}
             </div>
           )
         ) : loading ? (
           <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Loading courses" /></div>
         ) : nothingAtAll ? (
-          <div className="flex flex-col items-center gap-2 py-16 text-center px-6">
+          <div data-pop className="flex flex-col items-center gap-2 py-16 text-center px-6">
             <GraduationCap className="w-10 h-10 text-gray-200" />
             <p className="text-sm font-bold text-gray-700">No courses yet</p>
             <p className="text-xs text-gray-400 max-w-[240px]">Check back soon as creators start publishing courses.</p>
@@ -342,7 +342,7 @@ export function CoursesHome() {
 
             {topInstructors.length > 0 && (
               <div className="space-y-2.5">
-                <div className="px-4 lg:px-0">
+                <div data-pop className="px-4 lg:px-0">
                   <p className="text-base font-black text-gray-900">Top instructors</p>
                   <p className="text-xs text-gray-400 mt-0.5">Learn from real creators making an impact.</p>
                 </div>
@@ -353,7 +353,7 @@ export function CoursesHome() {
             )}
 
             {/* ── Teach CTA ── */}
-            <div className="mx-4 lg:mx-0 rounded-3xl overflow-hidden relative p-6 lg:p-10" style={{ background: 'linear-gradient(135deg,#111827,#1f2937)' }}>
+            <div data-pop className="mx-4 lg:mx-0 rounded-3xl overflow-hidden relative p-6 lg:p-10" style={{ background: 'linear-gradient(135deg,#111827,#1f2937)' }}>
               <p className="text-xl lg:text-2xl font-black text-white">Teach on Filmons Learning</p>
               <p className="text-sm text-gray-300 mt-2 max-w-md leading-relaxed">
                 Turn your experience into opportunity. Create a course, reach creators worldwide and earn from your knowledge.

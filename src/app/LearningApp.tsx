@@ -8,6 +8,7 @@ import { NotificationsProvider } from './context/NotificationsContext';
 import { NotificationBannerProvider } from './components/NotificationBanner';
 import { LearningTransitionProvider } from './context/LearningTransitionContext';
 import { LearningSessionProvider } from './context/LearningSessionContext';
+import { usePopIn } from './lib/usePopIn';
 
 // Filmons Learning's whole React tree, a real separate Rollup entry (see
 // learning.html) -- unlike AdminApp.tsx, this DOES wrap the normal
@@ -27,6 +28,8 @@ import { LearningSessionProvider } from './context/LearningSessionContext';
 const router = createLearningRouter();
 
 export default function LearningApp() {
+  // Pop-in appearance for every [data-pop] element in Learning.
+  usePopIn();
   return (
     <AuthProvider>
       {/* Learning has its own sign-in step on top of the shared FILMONS

@@ -2,7 +2,7 @@
 // mobile slide-in drawer (LearningDrawer) and the persistent desktop
 // sidebar (LearningSidebar). Paths are Learning-router-relative (see
 // learningRoutes.tsx's basename note).
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -60,7 +60,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <nav aria-label="Learning" className="flex flex-col gap-0.5">
-      {items.map(item => {
+      {items.map((item, i) => {
         const active = isActive(item, pathname);
         const Icon = item.icon;
         const count = item.badge === 'notifications' && user ? unreadCount : 0;
@@ -69,7 +69,8 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
             key={item.path}
             onClick={() => { navigate(item.path); onNavigate?.(); }}
             aria-current={active ? 'page' : undefined}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition-colors ${
+            style={{ '--i': i } as CSSProperties}
+            className={`lp-nav-item flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition-colors ${
               active ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -92,7 +93,8 @@ function BackToFilmons({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <button
       onClick={() => { onNavigate?.(); leaveLearning('/'); }}
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-gray-100 transition-colors"
+      style={{ '--i': 9 } as CSSProperties}
+      className="lp-nav-item flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-gray-700 hover:bg-gray-100 transition-colors"
     >
       <ArrowLeft className="w-5 h-5 shrink-0 text-gray-500" />
       Back to FILMONS
@@ -105,7 +107,8 @@ function BackToFilmons({ onNavigate }: { onNavigate?: () => void }) {
 // rule it beats Tailwind's layered utilities -- see AuthScreenLayout.tsx.
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
-/** Mobile: slides in from the left over a dimmed page. */
+/** Mobile: slides in from the left over a dimmed page; its items pop in
+ *  one after another on every open (.lp-nav-animate, learning-pop.css). */
 export function LearningDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -128,7 +131,7 @@ export function LearningDrawer({ open, onClose }: { open: boolean; onClose: () =
       />
       <aside
         role="dialog" aria-modal="true" aria-label="Learning menu"
-        className="absolute inset-y-0 left-0 flex w-[80%] max-w-[320px] flex-col bg-white shadow-2xl"
+        className={`absolute inset-y-0 left-0 flex w-[80%] max-w-[320px] flex-col bg-white shadow-2xl ${open ? 'lp-nav-animate' : ''}`}
         style={{ transform: open ? 'translateX(0)' : 'translateX(-100%)', visibility: open ? 'visible' : 'hidden', transition: `transform 300ms ${EASE}, visibility 300ms` }}
       >
         <div className="flex items-center gap-3 border-b border-gray-100 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '12px' }}>
@@ -153,7 +156,7 @@ export function LearningDrawer({ open, onClose }: { open: boolean; onClose: () =
 export function LearningSidebar() {
   const navigate = useNavigate();
   return (
-    <aside className="hidden md:flex sticky top-0 h-screen w-64 shrink-0 flex-col border-r border-gray-100 bg-white">
+    <aside className="lp-nav-animate hidden md:flex sticky top-0 h-screen w-64 shrink-0 flex-col border-r border-gray-100 bg-white">
       <button onClick={() => navigate('/')} className="px-6 pt-6 pb-5 text-left">
         <LearningWordmark />
       </button>

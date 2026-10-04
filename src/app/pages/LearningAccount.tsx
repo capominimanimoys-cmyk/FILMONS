@@ -60,7 +60,7 @@ export function LearningNotifications() {
           <button onClick={markAllRead} className="shrink-0 pt-1.5 text-xs font-bold text-blue-600 hover:underline">Mark all read</button>
         ) : undefined} />
 
-      <div className="mb-5 flex gap-2">
+      <div data-pop className="mb-5 flex gap-2">
         {([['learning', 'Learning'], ['all', 'All FILMONS']] as const).map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)}
             className={`rounded-full px-4 py-2 text-xs font-bold ${filter === id ? 'bg-blue-600 text-white' : 'border border-gray-200 bg-white text-gray-600'}`}>
@@ -80,7 +80,7 @@ export function LearningNotifications() {
               ? `${n.fromUserName || 'An instructor'} published a new course${n.postContent ? `: "${n.postContent}"` : ''}`
               : notificationTitle(n.type, n.fromUserName || 'Someone', { listingTitle: n.listingTitle });
             return (
-              <button key={n.id} onClick={() => open(n)}
+              <button key={n.id} data-pop onClick={() => open(n)}
                 className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${n.read ? 'border-gray-100 bg-white hover:bg-gray-50' : 'border-blue-100 bg-blue-50/50 hover:bg-blue-50'}`}>
                 {n.fromUserAvatar || n.fromUserName
                   ? <UserAvatar user={{ id: n.fromUserId, name: n.fromUserName || '', avatar: n.fromUserAvatar }} size={36} />
@@ -136,7 +136,7 @@ export function LearningProfile() {
 
   return (
     <LearningPage>
-      <div className="mb-6 flex items-center gap-4 rounded-3xl border border-gray-100 bg-white p-5">
+      <div data-pop className="mb-6 flex items-center gap-4 rounded-3xl border border-gray-100 bg-white p-5">
         <UserAvatar user={{ id: user.id, name: user.name, avatar: user.avatar }} size={64} />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-black text-gray-900">{user.name}</h1>
@@ -147,7 +147,7 @@ export function LearningProfile() {
 
       <div className="mb-8 grid grid-cols-3 gap-3">
         {stats.map(s => (
-          <button key={s.label} onClick={() => navigate(s.to)} className="rounded-2xl border border-gray-100 bg-white p-4 text-left hover:bg-gray-50">
+          <button key={s.label} data-pop onClick={() => navigate(s.to)} className="rounded-2xl border border-gray-100 bg-white p-4 text-left hover:bg-gray-50">
             <s.icon className="h-4 w-4 text-blue-600" />
             <p className="mt-2 text-xl font-black text-gray-900">{s.value ?? '–'}</p>
             <p className="text-xs text-gray-400">{s.label}</p>
@@ -160,7 +160,7 @@ export function LearningProfile() {
           <SectionTitle title="Continue learning" onViewAll={() => navigate('/my-learning')} />
           <div className="space-y-2">
             {inProgress.slice(0, 3).map(c => (
-              <button key={c.id} onClick={() => navigate(`/course/${c.id}`)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left">
+              <button key={c.id} data-pop onClick={() => navigate(`/course/${c.id}`)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left">
                 <span className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
                   {c.coverUrl && <img src={c.coverUrl} alt="" className="h-full w-full object-cover" />}
                 </span>
@@ -179,14 +179,14 @@ export function LearningProfile() {
 
       <div className="space-y-2">
         {canCreateCourses(user.accountType) && (
-          <button onClick={() => navigate('/instructor')} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
+          <button data-pop onClick={() => navigate('/instructor')} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
             <LayoutDashboard className="h-5 w-5 text-gray-500" /> Instructor dashboard
           </button>
         )}
-        <button onClick={() => leaveLearning('/profile')} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
+        <button data-pop onClick={() => leaveLearning('/profile')} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
           <ExternalLink className="h-5 w-5 text-gray-500" /> View FILMONS profile
         </button>
-        <button onClick={() => { endLearningSession(); navigate('/', { replace: true }); }}
+        <button data-pop onClick={() => { endLearningSession(); navigate('/', { replace: true }); }}
           className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50">
           <LogOut className="h-5 w-5" /> Log out of Learning
         </button>
@@ -237,7 +237,7 @@ export function InstructorDashboard() {
           { label: 'Students', value: courses ? students.toLocaleString() : null, icon: Users },
           { label: 'Avg rating', value: courses ? (avgRating ? avgRating.toFixed(1) : '–') : null, icon: Star },
         ].map(s => (
-          <div key={s.label} className="rounded-2xl border border-gray-100 bg-white p-4">
+          <div key={s.label} data-pop className="rounded-2xl border border-gray-100 bg-white p-4">
             <s.icon className="h-4 w-4 text-blue-600" />
             <p className="mt-2 text-xl font-black text-gray-900">{s.value ?? '–'}</p>
             <p className="text-xs text-gray-400">{s.label}</p>
