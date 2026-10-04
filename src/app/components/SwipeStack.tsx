@@ -235,31 +235,31 @@ function ProfileCompletionContent({ onNotNow, endOfQueue }: { onNotNow: () => vo
 
   return (
     <>
-      <div className="relative h-72 lg:h-[420px] bg-gradient-to-br from-blue-600 to-purple-600 overflow-hidden flex flex-col items-center justify-center text-center px-6">
-        <Sparkles className="w-9 h-9 text-white/90 mb-3"/>
-        <h3 className="text-xl lg:text-2xl font-black text-white mb-1.5">Complete your profile</h3>
-        <p className="text-sm text-white/80 max-w-xs leading-relaxed">
+      <div className="relative h-40 lg:h-[300px] bg-gradient-to-br from-blue-600 to-purple-600 overflow-hidden flex flex-col items-center justify-center text-center px-6">
+        <Sparkles className="w-7 h-7 lg:w-9 lg:h-9 text-white/90 mb-2"/>
+        <h3 className="text-lg lg:text-2xl font-black text-white mb-1">Complete your profile</h3>
+        <p className="text-xs lg:text-sm text-white/80 max-w-xs leading-relaxed">
           {endOfQueue
             ? "You've seen all available listings right now. Help FILMONS improve what we recommend to you."
             : 'Help FILMONS find gear, services and opportunities that fit what you do.'}
         </p>
       </div>
 
-      <div className="px-4 lg:px-6 py-3.5 lg:py-5">
-        <div className="flex items-center gap-2 mb-3.5">
+      <div className="px-4 lg:px-6 py-3 lg:py-5">
+        <div className="flex items-center gap-2 mb-2.5">
           <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
             <div className="h-full rounded-full bg-blue-600" style={{ width: `${completion.percentage}%` }}/>
           </div>
           <span className="text-xs font-bold text-gray-500 shrink-0">{completion.percentage}% complete</span>
         </div>
 
-        <div className="space-y-1.5 mb-4">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3">
           {CORE_FIELDS.map(f => {
             const done = completion.completedFields.includes(f);
             return (
-              <div key={f} className="flex items-center gap-2">
+              <div key={f} className="flex min-w-0 items-center gap-1.5">
                 {done ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0"/> : <Circle className="w-4 h-4 text-gray-300 shrink-0"/>}
-                <span className={`text-xs font-semibold ${done ? 'text-gray-400' : 'text-gray-700'}`}>{CORE_FIELD_LABEL[f]}</span>
+                <span className={`truncate text-xs font-semibold ${done ? 'text-gray-400' : 'text-gray-700'}`}>{CORE_FIELD_LABEL[f]}</span>
               </div>
             );
           })}
@@ -270,7 +270,7 @@ function ProfileCompletionContent({ onNotNow, endOfQueue }: { onNotNow: () => vo
           Continue setup →
         </button>
         <button type="button" onPointerDown={stop} onClick={e => { e.stopPropagation(); onNotNow(); }}
-          className="w-full mt-2 py-2 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors">
+          className="w-full mt-1 py-1.5 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors">
           Not now
         </button>
       </div>
