@@ -119,7 +119,7 @@ export function StepOutcomes({ b, doc }: StepProps) {
         </div>
         <ol className="space-y-2">
           {list.map((item, i) => (
-            <li key={item.id} className="flex items-center gap-2">
+            <li data-pop key={item.id} className="flex items-center gap-2">
               <span className="w-5 shrink-0 text-center text-xs font-black text-gray-400">{i + 1}</span>
               <input value={item.text} maxLength={160} aria-label={`Learning outcome ${i + 1}`}
                 onChange={e => set({ outcomes: list.map(x => (x.id === item.id ? { ...x, text: e.target.value } : x)) })}
