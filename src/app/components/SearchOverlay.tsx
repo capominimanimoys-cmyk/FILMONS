@@ -1084,6 +1084,48 @@ function timeAgoShort(iso?: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// Placeholder for the Search -> Connect landing while its discovery fetch
+// is in flight -- same shapes as the real sections (a row of profile
+// cards, then feed-style post cards) so nothing jumps when data lands.
+function ConnectLandingSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading Connect">
+      <section className="mb-4">
+        <div className="px-4 py-2"><div className="h-3.5 w-36 rounded bg-gray-100 animate-pulse"/></div>
+        <div className="flex gap-3 px-4 overflow-hidden">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="w-[172px] shrink-0 rounded-2xl border border-gray-100 p-4 flex flex-col items-center gap-2.5">
+              <div className="w-16 h-16 rounded-full bg-gray-100 animate-pulse"/>
+              <div className="h-3 w-24 rounded bg-gray-100 animate-pulse"/>
+              <div className="h-2.5 w-16 rounded bg-gray-100 animate-pulse"/>
+              <div className="h-8 w-full rounded-xl bg-gray-100 animate-pulse mt-1"/>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="mb-4">
+        <div className="px-4 py-2"><div className="h-3.5 w-32 rounded bg-gray-100 animate-pulse"/></div>
+        <div className="px-4 space-y-3">
+          {[0, 1].map(i => (
+            <div key={i} className="rounded-2xl border border-gray-100 p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gray-100 animate-pulse"/>
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3 w-32 rounded bg-gray-100 animate-pulse"/>
+                  <div className="h-2.5 w-20 rounded bg-gray-100 animate-pulse"/>
+                </div>
+              </div>
+              <div className="h-3 w-full rounded bg-gray-100 animate-pulse"/>
+              <div className="h-3 w-4/5 rounded bg-gray-100 animate-pulse"/>
+              <div className="h-48 w-full rounded-xl bg-gray-100 animate-pulse"/>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // Content-agnostic version of MarketplaceDiscoveryRow above, for Connect's
 // landing page -- its 5 sections each need a genuinely different card
 // design (a creator card isn't a post card isn't a hashtag chip), so this
@@ -1471,6 +1513,9 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [connectTrendingPosts,    setConnectTrendingPosts]    = useState<Post[]>([]);
   const [connectFeaturedPortfolio,setConnectFeaturedPortfolio]= useState<PortfolioFeedEntry[]>([]);
   const [connectActivity,         setConnectActivity]         = useState<ActivityEntry[]>([]);
+  // False until the landing's first fetch resolves -- drives the skeleton
+  // so the Connect tab never sits blank while discovery loads.
+  const [connectLoaded,           setConnectLoaded]           = useState(false);
   // Portfolio/Posts/Hashtags -- only ever populated for a typed search on
   // the 'all' tab (no dedicated tab UI for these yet, unlike
   // rawUsers/rawListings above); shown as their own ResultSections there,
@@ -1843,7 +1888,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
       setConnectTrendingPosts(discovery.trendingPosts);
       setConnectFeaturedPortfolio(discovery.featuredPortfolio);
       setConnectActivity(activity.entries);
-    });
+      setConnectLoaded(true);
+    }).catch(() => { if (!cancelled) setConnectLoaded(true); });
     return () => { cancelled = true; };
   }, [activeTab, hasTyped, user?.id]);
 
@@ -2457,7 +2503,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   below. That list stays exactly as it was for the 'all' tab
                   and for Connect once the viewer actually types something. */}
               {activeTab !== 'all' && (showConnectLanding ? (
-                <>
+                !connectLoaded ? <ConnectLandingSkeleton/> : <>
                   {connectSuggested.length > 0 && (
                     <ConnectDiscoveryRow title="Profiles You May Like" onViewAll={() => closeAndNavigate('/connections/suggested')}>
                       {connectSuggested.map(c => (
