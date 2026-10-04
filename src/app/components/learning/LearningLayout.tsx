@@ -12,26 +12,31 @@
 // entry, show it). Either way this is a one-shot per session: subsequent
 // in-Learning navigation (Course -> Lesson, Discover -> Course, etc.)
 // never replays it.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router';
 import { LearningHeader } from './LearningHeader';
+import { LearningDrawer, LearningSidebar } from './LearningNav';
 import { FilmonsLearningTransition } from './FilmonsLearningTransition';
 
 const ENTERED_KEY = 'filmons_learning_entered';
 const ORIGIN_KEY = 'filmons_learning_origin';
 
-// Course Detail gets an immersive layout -- global FILMONS chrome was
-// already never mounted here (separate bundle), and per spec this
-// bundle's OWN header is hidden too, leaving just the course's own local
-// sticky header + Enroll/Continue CTA. Matches exactly `course/:courseId`
-// (useLocation().pathname is already basename-relative), not its
-// `/content` or `/lesson/:lessonId` children -- those keep the shared
-// header, only the detail page itself goes immersive.
+// Course Detail gets an immersive layout on mobile -- this bundle's own
+// header is hidden, leaving just the course's local sticky header +
+// Enroll/Continue CTA (desktop keeps the sidebar). Matches exactly
+// `course/:courseId` (useLocation().pathname is basename-relative), not
+// its `/content` or `/lesson/:lessonId` children.
 const COURSE_DETAIL_PATH = /^\/course\/[^/]+\/?$/;
+// A lesson is focus mode on every screen size: no header, drawer or
+// sidebar -- the player's own back + Lessons controls only.
+const LESSON_PATH = /^\/course\/[^/]+\/lesson\//;
 
 export function LearningLayout() {
   const location = useLocation();
-  const hideHeader = COURSE_DETAIL_PATH.test(location.pathname);
+  const inLesson = LESSON_PATH.test(location.pathname);
+  const hideHeader = inLesson || COURSE_DETAIL_PATH.test(location.pathname);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [showStartup, setShowStartup] = useState(() => {
     try { return !sessionStorage.getItem(ENTERED_KEY) && !sessionStorage.getItem(ORIGIN_KEY); } catch { return false; }
   });
@@ -41,12 +46,21 @@ export function LearningLayout() {
     try { sessionStorage.setItem(ENTERED_KEY, '1'); } catch {}
   }, [showStartup]);
 
+  // Any navigation (drawer item, in-page link, back button) closes it.
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+
+  // No bottom navigation bar anywhere in Learning -- the drawer (mobile)
+  // and sidebar (desktop) are the navigation.
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      {!hideHeader && <LearningHeader />}
-      <div className="flex-1">
-        <Outlet />
+    <div className="min-h-screen flex bg-gray-50">
+      {!inLesson && <LearningSidebar />}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {!hideHeader && <LearningHeader onOpenMenu={() => setMenuOpen(true)} />}
+        <div className="flex-1">
+          <Outlet />
+        </div>
       </div>
+      {!inLesson && <LearningDrawer open={menuOpen} onClose={closeMenu} />}
       {showStartup && (
         <FilmonsLearningTransition ready mode="enter" onDone={() => setShowStartup(false)} />
       )}

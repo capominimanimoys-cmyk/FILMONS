@@ -8,6 +8,8 @@ import { CourseContent } from './pages/CourseContent';
 import { LearningPlayer } from './pages/LearningPlayer';
 import { LearningLogin } from './pages/LearningLogin';
 import { LearningSignup } from './pages/LearningSignup';
+import { LearningExplore, RecentTopicsPage, TopicCoursesPage, TrendingTopicsPage } from './pages/LearningTopics';
+import { InstructorDashboard, LearningNotifications, LearningProfile } from './pages/LearningAccount';
 
 // Every path below is written RELATIVE TO THE BASENAME -- never hardcode
 // '/learning' anywhere in this tree, in LearningHeader's nav, or in any
@@ -24,7 +26,14 @@ const learningRouteTree = [
     Component: LearningLayout,
     children: [
       { index: true, Component: CoursesHome },
+      { path: 'explore', Component: LearningExplore },
+      { path: 'topics/trending', Component: TrendingTopicsPage },
+      { path: 'topics/recent', Component: RecentTopicsPage },
+      { path: 'topic/:tag', Component: TopicCoursesPage },
       { path: 'my-learning', Component: MyLearning },
+      { path: 'notifications', Component: LearningNotifications },
+      { path: 'profile', Component: LearningProfile },
+      { path: 'instructor', Component: InstructorDashboard },
       { path: 'create', Component: CreateCourse },
       { path: 'course/:courseId', Component: CourseDetail },
       { path: 'course/:courseId/content', Component: CourseContent },

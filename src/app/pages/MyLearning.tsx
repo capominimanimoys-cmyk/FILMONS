@@ -1,21 +1,21 @@
-// FILMONS Learning -- /learning/my-learning. Two tabs: Enrolled (any
-// account type) and My Courses (instructor-facing -- real data even for a
-// Creator/Creator+ viewer with zero courses, since browsing this tab isn't
-// gated, only actually publishing is).
+// FILMONS Learning -- /learning/my-learning. The learner's own courses:
+// In progress / Completed / Saved. Instructor-side course management
+// lives on the Instructor dashboard (see InstructorDashboard.tsx), which
+// reuses MyCourseRow from here.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Star, Users, MoreHorizontal } from 'lucide-react';
+import { Bookmark, GraduationCap, Star, Users, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { learningLoginPath } from '../lib/learningAuth';
 import {
-  getMyEnrollments, getCoursesByInstructor, setCourseStatus, publishCourse,
+  getMyEnrollments, setCourseStatus, publishCourse,
   type EnrolledCourse, type Course,
 } from '../lib/coursesApi';
+import { getSavedCourses } from '../lib/topicsApi';
+import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
+import { CourseCard } from '../components/courses/CourseCard';
+import { EmptyState, LearningPage, ListSkeleton, PageTitle, SignInPrompt } from '../components/learning/LearningPageParts';
 import { PostMoreMenu } from '../components/connect/PostMoreMenu';
-import { FilmonsBrandLoader } from '../components/FilmonsLoader';
-
-type Tab = 'enrolled' | 'mine';
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   draft: { label: 'Draft', className: 'bg-gray-100 text-gray-500' },
@@ -44,7 +44,7 @@ function EnrolledRow({ course }: { course: EnrolledCourse }) {
   );
 }
 
-function MyCourseRow({ course, onChanged }: { course: Course; onChanged: () => void }) {
+export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: () => void }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -90,68 +90,75 @@ function MyCourseRow({ course, onChanged }: { course: Course; onChanged: () => v
   );
 }
 
+type Tab = 'progress' | 'completed' | 'saved';
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'progress', label: 'In progress' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'saved', label: 'Saved' },
+];
+
 export function MyLearning() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>('enrolled');
+  const [tab, setTab] = useState<Tab>('progress');
   const [enrolled, setEnrolled] = useState<EnrolledCourse[] | null>(null);
-  const [mine, setMine] = useState<Course[] | null>(null);
+  const [saved, setSaved] = useState<Course[] | null>(null);
+  const [trust, setTrust] = useState<Map<string, TrustLevel>>(new Map());
 
-  const loadMine = () => { if (user) getCoursesByInstructor(user.id).then(setMine); };
-
-  useEffect(() => { if (user) getMyEnrollments(user.id).then(setEnrolled); }, [user?.id]);
-  useEffect(() => { if (tab === 'mine' && mine === null) loadMine(); }, [tab]); // eslint-disable-line
+  useEffect(() => { if (user) getMyEnrollments(user.id).then(setEnrolled).catch(() => setEnrolled([])); }, [user?.id]);
+  useEffect(() => {
+    if (!user || tab !== 'saved' || saved !== null) return;
+    getSavedCourses(user.id).then(async list => {
+      setSaved(list);
+      const ids = [...new Set(list.map(c => c.instructorId))];
+      if (ids.length) setTrust(await getTrustLevelsBatch(ids));
+    }).catch(() => setSaved([]));
+  }, [tab, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!user) return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-6 text-center">
-      <p className="text-sm text-gray-500">Log in to see your courses and progress.</p>
-      <button onClick={() => navigate(learningLoginPath('/my-learning'))}
-        className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700">
-        Log in
-      </button>
-    </div>
+    <LearningPage>
+      <PageTitle title="My learning" />
+      <SignInPrompt message="Log in to see your courses, progress and saved courses." />
+    </LearningPage>
   );
 
-  return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-          <ArrowLeft className="w-4 h-4 text-gray-700" />
-        </button>
-        <p className="text-sm font-bold text-gray-900">My Learning</p>
-      </div>
+  const inProgress = enrolled?.filter(c => c.progressPercent < 100) ?? null;
+  const completed = enrolled?.filter(c => c.progressPercent >= 100) ?? null;
+  const list = tab === 'progress' ? inProgress : tab === 'completed' ? completed : null;
 
-      <div className="flex px-4 pt-3 gap-2">
-        {(['enrolled', 'mine'] as Tab[]).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-full text-xs font-bold ${tab === t ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
-            {t === 'enrolled' ? 'Enrolled' : 'My Courses'}
+  return (
+    <LearningPage>
+      <PageTitle title="My learning" subtitle="Your courses and progress, on your FILMONS account." />
+
+      <div className="mb-5 flex gap-2 overflow-x-auto no-scrollbar">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold ${tab === t.id ? 'bg-blue-600 text-white' : 'border border-gray-200 bg-white text-gray-600'}`}>
+            {t.label}
           </button>
         ))}
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-4 space-y-3">
-        {tab === 'mine' && (
-          <button onClick={() => navigate('/create')} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">
-            <Plus className="w-4 h-4" /> Create Course
-          </button>
-        )}
-
-        {tab === 'enrolled' ? (
-          enrolled === null ? (
-            <div className="flex justify-center py-12"><FilmonsBrandLoader size="md" label="Loading" /></div>
-          ) : enrolled.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-sm font-bold text-gray-600">No courses yet</p>
-              <button onClick={() => navigate('/')} className="text-sm font-bold text-blue-600 mt-2">Browse Learning</button>
-            </div>
-          ) : enrolled.map(c => <EnrolledRow key={c.id} course={c} />)
-        ) : mine === null ? (
-          <div className="flex justify-center py-12"><FilmonsBrandLoader size="md" label="Loading" /></div>
-        ) : mine.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-12">You haven't created any courses yet.</p>
-        ) : mine.map(c => <MyCourseRow key={c.id} course={c} onChanged={loadMine} />)}
-      </div>
-    </div>
+      {tab === 'saved' ? (
+        saved === null ? <ListSkeleton rows={4} /> : saved.length === 0 ? (
+          <EmptyState icon={<Bookmark className="h-9 w-9" />} title="No saved courses"
+            body="Tap the bookmark on any course to save it for later." />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            {saved.map(c => <CourseCard key={c.id} course={c} trustLevel={trust.get(c.instructorId)} />)}
+          </div>
+        )
+      ) : list === null ? <ListSkeleton rows={4} /> : list.length === 0 ? (
+        <div className="space-y-3">
+          <EmptyState icon={<GraduationCap className="h-9 w-9" />}
+            title={tab === 'progress' ? 'No courses in progress' : 'No completed courses yet'} />
+          <div className="text-center">
+            <button onClick={() => navigate('/explore')} className="text-sm font-bold text-blue-600 hover:underline">Explore courses</button>
+          </div>
+        </div>
+      ) : (
+        <div className="max-w-2xl space-y-3">{list.map(c => <EnrolledRow key={c.id} course={c} />)}</div>
+      )}
+    </LearningPage>
   );
 }

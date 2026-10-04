@@ -14,7 +14,7 @@ import { FilmonsLogo } from '../components/FilmonsLogo';
 import FilmonsLoader from '../components/FilmonsLoader';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { authApi } from '../lib/api';
-import { consumePendingReturnUrl } from '../lib/authReturnUrl';
+import { consumePendingReturnUrl, getPendingReturnUrl, setPendingReturnUrl } from '../lib/authReturnUrl';
 
 type Screen = 'splash' | 'method' | 'email' | 'email_not_found' | 'oauth_only' | 'security';
 
@@ -131,7 +131,25 @@ export function Login() {
   // honored regardless of which method the user actually signed in with,
   // and there's no risk of two navigate() calls racing and one clobbering
   // the other's destination.
+  // A caller can also pass the destination as ?returnUrl= (e.g. FILMONS
+  // Learning's "Continue with FILMONS") -- stash it before anything below
+  // reads it, so it wins over a stale value and survives a lost stash.
+  const [returnUrlParam] = useState(() => {
+    const r = searchParams.get('returnUrl');
+    if (r) setPendingReturnUrl(r);
+    return r;
+  });
   useEffect(() => { if (isAuthenticated) { captureSnapshot(); navigate(consumePendingReturnUrl(), { replace: true }); } }, [isAuthenticated]);
+
+  // PhoneLogin clears the stashed destination unless it's handed one via
+  // ?returnUrl=, so carry it across -- otherwise signing in by phone from
+  // a flow with a destination (FILMONS Learning, a guest-gated action)
+  // lands on Home instead.
+  const goToPhoneLogin = () => {
+    const pending = getPendingReturnUrl() || returnUrlParam;
+    captureSnapshot();
+    navigate(pending ? `/phone-login?returnUrl=${encodeURIComponent(pending)}` : '/phone-login');
+  };
 
   // Splash auto-advances via FilmonsLoader's onComplete (skipped when email is pre-filled)
 
@@ -376,7 +394,7 @@ export function Login() {
               <Mail className="w-5 h-5 text-gray-500 shrink-0"/>
               <span className="flex-1 text-left">Continue with Email</span>
             </button>
-            <button onClick={() => { captureSnapshot(); navigate('/phone-login'); }}
+            <button onClick={goToPhoneLogin}
               className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all touch-manipulation">
               <Phone className="w-5 h-5 shrink-0"/>
               <span className="flex-1 text-left">Continue with Phone</span>
@@ -558,7 +576,7 @@ export function Login() {
           <div className="space-y-3 pb-8">
             <OAuthBtn onClick={() => handleOAuth('google')} loading={oauthLoading}/>
             <button
-              onClick={() => { captureSnapshot(); navigate('/phone-login'); }}
+              onClick={goToPhoneLogin}
               className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-2xl px-4 py-3.5 active:scale-[0.98] transition-all"
             >
               <Phone className="w-5 h-5 shrink-0"/>
@@ -636,7 +654,7 @@ export function Login() {
         <input value={otp} onChange={e => setOtp(e.target.value.slice(0,6))}
           type="tel" placeholder="000000" maxLength={6}
           className="auth-input-fx w-full bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl px-4 py-4 text-2xl font-black text-center tracking-[0.4em] outline-none focus:border-blue-400 focus:bg-white/15 transition-all"/>
-        <button onClick={() => { if (otp.length === 6) { captureSnapshot(); navigate('/'); } else { toast.error('Enter the 6-digit code'); } }}
+        <button onClick={() => { if (otp.length === 6) { captureSnapshot(); navigate(consumePendingReturnUrl()); } else { toast.error('Enter the 6-digit code'); } }}
           className="auth-btn-fx mt-4 w-full py-4 bg-blue-600 text-white font-black text-sm rounded-2xl hover:bg-blue-700 transition-all">
           Verify &amp; Sign In
         </button>

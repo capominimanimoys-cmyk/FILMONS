@@ -27,6 +27,7 @@ import {
   redirectToCanonicalLearningAuth,
   resolveLearningReturnTo,
   startLearningGoogleAuth,
+  toFilmonsLearningPath,
 } from '../lib/learningAuth';
 import { GoogleIcon, LearningAuthLayout } from '../components/learning/LearningAuthLayout';
 
@@ -123,7 +124,7 @@ export function LearningLogin() {
       finish(user);
       return;
     }
-    continueInFilmons('/login', returnTo);
+    continueInFilmons(`/login?returnUrl=${encodeURIComponent(toFilmonsLearningPath(returnTo))}`, returnTo);
   };
 
   const forgotHref = `/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`;
