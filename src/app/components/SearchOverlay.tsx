@@ -1801,7 +1801,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // that didn't come from a listing's back button.
   useEffect(() => {
     const saved = consumeSearchState();
-    if (!saved) return;
+    if (!saved) {
+      // ?q= from a page handing off to Browse Search with text already
+      // typed (e.g. ConnectCategoryHeader's search bar).
+      const urlQ = searchParams.get('q')?.trim();
+      if (urlQ) { setQ(urlQ); runSearch(urlQ); }
+      return;
+    }
     setActiveTab(saved.activeTab as TabId);
     setFilters(saved.filters as SearchFilters);
     setSort(saved.sort as SortBy);

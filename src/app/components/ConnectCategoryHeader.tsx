@@ -14,6 +14,11 @@
 // already reads its initial query from `q` the same way the rest of this
 // app's category pages do), so typing "cinematography" then tapping
 // Portfolio lands there with the same text still in the box.
+//
+// The "All" landing is the exception: it's the Connect entry point reached
+// from Browse Search, so its search bar and back button both hand off to
+// Browse Search's Connect tab (replacing this history entry, so Browse
+// Search -> Connect -> Back never loops) instead of filtering in place.
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Search, ArrowLeft, X } from 'lucide-react';
@@ -40,6 +45,12 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
   const [inputFocused, setInputFocused] = useState(false);
   const { headerVisible } = useSearchChromeVisibility({ inputFocused });
 
+  const isLanding = activeCategory === 'all';
+  const openBrowseSearch = () => {
+    const q = query.trim();
+    navigate(`/search?tab=connect${q ? `&q=${encodeURIComponent(q)}` : ''}`, { replace: true });
+  };
+
   const goTo = (id: ConnectCategoryId) => {
     if (id === activeCategory) return;
     const path = id === 'all' ? '/search/category/connect' : `/search/category/connect/${id}`;
@@ -56,7 +67,7 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
     <div className="sticky top-0 z-40 bg-white border-b border-gray-100">
       <SlideHeader visible={headerVisible}>
         <div className="flex items-center gap-3 px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', paddingBottom: '10px' }}>
-          <button onClick={() => navigate(-1)} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
+          <button onClick={() => isLanding ? navigate('/search?tab=connect', { replace: true }) : navigate(-1)} aria-label="Back" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90">
             <ArrowLeft className="w-5 h-5 text-gray-700"/>
           </button>
           <div className="min-w-0">
@@ -68,6 +79,13 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
         </div>
 
         <div className="px-4 pb-3">
+          {isLanding ? (
+            <button type="button" onClick={openBrowseSearch} aria-label="Open search"
+              className="w-full flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-2xl pl-3.5 pr-3 py-2.5 text-sm text-left transition-colors active:bg-gray-100">
+              <Search className="w-4 h-4 text-gray-400 shrink-0"/>
+              <span className={`truncate ${query ? 'text-gray-900' : 'text-gray-400'}`}>{query || placeholder}</span>
+            </button>
+          ) : (
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
             <input
@@ -82,6 +100,7 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
               </button>
             )}
           </div>
+          )}
         </div>
 
         {/* Horizontally scrollable so it never wraps to a 2nd line, per
