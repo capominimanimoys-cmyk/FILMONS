@@ -137,8 +137,8 @@ export function PostsCategoryResults({ query: initialQuery }: { query?: string }
               const [left, right] = splitTwoColumns(filtered);
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-                  <div className="space-y-3">{left.map(p => <PostCard key={p.id} post={p} />)}</div>
-                  <div className="space-y-3">{right.map(p => <PostCard key={p.id} post={p} />)}</div>
+                  <div data-pop-list className="space-y-3">{left.map(p => <PostCard key={p.id} post={p} />)}</div>
+                  <div data-pop-list className="space-y-3">{right.map(p => <PostCard key={p.id} post={p} />)}</div>
                 </div>
               );
             })()
