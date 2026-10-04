@@ -30,7 +30,7 @@ function timeAgo(iso: string): string {
 
 function CompactActivityRow({ item }: { item: ConnectFeedItem }) {
   const navigate = useNavigate();
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
 
   if (item.kind === 'portfolio') {
     const { entry } = item;
@@ -38,7 +38,7 @@ function CompactActivityRow({ item }: { item: ConnectFeedItem }) {
     const thumb = entry.type === 'item' ? (entry.item.thumbnail_url || entry.item.media_url) : entry.coverUrl;
     return (
       <button
-        onClick={() => openPortfolioPreview(entry.creator.id, entry.type === 'album' ? entry.id : undefined)}
+        onClick={() => (entry.type === 'item' ? openPortfolioItem(entry) : openPortfolioPreview(entry.creator.id, entry.id))}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
       >
         <Avatar url={entry.creator.avatar_url} name={entry.creator.name} />
@@ -58,6 +58,7 @@ function CompactActivityRow({ item }: { item: ConnectFeedItem }) {
     const openGroupTarget = () => {
       if (targetType === 'post') { navigate(`/post/${targetId}`); return; }
       const ownerId = portfolioEntry?.creator.id ?? actors[0].id;
+      if (targetType === 'portfolio_item') { openPortfolioItem(portfolioEntry?.type === 'item' ? portfolioEntry : targetId); return; }
       openPortfolioPreview(ownerId, targetType === 'portfolio_album' ? targetId : undefined);
     };
     return (
@@ -82,6 +83,7 @@ function CompactActivityRow({ item }: { item: ConnectFeedItem }) {
         // the original creator only ever comes from the batch-fetched
         // portfolioEntry (content_reposted) itself, never entry.actor.
         const ownerId = entry.portfolioEntry?.creator.id ?? entry.actor.id;
+        if (entry.targetType === 'portfolio_item') { openPortfolioItem(entry.portfolioEntry?.type === 'item' ? entry.portfolioEntry : entry.targetId); return; }
         openPortfolioPreview(ownerId, entry.targetType === 'portfolio_album' ? entry.targetId : undefined);
         return;
       }

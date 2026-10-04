@@ -21,6 +21,8 @@ import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../cont
 import { RepostComposeProvider } from '../context/RepostComposeContext';
 import { PostRepostComposeProvider, GlobalPostRepostComposer } from '../context/PostRepostComposeContext';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
+import { PortfolioPinDetail, type PortfolioItemEntry } from '../components/connect/PortfolioPinDetail';
+import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from '../lib/portfolioApi';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];
@@ -44,6 +46,19 @@ export function Root() {
   const openPortfolioPreview = useCallback((creatorId: string, initialAlbumId?: string) => {
     setPortfolioPreview({ creatorId, initialAlbumId });
   }, []);
+  // Global portfolio item detail page (Pinterest-style) -- same reasoning
+  // as the preview above: it must outlive whichever card or overlay opened it.
+  const [portfolioPin, setPortfolioPin] = useState<{ entry: PortfolioItemEntry; seed: PortfolioFeedEntry[] } | null>(null);
+  const openPortfolioItem = useCallback((item: string | PortfolioItemEntry, seed: PortfolioFeedEntry[] = []) => {
+    if (typeof item !== 'string') { setPortfolioPin({ entry: item, seed }); return; }
+    getPortfolioEntriesByIds([item], [], user?.id).then(map => {
+      const e = map.get(item);
+      if (e && e.type === 'item') setPortfolioPin({ entry: e, seed });
+    }).catch(() => {});
+  }, [user?.id]);
+  const portfolioPinView = portfolioPin && (
+    <PortfolioPinDetail key={portfolioPin.entry.id} entry={portfolioPin.entry} seed={portfolioPin.seed} onClose={() => setPortfolioPin(null)} />
+  );
   // Inbox reports whether an active conversation is open on mobile —
   // same window CustomEvent pattern api.ts already uses for
   // 'filmons:unread-changed', not a new context, since there's exactly
@@ -175,7 +190,7 @@ export function Root() {
 
   if (hideAll) {
     return (
-      <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
+      <PortfolioPreviewContext.Provider value={{ openPortfolioPreview, openPortfolioItem }}>
         <LearningTransitionProvider>
         <RepostComposeProvider>
         <PostRepostComposeProvider>
@@ -189,12 +204,13 @@ export function Root() {
         </PostRepostComposeProvider>
         </RepostComposeProvider>
         </LearningTransitionProvider>
-      </PortfolioPreviewContext.Provider>
+      {portfolioPinView}
+    </PortfolioPreviewContext.Provider>
     );
   }
 
   return (
-    <PortfolioPreviewContext.Provider value={{ openPortfolioPreview }}>
+    <PortfolioPreviewContext.Provider value={{ openPortfolioPreview, openPortfolioItem }}>
     <LearningTransitionProvider>
     <RepostComposeProvider>
     <PostRepostComposeProvider>
@@ -268,6 +284,7 @@ export function Root() {
     </PostRepostComposeProvider>
     </RepostComposeProvider>
     </LearningTransitionProvider>
+    {portfolioPinView}
     </PortfolioPreviewContext.Provider>
   );
 }

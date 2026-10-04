@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Heart, Layers, Play } from 'lucide-react';
 import type { PortfolioFeedEntry } from '../../lib/portfolioApi';
-import { PortfolioPinDetail, type PortfolioItemEntry } from './PortfolioPinDetail';
+import type { PortfolioItemEntry } from './PortfolioPinDetail';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 
 function useColumnCount() {
@@ -35,8 +35,7 @@ export function PortfolioPinGrid({ entries, onOpenItem }: {
   onOpenItem?: (e: PortfolioItemEntry) => void;
 }) {
   const cols = useColumnCount();
-  const [focused, setFocused] = useState<PortfolioItemEntry | null>(null);
-  const { openPortfolioPreview } = usePortfolioPreview();
+  const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
 
   const columns = useMemo(() => {
     const out: PortfolioFeedEntry[][] = Array.from({ length: cols }, () => []);
@@ -56,12 +55,11 @@ export function PortfolioPinGrid({ entries, onOpenItem }: {
           <div key={ci} className="flex min-w-0 flex-1 flex-col gap-4">
             {col.map(e => (
               <PinTile key={`${e.type}-${e.id}`} entry={e}
-                onOpen={() => (e.type === 'item' ? (onOpenItem ?? setFocused)(e) : openPortfolioPreview(e.creator.id, e.id))} />
+                onOpen={() => (e.type === 'item' ? (onOpenItem ? onOpenItem(e) : openPortfolioItem(e, entries)) : openPortfolioPreview(e.creator.id, e.id))} />
             ))}
           </div>
         ))}
       </div>
-      {focused && <PortfolioPinDetail entry={focused} seed={entries} onClose={() => setFocused(null)} />}
     </>
   );
 }

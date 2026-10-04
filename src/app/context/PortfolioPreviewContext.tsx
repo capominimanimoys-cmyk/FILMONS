@@ -8,6 +8,7 @@
 // the overlay itself -- mid-animation, producing exactly the abrupt cut
 // the sequenced-transition spec explicitly calls out as the bug to avoid.
 import { createContext, useContext } from 'react';
+import type { PortfolioFeedEntry } from '../lib/portfolioApi';
 
 export interface PortfolioPreviewRequest {
   creatorId: string;
@@ -16,6 +17,10 @@ export interface PortfolioPreviewRequest {
 
 interface PortfolioPreviewContextValue {
   openPortfolioPreview: (creatorId: string, initialAlbumId?: string) => void;
+  /** Opens one piece of portfolio work on its Pinterest-style detail page
+   *  (PortfolioPinDetail). Pass the entry when you have it, or just its id;
+   *  `seed` fills More to explore while related work loads. */
+  openPortfolioItem: (item: string | Extract<PortfolioFeedEntry, { type: 'item' }>, seed?: PortfolioFeedEntry[]) => void;
 }
 
 export const PortfolioPreviewContext = createContext<PortfolioPreviewContextValue | null>(null);
