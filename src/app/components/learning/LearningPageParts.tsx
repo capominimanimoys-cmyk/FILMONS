@@ -1,6 +1,7 @@
 // Small building blocks shared by FILMONS Learning's list pages
 // (Explore, Trending/Recent topics, a topic's courses, My learning,
-// Notifications, Profile, Instructor dashboard).
+// Notifications, Profile, Instructor dashboard). Blocks marked data-pop
+// pop in as they appear (see lib/usePopIn.ts).
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { ChevronRight, Hash } from 'lucide-react';
@@ -13,7 +14,7 @@ export function LearningPage({ children }: { children: ReactNode }) {
 
 export function PageTitle({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-6 flex items-start gap-4">
+    <div data-pop className="mb-6 flex items-start gap-4">
       <div className="min-w-0 flex-1">
         <h1 className="text-2xl font-black tracking-tight text-gray-900">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
@@ -25,7 +26,7 @@ export function PageTitle({ title, subtitle, action }: { title: ReactNode; subti
 
 export function SectionTitle({ title, subtitle, onViewAll }: { title: string; subtitle?: string; onViewAll?: () => void }) {
   return (
-    <div className="mb-3 flex items-end justify-between gap-3">
+    <div data-pop className="mb-3 flex items-end justify-between gap-3">
       <div className="min-w-0">
         <h2 className="text-base font-black text-gray-900">{title}</h2>
         {subtitle && <p className="mt-0.5 text-xs text-gray-400">{subtitle}</p>}
@@ -44,7 +45,7 @@ export function SignInPrompt({ message }: { message: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   return (
-    <div className="flex flex-col items-center gap-4 rounded-3xl border border-gray-100 bg-white px-6 py-14 text-center">
+    <div data-pop className="flex flex-col items-center gap-4 rounded-3xl border border-gray-100 bg-white px-6 py-14 text-center">
       <p className="max-w-xs text-sm text-gray-500">{message}</p>
       <button onClick={() => navigate(learningLoginPath(location.pathname + location.search))}
         className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700">
@@ -56,7 +57,7 @@ export function SignInPrompt({ message }: { message: string }) {
 
 export function EmptyState({ icon, title, body }: { icon: ReactNode; title: string; body?: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-gray-200 px-6 py-14 text-center">
+    <div data-pop className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-gray-200 px-6 py-14 text-center">
       <div className="text-gray-300">{icon}</div>
       <p className="text-sm font-bold text-gray-700">{title}</p>
       {body && <p className="max-w-xs text-xs leading-relaxed text-gray-400">{body}</p>}
@@ -68,7 +69,7 @@ export function EmptyState({ icon, title, body }: { icon: ReactNode; title: stri
 export function TopicRow({ tag, rank, meta }: { tag: string; rank?: number; meta: ReactNode }) {
   const navigate = useNavigate();
   return (
-    <button onClick={() => navigate(`/topic/${encodeURIComponent(tag)}`)}
+    <button data-pop onClick={() => navigate(`/topic/${encodeURIComponent(tag)}`)}
       className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-left hover:border-gray-200 hover:bg-gray-50 transition-colors">
       {rank !== undefined ? (
         <span className={`w-7 shrink-0 text-center text-sm font-black ${rank <= 3 ? 'text-blue-600' : 'text-gray-300'}`}>{rank}</span>

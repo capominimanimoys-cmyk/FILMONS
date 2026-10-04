@@ -195,12 +195,12 @@ export function CourseDetail() {
         </div>
 
         <div className="px-4 py-4 space-y-4">
-          <div>
+          <div data-pop>
             <p className="text-lg font-black text-gray-900 leading-snug">{course.title}</p>
             {course.shortDescription && <p className="text-sm text-gray-500 mt-1 leading-relaxed">{course.shortDescription}</p>}
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+          <div data-pop className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
             {course.ratingCount > 0 && (
               <span className="flex items-center gap-1 font-bold text-gray-700">
                 <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> {course.ratingAvg.toFixed(1)}
@@ -215,7 +215,7 @@ export function CourseDetail() {
           </div>
 
           <button onClick={() => leaveLearning(course.instructor?.username ? `/${course.instructor.username}` : `/host/${course.instructorId}`)}
-            className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
+            data-pop className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
             <UserAvatar user={{ id: course.instructorId, name: course.instructor?.name || '', avatar: course.instructor?.avatar_url ?? undefined }} size={44} />
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Created by</p>
@@ -233,7 +233,7 @@ export function CourseDetail() {
           </button>
 
           {/* Enroll / Continue */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+          <div data-pop className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
             <p className="text-xl font-black text-gray-900">
               {course.isFree || course.price === 0 ? 'Free' : `${course.currency} $${course.price.toFixed(2)}`}
             </p>
@@ -271,7 +271,7 @@ export function CourseDetail() {
 
           <div ref={el => { sectionRefs.current.outcomes = el; }} />
           {course.learningOutcomes.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div data-pop className="bg-white rounded-2xl border border-gray-100 p-4">
               <p className="text-sm font-black text-gray-900 mb-3">What you'll learn</p>
               <div className="space-y-2">
                 {course.learningOutcomes.map((o, i) => (
@@ -285,7 +285,7 @@ export function CourseDetail() {
 
           <div ref={el => { sectionRefs.current.content = el; }} />
           {sections.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <div data-pop className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="p-4 pb-2">
                 <p className="text-sm font-black text-gray-900">Course content</p>
                 <p className="text-xs text-gray-400 mt-0.5">
@@ -341,14 +341,14 @@ export function CourseDetail() {
 
           <div ref={el => { sectionRefs.current.about = el; }} />
           {course.description && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div data-pop className="bg-white rounded-2xl border border-gray-100 p-4">
               <p className="text-sm font-black text-gray-900 mb-2">About this course</p>
               <HashtagText text={course.description} className="text-sm text-gray-600 leading-relaxed whitespace-pre-line" />
             </div>
           )}
 
           <div ref={el => { sectionRefs.current.instructor = el; }} />
-          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+          <div data-pop className="bg-white rounded-2xl border border-gray-100 p-4">
             <p className="text-sm font-black text-gray-900 mb-3">Instructor</p>
             <div className="flex items-center gap-3">
               <UserAvatar user={{ id: course.instructorId, name: course.instructor?.name || '', avatar: course.instructor?.avatar_url ?? undefined }} size={48} />
@@ -365,7 +365,7 @@ export function CourseDetail() {
           </div>
 
           <div ref={el => { sectionRefs.current.reviews = el; }} />
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+          <div data-pop className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
             <p className="text-sm font-black text-gray-900">Reviews</p>
             {enrolled && (
               <div className="border border-gray-100 rounded-xl p-3 space-y-2">

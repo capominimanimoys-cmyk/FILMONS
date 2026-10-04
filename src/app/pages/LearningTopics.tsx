@@ -121,13 +121,13 @@ export function TopicCoursesPage() {
 
   return (
     <LearningPage>
-      <button onClick={() => navigate(-1)} className="-ml-1 mb-3 flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-800">
+      <button data-pop onClick={() => navigate(-1)} className="-ml-1 mb-3 flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-3.5 w-3.5" /> Back
       </button>
       <PageTitle title={<span className="text-blue-600">{topicLabel(tag)}</span>}
         subtitle={courses ? plural(courses.length, 'course') : 'Loading courses…'} />
 
-      <div role="tablist" aria-label="Sort courses" className="mb-5 inline-flex rounded-full bg-gray-100 p-1">
+      <div data-pop role="tablist" aria-label="Sort courses" className="mb-5 inline-flex rounded-full bg-gray-100 p-1">
         {SORTS.map((s, i) => (
           <span key={s.id} className="flex items-center">
             {i > 0 && <span aria-hidden className="px-0.5 text-gray-300">·</span>}
@@ -148,7 +148,7 @@ export function TopicCoursesPage() {
         <EmptyState icon={<GraduationCap className="h-9 w-9" />} title="No courses in this topic yet" />
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          {courses.map(c => <CourseCard key={c.id} course={c} trustLevel={trust.get(c.instructorId)} />)}
+          {courses.map(c => <div key={c.id} data-pop><CourseCard course={c} trustLevel={trust.get(c.instructorId)} /></div>)}
         </div>
       )}
     </LearningPage>

@@ -137,19 +137,19 @@ export function LearningPlayer() {
 
       {/* Lesson content + controls */}
       <div className="flex-1 mx-auto w-full max-w-3xl px-5 pt-5 pb-8">
-        <p className="text-xs font-bold text-gray-400">Lesson {idx + 1} of {total}</p>
-        <h1 className="text-xl font-black text-gray-900 mt-0.5 leading-snug">{lesson.title}</h1>
+        <p data-pop className="text-xs font-bold text-gray-400">Lesson {idx + 1} of {total}</p>
+        <h1 data-pop className="text-xl font-black text-gray-900 mt-0.5 leading-snug">{lesson.title}</h1>
 
         {isText && lesson.content && (
-          <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-5 text-[15px] leading-relaxed text-gray-800 whitespace-pre-line">{lesson.content}</div>
+          <div data-pop className="mt-4 rounded-2xl border border-gray-100 bg-white p-5 text-[15px] leading-relaxed text-gray-800 whitespace-pre-line">{lesson.content}</div>
         )}
 
-        <button onClick={handleMarkComplete} disabled={marking}
+        <button data-pop onClick={handleMarkComplete} disabled={marking}
           className={`mt-5 w-full py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60 ${completed ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-blue-600 text-white'}`}>
           <CheckCircle2 className="w-4 h-4" /> {completed ? 'Completed' : 'Mark complete'}
         </button>
 
-        <div className="flex items-center gap-3 mt-3">
+        <div data-pop className="flex items-center gap-3 mt-3">
           <button onClick={() => goToLesson(idx - 1)} disabled={idx <= 0}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm font-bold disabled:opacity-40">
             <ChevronLeft className="w-4 h-4" /> Previous
@@ -160,7 +160,7 @@ export function LearningPlayer() {
           </button>
         </div>
 
-        <div className="mt-6">
+        <div data-pop className="mt-6">
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs font-bold text-gray-500">Course progress</p>
             <p className="text-xs font-bold text-gray-900">{percent}%</p>
@@ -183,7 +183,7 @@ export function LearningPlayer() {
                     const current = l.id === lesson.id;
                     const done = !!progress[l.id];
                     return (
-                      <button key={l.id} onClick={() => { setShowLessons(false); if (!current) goToLesson(n); }}
+                      <button key={l.id} data-pop onClick={() => { setShowLessons(false); if (!current) goToLesson(n); }}
                         aria-current={current ? 'true' : undefined}
                         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${current ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
                         {done ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
