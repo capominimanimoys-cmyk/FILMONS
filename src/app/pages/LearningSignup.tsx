@@ -88,17 +88,17 @@ export function LearningSignup() {
     <LearningAuthLayout>
       {view === 'options' ? (
         <>
-          <h1 className="text-2xl sm:text-[26px] font-black tracking-tight text-gray-900 leading-tight">Create your FILMONS account</h1>
+          <h1 data-pop className="text-2xl sm:text-[26px] font-black tracking-tight text-gray-900 leading-tight">Create your FILMONS account</h1>
           <p className="mt-2 text-sm text-gray-500 leading-relaxed">
             Start learning today. Your account also works across FILMONS.
           </p>
 
           <div className="mt-8 space-y-3">
-            <button type="button" onClick={handleGoogle} disabled={googleLoading} className={optionBtn}>
+            <button type="button" onClick={handleGoogle} disabled={googleLoading} data-pop className={optionBtn}>
               <GoogleIcon className="h-5 w-5 shrink-0" />
               <span className="flex-1 text-center pr-5">{googleLoading ? 'Opening Google…' : 'Sign up with Google'}</span>
             </button>
-            <button type="button" onClick={() => setView('email')} className={optionBtn}>
+            <button type="button" onClick={() => setView('email')} data-pop className={optionBtn}>
               <Mail className="h-5 w-5 shrink-0 text-gray-700" strokeWidth={1.75} />
               <span className="flex-1 text-center pr-5">Sign up with email</span>
             </button>
@@ -114,10 +114,10 @@ export function LearningSignup() {
             className="-ml-1 mb-4 flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors">
             <ArrowLeft className="h-3.5 w-3.5" /> All sign-up options
           </button>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900">Sign up with email</h1>
+          <h1 data-pop className="text-2xl font-black tracking-tight text-gray-900">Sign up with email</h1>
           <p className="mt-1.5 text-sm text-gray-500">We'll send a code to verify your email.</p>
 
-          <form onSubmit={handleSubmit} className="mt-7 space-y-3" noValidate>
+          <form data-pop onSubmit={handleSubmit} className="mt-7 space-y-3" noValidate>
             <div>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" autoComplete="name" autoFocus aria-label="Full name"
                 className={`${inputCls} ${submitAttempted && !nameValid ? 'border-red-400' : 'border-gray-200 focus:border-blue-400'}`} />

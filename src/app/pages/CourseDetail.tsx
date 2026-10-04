@@ -4,6 +4,7 @@
 // state instead of a Buy button that would lead nowhere -- real one-time
 // checkout needs its own Stripe wiring (see stripe-charge/stripe-webhook,
 // built for a different flow) that's out of scope for this pass.
+import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
@@ -191,8 +192,8 @@ export function CourseDetail() {
         <div className="relative w-full bg-black" style={{ aspectRatio: '16/9' }}>
           {course.trailerUrl ? (
             <video src={course.trailerUrl} poster={course.coverUrl ?? undefined} controls className="w-full h-full object-contain bg-black" />
-          ) : course.coverUrl ? (
-            <img src={course.coverUrl} alt="" className="w-full h-full object-cover" />
+          ) : course.coverUrl || course.coverVideoUrl ? (
+            <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl">🎬</div>
           )}

@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    FILMONS LEARNING — pop-in appearance
    Elements marked [data-pop] start hidden and pop in (fade + scale with a
-   small overshoot) the first time they scroll into view, staggered when
+   small overshoot) every time they scroll into view, staggered when
    several appear together. Driven by usePopIn() (app/lib/usePopIn.ts),
    which marks them [data-lp-in] and adds .lp-ready to <html> only once
    it's running -- without JS nothing is ever hidden.
@@ -37,8 +37,13 @@
   animation: lpNavPop 380ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--i, 0) * 40ms + 80ms) backwards;
 }
 
+@keyframes lpFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Reduced motion: still appear, as a plain fade -- no movement or scale. */
 @media (prefers-reduced-motion: reduce) {
-  .lp-ready [data-pop]:not([data-lp-in]) { opacity: 1; }
-  [data-lp-in],
-  .lp-nav-animate .lp-nav-item { animation: none; }
+  [data-lp-in] { animation: lpFade 280ms ease-out var(--lp-delay, 0ms) backwards; }
+  .lp-nav-animate .lp-nav-item { animation: lpFade 240ms ease-out calc(var(--i, 0) * 30ms) backwards; }
 }

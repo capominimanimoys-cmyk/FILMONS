@@ -159,8 +159,9 @@ export function CoursePreview({ doc, instructorName }: { doc: CourseDoc; instruc
       <div className="relative bg-black" style={{ aspectRatio: '16/9' }}>
         {doc.presentation.introVideoUrl && doc.presentation.introVideoStatus === 'ready'
           ? <video src={doc.presentation.introVideoUrl} poster={doc.presentation.coverUrl || undefined} controls playsInline className="h-full w-full object-contain" />
+          : doc.presentation.coverVideoUrl ? <video src={doc.presentation.coverVideoUrl} poster={doc.presentation.coverUrl || undefined} autoPlay muted loop playsInline className="h-full w-full object-cover" />
           : doc.presentation.coverUrl ? <img src={doc.presentation.coverUrl} alt="" className="h-full w-full object-cover" />
-          : <div className="flex h-full items-center justify-center text-sm text-white/50">No cover image yet</div>}
+          : <div className="flex h-full items-center justify-center text-sm text-white/50">No cover yet</div>}
       </div>
       <div className="space-y-5 p-4 sm:p-6">
         <div>

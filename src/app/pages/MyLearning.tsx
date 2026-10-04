@@ -2,6 +2,7 @@
 // In progress / Completed / Saved. Instructor-side course management
 // lives on the Instructor dashboard (see InstructorDashboard.tsx), which
 // reuses MyCourseRow from here.
+import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Bookmark, GraduationCap, Pencil, Settings2, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
@@ -29,7 +30,7 @@ function EnrolledRow({ course }: { course: EnrolledCourse }) {
   return (
     <button data-pop onClick={() => navigate(`/course/${course.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
       <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-        {course.coverUrl ? <img src={course.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>}
+        <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} play={false} fallback={<div className="w-full h-full flex items-center justify-center text-xl">🎬</div>} />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-gray-900 truncate">{course.title}</p>
@@ -55,7 +56,7 @@ export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: 
   return (
     <div data-pop className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3">
       <button onClick={() => navigate(`/instructor/course/${course.id}`)} className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-        {course.coverUrl ? <img src={course.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>}
+        <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} play={false} fallback={<div className="w-full h-full flex items-center justify-center text-xl">🎬</div>} />
       </button>
       <div className="flex-1 min-w-0">
         <button onClick={() => navigate(`/instructor/course/${course.id}`)} className="block max-w-full text-left text-sm font-bold text-gray-900 truncate hover:underline">{course.title}</button>

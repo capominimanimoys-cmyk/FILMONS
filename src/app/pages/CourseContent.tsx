@@ -66,6 +66,7 @@ export function CourseContent() {
                   const isCurrent = currentLessonId ? l.id === currentLessonId : (!completed && l.id === firstIncomplete?.id);
                   return (
                     <button
+                      data-pop
                       key={l.id}
                       onClick={() => navigate(`/course/${courseId}/lesson/${l.id}`)}
                       className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50"

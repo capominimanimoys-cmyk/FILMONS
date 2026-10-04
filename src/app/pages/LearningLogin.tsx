@@ -135,7 +135,7 @@ export function LearningLogin() {
     <LearningAuthLayout>
       {view === 'options' ? (
         <>
-          <h1 className="text-2xl sm:text-[26px] font-black tracking-tight text-gray-900 leading-tight">Welcome to FILMONS Learning</h1>
+          <h1 data-pop className="text-2xl sm:text-[26px] font-black tracking-tight text-gray-900 leading-tight">Welcome to FILMONS Learning</h1>
           <p className="mt-2 text-sm text-gray-500 leading-relaxed">Learn new skills. Grow your creative career.</p>
 
           <div className="mt-8 space-y-3">
@@ -153,18 +153,18 @@ export function LearningLogin() {
                   : <ArrowRight className="h-4 w-4 shrink-0 text-blue-600" />}
               </button>
             ) : (
-              <button type="button" onClick={handleContinueWithFilmons} className={optionBtn}>
+              <button type="button" onClick={handleContinueWithFilmons} data-pop className={optionBtn}>
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gray-900 text-[11px] font-black text-white">F</span>
                 <span className="flex-1 text-center pr-6">Continue with FILMONS</span>
               </button>
             )}
 
-            <button type="button" onClick={() => handleGoogle()} disabled={googleLoading} className={optionBtn}>
+            <button type="button" onClick={() => handleGoogle()} disabled={googleLoading} data-pop className={optionBtn}>
               <GoogleIcon className="h-5 w-5 shrink-0" />
               <span className="flex-1 text-center pr-5">{googleLoading ? 'Opening Google…' : 'Continue with Google'}</span>
             </button>
 
-            <button type="button" onClick={() => { setView('email'); setError(null); }} className={optionBtn}>
+            <button type="button" onClick={() => { setView('email'); setError(null); }} data-pop className={optionBtn}>
               <Mail className="h-5 w-5 shrink-0 text-gray-700" strokeWidth={1.75} />
               <span className="flex-1 text-center pr-5">Continue with email</span>
             </button>
@@ -185,10 +185,10 @@ export function LearningLogin() {
             className="-ml-1 mb-4 flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors">
             <ArrowLeft className="h-3.5 w-3.5" /> All sign-in options
           </button>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900">Sign in with email</h1>
+          <h1 data-pop className="text-2xl font-black tracking-tight text-gray-900">Sign in with email</h1>
           <p className="mt-1.5 text-sm text-gray-500">Use the email and password for your FILMONS account.</p>
 
-          <form onSubmit={handleEmailLogin} className="mt-7 space-y-3" noValidate>
+          <form data-pop onSubmit={handleEmailLogin} className="mt-7 space-y-3" noValidate>
             <label className="block">
               <span className="sr-only">Email</span>
               <input value={email} onChange={e => { setEmail(e.target.value); setError(null); }}

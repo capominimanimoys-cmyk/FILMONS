@@ -34,7 +34,11 @@ export interface CourseDoc {
   version: 1;
   basics: { title: string; shortDescription: string; language: string; category: string; topics: string[]; level: CourseLevel3 | '' };
   outcomes: { outcomes: { id: string; text: string }[]; audience: string; prerequisites: string; tools: string };
-  presentation: { coverUrl: string; introVideoUrl: string; introVideoStatus: VideoStatus; description: string };
+  presentation: {
+    coverUrl: string; // always an image: uploaded, or a frame taken from the cover video
+    coverVideoUrl: string; coverVideoStatus: VideoStatus; // optional looping cover video
+    introVideoUrl: string; introVideoStatus: VideoStatus; description: string;
+  };
   sections: DocSection[];
   certificate: { enabled: boolean };
   pricing: { isFree: boolean | null; price: number; currency: string };
@@ -143,7 +147,9 @@ export function checklist(doc: CourseDoc, opts: { payoutReady: boolean }): Probl
   if (!b.category.trim()) p.push({ step: 1, target: 'category', message: 'Choose a category' });
   if (!b.level) p.push({ step: 1, target: 'level', message: 'Choose a level' });
   if (!doc.outcomes.outcomes.some(o => o.text.trim())) p.push({ step: 2, target: 'outcomes', message: 'Add at least one learning outcome' });
-  if (!doc.presentation.coverUrl) p.push({ step: 3, target: 'cover', message: 'Add a course cover image' });
+  const cover = doc.presentation;
+  if (cover.coverVideoUrl && cover.coverVideoStatus !== 'ready') p.push({ step: 3, target: 'cover', message: 'Wait for the cover video to finish processing' });
+  else if (!cover.coverUrl && !cover.coverVideoUrl) p.push({ step: 3, target: 'cover', message: 'Add a course cover image or video' });
   if (!doc.presentation.description.trim()) p.push({ step: 3, target: 'description', message: 'Add the full course description' });
   if (doc.presentation.introVideoUrl && doc.presentation.introVideoStatus !== 'ready') p.push({ step: 3, target: 'intro', message: 'Wait for the introduction video to finish processing' });
 
@@ -216,7 +222,7 @@ export function normalizeDoc(raw: any): CourseDoc {
   d.version = 1;
   d.basics = { title: '', shortDescription: '', language: 'English', category: '', topics: [], level: '', ...r.basics };
   d.outcomes = { outcomes: [], audience: '', prerequisites: '', tools: '', ...r.outcomes };
-  d.presentation = { coverUrl: '', introVideoUrl: '', introVideoStatus: 'none', description: '', ...r.presentation };
+  d.presentation = { coverUrl: '', coverVideoUrl: '', coverVideoStatus: 'none', introVideoUrl: '', introVideoStatus: 'none', description: '', ...r.presentation };
   if (d.presentation.introVideoStatus === 'uploading') d.presentation.introVideoStatus = d.presentation.introVideoUrl ? 'processing' : 'failed';
   d.sections = ((r.sections ?? []) as any[]).map(s => ({
     ...s, description: s.description ?? '',
@@ -306,6 +312,28 @@ export function probeVideo(url: string, timeoutMs = 60000): Promise<{ durationSe
       else done(() => resolve({ durationSeconds: Math.round(d) }));
     };
     v.onerror = () => done(() => reject(new Error("This video format can't be played. Try an MP4 (H.264) file.")));
+    v.src = url;
+  });
+}
+
+/** A JPEG frame from a local video file (about a second in), used as the
+ *  cover image when the instructor's cover is a video. */
+export function captureVideoFrame(file: File, atSeconds = 1): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    const done = (fn: () => void) => { clearTimeout(t); URL.revokeObjectURL(url); fn(); };
+    const t = setTimeout(() => done(() => reject(new Error('timeout'))), 20000);
+    v.onloadedmetadata = () => { v.currentTime = Math.min(atSeconds, Math.max(0, (v.duration || 0) / 3)); };
+    v.onseeked = () => {
+      const w = Math.min(1600, v.videoWidth), h = Math.round(w * (v.videoHeight / v.videoWidth));
+      if (!w || !h) return done(() => reject(new Error('no frame')));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d')!.drawImage(v, 0, 0, w, h);
+      c.toBlob(b => done(() => (b ? resolve(new File([b], file.name.replace(/\.[^.]+$/, '') + '-cover.jpg', { type: 'image/jpeg' })) : reject(new Error('no frame')))), 'image/jpeg', 0.86);
+    };
+    v.onerror = () => done(() => reject(new Error('unreadable')));
     v.src = url;
   });
 }

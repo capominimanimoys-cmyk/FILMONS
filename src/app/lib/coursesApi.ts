@@ -35,6 +35,7 @@ export interface Course {
   audience: string | null;
   prerequisites: string | null;
   coverUrl: string | null;
+  coverVideoUrl: string | null;
   trailerUrl: string | null;
   price: number;
   currency: string;
@@ -109,6 +110,7 @@ function rowToCourse(row: any, instructor?: any): Course {
     audience: row.audience,
     prerequisites: row.prerequisites,
     coverUrl: row.cover_url,
+    coverVideoUrl: row.cover_video_url ?? null,
     trailerUrl: row.trailer_url,
     price: Number(row.price) || 0,
     currency: row.currency || 'CAD',

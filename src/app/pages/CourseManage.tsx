@@ -2,6 +2,7 @@
 // View course, Edit course, Students, Earnings, plus publishing state.
 // Statuses: Draft, Published, Unpublished (unpublished = gone from
 // discovery and new purchases; existing students keep access).
+import { CourseCover } from '../components/courses/CourseCover';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -75,7 +76,7 @@ export function CourseManage() {
 
       <div data-pop className="flex flex-col gap-4 rounded-3xl border border-gray-100 bg-white p-4 sm:flex-row sm:items-center sm:p-5">
         <div className="aspect-video w-full shrink-0 overflow-hidden rounded-2xl bg-gray-100 sm:w-44">
-          {course.coverUrl && <img src={course.coverUrl} alt="" className="h-full w-full object-cover" />}
+          <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} play={false} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

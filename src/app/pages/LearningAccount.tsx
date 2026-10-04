@@ -3,6 +3,7 @@
 //   /notifications  -- the FILMONS notifications feed, Learning first
 //   /profile        -- the learner's Learning profile + progress
 //   /instructor     -- Instructor dashboard (Professional/Business only)
+import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
@@ -162,7 +163,7 @@ export function LearningProfile() {
             {inProgress.slice(0, 3).map(c => (
               <button key={c.id} data-pop onClick={() => navigate(`/course/${c.id}`)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left">
                 <span className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                  {c.coverUrl && <img src={c.coverUrl} alt="" className="h-full w-full object-cover" />}
+                  <CourseCover imageUrl={c.coverUrl} videoUrl={c.coverVideoUrl} play={false} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold text-gray-900">{c.title}</span>

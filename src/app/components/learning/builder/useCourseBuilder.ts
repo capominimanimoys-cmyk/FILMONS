@@ -12,12 +12,12 @@
 // upload can be retried without picking the file again.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  builderApi, probeVideo, uploadCourseFile, fileKind,
+  builderApi, probeVideo, uploadCourseFile, fileKind, captureVideoFrame,
   type CourseDoc, type DocVideo, type DraftLoad, type UploadHandle,
 } from '../../../lib/courseBuilder';
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-export type UploadTarget = string; // 'cover' | 'intro' | `video:${id}` | `res:${itemId}:${resId}`
+export type UploadTarget = string; // 'cover' | 'coverVideo' | 'intro' | `video:${id}` | `res:${itemId}:${resId}`
 export interface UploadInfo { progress: number; status: 'uploading' | 'error'; error?: string; fileName: string }
 
 const SAVE_DELAY_MS = 900;
@@ -129,6 +129,7 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
   const applyResult = (target: UploadTarget, patch: { url: string; status?: DocVideo['videoStatus']; durationSeconds?: number; fileName?: string; fileType?: string }) => {
     if (target === 'cover') setDoc(d => ({ ...d, presentation: { ...d.presentation, coverUrl: patch.url } }));
     else if (target === 'intro') setDoc(d => ({ ...d, presentation: { ...d.presentation, introVideoUrl: patch.url, introVideoStatus: patch.status ?? 'ready' } }));
+    else if (target === 'coverVideo') setDoc(d => ({ ...d, presentation: { ...d.presentation, coverVideoUrl: patch.url, coverVideoStatus: patch.status ?? 'ready' } }));
     else if (target.startsWith('video:')) updateVideo(target.slice(6), { videoUrl: patch.url, videoStatus: patch.status ?? 'ready', ...(patch.durationSeconds ? { durationSeconds: patch.durationSeconds } : {}) });
     else if (target.startsWith('res:')) {
       const [, itemId, resId] = target.split(':');
@@ -140,6 +141,7 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
 
   const setVideoStatus = (target: UploadTarget, status: DocVideo['videoStatus'], durationSeconds?: number) => {
     if (target === 'intro') setDoc(d => ({ ...d, presentation: { ...d.presentation, introVideoStatus: status } }));
+    else if (target === 'coverVideo') setDoc(d => ({ ...d, presentation: { ...d.presentation, coverVideoStatus: status } }));
     else if (target.startsWith('video:')) updateVideo(target.slice(6), { videoStatus: status, ...(durationSeconds ? { durationSeconds } : {}) });
   };
 
@@ -157,10 +159,15 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
     if (!courseId) return;
     handles.current[target]?.abort();
     files.current[target] = file;
-    const isVideo = target === 'intro' || target.startsWith('video:');
-    const folder = `${courseId}/${target === 'cover' ? 'cover' : target === 'intro' ? 'intro' : target.startsWith('video:') ? 'lessons' : 'resources'}`;
+    const isVideo = target === 'intro' || target === 'coverVideo' || target.startsWith('video:');
+    const folder = `${courseId}/${target === 'cover' || target === 'coverVideo' ? 'cover' : target === 'intro' ? 'intro' : target.startsWith('video:') ? 'lessons' : 'resources'}`;
     setUpload(target, { progress: 0, status: 'uploading', fileName: file.name });
     if (isVideo) setVideoStatus(target, 'uploading');
+    // A cover video needs an image too (cards, share previews, poster):
+    // without one already, use a frame from the video.
+    if (target === 'coverVideo' && !docRef.current?.presentation.coverUrl) {
+      captureVideoFrame(file).then(img => startUpload('cover', img)).catch(() => {});
+    }
     const handle = uploadCourseFile(file, folder, pct => setUploads(u => (u[target] ? { ...u, [target]: { ...u[target], progress: pct } } : u)));
     handles.current[target] = handle;
     handle.promise.then(async url => {
