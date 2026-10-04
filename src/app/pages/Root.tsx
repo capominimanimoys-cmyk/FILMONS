@@ -21,7 +21,6 @@ import { LearningTransitionProvider, LEARNING_RESTORE_SCROLL_KEY } from '../cont
 import { RepostComposeProvider } from '../context/RepostComposeContext';
 import { PostRepostComposeProvider, GlobalPostRepostComposer } from '../context/PostRepostComposeContext';
 import { DraggablePortfolioPage } from '../components/connect/DraggablePortfolioPage';
-import type { User } from '../types';
 
 const NO_NAV_PAGES    = ['/login', '/phone-signup', '/phone-login', '/verify-device'];
 const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card'];

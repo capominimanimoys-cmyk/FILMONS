@@ -18,6 +18,7 @@ import * as notifsDb from "./notifications.tsx";
 import * as convsDb from "./conversations.tsx";
 import verificationsDb from "./verifications.tsx";
 import { registerAiEditorRoutes } from "./aiEditor.tsx";
+import { registerLearningRoutes } from "./learning.tsx";
 import { ENTITLEMENTS, normalizeTier } from "../_shared/entitlements.ts";
 
 const app = new Hono();
@@ -42,6 +43,9 @@ app.use(
   }),
 );
 app.use("*", logger(console.log));
+
+// ── FILMONS Learning (course builder, grading, certificates) ────────────────
+registerLearningRoutes(app);
 // verificationsDb routes are registered directly below as /make-server-ec8fe879/verifications/*
 
 // ── ID generator ───────────────────��───────────────────────────────────────

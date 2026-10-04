@@ -33,7 +33,7 @@ export function CourseContent() {
       const isInstructor = user?.id === c.instructorId;
       const enrolled = user ? await isEnrolled(user.id, courseId) : false;
       setAllowed(enrolled || isInstructor);
-      setSections(await getCourseCurriculum(courseId, { viewerIsEnrolled: enrolled, viewerIsInstructor: isInstructor }));
+      setSections(await getCourseCurriculum(courseId, { userId: user?.id }));
       if (enrolled && user) setProgress(await getLessonProgressMap(user.id, courseId));
     });
   }, [courseId, user?.id]);

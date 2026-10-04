@@ -47,6 +47,9 @@ export interface Course {
   durationSeconds: number;
   createdAt: string;
   publishedAt: string | null;
+  topics: string[];
+  requiredTools: string | null;
+  certificateEnabled: boolean;
 }
 
 export interface CourseLesson {
@@ -62,11 +65,15 @@ export interface CourseLesson {
   durationSeconds: number | null;
   isPreview: boolean;
   position: number;
+  description?: string | null;
+  quiz?: { passingScore: number; required: boolean; isFinal: boolean; questionCount: number } | null;
+  resources?: { id: string; name: string; url: string; fileType: string | null; isPreview: boolean }[];
 }
 
 export interface CourseSection {
   id: string;
   title: string;
+  description?: string | null;
   position: number;
   lessons: CourseLesson[];
 }
@@ -114,6 +121,9 @@ function rowToCourse(row: any, instructor?: any): Course {
     durationSeconds: row.duration_seconds || 0,
     createdAt: row.created_at,
     publishedAt: row.published_at,
+    topics: Array.isArray(row.topics) ? row.topics : [],
+    requiredTools: row.required_tools ?? null,
+    certificateEnabled: !!row.certificate_enabled,
   };
 }
 
@@ -173,10 +183,22 @@ export async function getCourses(opts: {
     // recommendation sections ("Recommended because you're a Photographer"
     // rarely appears verbatim in a course TITLE, but often in its category
     // or description) -- OR across all three instead.
-    const term = opts.query.trim();
-    q = q.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%`);
+    const term = opts.query.trim().replace(/[,()]/g, ' ');
+    // Topics are stored normalized (lowercase, no spaces/#), so match the
+    // query in that form too: "Color grading" finds #colorgrading.
+    const tag = term.toLowerCase().replace(/^#/, '').replace(/[^a-z0-9_]/g, '');
+    q = q.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%${tag ? `,topics.cs.{${tag}}` : ''}`);
   }
-  const { data, error } = await q;
+  let { data, error } = await q;
+  if (error && opts.query?.trim()) {
+    // Before the course-builder migration there's no topics column to match.
+    const term = opts.query.trim().replace(/[,()]/g, ' ');
+    let retry = supabase.from('courses').select('*').order('created_at', { ascending: false }).limit(limit).eq('status', opts.status ?? 'published');
+    if (opts.category) retry = retry.eq('category', opts.category);
+    if (opts.subcategory) retry = retry.eq('subcategory', opts.subcategory);
+    if (opts.instructorId) retry = retry.eq('instructor_id', opts.instructorId);
+    ({ data, error } = await retry.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%`));
+  }
   if (error) { console.warn('[coursesApi] getCourses error:', error.message); return []; }
   const withInstructors = await attachInstructors(data ?? []);
   return attachCurriculumStats(withInstructors);
@@ -206,43 +228,21 @@ export async function getCourse(id: string): Promise<Course | null> {
   return withStats;
 }
 
-// `viewerIsEnrolled`/`viewerIsInstructor` decide whether non-preview lesson
-// content is scrubbed -- the actual access gate (this pass has no purchase
-// flow yet, so every non-instructor viewer sees preview-only content,
-// matching "students must be enrolled to see lesson content").
-export async function getCourseCurriculum(courseId: string, opts: {
-  viewerIsEnrolled?: boolean;
-  viewerIsInstructor?: boolean;
-} = {}): Promise<CourseSection[]> {
-  const canSeeAll = !!opts.viewerIsEnrolled || !!opts.viewerIsInstructor;
-  const { data: sections, error: sErr } = await supabase
-    .from('course_sections').select('id, title, position').eq('course_id', courseId).order('position');
-  if (sErr || !sections?.length) return [];
-
-  const sectionIds = sections.map((s: any) => s.id);
-  const { data: lessons } = await supabase
-    .from('course_lessons').select('*').in('section_id', sectionIds).order('position');
-
-  const lessonsBySection = new Map<string, CourseLesson[]>();
-  (lessons ?? []).forEach((l: any) => {
-    const visible = canSeeAll || l.is_preview;
-    const lesson: CourseLesson = {
-      id: l.id, sectionId: l.section_id, title: l.title, type: l.type,
-      content: visible ? l.content : null,
-      videoUrl: visible ? l.video_url : null,
-      videoPosterUrl: l.video_poster_url,
-      durationSeconds: l.duration_seconds,
-      isPreview: !!l.is_preview,
-      position: l.position,
-    };
-    const arr = lessonsBySection.get(l.section_id) ?? [];
-    arr.push(lesson);
-    lessonsBySection.set(l.section_id, arr);
-  });
-
-  return sections.map((s: any) => ({
-    id: s.id, title: s.title, position: s.position,
-    lessons: lessonsBySection.get(s.id) ?? [],
+/** The course outline for this viewer. Served by the server, which only
+ *  includes lesson media for the instructor, enrolled students, and (for
+ *  free-preview lessons) everyone -- see server/learning.tsx /curriculum. */
+export async function getCourseCurriculum(courseId: string, opts: { userId?: string | null } = {}): Promise<CourseSection[]> {
+  const { learningServer } = await import('./learningServer');
+  const c = await learningServer.curriculum(courseId, opts.userId ?? null).catch(() => null);
+  if (!c) return [];
+  return c.sections.map((s, si) => ({
+    id: s.id, title: s.title, description: s.description, position: si,
+    lessons: s.items.map((l, li) => ({
+      id: l.id, sectionId: s.id, title: l.title, type: l.type as LessonType, content: l.content, videoUrl: l.videoUrl,
+      videoPosterUrl: l.posterUrl, durationSeconds: l.durationSeconds, isPreview: l.isPreview, position: li,
+      description: l.description, resources: l.resources,
+      quiz: l.quiz ? { passingScore: l.quiz.passingScore, required: l.quiz.required, isFinal: l.quiz.isFinal, questionCount: l.quiz.questionCount } : null,
+    })),
   }));
 }
 
@@ -264,13 +264,12 @@ export async function isEnrolled(userId: string, courseId: string): Promise<bool
 // see the CourseDetail "Coming soon" state) -- this path only ever writes
 // an enrollment row for a genuinely free course, re-checked server-side
 // against the course's own price/isFree rather than trusting the caller.
+/** Free courses only -- the server re-checks the price and that the course
+ *  is published (paid enrollments come from a confirmed payment). */
 export async function enrollInFreeCourse(userId: string, courseId: string): Promise<boolean> {
-  const course = await getCourse(courseId);
-  if (!course || (!course.isFree && course.price > 0)) return false;
-  const { error } = await supabase.from('course_enrollments')
-    .upsert({ user_id: userId, course_id: courseId, status: 'active' }, { onConflict: 'user_id,course_id', ignoreDuplicates: true });
-  if (error) { console.warn('[coursesApi] enroll error:', error.message); return false; }
-  return true;
+  const { learningServer } = await import('./learningServer');
+  try { await learningServer.enroll(courseId, userId); return true; }
+  catch (e: any) { console.warn('[coursesApi] enroll error:', e?.message); return false; }
 }
 
 export async function getLessonProgressMap(userId: string, courseId: string): Promise<Record<string, boolean>> {
@@ -280,22 +279,20 @@ export async function getLessonProgressMap(userId: string, courseId: string): Pr
   return map;
 }
 
+/** Marks an older (text/image/pdf/file/link) lesson complete. Video
+ *  lessons complete from playback and quizzes from passing -- server-side. */
 export async function setLessonComplete(userId: string, courseId: string, lessonId: string, completed: boolean): Promise<boolean> {
-  const { error } = await supabase.from('course_progress').upsert(
-    { user_id: userId, course_id: courseId, lesson_id: lessonId, completed, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id,lesson_id' },
-  );
-  if (error) { console.warn('[coursesApi] progress error:', error.message); return false; }
-  return true;
+  const { learningServer } = await import('./learningServer');
+  try { await learningServer.completeLesson(courseId, lessonId, userId, completed); return true; }
+  catch (e: any) { console.warn('[coursesApi] progress error:', e?.message); return false; }
 }
 
+/** Progress toward completion: required lessons watched + required quizzes passed. */
 export async function getCourseProgressStats(userId: string, courseId: string): Promise<{ completed: number; total: number; percent: number }> {
-  const sections = await getCourseCurriculum(courseId, { viewerIsEnrolled: true });
-  const total = sections.reduce((n, s) => n + s.lessons.length, 0);
-  if (!total) return { completed: 0, total: 0, percent: 0 };
-  const progress = await getLessonProgressMap(userId, courseId);
-  const completed = sections.reduce((n, s) => n + s.lessons.filter(l => progress[l.id]).length, 0);
-  return { completed, total, percent: Math.round((completed / total) * 100) };
+  const { learningServer } = await import('./learningServer');
+  const c = await learningServer.completion(courseId, userId).catch(() => null);
+  if (!c || !c.required) return { completed: 0, total: 0, percent: 0 };
+  return { completed: c.done, total: c.required, percent: Math.round((c.done / c.required) * 100) };
 }
 
 export interface EnrolledCourse extends Course {

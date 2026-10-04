@@ -2,7 +2,9 @@ import { createBrowserRouter } from 'react-router';
 import { LearningLayout } from './components/learning/LearningLayout';
 import { CoursesHome } from './pages/CoursesHome';
 import { MyLearning } from './pages/MyLearning';
-import { CreateCourse } from './pages/CreateCourse';
+import { CourseBuilder, CreateCourseStart } from './pages/CourseBuilder';
+import { CourseManage } from './pages/CourseManage';
+import { CertificatePage } from './pages/CertificatePage';
 import { CourseDetail } from './pages/CourseDetail';
 import { CourseContent } from './pages/CourseContent';
 import { LearningPlayer } from './pages/LearningPlayer';
@@ -34,7 +36,9 @@ const learningRouteTree = [
       { path: 'notifications', Component: LearningNotifications },
       { path: 'profile', Component: LearningProfile },
       { path: 'instructor', Component: InstructorDashboard },
-      { path: 'create', Component: CreateCourse },
+      { path: 'create', Component: CreateCourseStart },
+      { path: 'instructor/course/:courseId', Component: CourseManage },
+      { path: 'instructor/course/:courseId/edit', Component: CourseBuilder },
       { path: 'course/:courseId', Component: CourseDetail },
       { path: 'course/:courseId/content', Component: CourseContent },
       { path: 'course/:courseId/lesson/:lessonId', Component: LearningPlayer },
@@ -43,6 +47,8 @@ const learningRouteTree = [
   // Sign in / create account -- full-screen, outside LearningLayout's
   // header. Both sign into the one shared FILMONS account (see
   // lib/learningAuth.ts).
+  // Public certificate verification -- works signed out.
+  { path: '/certificate/:code', Component: CertificatePage },
   { path: '/login', Component: LearningLogin },
   { path: '/signup', Component: LearningSignup },
 ];

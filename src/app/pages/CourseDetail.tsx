@@ -8,13 +8,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Star, Users, Clock, Play, ChevronDown, ChevronUp, FileText,
+  ArrowLeft, Star, Users, Play, ChevronDown, ChevronUp, FileText, ClipboardCheck, Award,
   Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2, Send, Bookmark,
 } from 'lucide-react';
 import {
-  getCourse, getCourseCurriculum, isEnrolled, enrollInFreeCourse,
-  getLessonProgressMap, getCourseReviews, submitCourseReview,
-  type Course, type CourseSection, type CourseReview,
+  getCourse, enrollInFreeCourse, getCourseReviews, submitCourseReview,
+  type Course, type CourseReview,
 } from '../lib/coursesApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { getTrustLevelCached, type TrustLevel } from '../lib/trustApi';
@@ -27,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { learningLoginPath } from '../lib/learningAuth';
 import { recordCourseView, isCourseSaved, setCourseSaved } from '../lib/topicsApi';
+import { learningServer, isItemDone, type Curriculum, type ViewerSection } from '../lib/learningServer';
 
 function formatDuration(totalSeconds: number): string {
   if (!totalSeconds) return '';
@@ -37,7 +37,7 @@ function formatDuration(totalSeconds: number): string {
   return `${m}m`;
 }
 
-const LESSON_ICON: Record<string, any> = { video: Play, text: FileText, image: ImageIcon, pdf: FileText, file: Download, link: LinkIcon };
+const LESSON_ICON: Record<string, any> = { video: Play, quiz: ClipboardCheck, text: FileText, image: ImageIcon, pdf: FileText, file: Download, link: LinkIcon };
 const LEVEL_LABEL: Record<string, string> = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced', all_levels: 'All levels' };
 const TABS = [
   { id: 'about', label: 'About' },
@@ -66,14 +66,14 @@ export function CourseDetail() {
   const { leaveLearning } = useLearningTransition();
   const { user } = useAuth();
   const [course, setCourse] = useState<Course | null | undefined>(undefined);
-  const [sections, setSections] = useState<CourseSection[]>([]);
+  const [sections, setSections] = useState<ViewerSection[]>([]);
+  const [curriculum, setCurriculum] = useState<Curriculum | null>(null);
   const [instructorTrust, setInstructorTrust] = useState<TrustLevel | undefined>();
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [previewLesson, setPreviewLesson] = useState<{ title: string; url: string } | null>(null);
 
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [enrolling, setEnrolling] = useState(false);
-  const [lessonProgress, setLessonProgress] = useState<Record<string, boolean>>({});
   const [reviews, setReviews] = useState<CourseReview[]>([]);
   const [myRating, setMyRating] = useState(0);
   const [myReviewBody, setMyReviewBody] = useState('');
@@ -97,13 +97,11 @@ export function CourseDetail() {
       if (user) isCourseSaved(user.id, c.id).then(setSaved);
       getTrustLevelCached(c.instructorId).then(setInstructorTrust).catch(() => {});
       getCourseReviews(courseId).then(setReviews);
-      const alreadyEnrolled = user ? await isEnrolled(user.id, courseId) : false;
-      const isInstructor = user?.id === c.instructorId;
-      setEnrolled(alreadyEnrolled);
-      const secs = await getCourseCurriculum(courseId, { viewerIsEnrolled: alreadyEnrolled, viewerIsInstructor: isInstructor });
-      setSections(secs);
-      if (secs[0]) setOpenSectionId(secs[0].id);
-      if (alreadyEnrolled && user) setLessonProgress(await getLessonProgressMap(user.id, courseId));
+      const cur = await learningServer.curriculum(courseId, user?.id).catch(() => null);
+      setCurriculum(cur);
+      setEnrolled(cur?.access === 'enrolled');
+      setSections(cur?.sections ?? []);
+      if (cur?.sections[0]) setOpenSectionId(cur.sections[0].id);
     });
   }, [courseId, user?.id]);
 
@@ -120,9 +118,14 @@ export function CourseDetail() {
   }
 
   const duration = formatDuration(course.durationSeconds);
-  const allLessons = sections.flatMap(s => s.lessons);
+  const allLessons = sections.flatMap(s => s.items);
+  const lessonCount = allLessons.filter(l => l.type !== 'quiz').length;
+  const quizCount = allLessons.length - lessonCount;
+  const done = (id: string) => !!curriculum && isItemDone(allLessons.find(l => l.id === id)!, curriculum);
+  const completion = curriculum?.completion ?? null;
+  const unavailable = course.status !== 'published' && !enrolled && !isOwn;
 
-  const firstIncompleteLesson = () => allLessons.find(l => !lessonProgress[l.id]) ?? allLessons[allLessons.length - 1];
+  const firstIncompleteLesson = () => allLessons.find(l => !done(l.id)) ?? allLessons[0];
 
   const toggleSave = async () => {
     if (!user) { navigate(learningLoginPath(location.pathname + location.search)); return; }
@@ -142,13 +145,14 @@ export function CourseDetail() {
     if (!ok) { toast.error('Could not enroll'); return; }
     setEnrolled(true);
     toast.success('Enrolled!');
-    const secs = await getCourseCurriculum(course.id, { viewerIsEnrolled: true });
-    setSections(secs);
+    const cur = await learningServer.curriculum(course.id, user.id).catch(() => null);
+    setCurriculum(cur);
+    setSections(cur?.sections ?? []);
   };
 
   const handleContinue = () => {
     const lesson = firstIncompleteLesson();
-    if (!lesson) { navigate(`/course/${course.id}/content`); return; }
+    if (!lesson) return;
     navigate(`/course/${course.id}/lesson/${lesson.id}`);
   };
 
@@ -237,19 +241,41 @@ export function CourseDetail() {
             <p className="text-xl font-black text-gray-900">
               {course.isFree || course.price === 0 ? 'Free' : `${course.currency} $${course.price.toFixed(2)}`}
             </p>
+            {course.certificateEnabled && (
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-blue-700"><Award className="w-4 h-4" /> Certificate of completion included</p>
+            )}
             {isOwn ? (
-              <button onClick={() => navigate(`/course/${course.id}/content`)} className="w-full py-3 rounded-2xl bg-gray-900 text-white text-sm font-bold">
-                View course content
-              </button>
-            ) : enrolled ? (
               <>
-                <button onClick={handleContinue} className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">
-                  Continue course
+                <button onClick={handleContinue} disabled={!allLessons.length} className="w-full py-3 rounded-2xl bg-gray-900 text-white text-sm font-bold disabled:opacity-50">
+                  Open lessons
                 </button>
-                <button onClick={() => navigate(`/course/${course.id}/content`)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">
-                  View course content
+                <button onClick={() => navigate(`/instructor/course/${course.id}`)} className="w-full py-3 rounded-2xl bg-gray-100 text-gray-700 text-sm font-bold">
+                  Manage course
                 </button>
               </>
+            ) : enrolled ? (
+              <>
+                {completion?.complete ? (
+                  <div className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-800 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" /> Course completed
+                    {completion.certificate && (
+                      <button onClick={() => navigate(`/certificate/${completion.certificate!.code}`)} className="ml-auto text-xs font-black text-blue-600 hover:underline">View certificate</button>
+                    )}
+                  </div>
+                ) : completion && completion.required > 0 ? (
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-gray-500"><span>Your progress</span><span>{completion.done}/{completion.required}</span></div>
+                    <div className="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.round((completion.done / completion.required) * 100)}%` }} /></div>
+                  </div>
+                ) : null}
+                <button onClick={handleContinue} disabled={!allLessons.length} className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold disabled:opacity-50">
+                  {completion?.complete ? 'Review course' : 'Continue course'}
+                </button>
+              </>
+            ) : enrolled === null ? (
+              <div className="h-11 w-full animate-pulse rounded-2xl bg-gray-100" aria-label="Loading" />
+            ) : unavailable ? (
+              <p className="rounded-xl bg-gray-100 px-3 py-2.5 text-sm text-gray-600">This course isn’t available to new students right now.</p>
             ) : (
               <button onClick={handleEnroll} disabled={enrolling} className="w-full py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold disabled:opacity-60">
                 {enrolling ? 'Enrolling…' : 'Enroll now'}
@@ -283,13 +309,20 @@ export function CourseDetail() {
             </div>
           )}
 
+          {[['Who this course is for', course.audience], ['Prerequisites', course.prerequisites], ['Tools you’ll need', course.requiredTools]].filter(([, v]) => v && String(v).trim()).map(([k, v]) => (
+            <div key={k as string} data-pop className="bg-white rounded-2xl border border-gray-100 p-4">
+              <p className="text-sm font-black text-gray-900 mb-1.5">{k}</p>
+              <p className="text-sm text-gray-600 whitespace-pre-line">{v}</p>
+            </div>
+          ))}
+
           <div ref={el => { sectionRefs.current.content = el; }} />
           {sections.length > 0 && (
             <div data-pop className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="p-4 pb-2">
                 <p className="text-sm font-black text-gray-900">Course content</p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {allLessons.length} lessons{duration ? ` · ${duration}` : ''}
+                  {lessonCount} lesson{lessonCount === 1 ? '' : 's'}{quizCount ? ` · ${quizCount} quiz${quizCount === 1 ? '' : 'zes'}` : ''}{duration ? ` · ${duration}` : ''}
                 </p>
               </div>
               <div className="divide-y divide-gray-50 border-t border-gray-50">
@@ -304,10 +337,10 @@ export function CourseDetail() {
                       </button>
                       {open && (
                         <div className="bg-gray-50/60">
-                          {s.lessons.map((l, li) => {
+                          {s.items.map((l, li) => {
                             const Icon = LESSON_ICON[l.type] ?? Play;
                             const canOpen = enrolled || isOwn || (l.isPreview && l.type === 'video' && !!l.videoUrl);
-                            const completed = !!lessonProgress[l.id];
+                            const completed = enrolled && done(l.id);
                             const onTap = () => {
                               if (enrolled || isOwn) navigate(`/course/${course.id}/lesson/${l.id}`);
                               else if (l.isPreview && l.videoUrl) setPreviewLesson({ title: l.title, url: l.videoUrl });
@@ -321,6 +354,9 @@ export function CourseDetail() {
                               >
                                 {completed ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <Icon className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
                                 <p className="flex-1 min-w-0 text-xs text-gray-700 truncate">{li + 1}. {l.title}</p>
+                                {l.type === 'quiz' && (
+                                  <span className="text-[10px] font-bold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full shrink-0">{l.quiz?.isFinal ? 'Final quiz' : 'Quiz'}</span>
+                                )}
                                 {l.isPreview && !enrolled && !isOwn && (
                                   <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full shrink-0">Preview</span>
                                 )}

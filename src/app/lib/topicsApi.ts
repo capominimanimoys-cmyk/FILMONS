@@ -3,7 +3,8 @@
 // tag ('videoediting'): every hashtag a published course mentions (see
 // hashtagsApi.ts's hashtag_mentions, content_type 'course') plus each
 // course's own category/subcategory, normalized the same way, so a course
-// with no hashtags still belongs to its category's topic.
+// with no hashtags still belongs to its category's topic. Topics the
+// instructor picks in the course builder (courses.topics) count too.
 //
 // Ranking is computed client-side from the open course tables (same RLS
 // model as coursesApi.ts) over a bounded window -- fine at Learning's
@@ -59,11 +60,14 @@ let indexCache: { at: number; promise: Promise<TopicIndex> } | null = null;
 const INDEX_TTL_MS = 60_000;
 
 async function buildTopicIndex(): Promise<TopicIndex> {
-  const { data: rows, error } = await supabase.from('courses')
-    .select('id, title, category, subcategory, published_at, created_at')
+  const catalog = (cols: string) => supabase.from('courses')
+    .select(cols)
     .eq('status', 'published')
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(CATALOG_LIMIT);
+  let { data: rows, error } = await catalog('id, title, category, subcategory, topics, published_at, created_at');
+  // Before the course-builder migration there's no topics column yet.
+  if (error) ({ data: rows, error } = await catalog('id, title, category, subcategory, published_at, created_at'));
   if (error) console.warn('[topicsApi] catalog error:', error.message);
 
   const courses = new Map<string, CatalogCourse>();
@@ -74,10 +78,11 @@ async function buildTopicIndex(): Promise<TopicIndex> {
     topicCourses.get(tag)!.add(courseId);
   };
 
-  for (const r of rows ?? []) {
+  for (const r of (rows ?? []) as any[]) {
     courses.set(r.id, { id: r.id, title: r.title, publishedAt: r.published_at || r.created_at });
     add(normalizeTopic(r.category), r.id);
     add(normalizeTopic(r.subcategory), r.id);
+    for (const t of (Array.isArray(r.topics) ? r.topics : [])) add(normalizeTopic(t), r.id);
   }
 
   const ids = [...courses.keys()];

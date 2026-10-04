@@ -31,7 +31,7 @@ const BASE_ITEMS: NavItem[] = [
   { label: 'Notifications',   path: '/notifications',   icon: Bell, badge: 'notifications' },
   { label: 'Profile',         path: '/profile',         icon: UserRound },
 ];
-const INSTRUCTOR_ITEM: NavItem = { label: 'Instructor dashboard', path: '/instructor', icon: LayoutDashboard, alsoActive: /^\/create\/?$/ };
+const INSTRUCTOR_ITEM: NavItem = { label: 'Instructor dashboard', path: '/instructor', icon: LayoutDashboard, alsoActive: /^\/(create|instructor\/course\/.+)\/?$/ };
 
 function isActive(item: NavItem, pathname: string): boolean {
   const path = pathname.replace(/\/+$/, '') || '/';
