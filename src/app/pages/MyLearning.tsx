@@ -4,11 +4,10 @@
 // reuses MyCourseRow from here.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { toast } from 'sonner';
-import { Bookmark, GraduationCap, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Bookmark, GraduationCap, Pencil, Settings2, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
-  getMyEnrollments, setCourseStatus, publishCourse,
+  getMyEnrollments,
   type EnrolledCourse, type Course,
 } from '../lib/coursesApi';
 import { getSavedCourses } from '../lib/topicsApi';
@@ -21,7 +20,8 @@ import { DeleteCourseSheet } from '../components/learning/DeleteCourseSheet';
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   draft: { label: 'Draft', className: 'bg-gray-100 text-gray-500' },
   published: { label: 'Published', className: 'bg-emerald-50 text-emerald-600' },
-  archived: { label: 'Archived', className: 'bg-amber-50 text-amber-600' },
+  unpublished: { label: 'Unpublished', className: 'bg-amber-50 text-amber-600' },
+  archived: { label: 'Unpublished', className: 'bg-amber-50 text-amber-600' },
 };
 
 function EnrolledRow({ course }: { course: EnrolledCourse }) {
@@ -52,40 +52,30 @@ export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const status = STATUS_LABEL[course.status] ?? STATUS_LABEL.draft;
 
-  const handlePublish = async () => {
-    if (!user) return;
-    const ok = await publishCourse(course.id, user.id);
-    if (ok) { toast.success('Published'); onChanged(); } else toast.error('Could not publish');
-  };
-  const handleUnpublish = async () => {
-    if (!user) return;
-    const ok = await setCourseStatus(course.id, user.id, 'draft');
-    if (ok) { toast.success('Moved back to draft'); onChanged(); } else toast.error('Could not update');
-  };
-
   return (
     <div data-pop className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3">
-      <button onClick={() => navigate(`/course/${course.id}`)} className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+      <button onClick={() => navigate(`/instructor/course/${course.id}`)} className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
         {course.coverUrl ? <img src={course.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>}
       </button>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-gray-900 truncate">{course.title}</p>
+        <button onClick={() => navigate(`/instructor/course/${course.id}`)} className="block max-w-full text-left text-sm font-bold text-gray-900 truncate hover:underline">{course.title}</button>
         <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 ${status.className}`}>{status.label}</span>
         <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1.5">
           {course.studentCount > 0 && <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {course.studentCount} students</span>}
           {course.ratingCount > 0 && <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400" /> {course.ratingAvg.toFixed(1)}</span>}
         </div>
       </div>
-      <button onClick={() => navigate(`/create?edit=${course.id}`)} className="shrink-0 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">Edit</button>
+      <button onClick={() => navigate(`/instructor/course/${course.id}/edit?step=1`)} className="shrink-0 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">Edit</button>
       <button onClick={() => setMenuOpen(true)} className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
         <MoreHorizontal className="w-4 h-4" />
       </button>
       {menuOpen && (
         <PostMoreMenu
           onClose={() => setMenuOpen(false)}
-          actions={course.status === 'published'
-            ? [{ icon: Star, label: 'Move to draft', onClick: () => { setMenuOpen(false); handleUnpublish(); } }]
-            : [{ icon: Star, label: 'Publish', onClick: () => { setMenuOpen(false); handlePublish(); } }]}
+          actions={[
+            { icon: Settings2, label: 'Manage course', onClick: () => { setMenuOpen(false); navigate(`/instructor/course/${course.id}`); } },
+            { icon: Pencil, label: 'Edit course', onClick: () => { setMenuOpen(false); navigate(`/instructor/course/${course.id}/edit?step=1`); } },
+          ]}
           destructiveActions={[{ icon: Trash2, label: 'Delete course', onClick: () => { setMenuOpen(false); setConfirmDelete(true); } }]}
         />
       )}

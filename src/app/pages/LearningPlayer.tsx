@@ -1,198 +1,160 @@
-// FILMONS Learning -- /learning/course/:courseId/lesson/:lessonId. Full
-// lesson viewing experience: video, lesson position ("Lesson 4 of 18"),
-// Previous/Next, Mark complete, and the course-wide progress bar --
-// completing a lesson here immediately recomputes overall progress (no
-// separate "sync" step). Focus mode: LearningLayout hides the header,
-// drawer and sidebar here, leaving a back button and a Lessons button that
-// opens the course's lesson list in a bottom sheet.
-import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
+// FILMONS Learning -- /learning/course/:courseId/lesson/:lessonId. Focus
+// mode: LearningLayout hides the main navigation here, leaving a back
+// button, the course title, progress and a Lessons button (bottom sheet
+// with every section, video lesson and quiz, and completion marks).
+//
+// Video lessons complete when 90% has actually been played (the browser's
+// `played` ranges -- skipping ahead doesn't count, and opening a lesson
+// alone never marks it complete). Quizzes are graded on the server. When
+// every requirement is met the completion screen appears, with the
+// certificate actions if the course issues one.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Circle, FileText, Link as LinkIcon, Download, ListVideo, PlayCircle } from 'lucide-react';
 import {
-  getCourse, getCourseCurriculum, isEnrolled, getLessonProgressMap, setLessonComplete,
-  type Course, type CourseSection,
-} from '../lib/coursesApi';
+  ArrowLeft, Award, CheckCircle2, ChevronLeft, ChevronRight, Circle, ClipboardCheck, Download, FileText,
+  Link as LinkIcon, ListVideo, Lock, PartyPopper, PlayCircle, RotateCcw,
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import {
+  flattenItems, isItemDone, learningServer, type Completion, type Curriculum, type ViewerItem,
+} from '../lib/learningServer';
+import { VIDEO_COMPLETE_PERCENT, formatDuration } from '../lib/courseBuilder';
+import { learningLoginPath } from '../lib/learningAuth';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { BottomSheet } from '../components/BottomSheet';
-
-function formatDuration(totalSeconds: number | null): string {
-  if (!totalSeconds) return '';
-  const m = Math.floor(totalSeconds / 60);
-  return `${m}:${String(totalSeconds % 60).padStart(2, '0')}`;
-}
-import { useAuth } from '../context/AuthContext';
+import { StudentQuiz } from '../components/learning/StudentQuiz';
+import { CertificateActions } from '../components/learning/CertificateActions';
 
 export function LearningPlayer() {
   const { courseId, lessonId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [course, setCourse] = useState<Course | null | undefined>(undefined);
-  const [sections, setSections] = useState<CourseSection[]>([]);
+  const [cur, setCur] = useState<Curriculum | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [showLessons, setShowLessons] = useState(false);
-  const [progress, setProgress] = useState<Record<string, boolean>>({});
-  const [allowed, setAllowed] = useState(false);
-  const [marking, setMarking] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!courseId) return;
-    let cancelled = false;
-    (async () => {
-      const c = await getCourse(courseId);
-      if (cancelled) return;
-      setCourse(c ?? null);
-      if (!c) return;
-      const isInstructor = user?.id === c.instructorId;
-      const enrolled = user ? await isEnrolled(user.id, courseId) : false;
-      if (cancelled) return;
-      setAllowed(enrolled || isInstructor);
-      if (!enrolled && !isInstructor) return;
-      const sections = await getCourseCurriculum(courseId, { viewerIsEnrolled: enrolled, viewerIsInstructor: isInstructor });
-      if (cancelled) return;
-      setSections(sections);
-      if (user) setProgress(await getLessonProgressMap(user.id, courseId));
-    })();
-    return () => { cancelled = true; };
+    setState('loading');
+    try {
+      setCur(await learningServer.curriculum(courseId, user?.id));
+      setState('ready');
+    } catch { setState('error'); }
   }, [courseId, user?.id]);
+  useEffect(() => { load(); }, [load]);
 
-  const lessons = sections.flatMap(sec => sec.lessons);
-  const idx = lessons.findIndex(l => l.id === lessonId);
-  const lesson = idx >= 0 ? lessons[idx] : undefined;
-  const total = lessons.length;
-  const completedCount = lessons.filter(l => progress[l.id]).length;
-  const percent = total ? Math.round((completedCount / total) * 100) : 0;
+  const items = useMemo(() => (cur ? flattenItems(cur.sections) : []), [cur]);
+  const idx = items.findIndex(i => i.id === lessonId);
+  const item = idx >= 0 ? items[idx] : undefined;
+  const next = idx >= 0 ? items[idx + 1] : undefined;
+  const prev = idx > 0 ? items[idx - 1] : undefined;
+  const learner = cur?.access === 'enrolled' || cur?.access === 'instructor';
+  const canOpen = (i: ViewerItem) => learner || (i.isPreview && i.type !== 'quiz');
+  const go = (i: ViewerItem | undefined, replace = true) => { if (i) navigate(`/course/${courseId}/lesson/${i.id}`, { replace }); };
 
-  const goToLesson = useCallback((i: number) => {
-    const target = lessons[i];
-    if (target) navigate(`/course/${courseId}/lesson/${target.id}`, { replace: true });
-  }, [lessons, courseId, navigate]);
-
-  const handleMarkComplete = async () => {
-    if (!user || !lesson || !courseId) return;
-    const next = !progress[lesson.id];
-    setMarking(true);
-    const ok = await setLessonComplete(user.id, courseId, lesson.id, next);
-    setMarking(false);
-    if (!ok) { toast.error('Could not update progress'); return; }
-    setProgress(prev => ({ ...prev, [lesson.id]: next }));
-    if (next && idx < total - 1) goToLesson(idx + 1);
+  const applyCompletion = (completion: Completion | null) => {
+    if (!completion) return;
+    setCur(c => {
+      if (c && !c.completion?.complete && completion.complete) setCelebrate(true);
+      return c ? { ...c, completion } : c;
+    });
   };
 
-  if (course === undefined) {
-    return <div className="min-h-screen bg-black flex items-center justify-center"><FilmonsBrandLoader size="lg" label="Loading lesson" /></div>;
-  }
-  if (course === null) return <div className="min-h-screen bg-black flex items-center justify-center text-sm text-white/60">Course not found</div>;
-  if (!allowed) {
+  if (state === 'loading') return <div className="min-h-screen flex items-center justify-center bg-gray-50"><FilmonsBrandLoader size="lg" label="Loading lesson" /></div>;
+  if (state === 'error' || !cur) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-sm font-bold text-white">Enroll to watch this lesson</p>
-        <button onClick={() => navigate(`/course/${courseId}`)} className="text-sm font-bold text-blue-400">Back to course</button>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-50 px-6 text-center">
+        <p className="text-sm font-bold text-gray-800">We couldn’t load this lesson.</p>
+        <div className="flex gap-2">
+          <button onClick={load} className="flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-sm font-bold text-gray-800 border border-gray-200"><RotateCcw className="h-4 w-4" /> Retry</button>
+          <button onClick={() => navigate(`/course/${courseId}`)} className="rounded-xl px-4 py-2 text-sm font-bold text-gray-600">Back to course</button>
+        </div>
       </div>
     );
   }
-  if (!lesson) return <div className="min-h-screen bg-black flex items-center justify-center text-sm text-white/60">Lesson not found</div>;
+  if (!item) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-50 px-6 text-center">
+        <p className="text-sm font-bold text-gray-800">This lesson isn’t part of the course anymore.</p>
+        <button onClick={() => navigate(`/course/${courseId}`)} className="text-sm font-bold text-blue-600">Back to course</button>
+      </div>
+    );
+  }
 
-  const completed = !!progress[lesson.id];
-  const isText = lesson.type === 'text';
+  const completion = cur.completion;
+  const percent = completion?.required ? Math.round((completion.done / completion.required) * 100) : 0;
+  const nextLabel = next ? (next.type === 'quiz' ? 'Start quiz' : 'Next lesson') : completion?.complete ? 'View completion' : 'Back to course';
+  const onNext = () => {
+    if (next) go(next);
+    else if (completion?.complete) setCelebrate(true);
+    else navigate(`/course/${courseId}`);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      {/* Slim bar: back + Lessons -- nothing else competes with the lesson */}
-      <div className="sticky top-0 z-20 bg-black flex items-center gap-2 px-3 py-2.5" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
-        <button onClick={() => navigate(`/course/${courseId}`)} aria-label="Back to course"
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 shrink-0">
-          <ArrowLeft className="w-4 h-4 text-white" />
-        </button>
-        <p className="min-w-0 flex-1 truncate text-sm font-bold text-white/90">{course.title}</p>
-        <button onClick={() => setShowLessons(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-2 text-xs font-bold text-white hover:bg-white/20">
-          <ListVideo className="w-4 h-4" /> Lessons
-          <span className="text-white/50">{idx + 1}/{total}</span>
-        </button>
-      </div>
-
-      {/* Media */}
-      {!isText && (
-        <div className="w-full bg-black">
-          <div className="mx-auto w-full max-w-5xl flex items-center justify-center" style={{ aspectRatio: '16/9', maxHeight: '75vh' }}>
-            {lesson.type === 'video' && lesson.videoUrl ? (
-              <video key={lesson.id} src={lesson.videoUrl} poster={lesson.videoPosterUrl ?? undefined} controls autoPlay playsInline className="w-full h-full object-contain" />
-            ) : lesson.type === 'image' && lesson.content ? (
-              <img src={lesson.content} alt={lesson.title} className="max-w-full max-h-full object-contain" />
-            ) : lesson.type === 'link' && lesson.content ? (
-              <a href={lesson.content} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-2 text-white/70">
-                <LinkIcon className="w-10 h-10" /> <span className="text-sm underline">Open link</span>
-              </a>
-            ) : lesson.type === 'pdf' || lesson.type === 'file' ? (
-              <div className="flex flex-col items-center gap-2 text-white/70">
-                {lesson.type === 'pdf' ? <FileText className="w-10 h-10" /> : <Download className="w-10 h-10" />}
-                {lesson.content && <a href={lesson.content} target="_blank" rel="noreferrer" className="text-sm underline">Open file</a>}
+      {/* Back · course title · progress · Lessons */}
+      <div className="sticky top-0 z-20 bg-black px-3 py-2.5" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigate(`/course/${courseId}`)} aria-label="Back to course" className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 shrink-0">
+            <ArrowLeft className="w-4 h-4 text-white" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-white/90">{cur.course.title}</p>
+            {learner && completion && completion.required > 0 && (
+              <div className="mt-1 flex items-center gap-2">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-blue-500" style={{ width: `${percent}%` }} /></div>
+                <span className="text-[10px] font-bold text-white/60">{percent}%</span>
               </div>
-            ) : (
-              <p className="text-white/40 text-sm">This lesson has no media.</p>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Lesson content + controls */}
-      <div className="flex-1 mx-auto w-full max-w-3xl px-5 pt-5 pb-8">
-        <p data-pop className="text-xs font-bold text-gray-400">Lesson {idx + 1} of {total}</p>
-        <h1 data-pop className="text-xl font-black text-gray-900 mt-0.5 leading-snug">{lesson.title}</h1>
-
-        {isText && lesson.content && (
-          <div data-pop className="mt-4 rounded-2xl border border-gray-100 bg-white p-5 text-[15px] leading-relaxed text-gray-800 whitespace-pre-line">{lesson.content}</div>
-        )}
-
-        <button data-pop onClick={handleMarkComplete} disabled={marking}
-          className={`mt-5 w-full py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60 ${completed ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-blue-600 text-white'}`}>
-          <CheckCircle2 className="w-4 h-4" /> {completed ? 'Completed' : 'Mark complete'}
-        </button>
-
-        <div data-pop className="flex items-center gap-3 mt-3">
-          <button onClick={() => goToLesson(idx - 1)} disabled={idx <= 0}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm font-bold disabled:opacity-40">
-            <ChevronLeft className="w-4 h-4" /> Previous
+          <button onClick={() => setShowLessons(true)} className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-2 text-xs font-bold text-white hover:bg-white/20">
+            <ListVideo className="w-4 h-4" /> Lessons <span className="text-white/50">{idx + 1}/{items.length}</span>
           </button>
-          <button onClick={() => goToLesson(idx + 1)} disabled={idx >= total - 1}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm font-bold disabled:opacity-40">
-            Next <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div data-pop className="mt-6">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-xs font-bold text-gray-500">Course progress</p>
-            <p className="text-xs font-bold text-gray-900">{percent}%</p>
-          </div>
-          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-600 rounded-full" style={{ width: `${percent}%` }} />
-          </div>
         </div>
       </div>
 
+      {!canOpen(item) ? (
+        <Locked onEnroll={() => navigate(user ? `/course/${courseId}` : learningLoginPath(`/course/${courseId}`))} isQuiz={item.type === 'quiz'} />
+      ) : item.type === 'quiz' ? (
+        <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-5 pb-10">
+          {user && cur.access !== 'preview' ? (
+            <StudentQuiz courseId={courseId!} userId={user.id} item={item} state={cur.quizzes[item.id]}
+              onChanged={(st, comp) => { setCur(c => (c ? { ...c, quizzes: { ...c.quizzes, [item.id]: st } } : c)); applyCompletion(comp); }}
+              onNext={onNext} nextLabel={nextLabel} />
+          ) : null}
+        </div>
+      ) : (
+        <LessonView key={item.id} courseId={courseId!} userId={learner && user && cur.access === 'enrolled' ? user.id : null} item={item}
+          progress={cur.progress[item.id]} onProgress={(p, comp) => { setCur(c => (c ? { ...c, progress: { ...c.progress, [item.id]: { ...(c.progress[item.id] ?? { completed: false, watchedPercent: 0, exerciseCompleted: false, positionSeconds: 0 }), ...p } } } : c)); applyCompletion(comp); }}
+          prev={prev} onPrev={() => go(prev)} onNext={onNext} nextLabel={nextLabel} isInstructor={cur.access === 'instructor'} />
+      )}
+
       {showLessons && (
-        <BottomSheet title={`Lessons · ${completedCount}/${total} complete`} onClose={() => setShowLessons(false)} maxHeightVh={80}>
-          <div className="px-4 pb-6 space-y-5">
-            {sections.map(sec => (
+        <BottomSheet title={learner && completion ? `Lessons · ${completion.done}/${completion.required} required complete` : 'Lessons'} onClose={() => setShowLessons(false)} maxHeightVh={80}>
+          <div className="space-y-5 px-4 pb-6">
+            {cur.sections.map(sec => (
               <div key={sec.id}>
                 <p className="px-1 pb-2 text-xs font-black uppercase tracking-wide text-gray-400">{sec.title}</p>
                 <div className="space-y-1">
-                  {sec.lessons.map(l => {
-                    const n = lessons.findIndex(x => x.id === l.id);
-                    const current = l.id === lesson.id;
-                    const done = !!progress[l.id];
+                  {sec.items.map(l => {
+                    const n = items.findIndex(x => x.id === l.id);
+                    const current = l.id === item.id;
+                    const done = learner && isItemDone(l, cur);
+                    const open = canOpen(l);
                     return (
-                      <button key={l.id} data-pop onClick={() => { setShowLessons(false); if (!current) goToLesson(n); }}
+                      <button key={l.id} data-pop disabled={!open} onClick={() => { setShowLessons(false); if (!current) go(l); }}
                         aria-current={current ? 'true' : undefined}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${current ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                        {done ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left disabled:opacity-50 ${current ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                        {!open ? <Lock className="h-5 w-5 shrink-0 text-gray-300" />
+                          : done ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                          : l.type === 'quiz' ? <ClipboardCheck className={`h-5 w-5 shrink-0 ${current ? 'text-blue-600' : 'text-violet-500'}`} />
                           : current ? <PlayCircle className="h-5 w-5 shrink-0 text-blue-600" />
                           : <Circle className="h-5 w-5 shrink-0 text-gray-300" />}
-                        <span className={`min-w-0 flex-1 truncate text-sm ${current ? 'font-black text-blue-600' : 'font-semibold text-gray-800'}`}>
-                          {n + 1}. {l.title}
-                        </span>
-                        {formatDuration(l.durationSeconds) && <span className="shrink-0 text-xs text-gray-400">{formatDuration(l.durationSeconds)}</span>}
+                        <span className={`min-w-0 flex-1 truncate text-sm ${current ? 'font-black text-blue-600' : 'font-semibold text-gray-800'}`}>{n + 1}. {l.title}</span>
+                        {l.type === 'quiz' ? <span className="shrink-0 text-xs text-gray-400">{l.quiz?.required ? 'Quiz' : 'Optional quiz'}</span>
+                          : l.durationSeconds ? <span className="shrink-0 text-xs text-gray-400">{formatDuration(l.durationSeconds)}</span> : null}
                       </button>
                     );
                   })}
@@ -202,6 +164,191 @@ export function LearningPlayer() {
           </div>
         </BottomSheet>
       )}
+
+      {celebrate && completion?.complete && (
+        <CompletionScreen courseTitle={cur.course.title} completion={completion} onClose={() => setCelebrate(false)} onBack={() => navigate(`/course/${courseId}`)} />
+      )}
+    </div>
+  );
+}
+
+function Locked({ onEnroll, isQuiz }: { onEnroll: () => void; isQuiz: boolean }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-24 text-center">
+      <Lock className="h-8 w-8 text-gray-300" />
+      <p className="text-sm font-bold text-gray-800">{isQuiz ? 'Enroll to take this quiz' : 'Enroll to watch this lesson'}</p>
+      <button onClick={onEnroll} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white">See course options</button>
+    </div>
+  );
+}
+
+function LessonView({ courseId, userId, item, progress, onProgress, prev, onPrev, onNext, nextLabel, isInstructor }: {
+  courseId: string; userId: string | null; item: ViewerItem; progress: Curriculum['progress'][string] | undefined;
+  onProgress: (p: Partial<Curriculum['progress'][string]>, completion: Completion | null) => void;
+  prev?: ViewerItem; onPrev: () => void; onNext: () => void; nextLabel: string; isInstructor: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const reported = useRef(progress?.watchedPercent ?? 0);
+  const sending = useRef(false);
+  const [watched, setWatched] = useState(progress?.watchedPercent ?? 0);
+  const completed = !!progress?.completed;
+  const isVideo = item.type === 'video';
+
+  // Share of the video actually played, from the browser's played ranges.
+  const playedPercent = () => {
+    const v = videoRef.current;
+    if (!v || !v.duration || !Number.isFinite(v.duration)) return 0;
+    let total = 0;
+    for (let i = 0; i < v.played.length; i++) total += v.played.end(i) - v.played.start(i);
+    return Math.min(100, Math.round((total / v.duration) * 100));
+  };
+
+  const report = useCallback(async (force = false) => {
+    if (!userId || !isVideo || sending.current) return;
+    const v = videoRef.current;
+    const pct = Math.max(reported.current, playedPercent());
+    setWatched(w => Math.max(w, pct));
+    if (!force && pct - reported.current < 5 && !(pct >= VIDEO_COMPLETE_PERCENT && !completed)) return;
+    if (pct <= reported.current && !force) return;
+    sending.current = true;
+    try {
+      const r = await learningServer.videoProgress(courseId, item.id, userId, pct, Math.round(v?.currentTime ?? 0));
+      reported.current = r.watchedPercent;
+      onProgress({ watchedPercent: r.watchedPercent, completed: r.completed }, r.completion);
+      if (r.completed && !completed) toast.success('Lesson complete');
+    } catch { /* retried on the next report */ }
+    sending.current = false;
+  }, [userId, isVideo, courseId, item.id, completed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isVideo || !userId) return;
+    const t = setInterval(() => report(), 10000);
+    const onHide = () => { if (document.visibilityState === 'hidden') report(true); };
+    document.addEventListener('visibilitychange', onHide);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onHide); report(true); };
+  }, [isVideo, userId, report]);
+
+  const resumeAt = progress?.positionSeconds ?? 0;
+  const markLegacyDone = async () => {
+    if (!userId) return;
+    try { const r = await learningServer.completeLesson(courseId, item.id, userId, !completed); onProgress({ completed: !completed }, r.completion); }
+    catch (e: any) { toast.error(e?.message || 'Could not update progress'); }
+  };
+  const toggleExercise = async () => {
+    if (!userId) return;
+    const nextVal = !progress?.exerciseCompleted;
+    onProgress({ exerciseCompleted: nextVal }, null);
+    try { await learningServer.exercise(courseId, item.id, userId, nextVal); }
+    catch { onProgress({ exerciseCompleted: !nextVal }, null); toast.error('Could not save'); }
+  };
+
+  return (
+    <>
+      {isVideo && (
+        <div className="w-full bg-black">
+          <div className="mx-auto flex w-full max-w-5xl items-center justify-center" style={{ aspectRatio: '16/9', maxHeight: '75vh' }}>
+            {item.videoUrl ? (
+              <video ref={videoRef} src={item.videoUrl} poster={item.posterUrl ?? undefined} controls playsInline className="h-full w-full object-contain"
+                onLoadedMetadata={e => { if (resumeAt > 5 && resumeAt < (e.currentTarget.duration || 0) - 5) e.currentTarget.currentTime = resumeAt; }}
+                onPause={() => report(true)} onEnded={() => report(true)} onTimeUpdate={() => setWatched(w => Math.max(w, playedPercent()))} />
+            ) : <p className="text-sm text-white/50">This video isn’t available.</p>}
+          </div>
+        </div>
+      )}
+      {!isVideo && item.type !== 'quiz' && item.type !== 'text' && (
+        <div className="w-full bg-black">
+          <div className="mx-auto flex w-full max-w-5xl items-center justify-center p-6" style={{ minHeight: 220 }}>
+            {item.type === 'image' && item.content ? <img src={item.content} alt={item.title} className="max-h-[70vh] max-w-full object-contain" />
+              : item.content ? <a href={item.content} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-2 text-white/80">
+                {item.type === 'link' ? <LinkIcon className="h-10 w-10" /> : <FileText className="h-10 w-10" />}<span className="text-sm underline">Open {item.type === 'link' ? 'link' : 'file'}</span></a>
+              : <p className="text-sm text-white/50">Nothing to show.</p>}
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto w-full max-w-3xl flex-1 px-5 pt-5 pb-10">
+        <h1 data-pop className="text-xl font-black leading-snug text-gray-900">{item.title}</h1>
+        {isVideo && userId && (
+          <p data-pop className={`mt-1.5 flex items-center gap-1.5 text-xs font-semibold ${completed ? 'text-emerald-600' : 'text-gray-500'}`}>
+            {completed ? <><CheckCircle2 className="h-3.5 w-3.5" /> Completed</> : <>Watched {watched}% · watch {VIDEO_COMPLETE_PERCENT}% to complete</>}
+          </p>
+        )}
+        {isVideo && isInstructor && <p className="mt-1.5 text-xs text-gray-400">Instructor view -- your progress isn’t tracked.</p>}
+        {!userId && !isInstructor && <p className="mt-1.5 text-xs font-semibold text-emerald-600">Free preview</p>}
+
+        {item.type === 'text' && item.content && (
+          <div data-pop className="mt-4 whitespace-pre-line rounded-2xl border border-gray-100 bg-white p-5 text-[15px] leading-relaxed text-gray-800">{item.content}</div>
+        )}
+        {item.description && <p data-pop className="mt-3 whitespace-pre-line text-sm leading-relaxed text-gray-600">{item.description}</p>}
+
+        {item.resources.length > 0 && (
+          <div data-pop className="mt-5 rounded-2xl border border-gray-100 bg-white p-4">
+            <p className="text-sm font-black text-gray-900">Resources</p>
+            <ul className="mt-2 divide-y divide-gray-50">
+              {item.resources.map(r => (
+                <li key={r.id}>
+                  <a href={r.url} target="_blank" rel="noreferrer" download className="flex items-center gap-3 py-2.5 text-sm font-semibold text-gray-800 hover:text-blue-600">
+                    <Download className="h-4 w-4 shrink-0 text-gray-400" /> <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                    {r.fileType && <span className="shrink-0 text-[11px] font-bold uppercase text-gray-400">{r.fileType}</span>}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {item.exercise && (
+          <div data-pop className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+            <p className="text-sm font-black text-gray-900">Practical exercise</p>
+            <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-gray-700">{item.exercise.instructions}</p>
+            {item.exercise.expectedResult && <p className="mt-2 text-xs leading-relaxed text-gray-600"><b>Expected result:</b> {item.exercise.expectedResult}</p>}
+            {userId && (
+              <button onClick={toggleExercise} className={`mt-3 flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold ${progress?.exerciseCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-white text-gray-800 border border-gray-200'}`}>
+                <CheckCircle2 className="h-4 w-4" /> {progress?.exerciseCompleted ? 'Exercise completed' : 'Mark exercise complete'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {!isVideo && userId && (
+          <button data-pop onClick={markLegacyDone} className={`mt-5 w-full rounded-2xl py-3 text-sm font-bold ${completed ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-blue-600 text-white'}`}>
+            {completed ? 'Completed' : 'Mark complete'}
+          </button>
+        )}
+
+        <div data-pop className="mt-6 flex items-center gap-3">
+          <button onClick={onPrev} disabled={!prev} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-700 disabled:opacity-40">
+            <ChevronLeft className="h-4 w-4" /> Previous
+          </button>
+          <button onClick={onNext} className="flex flex-[2] items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-black text-white hover:bg-blue-700">
+            {nextLabel} <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CompletionScreen({ courseTitle, completion, onClose, onBack }: { courseTitle: string; completion: Completion; onClose: () => void; onBack: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Course complete">
+      <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white p-6 text-center shadow-2xl" style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50"><PartyPopper className="h-8 w-8 text-emerald-600" /></div>
+        <h2 className="mt-3 text-2xl font-black text-gray-900">Course complete!</h2>
+        <p className="mt-1 text-sm text-gray-600">You finished <b>{courseTitle}</b>.</p>
+        {completion.certificate ? (
+          <div className="mt-5 space-y-3 text-left">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-blue-700"><Award className="h-4 w-4" /> Your certificate of completion is ready</p>
+            <CertificateActions certificate={completion.certificate} />
+          </div>
+        ) : completion.certificateEnabled ? (
+          <p className="mt-4 text-xs text-gray-500">Your certificate is being prepared -- it will appear on the course page shortly.</p>
+        ) : null}
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+          <button onClick={onBack} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white">Back to course</button>
+          <button onClick={onClose} className="rounded-xl px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-100">Keep reviewing</button>
+        </div>
+      </div>
     </div>
   );
 }

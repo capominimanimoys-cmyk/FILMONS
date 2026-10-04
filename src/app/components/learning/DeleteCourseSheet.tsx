@@ -2,13 +2,14 @@
 // from the course's ⋯ menu on the Instructor dashboard). Checks first
 // whether anyone is enrolled or has paid: if so a permanent delete would
 // take the course away from those learners and wipe the payment records
-// (deleting a course cascades to both), so it offers Archive instead --
+// (deleting a course cascades to both), so it offers Unpublish instead --
 // hidden from Learning, enrolled students keep access.
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, Archive, Trash2 } from 'lucide-react';
 import { BottomSheet } from '../BottomSheet';
-import { deleteCourse, getCourseDeletionBlockers, setCourseStatus, type Course } from '../../lib/coursesApi';
+import { deleteCourse, getCourseDeletionBlockers, type Course } from '../../lib/coursesApi';
+import { builderApi } from '../../lib/courseBuilder';
 
 type State =
   | { kind: 'checking' }
@@ -20,11 +21,13 @@ export function DeleteCourseSheet({ course, instructorId, onClose, onChanged }: 
   course: Course;
   instructorId: string;
   onClose: () => void;
-  /** Called after the course was deleted or archived. */
+  /** Called after the course was deleted or unpublished. */
   onChanged: () => void;
 }) {
   const [state, setState] = useState<State>({ kind: 'checking' });
   const [busy, setBusy] = useState(false);
+  // Only a published course can be unpublished; drafts never have students.
+  const isLive = course.status === 'published';
 
   useEffect(() => {
     let cancelled = false;
@@ -45,10 +48,10 @@ export function DeleteCourseSheet({ course, instructorId, onClose, onChanged }: 
 
   const handleArchive = async () => {
     setBusy(true);
-    const ok = await setCourseStatus(course.id, instructorId, 'archived');
+    const ok = await builderApi.setStatus(course.id, instructorId, 'unpublished').then(() => true, () => false);
     setBusy(false);
-    if (!ok) { toast.error('Could not archive the course'); return; }
-    toast.success('Course archived');
+    if (!ok) { toast.error('Could not unpublish the course'); return; }
+    toast.success('Course unpublished');
     onChanged();
     onClose();
   };
@@ -96,16 +99,16 @@ export function DeleteCourseSheet({ course, instructorId, onClose, onChanged }: 
               <p className="text-sm leading-relaxed text-gray-700">
                 This course can't be deleted because {who(state.students, state.payments)}. Deleting it would remove it
                 from their learning and erase their progress and payment records.
-                {course.status !== 'archived' && <> Archive it instead: it disappears from FILMONS Learning, and enrolled students keep access.</>}
+                {isLive && <> Unpublish it instead: it disappears from FILMONS Learning and new purchases, and enrolled students keep access.</>}
               </p>
             </div>
-            {course.status !== 'archived' ? (
+            {isLive ? (
               <button onClick={handleArchive} disabled={busy}
                 className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-900 py-3.5 text-sm font-black text-white hover:bg-gray-800 disabled:opacity-60">
-                <Archive className="h-4 w-4" /> {busy ? 'Archiving…' : 'Archive course'}
+                <Archive className="h-4 w-4" /> {busy ? 'Unpublishing…' : 'Unpublish course'}
               </button>
             ) : (
-              <p className="mt-4 text-sm text-gray-500">It's already archived, so it's hidden from Learning.</p>
+              <p className="mt-4 text-sm text-gray-500">It's already unpublished, so it's hidden from Learning.</p>
             )}
           </>
         )}
