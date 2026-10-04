@@ -137,7 +137,7 @@ export function CreateCourse() {
       toast.success('Draft saved');
     }
     setSaving(false);
-    navigate('/my-learning');
+    navigate('/instructor');
   };
 
   return (

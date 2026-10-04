@@ -276,7 +276,7 @@ export function CoursesHome() {
             <div className="lg:max-w-5xl lg:mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar px-4 lg:px-0">
               <button className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-black bg-blue-600 text-white">All</button>
               {TOPIC_TAGS.map(tag => (
-                <button key={tag} onClick={() => runSearch(tag)} className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+                <button key={tag} onClick={() => navigate(`/topic/${tag}`)} className="shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
                   #{tag}
                 </button>
               ))}

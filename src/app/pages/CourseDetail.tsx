@@ -9,7 +9,7 @@ import { useParams, useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Star, Users, Clock, Play, ChevronDown, ChevronUp, FileText,
-  Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2, Send,
+  Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2, Send, Bookmark,
 } from 'lucide-react';
 import {
   getCourse, getCourseCurriculum, isEnrolled, enrollInFreeCourse,
@@ -26,6 +26,7 @@ import { SharePostSheet } from '../components/connect/SharePostSheet';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { learningLoginPath } from '../lib/learningAuth';
+import { recordCourseView, isCourseSaved, setCourseSaved } from '../lib/topicsApi';
 
 function formatDuration(totalSeconds: number): string {
   if (!totalSeconds) return '';
@@ -78,6 +79,7 @@ export function CourseDetail() {
   const [myReviewBody, setMyReviewBody] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const isOwn = !!user && !!course && user.id === course.instructorId;
 
@@ -89,6 +91,10 @@ export function CourseDetail() {
     getCourse(courseId).then(async c => {
       setCourse(c ?? null);
       if (!c) return;
+      // A view is one of the Trending topics signals (see topicsApi.ts) --
+      // the instructor looking at their own course doesn't count.
+      if (user?.id !== c.instructorId) recordCourseView(c.id, user?.id);
+      if (user) isCourseSaved(user.id, c.id).then(setSaved);
       getTrustLevelCached(c.instructorId).then(setInstructorTrust).catch(() => {});
       getCourseReviews(courseId).then(setReviews);
       const alreadyEnrolled = user ? await isEnrolled(user.id, courseId) : false;
@@ -117,6 +123,15 @@ export function CourseDetail() {
   const allLessons = sections.flatMap(s => s.lessons);
 
   const firstIncompleteLesson = () => allLessons.find(l => !lessonProgress[l.id]) ?? allLessons[allLessons.length - 1];
+
+  const toggleSave = async () => {
+    if (!user) { navigate(learningLoginPath(location.pathname + location.search)); return; }
+    const next = !saved;
+    setSaved(next);
+    const ok = await setCourseSaved(user.id, course.id, next);
+    if (!ok) { setSaved(!next); toast.error('Could not update saved courses'); return; }
+    toast.success(next ? 'Saved to your profile' : 'Removed from saved');
+  };
 
   const handleEnroll = async () => {
     if (!user) { navigate(learningLoginPath(location.pathname + location.search)); return; }
@@ -159,6 +174,10 @@ export function CourseDetail() {
           <ArrowLeft className="w-4 h-4 text-gray-700" />
         </button>
         <p className="flex-1 text-sm font-bold text-gray-900 truncate">{course.category}{course.subcategory ? ` · ${course.subcategory}` : ''}</p>
+        <button onClick={toggleSave} aria-label={saved ? 'Remove from saved' : 'Save course'} aria-pressed={saved}
+          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
+          <Bookmark className={`w-4 h-4 ${saved ? 'text-blue-600 fill-blue-600' : 'text-gray-700'}`} />
+        </button>
         <button onClick={() => setShowShareSheet(true)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
           <Send className="w-4 h-4 text-gray-700" />
         </button>

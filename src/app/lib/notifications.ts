@@ -16,6 +16,10 @@ const MAX      = 200;
 const DEDUP_MS = 24 * 60 * 60 * 1000;
 
 // ── Title builder ─────────────────────────────────────────────────────────────
+/** One-line summary of a notification -- shared with Learning's list. */
+export function notificationTitle(type: string, actorName: string, extra?: { listingTitle?: string }): string {
+  return _notifTitle(type, actorName, extra);
+}
 function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: string }): string {
   const opp = extra?.listingTitle ? `"${extra.listingTitle}"` : 'this opportunity';
   switch (type) {
