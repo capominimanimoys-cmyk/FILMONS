@@ -4,10 +4,9 @@
 // filled greedily (each tile goes to the shortest column), so appending a
 // page never moves the tiles already on screen.
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Heart, Layers, Play } from 'lucide-react';
-import type { PortfolioFeedEntry, PortfolioItem } from '../../lib/portfolioApi';
-import { PortfolioItemFocusView } from '../PortfolioItemFocusView';
+import type { PortfolioFeedEntry } from '../../lib/portfolioApi';
+import { PortfolioPinDetail, type PortfolioItemEntry } from './PortfolioPinDetail';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 
 function useColumnCount() {
@@ -30,9 +29,13 @@ function tileRatio(e: PortfolioFeedEntry): number {
   return Math.min(1.8, Math.max(0.6, r));
 }
 
-export function PortfolioPinGrid({ entries }: { entries: PortfolioFeedEntry[] }) {
+export function PortfolioPinGrid({ entries, onOpenItem }: {
+  entries: PortfolioFeedEntry[];
+  /** Inside an open detail page: open the piece there instead of a new page. */
+  onOpenItem?: (e: PortfolioItemEntry) => void;
+}) {
   const cols = useColumnCount();
-  const [focused, setFocused] = useState<PortfolioItem | null>(null);
+  const [focused, setFocused] = useState<PortfolioItemEntry | null>(null);
   const { openPortfolioPreview } = usePortfolioPreview();
 
   const columns = useMemo(() => {
@@ -53,12 +56,12 @@ export function PortfolioPinGrid({ entries }: { entries: PortfolioFeedEntry[] })
           <div key={ci} className="flex min-w-0 flex-1 flex-col gap-4">
             {col.map(e => (
               <PinTile key={`${e.type}-${e.id}`} entry={e}
-                onOpen={() => (e.type === 'item' ? setFocused(e.item) : openPortfolioPreview(e.creator.id, e.id))} />
+                onOpen={() => (e.type === 'item' ? (onOpenItem ?? setFocused)(e) : openPortfolioPreview(e.creator.id, e.id))} />
             ))}
           </div>
         ))}
       </div>
-      {focused && createPortal(<PortfolioItemFocusView item={focused} onClose={() => setFocused(null)} />, document.body)}
+      {focused && <PortfolioPinDetail entry={focused} seed={entries} onClose={() => setFocused(null)} />}
     </>
   );
 }
