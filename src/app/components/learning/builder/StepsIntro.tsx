@@ -155,20 +155,65 @@ export function StepOutcomes({ b, doc }: StepProps) {
 export function StepPresentation({ b, doc }: StepProps) {
   const p = doc.presentation;
   const set = (patch: Partial<CourseDoc['presentation']>) => b.setDoc(d => ({ ...d, presentation: { ...d.presentation, ...patch } }));
+  const [coverMode, setCoverMode] = useState<'image' | 'video'>(p.coverVideoUrl ? 'video' : 'image');
   return (
     <div className="space-y-4">
       <StepHeading title="Course presentation" subtitle="Make a strong first impression on your course page." />
       <Card className="space-y-3" id="field-cover">
-        <p className="text-sm font-bold text-gray-900">Course cover image</p>
-        {p.coverUrl && !b.uploads.cover && (
-          <div className="relative overflow-hidden rounded-xl bg-gray-100" style={{ aspectRatio: '16/9' }}>
-            <img src={p.coverUrl} alt="Course cover preview" className="h-full w-full object-cover" />
-            <button type="button" onClick={() => set({ coverUrl: '' })} className="absolute right-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-xs font-bold text-white">Remove</button>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-bold text-gray-900">Course cover</p>
+          <Segmented ariaLabel="Cover type" value={coverMode} onChange={setCoverMode}
+            options={[{ id: 'image', label: 'Image' }, { id: 'video', label: 'Video' }]} />
+        </div>
+        {coverMode === 'image' ? (
+          <>
+            {p.coverUrl && !b.uploads.cover && (
+              <div className="relative overflow-hidden rounded-xl bg-gray-100" style={{ aspectRatio: '16/9' }}>
+                <img src={p.coverUrl} alt="Course cover preview" className="h-full w-full object-cover" />
+                <button type="button" onClick={() => set({ coverUrl: '' })} className="absolute right-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-xs font-bold text-white">Remove</button>
+              </div>
+            )}
+            <UploadBox accept="image/jpeg,image/png,image/webp" label={p.coverUrl ? 'Replace cover image' : 'Upload a cover image'} hint="16:9, at least 1280×720 · JPG, PNG or WebP"
+              upload={b.uploads.cover} onFile={f => b.startUpload('cover', f)} onRetry={() => b.retryUpload('cover')} canRetry={b.canRetry('cover')}
+              onCancel={() => b.cancelUpload('cover')} compact={!!p.coverUrl} />
+            {p.coverVideoUrl && (
+              <p className="rounded-xl bg-blue-50 px-3.5 py-2.5 text-xs text-blue-800">
+                Your cover video plays instead of this image on course cards and your course page.{' '}
+                <button type="button" onClick={() => set({ coverVideoUrl: '', coverVideoStatus: 'none' })} className="font-bold underline">Remove cover video</button>
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            {p.coverVideoUrl && p.coverVideoStatus === 'ready' && !b.uploads.coverVideo && (
+              <div className="relative overflow-hidden rounded-xl bg-black" style={{ aspectRatio: '16/9' }}>
+                <video src={p.coverVideoUrl} poster={p.coverUrl || undefined} autoPlay muted loop playsInline aria-label="Cover video preview" className="h-full w-full object-cover" />
+                <button type="button" onClick={() => set({ coverVideoUrl: '', coverVideoStatus: 'none' })} className="absolute right-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-xs font-bold text-white">Remove</button>
+              </div>
+            )}
+            <UploadBox accept="video/mp4,video/quicktime,video/webm" label={p.coverVideoUrl ? 'Replace cover video' : 'Upload a cover video'}
+              hint="A short loop, 5–30 seconds · 16:9 · MP4 recommended. It plays silently."
+              upload={b.uploads.coverVideo} processing={p.coverVideoStatus === 'processing'} failedMessage={p.coverVideoStatus === 'failed' ? 'The cover video could not be processed' : null}
+              onFile={f => b.startUpload('coverVideo', f)} onRetry={() => b.retryUpload('coverVideo')} canRetry={b.canRetry('coverVideo')} onCancel={() => b.cancelUpload('coverVideo')}
+              compact={p.coverVideoStatus === 'ready'} />
+            {(p.coverVideoUrl || p.coverUrl || b.uploads.cover) && (
+              <div className="flex items-center gap-3 rounded-xl border border-gray-100 p-2.5">
+                <div className="h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                  {p.coverUrl && <img src={p.coverUrl} alt="Poster image" className="h-full w-full object-cover" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-gray-900">Poster image</p>
+                  <p className="text-xs text-gray-400">{b.uploads.cover ? 'Uploading…' : p.coverUrl ? 'Shown while the video loads and in share previews.' : 'Taken from your video automatically, or upload one.'}</p>
+                </div>
+                <label className="shrink-0 cursor-pointer rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50">
+                  Change
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) b.startUpload('cover', f); e.target.value = ''; }} />
+                </label>
+              </div>
+            )}
+          </>
         )}
-        <UploadBox accept="image/jpeg,image/png,image/webp" label={p.coverUrl ? 'Replace cover image' : 'Upload a cover image'} hint="16:9, at least 1280×720 · JPG, PNG or WebP"
-          upload={b.uploads.cover} onFile={f => b.startUpload('cover', f)} onRetry={() => b.retryUpload('cover')} canRetry={b.canRetry('cover')}
-          onCancel={() => b.cancelUpload('cover')} compact={!!p.coverUrl} />
       </Card>
       <Card className="space-y-3" id="field-intro">
         <div>

@@ -7,6 +7,7 @@
 // Filmons profile data actually exists (no primaryRole -> no "Recommended
 // because you're a ___" section, no gear -> no tool section) -- never an
 // awkward placeholder for missing data.
+import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
@@ -91,7 +92,7 @@ function ContinueLearningRow({ courses, onSeeAll }: { courses: EnrolledCourse[];
           <div key={c.id} data-pop className="shrink-0 w-64 bg-white rounded-2xl border border-gray-100 p-3">
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-                {c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-lg">🎬</div>}
+                <CourseCover imageUrl={c.coverUrl} videoUrl={c.coverVideoUrl} play={false} fallback={<div className="w-full h-full flex items-center justify-center text-lg">🎬</div>} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-gray-900 truncate">{c.title}</p>

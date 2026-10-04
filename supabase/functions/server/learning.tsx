@@ -82,7 +82,7 @@ interface CourseDoc {
   version: 1;
   basics: { title: string; shortDescription: string; language: string; category: string; topics: string[]; level: string };
   outcomes: { outcomes: { id: string; text: string }[]; audience: string; prerequisites: string; tools: string };
-  presentation: { coverUrl: string; introVideoUrl: string; introVideoStatus: string; description: string };
+  presentation: { coverUrl: string; coverVideoUrl?: string; coverVideoStatus?: string; introVideoUrl: string; introVideoStatus: string; description: string };
   sections: DocSection[];
   certificate: { enabled: boolean };
   pricing: { isFree: boolean | null; price: number; currency: string };
@@ -164,7 +164,7 @@ async function docFromLive(course: any): Promise<CourseDoc> {
       outcomes: (Array.isArray(course.learning_outcomes) ? course.learning_outcomes : []).map((t: string) => ({ id: crypto.randomUUID(), text: t })),
       audience: course.audience ?? "", prerequisites: course.prerequisites ?? "", tools: course.required_tools ?? "",
     },
-    presentation: { coverUrl: course.cover_url ?? "", introVideoUrl: course.trailer_url ?? "", introVideoStatus: course.trailer_url ? "ready" : "none", description: course.description ?? "" },
+    presentation: { coverUrl: course.cover_url ?? "", coverVideoUrl: course.cover_video_url ?? "", coverVideoStatus: course.cover_video_url ? "ready" : "none", introVideoUrl: course.trailer_url ?? "", introVideoStatus: course.trailer_url ? "ready" : "none", description: course.description ?? "" },
     sections: (sections ?? []).map((s: any) => ({ id: s.id, title: s.title, description: s.description ?? "", items: items(s.id) })),
     certificate: { enabled: !!course.certificate_enabled },
     pricing: { isFree: course.status === "draft" && !course.published_at && !course.is_free && !Number(course.price) ? null : !!course.is_free, price: Number(course.price) || 0, currency: course.currency || "CAD" },
@@ -183,7 +183,8 @@ function validateDoc(doc: CourseDoc, opts: { payoutReady: boolean }): Problem[] 
   if (!b.category?.trim()) p.push({ step: 1, target: "category", message: "Choose a category" });
   if (!["beginner", "intermediate", "advanced"].includes(b.level)) p.push({ step: 1, target: "level", message: "Choose a level" });
   if (!(doc.outcomes?.outcomes ?? []).some(o => o.text?.trim())) p.push({ step: 2, target: "outcomes", message: "Add at least one learning outcome" });
-  if (!doc.presentation?.coverUrl) p.push({ step: 3, target: "cover", message: "Add a course cover image" });
+  if (doc.presentation?.coverVideoUrl && doc.presentation.coverVideoStatus !== "ready") p.push({ step: 3, target: "cover", message: "Wait for the cover video to finish processing" });
+  else if (!doc.presentation?.coverUrl && !doc.presentation?.coverVideoUrl) p.push({ step: 3, target: "cover", message: "Add a course cover image or video" });
   if (!doc.presentation?.description?.trim()) p.push({ step: 3, target: "description", message: "Add the full course description" });
   if (doc.presentation?.introVideoUrl && doc.presentation.introVideoStatus !== "ready") p.push({ step: 3, target: "intro", message: "Wait for the introduction video to finish processing" });
 
@@ -248,13 +249,17 @@ async function applyDoc(course: any, doc: CourseDoc, ownershipConfirmed: boolean
         category = ${b.category}, topics = ARRAY(SELECT jsonb_array_elements_text(${tx.json(b.topics.slice(0, 10))}::jsonb)), level = ${b.level}, language = ${b.language},
         learning_outcomes = ${tx.json(o.outcomes.map(x => x.text.trim()).filter(Boolean))}::jsonb,
         audience = ${o.audience.trim() || null}, prerequisites = ${o.prerequisites.trim() || null}, required_tools = ${o.tools.trim() || null},
-        cover_url = ${pr.coverUrl}, trailer_url = ${pr.introVideoUrl || null},
+        cover_url = ${pr.coverUrl || null}, trailer_url = ${pr.introVideoUrl || null},
         certificate_enabled = ${!!doc.certificate.enabled},
         is_free = ${!!price.isFree}, price = ${price.isFree ? 0 : price.price}, currency = ${price.currency || "CAD"},
         status = 'published', published_at = COALESCE(published_at, now()), unpublished_at = NULL,
         ownership_confirmed_at = ${ownershipConfirmed ? new Date().toISOString() : null}::timestamptz,
         has_draft_changes = false, updated_at = now()
       WHERE id = ${course.id}`;
+    // Cover video column arrives with a later migration; skip it until then.
+    if ((await tx`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'courses' AND column_name = 'cover_video_url'`).length) {
+      await tx`UPDATE public.courses SET cover_video_url = ${pr.coverVideoUrl || null} WHERE id = ${course.id}`;
+    }
 
     // Ids come from the draft: refuse any that already belong to another
     // course, so an upsert can never pull someone else's lesson in.
@@ -532,6 +537,9 @@ export function registerLearningRoutes(app: HonoApp): void {
         level: ["beginner", "intermediate", "advanced"].includes(doc.basics.level) ? doc.basics.level : "all_levels",
         updated_at: now,
       }).eq("id", courseId);
+      // Separate so a missing cover_video_url column (migration not run
+      // yet) can't block the rest.
+      await db.from("courses").update({ cover_video_url: str(doc.presentation.coverVideoUrl ?? "", 2000) || null }).eq("id", courseId);
     } else {
       await db.from("courses").update({ has_draft_changes: true }).eq("id", courseId);
     }
