@@ -3,12 +3,13 @@
  * Splash → Method → Email Login → Security Check (new device) → Home
  */
 import { useState, useEffect } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router';
+import { useNavigate, Link, useSearchParams, useLocation } from 'react-router';
 import { Eye, EyeOff, ArrowLeft, Mail, Phone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { supabase } from '../../lib/supabase';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
+import { clearStaleAuthSession } from '../lib/authSession';
 import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import FilmonsLoader from '../components/FilmonsLoader';
@@ -111,8 +112,14 @@ export function Login() {
   const customHeading = searchParams.get('heading');
   const customSub      = searchParams.get('sub');
 
+  // The branded splash is for a cold app launch straight onto /login. When
+  // the user got here by tapping "Sign in" inside the app (location.key is
+  // only 'default' for the very first history entry), show the sign-in
+  // options immediately instead of making them sit through it.
+  const location = useLocation();
+  const cameFromInsideApp = location.key !== 'default';
   const [screen, setScreen] = useState<Screen>(
-    prefillEmail ? 'email' : (isGuest ? 'method' : 'splash')
+    prefillEmail ? 'email' : (isGuest || cameFromInsideApp ? 'method' : 'splash')
   );
   const [email,    setEmail]    = useState(prefillEmail);
   const [password, setPassword] = useState('');
@@ -208,6 +215,9 @@ export function Login() {
     // this browser).
     if (expectedEmail) sessionStorage.setItem('fm_expected_login_email', expectedEmail.toLowerCase());
     else sessionStorage.removeItem('fm_expected_login_email');
+    // Never let a leftover session from a previously signed-in account be
+    // the one the callback picks up.
+    await clearStaleAuthSession();
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       // Forces Google's account chooser instead of silently reusing

@@ -10,6 +10,7 @@
  */
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../../lib/supabase';
+import { purgeStoredSupabaseSession } from '../lib/authSession';
 import { User } from '../types';
 import { authApi } from '../lib/api';
 import { seedDemoData } from '../lib/initializeData';
@@ -390,7 +391,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Logout ────────────────────────────────────────────────────────────────
   const logout = async () => {
     setAndCache(null);
-    supabase.auth.signOut().catch(() => {}); // best-effort phone-session cleanup
+    // Synchronously purge the stored Supabase tokens first -- signOut()
+    // alone skips clearing them when its network call fails, and the
+    // recovery effect above would then sign the old account back in.
+    purgeStoredSupabaseSession();
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    purgeStoredSupabaseSession();
   };
 
   return (

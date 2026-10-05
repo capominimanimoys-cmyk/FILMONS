@@ -10,6 +10,7 @@
 // routes.tsx) turns the final client-side navigate() into a real page
 // load of the Learning bundle.
 import { supabase } from '../../lib/supabase';
+import { clearStaleAuthSession } from './authSession';
 import { getOAuthRedirectUrl } from './appUrl';
 import { setPendingReturnUrl } from './authReturnUrl';
 import { buildHandoffUrl } from '../context/AuthContext';
@@ -93,6 +94,7 @@ export async function startLearningGoogleAuth(learningReturnTo: string, expected
     if (expectedEmail) sessionStorage.setItem(EXPECTED_EMAIL_KEY, expectedEmail.toLowerCase());
     else sessionStorage.removeItem(EXPECTED_EMAIL_KEY);
   } catch {}
+  await clearStaleAuthSession();
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
