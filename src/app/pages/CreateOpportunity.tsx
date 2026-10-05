@@ -18,6 +18,7 @@ import {
   DollarSign, Users, MessageCircle, Loader2,
 } from 'lucide-react';
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
+import { ListingFlowStyles, StepTransition } from '../components/ListingFlowMotion';
 import { VideoCoverPicker } from '../components/VideoCoverPicker';
 import { ListingCard } from '../components/ListingCard';
 import { OpportunityLimitUpgrade } from '../components/OpportunityLimitUpgrade';
@@ -921,7 +922,8 @@ export function CreateOpportunity() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 cf-page">
+      <ListingFlowStyles />
       <div className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <button onClick={() => step > 1 ? goPrev() : navigate(-1)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0">
@@ -940,7 +942,7 @@ export function CreateOpportunity() {
         </div>
       </div>
 
-      <main className="max-w-2xl mx-auto px-4 pt-6 pb-32">{renderStep()}</main>
+      <main className="max-w-2xl mx-auto px-4 pt-6 pb-32"><StepTransition step={step}>{renderStep()}</StepTransition></main>
 
       {step < 10 && (
         <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 px-4 py-3">
