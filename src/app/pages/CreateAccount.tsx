@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
+import { clearStaleAuthSession } from '../lib/authSession';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { startEmailSignup, PENDING_SIGNUP_KEY, PW_RULES } from '../lib/emailSignup';
 
@@ -109,6 +110,7 @@ export function CreateAccount() {
 
   const handleOAuth = async (provider: 'google' | 'apple') => {
     if (!agreedToTerms) { toast.error('Please agree to the Terms of Service and Privacy Policy to continue.'); return; }
+    await clearStaleAuthSession();
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       // Forces Google's account chooser instead of silently reusing

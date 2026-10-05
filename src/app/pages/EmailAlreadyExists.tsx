@@ -11,6 +11,7 @@ import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { AuthScreenLayout } from '../components/AuthScreenLayout';
 import { supabase } from '../../lib/supabase';
+import { clearStaleAuthSession } from '../lib/authSession';
 import { getOAuthRedirectUrl } from '../lib/appUrl';
 import { toast } from 'sonner';
 
@@ -50,6 +51,7 @@ export function EmailAlreadyExists() {
   const provider = (params.get('provider') ?? '') as 'google' | '';
 
   const handleOAuth = async (p: 'google') => {
+    await clearStaleAuthSession();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: p,
       options: { redirectTo: getOAuthRedirectUrl(), queryParams: { prompt: 'select_account' } },
