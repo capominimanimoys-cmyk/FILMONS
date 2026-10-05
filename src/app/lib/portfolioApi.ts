@@ -302,8 +302,12 @@ export async function deletePortfolioItem(id: string): Promise<boolean> {
     .eq('id', id)
     .maybeSingle();
 
-  const { error } = await supabase.from('portfolio_items').delete().eq('id', id);
+  // .select() so a delete the database silently refuses (RLS matching 0
+  // rows returns no error) is reported as a failure instead of a success
+  // that leaves the item sitting on the page after a refresh.
+  const { data: deleted, error } = await supabase.from('portfolio_items').delete().eq('id', id).select('id');
   if (error) { console.error('[portfolio] delete error:', error.message); return false; }
+  if (!deleted?.length) { console.error('[portfolio] delete removed no rows for', id); return false; }
 
   if (item) {
     const paths = [item.media_url, item.thumbnail_url, item.media_url_original]
@@ -618,6 +622,23 @@ export async function getAlbumItems(albumId: string): Promise<PortfolioItem[]> {
     if (error) { console.warn('[albums] items error:', error.message); return []; }
     return (data ?? []).map((r: any) => r.portfolio_items).filter(Boolean) as PortfolioItem[];
   } catch { return []; }
+}
+
+/** Bulk "Move to Album": the items leave every other album and end up in
+ *  exactly `albumId`. Returns the ids that actually ended up there. */
+export async function moveItemsToAlbum(albumId: string, itemIds: string[]): Promise<string[]> {
+  if (!itemIds.length) return [];
+  const { error: rmErr } = await supabase
+    .from('portfolio_album_items')
+    .delete()
+    .in('item_id', itemIds)
+    .neq('album_id', albumId);
+  if (rmErr) console.error('[portfolio] move: remove from old albums failed:', rmErr.message);
+  const { error } = await supabase
+    .from('portfolio_album_items')
+    .upsert(itemIds.map(item_id => ({ album_id: albumId, item_id })), { onConflict: 'album_id,item_id', ignoreDuplicates: true });
+  if (error) { console.error('[portfolio] move: add failed:', error.message); return []; }
+  return itemIds;
 }
 
 export async function addItemToAlbum(albumId: string, itemId: string): Promise<boolean> {

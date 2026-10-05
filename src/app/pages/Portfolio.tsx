@@ -20,7 +20,7 @@ import { BottomSheet } from '../components/BottomSheet';
 import FilmonsLoader from '../components/FilmonsLoader';
 import {
   getPortfolioItems, deletePortfolioItem, toggleFeatured,
-  getAlbums, getAlbumItems, addItemToAlbum, deleteAlbum,
+  getAlbums, getAlbumItems, addItemToAlbum, moveItemsToAlbum, deleteAlbum,
   getPortfolioSettings, upsertPortfolioSettings, DEFAULT_PORTFOLIO_SETTINGS,
   isItemLiked, toggleItemLike, getItemComments, addItemComment,
   incrementItemView, logPortfolioEngagementEvent,
@@ -1081,9 +1081,16 @@ function CreateAlbumFromSelectionSheet({
   }, []); // eslint-disable-line
 
   const handleAddToExisting = async (albumId: string) => {
+    if (saving) return;
     setSaving(true);
-    await Promise.all(selectedIds.map(id => addItemToAlbum(albumId, id)));
+    let ok: boolean;
+    if (mode === 'move') {
+      ok = (await moveItemsToAlbum(albumId, selectedIds)).length === selectedIds.length;
+    } else {
+      ok = (await Promise.all(selectedIds.map(id => addItemToAlbum(albumId, id)))).some(Boolean);
+    }
     setSaving(false);
+    if (!ok) { toast.error('Could not update the album. Please try again.'); return; }
     onAddedToExisting();
   };
 
@@ -1235,6 +1242,8 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showAlbumFromSelection, setShowAlbumFromSelection] = useState(false);
   const [showMoveToAlbum, setShowMoveToAlbum] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -1420,18 +1429,38 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
     }
   };
 
+  // Album counts / the open album's contents after a bulk change.
+  const refreshAlbums = async () => {
+    const { data } = await supabase.from('portfolio_album_items').select('album_id');
+    const counts: Record<string, number> = {};
+    (data ?? []).forEach((r: any) => { counts[r.album_id] = (counts[r.album_id] ?? 0) + 1; });
+    setAlbumCounts(counts);
+    if (activeAlbum) setAlbumItems(await getAlbumItems(activeAlbum.id));
+  };
+
+  // In-app confirm (see the sheet below) instead of window.confirm, which
+  // iOS home-screen web apps suppress -- the dialog never showed and the
+  // delete silently never ran.
   const handleBulkDelete = async () => {
     const ids = [...selectedIds];
-    if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} project${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
-    const results = await Promise.all(ids.map(id => deletePortfolioItem(id)));
-    const deletedIds = new Set(ids.filter((_, i) => results[i]));
-    setItems(prev => prev.filter(p => !deletedIds.has(p.id)));
-    setAlbumItems(prev => prev.filter(p => !deletedIds.has(p.id)));
-    exitSelectMode();
-    const failedCount = ids.length - deletedIds.size;
-    if (deletedIds.size > 0) toast.success(`${deletedIds.size} project${deletedIds.size === 1 ? '' : 's'} deleted`);
-    if (failedCount > 0) toast.error(`${failedCount} project${failedCount === 1 ? '' : 's'} could not be deleted`);
+    if (!ids.length || deleting) return;
+    setDeleting(true);
+    try {
+      const results: boolean[] = [];
+      for (const id of ids) results.push(await deletePortfolioItem(id).catch(() => false));
+      const deletedIds = new Set(ids.filter((_, i) => results[i]));
+      setItems(prev => prev.filter(p => !deletedIds.has(p.id)));
+      setAlbumItems(prev => prev.filter(p => !deletedIds.has(p.id)));
+      // Failed ones stay selected so the user can retry just those.
+      setSelectedIds(new Set(ids.filter(id => !deletedIds.has(id))));
+      setConfirmDelete(false);
+      if (deletedIds.size === ids.length) setSelectMode(false);
+      if (deletedIds.size > 0) { toast.success(`${deletedIds.size} work${deletedIds.size === 1 ? '' : 's'} deleted`); refreshAlbums(); }
+      const failedCount = ids.length - deletedIds.size;
+      if (failedCount > 0) toast.error(`${failedCount} work${failedCount === 1 ? '' : 's'} could not be deleted`);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const changeLayout = async (l: PortfolioLayout) => {
@@ -2027,37 +2056,76 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
            through selected work. ── */}
       {selectMode && (
         <div
-          className="fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 py-3 flex items-center justify-between gap-2"
+          className="fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 pt-3"
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
         >
-          <div className="flex items-center gap-2">
-            <button onClick={exitSelectMode} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 shrink-0">
-              <X className="w-4 h-4" />
-            </button>
-            <p className="text-sm font-bold text-gray-900 whitespace-nowrap">{selectedIds.size} selected</p>
-          </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <button onClick={exitSelectMode} aria-label="Cancel selection" className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+              <p className="text-sm font-black text-gray-900">
+                {selectedIds.size === 0 ? 'Select works' : `${selectedIds.size} selected`}
+              </p>
+            </div>
             <button
-              onClick={handleBulkDelete}
-              disabled={selectedIds.size < 1}
-              className="flex items-center gap-1.5 text-red-600 text-sm font-bold px-3.5 py-2.5 rounded-2xl border border-red-200 disabled:opacity-40 active:scale-95 transition-all hover:bg-red-50"
+              onClick={() => {
+                const visible = cardProps.items.map(i => i.id);
+                setSelectedIds(prev => prev.size === visible.length ? new Set() : new Set(visible));
+              }}
+              className="text-xs font-bold text-blue-600 px-2 py-1"
             >
-              <Trash2 className="w-4 h-4" /> Delete Work
+              {selectedIds.size === cardProps.items.length && selectedIds.size > 0 ? 'Clear' : 'Select all'}
             </button>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setShowMoveToAlbum(true)}
               disabled={selectedIds.size < 1}
-              className="flex items-center gap-1.5 text-gray-700 text-sm font-bold px-3.5 py-2.5 rounded-2xl border border-gray-200 bg-white disabled:opacity-40 active:scale-95 transition-all hover:bg-gray-50"
+              className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl border border-gray-200 bg-white text-gray-800 text-xs font-bold disabled:opacity-40 active:scale-95 transition-all"
             >
-              <FolderOpen className="w-4 h-4" /> Move to Album
+              <FolderOpen className="w-5 h-5" /> Move
             </button>
             <button
               onClick={() => setShowAlbumFromSelection(true)}
               disabled={selectedIds.size < 2}
-              className="flex items-center gap-1.5 text-white text-sm font-black px-4 py-2.5 rounded-2xl disabled:opacity-40 active:scale-95 transition-all"
+              className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-xs font-bold disabled:opacity-40 active:scale-95 transition-all"
               style={{ background: 'linear-gradient(135deg,#2563eb,#4f46e5)' }}
             >
-              <FolderPlus className="w-4 h-4" /> Create Album
+              <FolderPlus className="w-5 h-5" /> Create album
+            </button>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={selectedIds.size < 1}
+              className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl border border-red-200 bg-red-50 text-red-600 text-xs font-bold disabled:opacity-40 active:scale-95 transition-all"
+            >
+              <Trash2 className="w-5 h-5" /> Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm bulk delete ── */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !deleting && setConfirmDelete(false)} />
+          <div className="relative w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}>
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6 text-red-500" />
+            </div>
+            <p className="text-base font-black text-gray-900 text-center">
+              Delete {selectedIds.size} work{selectedIds.size === 1 ? '' : 's'}?
+            </p>
+            <p className="text-sm text-gray-500 text-center mt-1 mb-5">This permanently removes them from your portfolio and any albums. This can't be undone.</p>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting}
+              className="w-full py-3.5 rounded-2xl bg-red-600 text-white text-sm font-black flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.98] transition-all"
+            >
+              {deleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting…</> : 'Delete'}
+            </button>
+            <button onClick={() => setConfirmDelete(false)} disabled={deleting} className="w-full py-3 mt-1 text-sm font-bold text-gray-500 disabled:opacity-40">
+              Cancel
             </button>
           </div>
         </div>
@@ -2078,6 +2146,7 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
             setShowMoveToAlbum(false);
             exitSelectMode();
             toast.success('Moved to album');
+            refreshAlbums();
           }}
         />
       )}
@@ -2101,6 +2170,7 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
             setShowAlbumFromSelection(false);
             exitSelectMode();
             toast.success('Added to album');
+            refreshAlbums();
           }}
         />
       )}
