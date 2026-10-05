@@ -342,7 +342,12 @@ export function ReelFeed() {
   }>>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY  = useRef(0);
+  const touchStartT  = useRef(0);
   const isDragging   = useRef(false);
+  // Live finger offset (px) so the reel follows the swipe, then slides into
+  // place on release instead of jumping after the finger lifts.
+  const [dragY, setDragY]       = useState(0);
+  const [dragging, setDragging] = useState(false);
 
   // Load video posts
   useEffect(() => {
@@ -417,12 +422,28 @@ export function ReelFeed() {
   const goNext = useCallback(() => setActiveIdx(i => Math.min(i + 1, posts.length - 1)), [posts.length]);
   const goPrev = useCallback(() => setActiveIdx(i => Math.max(i - 1, 0)), []);
 
-  const onTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; isDragging.current = true; };
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchStartT.current = Date.now();
+    isDragging.current = true;
+    setDragging(true);
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging.current) return;
+    let dy = e.touches[0].clientY - touchStartY.current;
+    // Rubber-band when pulling past the first / last reel.
+    if ((activeIdx === 0 && dy > 0) || (activeIdx === posts.length - 1 && dy < 0)) dy *= 0.35;
+    setDragY(dy);
+  };
   const onTouchEnd   = (e: React.TouchEvent) => {
     if (!isDragging.current) return;
     isDragging.current = false;
     const dy = touchStartY.current - e.changedTouches[0].clientY;
-    if (Math.abs(dy) > 50) dy > 0 ? goNext() : goPrev();
+    const velocity = Math.abs(dy) / Math.max(Date.now() - touchStartT.current, 1); // px/ms
+    // A short fast flick counts the same as a long slow drag.
+    if (Math.abs(dy) > 60 || (Math.abs(dy) > 20 && velocity > 0.4)) dy > 0 ? goNext() : goPrev();
+    setDragging(false);
+    setDragY(0);
   };
   const lastWheel = useRef(0);
   const onWheel = (e: React.WheelEvent) => {
@@ -444,14 +465,19 @@ export function ReelFeed() {
   );
 
   return (
-    <div ref={containerRef} className="fixed inset-0 bg-black z-50 overflow-hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onWheel={onWheel}>
-      <div className="h-full transition-transform duration-300 ease-out" style={{ transform: `translateY(-${activeIdx * 100}%)` }}>
+    <div ref={containerRef} className="fixed inset-0 bg-black z-50 overflow-hidden" style={{ touchAction: 'none', overscrollBehavior: 'none' }}
+      onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd} onWheel={onWheel}>
+      <div className="h-full" style={{
+        transform: `translate3d(0, calc(-${activeIdx * 100}% + ${dragY}px), 0)`,
+        transition: dragging ? 'none' : 'transform 450ms cubic-bezier(0.22, 1, 0.36, 1)',
+        willChange: 'transform',
+      }}>
         {posts.map((post, idx) => {
           // Only render ±2 slides to save memory; preload src for adjacent
           const inView = Math.abs(idx - activeIdx) <= 2;
-          if (!inView) return <div key={post.id} className="w-full h-screen bg-black" />;
+          if (!inView) return <div key={post.id} className="w-full h-full bg-black" />;
           return (
-            <div key={post.id} className="w-full h-screen">
+            <div key={post.id} className="w-full h-full">
               <ReelCard
                 post={post}
                 active={idx === activeIdx}
