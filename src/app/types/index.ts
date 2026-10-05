@@ -103,6 +103,15 @@ export interface Comment {
 export type PostType = 'photo' | 'video' | 'audio' | 'text' | 'mixed';
 export type Visibility = 'public' | 'followers' | 'private' | 'connections';
 
+export interface PostCourseAttachment {
+  id: string;
+  title: string;
+  coverUrl?: string | null;
+  price: number;
+  isFree: boolean;
+  level?: string;
+}
+
 export interface Post {
   id: string;
   userId: string;
@@ -150,6 +159,11 @@ export interface Post {
   portfolioItemTitle?: string;
   portfolioItemCategory?: string;
   portfolioItemThumb?: string;
+
+  // Linked course (Professional/Business instructors) -- lives in
+  // metadata.course, so no posts-table migration. Cached display fields
+  // only; the real course is opened by id.
+  course?: PostCourseAttachment;
 
   // Engagement
   likes: string[];

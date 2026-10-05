@@ -28,6 +28,7 @@ import { AudioPostCard } from './AudioPostCard';
 import { ListingTagSheet } from './ListingTagSheet';
 import { EditPostModal } from './EditPostModal';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
+import { useLearningTransition } from '../context/LearningTransitionContext';
 import { PostMoreMenu } from './connect/PostMoreMenu';
 import { SharePostSheet } from './connect/SharePostSheet';
 import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
@@ -329,6 +330,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   }, [(localPost as any).location, (localPost as any).audioTitle]); // eslint-disable-line
   const [showEditModal,  setShowEditModal]  = useState(false);
   const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
+  const { enterLearning } = useLearningTransition();
   const [showLikesSheet, setShowLikesSheet] = useState(false);
   const [showRepostsSheet, setShowRepostsSheet] = useState(false);
   const [showDoubleTapHeart, setDoubleTapHeart] = useState(false);
@@ -861,7 +863,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // have both a portfolio/listing attachment AND photos/video (the media
   // wins for sizing purposes -- it's still visually a media post).
   const hasVisualMedia = hasVideos || photoImages.length > 0 || hasGifs || isStandaloneAudio;
-  const hasAttachment  = !hasVisualMedia && (!!localPost.portfolioItemId || !!localPost.listingId || !!localPost.link);
+  const hasAttachment  = !hasVisualMedia && (!!localPost.portfolioItemId || !!localPost.course || !!localPost.listingId || !!localPost.link);
   const captionVariant: 'with-media' | 'with-attachment' | 'text-only' =
     hasVisualMedia ? 'with-media' : hasAttachment ? 'with-attachment' : 'text-only';
   const captionSizeClass =
@@ -1546,6 +1548,26 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               post, e.g. from Create Post's Listing toolbar item) rendered
               the attachment nowhere at all. Same structured-card treatment
               as the Portfolio attachment above. */}
+          {localPost.course && (
+            <button
+              onClick={()=>enterLearning(`/course/${localPost.course!.id}`, { route: window.location.pathname + window.location.search })}
+              className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
+              style={{ width: 'calc(100% - 1.5rem)' }}
+            >
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {localPost.course.coverUrl && <img src={localPost.course.coverUrl} className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{localPost.course.title}</p>
+                <p className="text-xs text-gray-400 truncate">
+                  Course · {localPost.course.isFree ? 'Free' : `$${localPost.course.price}`}
+                </p>
+                <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
+                  View Course <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+            </button>
+          )}
           {localPost.listingId && (
             <button
               onClick={()=>navigate(`/listing/${localPost.listingId}`)}

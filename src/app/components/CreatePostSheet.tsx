@@ -31,7 +31,7 @@ import { searchProfiles, attachMentionsToPost, type ProfileResult } from '../lib
 import { notifyEvent } from '../lib/notifyEvent';
 import * as notifs from '../lib/notifications';
 import { toast } from 'sonner';
-import type { Visibility, Listing, Post } from '../types';
+import type { Visibility, Listing, Post, PostCourseAttachment } from '../types';
 import { registerPortfolioRepost, type PortfolioItem } from '../lib/portfolioApi';
 import { QuotedPostPreview } from './QuotedPostPreview';
 
@@ -106,6 +106,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // on publish, just extraMeta.ownAlbum written straight through.
   const [ownAlbum, setOwnAlbum] = useState<NonNullable<Post['ownAlbum']> | undefined>(undefined);
   const [selectedListings, setSelectedListings] = useState<Listing[]>([]);
+  const [selectedCourse, setSelectedCourse] = useState<PostCourseAttachment | null>(null);
   const [location, setLocation] = useState<LocationResult | null>(null);
   const [link, setLink] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('public');
@@ -238,7 +239,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   // attached original doesn't count as "your own content" for this gate.
   const hasContent = (repostOfPost || repostOfAlbum)
     ? caption.trim().length > 0
-    : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || !!ownAlbum || selectedListings.length > 0;
+    : caption.trim().length > 0 || media.length > 0 || !!selectedPortfolioItem || !!ownAlbum || selectedListings.length > 0 || !!selectedCourse;
 
   // ── Publish ─────────────────────────────────────────────────────────────
   const publish = async () => {
@@ -307,6 +308,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           portfolioItemThumb: selectedPortfolioItem?.thumbnail_url,
           repostOfAlbum: repostOfAlbum,
           ownAlbum: ownAlbum,
+          course: selectedCourse ?? undefined,
           visibility,
         },
       );
@@ -669,6 +671,23 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           </div>
         )}
 
+        {selectedCourse && (
+          <div className="px-4 pt-3">
+            <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {selectedCourse.coverUrl && <img src={selectedCourse.coverUrl} className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black text-blue-600">View course →</p>
+                <p className="text-sm font-bold text-gray-900 truncate">{selectedCourse.title}</p>
+              </div>
+              <button onClick={() => setSelectedCourse(null)} className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                <X className="w-3.5 h-3.5 text-gray-600" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {location && (
           <div className="px-4 pt-3">
             <div className="flex items-center gap-2 bg-gray-50 rounded-full px-3 py-2 w-fit">
@@ -816,6 +835,8 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         <ListingBrowser
           selectedIds={new Set(selectedListings.map(l => l.id))}
           onToggle={toggleListing}
+          selectedCourseId={selectedCourse?.id}
+          onSelectCourse={course => { setSelectedCourse(course); setShowListingBrowser(false); }}
           onClose={() => setShowListingBrowser(false)}
         />
       )}

@@ -4,22 +4,61 @@
  * src/app/components/ListingBrowser.tsx
  */
 import { useState, useEffect, useMemo } from 'react';
-import { X, Search, MapPin, Tag, Check } from 'lucide-react';
+import { X, Search, MapPin, Tag, Check, GraduationCap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { listingsApi } from '../lib/api';
-import type { Listing } from '../types';
+import { listingsApi, isOpportunity } from '../lib/api';
+import { canCreateCourses, getCoursesByInstructor, type Course } from '../lib/coursesApi';
+import type { Listing, PostCourseAttachment } from '../types';
 
 interface ListingBrowserProps {
   selectedIds: Set<string>;
   onToggle:    (listing: Listing) => void;
   onClose:     () => void;
+  /** Courses can only be linked by Professional/Business accounts; omit
+   *  onSelectCourse and the Courses tab never appears. */
+  selectedCourseId?: string;
+  onSelectCourse?:   (course: PostCourseAttachment) => void;
 }
 
-const CATEGORIES = [
-  { id:'all',     label:'All'       },
-  { id:'gear',    label:'Equipment' },
-  { id:'service', label:'Services'  },
+const BASE_CATEGORIES = [
+  { id:'all',         label:'All'           },
+  { id:'gear',        label:'Equipment'     },
+  { id:'service',     label:'Services'      },
+  { id:'opportunity', label:'Opportunities' },
 ];
+const COURSE_CATEGORY = { id:'course', label:'Courses' };
+
+function toCourseAttachment(c: Course): PostCourseAttachment {
+  return { id: c.id, title: c.title, coverUrl: c.coverUrl, price: c.price, isFree: c.isFree, level: c.level };
+}
+
+function CourseRow({ course, selected, onSelect }: {
+  course: Course; selected: boolean; onSelect: () => void;
+}) {
+  return (
+    <button onClick={onSelect}
+      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+      style={{borderTop:'1px solid #f3f4f6'}}>
+      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 shrink-0 relative">
+        {course.coverUrl
+          ? <img src={course.coverUrl} className="w-full h-full object-cover" loading="lazy"/>
+          : <div className="w-full h-full flex items-center justify-center"><GraduationCap className="w-6 h-6 text-gray-300"/></div>}
+        {selected && (
+          <div className="absolute inset-0 bg-blue-600/80 flex items-center justify-center rounded-2xl">
+            <Check className="w-6 h-6 text-white"/>
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-black text-gray-900 truncate">{course.title}</p>
+        <p className="text-xs font-bold mt-0.5" style={{color:'#51A2FF'}}>{course.isFree ? 'Free' : `$${course.price}`}</p>
+        <p className="text-[10px] text-gray-400 mt-0.5 capitalize">
+          Course · {course.level.replace(/_/g,' ')}{course.lessonCount ? ` · ${course.lessonCount} lessons` : ''}
+        </p>
+      </div>
+    </button>
+  );
+}
 
 
 function ListingCard({ listing, selected, onSelect }: {
@@ -54,16 +93,18 @@ function ListingCard({ listing, selected, onSelect }: {
           )}
         </div>
         <p className="text-[10px] text-gray-400 mt-0.5 capitalize">
-          {listing.listingType === 'service'
-            ? (listing.serviceCategory?.replace(/-/g,' ') || 'Service')
-            : listing.listingMode === 'sale' ? 'Equipment · Sale' : 'Equipment · Rental'}
+          {isOpportunity(listing)
+            ? (listing.opportunity?.opportunityType?.replace(/_/g,' ') || 'Opportunity')
+            : listing.listingType === 'service'
+              ? (listing.serviceCategory?.replace(/-/g,' ') || 'Service')
+              : listing.listingMode === 'sale' ? 'Equipment · Sale' : 'Equipment · Rental'}
         </p>
       </div>
     </button>
   );
 }
 
-export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowserProps) {
+export function ListingBrowser({ selectedIds, onToggle, onClose, selectedCourseId, onSelectCourse }: ListingBrowserProps) {
   const { user } = useAuth();
 
   // Attaching a listing to a post should only ever offer the POSTER's own
@@ -76,21 +117,31 @@ export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowse
   const [refreshing, setRefreshing] = useState(true);
   const [query,    setQuery]    = useState('');
   const [category, setCategory] = useState('all');
+  const [courses,  setCourses]  = useState<Course[]>([]);
+
+  const canLinkCourses = !!onSelectCourse && canCreateCourses(user?.accountType);
+  const categories = canLinkCourses ? [...BASE_CATEGORIES, COURSE_CATEGORY] : BASE_CATEGORIES;
 
   useEffect(() => {
     if (!user) { setRefreshing(false); return; }
     setRefreshing(true);
-    listingsApi.getUserListings(user.id)
-      .then(setListings)
-      .finally(() => setRefreshing(false));
-  }, [user?.id]);
+    const listingsP = listingsApi.getUserListings(user.id).then(setListings);
+    // Only published courses are linkable -- a draft has no page to open.
+    const coursesP = canLinkCourses
+      ? getCoursesByInstructor(user.id).then(cs => setCourses(cs.filter(c => c.status === 'published')))
+      : Promise.resolve();
+    Promise.all([listingsP, coursesP]).finally(() => setRefreshing(false));
+  }, [user?.id, canLinkCourses]);
 
   // Filter
   const filtered = useMemo(() => {
     let result = listings;
+    if (category === 'course') return [];
     if (category !== 'all') {
       result = result.filter(l =>
-        category === 'gear' ? l.listingType === 'gear' : l.listingType === 'service'
+        category === 'opportunity' ? isOpportunity(l)
+        : category === 'gear'      ? l.listingType === 'gear' && !isOpportunity(l)
+        :                            l.listingType === 'service'
       );
     }
     if (query.trim()) {
@@ -103,6 +154,12 @@ export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowse
     }
     return result;
   }, [listings, query, category]);
+
+  const filteredCourses = useMemo(() => {
+    if (!canLinkCourses || (category !== 'all' && category !== 'course')) return [];
+    const q = query.trim().toLowerCase();
+    return q ? courses.filter(c => c.title?.toLowerCase().includes(q) || (c.category ?? '').toLowerCase().includes(q)) : courses;
+  }, [courses, query, category, canLinkCourses]);
 
   return (
     <div className="fixed inset-0 z-[92] flex flex-col justify-end">
@@ -150,8 +207,8 @@ export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowse
         </div>
 
         {/* Category pills */}
-        <div className="shrink-0 px-4 py-2 border-b border-gray-50 flex gap-2">
-          {CATEGORIES.map(cat => (
+        <div className="shrink-0 px-4 py-2 border-b border-gray-50 flex gap-2 overflow-x-auto">
+          {categories.map(cat => (
             <button key={cat.id} onClick={() => setCategory(cat.id)}
               className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
               style={category === cat.id
@@ -175,13 +232,15 @@ export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowse
 
         {/* List */}
         <div className="flex-1 overflow-y-auto">
-          {filtered.length === 0 && !refreshing ? (
+          {filtered.length === 0 && filteredCourses.length === 0 && !refreshing ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Tag className="w-10 h-10 text-gray-200"/>
               <p className="text-sm font-semibold text-gray-400">
-                {listings.length === 0 ? 'No listings yet' : 'No listings match'}
+                {category === 'course'
+                  ? (courses.length === 0 ? 'No published courses yet' : 'No courses match')
+                  : listings.length === 0 && courses.length === 0 ? 'No listings yet' : 'No listings match'}
               </p>
-              {listings.length === 0 && (
+              {listings.length === 0 && category !== 'course' && (
                 <p className="text-xs text-gray-300 text-center px-8">
                   Create a listing in the marketplace first
                 </p>
@@ -195,6 +254,14 @@ export function ListingBrowser({ selectedIds, onToggle, onClose }: ListingBrowse
                   listing={listing}
                   selected={selectedIds.has(listing.id)}
                   onSelect={() => onToggle(listing)}
+                />
+              ))}
+              {filteredCourses.map(course => (
+                <CourseRow
+                  key={course.id}
+                  course={course}
+                  selected={selectedCourseId === course.id}
+                  onSelect={() => onSelectCourse!(toCourseAttachment(course))}
                 />
               ))}
               <div className="h-6"/>

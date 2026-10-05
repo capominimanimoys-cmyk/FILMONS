@@ -1580,6 +1580,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     portfolioItemTitle:    row.portfolio_item_title    || undefined,
     portfolioItemCategory: row.portfolio_item_category || undefined,
     portfolioItemThumb:    row.portfolio_item_thumb    || undefined,
+    course:          meta.course          || undefined,
   } as Post;
 }
 
@@ -2073,6 +2074,8 @@ export const postsApi = {
       // poster's OWN album -- "Share to Connect" from Portfolio, not a
       // repost of someone else's work. Written into metadata.ownAlbum.
       ownAlbum?: Post['ownAlbum'];
+      // Linked course -- written into metadata.course (no column needed).
+      course?: Post['course'];
       visibility?: Visibility;
     },
   ): Promise<Post> => {
@@ -2101,6 +2104,7 @@ export const postsApi = {
       repostOf:        repostOf || null,
       repostOfAlbum:   extraMeta?.repostOfAlbum || null,
       ownAlbum:        extraMeta?.ownAlbum      || null,
+      course:          extraMeta?.course        || null,
     };
 
     // Direct Supabase insert — only columns that exist in posts table
@@ -2216,6 +2220,7 @@ export const postsApi = {
       listingImage:    extraMeta?.listingImage,
       listingPins:     extraMeta?.listingPins,
       tagPins:         extraMeta?.tagPins,
+      course:          extraMeta?.course,
       location:        undefined, // set via insertPayload if provided
     } as Post;
   },
