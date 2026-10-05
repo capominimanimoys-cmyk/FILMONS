@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import type { Visibility, Listing, Post, PostCourseAttachment } from '../types';
 import { registerPortfolioRepost, type PortfolioItem } from '../lib/portfolioApi';
 import { QuotedPostPreview } from './QuotedPostPreview';
+import { uploadPostMedia, forgetPostMedia } from '../lib/mediaPreupload';
 
 interface MediaDraft {
   id: string;
@@ -219,13 +220,15 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
       type: file.type.startsWith('video') ? 'video' : 'photo',
     }));
     setMedia(p => [...p, ...next]);
+    // Start uploading right away so Post doesn't have to wait for it.
+    if (user) next.forEach(m => { uploadPostMedia(m.previewUrl, user.id, m.type === 'video' ? 'videos' : 'images', m.file); });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removeMedia = (id: string) => {
     setMedia(p => {
       const found = p.find(m => m.id === id);
-      if (found) URL.revokeObjectURL(found.previewUrl);
+      if (found) { forgetPostMedia(found.previewUrl); URL.revokeObjectURL(found.previewUrl); }
       return p.filter(m => m.id !== id);
     });
   };
@@ -246,23 +249,11 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
     if (!user || !hasContent || stage !== 'editing') return;
     setStage('posting');
     try {
-      const uploadMedia = async (items: MediaDraft[], folder: string): Promise<string[]> => {
-        const uploaded: string[] = [];
-        for (const m of items) {
-          try {
-            const res = await fetch(m.previewUrl);
-            const blob = await res.blob();
-            const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || (m.type === 'video' ? 'mp4' : 'jpg');
-            const path = `${folder}/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-            const { error } = await supabase.storage.from('posts').upload(path, blob, { upsert: false, contentType: blob.type });
-            if (error) throw error;
-            const { data: urlData } = supabase.storage.from('posts').getPublicUrl(path);
-            uploaded.push(urlData.publicUrl);
-          } catch (e) {
-            console.error('[CreatePostSheet] media upload failed:', e);
-          }
-        }
-        return uploaded;
+      // Uploads were started when the files were picked; this just collects
+      // them (in parallel) and starts any that never began.
+      const uploadMedia = async (items: MediaDraft[], folder: 'images' | 'videos'): Promise<string[]> => {
+        const urls = await Promise.all(items.map(m => uploadPostMedia(m.previewUrl, user.id, folder, m.file)));
+        return urls.filter((u): u is string => !!u);
       };
 
       const photoItems = media.filter(m => m.type === 'photo');

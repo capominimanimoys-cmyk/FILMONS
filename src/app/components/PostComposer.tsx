@@ -30,6 +30,7 @@ import { inviteCollaborator } from '../lib/collabApi';
 import { ListingBrowser } from './ListingBrowser';
 import { PortfolioBrowser } from './PortfolioBrowser';
 import { AudioPostComposer } from './AudioPostComposer';
+import { uploadPostMedia } from '../lib/mediaPreupload';
 import * as notifs from '../lib/notifications';
 import { notifyEvent } from '../lib/notifyEvent';
 import { toast } from 'sonner';
@@ -2742,6 +2743,11 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const isMediaPost = kind==='photo'; // combined Photos & Videos post type
   const isPhoto     = kind==='photo'; // alias kept for compat
   const isVideo     = kind==='video'||kind==='reel'||kind==='story';
+
+  // Begin uploading the chosen/edited video right away so Post is near-instant.
+  useEffect(() => {
+    if (user && isVideo && videoUrl && videoUrl.startsWith('blob:')) uploadPostMedia(videoUrl, user.id, 'videos');
+  }, [videoUrl, isVideo, user?.id]);
   const postType = (kind==='reel'||kind==='story') ? 'video' : kind as PostType;
 
   // Gallery helpers
@@ -2998,34 +3004,22 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
     setPub(true);
     try{
       // Upload photos to Supabase Storage first
-      const uploadMedia = async (urls: string[], folder: string): Promise<string[]> => {
-        const uploaded: string[] = [];
-        for (const url of urls) {
-          if (url.startsWith('blob:') || url.startsWith('data:')) {
-            try {
-              const res  = await fetch(url);
-              const blob = await res.blob();
-              const ext  = blob.type.split('/')[1]?.replace('jpeg','jpg') || 'jpg';
-              const path = `${folder}/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
-              const { data, error } = await supabase.storage
-                .from('posts')
-                .upload(path, blob, { upsert: false, contentType: blob.type });
-              if (error) { console.error('Upload error:', error); uploaded.push(url); continue; }
-              const { data: urlData } = supabase.storage.from('posts').getPublicUrl(path);
-              uploaded.push(urlData.publicUrl);
-            } catch(e) { console.error('Upload failed:', e); uploaded.push(url); }
-          } else {
-            uploaded.push(url); // already a remote URL
-          }
-        }
-        return uploaded;
+      const uploadMedia = async (urls: string[], folder: 'images' | 'videos'): Promise<string[]> => {
+        // Videos are usually already uploaded (see the pre-upload effect);
+        // uploadPostMedia hands back that same in-flight/finished upload.
+        return Promise.all(urls.map(async (url) => {
+          if (!(url.startsWith('blob:') || url.startsWith('data:'))) return url; // already remote
+          return (await uploadPostMedia(url, user.id, folder)) ?? url;
+        }));
       };
 
       const rawImgs = isPhoto ? photos : [];
       const rawVids = isVideo && videoUrl ? [videoUrl] : [];
       console.log('[publish] rawImgs:', rawImgs.length, 'rawVids:', rawVids.length);
-      const imgs = rawImgs.length ? await uploadMedia(rawImgs, 'images') : [];
-      const vids = rawVids.length ? await uploadMedia(rawVids, 'videos') : [];
+      const [imgs, vids] = await Promise.all([
+        rawImgs.length ? uploadMedia(rawImgs, 'images') : Promise.resolve([] as string[]),
+        rawVids.length ? uploadMedia(rawVids, 'videos') : Promise.resolve([] as string[]),
+      ]);
       console.log('[publish] uploaded imgs:', imgs, 'vids:', vids);
       const auds  = kind==='audio' && audioUrl ? [audioUrl] : [];
 
