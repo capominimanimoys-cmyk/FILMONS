@@ -33,7 +33,7 @@ import { AudioPostComposer } from './AudioPostComposer';
 import * as notifs from '../lib/notifications';
 import { notifyEvent } from '../lib/notifyEvent';
 import { toast } from 'sonner';
-import type { PostType, Visibility } from '../types';
+import type { PostType, Visibility, PostCourseAttachment } from '../types';
 import type { PortfolioItem } from '../lib/portfolioApi';
 
 type PostKind   = PostType | 'reel' | 'story';
@@ -517,7 +517,7 @@ function TagPeopleSheet({ photo, editedPhoto, tagPins, setTagPins, collabs, setC
 }
 
 // ── RichCaptionBox ────────────────────────────────────────────────────────────
-function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollabs, mentionedUsers, setMentionedUsers, photos, editedPhotos, isPhoto, isCreatorPlus, selectedListings, setSelectedListings, onOpenListingBrowser, onOpenListingTagger, listingPins, onOpenCollabSheet, onOpenTrimSheet, publishedPostId, tagPins, setTagPins, selectedPortfolioItem, setSelectedPortfolioItem, onOpenPortfolioBrowser }: any) {
+function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollabs, mentionedUsers, setMentionedUsers, photos, editedPhotos, isPhoto, isCreatorPlus, selectedListings, setSelectedListings, onOpenListingBrowser, onOpenListingTagger, listingPins, onOpenCollabSheet, onOpenTrimSheet, publishedPostId, tagPins, setTagPins, selectedPortfolioItem, setSelectedPortfolioItem, onOpenPortfolioBrowser, selectedCourse, setSelectedCourse }: any) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showTagPeople,setShowTagPeople]= useState(false);
   const [pendingPin,   setPendingPin]   = useState<{x:number;y:number}|null>(null);
@@ -836,6 +836,24 @@ function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollab
               <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
             </button>
 
+            {/* Attached Course -- Professional/Business instructors only
+                (the ListingBrowser hides its Courses tab for everyone else). */}
+            {selectedCourse && (
+              <div className="px-4 pt-2 pb-1">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Linked course</p>
+                <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                    {selectedCourse.coverUrl && <img src={selectedCourse.coverUrl} className="w-full h-full object-cover" />}
+                  </div>
+                  <p className="text-sm font-bold text-gray-900 truncate flex-1">{selectedCourse.title}</p>
+                  <button onClick={()=>setSelectedCourse(null)}
+                    className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                    <X className="w-3.5 h-3.5 text-gray-600"/>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Attached Portfolio -- stores only the real portfolio_item_id
                 (see selectedPortfolioItem), never a copy of the item's
                 data, per spec ("Don't duplicate the Portfolio project's
@@ -1148,7 +1166,7 @@ const CANADA_LOCATIONS_GEO = [
 // Alias without geo for simple use
 const CANADA_LOCATIONS = CANADA_LOCATIONS_GEO;
 
-function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,textAlign,kind,ratio,audioTitle,audioArtist,caption,setCaption,tags,setTags,collabs,setCollabs,mentionedUsers,setMentionedUsers,location,setLoc,credits,setCredits,selectedMusic,setSelectedMusic,onOpenMusicBrowser,onOpenTrimSheet,selectedListings,setSelectedListings,onOpenListingBrowser,onOpenListingTagger,listingPins,tagPins,setTagPins,isCreatorPlus,onOpenCollabSheet,publishedPostId,ic,isPhoto,isVideo,selectedPortfolioItem,setSelectedPortfolioItem,onOpenPortfolioBrowser }: any) {
+function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,textAlign,kind,ratio,audioTitle,audioArtist,caption,setCaption,tags,setTags,collabs,setCollabs,mentionedUsers,setMentionedUsers,location,setLoc,credits,setCredits,selectedMusic,setSelectedMusic,onOpenMusicBrowser,onOpenTrimSheet,selectedListings,setSelectedListings,onOpenListingBrowser,onOpenListingTagger,listingPins,tagPins,setTagPins,isCreatorPlus,onOpenCollabSheet,publishedPostId,ic,isPhoto,isVideo,selectedPortfolioItem,setSelectedPortfolioItem,onOpenPortfolioBrowser,selectedCourse,setSelectedCourse }: any) {
   const [showLocSheet, setShowLocSheet] = useState(false);
   const [locSearch,    setLocSearch]    = useState('');
   const [locResults,   setLocResults]   = useState<LocationResult[]>([]);
@@ -1268,6 +1286,8 @@ function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,
         selectedPortfolioItem={selectedPortfolioItem}
         setSelectedPortfolioItem={setSelectedPortfolioItem}
         onOpenPortfolioBrowser={onOpenPortfolioBrowser}
+        selectedCourse={selectedCourse}
+        setSelectedCourse={setSelectedCourse}
         onOpenCollabSheet={onOpenCollabSheet}
         onOpenTrimSheet={onOpenTrimSheet}
         publishedPostId={publishedPostId}
@@ -2656,6 +2676,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [showListingBrowser, setShowListingBrowser] = useState(false);
   const [showPortfolioBrowser, setShowPortfolioBrowser] = useState(false);
   const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem|null>(null);
+  const [selectedCourse, setSelectedCourse] = useState<PostCourseAttachment|null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [textOverlays,       setTextOverlays]       = useState<TextLayer[]>([]);
   const [showTextEditor,     setShowTextEditor]     = useState(false);
@@ -3070,6 +3091,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           portfolioItemTitle:    selectedPortfolioItem?.title,
           portfolioItemCategory: selectedPortfolioItem?.category,
           portfolioItemThumb:    selectedPortfolioItem?.thumbnail_url,
+          course:                selectedCourse ?? undefined,
         }
       );
 
@@ -3212,7 +3234,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   // audience/settings change with nothing to actually say yet.
   const hasUnsavedContent = () =>
     !!(caption.trim() || textContent.trim() || photos.length || videoUrl || audioUrl
-      || selectedListings?.length || selectedPortfolioItem || tags.length || collabs.length);
+      || selectedListings?.length || selectedPortfolioItem || selectedCourse || tags.length || collabs.length);
 
   const goBack = ()=>{
     const flow:FlowStep[]=['typeSelect','gallery','edit','caption','advanced','share'];
@@ -3293,6 +3315,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
               return exists ? prev.filter((l:any)=>l.id!==listing.id) : [...prev, listing];
             });
           }}
+          selectedCourseId={selectedCourse?.id}
+          onSelectCourse={(course)=>{ setSelectedCourse(course); setShowListingBrowser(false); }}
           onClose={()=>setShowListingBrowser(false)}
         />
       )}
@@ -3768,6 +3792,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
               selectedPortfolioItem={selectedPortfolioItem}
               setSelectedPortfolioItem={setSelectedPortfolioItem}
               onOpenPortfolioBrowser={()=>setShowPortfolioBrowser(true)}
+              selectedCourse={selectedCourse}
+              setSelectedCourse={setSelectedCourse}
               isCreatorPlus={isCreatorPlus}
               onOpenCollabSheet={()=>setShowCollabSheet(true)}
               publishedPostId={publishedPostId}
