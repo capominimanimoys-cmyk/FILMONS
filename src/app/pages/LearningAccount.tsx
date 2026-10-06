@@ -20,7 +20,7 @@ import { getSavedCourses } from '../lib/topicsApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
-import { deleteLiveSession, getLiveSessionsByInstructor, setLiveSessionStatus, type LiveSession } from '../lib/liveSessionsApi';
+import { PLATFORM_LABEL, deleteLiveSession, formatFee, getLiveSessionsByInstructor, getUpcomingBookingsForInstructor, setLiveSessionStatus, type LiveApplication, type LiveSession } from '../lib/liveSessionsApi';
 import { PostMoreMenu } from '../components/connect/PostMoreMenu';
 import { ConfirmDialog } from '../components/learning/builder/BuilderUI';
 import { MyCourseRow } from './MyLearning';
@@ -30,7 +30,7 @@ import {
 } from '../components/learning/LearningPageParts';
 
 // ── Notifications ───────────────────────────────────────────────────────
-const LEARNING_TYPES = new Set(['course_published', 'course_purchased', 'live_session_application', 'live_session_accepted', 'live_session_declined', 'live_session_confirmed', 'payment_received']);
+const LEARNING_TYPES = new Set(['course_published', 'course_purchased', 'live_session_application', 'live_session_accepted', 'live_session_payment_request', 'live_session_declined', 'live_session_confirmed', 'payment_received']);
 
 export function LearningNotifications() {
   const navigate = useNavigate();
@@ -56,6 +56,9 @@ export function LearningNotifications() {
     // course_published carries the course id in the generic postId field
     // (see Notifications.tsx); everything else lives on FILMONS itself.
     if (n.type === 'course_published' && n.postId) navigate(`/course/${n.postId}`);
+    else if (['live_session_accepted', 'live_session_payment_request', 'live_session_declined', 'live_session_confirmed'].includes(n.type)) navigate('/my-learning?tab=live');
+    else if (n.type === 'live_session_application') navigate('/instructor');
+    else if (n.type === 'course_purchased') navigate('/my-learning');
     else leaveLearning('/notifications');
   };
 
@@ -258,6 +261,8 @@ export function InstructorDashboard() {
   const [reviews, setReviews] = useState<InstructorReview[] | null>(null);
   const [chooser, setChooser] = useState(false);
   const [live, setLive] = useState<LiveSession[]>([]);
+  const [upcoming, setUpcoming] = useState<(LiveApplication & { session: LiveSession })[]>([]);
+  useEffect(() => { if (user) getUpcomingBookingsForInstructor(user.id).then(setUpcoming).catch(() => {}); }, [user?.id]);
   const loadLive = () => { if (user) getLiveSessionsByInstructor(user.id).then(setLive).catch(() => {}); };
   useEffect(loadLive, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const onCreateType = (t: CreateType) => {
@@ -316,6 +321,25 @@ export function InstructorDashboard() {
           body="Turn your experience into a course creators can learn from." />
       ) : (
         <div className="max-w-2xl space-y-3">{courses.map(c => <MyCourseRow key={c.id} course={c} onChanged={load} />)}</div>
+      )}
+
+      {upcoming.length > 0 && (
+        <div className="mt-10">
+          <SectionTitle title="Upcoming live bookings" subtitle="Confirmed and paid" />
+          <div className="max-w-2xl space-y-2">
+            {upcoming.map(b => (
+              <button key={b.id} data-pop onClick={() => navigate(`/instructor/live/${b.sessionId}`)} className="w-full rounded-2xl border border-gray-100 bg-white p-3.5 text-left hover:bg-gray-50">
+                <div className="flex items-center gap-3">
+                  <UserAvatar user={{ id: b.studentId, name: b.student?.name || '', avatar: b.student?.avatarUrl ?? undefined }} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-gray-900">{b.student?.name ?? 'Filmons student'} · {b.session.title}</p>
+                    <p className="text-xs text-gray-500">{b.scheduledAt ? new Date(b.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: b.session.timezone || undefined }) : ''} · {PLATFORM_LABEL[b.session.platform]} · {formatFee(b.fee, b.currency)}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {live.length > 0 && (
