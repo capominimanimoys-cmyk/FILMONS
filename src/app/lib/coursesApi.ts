@@ -474,6 +474,26 @@ export async function getCourseReviews(courseId: string, limit = 20): Promise<Co
   }));
 }
 
+export interface InstructorReview extends CourseReview { courseId: string; courseTitle: string }
+
+/** Recent reviews across all of an instructor's courses (dashboard). */
+export async function getReviewsForInstructor(instructorId: string, limit = 10): Promise<InstructorReview[]> {
+  const { data: courses } = await supabase.from('courses').select('id, title').eq('instructor_id', instructorId);
+  if (!courses?.length) return [];
+  const titles = new Map(courses.map((c: any) => [c.id, c.title as string]));
+  const { data, error } = await supabase.from('course_reviews').select('id, course_id, user_id, rating, body, created_at')
+    .in('course_id', courses.map((c: any) => c.id)).order('created_at', { ascending: false }).limit(limit);
+  if (error || !data?.length) return [];
+  const userIds = [...new Set(data.map((r: any) => r.user_id))];
+  const { data: profiles } = await supabase.from('profiles').select('id, name, avatar_url').in('id', userIds);
+  const map = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  return data.map((r: any) => ({
+    id: r.id, userId: r.user_id, rating: r.rating, body: r.body, createdAt: r.created_at,
+    courseId: r.course_id, courseTitle: titles.get(r.course_id) ?? 'Course',
+    author: map.get(r.user_id) ? { name: map.get(r.user_id).name, avatarUrl: map.get(r.user_id).avatar_url } : undefined,
+  }));
+}
+
 /** Only an active enrollee may review -- checked here, not just left to the
  *  UI to hide the composer (see the table's own migration comment). One
  *  review per (course, user): a repeat submission replaces the original. */

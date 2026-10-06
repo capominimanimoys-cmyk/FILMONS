@@ -14,7 +14,7 @@ import { useNotifications } from '../context/NotificationsContext';
 import { useLearningSession } from '../context/LearningSessionContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { notificationTitle } from '../lib/notifications';
-import { canCreateCourses, getCoursesByInstructor, getMyEnrollments, type Course, type EnrolledCourse } from '../lib/coursesApi';
+import { canCreateCourses, getCoursesByInstructor, getMyEnrollments, getReviewsForInstructor, type Course, type EnrolledCourse, type InstructorReview } from '../lib/coursesApi';
 import { getSavedCourses } from '../lib/topicsApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
@@ -201,8 +201,10 @@ export function InstructorDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[] | null>(null);
+  const [reviews, setReviews] = useState<InstructorReview[] | null>(null);
   const load = () => { if (user) getCoursesByInstructor(user.id).then(setCourses).catch(() => setCourses([])); };
-  useEffect(load, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [user?.id]);
+  useEffect(() => { if (user) getReviewsForInstructor(user.id).then(setReviews).catch(() => setReviews([])); }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!user) return (
     <LearningPage>
@@ -253,6 +255,31 @@ export function InstructorDashboard() {
       ) : (
         <div className="max-w-2xl space-y-3">{courses.map(c => <MyCourseRow key={c.id} course={c} onChanged={load} />)}</div>
       )}
+
+      <div className="mt-10">
+        <SectionTitle title="Recent reviews" subtitle="What students are saying about your courses" />
+        {reviews === null ? <ListSkeleton rows={2} /> : reviews.length === 0 ? (
+          <EmptyState icon={<Star className="h-9 w-9" />} title="No reviews yet" body="Reviews from your students will show up here." />
+        ) : (
+          <ul className="max-w-2xl space-y-2">
+            {reviews.map(r => (
+              <li key={r.id} data-pop>
+                <button onClick={() => navigate(`/instructor/course/${r.courseId}`)} className="w-full rounded-2xl border border-gray-100 bg-white p-3.5 text-left hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar user={{ id: r.userId, name: r.author?.name || '', avatar: r.author?.avatarUrl ?? undefined }} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-gray-900">{r.author?.name ?? 'Filmons student'}</p>
+                      <p className="truncate text-xs text-gray-400">{r.courseTitle} · {timeAgo(r.createdAt)}</p>
+                    </div>
+                    <span className="flex items-center gap-0.5">{Array.from({ length: r.rating }).map((_, i) => <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />)}</span>
+                  </div>
+                  {r.body && <p className="mt-2 text-sm leading-relaxed text-gray-600">{r.body}</p>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </LearningPage>
   );
 }
