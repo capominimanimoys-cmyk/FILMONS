@@ -9,6 +9,7 @@
  * while never hiding it before real data is actually available.
  */
 import { useEffect, useRef, useState } from 'react';
+import { useLoadDeadline } from '../lib/useLoadDeadline';
 
 const MIN_VISIBLE_MS = 900;
 const EXIT_MS = 250;
@@ -121,7 +122,10 @@ export function FilmonsBrandLoader({
   className = '',
   label,
   tone = 'brand',
+  onRetry,
 }: {
+  /** Called by the "taking longer than expected" Retry (defaults to a page reload). */
+  onRetry?: () => void;
   size?: 'xs' | 'sm' | 'md' | 'lg';
   fullscreen?: boolean;
   className?: string;
@@ -130,6 +134,18 @@ export function FilmonsBrandLoader({
   tone?: 'brand' | 'light';
 }) {
   const px = SIZE_PX[size];
+  // Page/section-level loaders (not the tiny inline ones) obey the 5s rule:
+  // still spinning after 5s -> say so and offer Retry.
+  const late = useLoadDeadline(fullscreen || size === 'lg' || size === 'md');
+  if (late && (fullscreen || size === 'lg' || size === 'md')) {
+    return (
+      <div role="alert" className={`${fullscreen ? 'fixed inset-0 z-50 bg-white/90 backdrop-blur-sm' : ''} flex flex-col items-center justify-center gap-2 p-6 text-center ${className}`}>
+        <p className="text-sm font-bold text-gray-900">This is taking longer than expected.</p>
+        <p className="text-xs text-gray-500">Check your connection and try again.</p>
+        <button onClick={onRetry ?? (() => window.location.reload())} className="mt-1 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white">Retry</button>
+      </div>
+    );
+  }
   const mark = (
     <span role="status" aria-label={label || 'Loading'} className={`filmons-spin-wrap filmons-spin-tone-${tone}`}>
       <svg width={px} height={px} viewBox="0 0 24 24" fill="none" className="filmons-spin-ring" aria-hidden="true">
