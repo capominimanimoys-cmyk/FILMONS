@@ -155,7 +155,7 @@ export function checklist(doc: CourseDoc, opts: { payoutReady: boolean }): Probl
 
   const items = doc.sections.flatMap(s => s.items);
   const videos = items.filter((i): i is DocVideo => i.kind === 'video');
-  if (!videos.some(v => v.videoStatus === 'ready' && v.title.trim() && v.durationSeconds > 0)) p.push({ step: 4, target: 'lessons', message: 'Add at least one complete video lesson' });
+  if (!videos.some(v => v.videoStatus === 'ready' && v.title.trim())) p.push({ step: 4, target: 'lessons', message: 'Add at least one complete video lesson' });
   for (const s of doc.sections) if (!s.title.trim()) p.push({ step: 4, target: `section:${s.id}`, message: 'Every section needs a title' });
   for (const v of videos) {
     const name = `“${v.title || 'Untitled lesson'}”`;
@@ -223,13 +223,16 @@ export function normalizeDoc(raw: any): CourseDoc {
   d.basics = { title: '', shortDescription: '', language: 'English', category: '', topics: [], level: '', ...r.basics };
   d.outcomes = { outcomes: [], audience: '', prerequisites: '', tools: '', ...r.outcomes };
   d.presentation = { coverUrl: '', coverVideoUrl: '', coverVideoStatus: 'none', introVideoUrl: '', introVideoStatus: 'none', description: '', ...r.presentation };
-  if (d.presentation.introVideoStatus === 'uploading') d.presentation.introVideoStatus = d.presentation.introVideoUrl ? 'processing' : 'failed';
+  if (d.presentation.introVideoStatus === 'uploading') d.presentation.introVideoStatus = d.presentation.introVideoUrl ? 'ready' : 'failed';
+  if (d.presentation.introVideoStatus === 'processing') d.presentation.introVideoStatus = d.presentation.introVideoUrl ? 'ready' : 'failed';
   d.sections = ((r.sections ?? []) as any[]).map(s => ({
     ...s, description: s.description ?? '',
     items: ((s.items ?? []) as any[]).map(i => {
       if (i.kind === 'video') {
         const v = { ...newVideo(), ...i, exercise: { ...newVideo().exercise, ...(i.exercise ?? {}) } } as DocVideo;
-        if (v.videoStatus === 'uploading') v.videoStatus = v.videoUrl ? 'processing' : 'failed';
+        // An upload/processing state left over from an interrupted session:
+        // if the file made it to storage the video is usable.
+        if (v.videoStatus === 'uploading' || v.videoStatus === 'processing') v.videoStatus = v.videoUrl ? 'ready' : 'failed';
         return v;
       }
       return i;
@@ -299,20 +302,35 @@ export function uploadCourseFile(file: File, folder: string, onProgress: (pct: n
 
 /** "Processing": confirms the uploaded video actually plays from storage
  *  and reads its duration. */
-export function probeVideo(url: string, timeoutMs = 60000): Promise<{ durationSeconds: number }> {
+export class ProbeInconclusive extends Error {}
+
+/** Rejects with ProbeInconclusive when the browser simply never reports the
+ *  length (iOS Safari often doesn't load metadata for a detached <video>);
+ *  that says nothing about whether the upload is fine, so callers must not
+ *  treat it as a failed video. Any other rejection = the file can't play. */
+export function probeVideo(url: string, timeoutMs = 20000): Promise<{ durationSeconds: number }> {
   return new Promise((resolve, reject) => {
     const v = document.createElement('video');
     v.preload = 'metadata';
     v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
     const done = (fn: () => void) => { clearTimeout(t); v.removeAttribute('src'); v.load(); fn(); };
-    const t = setTimeout(() => done(() => reject(new Error('The video took too long to process'))), timeoutMs);
+    const t = setTimeout(() => done(() => reject(new ProbeInconclusive('The video took too long to process'))), timeoutMs);
+    const check = () => {
+      const d = v.duration;
+      if (Number.isFinite(d) && d > 0) done(() => resolve({ durationSeconds: Math.round(d) }));
+    };
     v.onloadedmetadata = () => {
       const d = v.duration;
-      if (!Number.isFinite(d) || d <= 0) done(() => reject(new Error("We couldn't read this video's length")));
-      else done(() => resolve({ durationSeconds: Math.round(d) }));
+      if (Number.isFinite(d) && d > 0) check();
+      else done(() => reject(new ProbeInconclusive("We couldn't read this video's length")));
     };
+    v.ondurationchange = check;
+    v.onloadeddata = check;
     v.onerror = () => done(() => reject(new Error("This video format can't be played. Try an MP4 (H.264) file.")));
     v.src = url;
+    v.load();
   });
 }
 

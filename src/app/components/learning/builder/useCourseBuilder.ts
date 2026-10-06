@@ -12,7 +12,7 @@
 // upload can be retried without picking the file again.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  builderApi, probeVideo, uploadCourseFile, fileKind, captureVideoFrame,
+  builderApi, probeVideo, ProbeInconclusive, uploadCourseFile, fileKind, captureVideoFrame,
   type CourseDoc, type DocVideo, type DraftLoad, type UploadHandle,
 } from '../../../lib/courseBuilder';
 
@@ -150,6 +150,9 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
       const { durationSeconds } = await probeVideo(url);
       setVideoStatus(target, 'ready', durationSeconds);
     } catch (e: any) {
+      // Couldn't read the length (common on iOS) -- not a bad file. Stay
+      // ready; the lesson's own player fills the duration in once it loads.
+      if (e instanceof ProbeInconclusive) return;
       setVideoStatus(target, 'failed');
       setUpload(target, { progress: 100, status: 'error', error: e?.message || 'Processing failed', fileName: '' });
     }
@@ -177,7 +180,9 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
         setUpload(target, null);
         return;
       }
-      applyResult(target, { url, status: 'processing' });
+      // The file is in storage, so show the video right away; its length is
+      // read in the background (see reprocess).
+      applyResult(target, { url, status: 'ready' });
       setUpload(target, null);
       await reprocess(target, url);
     }).catch((e: Error) => {
