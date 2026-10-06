@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
-  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Radio, Star, Users,
+  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, Eye, EyeOff, LogOut, MoreHorizontal, Plus, Radio, Star, Trash2, Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
@@ -20,7 +20,9 @@ import { getSavedCourses } from '../lib/topicsApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
-import { getLiveSessionsByInstructor, type LiveSession } from '../lib/liveSessionsApi';
+import { deleteLiveSession, getLiveSessionsByInstructor, setLiveSessionStatus, type LiveSession } from '../lib/liveSessionsApi';
+import { PostMoreMenu } from '../components/connect/PostMoreMenu';
+import { ConfirmDialog } from '../components/learning/builder/BuilderUI';
 import { MyCourseRow } from './MyLearning';
 import type { Notification } from '../types';
 import {
@@ -199,6 +201,55 @@ export function LearningProfile() {
   );
 }
 
+// A live session on the instructor dashboard, with a three-dot menu.
+function LiveSessionManageRow({ session: l, instructorId, onChanged }: { session: LiveSession; instructorId: string; onChanged: () => void }) {
+  const navigate = useNavigate();
+  const [menu, setMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const published = l.status === 'published';
+
+  const toggle = async () => {
+    setMenu(false);
+    if (await setLiveSessionStatus(l.id, instructorId, published ? 'unpublished' : 'published')) { toast.success(published ? 'Session unpublished' : 'Session published'); onChanged(); }
+    else toast.error('Could not update the session');
+  };
+  const remove = async () => {
+    setBusy(true);
+    const r = await deleteLiveSession(l.id, instructorId);
+    setBusy(false); setConfirmDelete(false);
+    if (r === 'deleted') { toast.success('Live session deleted'); onChanged(); }
+    else if (r === 'blocked') toast.error('Students have applied or booked this session', { description: 'Unpublish it instead, or decline the applications first.' });
+    else toast.error('Could not delete the session');
+  };
+
+  return (
+    <div data-pop className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3">
+      <button onClick={() => navigate(`/instructor/live/${l.id}`)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100">{l.coverUrl ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" /> : <Radio className="h-5 w-5 text-gray-400" />}</div>
+        <div className="min-w-0"><p className="truncate text-sm font-bold text-gray-900">{l.title}</p><p className="text-xs text-gray-400">{published ? 'Published' : 'Unpublished'} · {l.isFree ? 'Free' : `${l.currency} ${l.price.toFixed(2)}`}</p></div>
+      </button>
+      <button onClick={() => setMenu(true)} aria-label="Live session options" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"><MoreHorizontal className="h-4 w-4" /></button>
+      {menu && (
+        <PostMoreMenu
+          onClose={() => setMenu(false)}
+          actions={[
+            { icon: ExternalLink, label: 'View session', onClick: () => { setMenu(false); navigate(`/live/${l.id}`); } },
+            { icon: Users, label: 'Manage applications', onClick: () => { setMenu(false); navigate(`/instructor/live/${l.id}`); } },
+            { icon: published ? EyeOff : Eye, label: published ? 'Unpublish' : 'Publish again', onClick: toggle },
+          ]}
+          destructiveActions={[{ icon: Trash2, label: 'Delete session', onClick: () => { setMenu(false); setConfirmDelete(true); } }]}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmDialog title="Delete this live session?" confirmLabel="Delete" destructive busy={busy}
+          body="This permanently removes the session. If students have applied or booked, it can’t be deleted — unpublish it instead."
+          onCancel={() => setConfirmDelete(false)} onConfirm={remove} />
+      )}
+    </div>
+  );
+}
+
 // ── Instructor dashboard ────────────────────────────────────────────────
 export function InstructorDashboard() {
   const navigate = useNavigate();
@@ -207,7 +258,8 @@ export function InstructorDashboard() {
   const [reviews, setReviews] = useState<InstructorReview[] | null>(null);
   const [chooser, setChooser] = useState(false);
   const [live, setLive] = useState<LiveSession[]>([]);
-  useEffect(() => { if (user) getLiveSessionsByInstructor(user.id).then(setLive).catch(() => {}); }, [user?.id]);
+  const loadLive = () => { if (user) getLiveSessionsByInstructor(user.id).then(setLive).catch(() => {}); };
+  useEffect(loadLive, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const onCreateType = (t: CreateType) => {
     setChooser(false);
     navigate(t === 'live' ? '/create/live' : '/create');
@@ -270,12 +322,7 @@ export function InstructorDashboard() {
         <div className="mt-10">
           <SectionTitle title="Live sessions" subtitle={plural(live.length, 'session')} />
           <div className="max-w-2xl space-y-2">
-            {live.map(l => (
-              <button key={l.id} data-pop onClick={() => navigate(`/instructor/live/${l.id}`)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left hover:bg-gray-50">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100">{l.coverUrl ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" /> : <Radio className="h-5 w-5 text-gray-400" />}</div>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-gray-900">{l.title}</p><p className="text-xs text-gray-400">{l.status === 'published' ? 'Published' : 'Unpublished'} · {l.isFree ? 'Free' : `${l.currency} ${l.price.toFixed(2)}`}</p></div>
-              </button>
-            ))}
+            {live.map(l => <LiveSessionManageRow key={l.id} session={l} instructorId={user.id} onChanged={loadLive} />)}
           </div>
         </div>
       )}
