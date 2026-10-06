@@ -302,6 +302,16 @@ export function uploadCourseFile(file: File, folder: string, onProgress: (pct: n
 
 /** "Processing": confirms the uploaded video actually plays from storage
  *  and reads its duration. */
+// Maximum file size accepted per video upload (checked before anything is
+// sent). Change these two numbers to raise/lower the limit.
+export const MAX_LESSON_VIDEO_BYTES = 500 * 1024 * 1024; // lesson + introduction videos
+export const MAX_COVER_VIDEO_BYTES  = 100 * 1024 * 1024; // short silent cover loop
+
+export function formatBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1).replace(/\.0$/, '')} GB`;
+  return `${Math.round(n / 1024 ** 2)} MB`;
+}
+
 export class ProbeInconclusive extends Error {}
 
 /** Rejects with ProbeInconclusive when the browser simply never reports the

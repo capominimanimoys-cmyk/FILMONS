@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Hash, Plus, Trash2, X } from 'lucide-react';
 import { searchHashtagSuggestions } from '../../../lib/hashtagsApi';
-import { CATEGORIES, LANGUAGES, LEVELS, MAX_TOPICS, uid, type CourseDoc } from '../../../lib/courseBuilder';
+import { CATEGORIES, LANGUAGES, LEVELS, MAX_TOPICS, MAX_COVER_VIDEO_BYTES, MAX_LESSON_VIDEO_BYTES, formatBytes, uid, type CourseDoc } from '../../../lib/courseBuilder';
 import { Card, CharCount, Field, Segmented, StepHeading, UploadBox, inputCls } from './BuilderUI';
 import type { CourseBuilderState } from './useCourseBuilder';
 
@@ -192,7 +192,7 @@ export function StepPresentation({ b, doc }: StepProps) {
               </div>
             )}
             <UploadBox accept="video/mp4,video/quicktime,video/webm" label={p.coverVideoUrl ? 'Replace cover video' : 'Upload a cover video'}
-              hint="A short loop, 5–30 seconds · 16:9 · MP4 recommended. It plays silently."
+              hint={`A short loop, 5–30 seconds · 16:9 · MP4 recommended · max ${formatBytes(MAX_COVER_VIDEO_BYTES)}. It plays silently.`}
               upload={b.uploads.coverVideo} processing={p.coverVideoStatus === 'processing'} failedMessage={p.coverVideoStatus === 'failed' ? 'The cover video could not be processed' : null}
               onFile={f => b.startUpload('coverVideo', f)} onRetry={() => b.retryUpload('coverVideo')} canRetry={b.canRetry('coverVideo')} onCancel={() => b.cancelUpload('coverVideo')}
               compact={p.coverVideoStatus === 'ready'} />
@@ -226,7 +226,7 @@ export function StepPresentation({ b, doc }: StepProps) {
             <button type="button" onClick={() => set({ introVideoUrl: '', introVideoStatus: 'none' })} className="text-xs font-bold text-red-600 hover:underline">Remove introduction video</button>
           </div>
         )}
-        <UploadBox accept="video/mp4,video/quicktime,video/webm" label={p.introVideoUrl ? 'Replace introduction video' : 'Upload an introduction video'} hint="MP4 recommended"
+        <UploadBox accept="video/mp4,video/quicktime,video/webm" label={p.introVideoUrl ? 'Replace introduction video' : 'Upload an introduction video'} hint={`MP4 recommended · max ${formatBytes(MAX_LESSON_VIDEO_BYTES)}`}
           upload={b.uploads.intro} processing={p.introVideoStatus === 'processing'} failedMessage={p.introVideoStatus === 'failed' ? 'The introduction video could not be processed' : null}
           onFile={f => b.startUpload('intro', f)} onRetry={() => b.retryUpload('intro')} canRetry={b.canRetry('intro')} onCancel={() => b.cancelUpload('intro')}
           compact={p.introVideoStatus === 'ready'} />

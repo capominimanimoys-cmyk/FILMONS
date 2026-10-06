@@ -14,8 +14,11 @@ import { Post, Comment } from '../types';
 import {
   Heart, MessageCircle, Share2, X,
   Volume2, VolumeX, ChevronUp, ChevronDown, Play,
-  Send, Loader2,
+  Send, Loader2, MapPin, Music2, Link2, Tag, GraduationCap, Briefcase, FolderOpen,
 } from 'lucide-react';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
+import { useLearningTransition } from '../context/LearningTransitionContext';
+import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 
@@ -282,7 +285,7 @@ function ReelCard({
           }
           <span className="text-white font-semibold text-sm drop-shadow">@{post.userName}</span>
         </button>
-        {post.content && <p className="text-white text-sm leading-relaxed line-clamp-2 drop-shadow">{post.content}</p>}
+        <ReelAttachments post={post} />
       </div>
 
       {/* Right actions */}
@@ -323,6 +326,99 @@ function ReelCard({
         )}
       </div>
     </div>
+  );
+}
+
+// ── Everything the author attached to the post ────────────────────────────────
+// Same attachments PostCard shows (caption #hashtags/@mentions, location,
+// sound, link, tagged people, listings, portfolio work, course) so a post
+// reads the same in Reels as in the feed.
+function ReelCaption({ text }: { text: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const long = text.length > 90;
+  const shown = long && !open ? text.slice(0, 90).trimEnd() : text;
+  return (
+    <p className="text-white text-sm leading-relaxed drop-shadow">
+      {shown.split(/(@\w+|#\w+)/g).map((part, i) =>
+        part.startsWith('#') && part.length > 1
+          ? <button key={i} onClick={() => navigate(`/search/hashtags/${part.slice(1).toLowerCase()}`)} className="font-semibold text-sky-300">{part}</button>
+        : part.startsWith('@') && part.length > 1
+          ? <button key={i} onClick={() => navigate(`/${part.slice(1)}`)} className="font-semibold text-sky-300">{part}</button>
+          : <span key={i}>{part}</span>)}
+      {long && !open && <>{'… '}<button onClick={() => setOpen(true)} className="font-semibold text-white/60">more</button></>}
+    </p>
+  );
+}
+
+function Chip({ icon: Icon, children, onClick, thumb }: { icon: any; children: React.ReactNode; onClick: () => void; thumb?: string }) {
+  return (
+    <button onClick={onClick}
+      className="shrink-0 flex items-center gap-1.5 max-w-[210px] rounded-full bg-black/45 backdrop-blur-md border border-white/15 pl-1.5 pr-3 py-1.5 text-white text-xs font-semibold">
+      {thumb
+        ? <img src={thumb} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+        : <span className="w-6 h-6 rounded-full bg-white/15 flex items-center justify-center shrink-0"><Icon className="w-3.5 h-3.5" /></span>}
+      <span className="truncate">{children}</span>
+    </button>
+  );
+}
+
+function ReelAttachments({ post }: { post: Post }) {
+  const navigate = useNavigate();
+  const { openPortfolioItem } = usePortfolioPreview();
+  const { enterLearning } = useLearningTransition();
+  const p = post as any;
+
+  const taggedUsers = ((p.taggedUserIds || []) as string[])
+    .map(id => authApi.getUserByIdSync(id)).filter(Boolean) as import('../types').User[];
+
+  const listings: { id: string; title: string; image?: string }[] = [];
+  if (p.listingId) listings.push({ id: p.listingId, title: p.listingTitle || 'Listing', image: p.listingImage });
+  (p.listingPins || []).forEach((pin: any) => {
+    const id = pin.listingId || pin.id;
+    if (id && !listings.some(l => l.id === id)) listings.push({ id, title: pin.title || 'Listing', image: pin.image });
+  });
+
+  const chips: React.ReactNode[] = [];
+  if (p.location) chips.push(
+    <Chip key="loc" icon={MapPin} onClick={() => {
+      const { city, province } = parseLocationFreeText(p.location);
+      navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(city, province))}`);
+    }}>{String(p.location).split(',')[0]}</Chip>);
+  if (p.audioTitle) chips.push(
+    <Chip key="aud" icon={Music2} onClick={() => {
+      if (p.audioId) navigate(`/audio/${p.audioId}`);
+      else navigate(`/audio/search?title=${encodeURIComponent(p.audioTitle)}`);
+    }}>{p.audioTitle}{p.audioArtist ? ` · ${p.audioArtist}` : ''}</Chip>);
+  if (p.link) chips.push(
+    <Chip key="link" icon={Link2} onClick={() => window.open(String(p.link).startsWith('http') ? p.link : `https://${p.link}`, '_blank', 'noopener,noreferrer')}>
+      {String(p.link).replace(/^https?:\/\//, '')}</Chip>);
+  taggedUsers.forEach(u => chips.push(
+    <Chip key={`u-${u.id}`} icon={Tag} thumb={u.avatar} onClick={() => navigate(`/host/${u.id}`)}>@{u.username || u.name}</Chip>));
+  listings.forEach(l => chips.push(
+    <Chip key={`l-${l.id}`} icon={Tag} thumb={l.image} onClick={() => navigate(`/listing/${l.id}`)}>{l.title}</Chip>));
+  if (p.portfolioItemId) chips.push(
+    <Chip key="pf" icon={Briefcase} thumb={p.portfolioItemThumb} onClick={() => openPortfolioItem(p.portfolioItemId)}>{p.portfolioItemTitle || 'Portfolio work'}</Chip>);
+  const album = p.ownAlbum || p.repostOfAlbum;
+  if (album?.albumId) chips.push(
+    <Chip key="alb" icon={FolderOpen} thumb={album.coverUrl} onClick={() => openPortfolioItem(album.albumId, [], 'album')}>{album.title || 'Album'}</Chip>);
+  if (p.course) chips.push(
+    <Chip key="course" icon={GraduationCap} thumb={p.course.coverUrl || undefined}
+      onClick={() => enterLearning(`/course/${p.course.id}`, { route: window.location.pathname + window.location.search })}>{p.course.title}</Chip>);
+
+  return (
+    <>
+      {post.content && <ReelCaption text={post.content} />}
+      {chips.length > 0 && (
+        // Horizontal scroller: its touches must not reach the reel's
+        // vertical swipe handler on the page container.
+        <div className="mt-2 -mr-4 flex gap-2 overflow-x-auto no-scrollbar pr-4"
+          style={{ touchAction: 'pan-x' }}
+          onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          {chips}
+        </div>
+      )}
+    </>
   );
 }
 
