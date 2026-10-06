@@ -376,6 +376,44 @@ Deno.serve(async (req) => {
     // above (role names swapped: host earns here, not the metadata's
     // generic "worker"). Earnings are only ever created here, after Stripe
     // confirms payment — never at "Accept" or "terms agreed" time.
+    if (meta.charge_type === 'learning_course' || meta.charge_type === 'learning_live') {
+      if (!meta.ref_id || !meta.instructor_id || !meta.buyer_id) {
+        return new Response(JSON.stringify({ received: true, skipped: 'missing learning metadata' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      const isCourse = meta.charge_type === 'learning_course';
+      const gross = parseFloat(meta.gross_amount || '0');
+      const fee = parseFloat(meta.fee_amount || '0');
+      const net = parseFloat(meta.net_amount || '0');
+      const currency = meta.currency || 'CAD';
+      const stripeAvail = await fetchStripeAvailability(session.payment_intent);
+      const processed = await rpc('fn_finalize_learning_payment', {
+        p_idempotency_key: event.id,
+        p_kind: isCourse ? 'course' : 'live_session',
+        p_ref_id: meta.ref_id,
+        p_instructor_id: meta.instructor_id,
+        p_buyer_id: meta.buyer_id,
+        p_course_id: isCourse ? meta.course_id : null,
+        p_gross_amount: gross, p_fee_amount: fee, p_net_amount: net, p_currency: currency,
+        p_stripe_session_id: session.id,
+        p_stripe_payment_intent_id: session.payment_intent || null,
+        p_stripe_charge_id: stripeAvail.chargeId,
+        p_stripe_balance_transaction_id: stripeAvail.balanceTransactionId,
+        p_stripe_available_on: stripeAvail.availableOn,
+      });
+      if (processed) {
+        const what = meta.title || (isCourse ? 'your course' : 'your live session');
+        const buyer = await selectOne('profiles', `id=eq.${meta.buyer_id}`);
+        await insertNotification({ user_id: meta.instructor_id, actor_id: meta.buyer_id, actor_name: buyer?.name || 'A student', type: 'payment_received', title: `$${net.toFixed(2)} ${currency} added to your Filmons Wallet — ${what}`, is_read: false });
+        await insertNotification({ user_id: meta.buyer_id, actor_id: null, actor_name: 'Filmons', type: isCourse ? 'course_purchased' : 'live_session_confirmed', title: isCourse ? `You’re enrolled in ${what}` : `Your live session booking is confirmed — ${what}`, is_read: false });
+        const instructor = await selectOne('profiles', `id=eq.${meta.instructor_id}`);
+        if (instructor?.email) {
+          sendGenericNotificationEmail(instructor.email, instructor.name, 'You made a sale on Filmons Learning ✓',
+            `${buyer?.name || 'A student'} paid for "${what}". $${net.toFixed(2)} ${currency} (after the ${fee ? Math.round((fee / gross) * 100) : 8}% fee) is pending in your Filmons Wallet and becomes available after the standard hold.`).catch(() => {});
+        }
+      }
+      return new Response(JSON.stringify({ received: true, processed }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
     if (meta.charge_type === 'hire') {
       if (!meta.transaction_id || !meta.host_id || !meta.requester_id) {
         return new Response(JSON.stringify({ received: true, skipped: 'no transaction_id/host_id/requester_id' }), { headers: { ...cors, 'Content-Type': 'application/json' } });

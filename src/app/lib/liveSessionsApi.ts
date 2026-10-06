@@ -185,7 +185,7 @@ export async function getMyApplicationFor(sessionId: string, studentId: string):
   return data ? rowToApp(data) : null;
 }
 
-export async function applyToSession(session: LiveSession, studentId: string, input: { goals?: string; experience?: string; preferredDate?: string }): Promise<string | null> {
+export async function applyToSession(session: LiveSession, studentId: string, input: { goals?: string; experience?: string; preferredDate?: string }, actorName = 'A student'): Promise<string | null> {
   if (session.status !== 'published') return 'This session is not open for applications';
   if (session.instructorId === studentId) return 'You can’t apply to your own session';
   if (await getMyApplicationFor(session.id, studentId)) return 'You already have an application for this session';
@@ -193,7 +193,9 @@ export async function applyToSession(session: LiveSession, studentId: string, in
     session_id: session.id, student_id: studentId,
     goals: input.goals?.trim() || null, experience: input.experience?.trim() || null, preferred_date: input.preferredDate?.trim() || null,
   });
-  return error ? error.message : null;
+  if (error) return error.message;
+  notify(session.instructorId, studentId, actorName, 'live_session_application', `${actorName} applied for ${session.title}`).catch(() => {});
+  return null;
 }
 
 export async function getApplicationsForSession(sessionId: string): Promise<LiveApplication[]> {
@@ -214,11 +216,17 @@ export async function acceptApplication(app: LiveApplication, session: LiveSessi
     status: free ? 'confirmed' : 'awaiting_payment', scheduled_at: new Date(input.scheduledAt).toISOString(),
     fee: free ? 0 : input.fee, currency: input.currency, meeting_link: link || null, updated_at: new Date().toISOString(),
   }).eq('id', app.id).eq('status', 'applied');
-  return error ? error.message : null;
+  if (error) return error.message;
+  notify(app.studentId, session.instructorId, session.instructor?.name || 'Your instructor', free ? 'live_session_confirmed' : 'live_session_accepted',
+    free ? `Your booking for ${session.title} is confirmed` : `Accepted — pay to confirm your booking for ${session.title}`).catch(() => {});
+  return null;
 }
 
-export async function updateApplicationStatus(id: string, status: ApplicationStatus): Promise<boolean> {
+export async function updateApplicationStatus(id: string, status: ApplicationStatus, notifyStudent?: { studentId: string; instructorId: string; instructorName: string; title: string }): Promise<boolean> {
   const { error } = await supabase.from('live_session_applications').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+  if (!error && status === 'declined' && notifyStudent) {
+    notify(notifyStudent.studentId, notifyStudent.instructorId, notifyStudent.instructorName, 'live_session_declined', `Your application for ${notifyStudent.title} was declined`).catch(() => {});
+  }
   return !error;
 }
 
@@ -244,6 +252,10 @@ export async function getMyBookings(studentId: string): Promise<LiveApplication[
     // The meeting link only reaches the UI for a confirmed booking.
     return { ...a, session: s, meetingLink: a.status === 'confirmed' ? a.meetingLink : null };
   });
+}
+
+async function notify(userId: string, actorId: string | null, actorName: string, type: string, title: string) {
+  await supabase.from('notifications').insert({ user_id: userId, actor_id: actorId, actor_name: actorName, type, title, is_read: false });
 }
 
 export function joinLabel(p: MeetingPlatform) { return p === 'zoom' ? 'Join Zoom session' : 'Join Teams session'; }

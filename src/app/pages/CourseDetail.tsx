@@ -1,9 +1,8 @@
 // FILMONS Learning -- /learning/course/:courseId. Enrollment is real for
 // free courses (course_enrollments insert, gated by coursesApi's own
-// server-side price check); paid courses show an honest "coming soon"
-// state instead of a Buy button that would lead nowhere -- real one-time
-// checkout needs its own Stripe wiring (see stripe-charge/stripe-webhook,
-// built for a different flow) that's out of scope for this pass.
+// server-side price check); paid courses go through Stripe Checkout
+// (learning-charge), and stripe-webhook enrolls the student and deposits
+// the instructor's net earnings in their FILMONS Wallet.
 import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
@@ -26,6 +25,7 @@ import { SharePostSheet } from '../components/connect/SharePostSheet';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { learningLoginPath } from '../lib/learningAuth';
+import { startLearningCheckout, waitForPayment } from '../lib/learningCheckout';
 import { recordCourseView, isCourseSaved, setCourseSaved } from '../lib/topicsApi';
 import { useLearningBack } from '../lib/useLearningBack';
 import { learningServer, isItemDone, type Curriculum, type ViewerSection } from '../lib/learningServer';
@@ -86,6 +86,19 @@ export function CourseDetail() {
 
   const isOwn = !!user && !!course && user.id === course.instructorId;
 
+  // Back from Stripe (?paid=1): the webhook enrolls the student a moment later.
+  useEffect(() => {
+    if (!courseId || !user || new URLSearchParams(location.search).get('paid') !== '1') return;
+    toast.success('Payment received — unlocking your course…');
+    waitForPayment(async () => {
+      const cur = await learningServer.curriculum(courseId, user.id).catch(() => null);
+      if (cur?.access !== 'enrolled') return false;
+      setCurriculum(cur); setEnrolled(true); setSections(cur.sections ?? []);
+      toast.success('You’re enrolled!');
+      return true;
+    });
+  }, [courseId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollToTab = (id: string) => sectionRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -141,7 +154,12 @@ export function CourseDetail() {
 
   const handleEnroll = async () => {
     if (!user) { navigate(learningLoginPath(location.pathname + location.search)); return; }
-    if (!course.isFree && course.price > 0) { toast('Course checkout is coming soon', { description: 'Paid enrollment isn\'t live yet.' }); return; }
+    if (!course.isFree && course.price > 0) {
+      setEnrolling(true);
+      const err = await startLearningCheckout(user.id, { kind: 'course', courseId: course.id }, `${window.location.origin}${window.location.pathname}`);
+      if (err) { toast.error(err); setEnrolling(false); }
+      return;
+    }
     setEnrolling(true);
     const ok = await enrollInFreeCourse(user.id, course.id);
     setEnrolling(false);

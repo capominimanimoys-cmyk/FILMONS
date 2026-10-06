@@ -94,7 +94,7 @@ function AppCard({ app, session, onChanged }: { app: LiveApplication; session: L
     toast.success(fee > 0 ? 'Accepted — the student can now pay to confirm' : 'Booking confirmed');
     setAccepting(false); onChanged();
   };
-  const decline = async () => { (await updateApplicationStatus(app.id, 'declined')) ? onChanged() : toast.error('Could not decline'); };
+  const decline = async () => { (await updateApplicationStatus(app.id, 'declined', { studentId: app.studentId, instructorId: session.instructorId, instructorName: session.instructor?.name || 'Your instructor', title: session.title })) ? onChanged() : toast.error('Could not decline'); };
   const saveLink = async () => { const e = await setApplicationLink(app.id, link); e ? toast.error(e) : (toast.success('Meeting link saved'), onChanged()); };
 
   return (

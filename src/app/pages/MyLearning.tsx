@@ -17,6 +17,7 @@ import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { CourseCard } from '../components/courses/CourseCard';
 import { EmptyState, LearningPage, ListSkeleton, PageTitle, SignInPrompt } from '../components/learning/LearningPageParts';
 import { PostMoreMenu } from '../components/connect/PostMoreMenu';
+import { startLearningCheckout, waitForPayment } from '../lib/learningCheckout';
 import { PLATFORM_LABEL, formatFee, getMyBookings, joinLabel, type LiveApplication } from '../lib/liveSessionsApi';
 import { DeleteCourseSheet } from '../components/learning/DeleteCourseSheet';
 
@@ -106,8 +107,9 @@ const BOOKING_STATUS: Record<string, { label: string; cls: string }> = {
   cancelled: { label: 'Cancelled', cls: 'bg-gray-100 text-gray-500' },
 };
 
-function LiveBookingRow({ b }: { b: LiveApplication }) {
+function LiveBookingRow({ b, userId }: { b: LiveApplication; userId: string }) {
   const navigate = useNavigate();
+  const [paying, setPaying] = useState(false);
   const s = b.session;
   if (!s) return null;
   const st = BOOKING_STATUS[b.status] ?? BOOKING_STATUS.applied;
@@ -125,7 +127,11 @@ function LiveBookingRow({ b }: { b: LiveApplication }) {
       </button>
       {b.scheduledAt && <p className="mt-2 text-xs font-semibold text-gray-700">{new Date(b.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: s.timezone || undefined })} ({s.timezone}) · {formatFee(b.fee, b.currency)}</p>}
       {b.status === 'awaiting_payment' && (
-        <button onClick={() => toast('Session checkout is coming soon', { description: 'Paid bookings can’t be paid for yet.' })} className="mt-2 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white">Pay {formatFee(b.fee, b.currency)} to confirm</button>
+        <button disabled={paying} onClick={async () => {
+          setPaying(true);
+          const err = await startLearningCheckout(userId, { kind: 'live_session', applicationId: b.id }, `${window.location.origin}${window.location.pathname}?tab=live`);
+          if (err) { toast.error(err); setPaying(false); }
+        }} className="mt-2 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white disabled:opacity-60">{paying ? 'Opening checkout…' : `Pay ${formatFee(b.fee, b.currency)} to confirm`}</button>
       )}
       {b.status === 'confirmed' && (b.meetingLink ? (
         <a href={b.meetingLink} target="_blank" rel="noopener noreferrer" className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white"><Video className="h-4 w-4" /> {joinLabel(s.platform)}</a>
@@ -141,6 +147,16 @@ export function MyLearning() {
   const [tab, setTab] = useState<Tab>(qs.get('tab') === 'live' ? 'live' : 'progress');
   const [bookings, setBookings] = useState<LiveApplication[] | null>(null);
   useEffect(() => { if (user) getMyBookings(user.id).then(setBookings).catch(() => setBookings([])); }, [user?.id]);
+  // Back from Stripe: the webhook confirms the booking a moment later.
+  useEffect(() => {
+    if (!user || qs.get('paid') !== '1') return;
+    toast.success('Payment received — confirming your booking…');
+    waitForPayment(async () => {
+      const list = await getMyBookings(user.id);
+      setBookings(list);
+      return !list.some(x => x.status === 'awaiting_payment');
+    });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [enrolled, setEnrolled] = useState<EnrolledCourse[] | null>(null);
   const [saved, setSaved] = useState<Course[] | null>(null);
   const [trust, setTrust] = useState<Map<string, TrustLevel>>(new Map());
@@ -182,7 +198,7 @@ export function MyLearning() {
       {tab === 'live' ? (
         bookings === null ? <ListSkeleton rows={3} /> : bookings.length === 0 ? (
           <EmptyState icon={<Radio className="h-9 w-9" />} title="No live sessions yet" body="Apply for a live session and your bookings will appear here." />
-        ) : <div className="max-w-2xl space-y-3">{bookings.map(b => <LiveBookingRow key={b.id} b={b} />)}</div>
+        ) : <div className="max-w-2xl space-y-3">{bookings.map(b => <LiveBookingRow key={b.id} b={b} userId={user.id} />)}</div>
       ) : tab === 'saved' ? (
         saved === null ? <ListSkeleton rows={4} /> : saved.length === 0 ? (
           <EmptyState icon={<Bookmark className="h-9 w-9" />} title="No saved courses"
