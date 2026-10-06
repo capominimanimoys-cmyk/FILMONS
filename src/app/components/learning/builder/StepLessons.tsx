@@ -18,6 +18,7 @@ import {
   courseVideoSeconds, duplicateItem, formatDuration, formatDurationWords, newQuiz, newSection, newVideo, quizProblems, videoLessonState,
   type CourseDoc, type DocItem, type DocSection,
 } from '../../../lib/courseBuilder';
+import { BottomSheet, SheetAction } from '../../BottomSheet';
 import { Card, ConfirmDialog, StatusPill, StepHeading, inputCls } from './BuilderUI';
 import { VideoLessonEditor } from './VideoLessonEditor';
 import { QuizEditor } from './QuizEditor';
@@ -291,31 +292,23 @@ function OutlineItem({ item, index, count, sections, sectionId, onUp, onDown, on
       <div className="flex shrink-0 items-center">
         <button type="button" onClick={onUp} disabled={index === 0 || locked} aria-label="Move up" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
         <button type="button" onClick={onDown} disabled={index === count - 1 || locked} aria-label="Move down" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
-        <div className="relative">
-          <button type="button" onClick={() => setMenu(m => !m)} aria-label="More actions" aria-expanded={menu} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"><MoreHorizontal className="h-4 w-4" /></button>
-          {menu && (
-            <>
-              <div className="fixed inset-0 z-20" onClick={() => setMenu(false)} />
-              <div className="absolute right-0 top-9 z-30 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-xl">
-                <MenuButton icon={Pencil} label="Edit" onClick={() => { setMenu(false); onEdit(); }} />
-                {item.kind !== 'legacy' && !locked && <MenuButton icon={Copy} label="Duplicate" onClick={() => { setMenu(false); onDuplicate(); }} />}
-                {!locked && sections.filter(s => s.id !== sectionId).map(s => (
-                  <MenuButton key={s.id} icon={MoveRight} label={`Move to “${s.title || 'Untitled section'}”`} onClick={() => { setMenu(false); onMoveTo(s.id); }} />
-                ))}
-                <MenuButton icon={Trash2} label="Delete" destructive onClick={() => { setMenu(false); onDelete(); }} />
-              </div>
-            </>
-          )}
-        </div>
+        <button type="button" onClick={() => setMenu(true)} aria-label="More actions" aria-expanded={menu} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"><MoreHorizontal className="h-4 w-4" /></button>
+        {/* Bottom sheet (portaled to <body>) instead of an absolutely
+            positioned dropdown -- the dropdown was clipped by the section
+            card's overflow. */}
+        {menu && (
+          <BottomSheet title={item.title || (item.kind === 'quiz' ? 'Untitled quiz' : 'Untitled lesson')} onClose={() => setMenu(false)}>
+            <div className="py-1">
+              <SheetAction icon={Pencil} label="Edit" onClick={() => { setMenu(false); onEdit(); }} />
+              {item.kind !== 'legacy' && !locked && <SheetAction icon={Copy} label="Duplicate" onClick={() => { setMenu(false); onDuplicate(); }} />}
+              {!locked && sections.filter(s => s.id !== sectionId).map(s => (
+                <SheetAction key={s.id} icon={MoveRight} label={`Move to “${s.title || 'Untitled section'}”`} onClick={() => { setMenu(false); onMoveTo(s.id); }} />
+              ))}
+              <SheetAction icon={Trash2} label="Delete" destructive onClick={() => { setMenu(false); onDelete(); }} />
+            </div>
+          </BottomSheet>
+        )}
       </div>
     </li>
-  );
-}
-
-function MenuButton({ icon: Icon, label, onClick, destructive }: { icon: any; label: string; onClick: () => void; destructive?: boolean }) {
-  return (
-    <button type="button" onClick={onClick} className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-semibold ${destructive ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'}`}>
-      <Icon className="h-4 w-4 shrink-0" /> <span className="truncate">{label}</span>
-    </button>
   );
 }
