@@ -11,6 +11,7 @@ import {
   setLiveSessionStatus, setSessionLink, updateApplicationStatus, type LiveApplication, type LiveSession,
 } from '../lib/liveSessionsApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { Field, inputCls } from '../components/learning/builder/BuilderUI';
 import { EmptyState, LearningPage, SignInPrompt, timeAgo } from '../components/learning/LearningPageParts';
 
@@ -39,7 +40,7 @@ export function LiveSessionManage() {
   useEffect(() => { load(); }, [load]);
 
   if (!user) return <LearningPage><SignInPrompt message="Log in to manage your live session." /></LearningPage>;
-  if (s === undefined) return <div className="flex items-center justify-center gap-2 py-32 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>;
+  if (s === undefined) return <FilmonsBrandLoader size="lg" label="Loading session" className="py-32" />;
   if (s === null) return <LearningPage><EmptyState icon={<Radio className="h-9 w-9" />} title="Live session not found" body="It may belong to another instructor." /></LearningPage>;
 
   const toggle = async () => {

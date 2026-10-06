@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { getCourse, getCourseReviews, type Course, type CourseReview } from '../lib/coursesApi';
 import { builderApi, type CourseEarnings, type CourseStudent } from '../lib/courseBuilder';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { ConfirmDialog } from '../components/learning/builder/BuilderUI';
 import { EmptyState, LearningPage, SignInPrompt, plural, timeAgo } from '../components/learning/LearningPageParts';
 
@@ -43,7 +44,7 @@ export function CourseManage() {
   useEffect(() => { load(); }, [load]);
 
   if (!user) return <LearningPage><SignInPrompt message="Log in to manage your course." /></LearningPage>;
-  if (course === undefined) return <div className="flex items-center justify-center gap-2 py-32 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading course…</div>;
+  if (course === undefined) return <FilmonsBrandLoader size="lg" label="Loading course" className="py-32" />;
   if (course === null) return <LearningPage><EmptyState icon={<Eye className="h-9 w-9" />} title="Course not found" body="It may have been deleted, or it belongs to another instructor." /></LearningPage>;
 
   const status = STATUS[course.status] ?? STATUS.draft;
