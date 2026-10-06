@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, Check, Clock, Globe, Loader2, MessageCircle, Radio, Users, Video } from 'lucide-react';
+import { ArrowLeft, Check, Clock, Globe, Loader2, MessageCircle, Radio, Share2, Users, Video } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { learningLoginPath } from '../lib/learningAuth';
@@ -59,6 +59,7 @@ export function LiveSessionDetail() {
       <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-gray-100 bg-white/90 px-4 py-3 backdrop-blur-sm">
         <button onClick={goBack} aria-label="Back" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"><ArrowLeft className="h-4 w-4 text-gray-700" /></button>
         <p className="flex-1 truncate text-sm font-bold text-gray-900">Live session</p>
+        <button onClick={() => navigate(`/live/${s.id}/share-card`)} aria-label="Share card" title="Share card" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"><Share2 className="h-4 w-4 text-gray-700" /></button>
       </div>
       <div className="lg:mx-auto lg:max-w-3xl">
         <div className="aspect-video w-full bg-gray-900">

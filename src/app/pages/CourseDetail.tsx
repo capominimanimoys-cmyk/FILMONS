@@ -9,7 +9,7 @@ import { useParams, useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Star, Users, Play, ChevronDown, ChevronUp, FileText, ClipboardCheck, Award,
-  Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2, Send, Bookmark,
+  Image as ImageIcon, Link as LinkIcon, Download, BadgeCheck, X, CheckCircle2, Send, Share2, Bookmark,
 } from 'lucide-react';
 import {
   getCourse, enrollInFreeCourse, getCourseReviews, submitCourseReview,
@@ -203,7 +203,10 @@ export function CourseDetail() {
           className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
           <Bookmark className={`w-4 h-4 ${saved ? 'text-blue-600 fill-blue-600' : 'text-gray-700'}`} />
         </button>
-        <button onClick={() => setShowShareSheet(true)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
+        <button onClick={() => navigate(`/course/${course.id}/share-card`)} aria-label="Share card" title="Share card" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
+          <Share2 className="w-4 h-4 text-gray-700" />
+        </button>
+        <button onClick={() => setShowShareSheet(true)} aria-label="Send in message" title="Send in message" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 shrink-0">
           <Send className="w-4 h-4 text-gray-700" />
         </button>
       </div>
