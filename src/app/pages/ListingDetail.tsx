@@ -551,7 +551,7 @@ export function ListingDetail() {
                   </button>
                 </div>
               )}
-              {listing.tags && listing.tags.length > 0 && (
+              {Array.isArray(listing.tags) && listing.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {listing.tags.map(tag => (
                     <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{tag.replace(/_/g, ' ')}</span>
@@ -618,7 +618,7 @@ export function ListingDetail() {
                       <Award className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
                       <div><p className="font-semibold text-gray-800 text-sm mb-0.5">Experience</p><p className="text-sm text-gray-600 capitalize">{listing.opportunity.experienceLevel || 'Any level'}</p></div>
                     </div>
-                    {listing.opportunity.skills && listing.opportunity.skills.length > 0 && (
+                    {Array.isArray(listing.opportunity.skills) && listing.opportunity.skills.length > 0 && (
                       <div className="flex gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Award className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
                         <div><p className="font-semibold text-gray-800 text-sm mb-1">Skills</p>
@@ -665,16 +665,16 @@ export function ListingDetail() {
             )}
 
             {/* ── Pricing packages (service) ── */}
-            {listing.pricingPackages && listing.pricingPackages.length > 0 && (
+            {Array.isArray(listing.pricingPackages) && listing.pricingPackages.length > 0 && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-3">Packages</h2>
                 <div className="grid gap-3">
-                  {listing.pricingPackages.map((pkg, i) => (
+                  {listing.pricingPackages.filter(Boolean).map((pkg, i) => (
                     <div key={i} className={`p-4 rounded-2xl border-2 ${pkg.tier === 'deluxe' ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'}`}>
                       <div className="flex items-start justify-between">
                         <div>
                           <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${pkg.tier === 'deluxe' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                            {pkg.tier.charAt(0).toUpperCase() + pkg.tier.slice(1)}
+                            {pkg.tier ? pkg.tier.charAt(0).toUpperCase() + pkg.tier.slice(1) : `Package ${i + 1}`}
                           </span>
                           {pkg.name && <p className="font-bold text-gray-900 mt-1.5">{pkg.name}</p>}
                           {pkg.description && <p className="text-sm text-gray-600 mt-1">{pkg.description}</p>}
