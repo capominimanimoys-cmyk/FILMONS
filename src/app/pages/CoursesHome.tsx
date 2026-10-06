@@ -9,7 +9,6 @@
 // awkward placeholder for missing data.
 import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
 import { useNavigate } from 'react-router';
 import {
   Search, ChevronRight, GraduationCap, ArrowRight, PlayCircle,
@@ -349,9 +348,8 @@ export function CoursesHome() {
         )}
       </div>
       {createChooser && <CreateTypeChooser onClose={() => setCreateChooser(false)} onSelect={t => {
-        if (t === 'live') { toast('Live sessions are coming soon'); return; }
         setCreateChooser(false);
-        navigate('/create');
+        navigate(t === 'live' ? '/create/live' : '/create');
       }} />}
     </div>
   );

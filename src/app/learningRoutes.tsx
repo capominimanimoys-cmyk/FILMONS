@@ -6,6 +6,9 @@ import { CourseBuilder, CreateCourseStart } from './pages/CourseBuilder';
 import { CourseManage } from './pages/CourseManage';
 import { CertificatePage } from './pages/CertificatePage';
 import { CourseDetail } from './pages/CourseDetail';
+import { LiveSessionBuilder } from './pages/LiveSessionBuilder';
+import { LiveSessionDetail } from './pages/LiveSessionDetail';
+import { LiveSessionManage } from './pages/LiveSessionManage';
 import { CourseContent } from './pages/CourseContent';
 import { LearningPlayer } from './pages/LearningPlayer';
 import { LearningLogin } from './pages/LearningLogin';
@@ -37,6 +40,9 @@ const learningRouteTree = [
       { path: 'profile', Component: LearningProfile },
       { path: 'instructor', Component: InstructorDashboard },
       { path: 'create', Component: CreateCourseStart },
+      { path: 'create/live', Component: LiveSessionBuilder },
+      { path: 'live/:sessionId', Component: LiveSessionDetail },
+      { path: 'instructor/live/:sessionId', Component: LiveSessionManage },
       { path: 'instructor/course/:courseId', Component: CourseManage },
       { path: 'instructor/course/:courseId/edit', Component: CourseBuilder },
       { path: 'course/:courseId', Component: CourseDetail },

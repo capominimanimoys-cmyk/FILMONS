@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
-  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Star, Users,
+  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Radio, Star, Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
@@ -20,6 +20,7 @@ import { getSavedCourses } from '../lib/topicsApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
+import { getLiveSessionsByInstructor, type LiveSession } from '../lib/liveSessionsApi';
 import { MyCourseRow } from './MyLearning';
 import type { Notification } from '../types';
 import {
@@ -205,10 +206,11 @@ export function InstructorDashboard() {
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [reviews, setReviews] = useState<InstructorReview[] | null>(null);
   const [chooser, setChooser] = useState(false);
+  const [live, setLive] = useState<LiveSession[]>([]);
+  useEffect(() => { if (user) getLiveSessionsByInstructor(user.id).then(setLive).catch(() => {}); }, [user?.id]);
   const onCreateType = (t: CreateType) => {
-    if (t === 'live') { toast('Live sessions are coming soon'); return; }
     setChooser(false);
-    navigate('/create');
+    navigate(t === 'live' ? '/create/live' : '/create');
   };
   const load = () => { if (user) getCoursesByInstructor(user.id).then(setCourses).catch(() => setCourses([])); };
   useEffect(load, [user?.id]);
@@ -262,6 +264,20 @@ export function InstructorDashboard() {
           body="Turn your experience into a course creators can learn from." />
       ) : (
         <div className="max-w-2xl space-y-3">{courses.map(c => <MyCourseRow key={c.id} course={c} onChanged={load} />)}</div>
+      )}
+
+      {live.length > 0 && (
+        <div className="mt-10">
+          <SectionTitle title="Live sessions" subtitle={plural(live.length, 'session')} />
+          <div className="max-w-2xl space-y-2">
+            {live.map(l => (
+              <button key={l.id} data-pop onClick={() => navigate(`/instructor/live/${l.id}`)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left hover:bg-gray-50">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100">{l.coverUrl ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" /> : <Radio className="h-5 w-5 text-gray-400" />}</div>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-gray-900">{l.title}</p><p className="text-xs text-gray-400">{l.status === 'published' ? 'Published' : 'Unpublished'} · {l.isFree ? 'Free' : `${l.currency} ${l.price.toFixed(2)}`}</p></div>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="mt-10">
