@@ -126,6 +126,7 @@ export function LiveSessionDetail() {
 
 function ApplySheet({ session, studentId, onClose, onDone }: { session: LiveSession; studentId: string; onClose: () => void; onDone: () => void }) {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const [goals, setGoals] = useState('');
   const [experience, setExperience] = useState('');
   const [date, setDate] = useState('');
@@ -137,7 +138,7 @@ function ApplySheet({ session, studentId, onClose, onDone }: { session: LiveSess
     if (q.goals && !goals.trim()) { toast.error('Tell the instructor your learning goals'); return; }
     if (q.experience && !experience) { toast.error('Choose your experience level'); return; }
     setBusy(true);
-    const err = await applyToSession(session, studentId, { goals, experience, preferredDate: date });
+    const err = await applyToSession(session, studentId, { goals, experience, preferredDate: date }, user?.name || 'A student');
     setBusy(false);
     if (err) { toast.error(err); return; }
     onDone();

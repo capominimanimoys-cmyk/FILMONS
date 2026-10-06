@@ -65,6 +65,11 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'creator_liked':             return `${actorName} liked your profile`;
     case 'followed_creator_posted':   return `${actorName} posted a new listing`;
     case 'course_published':          return `${actorName} published a new course`;
+    case 'course_purchased':          return 'You’re enrolled in your new course';
+    case 'live_session_application':  return `${actorName} applied for your live session`;
+    case 'live_session_accepted':     return 'Your live session application was accepted';
+    case 'live_session_declined':     return 'Your live session application was declined';
+    case 'live_session_confirmed':    return 'Your live session booking is confirmed';
     case 'message_request_accepted':  return `${actorName} accepted your message request`;
     case 'payment_received':    return `Payment received from ${actorName}`;
     case 'payment_released':    return 'Your payment has been released';

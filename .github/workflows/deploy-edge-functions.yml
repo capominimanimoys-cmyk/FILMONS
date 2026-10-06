@@ -63,6 +63,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Deploy learning-charge
+        run: supabase functions deploy learning-charge --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Deploy stripe-webhook
         run: supabase functions deploy stripe-webhook --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:

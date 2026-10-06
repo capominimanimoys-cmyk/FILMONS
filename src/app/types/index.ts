@@ -516,7 +516,8 @@ export type NotificationType =
   // Portfolio
   | 'portfolio_view'
   // Learning
-  | 'course_published'
+  | 'course_published' | 'course_purchased'
+  | 'live_session_application' | 'live_session_accepted' | 'live_session_declined' | 'live_session_confirmed'
   // System
   | 'account_verified' | 'account_warning' | 'system_announcement' | 'system_notification';
 

@@ -28,7 +28,7 @@ import {
 } from '../components/learning/LearningPageParts';
 
 // ── Notifications ───────────────────────────────────────────────────────
-const LEARNING_TYPES = new Set(['course_published']);
+const LEARNING_TYPES = new Set(['course_published', 'course_purchased', 'live_session_application', 'live_session_accepted', 'live_session_declined', 'live_session_confirmed', 'payment_received']);
 
 export function LearningNotifications() {
   const navigate = useNavigate();
