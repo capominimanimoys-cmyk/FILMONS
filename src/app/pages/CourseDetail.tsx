@@ -305,6 +305,9 @@ export function CourseDetail() {
                 {enrolling ? 'Enrolling…' : 'Enroll now'}
               </button>
             )}
+            <button onClick={() => navigate(`/course/${course.id}/share-card`)} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-gray-200 bg-white text-sm font-bold text-gray-700 hover:bg-gray-50">
+              <Share2 className="w-4 h-4" /> Share course
+            </button>
           </div>
 
           {/* Tabs -- anchor-scroll rather than swap panels, so the page
