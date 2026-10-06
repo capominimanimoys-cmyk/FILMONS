@@ -6,7 +6,7 @@ import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { Bookmark, GraduationCap, Radio, Video, Pencil, Settings2, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Bookmark, ExternalLink, GraduationCap, Radio, Share2, Video, Pencil, Settings2, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
   getMyEnrollments,
@@ -30,22 +30,32 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
 
 function EnrolledRow({ course }: { course: EnrolledCourse }) {
   const navigate = useNavigate();
+  const [menu, setMenu] = useState(false);
   return (
-    <button data-pop onClick={() => navigate(`/course/${course.id}`)} className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3 text-left">
-      <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-        <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} play={false} fallback={<div className="w-full h-full flex items-center justify-center text-xl">🎬</div>} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-gray-900 truncate">{course.title}</p>
-        <p className="text-xs text-gray-400 truncate">{course.instructor?.name}</p>
-        <div className="flex items-center gap-2 mt-1.5">
-          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-600 rounded-full" style={{ width: `${course.progressPercent}%` }} />
-          </div>
-          <span className="text-[10px] font-bold text-gray-400 shrink-0">{course.progressPercent}%</span>
+    <div data-pop className="w-full flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-3">
+      <button onClick={() => navigate(`/course/${course.id}`)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+          <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} play={false} fallback={<div className="w-full h-full flex items-center justify-center text-xl">🎬</div>} />
         </div>
-      </div>
-    </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">{course.title}</p>
+          <p className="text-xs text-gray-400 truncate">{course.instructor?.name}</p>
+          <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${course.progressPercent}%` }} />
+            </div>
+            <span className="text-[10px] font-bold text-gray-400 shrink-0">{course.progressPercent}%</span>
+          </div>
+        </div>
+      </button>
+      <button onClick={() => setMenu(true)} aria-label="Course options" className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"><MoreHorizontal className="w-4 h-4" /></button>
+      {menu && (
+        <PostMoreMenu onClose={() => setMenu(false)} actions={[
+          { icon: ExternalLink, label: 'Open course', onClick: () => { setMenu(false); navigate(`/course/${course.id}`); } },
+          { icon: Share2, label: 'Share course', onClick: () => { setMenu(false); navigate(`/course/${course.id}/share-card`); } },
+        ]} />
+      )}
+    </div>
   );
 }
 
@@ -79,6 +89,7 @@ export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: 
           actions={[
             { icon: Settings2, label: 'Manage course', onClick: () => { setMenuOpen(false); navigate(`/instructor/course/${course.id}`); } },
             { icon: Pencil, label: 'Edit course', onClick: () => { setMenuOpen(false); navigate(`/instructor/course/${course.id}/edit?step=1`); } },
+            { icon: Share2, label: 'Share course', onClick: () => { setMenuOpen(false); navigate(`/course/${course.id}/share-card`); } },
           ]}
           destructiveActions={[{ icon: Trash2, label: 'Delete course', onClick: () => { setMenuOpen(false); setConfirmDelete(true); } }]}
         />
@@ -110,12 +121,14 @@ const BOOKING_STATUS: Record<string, { label: string; cls: string }> = {
 function LiveBookingRow({ b, userId }: { b: LiveApplication; userId: string }) {
   const navigate = useNavigate();
   const [paying, setPaying] = useState(false);
+  const [menu, setMenu] = useState(false);
   const s = b.session;
   if (!s) return null;
   const st = BOOKING_STATUS[b.status] ?? BOOKING_STATUS.applied;
   return (
     <div data-pop className="rounded-2xl border border-gray-100 bg-white p-3.5">
-      <button onClick={() => navigate(`/live/${s.id}`)} className="flex w-full items-center gap-3 text-left">
+      <div className="flex items-center gap-1">
+      <button onClick={() => navigate(`/live/${s.id}`)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100">
           {s.coverUrl ? <img src={s.coverUrl} alt="" className="h-full w-full object-cover" /> : <Radio className="h-5 w-5 text-gray-400" />}
         </div>
@@ -125,6 +138,14 @@ function LiveBookingRow({ b, userId }: { b: LiveApplication; userId: string }) {
           <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</span>
         </div>
       </button>
+      <button onClick={() => setMenu(true)} aria-label="Live session options" className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"><MoreHorizontal className="w-4 h-4" /></button>
+      </div>
+      {menu && (
+        <PostMoreMenu onClose={() => setMenu(false)} actions={[
+          { icon: ExternalLink, label: 'View session', onClick: () => { setMenu(false); navigate(`/live/${s.id}`); } },
+          { icon: Share2, label: 'Share live session', onClick: () => { setMenu(false); navigate(`/live/${s.id}/share-card`); } },
+        ]} />
+      )}
       {b.scheduledAt && <p className="mt-2 text-xs font-semibold text-gray-700">{new Date(b.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: s.timezone || undefined })} ({s.timezone}) · {formatFee(b.fee, b.currency)}</p>}
       {b.status === 'awaiting_payment' && (
         <button disabled={paying} onClick={async () => {
