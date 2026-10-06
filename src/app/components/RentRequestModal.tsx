@@ -44,7 +44,7 @@ export function RentRequestModal({ listing, host, onClose }: RentRequestModalPro
 
   const isService  = listing.listingType === 'service';
   const isSale     = listing.listingMode === 'sale';
-  const hasPackages = isService && listing.pricingPackages && listing.pricingPackages.length > 0;
+  const hasPackages = isService && Array.isArray(listing.pricingPackages) && listing.pricingPackages.length > 0;
 
   const requestLabel = isService ? 'Service Request' : isSale ? 'Purchase Request' : 'Rental Request';
   const actionLabel  = isService ? 'Book Service'    : isSale ? 'Request to Buy'   : 'Request to Rent';
