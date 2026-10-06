@@ -6,12 +6,13 @@ import { CourseCover } from '../components/courses/CourseCover';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { Award, CheckCircle2, ExternalLink, Eye, Loader2, Pencil, RotateCcw, Sparkles, Star, Users, Wallet } from 'lucide-react';
+import { Award, CheckCircle2, ExternalLink, Eye, Loader2, MoreHorizontal, Pencil, RotateCcw, Share2, Sparkles, Star, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getCourse, getCourseReviews, type Course, type CourseReview } from '../lib/coursesApi';
 import { builderApi, type CourseEarnings, type CourseStudent } from '../lib/courseBuilder';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { PostMoreMenu } from '../components/connect/PostMoreMenu';
 import { ConfirmDialog } from '../components/learning/builder/BuilderUI';
 import { EmptyState, LearningPage, SignInPrompt, plural, timeAgo } from '../components/learning/LearningPageParts';
 
@@ -33,6 +34,7 @@ export function CourseManage() {
   const [tab, setTab] = useState<Tab>('students');
   const [confirm, setConfirm] = useState<'unpublish' | 'discard' | null>(null);
   const [busy, setBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!courseId || !user) return;
@@ -75,7 +77,7 @@ export function CourseManage() {
         </div>
       )}
 
-      <div data-pop className="flex flex-col gap-4 rounded-3xl border border-gray-100 bg-white p-4 sm:flex-row sm:items-center sm:p-5">
+      <div data-pop className="relative flex flex-col gap-4 rounded-3xl border border-gray-100 bg-white p-4 sm:static sm:flex-row sm:items-center sm:p-5">
         <div className="aspect-video w-full shrink-0 overflow-hidden rounded-2xl bg-gray-100 sm:w-44">
           <CourseCover imageUrl={course.coverUrl} videoUrl={course.coverVideoUrl} play={false} />
         </div>
@@ -90,6 +92,14 @@ export function CourseManage() {
             {course.publishedAt ? ` · published ${timeAgo(course.publishedAt)}` : ''}
           </p>
         </div>
+        <button onClick={() => setMenuOpen(true)} aria-label="Course options" className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 sm:static sm:shrink-0"><MoreHorizontal className="h-4 w-4" /></button>
+        {menuOpen && (
+          <PostMoreMenu onClose={() => setMenuOpen(false)} actions={[
+            { icon: Eye, label: 'View course', onClick: () => { setMenuOpen(false); navigate(`/course/${course.id}`); } },
+            { icon: Pencil, label: 'Edit course', onClick: () => { setMenuOpen(false); navigate(`/instructor/course/${course.id}/edit?step=1`); } },
+            { icon: Share2, label: 'Share course', onClick: () => { setMenuOpen(false); navigate(`/course/${course.id}/share-card`); } },
+          ]} />
+        )}
       </div>
 
       <div data-pop className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">

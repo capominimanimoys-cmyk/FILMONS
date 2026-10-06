@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { Loader2, Radio } from 'lucide-react';
+import { ExternalLink, EyeOff, Eye, Loader2, MoreHorizontal, Radio, Share2 } from 'lucide-react';
+import { PostMoreMenu } from '../components/connect/PostMoreMenu';
 import { useAuth } from '../context/AuthContext';
 import {
   PLATFORM_LABEL, acceptApplication, formatFee, getApplicationsForSession, getLiveSession, getSessionLinkForInstructor, setApplicationLink,
@@ -28,6 +29,7 @@ export function LiveSessionManage() {
   const [s, setS] = useState<LiveSession | null | undefined>(undefined);
   const [apps, setApps] = useState<LiveApplication[] | null>(null);
   const [defaultLink, setDefaultLink] = useState('');
+  const [menu, setMenu] = useState(false);
 
   const load = useCallback(async () => {
     if (!sessionId || !user) return;
@@ -51,8 +53,16 @@ export function LiveSessionManage() {
 
   return (
     <LearningPage>
-      <div data-pop className="rounded-3xl border border-gray-100 bg-white p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-2">
+      <div data-pop className="relative rounded-3xl border border-gray-100 bg-white p-4 sm:p-5">
+        <button onClick={() => setMenu(true)} aria-label="Live session options" className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"><MoreHorizontal className="h-4 w-4" /></button>
+        {menu && (
+          <PostMoreMenu onClose={() => setMenu(false)} actions={[
+            { icon: ExternalLink, label: 'View session', onClick: () => { setMenu(false); navigate(`/live/${s.id}`); } },
+            { icon: Share2, label: 'Share live session', onClick: () => { setMenu(false); navigate(`/live/${s.id}/share-card`); } },
+            { icon: s.status === 'published' ? EyeOff : Eye, label: s.status === 'published' ? 'Unpublish' : 'Publish again', onClick: () => { setMenu(false); toggle(); } },
+          ]} />
+        )}
+        <div className="flex flex-wrap items-center gap-2 pr-10">
           <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${s.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{s.status === 'published' ? 'Published' : 'Unpublished'}</span>
           <span className="text-xs text-gray-500">{s.format === 'one_to_one' ? 'One-to-one' : `Small group · ${s.maxParticipants}`} · {s.durationMinutes} min · {PLATFORM_LABEL[s.platform]}</span>
         </div>

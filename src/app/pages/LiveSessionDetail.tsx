@@ -3,16 +3,18 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft, Check, Clock, Globe, Loader2, MessageCircle, Radio, Share2, Users, Video } from 'lucide-react';
+import { ArrowLeft, Check, Clock, Globe, Copy, Loader2, MessageCircle, MoreHorizontal, Radio, Settings2, Share2, Users, Video } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { learningLoginPath } from '../lib/learningAuth';
 import { useLearningBack } from '../lib/useLearningBack';
+import { learningOrigin } from '../lib/learningOrigin';
 import { DAY_LABEL, PLATFORM_LABEL, applyToSession, formatFee, getLiveSession, getMyApplicationFor, type LiveApplication, type LiveSession } from '../lib/liveSessionsApi';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { BottomSheet } from '../components/BottomSheet';
 import { useIsMobile } from '../components/ui/use-mobile';
 import { createPortal } from 'react-dom';
+import { PostMoreMenu } from '../components/connect/PostMoreMenu';
 import { Field, inputCls } from '../components/learning/builder/BuilderUI';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 
@@ -31,6 +33,7 @@ export function LiveSessionDetail() {
   const [s, setS] = useState<LiveSession | null | undefined>(undefined);
   const [mine, setMine] = useState<LiveApplication | null>(null);
   const [applying, setApplying] = useState(false);
+  const [menu, setMenu] = useState(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -59,8 +62,15 @@ export function LiveSessionDetail() {
       <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-gray-100 bg-white/90 px-4 py-3 backdrop-blur-sm">
         <button onClick={goBack} aria-label="Back" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"><ArrowLeft className="h-4 w-4 text-gray-700" /></button>
         <p className="flex-1 truncate text-sm font-bold text-gray-900">Live session</p>
-        <button onClick={() => navigate(`/live/${s.id}/share-card`)} aria-label="Share card" title="Share card" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"><Share2 className="h-4 w-4 text-gray-700" /></button>
+        <button onClick={() => setMenu(true)} aria-label="Live session options" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"><MoreHorizontal className="h-4 w-4 text-gray-700" /></button>
       </div>
+      {menu && (
+        <PostMoreMenu onClose={() => setMenu(false)} actions={[
+          { icon: Share2, label: 'Share live session', onClick: () => { setMenu(false); navigate(`/live/${s.id}/share-card`); } },
+          { icon: Copy, label: 'Copy link', onClick: () => { setMenu(false); navigator.clipboard.writeText(`${learningOrigin()}/live/${s.id}`).then(() => toast.success('Link copied!'), () => toast.error('Could not copy the link')); } },
+          ...(isOwn ? [{ icon: Settings2, label: 'Manage applications', onClick: () => { setMenu(false); navigate(`/instructor/live/${s.id}`); } }] : []),
+        ]} />
+      )}
       <div className="lg:mx-auto lg:max-w-3xl">
         <div className="aspect-video w-full bg-gray-900">
           {s.coverUrl ? <img src={s.coverUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-white/70"><Radio className="h-10 w-10" /></div>}
