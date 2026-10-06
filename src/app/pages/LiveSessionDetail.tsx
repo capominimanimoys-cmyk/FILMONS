@@ -101,6 +101,9 @@ export function LiveSessionDetail() {
               </div>
             )}
             {!isOwn && !mine && open && <p className="text-xs leading-relaxed text-gray-500">The instructor reviews your application and confirms the date, time and fee. {s.isFree ? 'Free sessions need no payment.' : 'You pay to confirm your booking.'}</p>}
+            <button onClick={() => navigate(`/live/${s.id}/share-card`)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50">
+              <Share2 className="h-4 w-4" /> Share live session
+            </button>
           </div>
 
           {s.description && <div data-pop className="rounded-2xl border border-gray-100 bg-white p-4"><p className="mb-2 text-sm font-black text-gray-900">About this session</p><p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">{s.description}</p></div>}
