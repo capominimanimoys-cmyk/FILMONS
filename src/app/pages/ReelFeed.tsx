@@ -14,8 +14,13 @@ import { Post, Comment } from '../types';
 import {
   Heart, MessageCircle, Share2, X,
   Volume2, VolumeX, ChevronUp, ChevronDown, Play,
-  Send, Loader2, MapPin, Music2, Link2, Tag, GraduationCap, Briefcase, FolderOpen,
+  Send, Loader2, MapPin, Music2, Link2, Tag, GraduationCap, Briefcase, FolderOpen, Repeat2, Check, Plus,
 } from 'lucide-react';
+import { useFollow } from '../context/FollowContext';
+import { RepostMenuSheet } from '../components/RepostMenuSheet';
+import { usePostRepostCompose } from '../context/PostRepostComposeContext';
+import { logContentRepostActivity, removeContentRepostActivity } from '../lib/activityApi';
+import * as notifs from '../lib/notifications';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
@@ -159,6 +164,61 @@ function ReelCard({
   const [showHeart, setShowHeart] = useState(false);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
+  const { isFollowing, follow } = useFollow();
+  const { requestPostRepostCompose } = usePostRepostCompose();
+
+  // "+" on the avatar: tap to follow -> it turns into a green check, holds a
+  // moment, then shrinks away. Hidden outright for your own reels and for
+  // anyone you already follow.
+  const [followAnim, setFollowAnim] = useState<'idle' | 'done' | 'leaving'>('idle');
+  const canFollow = !!user && post.userId !== user.id;
+  const showFollowBadge = canFollow && (!isFollowing(post.userId) || followAnim !== 'idle');
+  const handleFollow = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (followAnim !== 'idle') return;
+    setFollowAnim('done');
+    follow(post.userId).catch(() => {});
+    setTimeout(() => setFollowAnim('leaving'), 900);
+    setTimeout(() => setFollowAnim('idle'), 1250);
+  };
+
+  // Repost (same semantics as PostCard: instant repost / undo / with thoughts)
+  const [showRepostMenu, setShowRepostMenu] = useState(false);
+  const [hasReposted, setHasReposted] = useState(!!(post as any).hasReposted);
+  const [repostCount, setRepostCount] = useState(post.repostCount ?? 0);
+  const [reposting, setReposting] = useState(false);
+  const handleRepost = async () => {
+    if (!user || reposting) return;
+    setReposting(true);
+    setHasReposted(true); setRepostCount(c => c + 1); setShowRepostMenu(false);
+    try {
+      const { error } = await supabase.from('reposts').insert({ user_id: user.id, post_id: post.id, quote_text: null });
+      if (error) throw error;
+      logContentRepostActivity(user.id, 'post', post.id, post.content?.slice(0, 80) || null).catch(() => {});
+      toast.success('Reposted to your followers');
+      if (post.userId !== user.id) {
+        notifs.push(post.userId, {
+          type: 'content_repost', fromUserId: user.id, fromUserName: user.name, fromUserAvatar: user.avatar,
+          postId: post.id, postContent: (post.content || '').slice(0, 60), postImage: post.images?.[0] || post.thumbnailUrl,
+        });
+      }
+    } catch (e: any) {
+      if (e?.code === '23505') { setRepostCount(c => Math.max(0, c - 1)); toast.info('Already reposted'); }
+      else { setHasReposted(false); setRepostCount(c => Math.max(0, c - 1)); toast.error('Could not repost'); }
+    } finally { setReposting(false); }
+  };
+  const handleUndoRepost = async () => {
+    if (!user || reposting) return;
+    setReposting(true);
+    setHasReposted(false); setRepostCount(c => Math.max(0, c - 1)); setShowRepostMenu(false);
+    try {
+      const { error } = await supabase.from('reposts').delete().eq('user_id', user.id).eq('post_id', post.id);
+      if (error) throw error;
+      removeContentRepostActivity(user.id, 'post', post.id).catch(() => {});
+      toast.success('Repost removed');
+    } catch { setHasReposted(true); setRepostCount(c => c + 1); toast.error('Could not remove repost'); }
+    finally { setReposting(false); }
+  };
 
   const videoSrc = post.videos?.[0];
   const [videoReady, setVideoReady] = useState(false);
@@ -290,15 +350,29 @@ function ReelCard({
 
       {/* Right actions */}
       <div className="absolute right-3 bottom-16 flex flex-col items-center gap-5">
-        <button onClick={() => navigate(`/host/${post.userId}`)} className="relative">
-          {post.userAvatar
-            ? <img src={post.userAvatar} className="w-11 h-11 rounded-full border-2 border-white object-cover shadow-lg" alt="" />
-            : <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg">{post.userName?.[0]?.toUpperCase()}</div>
-          }
-          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center shadow">
-            <span className="text-white text-[9px] font-bold">+</span>
-          </div>
-        </button>
+        <div className="relative">
+          <button onClick={() => navigate(`/host/${post.userId}`)} aria-label={`Open ${post.userName}'s profile`}>
+            {post.userAvatar
+              ? <img src={post.userAvatar} className="w-11 h-11 rounded-full border-2 border-white object-cover shadow-lg" alt="" />
+              : <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg">{post.userName?.[0]?.toUpperCase()}</div>
+            }
+          </button>
+          {showFollowBadge && (
+            <button onClick={handleFollow} aria-label={followAnim === 'idle' ? `Follow ${post.userName}` : 'Following'}
+              className="absolute -bottom-2 left-1/2 w-6 h-6 rounded-full flex items-center justify-center shadow border-2 border-black/20"
+              style={{
+                transform: `translateX(-50%) scale(${followAnim === 'leaving' ? 0.2 : 1})`,
+                opacity: followAnim === 'leaving' ? 0 : 1,
+                background: followAnim === 'idle' ? '#ef4444' : '#22c55e',
+                transition: 'transform 300ms cubic-bezier(0.34,1.56,0.64,1), opacity 300ms ease, background-color 250ms ease',
+              }}>
+              <Plus className="w-3.5 h-3.5 text-white absolute"
+                style={{ transform: followAnim === 'idle' ? 'rotate(0) scale(1)' : 'rotate(90deg) scale(0)', opacity: followAnim === 'idle' ? 1 : 0, transition: 'transform 250ms ease, opacity 200ms ease' }} strokeWidth={3} />
+              <Check className="w-3.5 h-3.5 text-white absolute" strokeWidth={3.5}
+                style={{ transform: followAnim === 'idle' ? 'scale(0) rotate(-45deg)' : 'scale(1) rotate(0)', opacity: followAnim === 'idle' ? 0 : 1, transition: 'transform 350ms cubic-bezier(0.34,1.56,0.64,1) 80ms, opacity 200ms ease 80ms' }} />
+            </button>
+          )}
+        </div>
         {/* Like */}
         <div className="flex flex-col items-center gap-1">
           <button onClick={handleLike} disabled={liking} className="w-11 h-11 flex items-center justify-center transition-transform active:scale-90">
@@ -319,11 +393,32 @@ function ReelCard({
             <Share2 className="w-7 h-7 text-white drop-shadow-lg" />
           </button>
         </div>
+        {/* Repost */}
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={() => { if (!user) { toast.error('Sign in to repost'); return; } setShowRepostMenu(true); }} aria-label="Repost" className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform">
+            <Repeat2 className={`w-8 h-8 drop-shadow-lg ${hasReposted ? 'text-green-400' : 'text-white'}`} />
+          </button>
+          <span className="text-white text-xs font-semibold drop-shadow">{repostCount > 0 ? repostCount : ''}</span>
+        </div>
         {videoSrc && (
           <button onClick={() => setMuted(m => !m)} className="w-10 h-10 flex items-center justify-center">
             {muted ? <VolumeX className="w-6 h-6 text-white/70 drop-shadow" /> : <Volume2 className="w-6 h-6 text-white drop-shadow" />}
           </button>
         )}
+      </div>
+
+      {/* The sheet is portaled, but React still bubbles its touches up to the
+          reel's swipe handlers -- stop them so dragging the sheet can't move the reel. */}
+      <div onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+      <RepostMenuSheet
+        open={showRepostMenu}
+        onClose={() => setShowRepostMenu(false)}
+        hasReposted={hasReposted}
+        busy={reposting}
+        onRepost={handleRepost}
+        onUndoRepost={handleUndoRepost}
+        onRepostWithThoughts={() => { setShowRepostMenu(false); requestPostRepostCompose(post, () => { setHasReposted(true); setRepostCount(c => c + 1); }); }}
+      />
       </div>
     </div>
   );
@@ -613,7 +708,11 @@ export function ReelFeed() {
       )}
 
       {/* Comments sheet */}
-      {commentPost && <CommentsSheet post={commentPost} onClose={() => setCommentPost(null)} />}
+      {commentPost && (
+        <div onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          <CommentsSheet post={commentPost} onClose={() => setCommentPost(null)} />
+        </div>
+      )}
     </div>
   );
 }
