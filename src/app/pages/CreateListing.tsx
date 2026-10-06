@@ -18,6 +18,7 @@ import { emergencyApi, EMERGENCY_PLANS, type EmergencyPlan } from '../lib/emerge
 import { entitlementsApi, getEntitlement, getServiceListingUsage, type LimitReachedInfo } from '../lib/entitlements';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { ServiceLimitUpgrade } from '../components/ServiceLimitUpgrade';
+import { ListingFlowStyles, StepTransition } from '../components/ListingFlowMotion';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type ListingKind =
@@ -1836,7 +1837,8 @@ export function CreateListing() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 cf-page">
+      <ListingFlowStyles/>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
@@ -1901,7 +1903,7 @@ export function CreateListing() {
         {/* Main form area */}
         <main className="flex-1 px-4 pt-6 pb-32 md:pb-12 min-w-0">
           <div className="max-w-xl mx-auto">
-            {renderStep()}
+            <StepTransition step={step}>{renderStep()}</StepTransition>
           </div>
         </main>
       </div>
