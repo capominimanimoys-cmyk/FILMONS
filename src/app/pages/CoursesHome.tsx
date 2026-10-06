@@ -9,6 +9,7 @@
 // awkward placeholder for missing data.
 import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router';
 import {
   Search, ChevronRight, GraduationCap, ArrowRight, PlayCircle,
@@ -26,6 +27,7 @@ import { CourseCard } from '../components/courses/CourseCard';
 import { LearningHero } from '../components/learning/LearningHero';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
+import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
 import { useAuth } from '../context/AuthContext';
 import { useFollow } from '../context/FollowContext';
 
@@ -154,6 +156,7 @@ export function CoursesHome() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [query, setQuery] = useState('');
+  const [createChooser, setCreateChooser] = useState(false);
   const [loading, setLoading] = useState(true);
   const [recommended, setRecommended] = useState<Course[]>([]);
   const [popular, setPopular] = useState<Course[]>([]);
@@ -336,7 +339,7 @@ export function CoursesHome() {
                 ))}
               </div>
               <button
-                onClick={() => navigate('/create')}
+                onClick={() => setCreateChooser(true)}
                 className="mt-5 flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 text-white text-sm font-black hover:bg-blue-700 transition-colors"
               >
                 Create a course <ArrowRight className="w-4 h-4" />
@@ -345,6 +348,11 @@ export function CoursesHome() {
           </>
         )}
       </div>
+      {createChooser && <CreateTypeChooser onClose={() => setCreateChooser(false)} onSelect={t => {
+        if (t === 'live') { toast('Live sessions are coming soon'); return; }
+        setCreateChooser(false);
+        navigate('/create');
+      }} />}
     </div>
   );
 }

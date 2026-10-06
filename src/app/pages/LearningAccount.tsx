@@ -6,6 +6,7 @@
 import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import {
   Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Star, Users,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import { canCreateCourses, getCoursesByInstructor, getMyEnrollments, getReviewsF
 import { getSavedCourses } from '../lib/topicsApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
 import { MyCourseRow } from './MyLearning';
 import type { Notification } from '../types';
 import {
@@ -202,6 +204,12 @@ export function InstructorDashboard() {
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [reviews, setReviews] = useState<InstructorReview[] | null>(null);
+  const [chooser, setChooser] = useState(false);
+  const onCreateType = (t: CreateType) => {
+    if (t === 'live') { toast('Live sessions are coming soon'); return; }
+    setChooser(false);
+    navigate('/create');
+  };
   const load = () => { if (user) getCoursesByInstructor(user.id).then(setCourses).catch(() => setCourses([])); };
   useEffect(load, [user?.id]);
   useEffect(() => { if (user) getReviewsForInstructor(user.id).then(setReviews).catch(() => setReviews([])); }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -229,7 +237,7 @@ export function InstructorDashboard() {
     <LearningPage>
       <PageTitle title="Instructor dashboard" subtitle="Create courses and track how they're doing."
         action={(
-          <button onClick={() => navigate('/create')} className="flex shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">
+          <button onClick={() => setChooser(true)} className="flex shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">
             <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Create course</span><span className="sm:hidden">New</span>
           </button>
         )} />
@@ -280,6 +288,7 @@ export function InstructorDashboard() {
           </ul>
         )}
       </div>
+      {chooser && <CreateTypeChooser onClose={() => setChooser(false)} onSelect={onCreateType} />}
     </LearningPage>
   );
 }
