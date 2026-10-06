@@ -31,6 +31,9 @@ import { searchLocationSuggestions, type LocationSuggestion } from '../lib/locat
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { getCourses, type Course } from '../lib/coursesApi';
 import { CourseCard } from './courses/CourseCard';
+import { LiveSessionCard } from './learning/LiveSessionCard';
+import { searchPublishedLiveSessions, type LiveSession } from '../lib/liveSessionsApi';
+import { withTimeout } from '../lib/withTimeout';
 import { PortfolioPinGrid } from './connect/PortfolioPinGrid';
 import { getTrendingPortfolio, isPortfolioIntent } from '../lib/portfolioTrending';
 import {
@@ -1535,6 +1538,10 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const [rawLocations,   setRawLocations]   = useState<LocationSuggestion[]>([]);
   // Learning -- courses, distinct top-level mode from Connect/Marketplace.
   const [rawCourses,     setRawCourses]     = useState<Course[]>([]);
+  // Published live sessions live alongside courses in the Learning mode.
+  // Fetched by their own effect (below) with a deadline so they can never
+  // delay or break the course/marketplace/connect results.
+  const [rawLive,        setRawLive]        = useState<LiveSession[]>([]);
   // "portfolio" / "portfolios" typed on its own: the top trending work.
   const [portfolioIntent, setPortfolioIntent] = useState<PortfolioFeedEntry[]>([]);
   // Cached account_type per Opportunity-listing owner, used to exclude
@@ -1811,6 +1818,17 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
 
   const hasTyped = q.trim().length > 0;
 
+  useEffect(() => {
+    if (activeTab !== 'all' && activeTab !== 'learning') { setRawLive([]); return; }
+    // 'all' with nothing typed is the landing page, not a results page.
+    if (activeTab === 'all' && !q.trim()) { setRawLive([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      withTimeout(searchPublishedLiveSessions(q, 12), 3500, [] as LiveSession[]).then(r => { if (!cancelled) setRawLive(r); });
+    }, q.trim() ? 250 : 0);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q, activeTab]);
+
   // Category browse -- a tapped category must show its own results even
   // before any text is typed (spec). runSearch above only ever fires on a
   // non-empty query, so this covers the complementary case: whenever the
@@ -2061,6 +2079,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const visiblePortfolio    = showConnect     ? rawPortfolio         : [];
   const visiblePosts        = showConnect     ? rawPosts             : [];
   const visibleCourses      = showLearning    ? rawCourses           : [];
+  const visibleLive         = showLearning    ? rawLive              : [];
 
   // Emergency-flagged items within each of these four categories are
   // separately capped at emergencyLimit for a restricted tier -- non-
@@ -2133,12 +2152,12 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   const allOnlyMatches = activeTab === 'all' && (rawHashtags.length > 0 || rawLocations.length > 0 || destinationMatches.length > 0);
   const showPortfolioIntent = hasTyped && (activeTab === 'all' || activeTab === 'connect') && portfolioIntent.length > 0;
   const noResults  = hasTyped && resultsReady && !loading && filteredUsers.length === 0 && filteredListings.length === 0
-    && !showPortfolioIntent && rawPortfolio.length === 0 && rawPosts.length === 0 && rawCourses.length === 0 && !allOnlyMatches;
+    && !showPortfolioIntent && rawPortfolio.length === 0 && rawPosts.length === 0 && rawCourses.length === 0 && rawLive.length === 0 && !allOnlyMatches;
   const hasResults = filteredUsers.length > 0 || filteredListings.length > 0
     || rawPortfolio.length > 0 || rawPosts.length > 0 || rawCourses.length > 0 || allOnlyMatches;
   const hasVisible = visibleUsers.length > 0 || visibleRental.length > 0 || visibleSale.length > 0
     || visibleServices.length > 0 || visibleStudios.length > 0 || visibleOpportunities.length > 0 || visibleEmergency.length > 0
-    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleCourses.length > 0 || allOnlyMatches;
+    || visiblePortfolio.length > 0 || visiblePosts.length > 0 || visibleCourses.length > 0 || visibleLive.length > 0 || allOnlyMatches;
   const showSuggestions = hasTyped && !resultsReady && !loading && (suggestions.length > 0 || suggLoading);
 
   const activeFilterCount = countActiveFilters(filters);
@@ -2342,13 +2361,14 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                       </div>
                     </AllResultsSection>
                   ),
-                  learning: visibleCourses.length > 0 && (
-                    <AllResultsSection key="learning" title="FILMONS Learning" totalCount={visibleCourses.length}
+                  learning: (visibleCourses.length > 0 || visibleLive.length > 0) && (
+                    <AllResultsSection key="learning" title="FILMONS Learning" totalCount={visibleCourses.length + visibleLive.length}
                       moreLabel="Learning"
                       onViewAll={() => handleViewMoreCategory('courses')}
                       onViewMore={() => handleViewMoreCategory('courses')}>
                       <div className="grid grid-cols-2 gap-2.5 px-4">
                         {visibleCourses.slice(0, 6).map(c => <CourseCard key={c.id} course={c}/>)}
+                        {visibleLive.slice(0, 4).map(l => <LiveSessionCard key={l.id} session={l}/>)}
                       </div>
                     </AllResultsSection>
                   ),
@@ -2610,6 +2630,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   footer={visibleCourses.length > PREVIEW_LIMIT
                     ? <ViewMoreButton onClick={() => handleViewMoreCategory('courses')}/> : undefined}>
                   {visibleCourses.slice(0, PREVIEW_LIMIT).map(c => <CourseCard key={c.id} course={c} />)}
+                </ResultSection>
+              )}
+              {activeTab !== 'all' && visibleLive.length > 0 && (
+                <ResultSection label="🔴 Live sessions" count={Math.min(visibleLive.length, PREVIEW_LIMIT)} grid
+                  footer={visibleLive.length > PREVIEW_LIMIT
+                    ? <ViewMoreButton onClick={() => handleViewMoreCategory('courses')}/> : undefined}>
+                  {visibleLive.slice(0, PREVIEW_LIMIT).map(l => <LiveSessionCard key={l.id} session={l} />)}
                 </ResultSection>
               )}
               {resultsReady && !loading && !hasVisible && !showConnectLanding && (

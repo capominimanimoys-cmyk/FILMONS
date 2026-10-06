@@ -1,12 +1,22 @@
 // Card for a published live session (Learning home row).
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
+import { useLearningTransition } from '../../context/LearningTransitionContext';
+import { isInsideLearningBundle } from '../../lib/learningBundle';
 import { Clock, Radio, Users, Video } from 'lucide-react';
 import { PLATFORM_LABEL, formatFee, type LiveSession } from '../../lib/liveSessionsApi';
 
 export function LiveSessionCard({ session: s }: { session: LiveSession }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { enterLearning } = useLearningTransition();
+  // Same rule as CourseCard: inside Learning -> plain navigation; from the
+  // main FILMONS app (e.g. a profile) -> the real cross-bundle switch.
+  const open = () => {
+    if (isInsideLearningBundle()) navigate(`/live/${s.id}`);
+    else enterLearning(`/live/${s.id}`, { route: location.pathname + location.search });
+  };
   return (
-    <button onClick={() => navigate(`/live/${s.id}`)} className="block w-full overflow-hidden rounded-2xl border border-gray-100 bg-white text-left hover:shadow-sm">
+    <button onClick={open} className="block w-full overflow-hidden rounded-2xl border border-gray-100 bg-white text-left hover:shadow-sm">
       <div className="relative aspect-video bg-gray-900">
         {s.coverUrl ? <img src={s.coverUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-white/60"><Radio className="h-8 w-8" /></div>}
         <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"><Radio className="h-3 w-3" /> Live</span>

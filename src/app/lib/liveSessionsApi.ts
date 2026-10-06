@@ -171,6 +171,32 @@ export async function getPublishedLiveSessions(limit = 12): Promise<LiveSession[
   });
 }
 
+/** Browse Search: published live sessions matching `query` (title, topic,
+ *  description). No query -- or a query that is itself about live sessions --
+ *  returns the newest. Bounded by the caller's deadline. */
+export async function searchPublishedLiveSessions(query = '', limit = 12): Promise<LiveSession[]> {
+  let q = supabase.from('live_sessions').select('*').eq('status', 'published').order('published_at', { ascending: false }).limit(limit);
+  const term = query.trim().replace(/[,()%]/g, ' ').trim();
+  if (term && !/\b(live|sessions?|mentor(ing)?|1:1|one.to.one|coaching|class(es)?|workshop)\b/i.test(term)) {
+    q = q.or(`title.ilike.%${term}%,topic.ilike.%${term}%,description.ilike.%${term}%`);
+  }
+  const { data, error } = await q;
+  if (error) return [];
+  const sessions = (data ?? []).map(rowToSession);
+  const profiles = await profilesById(sessions.map(x => x.instructorId));
+  return sessions.map(x => {
+    const p = profiles.get(x.instructorId);
+    return p ? { ...x, instructor: { id: p.id, name: p.name, username: p.username ?? null, avatarUrl: p.avatar_url ?? null } } : x;
+  });
+}
+
+/** One instructor's published sessions (profile Courses section). */
+export async function getPublishedLiveSessionsByInstructor(instructorId: string, limit = 12): Promise<LiveSession[]> {
+  const { data } = await supabase.from('live_sessions').select('*').eq('instructor_id', instructorId).eq('status', 'published')
+    .order('published_at', { ascending: false }).limit(limit);
+  return (data ?? []).map(rowToSession);
+}
+
 /** Applications that would be lost by deleting the session (anything still live). */
 export async function countOpenApplications(sessionId: string): Promise<number> {
   const { count } = await supabase.from('live_session_applications').select('id', { count: 'exact', head: true })
@@ -270,7 +296,7 @@ export async function getMyBookings(studentId: string): Promise<LiveApplication[
   const apps = (data ?? []).map(rowToApp);
   if (!apps.length) return [];
   const { data: ss } = await supabase.from('live_sessions').select('*').in('id', [...new Set(apps.map(a => a.sessionId))]);
-  const sessions = new Map((ss ?? []).map((r: any) => [r.id, rowToSession(r)]));
+  const sessions = new Map<string, LiveSession>((ss ?? []).map((r: any): [string, LiveSession] => [r.id, rowToSession(r)]));
   const profiles = await profilesById([...sessions.values()].map(s => s.instructorId));
   return apps.map(a => {
     const s = sessions.get(a.sessionId);

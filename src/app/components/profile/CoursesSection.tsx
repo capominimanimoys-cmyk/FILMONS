@@ -13,20 +13,27 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { getCourses, type Course } from '../../lib/coursesApi';
 import { CourseCard } from '../courses/CourseCard';
+import { LiveSessionCard } from '../learning/LiveSessionCard';
+import { getPublishedLiveSessionsByInstructor, type LiveSession } from '../../lib/liveSessionsApi';
+import { withTimeout } from '../../lib/withTimeout';
 import { useLearningTransition } from '../../context/LearningTransitionContext';
 
 export function CoursesSection({ userId, isOwner }: { userId: string; isOwner: boolean }) {
   const { enterLearning } = useLearningTransition();
   const location = useLocation();
   const [courses, setCourses] = useState<Course[] | null>(null);
+  const [live, setLive] = useState<LiveSession[]>([]);
 
+  // Courses and live sessions load independently, each bounded, so a slow
+  // one never holds back (or hides) the other.
   useEffect(() => {
     let cancelled = false;
-    getCourses({ instructorId: userId, status: 'published', limit: 12 }).then(c => { if (!cancelled) setCourses(c); });
+    withTimeout(getCourses({ instructorId: userId, status: 'published', limit: 12 }), 4000, [] as Course[]).then(c => { if (!cancelled) setCourses(c); });
+    withTimeout(getPublishedLiveSessionsByInstructor(userId, 12), 4000, [] as LiveSession[]).then(l => { if (!cancelled) setLive(l); });
     return () => { cancelled = true; };
   }, [userId]);
 
-  if (!courses?.length) return null;
+  if (!courses?.length && !live.length) return null;
 
   return (
     <section className="bg-white rounded-2xl border border-gray-100 p-4">
@@ -38,9 +45,19 @@ export function CoursesSection({ userId, isOwner }: { userId: string; isOwner: b
           </button>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        {courses.map(c => <CourseCard key={c.id} course={c} />)}
-      </div>
+      {!!courses?.length && (
+        <div className="grid grid-cols-2 gap-3">
+          {courses.map(c => <CourseCard key={c.id} course={c} />)}
+        </div>
+      )}
+      {live.length > 0 && (
+        <>
+          <p className={`text-xs font-bold text-gray-500 ${courses?.length ? 'mt-4' : ''} mb-2`}>Live sessions</p>
+          <div className="grid grid-cols-2 gap-3">
+            {live.map(l => <LiveSessionCard key={l.id} session={l} />)}
+          </div>
+        </>
+      )}
     </section>
   );
 }
