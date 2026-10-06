@@ -11,8 +11,9 @@
 // doesn't cancel its upload. Each one remembers its File, so a failed
 // upload can be retried without picking the file again.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
-  builderApi, probeVideo, ProbeInconclusive, uploadCourseFile, fileKind, captureVideoFrame,
+  builderApi, probeVideo, ProbeInconclusive, MAX_LESSON_VIDEO_BYTES, MAX_COVER_VIDEO_BYTES, formatBytes, uploadCourseFile, fileKind, captureVideoFrame,
   type CourseDoc, type DocVideo, type DraftLoad, type UploadHandle,
 } from '../../../lib/courseBuilder';
 
@@ -163,6 +164,14 @@ export function useCourseBuilder(courseId: string | undefined, instructorId: str
     handles.current[target]?.abort();
     files.current[target] = file;
     const isVideo = target === 'intro' || target === 'coverVideo' || target.startsWith('video:');
+    if (isVideo) {
+      const max = target === 'coverVideo' ? MAX_COVER_VIDEO_BYTES : MAX_LESSON_VIDEO_BYTES;
+      if (file.size > max) {
+        // Rejected before upload; whatever video is already there stays untouched.
+        toast.error(`That video is ${formatBytes(file.size)}. The maximum is ${formatBytes(max)}. Compress it or trim it and try again.`);
+        return;
+      }
+    }
     const folder = `${courseId}/${target === 'cover' || target === 'coverVideo' ? 'cover' : target === 'intro' ? 'intro' : target.startsWith('video:') ? 'lessons' : 'resources'}`;
     setUpload(target, { progress: 0, status: 'uploading', fileName: file.name });
     if (isVideo) setVideoStatus(target, 'uploading');

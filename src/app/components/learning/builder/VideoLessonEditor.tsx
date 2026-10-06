@@ -2,7 +2,7 @@
 // straight into the draft (and autosave); uploads keep running if the
 // panel is closed. "Save lesson" returns to the outline.
 import { ArrowLeft, FileDown, Lock, Trash2, Unlock } from 'lucide-react';
-import { formatDuration, uid, videoLessonState, type DocResource, type DocVideo } from '../../../lib/courseBuilder';
+import { MAX_LESSON_VIDEO_BYTES, formatBytes, formatDuration, uid, videoLessonState, type DocResource, type DocVideo } from '../../../lib/courseBuilder';
 import { Card, Field, StatusPill, Toggle, UploadBox, inputCls } from './BuilderUI';
 import type { CourseBuilderState } from './useCourseBuilder';
 
@@ -60,7 +60,7 @@ export function VideoLessonEditor({ b, lesson, onClose }: { b: CourseBuilderStat
               </div>
             )}
             <UploadBox accept="video/mp4,video/quicktime,video/webm,video/x-m4v" label={lesson.videoUrl && lesson.videoStatus === 'ready' ? 'Replace video' : 'Upload video'}
-              hint="MP4 (H.264) plays everywhere" upload={upload} processing={lesson.videoStatus === 'processing'}
+              hint={`MP4 (H.264) plays everywhere · max ${formatBytes(MAX_LESSON_VIDEO_BYTES)}`} upload={upload} processing={lesson.videoStatus === 'processing'}
               failedMessage={lesson.videoStatus === 'failed' ? 'This video could not be uploaded or processed' : null}
               onFile={f => b.startUpload(target, f)} onRetry={() => b.retryUpload(target)} canRetry={b.canRetry(target)} onCancel={() => b.cancelUpload(target)}
               compact={lesson.videoStatus === 'ready'} />
