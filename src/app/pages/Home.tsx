@@ -759,7 +759,7 @@ export function Home() {
       ]);
 
       if (oppOwnerIds.length) {
-        const ownerAccountTypes = new Map((ownerRowsRes.data ?? []).map((r: any) => [r.id, r.account_type as string | undefined]));
+        const ownerAccountTypes = new Map<string, string | undefined>((ownerRowsRes.data ?? []).map((r: any): [string, string | undefined] => [r.id, r.account_type]));
         l = filterOutLockedOpportunities(l, ownerAccountTypes);
       }
       setRawListings(l);
