@@ -13,6 +13,7 @@ import { getPortfolioFeed, getPortfolioEntriesByIds, type PortfolioFeedEntry } f
 import { getActivityFeed, type ActivityEntry, type ActivityActor } from './activityApi';
 import { getTrustLevelsBatch, type TrustLevel } from './trustApi';
 import { postsApi } from './api';
+import { withTimeout } from './withTimeout';
 import type { Post } from '../types';
 
 export type ConnectSort = 'relevant' | 'recent';
@@ -229,6 +230,12 @@ export async function getRecommendedPortfolio(opts: {
     .slice(0, limit);
 }
 
+// Enrichment (full post bodies, reposted items, trust badges) is a second
+// round-trip after the feed rows themselves. If it's slow the page renders
+// anyway -- cards fall back to their title-only form -- rather than holding
+// the whole Connect feed past the ~5s budget.
+const ENRICH_TIMEOUT_MS = 2500;
+
 export async function getConnectFeed(opts: {
   tab: 'foryou' | 'following';
   viewerId?: string;
@@ -295,11 +302,11 @@ export async function getConnectFeed(opts: {
   const unresolved = [...new Set(actorIds)].filter(id => !opts.trustLevels?.has(id));
 
   const [realPosts, repostEntryMap, freshLevels] = await Promise.all([
-    postTargetIds.length ? postsApi.getByIds([...new Set(postTargetIds)]) : Promise.resolve([]),
+    postTargetIds.length ? withTimeout(postsApi.getByIds([...new Set(postTargetIds)]), ENRICH_TIMEOUT_MS, [] as Post[]) : Promise.resolve([] as Post[]),
     (repostItemIds.length || repostAlbumIds.length)
-      ? getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)], opts.viewerId)
+      ? withTimeout(getPortfolioEntriesByIds([...new Set(repostItemIds)], [...new Set(repostAlbumIds)], opts.viewerId), ENRICH_TIMEOUT_MS, new Map<string, PortfolioFeedEntry>())
       : Promise.resolve(new Map<string, PortfolioFeedEntry>()),
-    unresolved.length ? getTrustLevelsBatch(unresolved) : Promise.resolve(new Map<string, TrustLevel>()),
+    unresolved.length ? withTimeout(getTrustLevelsBatch(unresolved), ENRICH_TIMEOUT_MS, new Map<string, TrustLevel>()) : Promise.resolve(new Map<string, TrustLevel>()),
   ]);
 
   if (postTargetIds.length) {

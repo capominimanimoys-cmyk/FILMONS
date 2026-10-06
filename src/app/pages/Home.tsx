@@ -26,6 +26,7 @@ import { ListingCard } from '../components/ListingCard';
 import { getSuggestedCreators, PORTFOLIO_CATEGORIES, type SuggestedCreator, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { getPersonalizedCategories, resolveCategoryFilter, logPortfolioInteraction } from '../lib/personalization';
 import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
+import { withTimeout } from '../lib/withTimeout';
 import { getConnectFeed, getRecommendedPortfolio, connectFeedItemKey, type ConnectFeedItem, type ConnectFeedCursor, type ConnectSort } from '../lib/connectFeed';
 import { ConnectFeedCard } from '../components/connect/ConnectFeedCard';
 import { CreatePostTrigger } from '../components/CreatePostTrigger';
@@ -236,6 +237,27 @@ function ConnectActivityPlaceholder() {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+// First page of the Connect feed per viewer+tab+sort, kept for a few minutes
+// at module level so navigating away from Home and back is instant instead
+// of a full refetch. Fresh data still replaces it on a hard refresh/retry.
+const CONNECT_PAGE_TTL_MS = 3 * 60_000;
+const CONNECT_PAGE_CACHE = {
+  pages: new Map<string, { at: number; entry: any }>(),
+  levels: new Map<string, Map<string, TrustLevel>>(),
+};
+function readConnectPageCache(userId?: string): Partial<Record<string, any>> {
+  const out: Record<string, any> = {};
+  const prefix = `${userId ?? ''}::`;
+  CONNECT_PAGE_CACHE.pages.forEach((v, k) => {
+    if (k.startsWith(prefix) && Date.now() - v.at < CONNECT_PAGE_TTL_MS) out[k.slice(prefix.length)] = v.entry;
+  });
+  return out;
+}
+function writeConnectPageCache(userId: string | undefined, key: string, entry: any, levels: Map<string, TrustLevel>) {
+  CONNECT_PAGE_CACHE.pages.set(`${userId ?? ''}::${key}`, { at: Date.now(), entry });
+  CONNECT_PAGE_CACHE.levels.set(userId ?? '', levels);
+}
+
 export function Home() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -458,7 +480,9 @@ export function Home() {
   interface ConnectCacheEntry {
     items: ConnectFeedItem[]; cursor: ConnectFeedCursor; portfolioHasMore: boolean; activityHasMore: boolean;
   }
-  const connectCacheRef = useRef<Partial<Record<string, ConnectCacheEntry>>>({});
+  // Module-level (see CONNECT_PAGE_CACHE) so coming back to Home doesn't
+  // refetch the whole first page -- the ref is seeded from it on mount.
+  const connectCacheRef = useRef<Partial<Record<string, ConnectCacheEntry>>>(readConnectPageCache(user?.id));
   // Keyed by tab+sort -- switching either invalidates the cache slot,
   // matching feedCacheRef's old per-tab pattern one level deeper.
   const connectCacheKey = `${connectTab}::${connectSort}`;
@@ -483,6 +507,7 @@ export function Home() {
         connectCacheRef.current[cacheKey] = {
           items: page.items, cursor: page.cursor, portfolioHasMore: page.portfolioHasMore, activityHasMore: page.activityHasMore,
         };
+        writeConnectPageCache(user?.id, cacheKey, connectCacheRef.current[cacheKey]!, page.trustLevels);
         setConnectItems(page.items);
         setConnectTrustLevels(page.trustLevels);
         setConnectHasMore(page.portfolioHasMore || page.activityHasMore);
@@ -496,6 +521,8 @@ export function Home() {
     const cached = connectCacheRef.current[connectCacheKey];
     if (cached) {
       setConnectItems(cached.items);
+      const lv = CONNECT_PAGE_CACHE.levels.get(user?.id ?? '');
+      if (lv) setConnectTrustLevels(lv);
       setConnectHasMore(cached.portfolioHasMore || cached.activityHasMore);
       setConnectError(false);
       return;
@@ -503,7 +530,7 @@ export function Home() {
     loadConnect(connectCacheKey, connectTab, connectSort);
   }, [homeMode, connectCacheKey, connectTab, connectSort, loadConnect]);
 
-  const retryConnect = () => { delete connectCacheRef.current[connectCacheKey]; loadConnect(connectCacheKey, connectTab, connectSort); };
+  const retryConnect = () => { delete connectCacheRef.current[connectCacheKey]; CONNECT_PAGE_CACHE.pages.delete(`${user?.id ?? ''}::${connectCacheKey}`); loadConnect(connectCacheKey, connectTab, connectSort); };
 
   const loadMoreConnect = useCallback(() => {
     const cached = connectCacheRef.current[connectCacheKey];
@@ -653,8 +680,22 @@ export function Home() {
   useEffect(() => {
     let done = false;
     setLoadError(false);
+    // Stale-while-revalidate: if this device has seen the marketplace
+    // before, paint the last-known listings right away (minus Opportunities,
+    // which need the tier-entitlement filter below) and let the fresh fetch
+    // replace them -- instead of a skeleton until the slowest query returns.
+    let cachedListings: Listing[] = [];
+    try { cachedListings = JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch {}
+    if (Array.isArray(cachedListings) && cachedListings.length) {
+      const instant = cachedListings.filter(x => x && x.listingType !== 'opportunity' && x.listingKind !== 'talent') as EnrichedListing[];
+      if (instant.length) { setRawListings(prev => prev.length ? prev : instant); setListings(prev => prev.length ? prev : instant); setLoading(false); }
+    }
+    // Each query gets a deadline so one slow lookup can't hold the deck
+    // past ~5s: the main listings fall back to the cached copy, the
+    // secondary ones (opportunities, creators, swipe history) to empty.
+    const LISTINGS_MS = 4500, SECONDARY_MS = 3500;
     Promise.all([
-      listingsApi.getAll(),
+      withTimeout(listingsApi.getAll(), LISTINGS_MS, cachedListings as Listing[]),
       // getAll() only ever returns the 80 most-recently-created listings
       // of ANY type -- a real Opportunity could be older than that cutoff
       // (rentals/sales/services are the higher-volume categories) and
@@ -663,16 +704,18 @@ export function Home() {
       // genuinely existing. Fetched and merged in unconditionally (not
       // just when filter === 'talent') so switching to that tab never
       // needs a second round-trip first.
-      listingsApi.getOpportunities().catch(() => [] as Listing[]),
-      supabase
-        .from('profiles')
-        .select('id, name, username, avatar_url, city, primary_role, business_industry, account_type, bio, is_verified')
-        .not('name', 'is', null)
-        .neq('name', '')
-        .not('primary_role', 'is', null)
-        .limit(24)
-        .then(r => (r.data ?? []) as CreatorProfile[], () => [] as CreatorProfile[]),
-      user?.id ? swipeApi.getExcludedIds(user.id) : Promise.resolve(new Set<string>()),
+      withTimeout(listingsApi.getOpportunities(), SECONDARY_MS, [] as Listing[]),
+      withTimeout(
+        supabase
+          .from('profiles')
+          .select('id, name, username, avatar_url, city, primary_role, business_industry, account_type, bio, is_verified')
+          .not('name', 'is', null)
+          .neq('name', '')
+          .not('primary_role', 'is', null)
+          .limit(24)
+          .then(r => (r.data ?? []) as CreatorProfile[], () => [] as CreatorProfile[]),
+        SECONDARY_MS, [] as CreatorProfile[]),
+      user?.id ? withTimeout(swipeApi.getExcludedIds(user.id), SECONDARY_MS, new Set<string>()) : Promise.resolve(new Set<string>()),
     ]).then(async ([l0, opp, c, excluded]) => {
       if (done) return;
       // Dedupe by id -- an Opportunity that also happened to be within
@@ -704,7 +747,7 @@ export function Home() {
 
       const [ownerRowsRes, recentlySeen] = await Promise.all([
         oppOwnerIds.length
-          ? supabase.from('profiles').select('id, account_type').in('id', oppOwnerIds)
+          ? withTimeout(Promise.resolve(supabase.from('profiles').select('id, account_type').in('id', oppOwnerIds)), SECONDARY_MS, { data: null as any[] | null })
           : Promise.resolve({ data: [] as any[] }),
         // Spacing: a recycled Emergency listing shouldn't resurface too
         // soon after this viewer was already shown it this same way --
