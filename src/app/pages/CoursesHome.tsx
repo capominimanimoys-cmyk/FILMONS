@@ -28,6 +28,9 @@ import { UserAvatar } from '../components/AccountTypeBadge';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
 import { useAuth } from '../context/AuthContext';
+import { LiveSessionCard } from '../components/learning/LiveSessionCard';
+import { getPublishedLiveSessions, type LiveSession } from '../lib/liveSessionsApi';
+import { withTimeout } from '../lib/withTimeout';
 import { useFollow } from '../context/FollowContext';
 
 // Discovery chips + "Popular right now" topics -- Learning's own light
@@ -165,6 +168,7 @@ export function CoursesHome() {
   const [byTool, setByTool] = useState<Course[]>([]);
   const [continueLearning, setContinueLearning] = useState<EnrolledCourse[]>([]);
   const [topInstructors, setTopInstructors] = useState<TopInstructor[]>([]);
+  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
   const [searchResults, setSearchResults] = useState<Course[] | null>(null);
   const [trustLevels, setTrustLevels] = useState<Map<string, TrustLevel>>(new Map());
 
@@ -203,6 +207,15 @@ export function CoursesHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Published live sessions get their own row. Fetched independently (and
+  // bounded) so they appear as soon as they're ready and never hold up --
+  // or fail -- the course rows.
+  useEffect(() => {
+    let live = true;
+    withTimeout(getPublishedLiveSessions(12), 3500, [] as LiveSession[]).then(r => { if (live) setLiveSessions(r); });
+    return () => { live = false; };
+  }, [user?.id]);
+
   const runSearch = (q: string) => {
     setQuery(q);
   };
@@ -223,7 +236,7 @@ export function CoursesHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  const nothingAtAll = !loading && !recommended.length && !popular.length && !newest.length;
+  const nothingAtAll = !loading && !recommended.length && !popular.length && !newest.length && !liveSessions.length;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -309,6 +322,18 @@ export function CoursesHome() {
             )}
 
             <ContinueLearningRow courses={continueLearning} onSeeAll={() => navigate('/my-learning')} />
+
+            {liveSessions.length > 0 && (
+              <div className="space-y-2.5">
+                <div data-pop className="px-4 lg:px-0">
+                  <p className="text-base font-black text-gray-900">Live sessions</p>
+                  <p className="mt-0.5 text-xs text-gray-400">Learn live, one-to-one or in a small group.</p>
+                </div>
+                <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 lg:px-0">
+                  {liveSessions.map(l => <div key={l.id} data-pop className="w-60 shrink-0"><LiveSessionCard session={l} /></div>)}
+                </div>
+              </div>
+            )}
 
             <CourseRow title="Popular right now" subtitle="Trending across Filmons Learning." courses={popular} trustLevels={trustLevels} />
             <CourseRow title="From your connections" courses={fromConnections} trustLevels={trustLevels} />

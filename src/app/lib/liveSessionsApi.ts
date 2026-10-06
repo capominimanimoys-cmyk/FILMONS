@@ -159,6 +159,33 @@ export async function getLiveSessionsByInstructor(instructorId: string): Promise
   return (data ?? []).map(rowToSession);
 }
 
+/** Published sessions for Learning home, newest first. */
+export async function getPublishedLiveSessions(limit = 12): Promise<LiveSession[]> {
+  const { data } = await supabase.from('live_sessions').select('*').eq('status', 'published')
+    .order('published_at', { ascending: false }).limit(limit);
+  const sessions = (data ?? []).map(rowToSession);
+  const profiles = await profilesById(sessions.map(s => s.instructorId));
+  return sessions.map(s => {
+    const p = profiles.get(s.instructorId);
+    return p ? { ...s, instructor: { id: p.id, name: p.name, username: p.username ?? null, avatarUrl: p.avatar_url ?? null } } : s;
+  });
+}
+
+/** Applications that would be lost by deleting the session (anything still live). */
+export async function countOpenApplications(sessionId: string): Promise<number> {
+  const { count } = await supabase.from('live_session_applications').select('id', { count: 'exact', head: true })
+    .eq('session_id', sessionId).in('status', ['applied', 'accepted', 'awaiting_payment', 'confirmed']);
+  return count ?? 0;
+}
+
+/** Deletes the session. Refuses while students have open applications or
+ *  bookings (deleting cascades to them) -- unpublish instead. */
+export async function deleteLiveSession(id: string, instructorId: string): Promise<'deleted' | 'blocked' | 'error'> {
+  if ((await countOpenApplications(id)) > 0) return 'blocked';
+  const { error } = await supabase.from('live_sessions').delete().eq('id', id).eq('instructor_id', instructorId);
+  return error ? 'error' : 'deleted';
+}
+
 export async function setLiveSessionStatus(id: string, instructorId: string, status: LiveStatus): Promise<boolean> {
   const { error } = await supabase.from('live_sessions').update({ status }).eq('id', id).eq('instructor_id', instructorId);
   return !error;
