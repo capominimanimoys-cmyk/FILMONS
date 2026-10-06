@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
-  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, Eye, EyeOff, LogOut, MoreHorizontal, Plus, Radio, Star, Trash2, Users,
+  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, Eye, EyeOff, LogOut, MoreHorizontal, Plus, Radio, Share2, Star, Trash2, Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
@@ -239,6 +239,7 @@ function LiveSessionManageRow({ session: l, instructorId, onChanged }: { session
           actions={[
             { icon: ExternalLink, label: 'View session', onClick: () => { setMenu(false); navigate(`/live/${l.id}`); } },
             { icon: Users, label: 'Manage applications', onClick: () => { setMenu(false); navigate(`/instructor/live/${l.id}`); } },
+            { icon: Share2, label: 'Share live session', onClick: () => { setMenu(false); navigate(`/live/${l.id}/share-card`); } },
             { icon: published ? EyeOff : Eye, label: published ? 'Unpublish' : 'Publish again', onClick: toggle },
           ]}
           destructiveActions={[{ icon: Trash2, label: 'Delete session', onClick: () => { setMenu(false); setConfirmDelete(true); } }]}
