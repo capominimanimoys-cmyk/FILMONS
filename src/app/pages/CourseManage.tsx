@@ -6,9 +6,9 @@ import { CourseCover } from '../components/courses/CourseCover';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
-import { Award, CheckCircle2, ExternalLink, Eye, Loader2, Pencil, RotateCcw, Sparkles, Users, Wallet } from 'lucide-react';
+import { Award, CheckCircle2, ExternalLink, Eye, Loader2, Pencil, RotateCcw, Sparkles, Star, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getCourse, type Course } from '../lib/coursesApi';
+import { getCourse, getCourseReviews, type Course, type CourseReview } from '../lib/coursesApi';
 import { builderApi, type CourseEarnings, type CourseStudent } from '../lib/courseBuilder';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { ConfirmDialog } from '../components/learning/builder/BuilderUI';
@@ -20,7 +20,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   unpublished: { label: 'Unpublished', cls: 'bg-amber-50 text-amber-700' },
   archived: { label: 'Unpublished', cls: 'bg-amber-50 text-amber-700' },
 };
-type Tab = 'students' | 'earnings';
+type Tab = 'students' | 'reviews' | 'earnings';
 
 export function CourseManage() {
   const { courseId } = useParams();
@@ -91,10 +91,11 @@ export function CourseManage() {
         </div>
       </div>
 
-      <div data-pop className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div data-pop className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         <button onClick={() => navigate(`/course/${course.id}`)} className="flex items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white py-3 text-sm font-bold text-gray-800 hover:bg-gray-50"><Eye className="h-4 w-4" /> View course</button>
         <button onClick={() => navigate(`/instructor/course/${course.id}/edit?step=1`)} className="flex items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white py-3 text-sm font-bold text-gray-800 hover:bg-gray-50"><Pencil className="h-4 w-4" /> Edit course</button>
         <button onClick={() => setTab('students')} aria-pressed={tab === 'students'} className={`flex items-center justify-center gap-2 rounded-2xl border py-3 text-sm font-bold ${tab === 'students' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-100 bg-white text-gray-800 hover:bg-gray-50'}`}><Users className="h-4 w-4" /> Students</button>
+        <button onClick={() => setTab('reviews')} aria-pressed={tab === 'reviews'} className={`flex items-center justify-center gap-2 rounded-2xl border py-3 text-sm font-bold ${tab === 'reviews' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-100 bg-white text-gray-800 hover:bg-gray-50'}`}><Star className="h-4 w-4" /> Reviews</button>
         <button onClick={() => setTab('earnings')} aria-pressed={tab === 'earnings'} className={`flex items-center justify-center gap-2 rounded-2xl border py-3 text-sm font-bold ${tab === 'earnings' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-100 bg-white text-gray-800 hover:bg-gray-50'}`}><Wallet className="h-4 w-4" /> Earnings</button>
       </div>
 
@@ -111,7 +112,7 @@ export function CourseManage() {
       </div>
 
       <div className="mt-6">
-        {tab === 'students' ? <StudentsTab courseId={course.id} instructorId={user.id} /> : <EarningsTab courseId={course.id} instructorId={user.id} />}
+        {tab === 'students' ? <StudentsTab courseId={course.id} instructorId={user.id} /> : tab === 'reviews' ? <ReviewsTab course={course} /> : <EarningsTab courseId={course.id} instructorId={user.id} />}
       </div>
 
       {confirm === 'unpublish' && (
@@ -175,6 +176,51 @@ function StudentsTab({ courseId, instructorId }: { courseId: string; instructorI
         </li>
       ))}
     </ul>
+  );
+}
+
+function ReviewsTab({ course }: { course: Course }) {
+  const [reviews, setReviews] = useState<CourseReview[] | null>(null);
+  const [error, setError] = useState(false);
+  const load = useCallback(() => { setError(false); getCourseReviews(course.id, 100).then(setReviews).catch(() => setError(true)); }, [course.id]);
+  useEffect(load, [load]);
+  if (error) return <Retry onRetry={load} message="Couldn't load reviews." />;
+  if (!reviews) return <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-16 animate-pulse rounded-2xl bg-gray-100" />)}</div>;
+  if (!reviews.length) return <EmptyState icon={<Star className="h-9 w-9" />} title="No reviews yet" body="Reviews from enrolled students appear here." />;
+  const counts = [5, 4, 3, 2, 1].map(n => reviews.filter(r => r.rating === n).length);
+  return (
+    <div className="space-y-3">
+      <div data-pop className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4">
+        <div className="text-center">
+          <p className="text-3xl font-black text-gray-900">{course.ratingAvg.toFixed(1)}</p>
+          <p className="text-xs text-gray-400">{plural(course.ratingCount, 'review')}</p>
+        </div>
+        <div className="flex-1 space-y-1">
+          {[5, 4, 3, 2, 1].map((n, i) => (
+            <div key={n} className="flex items-center gap-2 text-[11px] text-gray-500">
+              <span className="w-3">{n}</span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(counts[i] / reviews.length) * 100}%` }} /></div>
+              <span className="w-5 text-right">{counts[i]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <ul className="space-y-2">
+        {reviews.map(r => (
+          <li key={r.id} data-pop className="rounded-2xl border border-gray-100 bg-white p-3.5">
+            <div className="flex items-center gap-3">
+              <UserAvatar user={{ id: r.userId, name: r.author?.name || '', avatar: r.author?.avatarUrl ?? undefined }} size={36} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-gray-900">{r.author?.name ?? 'Filmons student'}</p>
+                <p className="text-xs text-gray-400">{timeAgo(r.createdAt)}</p>
+              </div>
+              <span className="flex items-center gap-0.5">{Array.from({ length: r.rating }).map((_, i) => <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />)}</span>
+            </div>
+            {r.body && <p className="mt-2 text-sm leading-relaxed text-gray-600">{r.body}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

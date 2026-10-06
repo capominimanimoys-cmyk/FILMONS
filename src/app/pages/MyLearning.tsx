@@ -4,8 +4,9 @@
 // reuses MyCourseRow from here.
 import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { Bookmark, GraduationCap, Pencil, Settings2, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router';
+import { toast } from 'sonner';
+import { Bookmark, GraduationCap, Radio, Video, Pencil, Settings2, Star, Users, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
   getMyEnrollments,
@@ -16,6 +17,7 @@ import { getTrustLevelsBatch, type TrustLevel } from '../lib/trustApi';
 import { CourseCard } from '../components/courses/CourseCard';
 import { EmptyState, LearningPage, ListSkeleton, PageTitle, SignInPrompt } from '../components/learning/LearningPageParts';
 import { PostMoreMenu } from '../components/connect/PostMoreMenu';
+import { PLATFORM_LABEL, formatFee, getMyBookings, joinLabel, type LiveApplication } from '../lib/liveSessionsApi';
 import { DeleteCourseSheet } from '../components/learning/DeleteCourseSheet';
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
@@ -87,17 +89,58 @@ export function MyCourseRow({ course, onChanged }: { course: Course; onChanged: 
   );
 }
 
-type Tab = 'progress' | 'completed' | 'saved';
+type Tab = 'progress' | 'completed' | 'saved' | 'live';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'progress', label: 'In progress' },
   { id: 'completed', label: 'Completed' },
   { id: 'saved', label: 'Saved' },
+  { id: 'live', label: 'Live sessions' },
 ];
+
+const BOOKING_STATUS: Record<string, { label: string; cls: string }> = {
+  applied: { label: 'Waiting for instructor', cls: 'bg-blue-50 text-blue-700' },
+  accepted: { label: 'Accepted', cls: 'bg-blue-50 text-blue-700' },
+  awaiting_payment: { label: 'Pay to confirm', cls: 'bg-amber-50 text-amber-700' },
+  confirmed: { label: 'Confirmed', cls: 'bg-emerald-50 text-emerald-700' },
+  declined: { label: 'Declined', cls: 'bg-gray-100 text-gray-500' },
+  cancelled: { label: 'Cancelled', cls: 'bg-gray-100 text-gray-500' },
+};
+
+function LiveBookingRow({ b }: { b: LiveApplication }) {
+  const navigate = useNavigate();
+  const s = b.session;
+  if (!s) return null;
+  const st = BOOKING_STATUS[b.status] ?? BOOKING_STATUS.applied;
+  return (
+    <div data-pop className="rounded-2xl border border-gray-100 bg-white p-3.5">
+      <button onClick={() => navigate(`/live/${s.id}`)} className="flex w-full items-center gap-3 text-left">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100">
+          {s.coverUrl ? <img src={s.coverUrl} alt="" className="h-full w-full object-cover" /> : <Radio className="h-5 w-5 text-gray-400" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-gray-900">{s.title}</p>
+          <p className="truncate text-xs text-gray-400">{s.instructor?.name} · {PLATFORM_LABEL[s.platform]}</p>
+          <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</span>
+        </div>
+      </button>
+      {b.scheduledAt && <p className="mt-2 text-xs font-semibold text-gray-700">{new Date(b.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: s.timezone || undefined })} ({s.timezone}) · {formatFee(b.fee, b.currency)}</p>}
+      {b.status === 'awaiting_payment' && (
+        <button onClick={() => toast('Session checkout is coming soon', { description: 'Paid bookings can’t be paid for yet.' })} className="mt-2 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white">Pay {formatFee(b.fee, b.currency)} to confirm</button>
+      )}
+      {b.status === 'confirmed' && (b.meetingLink ? (
+        <a href={b.meetingLink} target="_blank" rel="noopener noreferrer" className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white"><Video className="h-4 w-4" /> {joinLabel(s.platform)}</a>
+      ) : <p className="mt-2 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-500">Your instructor will add the {PLATFORM_LABEL[s.platform]} link here soon.</p>)}
+    </div>
+  );
+}
 
 export function MyLearning() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>('progress');
+  const [qs] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(qs.get('tab') === 'live' ? 'live' : 'progress');
+  const [bookings, setBookings] = useState<LiveApplication[] | null>(null);
+  useEffect(() => { if (user) getMyBookings(user.id).then(setBookings).catch(() => setBookings([])); }, [user?.id]);
   const [enrolled, setEnrolled] = useState<EnrolledCourse[] | null>(null);
   const [saved, setSaved] = useState<Course[] | null>(null);
   const [trust, setTrust] = useState<Map<string, TrustLevel>>(new Map());
@@ -136,7 +179,11 @@ export function MyLearning() {
         ))}
       </div>
 
-      {tab === 'saved' ? (
+      {tab === 'live' ? (
+        bookings === null ? <ListSkeleton rows={3} /> : bookings.length === 0 ? (
+          <EmptyState icon={<Radio className="h-9 w-9" />} title="No live sessions yet" body="Apply for a live session and your bookings will appear here." />
+        ) : <div className="max-w-2xl space-y-3">{bookings.map(b => <LiveBookingRow key={b.id} b={b} />)}</div>
+      ) : tab === 'saved' ? (
         saved === null ? <ListSkeleton rows={4} /> : saved.length === 0 ? (
           <EmptyState icon={<Bookmark className="h-9 w-9" />} title="No saved courses"
             body="Tap the bookmark on any course to save it for later." />

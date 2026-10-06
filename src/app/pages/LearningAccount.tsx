@@ -6,18 +6,21 @@
 import { CourseCover } from '../components/courses/CourseCover';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import {
-  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Star, Users,
+  Bell, BookOpen, Bookmark, CheckCircle2, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Radio, Star, Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { useLearningSession } from '../context/LearningSessionContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { notificationTitle } from '../lib/notifications';
-import { canCreateCourses, getCoursesByInstructor, getMyEnrollments, type Course, type EnrolledCourse } from '../lib/coursesApi';
+import { canCreateCourses, getCoursesByInstructor, getMyEnrollments, getReviewsForInstructor, type Course, type EnrolledCourse, type InstructorReview } from '../lib/coursesApi';
 import { getSavedCourses } from '../lib/topicsApi';
 import { getDisplayIdentity } from '../lib/displayIdentity';
 import { UserAvatar } from '../components/AccountTypeBadge';
+import { CreateTypeChooser, type CreateType } from '../components/learning/CreateTypeChooser';
+import { getLiveSessionsByInstructor, type LiveSession } from '../lib/liveSessionsApi';
 import { MyCourseRow } from './MyLearning';
 import type { Notification } from '../types';
 import {
@@ -201,8 +204,17 @@ export function InstructorDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[] | null>(null);
+  const [reviews, setReviews] = useState<InstructorReview[] | null>(null);
+  const [chooser, setChooser] = useState(false);
+  const [live, setLive] = useState<LiveSession[]>([]);
+  useEffect(() => { if (user) getLiveSessionsByInstructor(user.id).then(setLive).catch(() => {}); }, [user?.id]);
+  const onCreateType = (t: CreateType) => {
+    setChooser(false);
+    navigate(t === 'live' ? '/create/live' : '/create');
+  };
   const load = () => { if (user) getCoursesByInstructor(user.id).then(setCourses).catch(() => setCourses([])); };
-  useEffect(load, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [user?.id]);
+  useEffect(() => { if (user) getReviewsForInstructor(user.id).then(setReviews).catch(() => setReviews([])); }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!user) return (
     <LearningPage>
@@ -227,7 +239,7 @@ export function InstructorDashboard() {
     <LearningPage>
       <PageTitle title="Instructor dashboard" subtitle="Create courses and track how they're doing."
         action={(
-          <button onClick={() => navigate('/create')} className="flex shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">
+          <button onClick={() => setChooser(true)} className="flex shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">
             <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Create course</span><span className="sm:hidden">New</span>
           </button>
         )} />
@@ -253,6 +265,46 @@ export function InstructorDashboard() {
       ) : (
         <div className="max-w-2xl space-y-3">{courses.map(c => <MyCourseRow key={c.id} course={c} onChanged={load} />)}</div>
       )}
+
+      {live.length > 0 && (
+        <div className="mt-10">
+          <SectionTitle title="Live sessions" subtitle={plural(live.length, 'session')} />
+          <div className="max-w-2xl space-y-2">
+            {live.map(l => (
+              <button key={l.id} data-pop onClick={() => navigate(`/instructor/live/${l.id}`)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left hover:bg-gray-50">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100">{l.coverUrl ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" /> : <Radio className="h-5 w-5 text-gray-400" />}</div>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-gray-900">{l.title}</p><p className="text-xs text-gray-400">{l.status === 'published' ? 'Published' : 'Unpublished'} · {l.isFree ? 'Free' : `${l.currency} ${l.price.toFixed(2)}`}</p></div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-10">
+        <SectionTitle title="Recent reviews" subtitle="What students are saying about your courses" />
+        {reviews === null ? <ListSkeleton rows={2} /> : reviews.length === 0 ? (
+          <EmptyState icon={<Star className="h-9 w-9" />} title="No reviews yet" body="Reviews from your students will show up here." />
+        ) : (
+          <ul className="max-w-2xl space-y-2">
+            {reviews.map(r => (
+              <li key={r.id} data-pop>
+                <button onClick={() => navigate(`/instructor/course/${r.courseId}`)} className="w-full rounded-2xl border border-gray-100 bg-white p-3.5 text-left hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar user={{ id: r.userId, name: r.author?.name || '', avatar: r.author?.avatarUrl ?? undefined }} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-gray-900">{r.author?.name ?? 'Filmons student'}</p>
+                      <p className="truncate text-xs text-gray-400">{r.courseTitle} · {timeAgo(r.createdAt)}</p>
+                    </div>
+                    <span className="flex items-center gap-0.5">{Array.from({ length: r.rating }).map((_, i) => <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />)}</span>
+                  </div>
+                  {r.body && <p className="mt-2 text-sm leading-relaxed text-gray-600">{r.body}</p>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {chooser && <CreateTypeChooser onClose={() => setChooser(false)} onSelect={onCreateType} />}
     </LearningPage>
   );
 }
