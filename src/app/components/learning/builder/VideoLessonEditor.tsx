@@ -54,8 +54,9 @@ export function VideoLessonEditor({ b, lesson, onClose }: { b: CourseBuilderStat
             <p className="text-sm font-bold text-gray-900">Video</p>
             {lesson.videoStatus === 'ready' && lesson.videoUrl && !upload && (
               <div className="space-y-2">
-                <video key={lesson.videoUrl} src={lesson.videoUrl} controls playsInline preload="metadata" className="w-full rounded-xl bg-black" style={{ aspectRatio: '16/9' }} />
-                <p className="text-xs text-gray-500">Ready · Detected duration <span className="font-bold text-gray-900">{formatDuration(lesson.durationSeconds)}</span></p>
+                <video key={lesson.videoUrl} src={lesson.videoUrl} controls playsInline preload="metadata" className="w-full rounded-xl bg-black" style={{ aspectRatio: '16/9' }}
+                  onLoadedMetadata={e => { const d = e.currentTarget.duration; if (!lesson.durationSeconds && Number.isFinite(d) && d > 0) patch({ durationSeconds: Math.round(d) }); }} />
+                <p className="text-xs text-gray-500">Ready{lesson.durationSeconds > 0 && <> · Detected duration <span className="font-bold text-gray-900">{formatDuration(lesson.durationSeconds)}</span></>}</p>
               </div>
             )}
             <UploadBox accept="video/mp4,video/quicktime,video/webm,video/x-m4v" label={lesson.videoUrl && lesson.videoStatus === 'ready' ? 'Replace video' : 'Upload video'}
