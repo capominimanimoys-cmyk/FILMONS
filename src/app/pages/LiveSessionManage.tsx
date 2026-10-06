@@ -92,7 +92,7 @@ function AppCard({ app, session, onChanged }: { app: LiveApplication; session: L
     const err = await acceptApplication(app, session, { scheduledAt: when, fee, currency: session.currency, meetingLink: link });
     setBusy(false);
     if (err) { toast.error(err); return; }
-    toast.success(fee > 0 ? 'Accepted — the student can now pay to confirm' : 'Booking confirmed');
+    toast.success(fee > 0 ? 'Approved — payment request sent to the student' : 'Booking confirmed');
     setAccepting(false); onChanged();
   };
   const decline = async () => { (await updateApplicationStatus(app.id, 'declined', { studentId: app.studentId, instructorId: session.instructorId, instructorName: session.instructor?.name || 'Your instructor', title: session.title })) ? onChanged() : toast.error('Could not decline'); };
@@ -121,10 +121,10 @@ function AppCard({ app, session, onChanged }: { app: LiveApplication; session: L
       {accepting && (
         <div data-pop className="mt-3 space-y-3 rounded-xl bg-gray-50 p-3">
           <Field label={`Date and time (${session.timezone})`} htmlFor={`w-${app.id}`}><input id={`w-${app.id}`} type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} className={inputCls} /></Field>
-          <Field label={`Fee (${session.currency}, per person)`} htmlFor={`f-${app.id}`} hint="Set 0 for no charge. A paid booking is confirmed once the student pays."><input id={`f-${app.id}`} type="number" min={0} step="0.01" value={fee} onChange={e => setFee(Number(e.target.value) || 0)} className={inputCls} /></Field>
+          <Field label={`Fee (${session.currency}, per person)`} htmlFor={`f-${app.id}`} hint="Set 0 for no charge. The student gets a payment request and the booking is confirmed once they pay."><input id={`f-${app.id}`} type="number" min={0} step="0.01" value={fee} onChange={e => setFee(Number(e.target.value) || 0)} className={inputCls} /></Field>
           <Field label="Meeting link" optional htmlFor={`l-${app.id}`} hint="Leave empty to use the session’s default link, or add it later."><input id={`l-${app.id}`} value={link} onChange={e => setLink(e.target.value)} placeholder="https://" className={inputCls} /></Field>
           <div className="flex gap-2">
-            <button onClick={accept} disabled={busy} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white disabled:opacity-60">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Accept and confirm</button>
+            <button onClick={accept} disabled={busy} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white disabled:opacity-60">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {fee > 0 ? 'Approve and send payment request' : 'Approve and confirm booking'}</button>
             <button onClick={() => setAccepting(false)} className="rounded-xl px-4 py-2 text-sm font-bold text-gray-600">Cancel</button>
           </div>
         </div>

@@ -67,6 +67,7 @@ function _notifTitle(type: string, actorName: string, extra?: { listingTitle?: s
     case 'course_published':          return `${actorName} published a new course`;
     case 'course_purchased':          return 'You’re enrolled in your new course';
     case 'live_session_application':  return `${actorName} applied for your live session`;
+    case 'live_session_payment_request': return `${actorName} sent you a payment request for your live session`;
     case 'live_session_accepted':     return 'Your live session application was accepted';
     case 'live_session_declined':     return 'Your live session application was declined';
     case 'live_session_confirmed':    return 'Your live session booking is confirmed';

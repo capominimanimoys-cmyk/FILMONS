@@ -270,8 +270,8 @@ export async function acceptApplication(app: LiveApplication, session: LiveSessi
     fee: free ? 0 : input.fee, currency: input.currency, meeting_link: link || null, updated_at: new Date().toISOString(),
   }).eq('id', app.id).eq('status', 'applied');
   if (error) return error.message;
-  notify(app.studentId, session.instructorId, session.instructor?.name || 'Your instructor', free ? 'live_session_confirmed' : 'live_session_accepted',
-    free ? `Your booking for ${session.title} is confirmed` : `Accepted — pay to confirm your booking for ${session.title}`).catch(() => {});
+  notify(app.studentId, session.instructorId, session.instructor?.name || 'Your instructor', free ? 'live_session_confirmed' : 'live_session_payment_request',
+    free ? `Your booking for ${session.title} is confirmed` : `Approved — pay ${formatFee(input.fee, input.currency)} to confirm your booking for ${session.title}`).catch(() => {});
   return null;
 }
 
@@ -309,6 +309,21 @@ export async function getMyBookings(studentId: string): Promise<LiveApplication[
 
 async function notify(userId: string, actorId: string | null, actorName: string, type: string, title: string) {
   await supabase.from('notifications').insert({ user_id: userId, actor_id: actorId, actor_name: actorName, type, title, is_read: false });
+}
+
+/** Confirmed upcoming bookings across all of an instructor's sessions. */
+export async function getUpcomingBookingsForInstructor(instructorId: string): Promise<(LiveApplication & { session: LiveSession })[]> {
+  const { data: ss } = await supabase.from('live_sessions').select('*').eq('instructor_id', instructorId);
+  const sessions = new Map<string, LiveSession>((ss ?? []).map((r: any): [string, LiveSession] => [r.id, rowToSession(r)]));
+  if (!sessions.size) return [];
+  const { data } = await supabase.from('live_session_applications').select('*').in('session_id', [...sessions.keys()])
+    .eq('status', 'confirmed').gte('scheduled_at', new Date(Date.now() - 2 * 3600_000).toISOString()).order('scheduled_at', { ascending: true }).limit(20);
+  const apps = (data ?? []).map(rowToApp);
+  const profiles = await profilesById(apps.map(a => a.studentId));
+  return apps.map(a => {
+    const p = profiles.get(a.studentId);
+    return { ...a, session: sessions.get(a.sessionId)!, student: p ? { name: p.name, avatarUrl: p.avatar_url ?? null } : undefined };
+  });
 }
 
 export function joinLabel(p: MeetingPlatform) { return p === 'zoom' ? 'Join Zoom session' : 'Join Teams session'; }
