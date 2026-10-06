@@ -26,7 +26,7 @@ const ORIGIN_KEY = 'filmons_learning_origin';
 // Enroll/Continue CTA (desktop keeps the sidebar). Matches exactly
 // `course/:courseId` (useLocation().pathname is basename-relative), not
 // its `/content` or `/lesson/:lessonId` children.
-const COURSE_DETAIL_PATH = /^\/(course|live)\/[^/]+\/?$/;
+const COURSE_DETAIL_PATH = /^\/(course|live)\/[^/]+(\/share-card)?\/?$/;
 // A lesson is focus mode on every screen size: no header, drawer or
 // sidebar -- the player's own back + Lessons controls only.
 const LESSON_PATH = /^\/course\/[^/]+\/lesson\//;

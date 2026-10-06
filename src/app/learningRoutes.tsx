@@ -6,6 +6,7 @@ import { CourseBuilder, CreateCourseStart } from './pages/CourseBuilder';
 import { CourseManage } from './pages/CourseManage';
 import { CertificatePage } from './pages/CertificatePage';
 import { CourseDetail } from './pages/CourseDetail';
+import { CourseShareCard, LiveSessionShareCard } from './pages/LearningShareCards';
 import { LiveSessionBuilder } from './pages/LiveSessionBuilder';
 import { LiveSessionDetail } from './pages/LiveSessionDetail';
 import { LiveSessionManage } from './pages/LiveSessionManage';
@@ -46,6 +47,8 @@ const learningRouteTree = [
       { path: 'instructor/course/:courseId', Component: CourseManage },
       { path: 'instructor/course/:courseId/edit', Component: CourseBuilder },
       { path: 'course/:courseId', Component: CourseDetail },
+      { path: 'course/:courseId/share-card', Component: CourseShareCard },
+      { path: 'live/:sessionId/share-card', Component: LiveSessionShareCard },
       { path: 'course/:courseId/content', Component: CourseContent },
       { path: 'course/:courseId/lesson/:lessonId', Component: LearningPlayer },
     ],
