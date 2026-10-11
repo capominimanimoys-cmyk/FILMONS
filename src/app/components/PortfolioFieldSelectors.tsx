@@ -22,14 +22,16 @@ export const VISIBILITY_OPTIONS: { id: ItemVisibility; label: string; sub: strin
   { id: 'private',     label: 'Private',     sub: 'Only you',              Icon: Lock  },
 ];
 
-export function CategoryPanel({ category, subcategory, onSave, onClose, closing }: {
+export function CategoryPanel({ category, subcategory, onSave, onClose, closing, depth }: {
   category: string; subcategory: string;
   onSave: (category: string, subcategory: string) => void;
   onClose: () => void; closing?: boolean;
+  /** Stacking depth for EditProfileFieldPanel -- raise it when opened over a high-z editor (e.g. WorkEditor). */
+  depth?: number;
 }) {
   const subs = PORTFOLIO_SUBCATEGORIES[category] ?? [];
   return (
-    <EditProfileFieldPanel title="Category" onClose={onClose} closing={closing}>
+    <EditProfileFieldPanel title="Category" onClose={onClose} closing={closing} depth={depth}>
       <div className="px-2 py-2">
         {PORTFOLIO_CATEGORIES.map(c => (
           <button
@@ -61,15 +63,17 @@ export function CategoryPanel({ category, subcategory, onSave, onClose, closing 
   );
 }
 
-export function TextFieldPanel({ title, placeholder, value, onSave, onClose, closing, icon: Icon }: {
+export function TextFieldPanel({ title, placeholder, value, onSave, onClose, closing, icon: Icon, depth }: {
   title: string; placeholder: string; value: string;
   onSave: (v: string) => void; onClose: () => void; closing?: boolean;
+  /** Stacking depth for EditProfileFieldPanel -- raise it when opened over a high-z editor (e.g. WorkEditor). */
+  depth?: number;
   icon?: any;
 }) {
   const [v, setV] = useState(value);
   return (
     <EditProfileFieldPanel
-      title={title} onClose={onClose} closing={closing}
+      title={title} onClose={onClose} closing={closing} depth={depth}
       footer={<button onClick={() => onSave(v.trim())} className="px-5 py-2.5 rounded-xl font-black text-white text-sm bg-blue-600">Done</button>}
     >
       <div className="px-4 py-4">
@@ -86,9 +90,11 @@ export function TextFieldPanel({ title, placeholder, value, onSave, onClose, clo
   );
 }
 
-export function TagsPanel({ title, placeholder, values, onSave, onClose, closing }: {
+export function TagsPanel({ title, placeholder, values, onSave, onClose, closing, depth }: {
   title: string; placeholder: string; values: string[];
   onSave: (v: string[]) => void; onClose: () => void; closing?: boolean;
+  /** Stacking depth for EditProfileFieldPanel -- raise it when opened over a high-z editor (e.g. WorkEditor). */
+  depth?: number;
 }) {
   const [tags, setTags] = useState<string[]>(values);
   const [input, setInput] = useState('');
@@ -99,7 +105,7 @@ export function TagsPanel({ title, placeholder, values, onSave, onClose, closing
   };
   return (
     <EditProfileFieldPanel
-      title={title} onClose={onClose} closing={closing}
+      title={title} onClose={onClose} closing={closing} depth={depth}
       footer={<button onClick={() => onSave(tags)} className="px-5 py-2.5 rounded-xl font-black text-white text-sm bg-blue-600">Done</button>}
     >
       <div className="px-4 py-4">
@@ -123,11 +129,13 @@ export function TagsPanel({ title, placeholder, values, onSave, onClose, closing
   );
 }
 
-export function VisibilityPanel({ value, onSave, onClose, closing }: {
+export function VisibilityPanel({ value, onSave, onClose, closing, depth }: {
   value: ItemVisibility; onSave: (v: ItemVisibility) => void; onClose: () => void; closing?: boolean;
+  /** Stacking depth for EditProfileFieldPanel -- raise it when opened over a high-z editor (e.g. WorkEditor). */
+  depth?: number;
 }) {
   return (
-    <EditProfileFieldPanel title="Visibility" onClose={onClose} closing={closing}>
+    <EditProfileFieldPanel title="Visibility" onClose={onClose} closing={closing} depth={depth}>
       <div className="px-2 py-2">
         {VISIBILITY_OPTIONS.map(opt => (
           <button key={opt.id} onClick={() => onSave(opt.id)}
