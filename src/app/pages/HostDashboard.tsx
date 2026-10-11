@@ -24,6 +24,26 @@ import { supabase } from '../../lib/supabase';
 import { normalizeTier } from '../lib/reliabilityApi';
 import { getOpportunityUsage, getEntitlement, resetLabel, getLockedOpportunityIds } from '../lib/entitlements';
 import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
+import { DashboardCalendarCard } from '../components/calendar/DashboardCalendarCard';
+
+// Opportunity + application management lives on dashboard cards (the Calendar
+// replaced them in the mobile menu); each opens its full management tab.
+function ManagementCards({ onOpen }: { onOpen: (tab: 'opportunities' | 'applications') => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <button onClick={() => onOpen('opportunities')} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-left hover:bg-gray-50 transition-colors">
+        <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center mb-2"><Briefcase className="w-4 h-4 text-emerald-600" /></div>
+        <p className="text-sm font-bold text-gray-900">Opportunities</p>
+        <p className="text-[11px] text-gray-500 mt-0.5">Manage posts &amp; applicants</p>
+      </button>
+      <button onClick={() => onOpen('applications')} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-left hover:bg-gray-50 transition-colors">
+        <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center mb-2"><FileText className="w-4 h-4 text-blue-600" /></div>
+        <p className="text-sm font-bold text-gray-900">Applications</p>
+        <p className="text-[11px] text-gray-500 mt-0.5">Track what you applied to</p>
+      </button>
+    </div>
+  );
+}
 
 function getStoredListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
@@ -474,6 +494,8 @@ function CreatorDashboard({ user }: { user: any }) {
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4 overflow-x-hidden">
         <DashboardTrustCard userId={user.id} />
+        <DashboardCalendarCard userId={user.id} />
+        <ManagementCards onOpen={tab => setTab(tab)} />
         {/* Become a Host CTA */}
         <div className="bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg shadow-purple-200">
           <div className="flex items-start gap-4">
@@ -905,6 +927,8 @@ function HostDashboardContent({ user }: { user: any }) {
               </div>
             </div>
         <DashboardTrustCard userId={user.id} />
+        <DashboardCalendarCard userId={user.id} />
+        <ManagementCards onOpen={tab => setActiveTab(tab)} />
             <div className="grid grid-cols-2 gap-3">
               <StatCard icon={<Package className="w-5 h-5 text-blue-600" />} label="Active Listings" value={stats.listingCount.toString()} sub="on Filmons" color="bg-blue-50" />
               <StatCard icon={<MessageCircle className="w-5 h-5 text-purple-600" />} label="Pending Requests" value={stats.activeRequests.toString()} sub="awaiting review" color="bg-purple-50" />

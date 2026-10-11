@@ -117,6 +117,7 @@ export const notificationSettingsApi = {
     notif_sound: 'Default', notif_vibration: true, notif_desktop: true,
     quiet_hours_enabled: false, quiet_start: '11:00 PM', quiet_end: '8:00 AM',
     notif_preview: 'Full Content',
+    notif_calendar_updates: true, notif_calendar_reminders: true,
   }),
   save: (userId: string, data: Record<string, any>) => upsert('notification_settings', userId, data),
 };

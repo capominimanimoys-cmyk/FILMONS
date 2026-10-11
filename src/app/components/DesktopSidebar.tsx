@@ -7,7 +7,7 @@
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useEffect, useState } from 'react';
 import {
-  Home, Layers, MessageCircle, Heart, CalendarDays, CreditCard,
+  Home, Layers, MessageCircle, Heart, CalendarDays, CalendarClock, CreditCard,
   Star, BarChart2, Settings, CircleHelp, Sparkles, UserPlus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -100,6 +100,7 @@ export function DesktopSidebar() {
             <NavItem icon={MessageCircle} label="Messages"                 to="/inbox"               active={isActive('/inbox')}      badge={unreadMsgs} />
             <NavItem icon={Heart}         label="Saved"                    to="/profile?tab=liked"   active={location.pathname === '/profile' && location.search.includes('tab=liked')} />
             <NavItem icon={CalendarDays}  label="Bookings"                 to="/my-orders"           active={isActive('/my-orders')} />
+            <NavItem icon={CalendarClock} label="Calendar"                 to="/calendar"            active={isActive('/calendar')} />
             <NavItem icon={CreditCard}    label="Earnings"                 to="/wallet"              active={isActive('/wallet')} />
             <NavItem icon={Star}          label="Reviews"                  to="/profile?tab=reviews" active={location.pathname === '/profile' && location.search.includes('tab=reviews')} />
             <NavItem icon={BarChart2}     label="Analytics"                to="/dashboard"           active={isActive('/dashboard')} />
