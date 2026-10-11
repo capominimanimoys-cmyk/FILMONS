@@ -2086,8 +2086,9 @@ async function fetchTopMarketplaceListings(limit: number): Promise<Listing[]> {
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('boosted', { ascending: false }).order('created_at', { ascending: false }).limit(limit * 2);
   });
-  // A failed read must surface as a failure, never as an empty list (which rendered as a blank page).
-  if (res.error) throw res.error;
+  // `boosted` may not exist (or not be orderable) on every database -- fall back to plain recency
+  // rather than failing the row.
+  if (res.error) return fetchLatestMarketplaceListings(limit);
   return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
 }
 
@@ -2215,9 +2216,11 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
     setDiscoveryFailed(false);
     // Any failed query: flag it (visible Retry) and release every still-loading
     // row to an empty state so no skeleton hangs forever.
-    const fail = () => {
+    // Secondary rows (role / gear / hashtag / nearby / topics) failing just leaves
+    // that row empty -- the card is only for the PRIMARY row of each product
+    // failing, otherwise one optional lookup made a fully loaded page look broken.
+    const release = () => {
       if (cancelled) return;
-      setDiscoveryFailed(true);
       setLatestListings(p => p ?? []); setTopListings(p => p ?? []); setNearbyListings(p => p ?? []);
       setRoleListings(p => p ?? []); setGearListings(p => p ?? []); setFollowedHashtagListings(p => p ?? []);
       setTrendingTags(p => p ?? []); setConnectCourses(p => p ?? []); setNearbyCreators(p => p ?? []);
@@ -2225,23 +2228,25 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       setSkillCourses(p => p ?? []); setFollowedHashtagCourses(p => p ?? []);
       setConnectDiscovery(p => p ?? ({ trendingPosts: [], featuredPortfolio: [], profilesYouMayLike: [] } as any));
     };
+    const fail = () => { if (cancelled) return; setDiscoveryFailed(true); release(); };
+    const soft = (e?: unknown) => { console.warn('[discovery] optional row failed:', e); release(); };
     if (product === 'marketplace') {
       fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setLatestListings(r); }).catch(fail);
-      fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); }).catch(fail);
+      fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); }).catch(soft);
       // Hidden entirely (not a fake/empty section) when the viewer has no
       // saved city -- same precedent as SearchOverlay's own nearbyListings.
       if (user?.city) {
-        fetchNearbyMarketplaceListings(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyListings(r); }).catch(fail);
+        fetchNearbyMarketplaceListings(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyListings(r); }).catch(soft);
       } else setNearbyListings([]);
       if (primaryRole) {
-        searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(fail);
+        searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(soft);
       } else setRoleListings([]);
       // "Because you use {gear}" -- the user's own first saved gear item
       // (AboutEditor.tsx's Gear & Tools accordion), searched the same way
       // the role row already is -- real equipment they actually use,
       // never a fabricated/generic suggestion.
       if (user?.gear?.length) {
-        searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(fail);
+        searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(soft);
       } else setGearListings([]);
       // "From #tag you follow" -- the viewer's single most recently
       // followed hashtag (Phase C of the Hashtag Page Flow spec), searched
@@ -2252,9 +2257,9 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         getMostRecentFollowedHashtag(user.id).then(tag => {
           if (cancelled) return;
           setFollowedHashtag(tag);
-          if (tag) searchMatchingListings(tag).then(rows => { if (!cancelled) setFollowedHashtagListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(fail);
+          if (tag) searchMatchingListings(tag).then(rows => { if (!cancelled) setFollowedHashtagListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(soft);
           else setFollowedHashtagListings([]);
-        }).catch(fail);
+        }).catch(soft);
       } else { setFollowedHashtag(null); setFollowedHashtagListings([]); }
     } else if (product === 'connect') {
       // Same shared discovery source SearchOverlay.tsx's own Connect
@@ -2262,30 +2267,30 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       // second posts-only version living here.
       fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); }).catch(fail);
       getTrendingHashtags(5).then(r => { if (!cancelled) setTrendingTags(r); }).catch(() => { if (!cancelled) setTrendingTags([]); });
-      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); }).catch(fail);
+      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); }).catch(soft);
       // Hidden entirely (not a fake/empty section) when the viewer has no
       // saved city -- same precedent as Marketplace's own nearbyListings.
       if (user?.city) {
-        fetchNearbyCreators(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyCreators(r); }).catch(fail);
+        fetchNearbyCreators(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyCreators(r); }).catch(soft);
       } else setNearbyCreators([]);
     } else if (product === 'learning') {
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); }).catch(fail);
-      getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); }).catch(fail);
+      getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); }).catch(soft);
       if (primaryRole) {
-        getCourses({ query: primaryRole, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setRoleCourses(r); }).catch(fail);
+        getCourses({ query: primaryRole, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setRoleCourses(r); }).catch(soft);
       } else setRoleCourses([]);
       // "Based on your skills in {skill}" -- the user's own first saved
       // skill (AboutEditor.tsx's Skills & Specialties accordion).
       if (user?.skills?.length) {
-        getCourses({ query: user.skills[0], limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setSkillCourses(r); }).catch(fail);
+        getCourses({ query: user.skills[0], limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setSkillCourses(r); }).catch(soft);
       } else setSkillCourses([]);
       if (user?.id) {
         getMostRecentFollowedHashtag(user.id).then(tag => {
           if (cancelled) return;
           setFollowedHashtag(tag);
-          if (tag) getCourses({ query: tag, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setFollowedHashtagCourses(r); }).catch(fail);
+          if (tag) getCourses({ query: tag, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setFollowedHashtagCourses(r); }).catch(soft);
           else setFollowedHashtagCourses([]);
-        }).catch(fail);
+        }).catch(soft);
       } else { setFollowedHashtag(null); setFollowedHashtagCourses([]); }
     }
     return () => { cancelled = true; };
