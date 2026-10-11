@@ -118,6 +118,8 @@ export function Login() {
   // options immediately instead of making them sit through it.
   const location = useLocation();
   const cameFromInsideApp = location.key !== 'default';
+  // Arriving from inside the app (e.g. a guest tapping Sign In): slide the page in.
+  const [slideIn] = useState(() => cameFromInsideApp || !!isGuest);
   const [screen, setScreen] = useState<Screen>(
     prefillEmail ? 'email' : (isGuest || cameFromInsideApp ? 'method' : 'splash')
   );
@@ -383,7 +385,7 @@ export function Login() {
   // ── METHOD SELECTOR ──────────────────────────────────────────────────────
   if (screen === 'method') {
     return (
-      <AuthScreenLayout>
+      <AuthScreenLayout slideIn={slideIn}>
         <CinematicBg/>
         {desktopPanel}
         <div className="auth-pop-main lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
@@ -432,7 +434,7 @@ export function Login() {
   // ── EMAIL LOGIN ──────────────────────────────────────────────────────────
   if (screen === 'email') {
     return (
-      <AuthScreenLayout>
+      <AuthScreenLayout slideIn={slideIn}>
         <CinematicBg/>
         {desktopPanel}
         <div className="auth-pop-main lg:hidden relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
@@ -514,7 +516,7 @@ export function Login() {
   // ── EMAIL NOT FOUND ──────────────────────────────────────────────────────
   if (screen === 'email_not_found') {
     return (
-      <AuthScreenLayout>
+      <AuthScreenLayout slideIn={slideIn}>
         <CinematicBg/>
         <div className="auth-pop-main relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           {/* Back */}
@@ -603,7 +605,7 @@ export function Login() {
     const providerLabel = oauthOnlyProviders.includes('google') ? 'Google' : oauthOnlyProviders.includes('apple') ? 'Apple' : 'a social account';
     const provider: 'google' | 'apple' = oauthOnlyProviders.includes('apple') ? 'apple' : 'google';
     return (
-      <AuthScreenLayout>
+      <AuthScreenLayout slideIn={slideIn}>
         <CinematicBg/>
         <div className="auth-pop-main relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto">
           <button
@@ -651,7 +653,7 @@ export function Login() {
 
   // ── SECURITY / OTP ───────────────────────────────────────────────────────
   return (
-    <AuthScreenLayout>
+    <AuthScreenLayout slideIn={slideIn}>
       <CinematicBg/>
       <div className="auth-pop-main relative z-10 flex flex-col flex-1 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <button onClick={goBack} className="flex items-center gap-2 text-white/60 pt-14 pb-6 w-fit hover:text-white transition-colors">
