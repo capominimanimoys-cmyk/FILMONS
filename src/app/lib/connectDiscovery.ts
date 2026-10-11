@@ -31,3 +31,32 @@ export async function fetchConnectDiscovery(userId?: string, limit = 10): Promis
   ]);
   return { trendingPosts, featuredPortfolio, profilesYouMayLike };
 }
+
+// Last result per viewer, kept in memory so reopening the Connect page paints
+// instantly (stale-while-revalidate) while the fresh data loads behind it.
+const cache = new Map<string, { at: number; data: Partial<ConnectDiscovery> }>();
+const CACHE_TTL_MS = 10 * 60_000;
+export function getCachedConnectDiscovery(userId?: string): Partial<ConnectDiscovery> | null {
+  const e = cache.get(userId ?? '');
+  return e && Object.keys(e.data).length && Date.now() - e.at < CACHE_TTL_MS ? e.data : null;
+}
+
+/** Same three sources as fetchConnectDiscovery, but each one is reported the
+ *  moment IT finishes instead of all three waiting on the slowest (usually the
+ *  trending-posts hydration or the suggested-creators lookup). A section can
+ *  therefore appear as soon as its own data is ready. Resolves when all are done. */
+export async function streamConnectDiscovery(
+  userId: string | undefined,
+  limit: number,
+  onPart: (part: Partial<ConnectDiscovery>) => void,
+): Promise<void> {
+  const entry = cache.get(userId ?? '') ?? { at: 0, data: {} as Partial<ConnectDiscovery> };
+  cache.set(userId ?? '', entry);
+  const report = (part: Partial<ConnectDiscovery>) => { entry.data = { ...entry.data, ...part }; entry.at = Date.now(); onPart(part); };
+  await Promise.all([
+    (userId ? getSuggestedCreators(userId, { limit }).catch(() => [] as SuggestedCreator[]) : Promise.resolve([] as SuggestedCreator[]))
+      .then(profilesYouMayLike => report({ profilesYouMayLike })),
+    postsApi.getTrendingPosts(limit).catch(() => [] as Post[]).then(trendingPosts => report({ trendingPosts })),
+    getPortfolioFeed({ limit, viewerId: userId }).catch(() => [] as PortfolioFeedEntry[]).then(featuredPortfolio => report({ featuredPortfolio })),
+  ]);
+}

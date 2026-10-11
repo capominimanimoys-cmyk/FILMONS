@@ -46,7 +46,7 @@ import { getPortfolioEntriesByIds, getMutualConnectionsBatch, type PortfolioFeed
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
-import { fetchConnectDiscovery, type ConnectDiscovery } from '../lib/connectDiscovery';
+import { streamConnectDiscovery, getCachedConnectDiscovery, type ConnectDiscovery } from '../lib/connectDiscovery';
 import { Hash, MapPin, TrendingUp } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { isProfessional, normalizeTier, getTierBadge, AccountTier } from '../lib/reliabilityApi';
@@ -2226,7 +2226,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       setTrendingTags(p => p ?? []); setConnectCourses(p => p ?? []); setNearbyCreators(p => p ?? []);
       setLatestCourses(p => p ?? []); setTopCourses(p => p ?? []); setRoleCourses(p => p ?? []);
       setSkillCourses(p => p ?? []); setFollowedHashtagCourses(p => p ?? []);
-      setConnectDiscovery(p => p ?? ({ trendingPosts: [], featuredPortfolio: [], profilesYouMayLike: [] } as any));
+      setConnectDiscovery(p => ({ trendingPosts: [], featuredPortfolio: [], profilesYouMayLike: [], ...(p ?? {}) } as ConnectDiscovery));
     };
     const fail = () => { if (cancelled) return; setDiscoveryFailed(true); release(); };
     const soft = (e?: unknown) => { console.warn('[discovery] optional row failed:', e); release(); };
@@ -2265,7 +2265,8 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       // Same shared discovery source SearchOverlay.tsx's own Connect
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
       // second posts-only version living here.
-      fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); }).catch(fail);
+      { const cached = getCachedConnectDiscovery(user?.id); if (cached) setConnectDiscovery(prev => ({ ...cached, ...(prev ?? {}) } as ConnectDiscovery)); }
+      streamConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT, part => { if (!cancelled) setConnectDiscovery(prev => ({ ...(prev ?? {}), ...part } as ConnectDiscovery)); }).catch(fail);
       getTrendingHashtags(5).then(r => { if (!cancelled) setTrendingTags(r); }).catch(() => { if (!cancelled) setTrendingTags([]); });
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); }).catch(soft);
       // Hidden entirely (not a fake/empty section) when the viewer has no
