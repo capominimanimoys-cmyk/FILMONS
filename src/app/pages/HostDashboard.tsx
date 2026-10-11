@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { DashboardTrustCard } from '../components/trust/DashboardTrustCard';
 import { useHeaderCollapse } from '../lib/useHeaderCollapse';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -19,10 +20,9 @@ import { savedListingsApi, listingsApi, reviewsApi } from '../lib/api';
 import { walletApi } from '../lib/walletApi';
 import { StatsCard, StatsGrid } from '../components/StatsCard';
 import { supabase } from '../../lib/supabase';
-import { reliabilityApi, ReputationScore, scoreColor, getCompositeTier, isCreatorPlus as isCreatorPlusTier, normalizeTier } from '../lib/reliabilityApi';
+import { normalizeTier } from '../lib/reliabilityApi';
 import { getOpportunityUsage, getEntitlement, resetLabel, getLockedOpportunityIds } from '../lib/entitlements';
 import { MyOpportunitiesOverview } from './dashboard/MyOpportunitiesOverview';
-import { setSettingsReturnTo } from '../lib/settingsReturnTo';
 
 function getStoredListings(): Listing[] {
   try { return JSON.parse(localStorage.getItem('filmons_listings') || '[]'); } catch { return []; }
@@ -410,16 +410,12 @@ function CreatorDashboard({ user }: { user: any }) {
   );
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showOpportunityGate, setShowOpportunityGate] = useState(false);
-  const [rep, setRep] = useState<ReputationScore | null>(null);
   const header = useHeaderCollapse();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
     tabRefs.current[tab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
   }, [tab]);
 
-  useEffect(() => {
-    reliabilityApi.getScore(user.id).then(setRep).catch(() => {});
-  }, [user.id]);
 
   useEffect(() => {
     // Fetch from orders table (source of truth)
@@ -474,39 +470,7 @@ function CreatorDashboard({ user }: { user: any }) {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4 overflow-x-hidden">
-        {/* Reliability score mini-card */}
-        {rep && (() => {
-          const composite = rep.reliability_score ?? 0;
-          const color = scoreColor(composite);
-          const tier = getCompositeTier(rep.reliability_level, isCreatorPlusTier(rep.account_type));
-          const tierLabel = tier.label;
-          return (
-            <button onClick={() => { setSettingsReturnTo(window.location.pathname); navigate('/settings/reviews'); }}
-              className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors">
-              <svg width={52} height={52} style={{ flexShrink: 0, overflow: 'visible' }}>
-                <circle cx={26} cy={26} r={20} fill="none" stroke="#e5e7eb" strokeWidth="5"/>
-                <circle cx={26} cy={26} r={20} fill="none" stroke={color} strokeWidth="5"
-                  strokeDasharray={`${(composite / 100) * (2 * Math.PI * 20)} ${2 * Math.PI * 20}`}
-                  strokeLinecap="round" transform="rotate(-90 26 26)"
-                  style={{ filter: `drop-shadow(0 0 4px ${color}55)` }}/>
-                <text x={26} y={30} textAnchor="middle" fontSize={13} fontWeight="900" fill={color}>{Math.round(composite)}</text>
-              </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-gray-900">Reliability Score</p>
-                <p className="text-xs font-semibold mt-0.5" style={{ color }}>{tierLabel}</p>
-                <div className="flex items-center gap-3 mt-1.5">
-                  {rep.renter_score !== undefined && (
-                    <span className="text-[10px] text-gray-400">🛒 Renter <strong className="text-gray-700">{Math.round(rep.renter_score)}</strong></span>
-                  )}
-                  {rep.verification_score !== undefined && (
-                    <span className="text-[10px] text-gray-400">✓ Verify <strong className="text-gray-700">{Math.round(rep.verification_score)}</strong></span>
-                  )}
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
-            </button>
-          );
-        })()}
+        <DashboardTrustCard userId={user.id} />
         {/* Become a Host CTA */}
         <div className="bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg shadow-purple-200">
           <div className="flex items-start gap-4">
@@ -751,11 +715,7 @@ function HostDashboardContent({ user }: { user: any }) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [dbTransactions, setDbTransactions] = useState<any[]>([]);
   const [dbTxLoading, setDbTxLoading] = useState(false);
-  const [rep, setRep] = useState<ReputationScore | null>(null);
 
-  useEffect(() => {
-    reliabilityApi.getScore(user.id).then(setRep).catch(() => {});
-  }, [user.id]);
 
   // Weekly Opportunity posts/applications usage -- shown on this
   // dashboard's Opportunities/Applications tabs. Business is exempt (its
@@ -939,42 +899,7 @@ function HostDashboardContent({ user }: { user: any }) {
                 <div><p className="text-blue-200 text-xs">Transactions</p><p className="text-white font-bold text-sm">{dbTransactions.length}</p></div>
               </div>
             </div>
-            {/* Reliability score card */}
-            {rep && (() => {
-              const composite = rep.reliability_score ?? 0;
-              const color = scoreColor(composite);
-              const tier = getCompositeTier(rep.reliability_level, isCreatorPlusTier(rep.account_type));
-              const tierLabel = tier.label;
-              return (
-                <button onClick={() => { setSettingsReturnTo(window.location.pathname); navigate('/settings/reviews'); }}
-                  className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors">
-                  <svg width={52} height={52} style={{ flexShrink: 0, overflow: 'visible' }}>
-                    <circle cx={26} cy={26} r={20} fill="none" stroke="#e5e7eb" strokeWidth="5"/>
-                    <circle cx={26} cy={26} r={20} fill="none" stroke={color} strokeWidth="5"
-                      strokeDasharray={`${(composite / 100) * (2 * Math.PI * 20)} ${2 * Math.PI * 20}`}
-                      strokeLinecap="round" transform="rotate(-90 26 26)"
-                      style={{ filter: `drop-shadow(0 0 4px ${color}55)` }}/>
-                    <text x={26} y={30} textAnchor="middle" fontSize={13} fontWeight="900" fill={color}>{Math.round(composite)}</text>
-                  </svg>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black text-gray-900">Reliability Score</p>
-                    <p className="text-xs font-semibold mt-0.5" style={{ color }}>{tierLabel}</p>
-                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                      {rep.renter_score !== undefined && (
-                        <span className="text-[10px] text-gray-400">🛒 Renter <strong className="text-gray-700">{Math.round(rep.renter_score)}</strong></span>
-                      )}
-                      {rep.host_score !== undefined && (
-                        <span className="text-[10px] text-gray-400">🏠 Host <strong className="text-gray-700">{Math.round(rep.host_score)}</strong></span>
-                      )}
-                      {rep.service_score !== undefined && (
-                        <span className="text-[10px] text-gray-400">🎬 Service <strong className="text-gray-700">{Math.round(rep.service_score)}</strong></span>
-                      )}
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
-                </button>
-              );
-            })()}
+        <DashboardTrustCard userId={user.id} />
             <div className="grid grid-cols-2 gap-3">
               <StatCard icon={<Package className="w-5 h-5 text-blue-600" />} label="Active Listings" value={stats.listingCount.toString()} sub="on Filmons" color="bg-blue-50" />
               <StatCard icon={<MessageCircle className="w-5 h-5 text-purple-600" />} label="Pending Requests" value={stats.activeRequests.toString()} sub="awaiting review" color="bg-purple-50" />
