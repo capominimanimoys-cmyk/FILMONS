@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 /**
  * Shared full-bleed shell for every pre-auth screen (sign in, sign up,
@@ -55,28 +55,15 @@ const AUTH_POP_CSS = `
   .auth-input-fx:focus { transform: scale(1.01); }
   .auth-btn-fx    { transition: transform 100ms ease; }
   .auth-btn-fx:active { transform: scale(0.97); }
-  /* Page slides in from the right (opt-in via slideIn). Short and ease-out so
-     it feels immediate; 'backwards' fill means no transform lingers after it
-     finishes, so the fixed backgrounds go back to tracking the real viewport.
-     The inner content's own scale-pop is skipped here -- two stacked entrance
-     animations made the screen feel slow to settle. */
-  @keyframes authSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-  .auth-slide { animation: authSlideIn 220ms cubic-bezier(0.22,1,0.36,1) backwards; }
-  .auth-slide-wrap .auth-pop-main { animation: none; }
-  @media (prefers-reduced-motion: reduce) { .auth-slide { animation: none; } }
 `;
 
-export function AuthScreenLayout({ children, className = '', slideIn = false }: { children: ReactNode; className?: string; slideIn?: boolean }) {
-  // The slide class is dropped the moment the animation ends (same wrapper
-  // element, so nothing remounts): once it's over, no animation/compositing
-  // state is left on the page that could interfere with taps on iOS.
-  const [sliding, setSliding] = useState(slideIn);
+// slideIn is intentionally a no-op for now: the slide wrapper was removed while the
+// "login buttons don't respond" report is investigated.
+export function AuthScreenLayout({ children, className = '' }: { children: ReactNode; className?: string; slideIn?: boolean }) {
   return (
     <div className={`relative min-h-[100dvh] w-full flex flex-col overflow-x-hidden ${className}`}>
       <style>{AUTH_POP_CSS}</style>
-      {/* The slide moves this inner wrapper; the root's overflow-x clips it (same
-          approach as CreateAccount) so the page never gains a horizontal scroll. */}
-      {slideIn ? <div className={`auth-slide-wrap ${sliding ? 'auth-slide ' : ''}flex flex-col flex-1`} onAnimationEnd={e => { if (e.target === e.currentTarget) setSliding(false); }}>{children}</div> : children}
+      {children}
     </div>
   );
 }
