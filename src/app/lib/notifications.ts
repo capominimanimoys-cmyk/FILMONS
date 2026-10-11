@@ -155,6 +155,8 @@ function rowToNotif(r: any): Notification {
     readAt:         r.read_at           ?? undefined,
     createdAt:      r.created_at        ?? new Date().toISOString(),
     viewCount:      r.view_count        ?? undefined,
+    title:          r.title             ?? undefined,
+    entityId:       r.entity_id         ?? undefined,
   };
 }
 

@@ -519,7 +519,9 @@ export type NotificationType =
   | 'course_published' | 'course_purchased'
   | 'live_session_application' | 'live_session_accepted' | 'live_session_payment_request' | 'live_session_declined' | 'live_session_confirmed'
   // System
-  | 'account_verified' | 'account_warning' | 'system_announcement' | 'system_notification';
+  | 'account_verified' | 'account_warning' | 'system_announcement' | 'system_notification'
+  // Calendar (announces an action + its calendar update; reminders for scheduled activities)
+  | 'calendar_update' | 'calendar_reminder';
 
 export interface Notification {
   id: string;
@@ -559,6 +561,9 @@ export interface Notification {
   // server-side as more people view the same unread batch, rather than a
   // new notification per viewer.
   viewCount?: number;
+  /** Calendar notifications: headline + the calendar entry key it deep-links to. */
+  title?: string;
+  entityId?: string;
   // Meta
   read: boolean;
   readAt?: string;

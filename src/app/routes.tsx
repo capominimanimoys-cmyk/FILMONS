@@ -28,6 +28,7 @@ import { Feed } from './pages/Feed';
 import { Inbox } from './pages/Inbox';
 import { Checkout } from './pages/Checkout';
 import { HostDashboard } from './pages/HostDashboard';
+import { Calendar } from './pages/Calendar';
 import { Wallet } from './pages/Wallet';
 import { PayoutMethodSetup } from './pages/PayoutMethodSetup';
 import AudioPage from './pages/AudioPage';
@@ -128,6 +129,7 @@ export const router = createBrowserRouter([
       { path: 'edit-listing/:id', Component: EditListing },
       { path: 'my-listings', Component: MyListings },
       { path: 'my-orders', Component: MyOrders },
+      { path: 'calendar', Component: Calendar },
       { path: 'listing/:id', Component: ListingDetail },
       { path: 'listing/:id/share-card', Component: ListingShareCard },
       { path: 'listing/:id/applicants', Component: OpportunityApplicants },

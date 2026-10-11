@@ -1,7 +1,7 @@
 import { Link, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import {
-  X, House, Search, MessageCircle, BriefcaseBusiness, FileText,
+  X, House, Search, MessageCircle, CalendarDays,
   LayoutDashboard, Wallet, Bookmark, Settings, CircleHelp, LogOut,
   UserPlus,
 } from 'lucide-react';
@@ -100,8 +100,7 @@ export function SideDrawer({ onClose }: Props) {
               <NavRow icon={House}             label="Home"          to="/"                          active={isActive('/')}                onClick={onClose} />
               <NavRow icon={Search}            label="Browse"        to="/search"                    active={isActive('/search')}          onClick={onClose} />
               <NavRow icon={MessageCircle}     label="Messages"      to="/inbox"                      active={isActive('/inbox')}           onClick={onClose} />
-              <NavRow icon={BriefcaseBusiness} label="Opportunities" to="/dashboard?tab=opportunities" active={location.pathname === '/dashboard' && location.search.includes('tab=opportunities')} onClick={onClose} />
-              <NavRow icon={FileText}          label="Applications"  to="/dashboard?tab=applications"  active={location.pathname === '/dashboard' && location.search.includes('tab=applications')}  onClick={onClose} />
+              <NavRow icon={CalendarDays}      label="Calendar"      to="/calendar"                   active={isActive('/calendar')}        onClick={onClose} />
               <NavRow icon={LayoutDashboard}   label="Dashboard"     to="/dashboard"                  active={isActive('/dashboard')}       onClick={onClose} />
               <NavRow icon={Wallet}            label="Wallet"        to="/wallet"                     active={isActive('/wallet')}          onClick={onClose} />
               <NavRow icon={Bookmark}          label="Saved"         to="/profile?tab=saved"          active={location.pathname === '/profile' && location.search.includes('tab=saved')} onClick={onClose} />

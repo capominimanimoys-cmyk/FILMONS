@@ -234,6 +234,9 @@ function typeCfg(n: Notification): NotifCfg {
       return { icon: Trophy,        gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: () => 'Your account has been verified' };
     case 'account_warning':
       return { icon: Bell,          gradient: 'from-red-500 to-rose-600',        iconColor: 'text-white', ringColor: 'ring-red-100',     label: () => 'Important notice about your account' };
+    case 'calendar_update':
+    case 'calendar_reminder':
+      return { icon: CalendarDays,  gradient: 'from-blue-500 to-indigo-600',     iconColor: 'text-white', ringColor: 'ring-blue-100',    label: n => n.title || 'Calendar update' };
     case 'system_announcement':
     case 'system_notification':
       return { icon: Rocket,        gradient: 'from-gray-600 to-gray-700',       iconColor: 'text-white', ringColor: 'ring-gray-100',    label: () => 'New announcement from Filmons' };
@@ -248,12 +251,14 @@ const SYSTEM_TYPES: string[] = [
   'profile_completion','trust_level_update','booking_accepted','booking_rejected',
   'payment_released','application_accepted','application_rejected',
   'payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed',
-  'support_reply','portfolio_view',
+  'support_reply','portfolio_view','calendar_update','calendar_reminder',
 ];
 function isSystemType(type: string) { return SYSTEM_TYPES.includes(type); }
 function systemIcon(type: string): ElementType {
   switch (type) {
     case 'portfolio_view':       return Eye;
+    case 'calendar_update':
+    case 'calendar_reminder':    return CalendarDays;
     case 'profile_completion':   return Star;
     case 'trust_level_update':   return Shield;
     case 'account_verified':     return Trophy;
@@ -617,7 +622,7 @@ const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketp
 const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
 const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
 const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','content_repost_thoughts','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view','course_published'];
-const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply'];
+const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply','calendar_update','calendar_reminder'];
 
 const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [
   { key: 'all',         label: 'All',         icon: Bell,        activeColor: 'text-blue-600 border-blue-600' },
@@ -700,7 +705,10 @@ export function Notifications() {
 
   const handleNavigate = (n: Notification) => {
     markRead(n.id);
-    if (MESSAGE_TYPES.includes(n.type)) {
+    if (n.type === 'calendar_update' || n.type === 'calendar_reminder') {
+      // Opens the calendar entry (and its related details) the notice is about.
+      navigate(n.entityId ? `/calendar?event=${encodeURIComponent(n.entityId)}` : '/calendar');
+    } else if (MESSAGE_TYPES.includes(n.type)) {
       navigate(n.conversationId
         ? `/inbox?conv=${n.conversationId}&with=${n.fromUserId}`
         : `/inbox?with=${n.fromUserId}`);

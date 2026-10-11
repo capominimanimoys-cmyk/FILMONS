@@ -354,6 +354,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Deploy calendar-reminders
+        run: supabase functions deploy calendar-reminders --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Deploy booking-reminders
         run: supabase functions deploy booking-reminders --project-ref snajrdvcwsbjqefaftsj --no-verify-jwt
         env:

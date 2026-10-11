@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Bell, Mail, Users, ShoppingBag, BarChart2, Briefcase, Volume2, Moon, ChevronRight } from 'lucide-react';
+import { CalendarDays, ArrowLeft, Bell, Mail, Users, ShoppingBag, BarChart2, Briefcase, Volume2, Moon, ChevronRight } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -88,6 +88,8 @@ export function NotificationSettings() {
       setComments(s.notif_comments ?? true);
       setShares(s.notif_shares ?? false);
       setReposts(s.notif_reposts ?? true);
+      setCalUpdates(s.notif_calendar_updates ?? true);
+      setCalReminders(s.notif_calendar_reminders ?? true);
       setSaves(s.notif_saves ?? false);
       setBookingReqs(s.notif_booking_reqs ?? true);
       setCastingCalls(s.notif_casting_calls ?? true);
@@ -143,6 +145,8 @@ export function NotificationSettings() {
   const [comments,    setComments]    = useState(true);
   const [shares,      setShares]      = useState(false);
   const [reposts,     setReposts]     = useState(true);
+  const [calUpdates,   setCalUpdates]   = useState(true);
+  const [calReminders, setCalReminders] = useState(true);
   const [saves,       setSaves]       = useState(false);
 
   // Push — Collaboration
@@ -197,6 +201,7 @@ export function NotificationSettings() {
         notif_mentions: mentions, notif_replies: replies, notif_reactions: reactions,
         notif_new_followers: newFollowers, notif_comments: comments,
         notif_shares: shares, notif_saves: saves, notif_reposts: reposts,
+        notif_calendar_updates: calUpdates, notif_calendar_reminders: calReminders,
         notif_booking_reqs: bookingReqs, notif_casting_calls: castingCalls,
         notif_project_invites: projectInvites, notif_file_requests: fileRequests,
         notif_new_orders: newOrders, notif_payments: payments, notif_rental_reqs: rentalReqs,
@@ -301,6 +306,12 @@ export function NotificationSettings() {
           <Toggle on={rentalReqs}  onChange={() => setRentalReqs(!rentalReqs)}   label="Rental Requests"      sub="Gear rental inquiries"/>
           <Toggle on={castingCalls} onChange={() => setCastingCalls(!castingCalls)} label="Listing Activity"  sub="Saves, views, and shares on your listings"/>
           <Toggle on={notifReviews} onChange={() => setNotifReviews(!notifReviews)} label="New Reviews"       sub="Someone left a review on your listing"/>
+        </Section>
+
+        {/* Calendar */}
+        <Section title="Calendar" icon={<CalendarDays className="w-4 h-4"/>}>
+          <Toggle on={calUpdates}   onChange={() => setCalUpdates(!calUpdates)}     label="Calendar updates"   sub="Bookings, work dates, purchases, enrollments and wallet activity added, rescheduled or cancelled"/>
+          <Toggle on={calReminders} onChange={() => setCalReminders(!calReminders)} label="Calendar reminders" sub="Reminders before confirmed pickups, returns, services, work dates and live sessions"/>
         </Section>
 
         {/* 5. Portfolio */}
