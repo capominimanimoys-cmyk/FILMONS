@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 /**
  * Shared full-bleed shell for every pre-auth screen (sign in, sign up,
@@ -61,18 +61,22 @@ const AUTH_POP_CSS = `
      The inner content's own scale-pop is skipped here -- two stacked entrance
      animations made the screen feel slow to settle. */
   @keyframes authSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-  .auth-slide { animation: authSlideIn 220ms cubic-bezier(0.22,1,0.36,1) backwards; will-change: transform; }
-  .auth-slide .auth-pop-main { animation: none; }
+  .auth-slide { animation: authSlideIn 220ms cubic-bezier(0.22,1,0.36,1) backwards; }
+  .auth-slide-wrap .auth-pop-main { animation: none; }
   @media (prefers-reduced-motion: reduce) { .auth-slide { animation: none; } }
 `;
 
 export function AuthScreenLayout({ children, className = '', slideIn = false }: { children: ReactNode; className?: string; slideIn?: boolean }) {
+  // The slide class is dropped the moment the animation ends (same wrapper
+  // element, so nothing remounts): once it's over, no animation/compositing
+  // state is left on the page that could interfere with taps on iOS.
+  const [sliding, setSliding] = useState(slideIn);
   return (
     <div className={`relative min-h-[100dvh] w-full flex flex-col overflow-x-hidden ${className}`}>
       <style>{AUTH_POP_CSS}</style>
       {/* The slide moves this inner wrapper; the root's overflow-x clips it (same
           approach as CreateAccount) so the page never gains a horizontal scroll. */}
-      {slideIn ? <div className="auth-slide flex flex-col flex-1">{children}</div> : children}
+      {slideIn ? <div className={`auth-slide-wrap ${sliding ? 'auth-slide ' : ''}flex flex-col flex-1`} onAnimationEnd={e => { if (e.target === e.currentTarget) setSliding(false); }}>{children}</div> : children}
     </div>
   );
 }
