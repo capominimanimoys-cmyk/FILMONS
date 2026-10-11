@@ -26,7 +26,7 @@ import {
   type MediaType, type PortfolioItem,
 } from '../lib/portfolioApi';
 import {
-  CategoryPanel, TextFieldPanel, TagsPanel, VisibilityPanel, FieldRow,
+  CategoryPanel, TextFieldPanel, TagsPanel, VisibilityPanel, LocationPanel, FieldRow,
   VISIBILITY_OPTIONS, type ItemVisibility,
 } from './PortfolioFieldSelectors';
 
@@ -240,7 +240,7 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
           onSave={v => { setTools(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'location' && (
-        <TextFieldPanel depth={PANEL_DEPTH} title="Location" placeholder="Add location" value={location}
+        <LocationPanel depth={PANEL_DEPTH} value={location}
           onSave={v => { setLocation(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'collaborators' && (

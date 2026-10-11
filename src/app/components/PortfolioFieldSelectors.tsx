@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { Check, Globe, Lock, Users, Search, X } from 'lucide-react';
 import { EditProfileFieldPanel } from './EditProfileFieldPanel';
+import { SmartAddressInput } from './SmartAddressInput';
 import { PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES } from '../lib/portfolioApi';
 
 export type ItemVisibility = 'public' | 'connections' | 'private';
@@ -85,6 +86,33 @@ export function TextFieldPanel({ title, placeholder, value, onSave, onClose, clo
             className="flex-1 text-sm text-gray-900 placeholder-gray-400 outline-none bg-transparent"
           />
         </div>
+      </div>
+    </EditProfileFieldPanel>
+  );
+}
+
+// Location with smart address search (same autocomplete the rest of the app uses:
+// venue / street / city suggestions, plus "use my location"). A suggestion fills the
+// field with its formatted address; free text is still accepted so a work is never
+// blocked from saving over a place the search doesn't know.
+export function LocationPanel({ value, onSave, onClose, closing, depth }: {
+  value: string; onSave: (v: string) => void; onClose: () => void; closing?: boolean;
+  depth?: number;
+}) {
+  const [v, setV] = useState(value);
+  return (
+    <EditProfileFieldPanel
+      title="Location" onClose={onClose} closing={closing} depth={depth}
+      footer={<button onClick={() => onSave(v.trim())} className="px-5 py-2.5 rounded-xl font-black text-white text-sm bg-blue-600">Done</button>}
+    >
+      <div className="px-4 py-4 pb-72">
+        <SmartAddressInput
+          value={v} onInputChange={setV}
+          onAddressSelect={display => setV(display)}
+          mode="full" showGPS countryCodes={['CA', 'US']}
+          placeholder="Search a place or address…"
+        />
+        <p className="text-[11px] text-gray-400 mt-2">Pick a suggestion, or type any place name.</p>
       </div>
     </EditProfileFieldPanel>
   );
