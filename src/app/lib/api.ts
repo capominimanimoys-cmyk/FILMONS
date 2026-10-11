@@ -1757,7 +1757,7 @@ export const postsApi = {
         .or('is_archived.eq.false,is_archived.is.null')
         .gte('created_at', since)
         .order('likes_count', { ascending: false })
-        .limit(Math.max(limit * 4, 40));
+        .limit(Math.max(limit * 3, 30));
       if (error) throw error;
       const now = Date.now();
       const score = (r: any) => {
