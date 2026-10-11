@@ -212,7 +212,7 @@ export function CoursesHome() {
   // or fail -- the course rows.
   useEffect(() => {
     let live = true;
-    withTimeout(getPublishedLiveSessions(12), 3500, [] as LiveSession[]).then(r => { if (live) setLiveSessions(r); });
+    withTimeout(getPublishedLiveSessions(12), 3500, [] as LiveSession[], r => { if (live) setLiveSessions(r); }).then(r => { if (live) setLiveSessions(r); });
     return () => { live = false; };
   }, [user?.id]);
 

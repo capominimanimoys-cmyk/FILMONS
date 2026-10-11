@@ -1824,7 +1824,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     if (activeTab === 'all' && !q.trim()) { setRawLive([]); return; }
     let cancelled = false;
     const t = setTimeout(() => {
-      withTimeout(searchPublishedLiveSessions(q, 12), 3500, [] as LiveSession[]).then(r => { if (!cancelled) setRawLive(r); });
+      withTimeout(searchPublishedLiveSessions(q, 12), 3500, [] as LiveSession[], r => { if (!cancelled) setRawLive(r); }).then(r => { if (!cancelled) setRawLive(r); });
     }, q.trim() ? 250 : 0);
     return () => { cancelled = true; clearTimeout(t); };
   }, [q, activeTab]);

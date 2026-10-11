@@ -28,8 +28,8 @@ export function CoursesSection({ userId, isOwner }: { userId: string; isOwner: b
   // one never holds back (or hides) the other.
   useEffect(() => {
     let cancelled = false;
-    withTimeout(getCourses({ instructorId: userId, status: 'published', limit: 12 }), 4000, [] as Course[]).then(c => { if (!cancelled) setCourses(c); });
-    withTimeout(getPublishedLiveSessionsByInstructor(userId, 12), 4000, [] as LiveSession[]).then(l => { if (!cancelled) setLive(l); });
+    withTimeout(getCourses({ instructorId: userId, status: 'published', limit: 12 }), 4000, [] as Course[], c => { if (!cancelled) setCourses(c); }).then(c => { if (!cancelled) setCourses(c); });
+    withTimeout(getPublishedLiveSessionsByInstructor(userId, 12), 4000, [] as LiveSession[], l => { if (!cancelled) setLive(l); }).then(l => { if (!cancelled) setLive(l); });
     return () => { cancelled = true; };
   }, [userId]);
 

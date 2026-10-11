@@ -234,7 +234,7 @@ export async function getRecommendedPortfolio(opts: {
 // round-trip after the feed rows themselves. If it's slow the page renders
 // anyway -- cards fall back to their title-only form -- rather than holding
 // the whole Connect feed past the ~5s budget.
-const ENRICH_TIMEOUT_MS = 2500;
+const ENRICH_TIMEOUT_MS = 4000;
 
 export async function getConnectFeed(opts: {
   tab: 'foryou' | 'following';
