@@ -30,10 +30,12 @@ import {
   VISIBILITY_OPTIONS, type ItemVisibility,
 } from './PortfolioFieldSelectors';
 
+import { normalizeExternalLink, externalLinkLabel } from '../lib/externalLink';
+
 // WorkEditor is z-[92]; field panels (z 85 + depth*2) must stack above it.
 const PANEL_DEPTH = 4;
 
-type PanelId = 'category' | 'role' | 'skills' | 'location' | 'collaborators' | 'hashtags' | 'visibility';
+type PanelId = 'link' | 'category' | 'role' | 'skills' | 'location' | 'collaborators' | 'hashtags' | 'visibility';
 
 export function WorkEditor({ onClose, onCreated, onMultiFile }: {
   onClose: () => void;
@@ -78,6 +80,7 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
   const [collaborators, setCollaborators] = useState<string[]>([]);
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<ItemVisibility>('public');
+  const [link, setLink] = useState('');
 
   const [activePanel, setActivePanel] = useState<PanelId | null>(null);
   const [saving, setSaving] = useState(false);
@@ -135,6 +138,7 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
       aspect_ratio:  ratio,
       visibility,
       location:      location.trim() || undefined,
+      external_link: normalizeExternalLink(link) || undefined,
       tags:          hashtags.length ? hashtags : undefined,
     } as any);
     setSaving(false);
@@ -205,6 +209,7 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
         </div>
 
         <FieldRow label="Category" placeholder="Select category" value={[category, subcategory].filter(Boolean).join(' · ')} onClick={() => setActivePanel('category')} />
+        <FieldRow label="Link" placeholder="Add a link (website, video, article)" value={link ? externalLinkLabel(normalizeExternalLink(link) ?? link) : ''} onClick={() => setActivePanel('link')} />
         <FieldRow label="Your role" placeholder="e.g. Cinematographer" value={role} onClick={() => setActivePanel('role')} />
         <FieldRow label="Skills & tools" placeholder="Add skills or tools" value={tools.join(', ')} onClick={() => setActivePanel('skills')} />
         <FieldRow label="Location" placeholder="Add location" value={location} onClick={() => setActivePanel('location')} />
@@ -216,6 +221,14 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
       {activePanel === 'category' && (
         <CategoryPanel depth={PANEL_DEPTH} category={category} subcategory={subcategory}
           onSave={(c, s) => { setCategory(c); setSubcategory(s); setActivePanel(null); }}
+          onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'link' && (
+        <TextFieldPanel depth={PANEL_DEPTH} title="Link" placeholder="https://example.com/your-work" value={link}
+          onSave={v => {
+            if (v && !normalizeExternalLink(v)) { toast.error('Enter a valid link, e.g. https://vimeo.com/123'); return; }
+            setLink(v ? normalizeExternalLink(v)! : ''); setActivePanel(null);
+          }}
           onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'role' && (

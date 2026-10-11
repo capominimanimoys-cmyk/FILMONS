@@ -20,6 +20,7 @@ import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { buildLocationSlug } from '../../lib/locationsApi';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
+import { PortfolioLinkChip } from '../PortfolioLinkChip';
 import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
 import { getSharedContentDeepLink } from '../../lib/shareApi';
@@ -213,6 +214,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
       <button onClick={openItemDetail} className="block mt-3 text-left">
         <p className="text-base font-black text-gray-900 leading-snug hover:underline">{item.title}</p>
         {item.description && <p className="text-sm text-gray-600 mt-1 leading-relaxed line-clamp-3">{item.description}</p>}
+        <PortfolioLinkChip url={item.external_link} className="mt-2" />
       </button>
 
       <button onClick={openItemDetail} className="block w-full mt-3">

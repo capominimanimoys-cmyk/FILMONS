@@ -8,6 +8,7 @@
 // Save reuses the generic `favorites` table (see togglePortfolioSave) --
 // the same primitive savedPostsApi/savedListingsApi already use with a
 // different item_type, not a new table.
+import { PortfolioLinkChip } from './PortfolioLinkChip';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
@@ -394,6 +395,7 @@ export function PortfolioFeedCard({ entry, onRemoved, trustLevel }: { entry: Por
             <p onClick={() => setViewingItem(true)} className="text-sm font-bold text-gray-900 cursor-pointer">{entry.item.title}</p>
           )}
           {entry.item.description && <ClampedText text={entry.item.description} />}
+          <PortfolioLinkChip url={entry.item.external_link} className="mt-1.5" />
 
           {/* Tapping the media opens THIS item's own full-screen detail
               (ItemFocusView) -- not the creator's page. Video keeps its own
