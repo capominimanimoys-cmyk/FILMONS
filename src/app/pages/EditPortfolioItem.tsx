@@ -4,6 +4,7 @@
 // sheet, per spec ("Edit Work page slides in right -> left") -- uses the
 // same .page-enter-forward convention every other forward navigation in
 // this app already uses (see styles/motion.css), not a bespoke transition.
+import { normalizeExternalLink } from '../lib/externalLink';
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -31,6 +32,7 @@ export function EditPortfolioItem() {
   const [subcategory, setSubcategory] = useState('');
   const availableSubcategories = PORTFOLIO_SUBCATEGORIES[category] ?? [];
   const [tagsText, setTagsText] = useState('');
+  const [link, setLink] = useState('');
 
   useEffect(() => {
     if (!itemId) return;
@@ -43,17 +45,22 @@ export function EditPortfolioItem() {
       setCategory(row.category ?? '');
       setSubcategory(row.subcategory ?? '');
       setTagsText((row.tags ?? []).join(', '));
+      setLink(row.external_link ?? '');
     });
   }, [itemId, user?.id]);
 
   const handleSave = async () => {
     if (!item) return;
     if (!title.trim()) { toast.error('Give this project a title'); return; }
+    const safeLink = normalizeExternalLink(link);
+    if (link.trim() && !safeLink) { toast.error('Enter a valid link, e.g. https://vimeo.com/123'); return; }
     setSaving(true);
     const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean);
     const ok = await updatePortfolioItem(item.id, {
       title: title.trim(), description: description.trim(), category,
       subcategory: subcategory || undefined, tags,
+      // '' (not undefined) so clearing the field actually removes the stored link.
+      external_link: safeLink ?? '',
     });
     setSaving(false);
     if (!ok) { toast.error('Could not save changes. Please try again.'); return; }
@@ -152,6 +159,15 @@ export function EditPortfolioItem() {
           <input
             value={tagsText} onChange={e => setTagsText(e.target.value)}
             placeholder="Comma-separated, e.g. Cinematography, BTS"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-gray-500">Link</label>
+          <input
+            value={link} onChange={e => setLink(e.target.value)} inputMode="url" autoCapitalize="none"
+            placeholder="https://example.com/your-work"
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
           />
         </div>

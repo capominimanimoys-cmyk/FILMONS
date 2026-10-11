@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { PortfolioLinkChip, usePortfolioItemLink } from './PortfolioLinkChip';
 import { supabase } from '../../lib/supabase';
 import { TextLayerRenderer, type TextLayer } from './TextLayerEditor';
 import { createPortal } from 'react-dom';
@@ -271,6 +272,8 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
     } : post;
     return normalizePost(base);
   });
+  // Link attached to the Portfolio work this post references (shown on the attachment card).
+  const attachedPortfolioLink = usePortfolioItemLink(localPost.portfolioItemId);
   const [showMenu, setShowMenu] = useState(false);
   const [audioPlaying,   setAudioPlaying]   = useState(false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
@@ -1541,6 +1544,10 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                 </span>
               </div>
             </button>
+          )}
+          {/* The attached work's own link (live lookup by portfolio_item_id). */}
+          {localPost.portfolioItemId && attachedPortfolioLink && (
+            <div className="mx-3 mt-1.5"><PortfolioLinkChip url={attachedPortfolioLink} /></div>
           )}
           {/* Attached Listing -- was previously ONLY reachable via the
               shoppable-tag icon overlaid on photo/video media, so a post
