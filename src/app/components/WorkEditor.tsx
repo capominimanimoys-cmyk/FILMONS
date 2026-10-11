@@ -30,6 +30,9 @@ import {
   VISIBILITY_OPTIONS, type ItemVisibility,
 } from './PortfolioFieldSelectors';
 
+// WorkEditor is z-[92]; field panels (z 85 + depth*2) must stack above it.
+const PANEL_DEPTH = 4;
+
 type PanelId = 'category' | 'role' | 'skills' | 'location' | 'collaborators' | 'hashtags' | 'visibility';
 
 export function WorkEditor({ onClose, onCreated, onMultiFile }: {
@@ -211,32 +214,32 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
       </div>
 
       {activePanel === 'category' && (
-        <CategoryPanel category={category} subcategory={subcategory}
+        <CategoryPanel depth={PANEL_DEPTH} category={category} subcategory={subcategory}
           onSave={(c, s) => { setCategory(c); setSubcategory(s); setActivePanel(null); }}
           onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'role' && (
-        <TextFieldPanel title="Your role" placeholder="e.g. Cinematographer" value={role}
+        <TextFieldPanel depth={PANEL_DEPTH} title="Your role" placeholder="e.g. Cinematographer" value={role}
           onSave={v => { setRole(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'skills' && (
-        <TagsPanel title="Skills & tools" placeholder="Add skills or tools" values={tools}
+        <TagsPanel depth={PANEL_DEPTH} title="Skills & tools" placeholder="Add skills or tools" values={tools}
           onSave={v => { setTools(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'location' && (
-        <TextFieldPanel title="Location" placeholder="Add location" value={location}
+        <TextFieldPanel depth={PANEL_DEPTH} title="Location" placeholder="Add location" value={location}
           onSave={v => { setLocation(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'collaborators' && (
-        <TagsPanel title="Collaborators" placeholder="Tag collaborators" values={collaborators}
+        <TagsPanel depth={PANEL_DEPTH} title="Collaborators" placeholder="Tag collaborators" values={collaborators}
           onSave={v => { setCollaborators(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'hashtags' && (
-        <TagsPanel title="Hashtags" placeholder="Add hashtags" values={hashtags}
+        <TagsPanel depth={PANEL_DEPTH} title="Hashtags" placeholder="Add hashtags" values={hashtags}
           onSave={v => { setHashtags(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'visibility' && (
-        <VisibilityPanel value={visibility}
+        <VisibilityPanel depth={PANEL_DEPTH} value={visibility}
           onSave={v => { setVisibility(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
     </div>
