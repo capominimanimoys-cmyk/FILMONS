@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { DashboardTrustCard } from '../components/trust/DashboardTrustCard';
+import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { useHeaderCollapse } from '../lib/useHeaderCollapse';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -411,6 +412,8 @@ function CreatorDashboard({ user }: { user: any }) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showOpportunityGate, setShowOpportunityGate] = useState(false);
   const header = useHeaderCollapse();
+  // Slide the app top bar + mobile bottom nav away on scroll down, back on scroll up.
+  useMobileScrollChrome();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
     tabRefs.current[tab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
@@ -698,6 +701,8 @@ function HostDashboardContent({ user }: { user: any }) {
   );
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const header = useHeaderCollapse();
+  // Slide the app top bar + mobile bottom nav away on scroll down, back on scroll up.
+  useMobileScrollChrome();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
     tabRefs.current[activeTab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
