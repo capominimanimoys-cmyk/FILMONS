@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useHeaderCollapse } from '../lib/useHeaderCollapse';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -410,6 +411,7 @@ function CreatorDashboard({ user }: { user: any }) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showOpportunityGate, setShowOpportunityGate] = useState(false);
   const [rep, setRep] = useState<ReputationScore | null>(null);
+  const header = useHeaderCollapse();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
     tabRefs.current[tab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
@@ -443,8 +445,8 @@ function CreatorDashboard({ user }: { user: any }) {
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden w-full max-w-[100vw]">
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-10" style={header.style}>
+        <div ref={header.titleRef} className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <UserAvatar user={user} size={40} />
             <div>
@@ -731,6 +733,7 @@ function HostDashboardContent({ user }: { user: any }) {
     initialTab === 'opportunities' || initialTab === 'listings' || initialTab === 'applications' || initialTab === 'orders' ? initialTab : 'overview',
   );
   const tabScrollRef = useRef<HTMLDivElement>(null);
+  const header = useHeaderCollapse();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
     tabRefs.current[activeTab]?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
@@ -884,8 +887,8 @@ function HostDashboardContent({ user }: { user: any }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-10" style={header.style}>
+        <div ref={header.titleRef} className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <UserAvatar user={user} size={40} />
             <div>
