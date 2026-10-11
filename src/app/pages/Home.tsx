@@ -335,6 +335,17 @@ export function Home() {
     window.dispatchEvent(new CustomEvent('filmons:home-mode-changed', { detail: { mode: m } }));
   };
 
+  // The side drawer's Marketplace / Connect rows ask Home to switch mode (it
+  // can already be mounted when they're tapped).
+  useEffect(() => {
+    const onSet = (e: Event) => {
+      const m = (e as CustomEvent).detail?.mode;
+      if (m === 'listings' || m === 'portfolio') setHomeMode(m);
+    };
+    window.addEventListener('filmons:set-home-mode', onSet);
+    return () => window.removeEventListener('filmons:set-home-mode', onSet);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The real, live follow list -- NOT user.following. That's a raw
   // profiles.following array column that NOTHING in this codebase ever
   // writes to (the actual Follow button, via FollowContext/socialApi, only
