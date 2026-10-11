@@ -11,8 +11,15 @@ export function ReadFailureBanner({ onRetry }: { onRetry: () => void }) {
   const lastDismissed = useRef(0);
 
   useEffect(() => {
+    // One stray failed request (a slow secondary lookup, a flaky moment) is not
+    // worth interrupting anyone for -- the banner needs several close together.
+    const recent: number[] = [];
     const onFail = () => {
-      if (Date.now() - lastDismissed.current < 20_000) return; // don't nag right after dismissal
+      const now = Date.now();
+      recent.push(now);
+      while (recent.length && now - recent[0] > 10_000) recent.shift();
+      if (recent.length < 3) return;
+      if (now - lastDismissed.current < 60_000) return; // don't nag right after dismissal
       setShow(true);
       clearTimeout(hideTimer.current);
       hideTimer.current = setTimeout(() => setShow(false), 20_000);
