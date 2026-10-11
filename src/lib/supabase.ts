@@ -28,7 +28,31 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') lastBecameVisibleAt = Date.now(); });
 }
 
+// Many components ask for the same thing at once (same profile, same list). An
+// identical GET that is already in flight is shared instead of re-sent -- fewer
+// requests competing for the connection, so the ones that matter finish sooner.
+// Each caller gets its own clone of the response. Skipped when the caller has
+// its own AbortSignal (cancelling one must not cancel the others).
+const inflight = new Map<string, Promise<Response>>();
+
 function deadlineFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const m = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (m === 'GET' && !init?.signal && !(input instanceof Request) && u.includes('/rest/v1/') && !isAdminApp) {
+    let hdr = '';
+    try { hdr = JSON.stringify([...new Headers(init?.headers as HeadersInit | undefined).entries()].sort()); } catch { /* unkeyable -> no sharing */ hdr = '\u0000' + Math.random(); }
+    const key = `${u}|${hdr}`;
+    let p = inflight.get(key);
+    if (!p) {
+      p = readWithResilience(input, init).finally(() => inflight.delete(key));
+      inflight.set(key, p);
+    }
+    return p.then(r => r.clone());
+  }
+  return readWithResilience(input, init);
+}
+
+function readWithResilience(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const isRead = (method === 'GET' || method === 'HEAD') && url.includes('/rest/v1/');
