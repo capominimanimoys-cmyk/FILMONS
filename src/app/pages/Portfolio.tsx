@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { downloadFromUrl, portfolioFilename } from '../lib/watermark';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
@@ -341,7 +342,8 @@ function PortfolioViewer({
     if (created) setComments(prev => [...prev, created]);
   };
 
-  const canDownload = settings.allow_downloads === 'individual'
+  const canDownload = item?.user_id === meId
+    || settings.allow_downloads === 'individual'
     || (settings.allow_downloads === 'selected' && !!item?.download_allowed);
 
   useEffect(() => {
@@ -413,15 +415,13 @@ function PortfolioViewer({
         </span>
         <div className="flex items-center gap-2">
           {canDownload && item.media_url && (
-            <a
-              href={item.media_url}
-              download
-              target="_blank"
-              rel="noreferrer"
+            <button
+              onClick={() => downloadFromUrl(item.media_url!, portfolioFilename(item.title, item.media_url!))}
+              aria-label="Download"
               className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
             >
               <Download className="w-5 h-5" />
-            </a>
+            </button>
           )}
           <button
             className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white"
