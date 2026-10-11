@@ -1,8 +1,8 @@
 // Dashboard summary of the FILMONS Reliability score -- same data and
 // weighting as Settings -> Trust & Verification (trustApi.getTrustProfile):
 // Connections /45, Recommendations /20, Transactions /20, Identity /15.
-// Tapping it opens that full breakdown. Fetches itself, shows a skeleton
-// straight away, and falls back after 3.5s so it never holds the page.
+// Tapping it opens that full breakdown. Fetches itself, shows cached data or a
+// skeleton straight away, retries once, then offers a Retry link.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ChevronRight, ShieldCheck, BadgeCheck } from 'lucide-react';
@@ -22,17 +22,33 @@ const PARTS: { key: keyof TrustProfile; label: string; max: number }[] = [
 
 export function DashboardTrustCard({ userId }: { userId: string }) {
   const navigate = useNavigate();
-  const [trust, setTrust] = useState<TrustProfile | null>(null);
+  // Stale-while-revalidate: show the last score instantly, refresh behind it.
+  const cacheKey = `filmons:trust-card:${userId}`;
+  const [trust, setTrust] = useState<TrustProfile | null>(() => {
+    try { const c = localStorage.getItem(cacheKey); return c ? JSON.parse(c) : null; } catch { return null; }
+  });
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
     setFailed(false);
-    withTimeout<TrustProfile | null>(getTrustProfile(userId), 3500, null).then(t => {
-      if (!alive) return;
-      if (t) setTrust(t); else setFailed(true);
-    });
+    // 4.2s: just inside the 4.5s Supabase read abort. One silent retry on
+    // failure (the first request often loses the race with the dashboard's
+    // other parallel loads) before surfacing the error.
+    const load = async () => {
+      for (let i = 0; i < 2; i++) {
+        const t = await withTimeout<TrustProfile | null>(getTrustProfile(userId), 4200, null);
+        if (!alive) return;
+        if (t) {
+          setTrust(t);
+          try { localStorage.setItem(cacheKey, JSON.stringify(t)); } catch { /* ignore */ }
+          return;
+        }
+      }
+      setFailed(true);
+    };
+    load();
     return () => { alive = false; };
   }, [userId, attempt]);
 
