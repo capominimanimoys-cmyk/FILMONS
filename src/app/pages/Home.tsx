@@ -695,7 +695,11 @@ export function Home() {
     // secondary ones (opportunities, creators, swipe history) to empty.
     const LISTINGS_MS = 4500, SECONDARY_MS = 3500;
     Promise.all([
-      withTimeout(listingsApi.getAll(), LISTINGS_MS, cachedListings as Listing[]),
+      // If the deadline fires first we paint the cached copy, but the real
+      // answer is NOT discarded: when it lands, reload the deck (getAll()
+      // then serves it instantly from its in-memory cache).
+      withTimeout(listingsApi.getAll(), LISTINGS_MS, cachedListings as Listing[],
+        late => { if (!done && late.length) setRefreshKey(k => k + 1); }),
       // getAll() only ever returns the 80 most-recently-created listings
       // of ANY type -- a real Opportunity could be older than that cutoff
       // (rentals/sales/services are the higher-volume categories) and

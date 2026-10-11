@@ -2046,6 +2046,17 @@ const PRODUCT_CATEGORY_IDS: Record<'marketplace' | 'connect' | 'learning', Categ
 // listing+post+course blend has no single coherent meaning).
 const DISCOVERY_GROUP_LIMIT = 10;
 
+// Shown when a discovery load failed -- never let a failed read look like "no results".
+function DiscoveryFailedCard({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div role="alert" className="mx-4 my-6 rounded-2xl border border-gray-100 bg-white p-5 text-center">
+      <p className="text-sm font-bold text-gray-900">We couldn’t load everything.</p>
+      <p className="mt-1 text-xs text-gray-500">Check your connection and try again.</p>
+      <button onClick={onRetry} className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Retry</button>
+    </div>
+  );
+}
+
 // Emergency is excluded from "Latest"/"Top" -- it's a permission-gated
 // category (Professional/Business only) with its own dedicated locked-
 // preview UI; surfacing it in a general discovery row would either leak
@@ -2061,6 +2072,8 @@ async function fetchLatestMarketplaceListings(limit: number): Promise<Listing[]>
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('created_at', { ascending: false }).limit(limit * 2);
   });
+  // A failed read must surface as a failure, never as an empty list (which rendered as a blank page).
+  if (res.error) throw res.error;
   return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
 }
 
@@ -2073,6 +2086,8 @@ async function fetchTopMarketplaceListings(limit: number): Promise<Listing[]> {
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('boosted', { ascending: false }).order('created_at', { ascending: false }).limit(limit * 2);
   });
+  // A failed read must surface as a failure, never as an empty list (which rendered as a blank page).
+  if (res.error) throw res.error;
   return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
 }
 
@@ -2090,6 +2105,8 @@ async function fetchNearbyMarketplaceListings(city: string, limit: number): Prom
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('created_at', { ascending: false }).limit(limit * 2);
   });
+  // A failed read must surface as a failure, never as an empty list (which rendered as a blank page).
+  if (res.error) throw res.error;
   return (res.data ?? []).map(mapListingRow).filter(l => !l.isEmergency).slice(0, limit);
 }
 
@@ -2189,26 +2206,42 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   const [roleCourses, setRoleCourses] = useState<Course[] | null>(null);
   const [skillCourses, setSkillCourses] = useState<Course[] | null>(null);
   const [followedHashtagCourses, setFollowedHashtagCourses] = useState<Course[] | null>(null);
+  // A failed load is shown (with Retry) instead of looking like "no results".
+  const [discoveryFailed, setDiscoveryFailed] = useState(false);
+  const [discoveryTick, setDiscoveryTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setDiscoveryFailed(false);
+    // Any failed query: flag it (visible Retry) and release every still-loading
+    // row to an empty state so no skeleton hangs forever.
+    const fail = () => {
+      if (cancelled) return;
+      setDiscoveryFailed(true);
+      setLatestListings(p => p ?? []); setTopListings(p => p ?? []); setNearbyListings(p => p ?? []);
+      setRoleListings(p => p ?? []); setGearListings(p => p ?? []); setFollowedHashtagListings(p => p ?? []);
+      setTrendingTags(p => p ?? []); setConnectCourses(p => p ?? []); setNearbyCreators(p => p ?? []);
+      setLatestCourses(p => p ?? []); setTopCourses(p => p ?? []); setRoleCourses(p => p ?? []);
+      setSkillCourses(p => p ?? []); setFollowedHashtagCourses(p => p ?? []);
+      setConnectDiscovery(p => p ?? ({ trendingPosts: [], featuredPortfolio: [], profilesYouMayLike: [] } as any));
+    };
     if (product === 'marketplace') {
-      fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setLatestListings(r); });
-      fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); });
+      fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setLatestListings(r); }).catch(fail);
+      fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); }).catch(fail);
       // Hidden entirely (not a fake/empty section) when the viewer has no
       // saved city -- same precedent as SearchOverlay's own nearbyListings.
       if (user?.city) {
-        fetchNearbyMarketplaceListings(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyListings(r); });
+        fetchNearbyMarketplaceListings(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyListings(r); }).catch(fail);
       } else setNearbyListings([]);
       if (primaryRole) {
-        searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
+        searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(fail);
       } else setRoleListings([]);
       // "Because you use {gear}" -- the user's own first saved gear item
       // (AboutEditor.tsx's Gear & Tools accordion), searched the same way
       // the role row already is -- real equipment they actually use,
       // never a fabricated/generic suggestion.
       if (user?.gear?.length) {
-        searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
+        searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(fail);
       } else setGearListings([]);
       // "From #tag you follow" -- the viewer's single most recently
       // followed hashtag (Phase C of the Hashtag Page Flow spec), searched
@@ -2219,44 +2252,44 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         getMostRecentFollowedHashtag(user.id).then(tag => {
           if (cancelled) return;
           setFollowedHashtag(tag);
-          if (tag) searchMatchingListings(tag).then(rows => { if (!cancelled) setFollowedHashtagListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); });
+          if (tag) searchMatchingListings(tag).then(rows => { if (!cancelled) setFollowedHashtagListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(fail);
           else setFollowedHashtagListings([]);
-        });
+        }).catch(fail);
       } else { setFollowedHashtag(null); setFollowedHashtagListings([]); }
     } else if (product === 'connect') {
       // Same shared discovery source SearchOverlay.tsx's own Connect
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
       // second posts-only version living here.
-      fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); });
+      fetchConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setConnectDiscovery(r); }).catch(fail);
       getTrendingHashtags(5).then(r => { if (!cancelled) setTrendingTags(r); }).catch(() => { if (!cancelled) setTrendingTags([]); });
-      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); });
+      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); }).catch(fail);
       // Hidden entirely (not a fake/empty section) when the viewer has no
       // saved city -- same precedent as Marketplace's own nearbyListings.
       if (user?.city) {
-        fetchNearbyCreators(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyCreators(r); });
+        fetchNearbyCreators(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyCreators(r); }).catch(fail);
       } else setNearbyCreators([]);
     } else if (product === 'learning') {
-      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); });
-      getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); });
+      getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setLatestCourses(r); }).catch(fail);
+      getPopularCourses(undefined, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopCourses(r); }).catch(fail);
       if (primaryRole) {
-        getCourses({ query: primaryRole, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setRoleCourses(r); });
+        getCourses({ query: primaryRole, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setRoleCourses(r); }).catch(fail);
       } else setRoleCourses([]);
       // "Based on your skills in {skill}" -- the user's own first saved
       // skill (AboutEditor.tsx's Skills & Specialties accordion).
       if (user?.skills?.length) {
-        getCourses({ query: user.skills[0], limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setSkillCourses(r); });
+        getCourses({ query: user.skills[0], limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setSkillCourses(r); }).catch(fail);
       } else setSkillCourses([]);
       if (user?.id) {
         getMostRecentFollowedHashtag(user.id).then(tag => {
           if (cancelled) return;
           setFollowedHashtag(tag);
-          if (tag) getCourses({ query: tag, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setFollowedHashtagCourses(r); });
+          if (tag) getCourses({ query: tag, limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setFollowedHashtagCourses(r); }).catch(fail);
           else setFollowedHashtagCourses([]);
-        });
+        }).catch(fail);
       } else { setFollowedHashtag(null); setFollowedHashtagCourses([]); }
     }
     return () => { cancelled = true; };
-  }, [product, primaryRole, user?.id, user?.city, user?.gear?.[0], user?.skills?.[0]]);
+  }, [product, primaryRole, user?.id, user?.city, user?.gear?.[0], user?.skills?.[0], discoveryTick]);
 
   const roleTitle = `Because you're a ${primaryRole}`;
 
@@ -2278,8 +2311,12 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         </DiscoveryRow>
       );
     };
+    const retry = () => setDiscoveryTick(t => t + 1);
+    const nothingYet = !discoveryFailed && latestListings?.length === 0 && topListings?.length === 0;
     return (
       <>
+        {discoveryFailed && <DiscoveryFailedCard onRetry={retry} />}
+        {nothingYet && <p className="text-center text-sm text-gray-500 py-10">No listings yet. Check back soon.</p>}
         {section('Latest Listings', latestListings, 'Latest listings')}
         {section('Top Listings', topListings, 'Top listings')}
         {section('Listings Nearby', nearbyListings, 'Nearby')}
@@ -2309,6 +2346,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
     // 0 results hides the section entirely -- never a fake placeholder.
     return (
       <>
+        {discoveryFailed && <DiscoveryFailedCard onRetry={() => setDiscoveryTick(t => t + 1)} />}
         {/* Twitter-style "Trending" -- what's hot right now (hashtags
             used this week, then time-decayed top posts, see
             getTrendingHashtags / postsApi.getTrendingPosts) leads the
@@ -2393,6 +2431,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
   // resolves, same reasoning as marketplace/connect above.
   return (
     <>
+      {discoveryFailed && <DiscoveryFailedCard onRetry={() => setDiscoveryTick(t => t + 1)} />}
       {latestCourses === null ? <DiscoveryRowSkeleton title="Latest" /> : (
         <DiscoveryRow title="Latest" count={latestCourses.length}>
           <CourseDiscoveryRow courses={latestCourses} />

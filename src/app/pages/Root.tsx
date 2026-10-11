@@ -13,7 +13,8 @@ import { BusinessIndustryPrompt } from '../components/BusinessIndustryPrompt';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { CookieConsent } from '../components/CookieConsent';
 import { RouteProgressBar } from '../components/RouteProgressBar';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
+import { ReadFailureBanner } from '../components/ReadFailureBanner';
 import { useAuth } from '../context/AuthContext';
 import { getPendingReturnUrl, isOnboardingIncomplete } from '../lib/authReturnUrl';
 import { PortfolioPreviewContext, type PortfolioPreviewRequest } from '../context/PortfolioPreviewContext';
@@ -38,6 +39,8 @@ export function Root() {
   const location = useLocation();
   const { user, isAuthenticated, isGuest, deviceVerified } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Bumped by the read-failure banner's Retry to remount the current page and re-run its loads.
+  const [retryKey, setRetryKey] = useState(0);
   const [searchOpen,  setSearchOpen]  = useState(false);
   // Global "View Portfolio" preview -- see PortfolioPreviewContext's own
   // header comment for why this lives here and not on whichever card
@@ -199,8 +202,9 @@ export function Root() {
         <PostRepostComposeProvider>
           <NotificationBannerProvider>
             <div className="min-h-screen flex flex-col">
-              <Outlet />
+              <Fragment key={retryKey}><Outlet /></Fragment>
             </div>
+            <ReadFailureBanner onRetry={() => setRetryKey(k => k + 1)} />
             <GlobalPostRepostComposer />
             <CookieConsent />
           </NotificationBannerProvider>
@@ -248,8 +252,9 @@ export function Root() {
             }}
           >
             {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
-            <Outlet />
+            <Fragment key={retryKey}><Outlet /></Fragment>
           </main>
+          <ReadFailureBanner onRetry={() => setRetryKey(k => k + 1)} />
         </div>
 
         {/* Footer — Home only, full width under the sidebar too (see above) */}
