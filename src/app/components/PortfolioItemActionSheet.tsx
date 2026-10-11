@@ -27,18 +27,19 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ExternalLink, Share2, FolderCog, EyeOff, Trash2, User, Flag, Bookmark,
-  Pencil,
+  Pencil, Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet, SheetCancel } from './BottomSheet';
 import { AddToAlbumSheet } from './AddToAlbumSheet';
+import { downloadFromUrl, portfolioFilename } from '../lib/watermark';
 import { logPortfolioInteraction } from '../lib/personalization';
 import { logProfileEngagement } from '../lib/profileEngagement';
 import {
   type PortfolioItem, type PortfolioAlbum,
   deletePortfolioItem, setItemHidden, reportPortfolioContent,
-  isPortfolioSaved, togglePortfolioSave, getAlbums, logPortfolioEngagementEvent,
+  isPortfolioSaved, togglePortfolioSave, getPortfolioSettings, getAlbums, logPortfolioEngagementEvent,
 } from '../lib/portfolioApi';
 
 const rowClass = 'flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors';
@@ -65,6 +66,28 @@ export function PortfolioItemActionSheet({
   const [saved, setSaved] = useState(false);
   const [showAddToAlbum, setShowAddToAlbum] = useState(false);
   const [myAlbums, setMyAlbums] = useState<PortfolioAlbum[]>([]);
+  // Owners can always download their own work; visitors only when the creator's
+  // Portfolio settings allow it (all images, or this item selected).
+  const [visitorCanDownload, setVisitorCanDownload] = useState(false);
+  const hasFile = !!item.media_url && item.media_type !== 'link';
+  const canDownload = hasFile && (isOwn || visitorCanDownload);
+
+  useEffect(() => {
+    if (isOwn || !hasFile) return;
+    let alive = true;
+    getPortfolioSettings(creatorId).then(s => {
+      if (alive && s) setVisitorCanDownload(s.allow_downloads === 'individual' || (s.allow_downloads === 'selected' && !!item.download_allowed));
+    });
+    return () => { alive = false; };
+  }, [creatorId, item.id, isOwn, hasFile]);
+
+  const handleDownload = async () => {
+    if (!item.media_url) return;
+    const t = toast.loading('Downloading…');
+    const ok = await downloadFromUrl(item.media_url, portfolioFilename(item.title, item.media_url));
+    toast.dismiss(t);
+    if (ok) toast.success('Download started');
+  };
 
   useEffect(() => {
     if (!isOwn && user) isPortfolioSaved(user.id, item.id, 'portfolio_item').then(setSaved);
@@ -141,6 +164,11 @@ export function PortfolioItemActionSheet({
               <button onClick={() => run(handleShare)} className={rowClass}>
                 <Share2 className="w-4 h-4 text-gray-400" /> Share
               </button>
+              {canDownload && (
+                <button onClick={() => run(handleDownload)} className={rowClass}>
+                  <Download className="w-4 h-4 text-gray-400" /> Download
+                </button>
+              )}
               <button onClick={handleHide} disabled={hiding} className={rowClass + ' disabled:opacity-50'}>
                 <EyeOff className="w-4 h-4 text-gray-400" /> {hiding ? 'Hiding…' : 'Hide from Portfolio'}
               </button>
@@ -167,6 +195,11 @@ export function PortfolioItemActionSheet({
               <button onClick={() => run(handleShare)} className={rowClass}>
                 <Share2 className="w-4 h-4 text-gray-400" /> Share
               </button>
+              {canDownload && (
+                <button onClick={() => run(handleDownload)} className={rowClass}>
+                  <Download className="w-4 h-4 text-gray-400" /> Download
+                </button>
+              )}
               <button onClick={() => run(handleToggleSave)} className={rowClass}>
                 <Bookmark className={`w-4 h-4 ${saved ? 'text-gray-900 fill-gray-900' : 'text-gray-400'}`} /> {saved ? 'Unsave' : 'Save'}
               </button>

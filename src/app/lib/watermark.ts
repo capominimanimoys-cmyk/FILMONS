@@ -107,3 +107,29 @@ export function triggerDownload(url: string, filename: string) {
   a.download = filename;
   a.click();
 }
+
+/**
+ * Download a (possibly cross-origin) file. The `download` attribute is ignored
+ * for cross-origin URLs, so fetch it as a blob first; if that is blocked
+ * (CORS) fall back to opening the URL in a new tab.
+ */
+export async function downloadFromUrl(url: string, filename: string): Promise<boolean> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    const blobUrl = URL.createObjectURL(await res.blob());
+    triggerDownload(blobUrl, filename);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+    return true;
+  } catch {
+    window.open(url, "_blank", "noopener");
+    return false;
+  }
+}
+
+/** Build a safe filename for a portfolio item from its title and URL extension. */
+export function portfolioFilename(title: string | undefined, url: string): string {
+  const ext = (url.split("?")[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] ?? "jpg").toLowerCase();
+  const base = (title || "filmons-work").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "filmons-work";
+  return `${base}.${ext}`;
+}
