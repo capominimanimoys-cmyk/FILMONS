@@ -38,7 +38,8 @@ import { ListingCard } from '../components/ListingCard';
 import { FollowersModal } from '../components/FollowersModal';
 import { AboutEditor } from '../components/AboutEditor';
 import { ProfileStrengthCard } from '../components/ProfileStrengthCard';
-import { AddPortfolioItemSheet } from '../components/AddPortfolioItemSheet';
+import { WorkEditor } from '../components/WorkEditor';
+import { AlbumEditor } from '../components/AlbumEditor';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, getPortfolioEntriesByIds, type PortfolioItem } from '../lib/portfolioApi';
 import { getUserRepostActivity, type ActivityEntry } from '../lib/activityApi';
 import { RepostedActivityCard } from '../components/connect/RepostedActivityCard';
@@ -822,6 +823,8 @@ export function Profile() {
 
   const [portfolioItems,   setPortfolioItems]   = useState<PortfolioItem[]>([]);
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
+  // 2+ files picked at once in the Add Work editor are handed to the album editor.
+  const [albumSeedFiles, setAlbumSeedFiles] = useState<File[] | undefined>(undefined);
   const [portfolioDetail,  setPortfolioDetail]  = useState<PortfolioItem | null>(null);
 
   async function load() {
@@ -2061,9 +2064,18 @@ export function Profile() {
           dead tab==='portfolio' fallback block) so the All tab's empty-state
           CTA can open it too, not just the dedicated Portfolio tab's. */}
       {showAddPortfolio && (
-        <AddPortfolioItemSheet
+        <WorkEditor
           onClose={() => setShowAddPortfolio(false)}
-          onAdded={item => setPortfolioItems(prev => [item, ...prev])}
+          onCreated={item => { setPortfolioItems(prev => [item, ...prev]); setShowAddPortfolio(false); }}
+          onMultiFile={files => { setShowAddPortfolio(false); setAlbumSeedFiles(files); }}
+        />
+      )}
+      {albumSeedFiles && (
+        <AlbumEditor
+          mode="create"
+          initialFiles={albumSeedFiles}
+          onClose={() => setAlbumSeedFiles(undefined)}
+          onCreated={() => setAlbumSeedFiles(undefined)}
         />
       )}
 
