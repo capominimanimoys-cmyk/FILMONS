@@ -23,6 +23,11 @@ const RETRY_IF_FASTER_THAN_MS = 6000;
 const RETRY_STATUS = new Set([429, 502, 503, 504, 520, 522, 524]);
 const isAdminApp = typeof window !== 'undefined' && (window.location.pathname.startsWith('/admin') || window.location.hostname.startsWith('admin.'));
 
+let lastBecameVisibleAt = 0;
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') lastBecameVisibleAt = Date.now(); });
+}
+
 function deadlineFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -54,8 +59,15 @@ function deadlineFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Re
       r = await attempt();
     }
     if (r.res && !RETRY_STATUS.has(r.res.status)) return r.res;
-    if (!callerAborted && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('filmons:read-failed', { detail: { url } }));
+    // Announce only failures worth the user's attention: not HEAD count/badge
+    // probes, and not while the tab is hidden / just came back (browsers kill
+    // in-flight fetches when a tab is backgrounded or the page navigates, which
+    // is not a data problem). The banner additionally needs several failures
+    // close together before it shows -- see ReadFailureBanner.
+    if (!callerAborted && method !== 'HEAD' && typeof window !== 'undefined' && typeof document !== 'undefined'
+        && document.visibilityState === 'visible' && Date.now() - lastBecameVisibleAt > 4000) {
+      console.warn('[supabase] read failed after retry:', url.replace(/^https?:\/\/[^/]+/, ''), r.res ? `HTTP ${r.res.status}` : String(r.err));
+      window.dispatchEvent(new CustomEvent('filmons:read-failed', { detail: { url, status: r.res?.status } }));
     }
     if (r.res) return r.res;      // let supabase-js surface the server's own error body
     throw r.err;
