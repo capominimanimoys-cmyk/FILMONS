@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, ElementType, MouseEvent } from 'react';
+import { useHeaderCollapse } from '../lib/useHeaderCollapse';
 import { useNavigate } from 'react-router';
 import {
   Bell, Heart, MessageCircle, UserPlus, DollarSign,
@@ -660,6 +661,7 @@ const EMPTY_STATE: Record<Tab, { title: string; body: string }> = {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Notifications() {
+  const header = useHeaderCollapse();
   const { user }   = useAuth();
   const navigate   = useNavigate();
   const { enterLearning } = useLearningTransition();
@@ -772,8 +774,8 @@ export function Notifications() {
       <div className="max-w-lg lg:max-w-2xl mx-auto pb-10">
 
         {/* ── Sticky header ── */}
-        <div className="bg-white border-b border-gray-100 sticky top-0 z-20 px-5 pt-5 pb-0">
-          <div className="flex items-center justify-between pb-3">
+        <div className="bg-white border-b border-gray-100 sticky top-0 z-20 px-5 pt-5 pb-0" style={header.style}>
+          <div ref={header.titleRef} className="flex items-center justify-between pb-3">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
                 <Bell className="w-4 h-4 text-white" />
