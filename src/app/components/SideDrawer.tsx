@@ -1,7 +1,7 @@
 import { Link, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import {
-  X, House, Search, MessageCircle, CalendarDays,
+  X, House, Search, MessageCircle, CalendarDays, Store, Users,
   LayoutDashboard, Wallet, Bookmark, Settings, CircleHelp, LogOut,
   UserPlus,
 } from 'lucide-react';
@@ -26,6 +26,17 @@ function NavRow({ icon: Icon, label, to, active, onClick }: {
   );
 }
 
+// Marketplace / Connect are Home's two modes. Home owns the mode (sessionStorage
+// + this event); the drawer only asks for one and navigates to Home.
+const HOME_MODE_KEY = 'filmons_home_mode';
+const readHomeMode = (): 'listings' | 'portfolio' => {
+  try { return sessionStorage.getItem(HOME_MODE_KEY) === 'portfolio' ? 'portfolio' : 'listings'; } catch { return 'listings'; }
+};
+const requestHomeMode = (mode: 'listings' | 'portfolio') => {
+  try { sessionStorage.setItem(HOME_MODE_KEY, mode); } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent('filmons:set-home-mode', { detail: { mode } }));
+};
+
 export function SideDrawer({ onClose }: Props) {
   const { user, logout } = useAuth();
   const navigate   = useNavigate();
@@ -33,6 +44,9 @@ export function SideDrawer({ onClose }: Props) {
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+
+  const onHome = location.pathname === '/';
+  const homeMode = readHomeMode();
 
   const handleLogout = async () => {
     localStorage.removeItem('filmons_current_user');
@@ -89,6 +103,8 @@ export function SideDrawer({ onClose }: Props) {
           {!user && (
             <div className="py-2">
               <NavRow icon={House}      label="Home"             to="/"        active={isActive('/')}        onClick={onClose} />
+              <NavRow icon={Store}      label="Marketplace"      to="/"        active={onHome && homeMode === 'listings'}  onClick={() => { requestHomeMode('listings'); onClose(); }} />
+              <NavRow icon={Users}      label="Connect"          to="/"        active={onHome && homeMode === 'portfolio'} onClick={() => { requestHomeMode('portfolio'); onClose(); }} />
               <NavRow icon={Search}     label="Browse"           to="/search"  active={isActive('/search')}  onClick={onClose} />
               <NavRow icon={CircleHelp} label="Contact Support"  to="/support" active={isActive('/support')} onClick={onClose} />
             </div>
@@ -98,6 +114,8 @@ export function SideDrawer({ onClose }: Props) {
           {user && (
             <div className="py-2">
               <NavRow icon={House}             label="Home"          to="/"                          active={isActive('/')}                onClick={onClose} />
+              <NavRow icon={Store}             label="Marketplace"   to="/"                          active={onHome && homeMode === 'listings'}  onClick={() => { requestHomeMode('listings'); onClose(); }} />
+              <NavRow icon={Users}             label="Connect"       to="/"                          active={onHome && homeMode === 'portfolio'} onClick={() => { requestHomeMode('portfolio'); onClose(); }} />
               <NavRow icon={Search}            label="Browse"        to="/search"                    active={isActive('/search')}          onClick={onClose} />
               <NavRow icon={MessageCircle}     label="Messages"      to="/inbox"                      active={isActive('/inbox')}           onClick={onClose} />
               <NavRow icon={CalendarDays}      label="Calendar"      to="/calendar"                   active={isActive('/calendar')}        onClick={onClose} />

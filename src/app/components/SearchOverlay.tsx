@@ -1767,18 +1767,25 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
       const hasIntent = intents.length > 0;
       const textQuery = hasIntent ? remainder : query;
       const coursesQuery = hasIntent && !remainder.trim() ? null : textQuery;
+      // Listings + creators are the primary results and are awaited. Everything
+      // else (portfolio, posts, hashtags, locations, courses) gets a 2s deadline
+      // so one slow lookup can't hold the whole results page -- and when it does
+      // arrive late it is applied (onLate) rather than thrown away.
+      const stale = () => searchVersionRef.current !== myVersion;
+      const secondary = <T,>(p: Promise<T>, fallback: T, apply: (v: T) => void) =>
+        withTimeout(p.catch(() => fallback), 2000, fallback, v => { if (!stale()) apply(v); });
       Promise.all([
         searchAll(query),
         // Fetched alongside listings/creators regardless of which of the
         // four top-level modes is active, so switching modes never needs a
         // second round trip -- the visible* derivations below decide what
         // actually renders per mode.
-        searchMatchingPortfolio(textQuery).catch(() => []),
-        searchMatchingPosts(textQuery).catch(() => []),
-        searchHashtagSuggestions(textQuery, 6).catch(() => []),
-        searchLocationSuggestions(textQuery, 6).catch(() => []),
-        coursesQuery ? getCourses({ query: coursesQuery, limit: 24 }).catch(() => []) : Promise.resolve([]),
-        isPortfolioIntent(query) ? getTrendingPortfolio(PREVIEW_LIMIT).catch(() => [] as PortfolioFeedEntry[]) : Promise.resolve([] as PortfolioFeedEntry[]),
+        secondary(searchMatchingPortfolio(textQuery), [] as Awaited<ReturnType<typeof searchMatchingPortfolio>>, setRawPortfolio),
+        secondary(searchMatchingPosts(textQuery), [] as Awaited<ReturnType<typeof searchMatchingPosts>>, setRawPosts),
+        secondary(searchHashtagSuggestions(textQuery, 6), [] as Awaited<ReturnType<typeof searchHashtagSuggestions>>, setRawHashtags),
+        secondary(searchLocationSuggestions(textQuery, 6), [] as Awaited<ReturnType<typeof searchLocationSuggestions>>, setRawLocations),
+        coursesQuery ? secondary(getCourses({ query: coursesQuery, limit: 24 }), [] as Course[], setRawCourses) : Promise.resolve([] as Course[]),
+        isPortfolioIntent(query) ? secondary(getTrendingPortfolio(PREVIEW_LIMIT), [] as PortfolioFeedEntry[], setPortfolioIntent) : Promise.resolve([] as PortfolioFeedEntry[]),
       ])
         .then(([{ users: u, listings: l }, portfolio, posts, hashtags, locations, courses, trendingPortfolio]) => {
           if (searchVersionRef.current !== myVersion) return; // a newer query already superseded this one
@@ -1796,7 +1803,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         })
         .catch(() => { if (searchVersionRef.current === myVersion) setResultsReady(true); })
         .finally(() => { if (searchVersionRef.current === myVersion) setLoading(false); });
-    }, 400);
+    }, 220);
   }, []);
 
   // Restores search state (query, category, filters, sort, scroll
