@@ -1,4 +1,4 @@
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { Menu, Bell, Search } from 'lucide-react';
 import { FilmonsLogo } from './FilmonsLogo';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,8 @@ interface TopBarProps { onMenuClick: () => void; onSearchOpen: () => void; }
 
 export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
   const { user } = useAuth();
+  // Dashboard pages have their own header directly beneath; no divider between the two bars.
+  const noDivider = useLocation().pathname.startsWith('/dashboard');
   const [unread, setUnread] = useState(0);
   // Home -> Portfolio mode auto-hide -- Home.tsx dispatches this while the
   // user scrolls down through the Portfolio feed (and clears it on scroll-
@@ -42,7 +44,7 @@ export function TopBar({ onMenuClick, onSearchOpen }: TopBarProps) {
     // collapse; border only drawn while visible so a collapsed 0-height
     // box doesn't still render a stray 1px line.
     <header
-      className={`sticky top-0 z-40 bg-white/95 backdrop-blur-md overflow-hidden lg:hidden ${barsHidden ? '' : 'border-b border-gray-100'}`}
+      className={`sticky top-0 z-40 bg-white/95 backdrop-blur-md overflow-hidden lg:hidden ${barsHidden || noDivider ? '' : 'border-b border-gray-100'}`}
       style={{
         height: barsHidden ? 0 : 56,
         transform: barsHidden ? 'translateY(-100%)' : 'translateY(0)',
