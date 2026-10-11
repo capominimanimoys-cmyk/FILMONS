@@ -55,13 +55,24 @@ const AUTH_POP_CSS = `
   .auth-input-fx:focus { transform: scale(1.01); }
   .auth-btn-fx    { transition: transform 100ms ease; }
   .auth-btn-fx:active { transform: scale(0.97); }
+  /* Page slides in from the right (opt-in via slideIn). Short and ease-out so
+     it feels immediate; 'backwards' fill means no transform lingers after it
+     finishes, so the fixed backgrounds go back to tracking the real viewport.
+     The inner content's own scale-pop is skipped here -- two stacked entrance
+     animations made the screen feel slow to settle. */
+  @keyframes authSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  .auth-slide { animation: authSlideIn 220ms cubic-bezier(0.22,1,0.36,1) backwards; will-change: transform; }
+  .auth-slide .auth-pop-main { animation: none; }
+  @media (prefers-reduced-motion: reduce) { .auth-slide { animation: none; } }
 `;
 
-export function AuthScreenLayout({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function AuthScreenLayout({ children, className = '', slideIn = false }: { children: ReactNode; className?: string; slideIn?: boolean }) {
   return (
     <div className={`relative min-h-[100dvh] w-full flex flex-col overflow-x-hidden ${className}`}>
       <style>{AUTH_POP_CSS}</style>
-      {children}
+      {/* The slide moves this inner wrapper; the root's overflow-x clips it (same
+          approach as CreateAccount) so the page never gains a horizontal scroll. */}
+      {slideIn ? <div className="auth-slide flex flex-col flex-1">{children}</div> : children}
     </div>
   );
 }
