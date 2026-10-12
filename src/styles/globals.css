@@ -13,6 +13,12 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Pages scroll vertically only: a card/row that is wider than the screen is cut off instead of
+   making the whole page pan sideways (`clip`, unlike `hidden`, keeps sticky headers working). */
+html, body, #root {
+  overflow-x: clip;
+}
+
 /* ── Full-screen mobile backgrounds ───────────────────────────────────────
    `min-h-screen`/`h-screen` compile to 100vh, a static value that doesn't
    track the actual visible viewport as mobile browser chrome (address bar,
