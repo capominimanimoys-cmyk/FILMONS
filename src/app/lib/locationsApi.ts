@@ -118,10 +118,11 @@ export async function indexContentLocation(contentType: LocationContentType, con
     }
     if (!locId) return;
 
-    await supabase.from('location_mentions').upsert(
+    const { error: mentionErr } = await supabase.from('location_mentions').upsert(
       { location_id: locId, content_type: contentType, content_id: contentId },
       { onConflict: 'content_type,content_id', ignoreDuplicates: true },
     );
+    if (mentionErr) console.warn('[locationsApi] location_mentions upsert failed:', mentionErr.message);
   } catch (e) {
     console.warn('[locationsApi] indexContentLocation failed:', e);
   }
@@ -237,7 +238,30 @@ export async function getLocationContent(keyInput: string, limit = 30): Promise<
     .order('created_at', { ascending: false })
     .limit(200);
   const rows = mentions ?? [];
-  const idsFor = (type: LocationContentType) => rows.filter(r => r.content_type === type).map(r => r.content_id);
+  const ids: Record<LocationContentType, Set<string>> = {
+    post: new Set(), portfolio_item: new Set(), portfolio_album: new Set(), listing: new Set(),
+  };
+  for (const r of rows) ids[r.content_type as LocationContentType]?.add(String(r.content_id));
+
+  // The index (location_mentions) is not the only record of where something happened:
+  // posts are also linked through post_locations, and every post / work / listing keeps its
+  // own free-text location. Include those too, so a place's page never misses content just
+  // because indexing failed or ran under an older location row.
+  const city = (locRow.city ?? '').replace(/[%_,()"]/g, '').trim();
+  if (city) {
+    const like = (col: string) => [`${col}.ilike."${city}"`, `${col}.ilike."${city},%"`, `${col}.ilike."%, ${city},%"`, `${col}.ilike."%, ${city}"`].join(',');
+    const [legacy, textPosts, textItems, cityListings] = await Promise.all([
+      supabase.from('post_locations').select('post_id').in('location_id', locIds).limit(200),
+      supabase.from('posts').select('id').or(like('location')).limit(100),
+      supabase.from('portfolio_items').select('id').or(like('location')).limit(100),
+      supabase.from('listings').select('id').ilike('city', city).eq('is_active', true).limit(50),
+    ]);
+    for (const r of legacy.data ?? []) ids.post.add(String((r as any).post_id));
+    for (const r of textPosts.data ?? []) ids.post.add(String((r as any).id));
+    for (const r of textItems.data ?? []) ids.portfolio_item.add(String((r as any).id));
+    for (const r of cityListings.data ?? []) ids.listing.add(String((r as any).id));
+  }
+  const idsFor = (type: LocationContentType) => [...ids[type]];
 
   const [posts, items, albums, listings] = await Promise.all([
     fetchLocationPosts(idsFor('post'), limit),
