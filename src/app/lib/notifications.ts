@@ -304,6 +304,19 @@ export function markAllRead(userId: string): void {
   void supabase.from('notifications').update({ is_read: true, read_at: now }).eq('user_id', userId).eq('is_read', false);
 }
 
+/** Marks everything read on the server FIRST and only then locally, so a failure leaves the unread
+ *  state untouched. Resolves false on any failure. */
+export async function markAllReadConfirmed(userId: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  try {
+    const { error } = await supabase.from('notifications').update({ is_read: true, read_at: now }).eq('user_id', userId).eq('is_read', false);
+    if (error) return false;
+  } catch { return false; }
+  saveLocal(userId, loadLocal(userId).map(n => ({ ...n, read: true, readAt: n.readAt ?? now })));
+  try { localStorage.setItem(CNT_KEY(userId), '0'); } catch { /* ignore */ }
+  return true;
+}
+
 export function remove(userId: string, notifId: string): void {
   saveLocal(userId, loadLocal(userId).filter(n => n.id !== notifId));
   void supabase.from('notifications').delete().eq('id', notifId);

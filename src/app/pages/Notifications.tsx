@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, ElementType, MouseEvent } from 'react';
-import { useHeaderCollapse } from '../lib/useHeaderCollapse';
 import { useNavigate } from 'react-router';
 import {
   Bell, Heart, MessageCircle, UserPlus, DollarSign,
   Check, Trash2, X, BellOff, UserCheck, Inbox, ArrowRight, Repeat2,
   ShoppingBag, Zap, Trophy, AtSign, Shield, Star,
   Rocket, Wrench, PartyPopper, Eye, ChevronRight, Loader2,
-  CalendarDays, CreditCard, GraduationCap,
+  CalendarDays, CreditCard, GraduationCap, ArrowLeft, Settings,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
@@ -614,60 +613,63 @@ function SkeletonRow() {
   );
 }
 
-// ── Tab definitions ───────────────────────────────────────────────────────────
-type Tab = 'all' | 'unread' | 'messages' | 'marketplace' | 'services' | 'payments' | 'social' | 'system';
+// ── Category filters ──────────────────────────────────────────────────────────
+// Every notification has exactly ONE primary category. A rental confirmation is Marketplace; its
+// payment receipt is Payments.
+type Tab = 'all' | 'marketplace' | 'connect' | 'learning' | 'payments' | 'system';
+type Category = Exclude<Tab, 'all'>;
 
 const MESSAGE_TYPES        = ['message','new_message','message_received','message_reply','message_reaction','message_request_accepted'];
-const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','listing_liked','followed_creator_posted'];
-const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected'];
-const PAYMENTS_TYPES       = ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed'];
-const SOCIAL_TYPES         = ['new_follower','follow_request','follow_accepted','connection_request','connection_accepted','content_like','content_repost','content_repost_thoughts','new_post','comment_received','comment_reply','comment_like','comment_mention','comment_pinned','creator_liked','portfolio_view','course_published'];
-const SYSTEM_TYPES_TAB     = ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','comment_deleted','support_reply','calendar_update','calendar_reminder'];
+const MARKETPLACE_TYPES    = ['marketplace_order','marketplace_booking','marketplace_reply','booking_accepted','booking_rejected','rental_request','rental_request_accepted','rental_request_declined','purchase_request_accepted','purchase_request_declined','listing_review','review_received','listing_liked'];
+const SERVICES_TYPES       = ['service_booked','application_received','application_shortlisted','application_accepted','application_rejected','application_withdrawn'];
 
-const TABS: { key: Tab; label: string; icon: ElementType; activeColor: string }[] = [
-  { key: 'all',         label: 'All',         icon: Bell,        activeColor: 'text-blue-600 border-blue-600' },
-  { key: 'unread',      label: 'Unread',      icon: Bell,        activeColor: 'text-blue-600 border-blue-600' },
-  { key: 'messages',    label: 'Messages',    icon: Inbox,       activeColor: 'text-sky-600 border-sky-500' },
-  { key: 'marketplace', label: 'Marketplace', icon: ShoppingBag, activeColor: 'text-orange-600 border-orange-500' },
-  { key: 'services',    label: 'Services',    icon: Wrench,      activeColor: 'text-purple-600 border-purple-500' },
-  { key: 'payments',    label: 'Payments',    icon: DollarSign,  activeColor: 'text-emerald-600 border-emerald-500' },
-  { key: 'social',      label: 'Social',      icon: Heart,       activeColor: 'text-pink-600 border-pink-500' },
-  { key: 'system',      label: 'System',      icon: Shield,      activeColor: 'text-gray-600 border-gray-500' },
+const CATEGORY_BY_TYPE: Record<string, Category> = {};
+const assign = (cat: Category, types: string[]) => types.forEach(t => { CATEGORY_BY_TYPE[t] = cat; });
+assign('marketplace', [...MARKETPLACE_TYPES, ...SERVICES_TYPES]);
+assign('connect', [
+  ...MESSAGE_TYPES,
+  'new_follower','follow_request','follow_accepted','connection_request','connection_accepted',
+  'content_like','content_repost','content_repost_thoughts','new_post','post_mention',
+  'comment_received','comment_reply','comment_like','comment_mention','comment_pinned','comment_deleted',
+  'creator_liked','followed_creator_posted','portfolio_view',
+]);
+assign('learning', ['course_published','course_purchased','live_session_application','live_session_accepted','live_session_payment_request','live_session_declined','live_session_confirmed']);
+assign('payments', ['payment_request','payment_received','payment_released','payout_requested','payout_approved','payout_processing','payout_sent','payout_paid','payout_rejected','payout_failed','refund','wallet_deposit','wallet_withdrawal']);
+assign('system', ['account_verified','account_warning','system_announcement','system_notification','profile_completion','trust_level_update','support_reply','subscription_update','security_alert']);
+
+/** Calendar notices follow the thing they remind about; everything else is Marketplace. */
+function categoryOf(n: Notification): Category {
+  if (n.type === 'calendar_update' || n.type === 'calendar_reminder') {
+    const text = `${n.title ?? ''} ${n.commentContent ?? ''}`.toLowerCase();
+    if (/\b(course|lesson|live session|learning|class)\b/.test(text)) return 'learning';
+    if (/\b(wallet|payout|withdraw|deposit|refund)\b/.test(text)) return 'payments';
+    return 'marketplace';
+  }
+  return CATEGORY_BY_TYPE[n.type] ?? 'system';
+}
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'all', label: 'All' }, { key: 'marketplace', label: 'Marketplace' }, { key: 'connect', label: 'Connect' },
+  { key: 'learning', label: 'Learning' }, { key: 'payments', label: 'Payments' }, { key: 'system', label: 'System' },
 ];
 
-const TAB_TYPES: Record<Tab, string[]> = {
-  all:         [],
-  unread:      [],
-  messages:    MESSAGE_TYPES,
-  marketplace: MARKETPLACE_TYPES,
-  services:    SERVICES_TYPES,
-  payments:    PAYMENTS_TYPES,
-  social:      SOCIAL_TYPES,
-  system:      SYSTEM_TYPES_TAB,
-};
-
 function filterByTab(notifs: Notification[], tab: Tab): Notification[] {
-  if (tab === 'all')    return notifs;
-  if (tab === 'unread') return notifs.filter(n => !n.read);
-  return notifs.filter(n => TAB_TYPES[tab].includes(n.type));
+  return tab === 'all' ? notifs : notifs.filter(n => categoryOf(n) === tab);
 }
 
 // ── Empty-state copy per tab ──────────────────────────────────────────────────
 const EMPTY_STATE: Record<Tab, { title: string; body: string }> = {
   all:         { title: "You're all caught up",   body: "When people interact with your profile, posts, or listings, you'll see it here." },
-  unread:      { title: "No unread notifications", body: "You've read everything. Nice work!" },
-  messages:    { title: "No messages yet",         body: "Start a conversation with someone on Filmons." },
-  marketplace: { title: "No marketplace activity", body: "When someone books or orders, you'll hear about it here." },
-  services:    { title: "No service activity",     body: "Applications and service bookings will show up here." },
-  payments:    { title: "No payment history",      body: "Completed transactions and releases appear here." },
-  social:      { title: "No social activity",      body: "Post something or follow creators to get started!" },
-  system:      { title: "No system notifications", body: "Account updates and announcements appear here." },
+  marketplace: { title: "No marketplace activity", body: "Rentals, sales, services and opportunities will show up here." },
+  connect:     { title: "No Connect activity",     body: "Followers, comments, likes and messages will show up here." },
+  learning:    { title: "No learning updates",     body: "Course access, lessons and live sessions will show up here." },
+  payments:    { title: "No payment history",      body: "Payments, refunds, deposits and payouts appear here." },
+  system:      { title: "No system notifications", body: "Verification, security and account updates appear here." },
 };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Notifications() {
-  const header = useHeaderCollapse();
-  const { user }   = useAuth();
+    const { user }   = useAuth();
   const navigate   = useNavigate();
   const { enterLearning } = useLearningTransition();
   const {
@@ -676,12 +678,27 @@ export function Notifications() {
     refresh: load,
     markRead,
     remove,
-    markAllRead: ctxMarkAllRead,
+    markAllReadConfirmed,
     clearAll: ctxClearAll,
   } = useNotifications();
 
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [activeTab,   setActiveTab]   = useState<Tab>('all');
+  const [markingAll,  setMarkingAll]  = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
+
+  // Keep the selected filter visible in the scrolling row.
+  useEffect(() => {
+    filtersRef.current?.querySelector<HTMLElement>(`[data-tab="${activeTab}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [activeTab]);
+
+  const handleMarkAll = async () => {
+    if (markingAll) return;
+    setMarkingAll(true);
+    const ok = await markAllReadConfirmed();
+    setMarkingAll(false);
+    if (!ok) toast.error("Couldn't mark notifications as read. Try again.");
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -769,80 +786,52 @@ export function Notifications() {
     hasLoadedRef.current = true;
   });
 
-  // Tab unread counts
-  const tabCount = (tab: Tab): number => {
-    if (tab === 'all' || tab === 'unread') return 0;
-    return notifs.filter(n => !n.read && TAB_TYPES[tab].includes(n.type)).length;
-  };
-
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-[#F5F7FA]">
+    <div className="min-h-screen bg-[#F5F7FA]" style={{ fontFamily: "'Neue Montreal', 'SF Pro Display', -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
       <div className="max-w-lg lg:max-w-2xl mx-auto pb-10">
 
-        {/* ── Sticky header ── */}
-        <div className="bg-white border-b border-gray-100 sticky top-0 z-20 px-5 pt-5 pb-0" style={header.style}>
-          <div ref={header.titleRef} className="flex items-center justify-between pb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-                <Bell className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-base font-bold text-gray-900 leading-none tracking-tight">Notifications</h1>
-                <p className="text-[11px] text-gray-400 mt-0.5">
-                  {unread > 0 ? `${unread} unread` : refreshing ? 'Refreshing…' : "You're all caught up"}
-                </p>
-              </div>
-              {unread > 0 && (
-                <span className="bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none animate-pulse">
-                  {unread > 99 ? '99+' : unread}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-0.5">
-              {unread > 0 && (
-                <button
-                  onClick={() => ctxMarkAllRead()}
-                  className="flex items-center gap-1 text-xs text-blue-600 font-semibold hover:text-blue-800 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                >
-                  <Check className="w-3.5 h-3.5" /> Read all
-                </button>
-              )}
-              {notifs.length > 0 && (
-                <button
-                  onClick={() => { if (window.confirm('Clear all notifications?')) ctxClearAll(); }}
-                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 font-medium px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
+        {/* ── Title row (sticky) ── */}
+        <div className="bg-white sticky top-0 z-30 flex h-14 items-center gap-2 px-3 sm:px-5">
+          <button onClick={() => navigate(-1)} aria-label="Back"
+            className="md:hidden flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-800 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h1 className="min-w-0 truncate text-xl font-bold tracking-tight text-gray-900">Notifications</h1>
+          {unread > 0 && (
+            <span aria-label={`${unread} unread`} className="min-w-[22px] rounded-full bg-blue-600 px-1.5 py-0.5 text-center text-xs font-bold leading-4 text-white">
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
+          <button onClick={() => navigate('/settings/notifications')} aria-label="Notification settings"
+            className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+            <Settings className="h-5 w-5" strokeWidth={1.75} />
+          </button>
+        </div>
 
-          {/* ── Tab bar ── */}
-          <div className="flex -mx-5 px-3 overflow-x-auto scrollbar-hide border-t border-gray-100 gap-0.5">
+        {/* ── Subtitle + Mark all as read (scrolls away) ── */}
+        <div className="bg-white flex items-center justify-between gap-3 px-4 sm:px-5 pb-3">
+          <p className="text-sm text-gray-500">Stay updated on your activity.</p>
+          {unread > 0 && (
+            <button onClick={handleMarkAll} disabled={markingAll}
+              className="shrink-0 rounded-lg px-2 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+              {markingAll ? 'Marking…' : 'Mark all as read'}
+            </button>
+          )}
+        </div>
+
+        {/* ── Category filters (sticky under the title row) ── */}
+        <div className="bg-white sticky top-14 z-30 border-b border-gray-200">
+          <div ref={filtersRef} role="tablist" aria-label="Notification categories"
+            className="flex flex-nowrap gap-2 overflow-x-auto no-scrollbar px-4 sm:px-5 py-2.5">
             {TABS.map(t => {
               const isActive = activeTab === t.key;
-              const cnt = t.key === 'unread' ? unread : tabCount(t.key);
-              const TabIcon = t.icon;
               return (
-                <button
-                  key={t.key}
-                  onClick={() => setActiveTab(t.key)}
-                  className={`relative shrink-0 flex items-center gap-1.5 px-3 py-3 text-[11.5px] font-semibold transition-all border-b-2 whitespace-nowrap ${
-                    isActive
-                      ? `${t.activeColor}`
-                      : 'text-gray-500 border-transparent hover:text-gray-800 hover:border-gray-200'
-                  }`}
-                >
-                  <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? '' : 'opacity-60'}`} />
+                <button key={t.key} role="tab" aria-selected={isActive} data-tab={t.key} onClick={() => setActiveTab(t.key)}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-4 min-h-[40px] text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                    isActive ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
                   {t.label}
-                  {cnt > 0 && (
-                    <span className={`text-[9px] font-black min-w-[15px] h-[15px] flex items-center justify-center px-0.5 rounded-full leading-none ${
-                      isActive ? 'bg-current/10 text-current' : 'bg-gray-100 text-gray-500'
-                    }`}>{cnt > 99 ? '99+' : cnt}</span>
-                  )}
                 </button>
               );
             })}
@@ -882,7 +871,7 @@ export function Notifications() {
               </div>
               <p className="text-sm font-bold text-gray-600 mb-1.5">{empty.title}</p>
               <p className="text-xs text-gray-400 max-w-[240px] leading-relaxed">{empty.body}</p>
-              {(activeTab === 'all' || activeTab === 'social') && (
+              {(activeTab === 'all' || activeTab === 'connect') && (
                 <button
                   onClick={() => navigate('/feed')}
                   className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
@@ -922,6 +911,15 @@ export function Notifications() {
             })()
           )}
         </div>
+
+        {notifs.length > 0 && (
+          <div className="mt-4 flex justify-center">
+            <button onClick={() => { if (window.confirm('Clear all notifications?')) ctxClearAll(); }}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-gray-400 hover:bg-red-50 hover:text-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+              <Trash2 className="h-3.5 w-3.5" /> Clear all notifications
+            </button>
+          </div>
+        )}
 
       </div>
     </div>
