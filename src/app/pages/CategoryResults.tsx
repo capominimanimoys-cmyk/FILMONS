@@ -2905,6 +2905,12 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
               </p>
             )}
           </div>
+          {product === 'marketplace' && (
+            <button onClick={() => window.dispatchEvent(new CustomEvent('filmons:open-search'))} aria-label="Search"
+              className="ml-auto w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90 text-gray-700">
+              <Search className="w-5 h-5"/>
+            </button>
+          )}
         </div>
 
         {/* Marketplace type pills -- All/Rental/Sale/Service/Opportunity.
@@ -2934,7 +2940,13 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
 
         {/* ── Mobile: search input + Filters/Sort row ──────────────────── */}
         <div className="lg:hidden px-4 pb-3 space-y-2.5">
-          <div className="relative">
+          {product === 'marketplace' && searchText.trim() && (
+            <button onClick={() => setSearchText('')} aria-label="Clear search"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-gray-900 pl-3.5 pr-2.5 py-1.5 text-xs font-bold text-white">
+              <span className="truncate">“{searchText.trim()}”</span><X className="w-3.5 h-3.5 shrink-0"/>
+            </button>
+          )}
+          <div className={`relative ${product === 'marketplace' ? 'hidden' : ''}`}>
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
             <input
               value={searchText} onChange={e => setSearchText(e.target.value)}
