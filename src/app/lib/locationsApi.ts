@@ -23,7 +23,14 @@ export function normalizeLocationKey(input: string): string {
  *  location field in this app already uses (SmartAddressInput's
  *  mode="city"). Province is null when the text has no comma. */
 export function parseLocationFreeText(text: string): { city: string; province: string | null } {
-  const [city, province] = text.split(',').map(s => s.trim());
+  const parts = text.split(',').map(s => s.trim()).filter(Boolean);
+  // A full street address ("13450 104 Ave, Surrey, BC V3T 1V8, Canada") leads with the
+  // street, not the city -- take the city/province that follow it, and drop a trailing
+  // postal code from the province ("BC V3T 1V8" -> "BC").
+  if (parts.length >= 3 && /\d/.test(parts[0])) {
+    return { city: parts[1], province: parts[2].split(/\s+/)[0] || null };
+  }
+  const [city, province] = parts;
   return { city: city ?? '', province: province || null };
 }
 
@@ -62,7 +69,21 @@ export async function indexContentLocation(contentType: LocationContentType, con
     // every row whose city matches case-insensitively, then pick the one
     // whose province (if any) matches too.
     const { data: candidates } = await supabase.from('locations').select('id, province').ilike('city', city);
-    let locId = (candidates ?? []).find(r => (r.province ?? null) === province)?.id;
+    const cands = candidates ?? [];
+    let locId = cands.find(r => (r.province ?? null) === province)?.id;
+    if (!locId && !province && cands.length) {
+      // "Surrey" with no province joins the existing "Surrey, BC" (or the only Surrey)
+      // rather than becoming a second, separate location nobody lands on.
+      locId = [...cands].sort((a, b) => Number(!!b.province) - Number(!!a.province))[0].id;
+    }
+    if (!locId && province) {
+      // The reverse: "Surrey, BC" adopts an earlier province-less "Surrey" row.
+      const bare = cands.find(r => !r.province);
+      if (bare) {
+        locId = bare.id;
+        await supabase.from('locations').update({ province, name: text }).eq('id', bare.id);
+      }
+    }
     if (!locId) {
       const { data: created } = await supabase.from('locations')
         .insert({ name: text, city, province, country: 'Canada' })
@@ -108,10 +129,13 @@ async function resolveLocationRow(slugInput: string): Promise<LocationRow | null
   const { data } = await supabase.from('locations').select('id, city, province, name, uses')
     .ilike('city', `${cityGuess}%`).limit(50);
   const rows = (data ?? []) as LocationRow[];
-  const exact = rows.find(r => buildLocationSlug(r.city ?? '', r.province) === slugInput);
+  const wanted = slugInput.trim().toLowerCase();
+  const exact = rows.find(r => buildLocationSlug(r.city ?? '', r.province) === wanted);
   if (exact) return exact;
-  // Legacy fallback: an old bare-city key with no province segment at all.
-  return rows.find(r => (r.city ?? '').toLowerCase() === normalizeLocationKey(slugInput)) ?? null;
+  // Legacy fallback: an old bare-city key with no province segment at all. Several rows can
+  // share the city (with / without province) -- prefer the most-used one.
+  const sameCity = rows.filter(r => (r.city ?? '').toLowerCase() === normalizeLocationKey(slugInput));
+  return sameCity.sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))[0] ?? null;
 }
 
 /** Ranking: exact match, then startsWith, then contains, ordered by usage/
@@ -159,9 +183,17 @@ export async function getLocationContent(keyInput: string, limit = 30): Promise<
   const locRow = await resolveLocationRow(keyInput);
   if (!locRow) return { posts: [], portfolio: [], listings: [] };
 
+  // Content can be indexed under any row for this city (one with a province, one without,
+  // from older saves) -- show all of it on the one page the user can reach.
+  const { data: sameCity } = await supabase.from('locations').select('id, province')
+    .ilike('city', locRow.city ?? '');
+  const locIds = (sameCity ?? [])
+    .filter((r: any) => !locRow.province || !r.province || r.province === locRow.province)
+    .map((r: any) => r.id);
+  if (!locIds.includes(locRow.id)) locIds.push(locRow.id);
   const { data: mentions } = await supabase.from('location_mentions')
     .select('content_type, content_id, created_at')
-    .eq('location_id', locRow.id)
+    .in('location_id', locIds)
     .order('created_at', { ascending: false })
     .limit(200);
   const rows = mentions ?? [];
