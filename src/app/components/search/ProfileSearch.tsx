@@ -56,18 +56,29 @@ export function useProfiles(query: string) {
 }
 
 // ── Card ─────────────────────────────────────────────────────────────────────
-function Avatar({ p, size }: { p: SearchProfile; size: number }) {
+// Fixed-structure card so every card is the same size at a given width and text
+// size, whatever the profile contains:
+//   * min-height 220px, 16px padding, 3 grid rows: [avatar + text + Follow] /
+//     [skills, one row] / [Trust Score, bottom-right]
+//   * every text line is ONE line with an ellipsis and always occupies its line
+//     (empty lines are reserved), chips never wrap, Follow's slot is reserved even
+//     when hidden (own card), Trust Score's slot is reserved even when unscored
+//   * line / chip heights are in rem, so at larger accessibility text sizes every
+//     card grows by the same amount
+function Avatar({ p }: { p: SearchProfile }) {
   const [failed, setFailed] = useState(false);
   const initial = p.name?.trim()?.[0]?.toUpperCase() ?? '?';
   return (
-    <div className="shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center font-black text-gray-500"
-      style={{ width: size, height: size, fontSize: size * 0.4 }}>
+    <div className="shrink-0 w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-2xl font-black text-gray-500 self-start">
       {p.avatarUrl && !failed
         ? <img src={p.avatarUrl} alt="" loading="lazy" onError={() => setFailed(true)} className="w-full h-full object-cover" />
         : initial}
     </div>
   );
 }
+
+const NBSP = '\u00A0';
+const CARD_CLASS = 'w-full min-h-[220px] bg-white rounded-2xl border border-gray-200 p-4 grid grid-rows-[auto_auto_1fr] gap-y-3';
 
 export function ProfileSearchCard({ profile: p, onOpen, onNavigate }: {
   profile: SearchProfile; onOpen?: (p: SearchProfile) => void;
@@ -79,8 +90,6 @@ export function ProfileSearchCard({ profile: p, onOpen, onNavigate }: {
   const { isFollowing, isPending, follow, unfollow } = useFollow();
   const following = isFollowing(p.id);
   const isSelf = !!user && user.id === p.id;
-  const place = [p.city, p.province].filter(Boolean).join(', ');
-  const sub = [p.headline, place].filter(Boolean).join(' · ');
 
   const open = () => { onOpen?.(p); if (onNavigate) onNavigate(`/host/${p.id}`); else navigate(`/host/${p.id}`); };
   const toggleFollow = async (e: React.MouseEvent) => {
@@ -93,39 +102,48 @@ export function ProfileSearchCard({ profile: p, onOpen, onNavigate }: {
     <div
       role="link" tabIndex={0} onClick={open}
       onKeyDown={e => { if (e.key === 'Enter') open(); }}
-      className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex gap-3.5 cursor-pointer active:scale-[0.995] hover:border-gray-300 transition-colors text-left"
+      className={`${CARD_CLASS} cursor-pointer active:scale-[0.995] hover:border-gray-300 transition-colors text-left`}
     >
-      <Avatar p={p} size={72} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <p className="text-[17px] font-black text-gray-900 leading-tight truncate">{p.name}</p>
-          {p.isVerified && <BadgeCheck className="w-[18px] h-[18px] shrink-0 fill-blue-600 text-white" aria-label="Verified" />}
+      {/* Row 1: avatar | name / username / role / location | Follow */}
+      <div className="flex items-start gap-3 min-w-0">
+        <Avatar p={p} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 min-w-0 h-6">
+            <p className="text-[17px] font-black text-gray-900 leading-6 truncate min-w-0">{p.name}</p>
+            {p.isVerified && <BadgeCheck className="w-[18px] h-[18px] shrink-0 fill-blue-600 text-white" aria-label="Verified" />}
+          </div>
+          <p className="h-5 text-sm leading-5 text-gray-400 truncate">{p.username ? `@${p.username}` : NBSP}</p>
+          <p className="h-5 text-sm leading-5 text-gray-800 truncate">{p.headline || NBSP}</p>
+          <p className="h-5 text-sm leading-5 text-gray-500 truncate">{p.place || NBSP}</p>
         </div>
-        {p.username && <p className="text-sm text-gray-400 truncate">@{p.username}</p>}
-        {sub && <p className="text-sm text-gray-800 mt-1 leading-snug">{sub}</p>}
-        {p.chips.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2.5">
-            {p.chips.map(c => <span key={c} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600 max-w-full truncate">{c}</span>)}
-          </div>
-        )}
+        {/* Same slot whether or not Follow is shown (hidden on your own card). */}
+        <div className="shrink-0 w-[88px] h-9">
+          {!isSelf && (
+            <button
+              onClick={toggleFollow} disabled={isPending(p.id)} aria-pressed={following}
+              className={`w-full h-full rounded-xl border-2 text-sm font-bold transition-colors disabled:opacity-60 ${
+                following ? 'border-gray-200 bg-gray-100 text-gray-700' : 'border-blue-600 text-blue-600 hover:bg-blue-50'}`}
+            >
+              {following ? 'Following' : 'Follow'}
+            </button>
+          )}
+        </div>
       </div>
-      {/* Fixed-width right column keeps Follow clear of the profile text. */}
-      <div className="shrink-0 w-[88px] flex flex-col items-end justify-between">
-        {isSelf ? <span /> : (
-          <button
-            onClick={toggleFollow} disabled={isPending(p.id)} aria-pressed={following}
-            className={`w-full rounded-xl border-2 px-2 py-2 text-sm font-bold transition-colors disabled:opacity-60 ${
-              following ? 'border-gray-200 bg-gray-100 text-gray-700' : 'border-blue-600 text-blue-600 hover:bg-blue-50'}`}
-          >
-            {following ? 'Following' : 'Follow'}
-          </button>
-        )}
-        {p.trust != null && (
-          <div className="text-right mt-2">
-            <p className="text-[11px] text-gray-400 leading-none">Trust Score</p>
-            <p className="leading-tight"><span className="text-2xl font-black text-violet-600">{p.trust}</span><span className="text-sm text-gray-400">/100</span></p>
-          </div>
-        )}
+
+      {/* Row 2: up to 3 skills / tools in ONE row; long labels truncate, nothing stacks. */}
+      <div className="flex flex-nowrap gap-1.5 min-w-0 overflow-hidden h-7">
+        {p.chips.slice(0, 3).map(c => (
+          <span key={c} title={c}
+            className="min-w-[2.5rem] shrink truncate rounded-full bg-gray-100 px-3 text-xs font-medium leading-7 text-gray-600">{c}</span>
+        ))}
+      </div>
+
+      {/* Row 3: Trust Score anchored bottom-right (slot reserved even without a score). */}
+      <div className="flex items-end justify-end">
+        <div className={`text-right ${p.trust == null ? 'invisible' : ''}`}>
+          <p className="text-[11px] leading-4 text-gray-400">Trust Score</p>
+          <p className="leading-7"><span className="text-2xl font-black text-violet-600">{p.trust ?? 0}</span><span className="text-sm text-gray-400">/100</span></p>
+        </div>
       </div>
     </div>
   );
@@ -133,14 +151,14 @@ export function ProfileSearchCard({ profile: p, onOpen, onNavigate }: {
 
 export function ProfileCardSkeleton() {
   return (
-    <div className="w-full bg-white rounded-2xl border border-gray-100 p-4 flex gap-3.5 animate-pulse" aria-hidden>
-      <div className="w-[72px] h-[72px] rounded-full bg-gray-100 shrink-0" />
-      <div className="flex-1 space-y-2.5 pt-1">
-        <div className="h-4 w-2/3 bg-gray-100 rounded" /><div className="h-3 w-1/3 bg-gray-100 rounded" />
-        <div className="h-3 w-3/4 bg-gray-100 rounded" />
-        <div className="flex gap-1.5"><div className="h-6 w-16 bg-gray-100 rounded-full" /><div className="h-6 w-20 bg-gray-100 rounded-full" /></div>
+    <div className={`${CARD_CLASS} animate-pulse`} aria-hidden>
+      <div className="flex items-start gap-3">
+        <div className="w-16 h-16 rounded-full bg-gray-100 shrink-0" />
+        <div className="flex-1 space-y-2 pt-1"><div className="h-4 w-2/3 bg-gray-100 rounded" /><div className="h-3 w-1/3 bg-gray-100 rounded" /><div className="h-3 w-1/2 bg-gray-100 rounded" /></div>
+        <div className="w-[88px] h-9 bg-gray-100 rounded-xl shrink-0" />
       </div>
-      <div className="w-[88px] shrink-0"><div className="h-9 bg-gray-100 rounded-xl" /></div>
+      <div className="flex gap-1.5 h-7"><div className="h-7 w-16 bg-gray-100 rounded-full" /><div className="h-7 w-20 bg-gray-100 rounded-full" /></div>
+      <div />
     </div>
   );
 }

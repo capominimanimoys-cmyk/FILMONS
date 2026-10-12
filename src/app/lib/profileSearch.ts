@@ -28,6 +28,8 @@ export interface SearchProfile {
   headline: string | null;
   city: string | null;
   province: string | null;
+  /** "Surrey, BC" -- city plus province abbreviation, '' when unknown. */
+  place: string;
   /** Skills + tools, de-duplicated, query-matching ones first. */
   chips: string[];
   /** Out of 100, null when the profile has no score yet. */
@@ -54,7 +56,29 @@ const TEXT_LIMIT = 200;
 const POOL_LIMIT = 150;
 
 const lc = (s: unknown) => String(s ?? '').trim().toLowerCase();
-const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(x => String(x)).filter(Boolean) : []);
+
+// Some profiles carry placeholder dashes instead of empty values -- treat as missing.
+const PLACEHOLDER = /^[\s\-–—_.?]*$|^n\/?a$|^none$/i;
+const real = (v: unknown): string => { const t = String(v ?? '').trim(); return PLACEHOLDER.test(t) ? '' : t; };
+
+const PROVINCES: Record<string, string> = {
+  'alberta': 'AB', 'british columbia': 'BC', 'manitoba': 'MB', 'new brunswick': 'NB',
+  'newfoundland and labrador': 'NL', 'newfoundland': 'NL', 'nova scotia': 'NS', 'northwest territories': 'NT',
+  'nunavut': 'NU', 'ontario': 'ON', 'prince edward island': 'PE', 'quebec': 'QC', 'québec': 'QC',
+  'saskatchewan': 'SK', 'yukon': 'YT',
+};
+/** "Surrey, BC" -- Canadian provinces always as their 2-letter code, one consistent format. */
+export function formatPlace(city: unknown, province: unknown, location?: unknown): string {
+  let c = real(city), p = real(province);
+  if (!c && location) {                      // fall back to "City, Province, Country" free text
+    const parts = String(location).split(',').map(x => x.trim()).filter(x => real(x));
+    c = parts[0] ?? ''; p = p || (parts[1] ?? '');
+  }
+  if (!c) return '';
+  const code = PROVINCES[p.toLowerCase()] ?? (p.length <= 3 ? p.toUpperCase() : p);
+  return code ? `${c}, ${code}` : c;
+}
+const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(x => real(x)).filter(Boolean) : []);
 const cleanTerm = (t: string) => t.replace(/[%_\\,()"]/g, '').trim();
 
 function completenessOf(r: any): number {
@@ -81,7 +105,7 @@ async function fetchTrust(ids: string[]): Promise<Map<string, number>> {
 
 function toProfile(r: any, trust: Map<string, number>, matchTerms: string[]): SearchProfile {
   const tier = normalizeTier(r.account_type ?? undefined);
-  const headline = (tier === 'business' ? r.business_industry : r.primary_role) || null;
+  const headline = real(tier === 'business' ? r.business_industry : r.primary_role) || null;
   const skills = arr(r.skills), tools = arr(r.gear);
   const all = [...new Set([...skills, ...tools])];
   // Chips that match what was searched come first.
@@ -91,7 +115,7 @@ function toProfile(r: any, trust: Map<string, number>, matchTerms: string[]): Se
   return {
     id: r.id, name: r.name, username: r.username ?? null, avatarUrl: r.avatar_url ?? null,
     isVerified: !!r.is_verified, accountType: r.account_type ?? null, headline,
-    city, province: r.province || null, chips,
+    city, province: r.province || null, place: formatPlace(r.city, r.province, r.location), chips,
     trust: trust.get(r.id) ?? null, completeness: completenessOf(r),
     _roleText: lc([r.primary_role, r.business_industry, ...arr(r.secondary_roles)].filter(Boolean).join(' ')),
     _locationText: lc([r.city, r.province, r.location].filter(Boolean).join(' ')),
