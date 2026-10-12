@@ -2851,7 +2851,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
   );
 
   return (
-    <div className="min-h-screen bg-gray-50" onClick={() => openMenu && setOpenMenu(null)}>
+    <div className="min-h-screen bg-gray-50 overflow-x-clip" onClick={() => openMenu && setOpenMenu(null)}>
       {/* Connect gets the shared /search/category/connect header+pill bar
           (same component every dedicated Connect category page uses) --
           lighter than the generic dropdown-row header below, per spec
