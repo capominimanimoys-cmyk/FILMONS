@@ -24,6 +24,8 @@ interface NotificationsState {
   refresh:       () => Promise<void>;
   markRead:      (id: string) => void;
   markAllRead:   () => void;
+  /** Resolves true once the server confirmed; on false nothing was marked. */
+  markAllReadConfirmed: () => Promise<boolean>;
   remove:        (id: string) => void;
   clearAll:      () => void;
 }
@@ -35,6 +37,7 @@ const NotificationsContext = createContext<NotificationsState>({
   refresh:       async () => {},
   markRead:      () => {},
   markAllRead:   () => {},
+  markAllReadConfirmed: async () => false,
   remove:        () => {},
   clearAll:      () => {},
 });
@@ -170,6 +173,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   }, [user?.id]); // eslint-disable-line
 
+  const markAllReadConfirmed = useCallback(async () => {
+    if (!user) return false;
+    const ok = await notifStore.markAllReadConfirmed(user.id);
+    if (ok) setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    return ok;
+  }, [user?.id]); // eslint-disable-line
+
   const remove = useCallback((id: string) => {
     if (!user) return;
     notifStore.remove(user.id, id);
@@ -184,7 +194,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   return (
     <NotificationsContext.Provider
-      value={{ notifications, unreadCount, loading, refresh, markRead, markAllRead, remove, clearAll }}
+      value={{ notifications, unreadCount, loading, refresh, markRead, markAllRead, markAllReadConfirmed, remove, clearAll }}
     >
       {children}
     </NotificationsContext.Provider>
