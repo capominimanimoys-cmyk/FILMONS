@@ -14,21 +14,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { searchMatchingPortfolio, type SearchPortfolioRow } from '../lib/filmSearch';
 import { getPortfolioEntriesByIds, getPortfolioFeed, PORTFOLIO_CATEGORIES, type PortfolioFeedEntry } from '../lib/portfolioApi';
-import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
-import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
 import { PortfolioPinGrid } from '../components/connect/PortfolioPinGrid';
 import { rankTrending } from '../lib/portfolioTrending';
 import { FilmonsBrandLoader } from '../components/FilmonsLoader';
 import { ConnectCategoryHeader } from '../components/ConnectCategoryHeader';
 import { useAuth } from '../context/AuthContext';
-
-// Splits an already-ordered list into 2 columns by alternating index --
-// preserves each card's own real height (an album card and an item card
-// are rarely the same height) instead of a plain grid forcing every row
-// to match its tallest cell.
-function splitTwoColumns<T>(items: T[]): [T[], T[]] {
-  return [items.filter((_, i) => i % 2 === 0), items.filter((_, i) => i % 2 === 1)];
-}
 
 type DatePreset = 'any' | 'today' | 'week' | 'month';
 const DATE_PRESET_LABEL: Record<DatePreset, string> = { any: 'Any time', today: 'Today', week: 'This week', month: 'This month' };
@@ -194,9 +184,7 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
     </div>
   );
 
-  const [left, right] = splitTwoColumns(filtered ?? []);
-
-  return (
+    return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <ConnectCategoryHeader activeCategory="portfolio" query={query} onQueryChange={setQuery} placeholder="Search portfolio work..."/>
 
@@ -225,21 +213,9 @@ export function PortfolioCategoryResults({ query: initialQuery }: { query?: stri
             <p className="text-center text-sm text-gray-400 py-16">
               {browsing ? (activeFilterCount ? 'No trending work matches these filters.' : 'No portfolio work yet.') : `No portfolio work matching "${query}"`}
             </p>
-          ) : browsing ? (
-            <PortfolioPinGrid entries={filtered} />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-              <div data-pop-list className="space-y-3">
-                {left.map(e => e.type === 'item'
-                  ? <PortfolioProjectCard key={`item-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
-                  : <PortfolioAlbumCard key={`album-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
-              </div>
-              <div data-pop-list className="space-y-3">
-                {right.map(e => e.type === 'item'
-                  ? <PortfolioProjectCard key={`item-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
-                  : <PortfolioAlbumCard key={`album-${e.id}`} entry={e as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
-              </div>
-            </div>
+            // Search results use the same pin grid as trending portfolios.
+            <PortfolioPinGrid entries={filtered} />
           )}
           {browsing && filtered !== null && !trendingDone && (
             <div ref={sentinel} className="flex justify-center py-6"><FilmonsBrandLoader size="sm" label="Loading more" /></div>
