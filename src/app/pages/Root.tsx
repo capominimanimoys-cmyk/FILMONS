@@ -42,9 +42,10 @@ export function Root() {
   // Bumped by the read-failure banner's Retry to remount the current page and re-run its loads.
   const [retryKey, setRetryKey] = useState(0);
   const [searchOpen,  setSearchOpen]  = useState(false);
+  const [searchTab,   setSearchTab]   = useState<string | undefined>(undefined);
   // Pages without the top bar (e.g. Marketplace search) open Browse search through this event.
   useEffect(() => {
-    const open = () => setSearchOpen(true);
+    const open = (e: Event) => { setSearchTab((e as CustomEvent).detail?.tab); setSearchOpen(true); };
     window.addEventListener('filmons:open-search', open);
     return () => window.removeEventListener('filmons:open-search', open);
   }, []);
@@ -240,7 +241,7 @@ export function Root() {
         {!hideTopBar && (
           <TopBar
             onMenuClick={() => setSidebarOpen(v => !v)}
-            onSearchOpen={() => setSearchOpen(true)}
+            onSearchOpen={() => { setSearchTab(undefined); setSearchOpen(true); }}
           />
         )}
 
@@ -257,7 +258,7 @@ export function Root() {
               transition: 'padding-bottom 280ms ease-out',
             }}
           >
-            {!hideTopBar && <DesktopTopBar onSearchOpen={() => setSearchOpen(true)} />}
+            {!hideTopBar && <DesktopTopBar onSearchOpen={() => { setSearchTab(undefined); setSearchOpen(true); }} />}
             <Fragment key={retryKey}><Outlet /></Fragment>
           </main>
           <ReadFailureBanner onRetry={() => setRetryKey(k => k + 1)} />
@@ -273,7 +274,7 @@ export function Root() {
         {!hideBottomNav && <MobileBottomNav />}
 
         {/* AI Search overlay — rendered above everything */}
-        {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
+        {searchOpen && <SearchOverlay initialTab={searchTab} onClose={() => setSearchOpen(false)} />}
 
         {/* Guest auth prompt — rendered globally, triggered via showGuestPrompt() */}
         <GuestAuthPrompt />

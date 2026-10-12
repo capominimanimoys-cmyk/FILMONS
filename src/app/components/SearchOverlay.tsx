@@ -1448,6 +1448,8 @@ interface Props {
    *  Use this in route-based contexts (SearchPage) to avoid the 280ms delayed
    *  navigate(-1) from firing after the user has already navigated to a result. */
   onResultNavigate?: (url: string, state?: Record<string, unknown>) => void;
+  /** Tab to open on (e.g. 'marketplace' when search was opened from the Marketplace page). */
+  initialTab?: string;
 }
 
 // Browse Search's preview cap -- every regular category (Rental, Sale,
@@ -1494,7 +1496,7 @@ function capEmergencyInCategory(items: ListingRow[], limit: number): { visible: 
 
 const TAB_IDS: TabId[] = ['all', 'marketplace', 'connect', 'learning'];
 
-export function SearchOverlay({ onClose, onResultNavigate }: Props) {
+export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) {
   const [searchParams] = useSearchParams();
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
@@ -1557,7 +1559,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
   // "See more" on a specific category (see handleGuestSeeMore) lands back
   // directly on that category instead of the generic 'all' view.
   const [activeTab,      setActiveTab]      = useState<TabId>(() => {
-    const t = searchParams.get('tab');
+    const t = initialTab ?? searchParams.get('tab');
     return t && (TAB_IDS as string[]).includes(t) ? (t as TabId) : 'all';
   });
   const [closing,        setClosing]        = useState(false);
