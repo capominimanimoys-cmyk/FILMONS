@@ -8,6 +8,7 @@ import { Heart, Layers, Play } from 'lucide-react';
 import type { PortfolioFeedEntry } from '../../lib/portfolioApi';
 import type { PortfolioPinEntry } from './PortfolioPinDetail';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
+import { PortfolioLinkChip } from '../PortfolioLinkChip';
 
 function useColumnCount() {
   const query = '(min-width: 768px)';
@@ -95,6 +96,7 @@ function PinTile({ entry: e, onOpen }: { entry: PortfolioFeedEntry; onOpen: () =
       </button>
       <div className="mt-1.5 px-0.5">
         {title && <p className="line-clamp-2 text-[13px] font-bold leading-snug text-gray-900">{title}</p>}
+        {isItem && <PortfolioLinkChip url={e.item.external_link} className="mt-1" />}
         <div className="mt-1 flex items-center gap-1.5">
           <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-300 text-[9px] font-black text-white">
             {e.creator.avatar_url ? <img src={e.creator.avatar_url} alt="" className="h-full w-full object-cover" /> : (e.creator.name || '?').charAt(0).toUpperCase()}

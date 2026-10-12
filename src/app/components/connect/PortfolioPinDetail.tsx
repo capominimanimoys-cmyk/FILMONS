@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
 import { PortfolioMedia } from '../PortfolioMedia';
+import { PortfolioLinkChip } from '../PortfolioLinkChip';
 import { PortfolioCommentSheet } from '../PortfolioCommentSheet';
 import { PostMoreMenu } from './PostMoreMenu';
 import { SharePostSheet } from './SharePostSheet';
@@ -308,6 +309,7 @@ function PinBody({ entry, seed, onBack, onExit, onOpenItem, onRelated }: {
         {identity && <p onClick={() => openPortfolioPreview(creator.id)} className="mt-0.5 cursor-pointer pl-[38px] text-xs text-gray-500">{[identity, creator.city].filter(Boolean).join(' · ')}</p>}
         {title && <h1 className="mt-3 text-[22px] font-bold leading-snug text-gray-900">{title}</h1>}
         {description && item?.media_type !== 'text' && <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-gray-600">{description}</p>}
+        <PortfolioLinkChip url={item?.external_link} className="mt-2" />
         {(category || (item?.tools?.length ?? 0) > 0) && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {[category, subcategory, ...(item?.tools ?? [])].filter(Boolean).map(t => (
