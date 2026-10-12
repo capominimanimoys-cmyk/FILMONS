@@ -270,7 +270,7 @@ export async function getLocationScope(keyInput: string): Promise<LocationScope 
   if (city) {
     // `.ilike()` (not a hand-built `.or()` string) so the pattern is encoded safely; the exact
     // "is this the city?" check then runs in JS on the returned text.
-    const cityRe = new RegExp(`(^|,\\s*)${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(,|$)`, 'i');
+    const cityRe = new RegExp(`(^|[\\s,])${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[\\s,])`, 'i');
     const withLocation = async (table: 'posts' | 'portfolio_items') => {
       const { data, error } = await supabase.from(table).select('id, location').ilike('location', `%${city}%`).limit(150);
       if (error) console.warn(`[locationsApi] ${table} location lookup failed:`, error.message);

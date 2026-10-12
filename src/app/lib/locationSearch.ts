@@ -71,7 +71,7 @@ async function inChunks<T>(ids: string[], run: (chunk: string[]) => PromiseLike<
 
 function cityMatcher(city: string) {
   const esc = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|,\\s*)${esc}\\s*(,|$)`, 'i');
+  return new RegExp(`(^|[\\s,])${esc}(?=$|[\\s,])`, 'i');
 }
 
 const listingKind = (l: Listing) =>
@@ -111,6 +111,27 @@ async function matchPosts(scope: LocationScope, query: string, f: LocationFilter
     .filter(x => x.score > 0).sort(byScoreThenRecency).map(x => x.id);
 }
 
+async function creatorWork(scope: LocationScope, wantItems: boolean, wantAlbums: boolean): Promise<[any[], any[]]> {
+  const people = await profilesInPlace(scope).catch(() => [] as any[]);
+  const userIds = people.map((p: any) => String(p.id));
+  if (!userIds.length) return [[], []];
+  const [items, albums] = await Promise.all([
+    wantItems ? inChunks(userIds, async chunk => {
+      const { data } = await supabase.from('portfolio_items')
+        .select('id, title, description, category, visibility, created_at').in('user_id', chunk)
+        .order('created_at', { ascending: false }).limit(100);
+      return data ?? [];
+    }) : Promise.resolve([] as any[]),
+    wantAlbums ? inChunks(userIds, async chunk => {
+      const { data } = await supabase.from('portfolio_albums')
+        .select('id, title, description, category, visibility, created_at').in('user_id', chunk)
+        .order('created_at', { ascending: false }).limit(100);
+      return data ?? [];
+    }) : Promise.resolve([] as any[]),
+  ]);
+  return [items, albums];
+}
+
 async function matchPortfolio(scope: LocationScope, query: string, f: LocationFilters): Promise<PortfolioRef[]> {
   const wantItems = f.type !== 'album', wantAlbums = f.type !== 'item';
   const [items, albums] = await Promise.all([
@@ -127,6 +148,12 @@ async function matchPortfolio(scope: LocationScope, query: string, f: LocationFi
       return data ?? [];
     }) : Promise.resolve([] as any[]),
   ]);
+  // The location chip on a portfolio card is the CREATOR's place, so work by people based here
+  // belongs on this page too (not only work individually tagged with the place).
+  const [creatorItems, creatorAlbums] = await creatorWork(scope, wantItems, wantAlbums);
+  const known = new Set<string>([...items, ...albums].map((r: any) => String(r.id)));
+  items.push(...creatorItems.filter((r: any) => !known.has(String(r.id))));
+  albums.push(...creatorAlbums.filter((r: any) => !known.has(String(r.id))));
   const publicAlbums = albums.filter((r: any) => !r.visibility || r.visibility === 'public');
   // An album with no works in it is not a result.
   const filled = new Set<string>();
@@ -147,20 +174,33 @@ async function matchPortfolio(scope: LocationScope, query: string, f: LocationFi
   ].filter(x => x.score > 0).sort(byScoreThenRecency).map(x => x.ref);
 }
 
-async function matchProfiles(scope: LocationScope, query: string, f: LocationFilters): Promise<SearchProfile[]> {
+const cityProfileRows = new WeakMap<LocationScope, Promise<any[]>>();
+/** Profiles whose own location is this place (city match, province must not contradict). */
+function profilesInPlace(scope: LocationScope): Promise<any[]> {
+  let p = cityProfileRows.get(scope);
+  if (p) return p;
   const city = scope.city.replace(/[%_,()"]/g, '').trim();
-  if (!city) return [];
-  const { data, error } = await supabase.from('profiles').select(PROFILE_SELECT)
-    .or(`city.ilike."${city}",location.ilike."%${city}%"`)
-    .not('name', 'is', null).neq('name', '').limit(CANDIDATE_CAP);
-  if (error) throw error;
-  const re = cityMatcher(city);
-  const rows = (data ?? []).filter((r: any) => {
-    const sameCity = lc(r.city).trim() === city.toLowerCase();
-    // Province must not contradict the place (profiles may hold only a city, or a district name).
-    if (sameCity) return provincesCompatible(scope.province, normalizeProvince(r.province));
-    return re.test(String(r.location ?? ''));
-  });
+  p = (async () => {
+    if (!city) return [];
+    const { data, error } = await supabase.from('profiles').select(PROFILE_SELECT)
+      .or(`city.ilike."${city}",location.ilike."%${city}%"`)
+      .not('name', 'is', null).neq('name', '').limit(CANDIDATE_CAP);
+    if (error) throw error;
+    const re = cityMatcher(city);
+    return (data ?? []).filter((r: any) => {
+      const sameCity = lc(r.city).trim() === city.toLowerCase();
+      // Province must not contradict the place (profiles may hold only a city, or a district name).
+      if (sameCity) return provincesCompatible(scope.province, normalizeProvince(r.province));
+      return re.test(String(r.location ?? ''));
+    });
+  })();
+  cityProfileRows.set(scope, p);
+  p.catch(() => cityProfileRows.delete(scope));
+  return p;
+}
+
+async function matchProfiles(scope: LocationScope, query: string, f: LocationFilters): Promise<SearchProfile[]> {
+  const rows = await profilesInPlace(scope);
   const trust = await fetchTrust(rows.map((r: any) => r.id)).catch(() => new Map<string, number>());
   const minTrust = Number(f.trust) || 0;
   return rows.map((r: any) => toProfile(r, trust, query.trim() ? [query.trim().toLowerCase()] : []))
