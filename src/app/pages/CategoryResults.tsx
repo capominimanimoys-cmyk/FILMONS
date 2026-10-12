@@ -47,6 +47,7 @@ import { CourseCard } from '../components/courses/CourseCard';
 import { getPortfolioEntriesByIds, getMutualConnectionsBatch, type PortfolioFeedEntry, type SuggestedCreator } from '../lib/portfolioApi';
 import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
 import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
+import { PortfolioPinGrid } from '../components/connect/PortfolioPinGrid';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
 import { streamConnectDiscovery, getCachedConnectDiscovery, type ConnectDiscovery } from '../lib/connectDiscovery';
 import { Hash, MapPin, TrendingUp } from 'lucide-react';
@@ -1934,10 +1935,7 @@ function PortfolioAllSection({ query }: { query?: string }) {
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-        <div className="space-y-3">{left.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e}/>)}</div>
-        <div className="space-y-3">{right.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e}/>)}</div>
-      </div>
+      <PortfolioPinGrid entries={entries} />
     </div>
   );
 }
@@ -2389,11 +2387,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         {featuredPortfolio === null ? <DiscoveryRowSkeleton title="Portfolio" /> : featuredPortfolio.length > 0 && (
           <DiscoveryRow title="Portfolio" count={featuredPortfolio.length}
             onViewAll={featuredPortfolio.length > 5 ? () => navigate('/search/category/connect/portfolio') : undefined}>
-            <div className="px-4 lg:px-0 space-y-3">
-              {featuredPortfolio.slice(0, 5).map(entry => entry.type === 'item'
-                ? <PortfolioProjectCard key={`item-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>}/>
-                : <PortfolioAlbumCard key={`album-${entry.id}`} entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>}/>)}
-            </div>
+            <div className="px-4 lg:px-0"><PortfolioPinGrid entries={featuredPortfolio.slice(0, 6)} /></div>
           </DiscoveryRow>
         )}
         {/* Creators for you -- the shared profile card, personalised from the viewer's role / skills / tools / location. */}
