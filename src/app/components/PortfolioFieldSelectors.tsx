@@ -108,7 +108,9 @@ export function LocationPanel({ value, onSave, onClose, closing, depth }: {
       <div className="px-4 py-4 pb-72">
         <SmartAddressInput
           value={v} onInputChange={setV}
-          onAddressSelect={display => setV(display)}
+          // Store "City, Province" -- that's what location pages group content by; a bare
+          // street address would index under the street instead of the city.
+          onAddressSelect={(display, parts) => setV(parts.city ? (parts.province ? `${parts.city}, ${parts.province}` : parts.city) : display)}
           mode="full" showGPS countryCodes={['CA', 'US']}
           placeholder="Search a place or address…"
         />
