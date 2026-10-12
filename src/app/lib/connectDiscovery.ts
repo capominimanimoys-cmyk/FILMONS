@@ -49,13 +49,15 @@ export async function streamConnectDiscovery(
   userId: string | undefined,
   limit: number,
   onPart: (part: Partial<ConnectDiscovery>) => void,
+  /** false = skip the (slow) suggested-creators lookup -- the caller shows its own Creators for you. */
+  includeProfiles = true,
 ): Promise<void> {
   const entry = cache.get(userId ?? '') ?? { at: 0, data: {} as Partial<ConnectDiscovery> };
   cache.set(userId ?? '', entry);
   const report = (part: Partial<ConnectDiscovery>) => { entry.data = { ...entry.data, ...part }; entry.at = Date.now(); onPart(part); };
   await Promise.all([
-    (userId ? getSuggestedCreators(userId, { limit }).catch(() => [] as SuggestedCreator[]) : Promise.resolve([] as SuggestedCreator[]))
-      .then(profilesYouMayLike => report({ profilesYouMayLike })),
+    (userId && includeProfiles ? getSuggestedCreators(userId, { limit }).catch(() => [] as SuggestedCreator[]) : Promise.resolve([] as SuggestedCreator[]))
+      .then(profilesYouMayLike => { if (includeProfiles) report({ profilesYouMayLike }); }),
     postsApi.getTrendingPosts(limit).catch(() => [] as Post[]).then(trendingPosts => report({ trendingPosts })),
     getPortfolioFeed({ limit, viewerId: userId }).catch(() => [] as PortfolioFeedEntry[]).then(featuredPortfolio => report({ featuredPortfolio })),
   ]);
