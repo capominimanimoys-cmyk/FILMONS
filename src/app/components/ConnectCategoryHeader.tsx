@@ -14,7 +14,6 @@
 // already reads its initial query from `q` the same way the rest of this
 // app's category pages do), so typing "cinematography" then tapping
 // Portfolio lands there with the same text still in the box.
-import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Search, ArrowLeft, X } from 'lucide-react';
 import { useSearchChromeVisibility } from '../lib/useSearchChromeVisibility';
@@ -37,8 +36,7 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
   placeholder?: string;
 }) {
   const navigate = useNavigate();
-  const [inputFocused, setInputFocused] = useState(false);
-  const { headerVisible } = useSearchChromeVisibility({ inputFocused });
+  const { headerVisible } = useSearchChromeVisibility();
 
   const goTo = (id: ConnectCategoryId) => {
     if (id === activeCategory) return;
@@ -65,24 +63,20 @@ export function ConnectCategoryHeader({ activeCategory, query, onQueryChange, pl
               <p className="text-xs text-gray-400 mt-0.5 truncate">Discover creators, work, profiles and courses.</p>
             )}
           </div>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('filmons:open-search', { detail: { tab: 'connect' } }))} aria-label="Search"
+            className="ml-auto w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90 text-gray-700">
+            <Search className="w-5 h-5"/>
+          </button>
         </div>
 
-        <div className="px-4 pb-3">
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
-            <input
-              value={query} onChange={e => onQueryChange(e.target.value)} placeholder={placeholder}
-              onFocus={() => setInputFocused(true)} onBlur={() => setInputFocused(false)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-9 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
-            />
-            {query && (
-              <button onClick={() => onQueryChange('')} aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4"/>
-              </button>
-            )}
+        {query.trim() && (
+          <div className="px-4 pb-3">
+            <button onClick={() => onQueryChange('')} aria-label="Clear search"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-gray-900 pl-3.5 pr-2.5 py-1.5 text-xs font-bold text-white">
+              <span className="truncate">“{query.trim()}”</span><X className="w-3.5 h-3.5 shrink-0"/>
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Horizontally scrollable so it never wraps to a 2nd line, per
             spec -- active pill is semibold/dark with a blue underline. */}
