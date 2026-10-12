@@ -51,7 +51,7 @@ export interface ProfileFilters {
 export const EMPTY_PROFILE_FILTERS: ProfileFilters = { location: '', role: '', skill: '', verifiedOnly: false };
 export const hasActiveProfileFilters = (f: ProfileFilters) => !!(f.location.trim() || f.role.trim() || f.skill.trim() || f.verifiedOnly);
 
-const SELECT = 'id, name, username, avatar_url, city, province, location, primary_role, business_industry, account_type, bio, is_verified, skills, gear, secondary_roles';
+export const PROFILE_SELECT = 'id, name, username, avatar_url, city, province, location, primary_role, business_industry, account_type, bio, is_verified, skills, gear, secondary_roles';
 const TEXT_LIMIT = 200;
 const POOL_LIMIT = 150;
 
@@ -92,7 +92,7 @@ function completenessOf(r: any): number {
   return Math.min(100, pts);
 }
 
-async function fetchTrust(ids: string[]): Promise<Map<string, number>> {
+export async function fetchTrust(ids: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (!ids.length) return out;
   const { data } = await supabase.from('reputation_scores').select('user_id, filmons_reliability_score').in('user_id', ids);
@@ -103,7 +103,7 @@ async function fetchTrust(ids: string[]): Promise<Map<string, number>> {
   return out;
 }
 
-function toProfile(r: any, trust: Map<string, number>, matchTerms: string[]): SearchProfile {
+export function toProfile(r: any, trust: Map<string, number>, matchTerms: string[]): SearchProfile {
   const tier = normalizeTier(r.account_type ?? undefined);
   const headline = real(tier === 'business' ? r.business_industry : r.primary_role) || null;
   const skills = arr(r.skills), tools = arr(r.gear);
@@ -137,8 +137,8 @@ async function fetchMatches(query: string): Promise<SearchProfile[]> {
   // Array columns only match whole elements (PostgREST `cs`); a supplement to the text fields.
   const arrayClauses = terms.flatMap(t => [`skills.cs.{"${t}"}`, `gear.cs.{"${t}"}`, `secondary_roles.cs.{"${t}"}`]);
   const [textRes, arrayRes] = await Promise.all([
-    supabase.from('profiles').select(SELECT).or(textClauses.join(',')).not('name', 'is', null).neq('name', '').limit(TEXT_LIMIT),
-    supabase.from('profiles').select(SELECT).or(arrayClauses.join(',')).not('name', 'is', null).neq('name', '').limit(TEXT_LIMIT),
+    supabase.from('profiles').select(PROFILE_SELECT).or(textClauses.join(',')).not('name', 'is', null).neq('name', '').limit(TEXT_LIMIT),
+    supabase.from('profiles').select(PROFILE_SELECT).or(arrayClauses.join(',')).not('name', 'is', null).neq('name', '').limit(TEXT_LIMIT),
   ]);
   if (textRes.error) throw textRes.error; // a failed search must show Retry, never "no creators"
   const seen = new Set<string>();
@@ -180,7 +180,7 @@ export interface ViewerSignals {
 }
 
 async function fetchCreatorsForYou(viewer: ViewerSignals | null): Promise<SearchProfile[]> {
-  let q = supabase.from('profiles').select(SELECT)
+  let q = supabase.from('profiles').select(PROFILE_SELECT)
     .not('name', 'is', null).neq('name', '')
     .or('primary_role.not.is.null,business_industry.not.is.null')
     .order('is_verified', { ascending: false }).limit(POOL_LIMIT);
