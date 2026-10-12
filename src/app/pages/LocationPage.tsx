@@ -15,8 +15,7 @@ import { SlideHeader } from '../components/SlideHeader';
 import { FilmonsLogo } from '../components/FilmonsLogo';
 import { ProfileCardSkeleton, ProfileSearchCard } from '../components/search/ProfileSearch';
 import { PostCard } from '../components/PostCard';
-import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
-import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
+import { PortfolioPinGrid } from '../components/connect/PortfolioPinGrid';
 import { CourseCard } from '../components/courses/CourseCard';
 import { useAuth } from '../context/AuthContext';
 import type { Listing } from '../types';
@@ -111,12 +110,6 @@ function LocationListingCard({ listing }: { listing: Listing }) {
     </button>
   );
 }
-function PortfolioEntryCard({ entry }: { entry: PortfolioFeedEntry }) {
-  return entry.type === 'item'
-    ? <PortfolioProjectCard entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>} />
-    : <PortfolioAlbumCard entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>} />;
-}
-
 const CardSkeleton = ({ h = 'h-52' }: { h?: string }) => <div className={`${h} w-full rounded-2xl bg-white border border-gray-100 animate-pulse`} aria-hidden />;
 
 /** Everything a category needs to render a slice of its matches. */
@@ -133,7 +126,7 @@ function useCategoryItems(cat: SectionCategory, matches: unknown[] | null, count
     case 'marketplace': return { nodes: (slice as Listing[]).map(l => ({ key: l.id, node: <LocationListingCard listing={l} /> })), pending: false, failed: false, retry: () => {} };
     case 'profiles': return { nodes: (slice as any[]).map(p => ({ key: p.id, node: <ProfileSearchCard profile={p} /> })), pending: false, failed: false, retry: () => {} };
     case 'posts': return { nodes: posts.ready.map(p => ({ key: p.id, node: <PostCard post={p} /> })), pending: posts.pending, failed: posts.failed, retry: posts.retry };
-    case 'portfolio': return { nodes: portfolio.ready.map(e => ({ key: `${e.type}-${e.id}`, node: <PortfolioEntryCard entry={e} /> })), pending: portfolio.pending, failed: portfolio.failed, retry: portfolio.retry };
+    case 'portfolio': return { nodes: portfolio.ready.map(e => ({ key: `${e.type}-${e.id}`, node: null, entry: e })), pending: portfolio.pending, failed: portfolio.failed, retry: portfolio.retry };
     case 'courses': return { nodes: courses.ready.map(c => ({ key: c.id, node: <CourseCard course={c} /> })), pending: courses.pending, failed: courses.failed, retry: courses.retry };
   }
 }
@@ -185,12 +178,16 @@ function AllSection({ cat, slug, scope, query, onViewAll, onSettled }: {
       {(m.error && !m.data) || (late && !m.data) ? (
         <div className="px-4 md:px-0"><SectionError onRetry={m.retry} label={TITLES[cat].toLowerCase()} /></div>
       ) : (
+        cat === 'portfolio' && m.data && items.nodes.length ? (
+          <div className="px-4 md:px-0"><PortfolioPinGrid entries={items.nodes.map((n: any) => n.entry)} /></div>
+        ) : (
         <div ref={scroller} className="flex items-start gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4 md:scroll-pl-0 px-4 md:px-0">
           {!m.data || (items.pending && !items.nodes.length)
             ? Array.from({ length: 2 }).map((_, i) => (
                 <div key={i} className={`snap-start shrink-0 ${CAROUSEL_W[cat]}`}>{cat === 'profiles' ? <ProfileCardSkeleton /> : <CardSkeleton />}</div>))
             : items.nodes.map(n => <div key={n.key} className={`snap-start shrink-0 ${CAROUSEL_W[cat]}`}>{n.node}</div>)}
         </div>
+        )
       )}
     </section>
   );
@@ -280,7 +277,7 @@ function CategoryList({ cat, slug, scope, query, filters, onFilters, initialShow
   useEffect(() => { if (settled) onReady(); }, [settled, onReady]);
 
   const columns = useMemo(() => {
-    if (cat === 'posts' || cat === 'portfolio') return [items.nodes.filter((_, i) => i % 2 === 0), items.nodes.filter((_, i) => i % 2 === 1)];
+    if (cat === 'posts') return [items.nodes.filter((_, i) => i % 2 === 0), items.nodes.filter((_, i) => i % 2 === 1)];
     return null;
   }, [cat, items.nodes]);
 
@@ -298,7 +295,9 @@ function CategoryList({ cat, slug, scope, query, filters, onFilters, initialShow
         <EmptyMessage place={scope.displayName} refined={refined} />
       ) : (
         <div className="px-4 md:px-0">
-          {columns ? (
+          {cat === 'portfolio' ? (
+            <PortfolioPinGrid entries={items.nodes.map((n: any) => n.entry)} />
+          ) : columns ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
               {columns.map((col, i) => <div key={i} className="space-y-3 min-w-0">{col.map(n => <div key={n.key}>{n.node}</div>)}</div>)}
             </div>
