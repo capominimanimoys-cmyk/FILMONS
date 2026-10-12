@@ -19,6 +19,8 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
+import { ProfilesCategoryResults } from './ProfilesCategoryResults';
+import { ProfilesSection } from '../components/search/ProfileSearch';
 import { usePopIn } from '../lib/usePopIn';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router';
@@ -2266,7 +2268,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
       // landing uses (fetchConnectDiscovery) -- one implementation, not a
       // second posts-only version living here.
       { const cached = getCachedConnectDiscovery(user?.id); if (cached) setConnectDiscovery(prev => ({ ...cached, ...(prev ?? {}) } as ConnectDiscovery)); }
-      streamConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT, part => { if (!cancelled) setConnectDiscovery(prev => ({ ...(prev ?? {}), ...part } as ConnectDiscovery)); }).catch(fail);
+      streamConnectDiscovery(user?.id, DISCOVERY_GROUP_LIMIT, part => { if (!cancelled) setConnectDiscovery(prev => ({ ...(prev ?? {}), ...part } as ConnectDiscovery)); }, false).catch(fail);
       getTrendingHashtags(5).then(r => { if (!cancelled) setTrendingTags(r); }).catch(() => { if (!cancelled) setTrendingTags([]); });
       getCourses({ limit: DISCOVERY_GROUP_LIMIT }).then(r => { if (!cancelled) setConnectCourses(r); }).catch(soft);
       // Hidden entirely (not a fake/empty section) when the viewer has no
@@ -2394,21 +2396,8 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
             </div>
           </DiscoveryRow>
         )}
-        {profilesYouMayLike === null ? <DiscoveryRowSkeleton title="Profiles" /> : profilesYouMayLike.length > 0 && (
-          <DiscoveryRow title="Profiles" count={profilesYouMayLike.length}
-            onViewAll={profilesYouMayLike.length > 5 ? () => navigate('/search/category/connect/profiles') : undefined}>
-            <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
-              {profilesYouMayLike.slice(0, 5).map(c => (
-                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-[172px] shrink-0 snap-start"/>
-              ))}
-            </div>
-            <div className={`hidden lg:flex flex-wrap gap-3 ${DESKTOP_SECTION_PAD}`}>
-              {profilesYouMayLike.slice(0, 5).map(c => (
-                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-64"/>
-              ))}
-            </div>
-          </DiscoveryRow>
-        )}
+        {/* Creators for you -- the shared profile card, personalised from the viewer's role / skills / tools / location. */}
+        <ProfilesSection query="" onViewAll={() => navigate('/search/category/connect/profiles')} />
         {connectCourses === null ? <DiscoveryRowSkeleton title="Courses" /> : connectCourses.length > 0 && (
           <DiscoveryRow title="Courses" count={connectCourses.length}
             onViewAll={connectCourses.length > 5 ? () => navigate('/search/category/connect/courses') : undefined}>
@@ -3097,23 +3086,9 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                     when the viewer explicitly filtered down to Profiles
                     via the category dropdown. */}
                 {categoryFilter !== 'all' && connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
-                {categoryFilter === 'all' && showConnectExtras && sharedMatched && sharedMatched.creators.length > 0 && (
-                  <div className="px-4 lg:px-0 mb-6">
-                    <div className="flex items-center justify-between mb-2.5">
-                      <p className="text-sm lg:text-base font-black text-gray-900">Profiles</p>
-                      {sharedMatched.creators.length > 5 && (
-                        <button onClick={() => navigate('/search/category/connect/profiles', { state: { query: term } })} className="flex items-center gap-0.5 text-xs font-bold text-blue-600">
-                          View all <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="lg:hidden flex flex-col gap-3">
-                      {(sharedMatched.creators as CreatorRow[]).slice(0, 5).map(u => <CreatorCardMobile key={u.id} u={u} onView={() => navigate(`/host/${u.id}`)}/>)}
-                    </div>
-                    <div className="hidden lg:flex lg:flex-col gap-3">
-                      {(sharedMatched.creators as CreatorRow[]).slice(0, 5).map(u => <CreatorResultRow key={u.id} u={u} onClick={() => navigate(`/host/${u.id}`)}/>)}
-                    </div>
-                  </div>
+                {categoryFilter === 'all' && showConnectExtras && (
+                  <ProfilesSection query={term} className="lg:px-0"
+                    onViewAll={() => navigate(`/search/category/connect/profiles${term ? `?q=${encodeURIComponent(term)}` : ''}`, { state: { query: term } })} />
                 )}
                 {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}
                 {categoryFilter === 'all' && showConnectExtras && <PostsAllSection query={term} />}
@@ -3267,7 +3242,7 @@ export function CategoryResults() {
   // stays 'creators'.
   if (tab === 'connect' && subTab === 'posts')     return <div data-connect-page><PostsCategoryResults query={navState.query} /></div>;
   if (tab === 'connect' && subTab === 'portfolio') return <div data-connect-page><PortfolioCategoryResults query={navState.query} /></div>;
-  if (tab === 'connect' && subTab === 'profiles')  return <div data-connect-page><SingleCategoryResults category="creators" navState={navState}/></div>;
+  if (tab === 'connect' && subTab === 'profiles')  return <div data-connect-page><ProfilesCategoryResults query={navState.query} /></div>;
   if (tab === 'connect' && subTab === 'courses')   return <div data-connect-page><CoursesCategoryResults query={navState.query} inConnect /></div>;
   // Top-level Marketplace/Connect/Learning modes -- the "View all results"
   // destination from SearchOverlay for a non-'all' tab. Same AllGroupedResults

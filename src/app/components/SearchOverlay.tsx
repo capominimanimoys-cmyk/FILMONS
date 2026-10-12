@@ -2,6 +2,7 @@
  * Filmons — Universal AI Search Overlay
  * Instant typeahead suggestions + ranked results + filter sheet + sort picker.
  */
+import { ProfilesSection } from './search/ProfileSearch';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -2138,12 +2139,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
     : [];
   const allConnectCombined: AllResultsConnectItem[] = activeTab === 'all'
     ? interleave3(
-        visibleUsers.map(row => ({ kind: 'creator' as const, row })),
+        // Profiles have their own section above (shared card) -- not repeated in the grid.
+        [] as { kind: 'creator'; row: typeof visibleUsers[number] }[],
         visiblePortfolio.map(row => ({ kind: 'portfolio' as const, row })),
         shownPosts.map(post => ({ kind: 'post' as const, post })),
       )
     : [];
-  const allConnectTotal = visibleUsers.length + visiblePortfolio.length + visiblePosts.length;
+  const allConnectTotal = visiblePortfolio.length + visiblePosts.length;
 
   const showMarketplaceLanding = activeTab === 'marketplace' && !hasTyped;
   // Search -> Connect, empty query: the 4-section discovery landing page
@@ -2282,7 +2284,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
         {/* ── Scrollable body ── */}
         <div ref={resultsRef} className="flex-1 overflow-y-auto overscroll-contain">
           {!hasTyped && activeTab === 'all' ? (
-            <PreSearch onSelect={val => { setQ(val); runSearch(val); }}/>
+            <>
+              {/* Before a query: Creators for you -- the shared profile carousel. */}
+              <div className="pt-4">
+                <ProfilesSection query="" onNavigate={handleResultNavigate} onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate('/search/category/connect/profiles')} />
+              </div>
+              <PreSearch onSelect={val => { setQ(val); runSearch(val); }}/>
+            </>
           ) : showSuggestions ? (
             <div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4 pt-4 pb-2">Suggestions</p>
@@ -2337,6 +2345,13 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                     </button>
                   </div>
                 </section>
+              )}
+              {/* All results: matching Profiles (shared card, max 5, View all keeps the query). */}
+              {activeTab === 'all' && hasTyped && (
+                <div className="pt-2">
+                  <ProfilesSection query={q} onNavigate={handleResultNavigate}
+                    onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate(`/search/category/connect/profiles?q=${encodeURIComponent(q.trim())}`, { query: q.trim() })} />
+                </div>
               )}
               {activeTab === 'all' && (() => {
                 const sections: Partial<Record<SearchSource, ReactNode>> = {
@@ -2531,20 +2546,7 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
                   and for Connect once the viewer actually types something. */}
               {activeTab !== 'all' && (showConnectLanding ? (
                 !connectLoaded ? <ConnectLandingSkeleton/> : <>
-                  {connectSuggested.length > 0 && (
-                    <ConnectDiscoveryRow title="Profiles You May Like" onViewAll={() => closeAndNavigate('/connections/suggested')}>
-                      {connectSuggested.map(c => (
-                        <SuggestedConnectionCard key={c.id} creator={c} showMenu
-                          widthClassName="w-[172px] shrink-0 snap-start"
-                          onConnected={() => {}}
-                          onDismiss={() => {
-                            setConnectSuggested(prev => prev.filter(x => x.id !== c.id));
-                            if (user) dismissSuggestion(user.id, c.id);
-                          }}
-                        />
-                      ))}
-                    </ConnectDiscoveryRow>
-                  )}
+                  <ProfilesSection query="" onNavigate={handleResultNavigate} onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate('/search/category/connect/profiles')} />
                   {/* Real, full Home-style post cards -- the exact same
                       PostCard/PortfolioProjectCard/PortfolioAlbumCard
                       components Home's Connect feed uses (Like/Comment/
@@ -2594,11 +2596,8 @@ export function SearchOverlay({ onClose, onResultNavigate }: Props) {
               ) : (
                 <>
                   {visibleUsers.length > 0 && (
-                    <ResultSection label="👤 Profiles" count={Math.min(visibleUsers.length, PREVIEW_LIMIT)}
-                      footer={visibleUsers.length > PREVIEW_LIMIT
-                        ? <ViewMoreButton onClick={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('connect/profiles')}/> : undefined}>
-                      {visibleUsers.slice(0, PREVIEW_LIMIT).map(u => <CreatorCard key={u.id} u={u} onNavigate={handleResultNavigate}/>)}
-                    </ResultSection>
+                    <ProfilesSection query={q} onNavigate={handleResultNavigate}
+                      onViewAll={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('connect/profiles')} />
                   )}
                   {visiblePortfolio.length > 0 && (
                     <ResultSection label="🎬 Portfolio" count={Math.min(visiblePortfolio.length, PREVIEW_LIMIT)} grid
