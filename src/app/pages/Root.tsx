@@ -42,6 +42,12 @@ export function Root() {
   // Bumped by the read-failure banner's Retry to remount the current page and re-run its loads.
   const [retryKey, setRetryKey] = useState(0);
   const [searchOpen,  setSearchOpen]  = useState(false);
+  // Pages without the top bar (e.g. Marketplace search) open Browse search through this event.
+  useEffect(() => {
+    const open = () => setSearchOpen(true);
+    window.addEventListener('filmons:open-search', open);
+    return () => window.removeEventListener('filmons:open-search', open);
+  }, []);
   // Global "View Portfolio" preview -- see PortfolioPreviewContext's own
   // header comment for why this lives here and not on whichever card
   // opens it.
