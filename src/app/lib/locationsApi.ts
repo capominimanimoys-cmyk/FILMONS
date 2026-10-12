@@ -55,7 +55,7 @@ export function parseLocationFreeText(text: string): { city: string; province: s
 }
 
 /** Same real province, treating an unknown / unrecognised one as compatible with anything. */
-function provincesCompatible(a: string | null | undefined, b: string | null | undefined): boolean {
+export function provincesCompatible(a: string | null | undefined, b: string | null | undefined): boolean {
   const x = normalizeProvince(a), y = normalizeProvince(b);
   return !x || !y || x === y;
 }
@@ -220,12 +220,25 @@ export interface LocationContent {
 
 /** Location results page content -- posts/Portfolio items+albums/listings,
  *  visibility-respecting (same pattern as getHashtagContent). */
-export async function getLocationContent(keyInput: string, limit = 30): Promise<LocationContent> {
+export interface LocationScope {
+  /** "Surrey, BC" */
+  displayName: string;
+  city: string;
+  province: string | null;
+  /** Every `locations` row that is this place (with / without province, older saves). */
+  locationIds: string[];
+  /** Ids of the content tagged with this place, per content type. */
+  ids: Record<LocationContentType, string[]>;
+}
+
+/** Everything a location page needs to filter content: the place and the ids tagged with it
+ *  (matched by location id first, free-text location only as a safety net). */
+export async function getLocationScope(keyInput: string): Promise<LocationScope | null> {
   // No `locations` row (indexing never ran/failed)? Still search by the city in the link, so
   // "Surrey" and "surrey" both work off the text saved on the posts/works themselves.
   const resolved = await resolveLocationRow(keyInput);
   const guessCity = normalizeLocationKey(keyInput).replace(/-[a-z]{2}$/i, '').replace(/-/g, ' ').trim();
-  if (!resolved && !guessCity) return { posts: [], portfolio: [], listings: [] };
+  if (!resolved && !guessCity) return null;
   const locRow: LocationRow = resolved ?? { id: '', city: guessCity, province: null, name: guessCity, uses: 0 } as LocationRow;
 
   // Content can be indexed under any row for this city (one with a province, one without,
@@ -267,14 +280,29 @@ export async function getLocationContent(keyInput: string, limit = 30): Promise<
       locIds.length ? supabase.from('post_locations').select('post_id').in('location_id', locIds).limit(200) : Promise.resolve({ data: [] as any[] }),
       withLocation('posts'),
       withLocation('portfolio_items'),
-      supabase.from('listings').select('id').ilike('city', city).eq('is_active', true).limit(50),
+      supabase.from('listings').select('id').ilike('city', city).eq('is_active', true).limit(300),
     ]);
     for (const r of legacy.data ?? []) ids.post.add(String((r as any).post_id));
     for (const r of textPosts) ids.post.add(String((r as any).id));
     for (const r of textItems) ids.portfolio_item.add(String((r as any).id));
     for (const r of cityListings.data ?? []) ids.listing.add(String((r as any).id));
   }
-  const idsFor = (type: LocationContentType) => [...ids[type]];
+  const prov = normalizeProvince(locRow.province);
+  const shownCity = locRow.city ?? guessCity;
+  return {
+    displayName: prov ? `${shownCity}, ${prov}` : shownCity,
+    city: shownCity, province: prov, locationIds: locIds,
+    ids: {
+      post: [...ids.post], portfolio_item: [...ids.portfolio_item],
+      portfolio_album: [...ids.portfolio_album], listing: [...ids.listing],
+    },
+  };
+}
+
+export async function getLocationContent(keyInput: string, limit = 30): Promise<LocationContent> {
+  const scope = await getLocationScope(keyInput);
+  if (!scope) return { posts: [], portfolio: [], listings: [] };
+  const idsFor = (type: LocationContentType) => scope.ids[type];
 
   const [posts, items, albums, listings] = await Promise.all([
     fetchLocationPosts(idsFor('post'), limit),
