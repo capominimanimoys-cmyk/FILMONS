@@ -241,7 +241,7 @@ async function searchProfilesByTerms(terms: string[]): Promise<SearchProfileRow[
 // per-category pages) are responsible for classifying into categories and
 // slicing for display -- the query itself never changes based on who's
 // asking, which is the actual fix: one search, two presentations.
-export async function searchMatchingListings(rawQuery: string): Promise<SearchListingRow[]> {
+async function searchMatchingListingsRaw(rawQuery: string): Promise<SearchListingRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];
   const listings = await searchListingsByTerms(terms);
@@ -301,7 +301,7 @@ export async function searchOpportunityListings(remainder: string): Promise<Sear
   return searchListingsByIntent('opportunity', remainder);
 }
 
-export async function searchMatchingCreators(rawQuery: string): Promise<SearchProfileRow[]> {
+async function searchMatchingCreatorsRaw(rawQuery: string): Promise<SearchProfileRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];
   const users = await searchProfilesByTerms(terms);
@@ -333,7 +333,7 @@ async function searchPortfolioByTerms(terms: string[]): Promise<SearchPortfolioR
   return [...items, ...albums];
 }
 
-export async function searchMatchingPortfolio(rawQuery: string): Promise<SearchPortfolioRow[]> {
+async function searchMatchingPortfolioRaw(rawQuery: string): Promise<SearchPortfolioRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];
   const rows = await searchPortfolioByTerms(terms);
@@ -391,7 +391,7 @@ async function searchPostsByTerms(terms: string[]): Promise<SearchPostRow[]> {
   return [...byId.values()];
 }
 
-export async function searchMatchingPosts(rawQuery: string): Promise<SearchPostRow[]> {
+async function searchMatchingPostsRaw(rawQuery: string): Promise<SearchPostRow[]> {
   const terms = expandSearchTerms(rawQuery);
   if (!terms.length) return [];
   const rows = await searchPostsByTerms(terms);
@@ -416,3 +416,30 @@ export async function searchAndHydratePosts(rawQuery: string, limit?: number): P
   const byId = new Map(posts.map(p => [p.id, p]));
   return ordered.map(r => byId.get(r.id)).filter((p): p is Post => !!p);
 }
+
+
+// ── Result cache ─────────────────────────────────────────────────────────────
+// The search overlay already ran these exact queries while the viewer typed; tapping a result
+// ("videographer Surrey") then opened a page that ran them all again from scratch. Sharing the
+// in-flight request and keeping the answer for a minute makes that hand-off instant. These
+// functions swallow request errors into [], so an empty answer is only kept briefly -- a failed
+// request must not be remembered as "no results".
+const CACHE_TTL = 60_000, EMPTY_TTL = 5_000;
+function memoizeSearch<T>(name: string, fn: (q: string) => Promise<T[]>) {
+  const cache = new Map<string, { at: number; p: Promise<T[]>; ttl: number }>();
+  return (rawQuery: string): Promise<T[]> => {
+    const key = `${name}:${rawQuery.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < hit.ttl) return hit.p;
+    const entry = { at: Date.now(), ttl: CACHE_TTL, p: null as unknown as Promise<T[]> };
+    entry.p = fn(rawQuery).then(rows => { if (!rows.length) entry.ttl = EMPTY_TTL; return rows; })
+      .catch(e => { cache.delete(key); throw e; });
+    cache.set(key, entry);
+    if (cache.size > 40) cache.delete(cache.keys().next().value as string);
+    return entry.p;
+  };
+}
+export const searchMatchingListings = memoizeSearch('listings', searchMatchingListingsRaw);
+export const searchMatchingCreators = memoizeSearch('creators', searchMatchingCreatorsRaw);
+export const searchMatchingPortfolio = memoizeSearch('portfolio', searchMatchingPortfolioRaw);
+export const searchMatchingPosts = memoizeSearch('posts', searchMatchingPostsRaw);

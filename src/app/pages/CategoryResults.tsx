@@ -2655,7 +2655,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
       searchMatchingCreators(hasIntent ? remainder : term),
     ]).then(([listings, creators]) => {
       if (!cancelled) setSharedMatched({ listings, creators });
-    });
+    }).catch(() => { if (!cancelled) setSharedMatched({ listings: [], creators: [] }); }); // never leave the page loading forever
     return () => { cancelled = true; };
   }, [term, discoveryIntent]);
 
