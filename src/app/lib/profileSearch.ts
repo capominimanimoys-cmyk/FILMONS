@@ -13,7 +13,7 @@
 //                                 complete profiles first), nothing personalised.
 // Only public profile columns are ever selected.
 import { supabase } from '../../lib/supabase';
-import { expandSearchTerms } from './filmSearch';
+import { expandSearchTerms, detectQueryLocation } from './filmSearch';
 import { scoreResult } from './searchUtils';
 import { normalizeTier } from './reliabilityApi';
 
@@ -127,7 +127,7 @@ export function toProfile(r: any, trust: Map<string, number>, matchTerms: string
 const quality = (p: SearchProfile) => (p.trust ?? 0) * 0.6 + p.completeness * 0.4;
 
 // ── Search ───────────────────────────────────────────────────────────────────
-async function fetchMatches(query: string): Promise<SearchProfile[]> {
+async function fetchTextMatches(query: string): Promise<SearchProfile[]> {
   const terms = expandSearchTerms(query).map(cleanTerm).filter(Boolean);
   if (!terms.length) return [];
   const textClauses = terms.flatMap(t => [
@@ -167,6 +167,30 @@ async function fetchMatches(query: string): Promise<SearchProfile[]> {
     return bucket(b.rel) - bucket(a.rel) || quality(b.p) - quality(a.p) || b.rel - a.rel;
   });
   return scored.map(s => s.p);
+}
+
+// "Surrey videographer": everyone based in Surrey, with those who also match "videographer" first,
+// then anyone else the plain text search finds.
+async function fetchMatches(query: string): Promise<SearchProfile[]> {
+  const loc = await detectQueryLocation(query).catch(() => null);
+  if (!loc) return fetchTextMatches(query);
+  const city = loc.city.replace(/[%_,()"]/g, '').trim();
+  const [placeRes, text] = await Promise.all([
+    supabase.from('profiles').select(PROFILE_SELECT).or(`city.ilike."${city}",location.ilike."%${city}%"`)
+      .not('name', 'is', null).neq('name', '').limit(TEXT_LIMIT),
+    fetchTextMatches(query).catch(() => [] as SearchProfile[]),
+  ]);
+  if (placeRes.error) { if (text.length) return text; throw placeRes.error; }
+  const esc = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(^|[\\s,])${esc}(?=$|[\\s,])`, 'i');
+  const rows = (placeRes.data ?? []).filter((r: any) => lc(r.city).trim() === city.toLowerCase() || re.test(String(r.location ?? '')));
+  const trust = await fetchTrust(rows.map((r: any) => r.id)).catch(() => new Map<string, number>());
+  const rem = lc(loc.remainder);
+  const place = rows.map((r: any) => toProfile(r, trust, rem ? [rem] : []));
+  const matchesRest = (p: SearchProfile) => !!rem && (lc(p.name).includes(rem) || p._roleText.includes(rem) || p._skillText.some(x => x.includes(rem)) || lc(p.headline).includes(rem));
+  place.sort((a, b) => Number(matchesRest(b)) - Number(matchesRest(a)) || quality(b) - quality(a));
+  const seen = new Set<string>();
+  return [...place, ...text].filter(p => !seen.has(p.id) && !!seen.add(p.id));
 }
 
 // ── Recommendations ──────────────────────────────────────────────────────────

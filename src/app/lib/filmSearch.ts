@@ -17,7 +17,8 @@
 // that.
 import { supabase } from '../../lib/supabase';
 import { withModerationFilter, LISTING_COLUMNS, postsApi } from './api';
-import { expandQuery, normalize, scoreResult, type MarketplaceIntentType } from './searchUtils';
+import { expandQuery, normalize, scoreResult, KNOWN_CITIES, type MarketplaceIntentType } from './searchUtils';
+import { getLocationScope, buildLocationSlug, normalizeProvince, provincesCompatible, type LocationScope } from './locationsApi';
 import type { Post } from '../types';
 
 // Full listing row shape, not just the text fields matching needs -- a
@@ -418,6 +419,138 @@ export async function searchAndHydratePosts(rawQuery: string, limit?: number): P
 }
 
 
+// ── "Place + something" searches ─────────────────────────────────────────────
+// A query that names a place ("Surrey videographer", "photographers in Surrey, BC") is a request for
+// that place: the people based there, everything those people posted / listed / published, plus
+// every post, listing and portfolio piece tagged with the place. The rest of the query ("videographer")
+// ranks the matches rather than throwing the others away.
+const escRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const FILLER = /\b(in|near|nearby|around|at|from|based)\b/gi;
+
+let dbCities: Promise<string[]> | null = null;
+function knownCities(): Promise<string[]> {
+  dbCities ??= (async () => {
+    const { data } = await supabase.from('locations').select('city, uses').not('city', 'is', null).order('uses', { ascending: false }).limit(300);
+    return (data ?? []).map((r: any) => String(r.city).trim()).filter(c => c.length >= 3);
+  })().catch(() => []);
+  return dbCities.then(list => [...new Set([...KNOWN_CITIES, ...list])].sort((a, b) => b.length - a.length));
+}
+
+export async function detectQueryLocation(raw: string): Promise<{ city: string; remainder: string } | null> {
+  const q = raw.trim();
+  if (q.length < 3) return null;
+  for (const city of await knownCities()) {
+    const re = new RegExp(`(^|[^\\p{L}])${escRe(city)}(?![\\p{L}])`, 'iu');
+    if (!re.test(q)) continue;
+    const remainder = q.replace(re, ' ')
+      .replace(/\b(bc|british columbia|canada)\b/gi, ' ')
+      .replace(FILLER, ' ').replace(/[,]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return { city, remainder };
+  }
+  return null;
+}
+
+interface PlaceBundle { scope: LocationScope; people: SearchProfileRow[]; userIds: string[] }
+const bundles = new Map<string, { at: number; p: Promise<PlaceBundle> }>();
+function placeBundle(city: string): Promise<PlaceBundle> {
+  const key = city.toLowerCase();
+  const hit = bundles.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.p;
+  const p = (async () => {
+    const clean = city.replace(/[%_,()"]/g, '').trim();
+    const [scope, peopleRes] = await Promise.all([
+      getLocationScope(buildLocationSlug(clean)),
+      supabase.from('profiles').select(PROFILE_SELECT).or(`city.ilike."${clean}",location.ilike."%${clean}%"`)
+        .not('name', 'is', null).neq('name', '').limit(PROFILE_TEXT_LIMIT),
+    ]);
+    if (peopleRes.error) throw peopleRes.error;
+    const s: LocationScope = scope ?? { displayName: clean, city: clean, province: null, locationIds: [], ids: { post: [], portfolio_item: [], portfolio_album: [], listing: [] } };
+    const re = new RegExp(`(^|[\\s,])${escRe(clean)}(?=$|[\\s,])`, 'i');
+    const people = (peopleRes.data ?? []).filter((r: any) =>
+      String(r.city ?? '').trim().toLowerCase() === clean.toLowerCase()
+        ? provincesCompatible(s.province, normalizeProvince((r as any).province))
+        : re.test(String(r.location ?? ''))) as SearchProfileRow[];
+    return { scope: s, people, userIds: people.map(r => r.id) };
+  })();
+  bundles.set(key, { at: Date.now(), p });
+  p.catch(() => bundles.delete(key));
+  return p;
+}
+
+async function inChunks<T>(ids: string[], run: (chunk: string[]) => PromiseLike<T[]>, size = 80): Promise<T[]> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+  return (await Promise.all(chunks.map(run))).flat();
+}
+const dedupe = <T extends { id: string }>(rows: T[]) => { const seen = new Set<string>(); return rows.filter(r => !seen.has(r.id) && !!seen.add(r.id)); };
+
+/** Place matches first (those that also match the rest of the query on top), then everything else. */
+function rankPlace<T extends { id: string }>(rows: T[], inPlace: Set<string>, remainder: string, text: (r: T) => [string, string, string]): T[] {
+  const rel = (r: T) => (remainder ? scoreResult(remainder, ...text(r)) : 0);
+  const tier = (r: T) => (inPlace.has(r.id) ? (rel(r) > 0 ? 2 : 1) : 0);
+  return rows.map(r => ({ r, t: tier(r), s: rel(r) })).sort((a, b) => b.t - a.t || b.s - a.s).map(x => x.r);
+}
+
+async function creatorsAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchProfileRow[]> {
+  const [{ people }, extra] = await Promise.all([placeBundle(loc.city), searchMatchingCreatorsRaw(raw).catch(() => [] as SearchProfileRow[])]);
+  const all = dedupe([...people, ...extra]);
+  return rankPlace(all, new Set(people.map(p => p.id)), loc.remainder, r => [r.name, r.primary_role || r.business_industry || '', r.bio ?? '']);
+}
+
+async function listingsAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchListingRow[]> {
+  const { scope, userIds } = await placeBundle(loc.city);
+  const clean = loc.city.replace(/[%_,()"]/g, '').trim();
+  const byQuery = (build: (q: any) => any) => withModerationFilter(active => {
+    let q = supabase.from('listings').select(LISTING_SELECT).eq('is_active', true);
+    if (active) q = q.eq('moderation_status', 'active');
+    return build(q);
+  }).then(r => (r.data ?? []) as unknown as SearchListingRow[]);
+  const [byOwner, byTag, byCity, extra] = await Promise.all([
+    inChunks(userIds, c => byQuery(q => q.in('user_id', c).order('created_at', { ascending: false }).limit(150))),
+    inChunks(scope.ids.listing.slice(0, 300), c => byQuery(q => q.in('id', c))),
+    byQuery(q => q.ilike('city', clean).limit(200)),
+    searchMatchingListingsRaw(raw).catch(() => [] as SearchListingRow[]),
+  ]);
+  const inPlace = new Set([...byOwner, ...byTag, ...byCity].map(r => r.id));
+  return rankPlace(dedupe([...byOwner, ...byTag, ...byCity, ...extra]), inPlace, loc.remainder, r => [r.title, r.description ?? '', r.city ?? '']);
+}
+
+async function postsAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchPostRow[]> {
+  const { scope, userIds } = await placeBundle(loc.city);
+  const [byAuthor, byTag, extra] = await Promise.all([
+    inChunks(userIds, async c => (await supabase.from('posts').select(POST_SELECT).eq('visibility', 'public').in('author_id', c).order('created_at', { ascending: false }).limit(100)).data ?? []),
+    inChunks(scope.ids.post.slice(0, 300), async c => (await supabase.from('posts').select(POST_SELECT).eq('visibility', 'public').in('id', c)).data ?? []),
+    searchMatchingPostsRaw(raw).catch(() => [] as SearchPostRow[]),
+  ]);
+  const inPlace = new Set([...byAuthor, ...byTag].map((r: any) => r.id));
+  return rankPlace(dedupe([...byAuthor, ...byTag, ...extra] as SearchPostRow[]), inPlace, loc.remainder, r => [r.content ?? '', '', '']);
+}
+
+async function portfolioAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchPortfolioRow[]> {
+  const { scope, userIds } = await placeBundle(loc.city);
+  const pub = (r: any) => !r.visibility || r.visibility === 'public';
+  const [ownItems, ownAlbums, tagItems, tagAlbums, extra] = await Promise.all([
+    inChunks(userIds, async c => (await supabase.from('portfolio_items').select(PORTFOLIO_ITEM_SELECT).in('user_id', c).order('created_at', { ascending: false }).limit(100)).data ?? []),
+    inChunks(userIds, async c => (await supabase.from('portfolio_albums').select(PORTFOLIO_ALBUM_SELECT).in('user_id', c).order('created_at', { ascending: false }).limit(100)).data ?? []),
+    inChunks(scope.ids.portfolio_item.slice(0, 300), async c => (await supabase.from('portfolio_items').select(PORTFOLIO_ITEM_SELECT).in('id', c)).data ?? []),
+    inChunks(scope.ids.portfolio_album.slice(0, 300), async c => (await supabase.from('portfolio_albums').select(PORTFOLIO_ALBUM_SELECT).in('id', c)).data ?? []),
+    searchMatchingPortfolioRaw(raw).catch(() => [] as SearchPortfolioRow[]),
+  ]);
+  const tag = (rows: any[], type: 'item' | 'album') => rows.filter(pub).map(r => ({ ...r, type }) as SearchPortfolioRow);
+  const placeRows = [...tag(ownItems, 'item'), ...tag(ownAlbums, 'album'), ...tag(tagItems, 'item'), ...tag(tagAlbums, 'album')];
+  const inPlace = new Set(placeRows.map(r => r.id));
+  return rankPlace(dedupe([...placeRows, ...extra]), inPlace, loc.remainder, r => [r.title, r.description ?? '', r.category ?? '']);
+}
+
+/** Runs the place-aware search when the query names a place, the plain one otherwise. */
+function placeAware<T>(plain: (q: string) => Promise<T[]>, atPlace: (q: string, loc: { city: string; remainder: string }) => Promise<T[]>) {
+  return async (q: string): Promise<T[]> => {
+    const loc = await detectQueryLocation(q).catch(() => null);
+    if (!loc) return plain(q);
+    try { return await atPlace(q, loc); } catch (e) { console.warn('[filmSearch] place search failed, using plain search:', e); return plain(q); }
+  };
+}
+
 // ── Result cache ─────────────────────────────────────────────────────────────
 // The search overlay already ran these exact queries while the viewer typed; tapping a result
 // ("videographer Surrey") then opened a page that ran them all again from scratch. Sharing the
@@ -439,7 +572,7 @@ function memoizeSearch<T>(name: string, fn: (q: string) => Promise<T[]>) {
     return entry.p;
   };
 }
-export const searchMatchingListings = memoizeSearch('listings', searchMatchingListingsRaw);
-export const searchMatchingCreators = memoizeSearch('creators', searchMatchingCreatorsRaw);
-export const searchMatchingPortfolio = memoizeSearch('portfolio', searchMatchingPortfolioRaw);
-export const searchMatchingPosts = memoizeSearch('posts', searchMatchingPostsRaw);
+export const searchMatchingListings = memoizeSearch('listings', placeAware(searchMatchingListingsRaw, listingsAtPlace));
+export const searchMatchingCreators = memoizeSearch('creators', placeAware(searchMatchingCreatorsRaw, creatorsAtPlace));
+export const searchMatchingPortfolio = memoizeSearch('portfolio', placeAware(searchMatchingPortfolioRaw, portfolioAtPlace));
+export const searchMatchingPosts = memoizeSearch('posts', placeAware(searchMatchingPostsRaw, postsAtPlace));
