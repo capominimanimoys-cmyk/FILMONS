@@ -221,8 +221,12 @@ export interface LocationContent {
 /** Location results page content -- posts/Portfolio items+albums/listings,
  *  visibility-respecting (same pattern as getHashtagContent). */
 export async function getLocationContent(keyInput: string, limit = 30): Promise<LocationContent> {
-  const locRow = await resolveLocationRow(keyInput);
-  if (!locRow) return { posts: [], portfolio: [], listings: [] };
+  // No `locations` row (indexing never ran/failed)? Still search by the city in the link, so
+  // "Surrey" and "surrey" both work off the text saved on the posts/works themselves.
+  const resolved = await resolveLocationRow(keyInput);
+  const guessCity = normalizeLocationKey(keyInput).replace(/-[a-z]{2}$/i, '').replace(/-/g, ' ').trim();
+  if (!resolved && !guessCity) return { posts: [], portfolio: [], listings: [] };
+  const locRow: LocationRow = resolved ?? { id: '', city: guessCity, province: null, name: guessCity, uses: 0 } as LocationRow;
 
   // Content can be indexed under any row for this city (one with a province, one without,
   // from older saves) -- show all of it on the one page the user can reach.
@@ -231,12 +235,14 @@ export async function getLocationContent(keyInput: string, limit = 30): Promise<
   const locIds = (sameCity ?? [])
     .filter((r: any) => provincesCompatible(locRow.province, r.province))
     .map((r: any) => r.id);
-  if (!locIds.includes(locRow.id)) locIds.push(locRow.id);
-  const { data: mentions } = await supabase.from('location_mentions')
-    .select('content_type, content_id, created_at')
-    .in('location_id', locIds)
-    .order('created_at', { ascending: false })
-    .limit(200);
+  if (locRow.id && !locIds.includes(locRow.id)) locIds.push(locRow.id);
+  const { data: mentions } = locIds.length
+    ? await supabase.from('location_mentions')
+        .select('content_type, content_id, created_at')
+        .in('location_id', locIds)
+        .order('created_at', { ascending: false })
+        .limit(200)
+    : { data: [] as any[] };
   const rows = mentions ?? [];
   const ids: Record<LocationContentType, Set<string>> = {
     post: new Set(), portfolio_item: new Set(), portfolio_album: new Set(), listing: new Set(),
@@ -249,16 +255,23 @@ export async function getLocationContent(keyInput: string, limit = 30): Promise<
   // because indexing failed or ran under an older location row.
   const city = (locRow.city ?? '').replace(/[%_,()"]/g, '').trim();
   if (city) {
-    const like = (col: string) => [`${col}.ilike."${city}"`, `${col}.ilike."${city},%"`, `${col}.ilike."%, ${city},%"`, `${col}.ilike."%, ${city}"`].join(',');
+    // `.ilike()` (not a hand-built `.or()` string) so the pattern is encoded safely; the exact
+    // "is this the city?" check then runs in JS on the returned text.
+    const cityRe = new RegExp(`(^|,\\s*)${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(,|$)`, 'i');
+    const withLocation = async (table: 'posts' | 'portfolio_items') => {
+      const { data, error } = await supabase.from(table).select('id, location').ilike('location', `%${city}%`).limit(150);
+      if (error) console.warn(`[locationsApi] ${table} location lookup failed:`, error.message);
+      return (data ?? []).filter((r: any) => cityRe.test(String(r.location ?? '')));
+    };
     const [legacy, textPosts, textItems, cityListings] = await Promise.all([
-      supabase.from('post_locations').select('post_id').in('location_id', locIds).limit(200),
-      supabase.from('posts').select('id').or(like('location')).limit(100),
-      supabase.from('portfolio_items').select('id').or(like('location')).limit(100),
+      locIds.length ? supabase.from('post_locations').select('post_id').in('location_id', locIds).limit(200) : Promise.resolve({ data: [] as any[] }),
+      withLocation('posts'),
+      withLocation('portfolio_items'),
       supabase.from('listings').select('id').ilike('city', city).eq('is_active', true).limit(50),
     ]);
     for (const r of legacy.data ?? []) ids.post.add(String((r as any).post_id));
-    for (const r of textPosts.data ?? []) ids.post.add(String((r as any).id));
-    for (const r of textItems.data ?? []) ids.portfolio_item.add(String((r as any).id));
+    for (const r of textPosts) ids.post.add(String((r as any).id));
+    for (const r of textItems) ids.portfolio_item.add(String((r as any).id));
     for (const r of cityListings.data ?? []) ids.listing.add(String((r as any).id));
   }
   const idsFor = (type: LocationContentType) => [...ids[type]];
