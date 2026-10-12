@@ -2906,7 +2906,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
             )}
           </div>
           {product === 'marketplace' && (
-            <button onClick={() => window.dispatchEvent(new CustomEvent('filmons:open-search'))} aria-label="Search"
+            <button onClick={() => window.dispatchEvent(new CustomEvent('filmons:open-search', { detail: { tab: 'marketplace' } }))} aria-label="Search"
               className="ml-auto w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors shrink-0 active:scale-90 text-gray-700">
               <Search className="w-5 h-5"/>
             </button>
