@@ -1120,11 +1120,11 @@ function PreviewListingCard({ listing, badge, gridMode = false }: {
 // every other result type -- no separate, larger design. A creator's photo
 // fills the same fixed 240x180 image area (object-cover, never influencing
 // the card's own size) as a listing's cover photo would.
-function PreviewCreatorCard({ u }: { u: CreatorRow }) {
+function PreviewCreatorCard({ u, gridMode = false }: { u: CreatorRow; gridMode?: boolean }) {
   const navigate = useNavigate();
   return (
-    <button onClick={() => navigate(`/host/${u.id}`)} style={PREVIEW_CARD_STYLE} className={PREVIEW_CARD_CLASS}>
-      <div style={PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
+    <button onClick={() => navigate(`/host/${u.id}`)} style={gridMode ? { borderRadius: 16 } : PREVIEW_CARD_STYLE} className={`${PREVIEW_CARD_CLASS} ${gridMode ? 'w-full h-auto' : ''}`}>
+      <div style={gridMode ? { aspectRatio: '4 / 3' } : PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
         {u.avatar_url
           ? <img src={u.avatar_url} className="w-full h-full object-cover" alt=""/>
           : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-gray-300">{u.name?.[0]?.toUpperCase() ?? '?'}</div>}
@@ -1561,7 +1561,7 @@ function CategorySection({ category, navState, matched }: {
             </button>
           )}
         </div>
-        {!loading && hasMore && (
+        {false && !loading && hasMore && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => scrollByPage(-1)} disabled={!canScrollLeft} aria-label="Previous"
@@ -1598,10 +1598,10 @@ function CategorySection({ category, navState, matched }: {
               padding before it's ever seen -- the header above (not a
               scroll container) never had this problem, which is why only
               the row looked misaligned. */}
-          <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
+          <div className="lg:hidden grid grid-cols-2 gap-3 px-4">
             {category === 'creators'
-              ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u}/>)
-              : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l} badge={sectionBadge}/>)
+              ? mobileCreators.map(u => <PreviewCreatorCard key={u.id} u={u} gridMode/>)
+              : mobileListings.map(l => <PreviewListingCard key={l.id} listing={l} badge={sectionBadge} gridMode/>)
             }
           </div>
           {/* ── Desktop row: exactly 5 fluid-width cards fill the row;
@@ -1610,11 +1610,11 @@ function CategorySection({ category, navState, matched }: {
               peek, never shrunk to fit 6+, never a wrapping grid. ────── */}
           <div
             ref={desktopScrollRef} onScroll={updateScrollState}
-            className={`hidden lg:flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}
+            className={`hidden lg:flex flex-wrap gap-4 ${DESKTOP_SECTION_PAD}`}
           >
             {category === 'creators'
-              ? creators.map(u => <DesktopCreatorCard key={u.id} u={u}/>)
-              : listings.map(l => <DesktopListingCard key={l.id} listing={l} badge={sectionBadge}/>)
+              ? creators.slice(0, ALL_PAGE_PREVIEW_LIMIT).map(u => <DesktopCreatorCard key={u.id} u={u}/>)
+              : listings.slice(0, ALL_PAGE_PREVIEW_LIMIT).map(l => <DesktopListingCard key={l.id} listing={l} badge={sectionBadge}/>)
             }
           </div>
         </>
@@ -2018,8 +2018,8 @@ function CoursesAllSection({ query, target = '/search/category/courses' }: { que
           </button>
         )}
       </div>
-      <div className="flex gap-3 overflow-x-auto no-scrollbar">
-        {shown.map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {shown.map(c => <div key={c.id} className="min-w-0"><CourseCard course={c} /></div>)}
       </div>
     </div>
   );
@@ -2047,6 +2047,30 @@ const PRODUCT_CATEGORY_IDS: Record<'marketplace' | 'connect' | 'learning', Categ
 const DISCOVERY_GROUP_LIMIT = 10;
 
 // Shown when a discovery load failed -- never let a failed read look like "no results".
+// Stale-while-revalidate for the Marketplace landing rows: the last answer is shown instantly (and
+// refreshed behind it), so reopening the page never starts from an empty skeleton. Only the fields a
+// card needs are kept, and inline (base64) images are dropped so the cache stays small.
+const DISC_CACHE_PREFIX = 'filmons:discovery:';
+function readDiscoveryCache(key: string): Listing[] | null {
+  try {
+    const raw = sessionStorage.getItem(DISC_CACHE_PREFIX + key);
+    if (!raw) return null;
+    const { at, rows } = JSON.parse(raw);
+    return Array.isArray(rows) && Date.now() - at < 30 * 60_000 ? rows : null;
+  } catch { return null; }
+}
+function writeDiscoveryCache(key: string, rows: Listing[]) {
+  try {
+    const slim = rows.map(l => ({ ...l, images: (l.images ?? []).filter(i => typeof i === 'string' && i.length < 2000).slice(0, 1), videos: [] }));
+    sessionStorage.setItem(DISC_CACHE_PREFIX + key, JSON.stringify({ at: Date.now(), rows: slim }));
+  } catch { /* storage full / unavailable -- the cache is optional */ }
+}
+function swrListings(key: string, fetcher: () => Promise<Listing[]>, set: (r: Listing[]) => void, cancelled: () => boolean): Promise<Listing[]> {
+  const hit = readDiscoveryCache(key);
+  if (hit) set(hit);
+  return fetcher().then(rows => { if (!cancelled()) set(rows); writeDiscoveryCache(key, rows); return rows; });
+}
+
 function DiscoveryFailedCard({ onRetry }: { onRetry: () => void }) {
   return (
     <div role="alert" className="mx-4 my-6 rounded-2xl border border-gray-100 bg-white p-5 text-center">
@@ -2231,33 +2255,28 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
     const fail = () => { if (cancelled) return; setDiscoveryFailed(true); release(); };
     const soft = (e?: unknown) => { console.warn('[discovery] optional row failed:', e); release(); };
     if (product === 'marketplace') {
-      fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setLatestListings(r); }).catch(fail);
-      fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setTopListings(r); }).catch(soft);
+      const gone = () => cancelled;
+      // The two rows everyone sees go first; the personalised / heavier searches start once the first
+      // row is in, so they never compete with it for the browser's few parallel connections.
+      const primary = swrListings('latest', () => fetchLatestMarketplaceListings(DISCOVERY_GROUP_LIMIT), setLatestListings, gone).catch(fail);
+      swrListings('top', () => fetchTopMarketplaceListings(DISCOVERY_GROUP_LIMIT), setTopListings, gone).catch(soft);
+      const later = (run: () => void) => { primary.finally(() => { if (!cancelled) run(); }); };
       // Hidden entirely (not a fake/empty section) when the viewer has no
       // saved city -- same precedent as SearchOverlay's own nearbyListings.
       if (user?.city) {
-        fetchNearbyMarketplaceListings(user.city, DISCOVERY_GROUP_LIMIT).then(r => { if (!cancelled) setNearbyListings(r); }).catch(soft);
+        swrListings(`nearby:${user.city}`, () => fetchNearbyMarketplaceListings(user.city!, DISCOVERY_GROUP_LIMIT), setNearbyListings, gone).catch(soft);
       } else setNearbyListings([]);
-      if (primaryRole) {
-        searchMatchingListings(primaryRole).then(rows => { if (!cancelled) setRoleListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(soft);
-      } else setRoleListings([]);
-      // "Because you use {gear}" -- the user's own first saved gear item
-      // (AboutEditor.tsx's Gear & Tools accordion), searched the same way
-      // the role row already is -- real equipment they actually use,
-      // never a fabricated/generic suggestion.
-      if (user?.gear?.length) {
-        searchMatchingListings(user.gear[0]).then(rows => { if (!cancelled) setGearListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(soft);
-      } else setGearListings([]);
-      // "From #tag you follow" -- the viewer's single most recently
-      // followed hashtag (Phase C of the Hashtag Page Flow spec), searched
-      // the same way the role/gear rows already are. Bounded to one
-      // signal, same precedent as those two -- not a full followed-
-      // hashtags feed.
+      const bySearch = (term: string, set: (r: Listing[]) => void, key: string) =>
+        later(() => { swrListings(key, () => searchMatchingListings(term).then(rows => rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)), set, gone).catch(soft); });
+      if (primaryRole) bySearch(primaryRole, setRoleListings, `role:${primaryRole}`); else setRoleListings([]);
+      // "Because you use {gear}" -- the user's own first saved gear item.
+      if (user?.gear?.length) bySearch(user.gear[0], setGearListings, `gear:${user.gear[0]}`); else setGearListings([]);
+      // "From #tag you follow" -- the viewer's single most recently followed hashtag.
       if (user?.id) {
         getMostRecentFollowedHashtag(user.id).then(tag => {
           if (cancelled) return;
           setFollowedHashtag(tag);
-          if (tag) searchMatchingListings(tag).then(rows => { if (!cancelled) setFollowedHashtagListings(rows.slice(0, DISCOVERY_GROUP_LIMIT).map(mapListingRow)); }).catch(soft);
+          if (tag) bySearch(tag, setFollowedHashtagListings, `tag:${tag}`);
           else setFollowedHashtagListings([]);
         }).catch(soft);
       } else { setFollowedHashtag(null); setFollowedHashtagListings([]); }
@@ -2391,7 +2410,7 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
           </DiscoveryRow>
         )}
         {/* Creators for you -- the shared profile card, personalised from the viewer's role / skills / tools / location. */}
-        <ProfilesSection query="" onViewAll={() => navigate('/search/category/connect/profiles')} />
+        <ProfilesSection vertical query="" onViewAll={() => navigate('/search/category/connect/profiles')} />
         {connectCourses === null ? <DiscoveryRowSkeleton title="Courses" /> : connectCourses.length > 0 && (
           <DiscoveryRow title="Courses" count={connectCourses.length}
             onViewAll={connectCourses.length > 5 ? () => navigate('/search/category/connect/courses') : undefined}>
@@ -2400,9 +2419,9 @@ function ProductDiscoveryGroups({ product, onSearchText }: { product: 'marketpla
         )}
         {!!user?.city && (nearbyCreators === null ? <DiscoveryRowSkeleton title={`Popular near ${user.city}`} /> : nearbyCreators.length > 0 && (
           <DiscoveryRow title={`Popular near ${user.city}`} count={nearbyCreators.length}>
-            <div className="lg:hidden flex gap-3 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
+            <div className="lg:hidden grid grid-cols-2 gap-3 px-4">
               {nearbyCreators.slice(0, 5).map(c => (
-                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-[172px] shrink-0 snap-start"/>
+                <SuggestedConnectionCard key={c.id} creator={c} onConnected={() => {}} onDismiss={() => {}} widthClassName="w-full min-w-0"/>
               ))}
             </div>
             <div className={`hidden lg:flex flex-wrap gap-3 ${DESKTOP_SECTION_PAD}`}>
@@ -2474,8 +2493,8 @@ function DiscoveryRowSkeleton({ title }: { title: string }) {
       <div className={`flex items-center justify-between mb-2.5 lg:mb-3 ${DESKTOP_SECTION_PAD}`}>
         <p className="text-sm lg:text-base font-black text-gray-900">{title}</p>
       </div>
-      <div className={`flex gap-3 overflow-x-hidden ${DESKTOP_SECTION_PAD}`}>
-        {[0, 1, 2].map(i => <div key={i} className="shrink-0 w-40 h-48 rounded-2xl bg-gray-100 animate-pulse"/>)}
+      <div className={`grid grid-cols-2 gap-3 ${DESKTOP_SECTION_PAD}`}>
+        {[0, 1].map(i => <div key={i} className="h-48 rounded-2xl bg-gray-100 animate-pulse"/>)}
       </div>
     </section>
   );
@@ -2506,23 +2525,23 @@ function ListingDiscoveryRow({ listings }: { listings: Listing[] }) {
 
   return (
     <>
-      <div className="lg:hidden flex gap-4 px-4 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4">
-        {listings.map(l => <PreviewListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
+      <div className="lg:hidden grid grid-cols-2 gap-3 px-4">
+        {listings.map(l => <PreviewListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)} gridMode/>)}
       </div>
       <div className="hidden lg:block relative">
         <div
           ref={desktopScrollRef} onScroll={updateScrollState}
-          className={`flex flex-nowrap gap-4 overflow-x-auto no-scrollbar ${DESKTOP_SECTION_PAD}`}
+          className={`flex flex-wrap gap-4 ${DESKTOP_SECTION_PAD}`}
         >
           {listings.map(l => <DesktopListingCard key={l.id} listing={l} badge={marketplaceTypeBadgeForListing(l)}/>)}
         </div>
-        {canScrollLeft && (
+        {false && canScrollLeft && (
           <button onClick={() => scrollByPage(-1)} aria-label="Previous"
             className="absolute left-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-md border border-gray-100 flex items-center justify-center text-gray-700 hover:bg-gray-50 z-10">
             <ChevronLeft className="w-4 h-4"/>
           </button>
         )}
-        {canScrollRight && (
+        {false && canScrollRight && (
           <button onClick={() => scrollByPage(1)} aria-label="Next"
             className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-md border border-gray-100 flex items-center justify-center text-gray-700 hover:bg-gray-50 z-10">
             <ChevronRight className="w-4 h-4"/>
@@ -2535,8 +2554,8 @@ function ListingDiscoveryRow({ listings }: { listings: Listing[] }) {
 
 function CourseDiscoveryRow({ courses }: { courses: Course[] }) {
   return (
-    <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 lg:px-0">
-      {courses.map(c => <div key={c.id} className="shrink-0 w-56"><CourseCard course={c} /></div>)}
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 px-4 lg:px-0">
+      {courses.map(c => <div key={c.id} className="min-w-0"><CourseCard course={c} /></div>)}
     </div>
   );
 }
@@ -3081,7 +3100,7 @@ function AllGroupedResults({ navState: initialNavState, product }: { navState: N
                     via the category dropdown. */}
                 {categoryFilter !== 'all' && connectCats.map(cat => <CategorySection key={cat} category={cat} navState={navState} matched={matchedFor(cat)}/>)}
                 {categoryFilter === 'all' && showConnectExtras && (
-                  <ProfilesSection query={term} className="lg:px-0"
+                  <ProfilesSection vertical query={term} className="lg:px-0"
                     onViewAll={() => navigate(`/search/category/connect/profiles${term ? `?q=${encodeURIComponent(term)}` : ''}`, { state: { query: term } })} />
                 )}
                 {categoryFilter === 'all' && showConnectExtras && <PortfolioAllSection query={term} />}

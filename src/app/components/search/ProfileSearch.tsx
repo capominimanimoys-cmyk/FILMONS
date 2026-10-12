@@ -166,7 +166,9 @@ export function ProfileCardSkeleton() {
 // ── Carousel section ─────────────────────────────────────────────────────────
 const MAX_CARDS = 5;
 
-export function ProfilesSection({ query, title, onViewAll, onNavigate, className = '' }: {
+export function ProfilesSection({ query, title, onViewAll, onNavigate, className = '', vertical = false }: {
+  /** Stack the cards in a vertical list instead of a sideways carousel. */
+  vertical?: boolean;
   /** Empty = "Creators for you" recommendations. */
   query: string;
   title?: string;
@@ -190,7 +192,7 @@ export function ProfilesSection({ query, title, onViewAll, onNavigate, className
           {data && data.length > MAX_CARDS && (
             <button onClick={onViewAll} className="text-sm font-bold text-blue-600 hover:text-blue-700">View all →</button>
           )}
-          <div className="hidden md:flex items-center gap-1">
+          <div className={vertical ? 'hidden' : 'hidden md:flex items-center gap-1'}>
             <button onClick={() => scrollBy(-1)} aria-label="Previous" className="w-8 h-8 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-gray-50"><ChevronLeft className="w-4 h-4" /></button>
             <button onClick={() => scrollBy(1)} aria-label="Next" className="w-8 h-8 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-gray-50"><ChevronRight className="w-4 h-4" /></button>
           </div>
@@ -201,9 +203,11 @@ export function ProfilesSection({ query, title, onViewAll, onNavigate, className
           Couldn’t load profiles. <span className="font-bold text-blue-600 inline-flex items-center gap-1"><RotateCcw className="w-3.5 h-3.5" /> Retry</span>
         </button>
       ) : (
-        <div ref={scroller} className="flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4 md:scroll-pl-0 px-4 md:px-0">
+        <div ref={scroller} className={vertical
+          ? 'grid grid-cols-1 md:grid-cols-2 gap-3 px-4 md:px-0'
+          : 'flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-4 md:scroll-pl-0 px-4 md:px-0'}>
           {(loading && !data ? Array.from({ length: 2 }) : shown).map((p, i) => (
-            <div key={p ? (p as SearchProfile).id : i} className="snap-start shrink-0 w-[calc(100%-2.5rem)] md:w-[440px]">
+            <div key={p ? (p as SearchProfile).id : i} className={vertical ? 'min-w-0' : 'snap-start shrink-0 w-[calc(100%-2.5rem)] md:w-[440px]'}>
               {p ? <ProfileSearchCard profile={p as SearchProfile} onNavigate={onNavigate} /> : <ProfileCardSkeleton />}
             </div>
           ))}
