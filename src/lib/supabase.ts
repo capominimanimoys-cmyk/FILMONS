@@ -55,7 +55,7 @@ const inflight = new Map<string, Promise<Response>>();
 // used for things that must be live (messages, notifications).
 const RESPONSE_TTL_MS = 20_000;
 const MAX_CACHED_BYTES = 400_000;
-const LIVE_PATHS = /\/(messages|notifications|conversations|typing|presence)/;
+const LIVE_PATHS = /\/(messages|notifications|conversations|typing|presence|wallets|wallet_transactions|payout_requests|payout_methods|orders|payments|payment_requests)/;
 const responseCache = new Map<string, { at: number; body: ArrayBuffer; status: number; statusText: string; headers: [string, string][] }>();
 /** Drops every cached read (called on sign-out so one account's data can never show for the next). */
 export const clearReadCache = () => { responseCache.clear(); };
