@@ -1808,7 +1808,7 @@ export function SearchOverlay({ onClose, onResultNavigate, initialTab, initialQu
         })
         .catch(() => { if (searchVersionRef.current === myVersion) setResultsReady(true); })
         .finally(() => { if (searchVersionRef.current === myVersion) setLoading(false); });
-    }, 220);
+    }, 300);
   }, []);
 
   // Restores search state (query, category, filters, sort, scroll

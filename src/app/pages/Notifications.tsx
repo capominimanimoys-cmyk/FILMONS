@@ -679,6 +679,7 @@ export function Notifications() {
     markRead,
     remove,
     markAllReadConfirmed,
+    loadOlder, hasMore, loadingOlder,
     clearAll: ctxClearAll,
   } = useNotifications();
 
@@ -686,6 +687,17 @@ export function Notifications() {
   const [activeTab,   setActiveTab]   = useState<Tab>('all');
   const [markingAll,  setMarkingAll]  = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
+  const olderSentinel = useRef<HTMLDivElement>(null);
+  const [olderFailed, setOlderFailed] = useState(false);
+  const fetchOlder = async () => { setOlderFailed(false); if (!(await loadOlder())) setOlderFailed(true); };
+  // Load the next page of older notifications shortly before the viewer reaches the end.
+  useEffect(() => {
+    const el = olderSentinel.current;
+    if (!el || !hasMore || olderFailed || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) fetchOlder(); }, { rootMargin: '500px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  });
 
   // Keep the selected filter visible in the scrolling row.
   useEffect(() => {
@@ -911,6 +923,16 @@ export function Notifications() {
             })()
           )}
         </div>
+
+        {hasMore && notifs.length > 0 && (
+          <div ref={olderSentinel} className="flex justify-center py-4">
+            {olderFailed ? (
+              <button onClick={fetchOlder} className="text-sm font-semibold text-blue-600">Couldn't load older notifications. Retry</button>
+            ) : loadingOlder ? (
+              <Loader2 className="h-4 w-4 animate-spin text-gray-300" />
+            ) : <span className="h-4" aria-hidden />}
+          </div>
+        )}
 
         {notifs.length > 0 && (
           <div className="mt-4 flex justify-center">

@@ -8,6 +8,7 @@
  *       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS birthdate text;
  *     in the Supabase SQL Editor before using phone signup.
  */
+import { clearPrivateCaches } from '../../lib/privateCache';
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../../lib/supabase';
 import { purgeStoredSupabaseSession } from '../lib/authSession';
@@ -391,6 +392,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Logout ────────────────────────────────────────────────────────────────
   const logout = async () => {
     setAndCache(null);
+    clearPrivateCaches();
     // Synchronously purge the stored Supabase tokens first -- signOut()
     // alone skips clearing them when its network call fails, and the
     // recovery effect above would then sign the old account back in.

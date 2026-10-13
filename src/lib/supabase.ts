@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { recordApiTiming } from './perfMetrics';
 
 const supabaseUrl = `https://${projectId}.supabase.co`;
 const supabaseAnonKey = publicAnonKey;
@@ -56,6 +57,8 @@ const RESPONSE_TTL_MS = 20_000;
 const MAX_CACHED_BYTES = 400_000;
 const LIVE_PATHS = /\/(messages|notifications|conversations|typing|presence)/;
 const responseCache = new Map<string, { at: number; body: ArrayBuffer; status: number; statusText: string; headers: [string, string][] }>();
+/** Drops every cached read (called on sign-out so one account's data can never show for the next). */
+export const clearReadCache = () => { responseCache.clear(); };
 const fromCache = (e: { body: ArrayBuffer; status: number; statusText: string; headers: [string, string][] }) =>
   new Response(e.body.slice(0), { status: e.status, statusText: e.statusText, headers: e.headers });
 
@@ -107,6 +110,7 @@ function readWithResilience(input: RequestInfo | URL, init?: RequestInit): Promi
     const started = Date.now();
     try {
       const res = await fetch(input, { ...init, signal: ctrl.signal });
+      recordApiTiming(Date.now() - started, url);
       return { res, ms: Date.now() - started };
     } catch (err) {
       return { err, ms: Date.now() - started };

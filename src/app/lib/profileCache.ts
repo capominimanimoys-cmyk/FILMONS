@@ -11,3 +11,5 @@ export function writeProfileCache(kind: 'posts' | 'portfolio', userId: string, v
   store.set(`${kind}:${userId}`, { at: Date.now(), value });
   if (store.size > 30) store.delete(store.keys().next().value as string);
 }
+
+export function clearProfileCache() { store.clear(); }
