@@ -442,25 +442,13 @@ function LocationPageInner({ slug }: { slug: string }) {
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
             <Link to="/" className="flex items-center flex-1 min-w-0"><FilmonsLogo iconSize={24} theme="light" /></Link>
+            <button onClick={() => window.dispatchEvent(new CustomEvent('filmons:open-search', { detail: { query: shortName } }))} aria-label={`Search ${shortName}`}
+              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 shrink-0">
+              <Search className="w-5 h-5" />
+            </button>
             <Link to="/inbox" aria-label="Inbox" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 shrink-0">
               <MessageCircle className="w-5 h-5" />
             </Link>
-          </div>
-
-          <div className="px-4 pb-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                value={input} onChange={e => setInput(e.target.value)} placeholder={`Search in ${shortName}`}
-                onFocus={() => setInputFocused(true)} onBlur={() => setInputFocused(false)} aria-label={`Search in ${shortName}`}
-                className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-10 pr-9 py-2.5 text-sm outline-none focus:border-blue-400 transition-colors"
-              />
-              {input && (
-                <button onClick={() => { setInput(''); setQuery(''); }} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
           </div>
 
           <div className="px-4 pb-3 flex items-center gap-3">

@@ -43,9 +43,10 @@ export function Root() {
   const [retryKey, setRetryKey] = useState(0);
   const [searchOpen,  setSearchOpen]  = useState(false);
   const [searchTab,   setSearchTab]   = useState<string | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState<string | undefined>(undefined);
   // Pages without the top bar (e.g. Marketplace search) open Browse search through this event.
   useEffect(() => {
-    const open = (e: Event) => { setSearchTab((e as CustomEvent).detail?.tab); setSearchOpen(true); };
+    const open = (e: Event) => { setSearchTab((e as CustomEvent).detail?.tab); setSearchQuery((e as CustomEvent).detail?.query); setSearchOpen(true); };
     window.addEventListener('filmons:open-search', open);
     return () => window.removeEventListener('filmons:open-search', open);
   }, []);
@@ -241,7 +242,7 @@ export function Root() {
         {!hideTopBar && (
           <TopBar
             onMenuClick={() => setSidebarOpen(v => !v)}
-            onSearchOpen={() => { setSearchTab(undefined); setSearchOpen(true); }}
+            onSearchOpen={() => { setSearchTab(undefined); setSearchQuery(undefined); setSearchOpen(true); }}
           />
         )}
 
@@ -258,7 +259,7 @@ export function Root() {
               transition: 'padding-bottom 280ms ease-out',
             }}
           >
-            {!hideTopBar && <DesktopTopBar onSearchOpen={() => { setSearchTab(undefined); setSearchOpen(true); }} />}
+            {!hideTopBar && <DesktopTopBar onSearchOpen={() => { setSearchTab(undefined); setSearchQuery(undefined); setSearchOpen(true); }} />}
             <Fragment key={retryKey}><Outlet /></Fragment>
           </main>
           <ReadFailureBanner onRetry={() => setRetryKey(k => k + 1)} />
@@ -274,7 +275,7 @@ export function Root() {
         {!hideBottomNav && <MobileBottomNav />}
 
         {/* AI Search overlay — rendered above everything */}
-        {searchOpen && <SearchOverlay initialTab={searchTab} onClose={() => setSearchOpen(false)} />}
+        {searchOpen && <SearchOverlay initialTab={searchTab} initialQuery={searchQuery} onClose={() => setSearchOpen(false)} />}
 
         {/* Guest auth prompt — rendered globally, triggered via showGuestPrompt() */}
         <GuestAuthPrompt />
