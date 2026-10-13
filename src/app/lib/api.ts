@@ -836,11 +836,10 @@ export const listingsApi = {
       const { data, error } = await withModerationFilter((filterActive) => {
         let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
         if (filterActive) q = q.eq('moderation_status', 'active');
-        return q.order('created_at', { ascending: false }).limit(80);
+        return q.order('created_at', { ascending: false }).limit(40);   // first page; the deck loads more as needed
       });
 
       if (!error && data) {
-        console.log(`✅ Loaded ${data.length} listings from Supabase`);
         let listings = data.map(mapListingRow);
 
         // Boost Listing is temporarily disabled — back to plain normal-feed

@@ -173,10 +173,15 @@ export async function getCourses(opts: {
    * (e.g. the instructor viewing their own course list). */
   status?: CourseStatus;
   limit?: number;
+  /** Cursor: only courses created before this ISO timestamp (the next page after the last one shown). */
+  before?: string;
+  /** Report a failed read instead of returning an empty list. */
+  throwOnError?: boolean;
 } = {}): Promise<Course[]> {
   const limit = opts.limit ?? 20;
   let q = supabase.from('courses').select('*').order('created_at', { ascending: false }).limit(limit);
   q = q.eq('status', opts.status ?? 'published');
+  if (opts.before) q = q.lt('created_at', opts.before);
   if (opts.category) q = q.eq('category', opts.category);
   if (opts.subcategory) q = q.eq('subcategory', opts.subcategory);
   if (opts.instructorId) q = q.eq('instructor_id', opts.instructorId);
@@ -201,7 +206,7 @@ export async function getCourses(opts: {
     if (opts.instructorId) retry = retry.eq('instructor_id', opts.instructorId);
     ({ data, error } = await retry.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%`));
   }
-  if (error) { console.warn('[coursesApi] getCourses error:', error.message); return []; }
+  if (error) { console.warn('[coursesApi] getCourses error:', error.message); if (opts.throwOnError) throw error; return []; }
   const withInstructors = await attachInstructors(data ?? []);
   return attachCurriculumStats(withInstructors);
 }
