@@ -4,17 +4,21 @@
 // sheet, per spec ("Edit Work page slides in right -> left") -- uses the
 // same .page-enter-forward convention every other forward navigation in
 // this app already uses (see styles/motion.css), not a bespoke transition.
-import { normalizeExternalLink } from '../lib/externalLink';
+import { normalizeExternalLink, externalLinkLabel } from '../lib/externalLink';
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { getPortfolioItem, updatePortfolioItem, type PortfolioItem } from '../lib/portfolioApi';
 import {
-  getPortfolioItem, updatePortfolioItem, PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES,
-  type PortfolioItem,
-} from '../lib/portfolioApi';
+  CategoryPanel, TextFieldPanel, TagsPanel, VisibilityPanel, LocationPanel, FieldRow, VISIBILITY_OPTIONS, type ItemVisibility,
+} from '../components/PortfolioFieldSelectors';
 import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
+
+type PanelId = 'link' | 'category' | 'role' | 'skills' | 'location' | 'collaborators' | 'hashtags' | 'visibility';
+// Field panels open above the page (z 85 + depth*2).
+const PANEL_DEPTH = 4;
 
 export function EditPortfolioItem() {
   const { itemId } = useParams<{ itemId: string }>();
@@ -30,9 +34,15 @@ export function EditPortfolioItem() {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [subcategory, setSubcategory] = useState('');
-  const availableSubcategories = PORTFOLIO_SUBCATEGORIES[category] ?? [];
-  const [tagsText, setTagsText] = useState('');
+  // Same fields as the Add Work editor.
+  const [role, setRole] = useState('');
+  const [tools, setTools] = useState<string[]>([]);
+  const [location, setLocation] = useState('');
+  const [collaborators, setCollaborators] = useState<string[]>([]);
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [visibility, setVisibility] = useState<ItemVisibility>('public');
   const [link, setLink] = useState('');
+  const [activePanel, setActivePanel] = useState<PanelId | null>(null);
 
   useEffect(() => {
     if (!itemId) return;
@@ -44,7 +54,12 @@ export function EditPortfolioItem() {
       setDescription(row.description ?? '');
       setCategory(row.category ?? '');
       setSubcategory(row.subcategory ?? '');
-      setTagsText((row.tags ?? []).join(', '));
+      setRole(row.role ?? '');
+      setTools(row.tools ?? []);
+      setLocation(row.location ?? '');
+      setCollaborators(row.collaborators ?? []);
+      setHashtags(row.tags ?? []);
+      setVisibility(((row as any).visibility as ItemVisibility) || 'public');
       setLink(row.external_link ?? '');
     });
   }, [itemId, user?.id]);
@@ -55,10 +70,11 @@ export function EditPortfolioItem() {
     const safeLink = normalizeExternalLink(link);
     if (link.trim() && !safeLink) { toast.error('Enter a valid link, e.g. https://vimeo.com/123'); return; }
     setSaving(true);
-    const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean);
     const ok = await updatePortfolioItem(item.id, {
       title: title.trim(), description: description.trim(), category,
-      subcategory: subcategory || undefined, tags,
+      subcategory: subcategory || undefined, tags: hashtags,
+      // '' / [] (not undefined) so clearing a field actually removes the stored value.
+      role: role.trim(), tools, collaborators, location: location.trim(), visibility,
       // '' (not undefined) so clearing the field actually removes the stored link.
       external_link: safeLink ?? '',
     });
@@ -130,48 +146,51 @@ export function EditPortfolioItem() {
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-gray-500">Category</label>
-          <select
-            value={category} onChange={e => { setCategory(e.target.value); setSubcategory(''); }}
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
-          >
-            <option value="">Select a category</option>
-            {PORTFOLIO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-
-        {availableSubcategories.length > 0 && (
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-500">Subcategory</label>
-            <select
-              value={subcategory} onChange={e => setSubcategory(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
-            >
-              <option value="">Select a subcategory</option>
-              {availableSubcategories.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        )}
-
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-gray-500">Tags</label>
-          <input
-            value={tagsText} onChange={e => setTagsText(e.target.value)}
-            placeholder="Comma-separated, e.g. Cinematography, BTS"
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-gray-500">Link</label>
-          <input
-            value={link} onChange={e => setLink(e.target.value)} inputMode="url" autoCapitalize="none"
-            placeholder="https://example.com/your-work"
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-400"
-          />
-        </div>
+        <FieldRow label="Category" placeholder="Select category" value={[category, subcategory].filter(Boolean).join(' · ')} onClick={() => setActivePanel('category')} />
+        <FieldRow label="Link" placeholder="Add a link (website, video, article)" value={link ? externalLinkLabel(normalizeExternalLink(link) ?? link) : ''} onClick={() => setActivePanel('link')} />
+        <FieldRow label="Your role" placeholder="e.g. Cinematographer" value={role} onClick={() => setActivePanel('role')} />
+        <FieldRow label="Skills & tools" placeholder="Add skills or tools" value={tools.join(', ')} onClick={() => setActivePanel('skills')} />
+        <FieldRow label="Location" placeholder="Add location" value={location} onClick={() => setActivePanel('location')} />
+        <FieldRow label="Collaborators" placeholder="Tag collaborators" value={collaborators.join(', ')} onClick={() => setActivePanel('collaborators')} />
+        <FieldRow label="Hashtags" placeholder="Add hashtags" value={hashtags.map(t => `#${t}`).join(' ')} onClick={() => setActivePanel('hashtags')} />
+        <FieldRow label="Visibility" placeholder="Public" value={VISIBILITY_OPTIONS.find(o => o.id === visibility)?.label} onClick={() => setActivePanel('visibility')} />
       </div>
+      {activePanel === 'category' && (
+        <CategoryPanel depth={PANEL_DEPTH} category={category} subcategory={subcategory}
+          onSave={(c, s2) => { setCategory(c); setSubcategory(s2); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'link' && (
+        <TextFieldPanel depth={PANEL_DEPTH} title="Link" placeholder="https://example.com/your-work" value={link}
+          onSave={v => {
+            if (v && !normalizeExternalLink(v)) { toast.error('Enter a valid link, e.g. https://vimeo.com/123'); return; }
+            setLink(v ? normalizeExternalLink(v)! : ''); setActivePanel(null);
+          }}
+          onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'role' && (
+        <TextFieldPanel depth={PANEL_DEPTH} title="Your role" placeholder="e.g. Cinematographer" value={role}
+          onSave={v => { setRole(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'skills' && (
+        <TagsPanel depth={PANEL_DEPTH} title="Skills & tools" placeholder="Add skills or tools" values={tools}
+          onSave={v => { setTools(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'location' && (
+        <LocationPanel depth={PANEL_DEPTH} value={location}
+          onSave={v => { setLocation(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'collaborators' && (
+        <TagsPanel depth={PANEL_DEPTH} title="Collaborators" placeholder="Tag collaborators" values={collaborators}
+          onSave={v => { setCollaborators(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'hashtags' && (
+        <TagsPanel depth={PANEL_DEPTH} title="Hashtags" placeholder="Add hashtags" values={hashtags}
+          onSave={v => { setHashtags(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'visibility' && (
+        <VisibilityPanel depth={PANEL_DEPTH} value={visibility}
+          onSave={v => { setVisibility(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
     </div>
   );
 }
