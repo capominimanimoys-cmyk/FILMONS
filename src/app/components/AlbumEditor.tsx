@@ -36,8 +36,11 @@ import { PortfolioContentPicker } from './PortfolioContentPicker';
 import { AlbumCreditsSection } from './AlbumCreditsSection';
 import { BottomSheet } from './BottomSheet';
 import {
-  CategoryPanel, TextFieldPanel, TagsPanel, VisibilityPanel, FieldRow, VISIBILITY_OPTIONS, type ItemVisibility,
+  CategoryPanel, LocationPanel, TagsPanel, VisibilityPanel, FieldRow, VISIBILITY_OPTIONS, type ItemVisibility,
 } from './PortfolioFieldSelectors';
+
+// AlbumEditor is z-[92]; field panels (z 85 + depth*2) must stack above it.
+const PANEL_DEPTH = 4;
 
 type PanelId = 'category' | 'location' | 'hashtags' | 'visibility';
 
@@ -515,17 +518,17 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
       )}
 
       {activePanel === 'category' && (
-        <CategoryPanel category={category} subcategory="" onSave={c => { setCategory(c); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+        <CategoryPanel depth={PANEL_DEPTH} category={category} subcategory="" onSave={c => { setCategory(c); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'location' && (
-        <TextFieldPanel title="Location" placeholder="Add location" value={location}
+        <LocationPanel depth={PANEL_DEPTH} value={location}
           onSave={v => { setLocation(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'hashtags' && (
-        <TagsPanel title="Hashtags" placeholder="Add hashtags" values={tags} onSave={v => { setTags(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+        <TagsPanel depth={PANEL_DEPTH} title="Hashtags" placeholder="Add hashtags" values={tags} onSave={v => { setTags(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'visibility' && (
-        <VisibilityPanel value={visibility} onSave={v => { setVisibility(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+        <VisibilityPanel depth={PANEL_DEPTH} value={visibility} onSave={v => { setVisibility(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
       )}
 
       {showDeleteConfirm && (
