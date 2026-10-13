@@ -27,7 +27,7 @@ const isAdminApp = typeof window !== 'undefined' && (window.location.pathname.st
 // requests (a search fanning out, a profile loading everything) saturates the connection pool and
 // turns into 429s / gateway timeouts -- which is exactly what the "Some content didn't load" notice
 // reports. The timeout clock starts when a request actually leaves, not while it is queued.
-const MAX_CONCURRENT_READS = 6;
+const MAX_CONCURRENT_READS = 10;
 let activeReads = 0;
 const readQueue: Array<() => void> = [];
 const acquireReadSlot = (): Promise<void> =>
@@ -48,17 +48,44 @@ if (typeof document !== 'undefined') {
 // its own AbortSignal (cancelling one must not cancel the others).
 const inflight = new Map<string, Promise<Response>>();
 
+// Short-lived copy of recent successful reads, so opening the same page / list again (back button,
+// switching tabs, the same query asked by two components a moment apart) is instant instead of another
+// round trip. Cleared by ANY write, kept brief, per-user (the auth header is part of the key), and never
+// used for things that must be live (messages, notifications).
+const RESPONSE_TTL_MS = 20_000;
+const MAX_CACHED_BYTES = 400_000;
+const LIVE_PATHS = /\/(messages|notifications|conversations|typing|presence)/;
+const responseCache = new Map<string, { at: number; body: ArrayBuffer; status: number; statusText: string; headers: [string, string][] }>();
+const fromCache = (e: { body: ArrayBuffer; status: number; statusText: string; headers: [string, string][] }) =>
+  new Response(e.body.slice(0), { status: e.status, statusText: e.statusText, headers: e.headers });
+
 function deadlineFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const m = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  if (m !== 'GET' && m !== 'HEAD') responseCache.clear(); // any write (or edge-function call) makes cached reads suspect
   const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (m === 'GET' && !init?.signal && !(input instanceof Request) && u.includes('/rest/v1/') && !isAdminApp) {
     let hdr = '';
     try { hdr = JSON.stringify([...new Headers(init?.headers as HeadersInit | undefined).entries()].sort()); } catch { /* unkeyable -> no sharing */ hdr = '\u0000' + Math.random(); }
     const key = `${u}|${hdr}`;
+    const cacheable = !LIVE_PATHS.test(u);
+    const hit = cacheable ? responseCache.get(key) : undefined;
+    if (hit && Date.now() - hit.at < RESPONSE_TTL_MS) return Promise.resolve(fromCache(hit));
     let p = inflight.get(key);
     if (!p) {
       p = readWithResilience(input, init).finally(() => inflight.delete(key));
       inflight.set(key, p);
+      if (cacheable) {
+        p.then(res => {
+          if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) return;
+          const len = Number(res.headers.get('content-length') || 0);
+          if (len > MAX_CACHED_BYTES) return;
+          res.clone().arrayBuffer().then(body => {
+            if (body.byteLength > MAX_CACHED_BYTES) return;
+            responseCache.set(key, { at: Date.now(), body, status: res.status, statusText: res.statusText, headers: [...res.headers.entries()] });
+            if (responseCache.size > 120) responseCache.delete(responseCache.keys().next().value as string);
+          }).catch(() => {});
+        }).catch(() => {});
+      }
     }
     return p.then(r => r.clone());
   }

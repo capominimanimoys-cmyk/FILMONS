@@ -1,139 +1,72 @@
 import { createBrowserRouter } from 'react-router';
 import { Root } from './pages/Root';
+import { FilmonsBrandLoader } from './components/FilmonsLoader';
 import { HardRedirect } from './components/HardRedirect';
 import { LearningReturn } from './components/LearningReturn';
 import { LegacyHashtagRedirect, LegacyLocationRedirect } from './components/LegacyEntityRedirects';
 import { Home } from './pages/Home';
 import { Login }         from './pages/Login';
-import { CreateAccount }  from './pages/CreateAccount';
-import { ForgotPassword } from './pages/ForgotPassword';
-import { ResetPassword }  from './pages/ResetPassword';
-import { PhoneLogin } from './pages/PhoneLogin';
-import { CreateListing } from './pages/CreateListing';
-import { EditListing } from './pages/EditListing';
-import { MyListings } from './pages/MyListings';
-import { ListingDetail } from './pages/ListingDetail';
-import { Profile } from './pages/Profile';
-import { CompleteProfilePage } from './pages/CompleteProfilePage';
-import { RefundPolicy } from './pages/RefundPolicy';
-import { PrivacyPolicy } from './pages/PrivacyPolicy';
-import { TermsConditions } from './pages/TermsConditions';
-import { CookiePolicy } from './pages/CookiePolicy';
-import { HostProfile } from './pages/HostProfile';
-import { Verification } from './pages/Verification';
-import { ContactSupport } from './pages/ContactSupport';
-import { MySupportCases } from './pages/MySupportCases';
-import { SupportCaseDetail } from './pages/SupportCaseDetail';
-import { Feed } from './pages/Feed';
-import { Inbox } from './pages/Inbox';
-import { Checkout } from './pages/Checkout';
-import { HostDashboard } from './pages/HostDashboard';
-import { Calendar } from './pages/Calendar';
-import { Wallet } from './pages/Wallet';
-import { PayoutMethodSetup } from './pages/PayoutMethodSetup';
-import AudioPage from './pages/AudioPage';
-import { Notifications } from './pages/Notifications';
-import { NotificationSettings }  from './pages/NotificationSettings';
-import { MessageSettings }        from './pages/MessageSettings';
-import { VerificationSettings }   from './pages/VerificationSettings';
-import { MyConnections }          from './pages/MyConnections';
-import { ConnectionRequests }      from './pages/ConnectionRequests';
-import { AllConnections }          from './pages/AllConnections';
-import { SuggestedConnections }    from './pages/SuggestedConnections';
-import { ConnectionsActivity }     from './pages/ConnectionsActivity';
-import { PrivacySettings }        from './pages/PrivacySettings';
-import { ReviewsSettings }        from './pages/ReviewsSettings';
-import { DeviceSettings }         from './pages/DeviceSettings';
-import { AccountUpgrade }          from './pages/AccountUpgrade';
-import { CreatorPlusRequired }       from './pages/CreatorPlusRequired';
-import { ProfessionalAccountSteps }  from './pages/ProfessionalAccountSteps';
-import { BusinessAccountSteps }      from './pages/BusinessAccountSteps';
-import { VerificationStatusPage }    from './pages/VerificationStatusPage';
-import { HelpCenter }              from './pages/HelpCenter';
-import { Settings } from './pages/Settings';
-import { LanguageSettings } from './pages/LanguageSettings';
-import { SecuritySettings } from './pages/SecuritySettings';
-import { ActiveDevices } from './pages/ActiveDevices';
-import { PortfolioSettings } from './pages/PortfolioSettings';
-import { DiscoverySettings } from './pages/DiscoverySettings';
-import { CreatorPreferencesSettings } from './pages/CreatorPreferencesSettings';
-import { PostDetail } from './pages/PostDetail';
-import { ReelFeed } from './pages/ReelFeed';
-import MyOrders from './pages/MyOrders';
-import { SearchPage } from './pages/SearchPage';
-import { CategoryResults } from './pages/CategoryResults';
-import { HashtagPage } from './pages/HashtagPage';
-import { LocationPage } from './pages/LocationPage';
-import { OAuthCallback } from './pages/OAuthCallback';
-import { GoogleSignup }  from './pages/GoogleSignup';
-import { CompleteProfile } from './pages/Onboarding';
-import { Portfolio } from './pages/Portfolio';
-import { EditPortfolioItem } from './pages/EditPortfolioItem';
-import { VerifyEmail } from './pages/VerifyEmail';
-import { VerifyDevice } from './pages/VerifyDevice';
-import { EmailAlreadyExists } from './pages/EmailAlreadyExists';
-import { SignupPhone }        from './pages/SignupPhone';
-import { PhoneAlreadyExists } from './pages/PhoneAlreadyExists';
-import { ShareCard }          from './pages/ShareCard';
-import { ListingShareCard }   from './pages/ListingShareCard';
-import { EmergencyListingFlow } from './pages/EmergencyListingFlow';
-import { CreateOpportunity } from './pages/CreateOpportunity';
-import { OpportunityApplicants } from './pages/OpportunityApplicants';
-import { LikedItems } from './pages/LikedItems';
-import { SavedLikedPosts } from './pages/SavedLikedPosts';
+
+
+// Pages load on demand (one small chunk each) instead of all being in the first download. The app's
+// first paint no longer waits for the code of ~70 pages it may never open.
+const page = (load: () => Promise<any>, pick?: string) => ({
+  lazy: async () => { const m = await load(); return { Component: pick ? m[pick] : m.default }; },
+});
 
 export const router = createBrowserRouter([
   {
     path: '/',
     Component: Root,
+    HydrateFallback: () => <FilmonsBrandLoader fullscreen label="Loading" />,
     children: [
       { index: true, Component: Home },
-      { path: 'feed', Component: Feed },
-      { path: 'inbox', Component: Inbox },
-      { path: 'checkout', Component: Checkout },
-      { path: 'dashboard', Component: HostDashboard },
-      { path: 'wallet', Component: Wallet },
-      { path: 'liked-listings', element: <LikedItems type="listing" /> },
-      { path: 'liked-creators', element: <LikedItems type="creator" /> },
-      { path: 'saved-posts', element: <SavedLikedPosts type="saved" /> },
-      { path: 'liked-posts', element: <SavedLikedPosts type="liked" /> },
-      { path: 'wallet/payout-method', Component: PayoutMethodSetup },
-      { path: 'notifications', Component: Notifications },
-      { path: 'settings/notifications',  Component: NotificationSettings  },
-      { path: 'settings/messages',       Component: MessageSettings        },
-      { path: 'settings/verification',   Component: VerificationSettings   },
-      { path: 'settings/privacy',        Component: PrivacySettings        },
-      { path: 'settings/reviews',        Component: ReviewsSettings        },
-      { path: 'settings/devices',        Component: DeviceSettings         },
-      { path: 'account/upgrade',          Component: AccountUpgrade         },
-      { path: 'creator-plus-required',    Component: CreatorPlusRequired        },
-      { path: 'professional-account-steps',Component: ProfessionalAccountSteps  },
-      { path: 'business-account-steps',   Component: BusinessAccountSteps       },
-      { path: 'verification-status',       Component: VerificationStatusPage      },
-      { path: 'help',                    Component: HelpCenter             },
-      { path: 'settings',                      Component: Settings                    },
-      { path: 'settings/language',             Component: LanguageSettings              },
-      { path: 'settings/security',             Component: SecuritySettings              },
-      { path: 'settings/security/active-devices', Component: ActiveDevices              },
-      { path: 'settings/portfolio',            Component: PortfolioSettings             },
-      { path: 'settings/discovery',            Component: DiscoverySettings             },
-      { path: 'settings/creator-preferences',  Component: CreatorPreferencesSettings    },
-      { path: 'post/:id', Component: PostDetail },
-      { path: 'audio/search', Component: AudioPage },
-      { path: 'audio/:id',    Component: AudioPage },
-      { path: 'reels/:postId', Component: ReelFeed },
-      { path: 'phone-signup', Component: SignupPhone },
-      { path: 'phone-login', Component: PhoneLogin },
-      { path: 'create-listing', Component: CreateListing },
-      { path: 'create-opportunity', Component: CreateOpportunity },
-      { path: 'edit-listing/:id', Component: EditListing },
-      { path: 'my-listings', Component: MyListings },
-      { path: 'my-orders', Component: MyOrders },
-      { path: 'calendar', Component: Calendar },
-      { path: 'listing/:id', Component: ListingDetail },
-      { path: 'listing/:id/share-card', Component: ListingShareCard },
-      { path: 'listing/:id/applicants', Component: OpportunityApplicants },
-      { path: 'listing/:id/emergency', Component: EmergencyListingFlow },
+      { path: 'feed', ...page(() => import('./pages/Feed'), 'Feed') },
+      { path: 'inbox', ...page(() => import('./pages/Inbox'), 'Inbox') },
+      { path: 'checkout', ...page(() => import('./pages/Checkout'), 'Checkout') },
+      { path: 'dashboard', ...page(() => import('./pages/HostDashboard'), 'HostDashboard') },
+      { path: 'wallet', ...page(() => import('./pages/Wallet'), 'Wallet') },
+      { path: 'liked-listings', lazy: async () => { const m = await import('./pages/LikedItems'); const C = m.LikedItems; return { element: <C type="listing"  /> }; } },
+      { path: 'liked-creators', lazy: async () => { const m = await import('./pages/LikedItems'); const C = m.LikedItems; return { element: <C type="creator"  /> }; } },
+      { path: 'saved-posts', lazy: async () => { const m = await import('./pages/SavedLikedPosts'); const C = m.SavedLikedPosts; return { element: <C type="saved"  /> }; } },
+      { path: 'liked-posts', lazy: async () => { const m = await import('./pages/SavedLikedPosts'); const C = m.SavedLikedPosts; return { element: <C type="liked"  /> }; } },
+      { path: 'wallet/payout-method', ...page(() => import('./pages/PayoutMethodSetup'), 'PayoutMethodSetup') },
+      { path: 'notifications', ...page(() => import('./pages/Notifications'), 'Notifications') },
+      { path: 'settings/notifications',  ...page(() => import('./pages/NotificationSettings'), 'NotificationSettings')  },
+      { path: 'settings/messages',       ...page(() => import('./pages/MessageSettings'), 'MessageSettings')        },
+      { path: 'settings/verification',   ...page(() => import('./pages/VerificationSettings'), 'VerificationSettings')   },
+      { path: 'settings/privacy',        ...page(() => import('./pages/PrivacySettings'), 'PrivacySettings')        },
+      { path: 'settings/reviews',        ...page(() => import('./pages/ReviewsSettings'), 'ReviewsSettings')        },
+      { path: 'settings/devices',        ...page(() => import('./pages/DeviceSettings'), 'DeviceSettings')         },
+      { path: 'account/upgrade',          ...page(() => import('./pages/AccountUpgrade'), 'AccountUpgrade')         },
+      { path: 'creator-plus-required',    ...page(() => import('./pages/CreatorPlusRequired'), 'CreatorPlusRequired')        },
+      { path: 'professional-account-steps',...page(() => import('./pages/ProfessionalAccountSteps'), 'ProfessionalAccountSteps')  },
+      { path: 'business-account-steps',   ...page(() => import('./pages/BusinessAccountSteps'), 'BusinessAccountSteps')       },
+      { path: 'verification-status',       ...page(() => import('./pages/VerificationStatusPage'), 'VerificationStatusPage')      },
+      { path: 'help',                    ...page(() => import('./pages/HelpCenter'), 'HelpCenter')             },
+      { path: 'settings',                      ...page(() => import('./pages/Settings'), 'Settings')                    },
+      { path: 'settings/language',             ...page(() => import('./pages/LanguageSettings'), 'LanguageSettings')              },
+      { path: 'settings/security',             ...page(() => import('./pages/SecuritySettings'), 'SecuritySettings')              },
+      { path: 'settings/security/active-devices', ...page(() => import('./pages/ActiveDevices'), 'ActiveDevices')              },
+      { path: 'settings/portfolio',            ...page(() => import('./pages/PortfolioSettings'), 'PortfolioSettings')             },
+      { path: 'settings/discovery',            ...page(() => import('./pages/DiscoverySettings'), 'DiscoverySettings')             },
+      { path: 'settings/creator-preferences',  ...page(() => import('./pages/CreatorPreferencesSettings'), 'CreatorPreferencesSettings')    },
+      { path: 'post/:id', ...page(() => import('./pages/PostDetail'), 'PostDetail') },
+      { path: 'audio/search', ...page(() => import('./pages/AudioPage')) },
+      { path: 'audio/:id',    ...page(() => import('./pages/AudioPage')) },
+      { path: 'reels/:postId', ...page(() => import('./pages/ReelFeed'), 'ReelFeed') },
+      { path: 'phone-signup', ...page(() => import('./pages/SignupPhone'), 'SignupPhone') },
+      { path: 'phone-login', ...page(() => import('./pages/PhoneLogin'), 'PhoneLogin') },
+      { path: 'create-listing', ...page(() => import('./pages/CreateListing'), 'CreateListing') },
+      { path: 'create-opportunity', ...page(() => import('./pages/CreateOpportunity'), 'CreateOpportunity') },
+      { path: 'edit-listing/:id', ...page(() => import('./pages/EditListing'), 'EditListing') },
+      { path: 'my-listings', ...page(() => import('./pages/MyListings'), 'MyListings') },
+      { path: 'my-orders', ...page(() => import('./pages/MyOrders')) },
+      { path: 'calendar', ...page(() => import('./pages/Calendar'), 'Calendar') },
+      { path: 'listing/:id', ...page(() => import('./pages/ListingDetail'), 'ListingDetail') },
+      { path: 'listing/:id/share-card', ...page(() => import('./pages/ListingShareCard'), 'ListingShareCard') },
+      { path: 'listing/:id/applicants', ...page(() => import('./pages/OpportunityApplicants'), 'OpportunityApplicants') },
+      { path: 'listing/:id/emergency', ...page(() => import('./pages/EmergencyListingFlow'), 'EmergencyListingFlow') },
       // Boost Listing routes temporarily removed (feature disabled, not
       // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
       // just unreachable from the active app until this is re-enabled).
@@ -148,38 +81,38 @@ export const router = createBrowserRouter([
       // cross-origin/full-page navigation via useLearningTransition()'s
       // enterLearning() (see learningOrigin.ts), never a route in this
       // tree.
-      { path: 'search', Component: SearchPage },
-      { path: 'search/category/:tab', Component: CategoryResults },
+      { path: 'search', ...page(() => import('./pages/SearchPage'), 'SearchPage') },
+      { path: 'search/category/:tab', ...page(() => import('./pages/CategoryResults'), 'CategoryResults') },
       // Posts/Portfolio/Profiles nested under Connect in the URL (per
       // spec: they're Connect content, not top-level Search products) --
       // same CategoryResults component, which reads the extra :subTab
       // segment via useParams and only ever acts on it when tab==='connect'.
-      { path: 'search/category/:tab/:subTab', Component: CategoryResults },
+      { path: 'search/category/:tab/:subTab', ...page(() => import('./pages/CategoryResults'), 'CategoryResults') },
       // Locations/Hashtags are global, cross-product entities -- the ONLY
       // valid route for one is /search/hashtags/:tag or
       // /search/locations/:slug. The old bare /hashtag/:tag and singular
       // /search/location/:key paths redirect here instead of 404ing.
-      { path: 'search/hashtags/:tag', Component: HashtagPage },
-      { path: 'search/locations/:slug', Component: LocationPage },
+      { path: 'search/hashtags/:tag', ...page(() => import('./pages/HashtagPage'), 'HashtagPage') },
+      { path: 'search/locations/:slug', ...page(() => import('./pages/LocationPage'), 'LocationPage') },
       { path: 'hashtag/:tag', Component: LegacyHashtagRedirect },
       { path: 'search/location/:key', Component: LegacyLocationRedirect },
-      { path: 'portfolio', Component: Portfolio },
-      { path: 'portfolio/:userId', Component: Portfolio },
-      { path: 'edit-portfolio-item/:itemId', Component: EditPortfolioItem },
-      { path: 'profile', Component: Profile },
-      { path: 'profile/complete', Component: CompleteProfilePage },
-      { path: 'share-card', Component: ShareCard },
-      { path: 'verification', Component: Verification },
-      { path: 'connections', Component: MyConnections },
-      { path: 'connections/requests', Component: ConnectionRequests },
-      { path: 'connections/all', Component: AllConnections },
-      { path: 'connections/suggested', Component: SuggestedConnections },
-      { path: 'connections/activity', Component: ConnectionsActivity },
-      { path: 'refund-policy', Component: RefundPolicy },
-      { path: 'privacy-policy', Component: PrivacyPolicy },
-      { path: 'terms-conditions', Component: TermsConditions },
-      { path: 'cookie-policy', Component: CookiePolicy },
-      { path: 'host/:userId', Component: HostProfile },
+      { path: 'portfolio', ...page(() => import('./pages/Portfolio'), 'Portfolio') },
+      { path: 'portfolio/:userId', ...page(() => import('./pages/Portfolio'), 'Portfolio') },
+      { path: 'edit-portfolio-item/:itemId', ...page(() => import('./pages/EditPortfolioItem'), 'EditPortfolioItem') },
+      { path: 'profile', ...page(() => import('./pages/Profile'), 'Profile') },
+      { path: 'profile/complete', ...page(() => import('./pages/CompleteProfilePage'), 'CompleteProfilePage') },
+      { path: 'share-card', ...page(() => import('./pages/ShareCard'), 'ShareCard') },
+      { path: 'verification', ...page(() => import('./pages/Verification'), 'Verification') },
+      { path: 'connections', ...page(() => import('./pages/MyConnections'), 'MyConnections') },
+      { path: 'connections/requests', ...page(() => import('./pages/ConnectionRequests'), 'ConnectionRequests') },
+      { path: 'connections/all', ...page(() => import('./pages/AllConnections'), 'AllConnections') },
+      { path: 'connections/suggested', ...page(() => import('./pages/SuggestedConnections'), 'SuggestedConnections') },
+      { path: 'connections/activity', ...page(() => import('./pages/ConnectionsActivity'), 'ConnectionsActivity') },
+      { path: 'refund-policy', ...page(() => import('./pages/RefundPolicy'), 'RefundPolicy') },
+      { path: 'privacy-policy', ...page(() => import('./pages/PrivacyPolicy'), 'PrivacyPolicy') },
+      { path: 'terms-conditions', ...page(() => import('./pages/TermsConditions'), 'TermsConditions') },
+      { path: 'cookie-policy', ...page(() => import('./pages/CookiePolicy'), 'CookiePolicy') },
+      { path: 'host/:userId', ...page(() => import('./pages/HostProfile'), 'HostProfile') },
       // Old flat admin URLs -- kept as redirects (not removed) for any
       // existing bookmark or already-sent email link (the support-case
       // admin-notification email template links to /admin-support). The
@@ -191,16 +124,16 @@ export const router = createBrowserRouter([
       { path: 'admin-verifications', element: <HardRedirect to="/admin/verifications" /> },
       { path: 'admin-support', element: <HardRedirect to="/admin/support-chats" /> },
       { path: 'admin-boosts', element: <HardRedirect to="/admin/boosts" /> },
-      { path: 'support', Component: ContactSupport },
-      { path: 'support/cases', Component: MySupportCases },
-      { path: 'support/cases/:id', Component: SupportCaseDetail },
+      { path: 'support', ...page(() => import('./pages/ContactSupport'), 'ContactSupport') },
+      { path: 'support/cases', ...page(() => import('./pages/MySupportCases'), 'MySupportCases') },
+      { path: 'support/cases/:id', ...page(() => import('./pages/SupportCaseDetail'), 'SupportCaseDetail') },
       // Canonical public-profile URL (filmons.app/username). Kept last —
       // React Router v6 ranks static segments (marketplace, wallet, etc.)
       // above a dynamic one regardless of declaration order, so this can
       // never shadow any route above it; it only matches when nothing
       // else does. HostProfile resolves the username itself and redirects
       // legacy /host/:userId links here once it knows the host's handle.
-      { path: ':username', Component: HostProfile },
+      { path: ':username', ...page(() => import('./pages/HostProfile'), 'HostProfile') },
     ],
   },
   // NOTE: FILMONS Admin (/admin/*) is NOT a route in this router — it is
@@ -212,19 +145,32 @@ export const router = createBrowserRouter([
   // ── Auth routes — outside Root layout (no navbar/shell) ──────────────────
   { path: '/login',          Component: Login          },
   { path: '/signin',         Component: Login          }, // alias
-  { path: '/create-account',   Component: CreateAccount  },
-  { path: '/forgot-password',  Component: ForgotPassword },
-  { path: '/reset-password',    Component: ResetPassword  },
-  { path: '/auth/callback',    Component: OAuthCallback  },
-  { path: '/google-signup',    Component: GoogleSignup   },
-  { path: '/onboarding',           Component: CompleteProfile    },
-  { path: '/verify-email',         Component: VerifyEmail        },
-  { path: '/verify-device',        Component: VerifyDevice       },
-  { path: '/email-already-exists', Component: EmailAlreadyExists },
-  { path: '/signup/phone',         Component: SignupPhone        },
-  { path: '/phone-already-exists', Component: PhoneAlreadyExists },
+  { path: '/create-account',   ...page(() => import('./pages/CreateAccount'), 'CreateAccount')  },
+  { path: '/forgot-password',  ...page(() => import('./pages/ForgotPassword'), 'ForgotPassword') },
+  { path: '/reset-password',    ...page(() => import('./pages/ResetPassword'), 'ResetPassword')  },
+  { path: '/auth/callback',    ...page(() => import('./pages/OAuthCallback'), 'OAuthCallback')  },
+  { path: '/google-signup',    ...page(() => import('./pages/GoogleSignup'), 'GoogleSignup')   },
+  { path: '/onboarding',           ...page(() => import('./pages/Onboarding'), 'CompleteProfile')    },
+  { path: '/verify-email',         ...page(() => import('./pages/VerifyEmail'), 'VerifyEmail')        },
+  { path: '/verify-device',        ...page(() => import('./pages/VerifyDevice'), 'VerifyDevice')       },
+  { path: '/email-already-exists', ...page(() => import('./pages/EmailAlreadyExists'), 'EmailAlreadyExists') },
+  { path: '/signup/phone',         ...page(() => import('./pages/SignupPhone'), 'SignupPhone')        },
+  { path: '/phone-already-exists', ...page(() => import('./pages/PhoneAlreadyExists'), 'PhoneAlreadyExists') },
   // FILMONS Learning is its own bundle (see the NOTE above) -- this only
   // catches a client-side navigate() into it (e.g. an auth flow finishing
   // with a Learning return URL) and turns it into a real page load.
   { path: '/learning/*', Component: LearningReturn },
 ]);
+// Warm the pages people open most, once the first screen is up and the browser is idle, so moving
+// around the app doesn't wait on a code download.
+if (typeof window !== 'undefined') {
+  const warm = () => {
+    [
+      () => import('./pages/Feed'), () => import('./pages/Inbox'), () => import('./pages/ListingDetail'),
+      () => import('./pages/Profile'), () => import('./pages/HostProfile'), () => import('./pages/SearchPage'),
+      () => import('./pages/CategoryResults'), () => import('./pages/Notifications'), () => import('./pages/PostDetail'),
+    ].forEach(load => { load().catch(() => {}); });
+  };
+  const idle = (window as any).requestIdleCallback as undefined | ((cb: () => void, o?: { timeout: number }) => void);
+  window.addEventListener('load', () => (idle ? idle(warm, { timeout: 4000 }) : setTimeout(warm, 2500)));
+}
