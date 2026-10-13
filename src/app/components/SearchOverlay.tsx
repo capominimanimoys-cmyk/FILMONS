@@ -1071,8 +1071,8 @@ function MarketplaceDiscoveryRow({ title, listings, onNavigate, onViewAll }: {
           instead of under the first letter of the section label above
           it. Same fix as CategoryResults.tsx's own preview rows. */}
       <motion.div variants={listV} initial="hidden" animate="visible"
-        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory scroll-pl-4">
-        {listings.map(l => <DiscoveryListingCard key={l.id} l={l} onNavigate={onNavigate}/>)}
+        className="grid grid-cols-2 gap-2.5 px-4 pb-1">
+        {listings.map(l => <DiscoveryListingCard key={l.id} l={l} onNavigate={onNavigate} gridMode/>)}
       </motion.div>
     </section>
   );
@@ -1146,7 +1146,7 @@ function ConnectDiscoveryRow({ title, onViewAll, children }: {
         <ViewAllLink onClick={onViewAll}/>
       </div>
       <motion.div variants={listV} initial="hidden" animate="visible"
-        className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 pb-1 snap-x snap-mandatory scroll-pl-4">
+        className="grid grid-cols-2 gap-2.5 px-4 pb-1 [&>*]:!w-full [&>*]:!min-w-0 [&>*]:!max-w-none">
         {children}
       </motion.div>
     </section>
@@ -2284,12 +2284,12 @@ export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) 
         )}
 
         {/* ── Scrollable body ── */}
-        <div ref={resultsRef} className="flex-1 overflow-y-auto overscroll-contain">
+        <div ref={resultsRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
           {!hasTyped && activeTab === 'all' ? (
             <>
               {/* Before a query: Creators for you -- the shared profile carousel. */}
               <div className="pt-4">
-                <ProfilesSection query="" onNavigate={handleResultNavigate} onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate('/search/category/connect/profiles')} />
+                <ProfilesSection vertical query="" onNavigate={handleResultNavigate} onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate('/search/category/connect/profiles')} />
               </div>
               <PreSearch onSelect={val => { setQ(val); runSearch(val); }}/>
             </>
@@ -2351,7 +2351,7 @@ export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) 
               {/* All results: matching Profiles (shared card, max 5, View all keeps the query). */}
               {activeTab === 'all' && hasTyped && (
                 <div className="pt-2">
-                  <ProfilesSection query={q} onNavigate={handleResultNavigate}
+                  <ProfilesSection vertical query={q} onNavigate={handleResultNavigate}
                     onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate(`/search/category/connect/profiles?q=${encodeURIComponent(q.trim())}`, { query: q.trim() })} />
                 </div>
               )}
@@ -2548,7 +2548,7 @@ export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) 
                   and for Connect once the viewer actually types something. */}
               {activeTab !== 'all' && (showConnectLanding ? (
                 !connectLoaded ? <ConnectLandingSkeleton/> : <>
-                  <ProfilesSection query="" onNavigate={handleResultNavigate} onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate('/search/category/connect/profiles')} />
+                  <ProfilesSection vertical query="" onNavigate={handleResultNavigate} onViewAll={() => !user ? handleGuestSeeMore('creators') : closeAndNavigate('/search/category/connect/profiles')} />
                   {/* Real, full Home-style post cards -- the exact same
                       PostCard/PortfolioProjectCard/PortfolioAlbumCard
                       components Home's Connect feed uses (Like/Comment/
@@ -2598,7 +2598,7 @@ export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) 
               ) : (
                 <>
                   {visibleUsers.length > 0 && (
-                    <ProfilesSection query={q} onNavigate={handleResultNavigate}
+                    <ProfilesSection vertical query={q} onNavigate={handleResultNavigate}
                       onViewAll={() => !user ? handleGuestSeeMore('creators') : handleViewMoreCategory('connect/profiles')} />
                   )}
                   {visiblePortfolio.length > 0 && (
