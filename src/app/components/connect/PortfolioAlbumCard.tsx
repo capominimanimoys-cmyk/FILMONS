@@ -15,7 +15,7 @@ import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
 import { togglePortfolioSave, isPortfolioSaved, toggleAlbumLike, isAlbumLiked, togglePortfolioRepost, isPortfolioReposted, type PortfolioFeedEntry } from '../../lib/portfolioApi';
 import { logPortfolioInteraction } from '../../lib/personalization';
 import { getDisplayIdentity } from '../../lib/displayIdentity';
-import { buildLocationSlug } from '../../lib/locationsApi';
+import { placeFor } from '../../lib/locationsApi';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { usePortfolioPreview } from '../../context/PortfolioPreviewContext';
 import { PostMoreMenu } from './PostMoreMenu';
@@ -47,6 +47,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
   const { user, showGuestPrompt } = useAuth();
   const navigate = useNavigate();
   const { album, creator, coverUrl, coverAspectRatio, itemCount } = entry;
+  const place = placeFor(album.location, creator.city);
   const isOwn = !!user && user.id === creator.id;
 
   const { openPortfolioItem } = usePortfolioPreview();
@@ -194,12 +195,12 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
             return (
               <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
                 {identity && <span>{identity}</span>}
-                {identity && creator.city && <span>·</span>}
-                {creator.city && (
-                  <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(creator.city))}`); }}
-                    className="hover:text-blue-600 hover:underline">{creator.city}</button>
+                {identity && place && <span>·</span>}
+                {place && (
+                  <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(place.slug)}`); }}
+                    className="hover:text-blue-600 hover:underline">{place.label}</button>
                 )}
-                {(identity || creator.city) && <span>·</span>}
+                {(identity || place) && <span>·</span>}
                 <span>{timeAgo(entry.created_at)}</span>
               </p>
             );

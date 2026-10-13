@@ -118,18 +118,24 @@ async function creatorWork(scope: LocationScope, wantItems: boolean, wantAlbums:
   const [items, albums] = await Promise.all([
     wantItems ? inChunks(userIds, async chunk => {
       const { data } = await supabase.from('portfolio_items')
-        .select('id, title, description, category, visibility, created_at').in('user_id', chunk)
+        .select('id, title, description, category, visibility, location, created_at').in('user_id', chunk)
         .order('created_at', { ascending: false }).limit(100);
       return data ?? [];
     }) : Promise.resolve([] as any[]),
     wantAlbums ? inChunks(userIds, async chunk => {
-      const { data } = await supabase.from('portfolio_albums')
-        .select('id, title, description, category, visibility, created_at').in('user_id', chunk)
+      let res = await supabase.from('portfolio_albums')
+        .select('id, title, description, category, visibility, location, created_at').in('user_id', chunk)
         .order('created_at', { ascending: false }).limit(100);
-      return data ?? [];
+      if (res.error) res = await supabase.from('portfolio_albums')   // no `location` column on this database
+        .select('id, title, description, category, visibility, created_at').in('user_id', chunk)
+        .order('created_at', { ascending: false }).limit(100) as any;
+      return res.data ?? [];
     }) : Promise.resolve([] as any[]),
   ]);
-  return [items, albums];
+  // Work tagged with a DIFFERENT place belongs to that place, not to where its creator lives.
+  const re = cityMatcher(scope.city);
+  const here = (r: any) => !String(r.location ?? '').trim() || re.test(String(r.location));
+  return [items.filter(here), albums.filter(here)];
 }
 
 async function matchPortfolio(scope: LocationScope, query: string, f: LocationFilters): Promise<PortfolioRef[]> {
