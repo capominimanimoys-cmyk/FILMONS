@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { logActivityEvent } from '../lib/activityApi';
 import { notifyEvent } from '../lib/notifyEvent';
 import {
-  PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia,
+  PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia, getPortfolioUploadError,
   readImageDimensions, readVideoDimensions, workTypeToMediaType, createAlbum, updateAlbum, addItemToAlbum,
   type WorkType, type PortfolioItem, type MediaType,
 } from '../lib/portfolioApi';
@@ -127,7 +127,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     const result = await uploadPortfolioMedia(user!.id, draft.file, pct =>
       setAlbumItems(prev => prev.map(d => d.id === draft.id ? { ...d, progress: pct } : d)));
     if (!result) {
-      setAlbumItems(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'error' } : d));
+      setAlbumItems(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'error', error: getPortfolioUploadError() } as any : d));
       return;
     }
     setAlbumItems(prev => prev.map(d => d.id === draft.id ? {
@@ -299,7 +299,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
     setUploadPct(0);
     const result = await uploadPortfolioMedia(user!.id, file, setUploadPct);
     setUploading(false);
-    if (!result) { toast.error('Upload failed — try again'); return; }
+    if (!result) { toast.error(getPortfolioUploadError('Upload failed — try again')); return; }
     setMediaUrl(result.url);
     if (result.thumbnailUrl) { setThumbUrl(result.thumbnailUrl); setFilePreview(result.thumbnailUrl); }
     toast.success('Uploaded');
@@ -794,7 +794,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                           {coverId === d.id ? <><Check className="w-3 h-3" /> Cover</> : 'Set as cover'}
                         </button>
                       )}
-                      {d.status === 'error' && <p className="text-[11px] text-red-500 font-semibold">Upload failed</p>}
+                      {d.status === 'error' && <p className="text-[11px] text-red-500 font-semibold">{(d as any).error || 'Upload failed'}</p>}
                     </div>
                     <div className="flex flex-col gap-1 shrink-0">
                       <button onClick={() => moveAlbumItem(d.id, -1)} disabled={i === 0} className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30">

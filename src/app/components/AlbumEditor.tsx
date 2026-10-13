@@ -28,7 +28,7 @@ import { supabase } from '../../lib/supabase';
 import {
   createAlbum, updateAlbum, deleteAlbum, getAlbumItems, getAlbumCredits,
   addItemToAlbum, removeItemFromAlbum, setAlbumCoverFromItem, updateItemsOrder,
-  uploadPortfolioMedia, readImageDimensions, readVideoDimensions, createPortfolioItem,
+  uploadPortfolioMedia, getPortfolioUploadError, readImageDimensions, readVideoDimensions, createPortfolioItem,
   type PortfolioAlbum, type PortfolioItem, type AlbumCredit, type MediaType,
 } from '../lib/portfolioApi';
 import { logActivityEvent } from '../lib/activityApi';
@@ -157,7 +157,7 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
     setCoverUploading(true);
     const result = await uploadPortfolioMedia(user.id, file);
     setCoverUploading(false);
-    if (!result) { toast.error('Cover upload failed'); setCoverPreview(''); return; }
+    if (!result) { toast.error(getPortfolioUploadError('Cover upload failed')); setCoverPreview(''); return; }
     setCoverUrl(result.url);
     if (mode === 'edit' && album) await updateAlbum(album.id, { cover_url: result.url, cover_item_id: undefined });
     setShowCoverPicker(false);
@@ -196,7 +196,7 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
       setEntries(prev => prev.map(e => e.kind === 'new' && e.draft.localId === localId ? { ...e, draft: { ...e.draft, progress: pct } } : e)));
     if (!result) {
       setEntries(prev => prev.map(e => e.kind === 'new' && e.draft.localId === localId ? { ...e, draft: { ...e.draft, status: 'error' } } : e));
-      toast.error(`Could not upload ${file.name}`);
+      toast.error(`${file.name}: ${getPortfolioUploadError('could not be uploaded')}`);
       return;
     }
     const draftDone: NewMediaDraft = {
