@@ -1,4 +1,5 @@
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router';
+import { SectionState } from '../components/SectionState';
 import { buildLocationSlug } from '../lib/locationsApi';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'motion/react';
@@ -100,6 +101,9 @@ export function ListingDetail() {
   const [listing, setListing]             = useState<Listing | null>(null);
   const [host, setHost]                   = useState<User | null>(null);
   const [reviews, setReviews]             = useState<Review[]>([]);
+  // Reviews load AFTER the listing itself (title / price / photos / actions come first).
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsError, setReviewsError]     = useState(false);
   const [loading, setLoading]             = useState(true);
   const [rating, setRating]               = useState(5);
   const [comment, setComment]             = useState('');
@@ -155,15 +159,19 @@ export function ListingDetail() {
     }
   }, [highlightReviewId, reviews]);
 
+  const loadReviews = (listingId: string) => {
+    setReviewsLoading(true); setReviewsError(false);
+    reviewsApi.getListingReviews(listingId)
+      .then(r => { setReviews(r); setReviewsLoading(false); })
+      .catch(() => { setReviewsError(true); setReviewsLoading(false); });
+  };
+
+  // Priority: the listing (title, price, first photo, main action) -> then reviews and the host, each in
+  // its own section as it arrives. Nothing below the fold holds the top of the page back.
   const loadListing = async (listingId: string) => {
     try {
       setLoading(true);
-      // Reviews only need the id from the route, not the listing itself —
-      // fetch them alongside the listing instead of waiting on it first.
-      const [data, reviewData] = await Promise.all([
-        listingsApi.getOne(listingId),
-        reviewsApi.getListingReviews(listingId),
-      ]);
+      const data = await listingsApi.getOne(listingId);
       const isEmergencyActive = !!data.isEmergency && !!data.emergencyExpiresAt && new Date(data.emergencyExpiresAt) > new Date();
       if (isEmergencyActive && !isProfessional(user?.accountType)) {
         setEmergencyBlocked(true);
@@ -171,12 +179,13 @@ export function ListingDetail() {
         return;
       }
       setListing(data);
-      setReviews(reviewData);
+      setLoading(false);
+      loadReviews(listingId);
       boostApi.logEvent(listingId, 'view', data.boosted ? 'boosted' : 'organic', undefined, user?.id);
-      const hostData = await authApi.getUserById(data.userId);
-      setHost(hostData);
+      authApi.getUserById(data.userId).then(setHost).catch(() => {});
     } catch (error: any) {
       toast.error(error?.message || 'Listing not found');
+      setReviewsLoading(false);
     } finally {
       setLoading(false);
     }
@@ -722,6 +731,9 @@ export function ListingDetail() {
               <h2 className="text-lg font-bold text-gray-900 mb-3">
                 Reviews {reviews.length > 0 && <span className="text-gray-400 font-normal">({reviews.length})</span>}
               </h2>
+              <SectionState loading={reviewsLoading && reviews.length === 0} error={reviewsError && reviews.length === 0}
+                onRetry={() => id && loadReviews(id)} label="reviews"
+                skeleton={<div className="space-y-3">{[0, 1].map(i => <div key={i} className="h-20 animate-pulse rounded-2xl bg-gray-100" />)}</div>}>
               {reviews.length > 0 ? (
                 <div className="space-y-4">
                   {reviews.map(review => (
@@ -751,6 +763,7 @@ export function ListingDetail() {
                   <p className="text-sm text-gray-500">No reviews yet — be the first!</p>
                 </div>
               )}
+              </SectionState>
 
               {/* Write review */}
               {user && !isOwnListing && (
