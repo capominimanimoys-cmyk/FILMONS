@@ -3,7 +3,7 @@
 // and category filters. Each category produces a ranked list of matches (relevance, then recency);
 // the page shows slices of it and hydrates only the slice it renders.
 import { supabase } from '../../lib/supabase';
-import { LISTING_COLUMNS, mapListingRow, postsApi, withModerationFilter } from './api';
+import { LISTING_CARD_COLUMNS, mapListingRow, postsApi, withModerationFilter } from './api';
 import { getCoursesByIds, type Course } from './coursesApi';
 import { getPortfolioEntriesByIds, type PortfolioFeedEntry } from './portfolioApi';
 import { fetchTrust, PROFILE_SELECT, toProfile, type SearchProfile } from './profileSearch';
@@ -82,7 +82,7 @@ async function matchMarketplace(scope: LocationScope, query: string, f: Location
   const ids = scope.ids.listing.slice(0, CANDIDATE_CAP);
   const rows = await inChunks(ids, async chunk => {
     const { data, error } = await withModerationFilter(active => {
-      let q = supabase.from('listings').select(LISTING_COLUMNS).in('id', chunk).eq('is_active', true);
+      let q = supabase.from('listings').select(LISTING_CARD_COLUMNS).in('id', chunk).eq('is_active', true);
       if (active) q = q.eq('moderation_status', 'active');
       return q;
     });
