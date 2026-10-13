@@ -288,6 +288,33 @@ export async function updatePortfolioItem(
   return true;
 }
 
+/** Like updatePortfolioItem, but resilient: if the combined update is rejected (e.g. a column from a
+ *  migration that isn't applied yet), fields are saved one by one so everything that CAN save does.
+ *  Resolves the names of fields that could not be saved (empty = all saved) plus the first error. */
+export async function updatePortfolioItemFields(
+  id: string,
+  updates: Partial<Omit<PortfolioItem, 'id' | 'user_id' | 'created_at'>>,
+): Promise<{ failed: string[]; error?: string }> {
+  const { error } = await supabase.from('portfolio_items').update(updates).eq('id', id);
+  if (!error) {
+    if (updates.title !== undefined || updates.description !== undefined) {
+      const { data: row } = await supabase.from('portfolio_items').select('title, description').eq('id', id).maybeSingle();
+      indexContentHashtags('portfolio_item', id, `${row?.title ?? ''} ${row?.description ?? ''}`).catch(() => {});
+    }
+    if (updates.location !== undefined) indexContentLocation('portfolio_item', id, updates.location).catch(() => {});
+    return { failed: [] };
+  }
+  console.error('[portfolio] combined update failed, retrying per field:', error.message);
+  const failed: string[] = [];
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === undefined) continue;
+    const r = await supabase.from('portfolio_items').update({ [k]: v }).eq('id', id);
+    if (r.error) { failed.push(k); console.error(`[portfolio] could not save "${k}":`, r.error.message); }
+    else if (k === 'location') indexContentLocation('portfolio_item', id, v as string).catch(() => {});
+  }
+  return { failed, error: error.message };
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 function storagePathFromUrl(url: string): string | null {
   const marker = `/object/public/${PORTFOLIO_BUCKET}/`;
