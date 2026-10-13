@@ -433,7 +433,9 @@ function knownCities(): Promise<string[]> {
     const { data } = await supabase.from('locations').select('city, uses').not('city', 'is', null).order('uses', { ascending: false }).limit(300);
     return (data ?? []).map((r: any) => String(r.city).trim()).filter(c => c.length >= 3);
   })().catch(() => []);
-  return dbCities.then(list => [...new Set([...KNOWN_CITIES, ...list])].sort((a, b) => b.length - a.length));
+  // The built-in list answers immediately; the database list only widens it once it has arrived.
+  const fast = Promise.race([dbCities, new Promise<string[]>(res => setTimeout(() => res([]), 600))]);
+  return fast.then(list => [...new Set([...KNOWN_CITIES, ...list])].sort((a, b) => b.length - a.length));
 }
 
 export async function detectQueryLocation(raw: string): Promise<{ city: string; remainder: string } | null> {
@@ -470,7 +472,7 @@ function placeBundle(city: string): Promise<PlaceBundle> {
       String(r.city ?? '').trim().toLowerCase() === clean.toLowerCase()
         ? provincesCompatible(s.province, normalizeProvince((r as any).province))
         : re.test(String(r.location ?? ''))) as SearchProfileRow[];
-    return { scope: s, people, userIds: people.map(r => r.id) };
+    return { scope: s, people, userIds: people.slice(0, 80).map(r => r.id) };
   })();
   bundles.set(key, { at: Date.now(), p });
   p.catch(() => bundles.delete(key));
@@ -491,13 +493,13 @@ function rankPlace<T extends { id: string }>(rows: T[], inPlace: Set<string>, re
   return rows.map(r => ({ r, t: tier(r), s: rel(r) })).sort((a, b) => b.t - a.t || b.s - a.s).map(x => x.r);
 }
 
-async function creatorsAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchProfileRow[]> {
-  const [{ people }, extra] = await Promise.all([placeBundle(loc.city), searchMatchingCreatorsRaw(raw).catch(() => [] as SearchProfileRow[])]);
+async function creatorsAtPlace(_raw: string, loc: { city: string; remainder: string }, plain: Promise<SearchProfileRow[]>): Promise<SearchProfileRow[]> {
+  const [{ people }, extra] = await Promise.all([placeBundle(loc.city), plain.catch(() => [] as SearchProfileRow[])]);
   const all = dedupe([...people, ...extra]);
   return rankPlace(all, new Set(people.map(p => p.id)), loc.remainder, r => [r.name, r.primary_role || r.business_industry || '', r.bio ?? '']);
 }
 
-async function listingsAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchListingRow[]> {
+async function listingsAtPlace(_raw: string, loc: { city: string; remainder: string }, plain: Promise<SearchListingRow[]>): Promise<SearchListingRow[]> {
   const { scope, userIds } = await placeBundle(loc.city);
   const clean = loc.city.replace(/[%_,()"]/g, '').trim();
   const byQuery = (build: (q: any) => any) => withModerationFilter(active => {
@@ -509,24 +511,24 @@ async function listingsAtPlace(raw: string, loc: { city: string; remainder: stri
     inChunks(userIds, c => byQuery(q => q.in('user_id', c).order('created_at', { ascending: false }).limit(150))),
     inChunks(scope.ids.listing.slice(0, 300), c => byQuery(q => q.in('id', c))),
     byQuery(q => q.ilike('city', clean).limit(200)),
-    searchMatchingListingsRaw(raw).catch(() => [] as SearchListingRow[]),
+    plain.catch(() => [] as SearchListingRow[]),
   ]);
   const inPlace = new Set([...byOwner, ...byTag, ...byCity].map(r => r.id));
   return rankPlace(dedupe([...byOwner, ...byTag, ...byCity, ...extra]), inPlace, loc.remainder, r => [r.title, r.description ?? '', r.city ?? '']);
 }
 
-async function postsAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchPostRow[]> {
+async function postsAtPlace(_raw: string, loc: { city: string; remainder: string }, plain: Promise<SearchPostRow[]>): Promise<SearchPostRow[]> {
   const { scope, userIds } = await placeBundle(loc.city);
   const [byAuthor, byTag, extra] = await Promise.all([
     inChunks(userIds, async c => (await supabase.from('posts').select(POST_SELECT).eq('visibility', 'public').in('author_id', c).order('created_at', { ascending: false }).limit(100)).data ?? []),
     inChunks(scope.ids.post.slice(0, 300), async c => (await supabase.from('posts').select(POST_SELECT).eq('visibility', 'public').in('id', c)).data ?? []),
-    searchMatchingPostsRaw(raw).catch(() => [] as SearchPostRow[]),
+    plain.catch(() => [] as SearchPostRow[]),
   ]);
   const inPlace = new Set([...byAuthor, ...byTag].map((r: any) => r.id));
   return rankPlace(dedupe([...byAuthor, ...byTag, ...extra] as SearchPostRow[]), inPlace, loc.remainder, r => [r.content ?? '', '', '']);
 }
 
-async function portfolioAtPlace(raw: string, loc: { city: string; remainder: string }): Promise<SearchPortfolioRow[]> {
+async function portfolioAtPlace(_raw: string, loc: { city: string; remainder: string }, plain: Promise<SearchPortfolioRow[]>): Promise<SearchPortfolioRow[]> {
   const { scope, userIds } = await placeBundle(loc.city);
   const pub = (r: any) => !r.visibility || r.visibility === 'public';
   const [ownItems, ownAlbums, tagItems, tagAlbums, extra] = await Promise.all([
@@ -534,7 +536,7 @@ async function portfolioAtPlace(raw: string, loc: { city: string; remainder: str
     inChunks(userIds, async c => (await supabase.from('portfolio_albums').select(PORTFOLIO_ALBUM_SELECT).in('user_id', c).order('created_at', { ascending: false }).limit(100)).data ?? []),
     inChunks(scope.ids.portfolio_item.slice(0, 300), async c => (await supabase.from('portfolio_items').select(PORTFOLIO_ITEM_SELECT).in('id', c)).data ?? []),
     inChunks(scope.ids.portfolio_album.slice(0, 300), async c => (await supabase.from('portfolio_albums').select(PORTFOLIO_ALBUM_SELECT).in('id', c)).data ?? []),
-    searchMatchingPortfolioRaw(raw).catch(() => [] as SearchPortfolioRow[]),
+    plain.catch(() => [] as SearchPortfolioRow[]),
   ]);
   const tag = (rows: any[], type: 'item' | 'album') => rows.filter(pub).map(r => ({ ...r, type }) as SearchPortfolioRow);
   const placeRows = [...tag(ownItems, 'item'), ...tag(ownAlbums, 'album'), ...tag(tagItems, 'item'), ...tag(tagAlbums, 'album')];
@@ -543,13 +545,19 @@ async function portfolioAtPlace(raw: string, loc: { city: string; remainder: str
 }
 
 /** Runs the place-aware search when the query names a place, the plain one otherwise. */
-function placeAware<T>(plain: (q: string) => Promise<T[]>, atPlace: (q: string, loc: { city: string; remainder: string }) => Promise<T[]>) {
+function placeAware<T>(plain: (q: string) => Promise<T[]>, atPlace: (q: string, loc: { city: string; remainder: string }, plain: Promise<T[]>) => Promise<T[]>) {
   return async (q: string): Promise<T[]> => {
+    const plainP = plain(q);           // always started right away and shared, never run twice
     const loc = await detectQueryLocation(q).catch(() => null);
-    if (!loc) return plain(q);
-    try { return await atPlace(q, loc); } catch (e) { console.warn('[filmSearch] place search failed, using plain search:', e); return plain(q); }
+    if (!loc) return plainP;
+    // The place expansion fans out into many requests; if it isn't back in a couple of seconds the
+    // plain results are shown instead of keeping the viewer on a spinner.
+    const slow = new Promise<T[]>(res => setTimeout(() => res(plainP), PLACE_DEADLINE_MS));
+    try { return await Promise.race([atPlace(q, loc, plainP), slow]); }
+    catch (e) { console.warn('[filmSearch] place search failed, using plain search:', e); return plainP; }
   };
 }
+const PLACE_DEADLINE_MS = 2200;
 
 // ── Result cache ─────────────────────────────────────────────────────────────
 // The search overlay already ran these exact queries while the viewer typed; tapping a result
