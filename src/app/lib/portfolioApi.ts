@@ -1656,14 +1656,18 @@ export async function getPortfolioEntriesByIds(
   try {
     const [itemsRes, albumsRes, settingsRes] = await Promise.all([
       itemIds.length ? supabase.from('portfolio_items').select('*').in('id', itemIds) : Promise.resolve({ data: [] as any[] }),
-      albumIds.length ? supabase.from('portfolio_albums').select('*').eq('visibility', 'public').in('id', albumIds) : Promise.resolve({ data: [] as any[] }),
+      albumIds.length ? supabase.from('portfolio_albums').select('*').in('id', albumIds) : Promise.resolve({ data: [] as any[] }),
       supabase.from('portfolio_settings').select('user_id').neq('visibility', 'public'),
     ]);
     const nonPublicUserIds = new Set((settingsRes.data ?? []).map((r: any) => r.user_id));
+    // Your own work is always visible to you, whatever its audience.
+    if (viewerId) nonPublicUserIds.delete(viewerId);
     const items = ((itemsRes.data ?? []) as PortfolioItem[])
-      .filter(i => !(i as any).visibility || (i as any).visibility === 'public')
+      .filter(i => (viewerId && i.user_id === viewerId) || !(i as any).visibility || (i as any).visibility === 'public')
       .filter(i => !i.is_hidden && !nonPublicUserIds.has(i.user_id));
-    const albums = ((albumsRes.data ?? []) as PortfolioAlbum[]).filter(a => !nonPublicUserIds.has(a.user_id));
+    const albums = ((albumsRes.data ?? []) as PortfolioAlbum[])
+      .filter(a => (viewerId && a.user_id === viewerId) || !a.visibility || a.visibility === 'public')
+      .filter(a => !nonPublicUserIds.has(a.user_id));
     if (!items.length && !albums.length) return map;
 
     // Independent of each other (profiles needs only items/albums, the
