@@ -2,6 +2,8 @@ import { useParams, useNavigate } from 'react-router';
 import { useState, useEffect, useRef } from 'react';
 import { authApi, listingsApi, reviewsApi, postsApi } from '../lib/api';
 import { getPortfolioItems, type PortfolioItem } from '../lib/portfolioApi';
+import { readProfileCache, writeProfileCache } from '../lib/profileCache';
+import { PageLoadState } from '../components/PageLoadState';
 import { getPortfolioMediaAspectRatio } from '../components/PortfolioMedia';
 import { captureSnapshot } from '../lib/smartAnimate';
 import { useAuth } from '../context/AuthContext';
@@ -143,6 +145,11 @@ export function HostProfile() {
   // fetched numbers for the same metric.
   const [interactionStats, setInteractionStats] = useState<ProfileInteractionStats | null>(null);
   const [posts,            setPosts]            = useState<Post[]>([]);
+  // Posts and portfolio paint the moment THEIR query returns (never held back by slower ones).
+  const [postsLoading,     setPostsLoading]     = useState(true);
+  const [postsError,       setPostsError]       = useState(false);
+  const [portfolioLoading, setPortfolioLoading] = useState(true);
+  const [portfolioError,   setPortfolioError]   = useState(false);
   const [connections,      setConnections]      = useState<ConnectionSummary[]>([]);
   const [connectionCount,  setConnectionCount]  = useState(0);
   const [mutualConnectionCount, setMutualConnectionCount] = useState<number | undefined>(undefined);
@@ -182,6 +189,12 @@ export function HostProfile() {
 
   const loadProfile = async (uid: string) => {
     setLoading(true);
+    // Last visit's posts / portfolio show instantly while the fresh ones load.
+    const cachedPosts = readProfileCache<Post[]>('posts', uid);
+    const cachedPortfolio = readProfileCache<PortfolioItem[]>('portfolio', uid);
+    if (cachedPosts) { setPosts(cachedPosts); setPostsLoading(false); } else { setPosts([]); setPostsLoading(true); }
+    if (cachedPortfolio) { setPortfolioItems(cachedPortfolio); setPortfolioLoading(false); } else { setPortfolioItems([]); setPortfolioLoading(true); }
+    setPostsError(false); setPortfolioError(false);
     try {
       // Kick off every independent query at once — none of these actually
       // depend on each other's results (only "profiles for these follower/
@@ -192,13 +205,18 @@ export function HostProfile() {
       const listingsPromise      = listingsApi.getUserListings(uid).catch(() => []);
       // Received reviews (about this host), not reviews they wrote about others.
       const reviewsPromise       = reviewsApi.getReceivedReviews(uid).catch(() => []);
-      const portfolioPromise     = getPortfolioItems(uid).catch(() => []);
+      // Applied the moment they resolve; a failure is shown (with Retry), not passed off as "nothing here".
+      getPortfolioItems(uid, { throwOnError: true } as any).then(items => {
+        setPortfolioItems(items); writeProfileCache('portfolio', uid, items); setPortfolioLoading(false); setPortfolioError(false);
+      }).catch(() => { setPortfolioError(true); setPortfolioLoading(false); });
       const repScorePromise      = supabase.from('reputation_scores').select('reliability_level, reliability_score').eq('user_id', uid).single();
       const followerRowsPromise  = supabase.from('follows').select('follower_id').eq('following_id', uid).limit(50);
       const followingRowsPromise = supabase.from('follows').select('following_id').eq('follower_id', uid).limit(50);
       const recommendationsPromise      = getRecommendations(uid, { limit: 2 }).catch(() => []);
       const recommendationCountPromise  = getRecommendationCount(uid).catch(() => 0);
-      const postsPromise                = postsApi.getUserPosts(uid).catch(() => []);
+      postsApi.getUserPosts(uid, { throwOnError: true }).then(items => {
+        setPosts(items); writeProfileCache('posts', uid, items); setPostsLoading(false); setPostsError(false);
+      }).catch(() => { setPostsError(true); setPostsLoading(false); });
 
       // Paint the header as soon as the host resolves, without waiting on the rest.
       const hostData = await hostPromise;
@@ -230,18 +248,16 @@ export function HostProfile() {
         navigate(`/${hostData.username}`, { replace: true });
       }
 
-      const [hostListings, hostReviews, hostPortfolio, repScore, followerRows, followingRows, hostRecommendations, hostRecommendationCount, hostPosts] =
+      const [hostListings, hostReviews, repScore, followerRows, followingRows, hostRecommendations, hostRecommendationCount] =
         await Promise.all([
-          listingsPromise, reviewsPromise, portfolioPromise, repScorePromise, followerRowsPromise, followingRowsPromise,
-          recommendationsPromise, recommendationCountPromise, postsPromise,
+          listingsPromise, reviewsPromise, repScorePromise, followerRowsPromise, followingRowsPromise,
+          recommendationsPromise, recommendationCountPromise,
         ]);
       setRecommendations(hostRecommendations);
       setRecommendationCount(hostRecommendationCount);
-      setPosts(hostPosts);
 
       setListings(hostListings);
       setReviews(hostReviews);
-      setPortfolioItems(hostPortfolio);
 
       const followerIds  = (followerRows.data  || []).map((r: any) => r.follower_id).filter(Boolean);
       const followingIds = (followingRows.data || []).map((r: any) => r.following_id).filter(Boolean);
@@ -562,12 +578,15 @@ export function HostProfile() {
           {/* ─── ACTIVITY ─────────────────────────────────────────────── */}
           {tab === 'activity' && (
             <div className="md:max-w-2xl md:mx-auto space-y-4">
+              <PageLoadState loading={postsLoading && posts.length === 0} error={postsError && posts.length === 0} onRetry={() => { if (resolvedId) loadProfile(resolvedId); }} label="posts"
+                skeleton={<div className="space-y-4">{[0, 1].map(i => <div key={i} className="h-64 rounded-2xl bg-white border border-gray-100 animate-pulse"/>)}</div>}>
               {posts.length === 0 ? (
                 <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
                   <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
                   <p className="text-gray-500 font-medium">No activity yet</p>
                 </div>
               ) : posts.map(p => <PostCard key={p.id} post={p} />)}
+              </PageLoadState>
             </div>
           )}
 
@@ -655,6 +674,8 @@ export function HostProfile() {
               </button>
 
               {/* Preview grid (first 6 items) */}
+              <PageLoadState loading={portfolioLoading && portfolioItems.length === 0} error={portfolioError && portfolioItems.length === 0} onRetry={() => { if (resolvedId) loadProfile(resolvedId); }} label="portfolio"
+                skeleton={<div className="grid grid-cols-3 gap-2">{[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse"/>)}</div>}>
               {portfolioItems.length === 0 ? (
                 <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
                   <Grid3X3 className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
@@ -686,6 +707,7 @@ export function HostProfile() {
                   ))}
                 </div>
               )}
+              </PageLoadState>
 
               {portfolioItems.length > 6 && (
                 <button
