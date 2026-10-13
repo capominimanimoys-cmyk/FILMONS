@@ -228,16 +228,16 @@ async function withHiddenFilter<T = any>(
 // this same function used indirectly for someone else's page) defaults to
 // excluding it, matching "Hide from Portfolio" meaning hidden from
 // everyone except its owner.
-export async function getPortfolioItems(userId: string, opts: { includeHidden?: boolean } = {}): Promise<PortfolioItem[]> {
+export async function getPortfolioItems(userId: string, opts: { includeHidden?: boolean; throwOnError?: boolean } = {}): Promise<PortfolioItem[]> {
   try {
     const { data, error } = await withHiddenFilter((filterActive) => {
       let q = supabase.from('portfolio_items').select('*').eq('user_id', userId);
       if (filterActive && !opts.includeHidden) q = q.eq('is_hidden', false);
       return q.order('is_featured', { ascending: false }).order('created_at', { ascending: false });
     });
-    if (error) { console.warn('[portfolio] fetch error:', error.message); return []; }
+    if (error) { console.warn('[portfolio] fetch error:', error.message); if (opts.throwOnError) throw error; return []; }
     return (data ?? []) as PortfolioItem[];
-  } catch { return []; }
+  } catch (e) { if (opts.throwOnError) throw e; return []; }
 }
 
 export async function getPortfolioItem(id: string): Promise<PortfolioItem | null> {

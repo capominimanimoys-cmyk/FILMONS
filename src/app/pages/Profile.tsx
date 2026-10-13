@@ -40,6 +40,7 @@ import { AboutEditor } from '../components/AboutEditor';
 import { ProfileStrengthCard } from '../components/ProfileStrengthCard';
 import { WorkEditor } from '../components/WorkEditor';
 import { AlbumEditor } from '../components/AlbumEditor';
+import { readProfileCache, writeProfileCache } from '../lib/profileCache';
 import { getPortfolioItems, deletePortfolioItem, toggleFeatured, getPortfolioEntriesByIds, type PortfolioItem } from '../lib/portfolioApi';
 import { getUserRepostActivity, type ActivityEntry } from '../lib/activityApi';
 import { RepostedActivityCard } from '../components/connect/RepostedActivityCard';
@@ -829,19 +830,22 @@ export function Profile() {
 
   async function load() {
     if (!user) return;
-    setLoading(true);
+    // Last visit's posts + portfolio paint instantly (the page loader is skipped) while fresh ones load.
+    const cachedPosts = readProfileCache<Post[]>('posts', user.id);
+    const cachedPortfolio = readProfileCache<PortfolioItem[]>('portfolio', user.id);
+    if (cachedPosts && cachedPortfolio) {
+      setPosts(cachedPosts); setPortfolioItems(cachedPortfolio); mergePosts(cachedPosts);
+      setLoading(false);
+    } else setLoading(true);
     try {
-      const [
-        myPosts, myListings, myReviews, myReceivedReviews, myPortfolio,
-        myRecommendations, myRecommendationCount,
-        myConnections, myConnectionCount, myPendingConnections,
-        myRepostActivity,
-      ] = await Promise.all([
-        postsApi.getUserPosts(user.id).catch(() => []),
+      // Everything starts at once. Posts + portfolio are what the page is for, so the page opens as
+      // soon as THEY are in; the rest fills in behind them instead of holding the whole page back.
+      const postsP = postsApi.getUserPosts(user.id).catch(() => cachedPosts ?? []);
+      const portfolioP = getPortfolioItems(user.id).catch(() => cachedPortfolio ?? []);
+      const restP = Promise.all([
         listingsApi.getUserListings(user.id).catch(() => []),
         reviewsApi.getUserReviews(user.id).catch(() => []),
         reviewsApi.getReceivedReviews(user.id).catch(() => []),
-        getPortfolioItems(user.id).catch(() => []),
         getRecommendations(user.id, { limit: 2 }).catch(() => []),
         getRecommendationCount(user.id).catch(() => 0),
         listConnections(user.id, { limit: 8 }).catch(() => []),
@@ -849,17 +853,28 @@ export function Profile() {
         listPendingReceived(user.id).catch(() => []),
         getUserRepostActivity(user.id).catch(() => []),
       ]);
+      const [myPosts, myPortfolio] = await Promise.all([postsP, portfolioP]);
       setPosts(myPosts);
+      setPortfolioItems(myPortfolio);
+      writeProfileCache('posts', user.id, myPosts);
+      writeProfileCache('portfolio', user.id, myPortfolio);
+      mergePosts(myPosts);
+      setLoading(false);
+
+      const [
+        myListings, myReviews, myReceivedReviews,
+        myRecommendations, myRecommendationCount,
+        myConnections, myConnectionCount, myPendingConnections,
+        myRepostActivity,
+      ] = await restP;
       setListings(myListings);
       setReviews(myReviews);
       setReceivedReviews(myReceivedReviews);
-      setPortfolioItems(myPortfolio);
       setRecommendations(myRecommendations);
       setRecommendationCount(myRecommendationCount);
       setConnections(myConnections);
       setConnectionCount(myConnectionCount);
       setPendingConnections(myPendingConnections.slice(0, 2));
-      mergePosts(myPosts);
 
       // Hydrate the reposts' embedded originals -- same batching
       // (postsApi.getByIds / getPortfolioEntriesByIds) connectFeed.ts uses,

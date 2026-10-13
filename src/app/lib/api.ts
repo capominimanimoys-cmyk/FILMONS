@@ -1777,22 +1777,24 @@ export const postsApi = {
     }
   },
 
-  getUserPosts: async (userId: string): Promise<Post[]> => {
+  getUserPosts: async (userId: string, opts: { throwOnError?: boolean } = {}): Promise<Post[]> => {
     const currentUser = authApi.getCurrentUser();
     try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
-        .eq('author_id', userId)
-        .or('is_archived.eq.false,is_archived.is.null')
-        .order('created_at', { ascending: false })
-        .limit(50);
+      // The author's own posts and the posts they collaborate on are independent -- ask for both at once.
+      const [{ data, error }, { data: collabData }] = await Promise.all([
+        supabase
+          .from('posts')
+          .select('*, profiles!author_id(id,name,username,avatar_url,account_type,primary_role)')
+          .eq('author_id', userId)
+          .or('is_archived.eq.false,is_archived.is.null')
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('post_collab_profiles')
+          .select('post_id')
+          .eq('user_id', userId),
+      ]);
       if (error) throw error;
-      // Also fetch collaborative posts
-      const { data: collabData } = await supabase
-        .from('post_collab_profiles')
-        .select('post_id')
-        .eq('user_id', userId);
       const collabPostIds = (collabData ?? []).map((r: any) => r.post_id).filter(Boolean);
       let collabPosts: any[] = [];
       if (collabPostIds.length) {
@@ -1828,7 +1830,7 @@ export const postsApi = {
       try {
         const { posts } = await call<any>(`/posts/user/${userId}`);
         return (posts || []).map((p: any) => normalizePostMedia(p));
-      } catch { return []; }
+      } catch (err) { if (opts.throwOnError) throw err; return []; }
     }
   },
 
