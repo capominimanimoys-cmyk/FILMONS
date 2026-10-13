@@ -1450,6 +1450,8 @@ interface Props {
   onResultNavigate?: (url: string, state?: Record<string, unknown>) => void;
   /** Tab to open on (e.g. 'marketplace' when search was opened from the Marketplace page). */
   initialTab?: string;
+  /** Pre-filled search (e.g. the place name when opened from a location page). */
+  initialQuery?: string;
 }
 
 // Browse Search's preview cap -- every regular category (Rental, Sale,
@@ -1496,7 +1498,7 @@ function capEmergencyInCategory(items: ListingRow[], limit: number): { visible: 
 
 const TAB_IDS: TabId[] = ['all', 'marketplace', 'connect', 'learning'];
 
-export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) {
+export function SearchOverlay({ onClose, onResultNavigate, initialTab, initialQuery }: Props) {
   const [searchParams] = useSearchParams();
   const [q,              setQ]              = useState('');
   const [rawUsers,       setRawUsers]       = useState<ProfileRow[]>([]);
@@ -1818,7 +1820,10 @@ export function SearchOverlay({ onClose, onResultNavigate, initialTab }: Props) 
   // that didn't come from a listing's back button.
   useEffect(() => {
     const saved = consumeSearchState();
-    if (!saved) return;
+    if (!saved) {
+      if (initialQuery?.trim()) { setQ(initialQuery.trim()); runSearch(initialQuery.trim()); }
+      return;
+    }
     setActiveTab(saved.activeTab as TabId);
     setFilters(saved.filters as SearchFilters);
     setSort(saved.sort as SortBy);
