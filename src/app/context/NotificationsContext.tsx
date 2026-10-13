@@ -22,6 +22,10 @@ interface NotificationsState {
   unreadCount:   number;
   loading:       boolean;
   refresh:       () => Promise<void>;
+  /** Older notifications (cursor pagination); resolves false if the request failed. */
+  loadOlder:     () => Promise<boolean>;
+  hasMore:       boolean;
+  loadingOlder:  boolean;
   markRead:      (id: string) => void;
   markAllRead:   () => void;
   /** Resolves true once the server confirmed; on false nothing was marked. */
@@ -35,6 +39,9 @@ const NotificationsContext = createContext<NotificationsState>({
   unreadCount:   0,
   loading:       false,
   refresh:       async () => {},
+  loadOlder:     async () => true,
+  hasMore:       false,
+  loadingOlder:  false,
   markRead:      () => {},
   markAllRead:   () => {},
   markAllReadConfirmed: async () => false,
@@ -66,6 +73,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading,       setLoading]       = useState(false);
   const seenIds = useRef<Set<string>>(new Set());
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  const notificationsRef = useRef<Notification[]>([]);
+  notificationsRef.current = notifications;
 
   // Derive unread count from notifications — single source of truth
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -86,13 +98,31 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       const fresh = await notifStore.getAll(user.id);
       fresh.forEach(n => seenIds.current.add(n.id));
       setNotifications(prev => merge(fresh, prev));
+      if (fresh.length < notifStore.NOTIFICATION_PAGE_SIZE) setHasMore(false);
     } catch {}
     finally { setLoading(false); }
   }, [user?.id]); // eslint-disable-line
 
+  // ── Older notifications, one page at a time (cursor = the oldest one already loaded) ──
+  const loadOlder = useCallback(async (): Promise<boolean> => {
+    if (!user || loadingOlderRef.current) return true;
+    const list = notificationsRef.current;
+    const oldest = list.length ? list[list.length - 1].createdAt : undefined;
+    if (!oldest) return true;
+    loadingOlderRef.current = true; setLoadingOlder(true);
+    try {
+      const older = await notifStore.getAll(user.id, { before: oldest, throwOnError: true });
+      older.forEach(n => seenIds.current.add(n.id));
+      setNotifications(prev => merge(older, prev));
+      if (older.length < notifStore.NOTIFICATION_PAGE_SIZE) setHasMore(false);
+      return true;
+    } catch { return false; }
+    finally { loadingOlderRef.current = false; setLoadingOlder(false); }
+  }, [user?.id]); // eslint-disable-line
+
   // ── Seed from localStorage on login, then refresh from server ────────────────
   useEffect(() => {
-    if (!user) { setNotifications([]); return; }
+    if (!user) { setNotifications([]); setHasMore(true); return; }
     const local = notifStore.getLocal(user.id);
     local.forEach(n => seenIds.current.add(n.id));
     setNotifications(local);
@@ -194,7 +224,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   return (
     <NotificationsContext.Provider
-      value={{ notifications, unreadCount, loading, refresh, markRead, markAllRead, markAllReadConfirmed, remove, clearAll }}
+      value={{ notifications, unreadCount, loading, refresh, loadOlder, hasMore, loadingOlder, markRead, markAllRead, markAllReadConfirmed, remove, clearAll }}
     >
       {children}
     </NotificationsContext.Provider>

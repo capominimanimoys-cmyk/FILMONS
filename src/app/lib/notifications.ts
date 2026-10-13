@@ -258,24 +258,28 @@ export function getLocal(userId: string): Notification[] {
 }
 
 // ── Read from notifications table ────────────────────────────────────────────
-export async function getAll(userId: string): Promise<Notification[]> {
-  console.log('[notifications] getAll called for', userId);
+export const NOTIFICATION_PAGE_SIZE = 30;
+
+/** One page of notifications, newest first. `before` (an ISO timestamp) asks for the page of OLDER ones. */
+export async function getAll(userId: string, opts: { limit?: number; before?: string; throwOnError?: boolean } = {}): Promise<Notification[]> {
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from('notifications')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(100);
-    console.log('[notifications] getAll result — rows:', data?.length, 'error:', error?.message ?? null);
+      .limit(opts.limit ?? NOTIFICATION_PAGE_SIZE);
+    if (opts.before) q = q.lt('created_at', opts.before);
+    const { data, error } = await q;
     if (error) throw error;
     const mapped = (data || []).map(rowToNotif);
-    saveLocal(userId, mapped);
+    if (!opts.before) saveLocal(userId, mapped);   // the cache is always "the latest page"
     return mapped;
   } catch (e) {
     console.error('[notifications] getAll FAILED:', (e as any)?.message, (e as any)?.code);
+    if (opts.throwOnError) throw e;
   }
-  return loadLocal(userId);
+  return opts.before ? [] : loadLocal(userId);
 }
 
 // ── Sync unread count from local cache (for Header polling) ──────────────────

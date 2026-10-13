@@ -502,6 +502,7 @@ export function Home() {
     getConnectFeed({
       tab: effectiveTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
       category: resolved?.category, subcategory: resolved?.subcategory, sort,
+      limit: 12, // first screen only; the next pages load as the viewer nears the end
     })
       .then(page => {
         connectCacheRef.current[cacheKey] = {
