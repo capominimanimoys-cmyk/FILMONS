@@ -1117,7 +1117,7 @@ export const listingsApi = {
               descriptionExcerpt: (newListing.description || '').slice(0, 160) || undefined,
             },
           });
-          indexContentHashtags('listing', data.id, `${newListing.title} ${newListing.description}`).catch(() => {});
+          indexContentHashtags('listing', data.id, `${newListing.title} ${newListing.description}`, newListing.tags).catch(() => {});
           indexContentLocation('listing', data.id, newListing.city).catch(() => {});
           return { ...newListing, id: data.id };
         }

@@ -263,7 +263,7 @@ export async function createPortfolioItem(
     .select()
     .single();
   if (error) { console.error('[portfolio] create error:', error.message); return null; }
-  indexContentHashtags('portfolio_item', data.id, `${item.title ?? ''} ${item.description ?? ''}`).catch(() => {});
+  indexContentHashtags('portfolio_item', data.id, `${item.title ?? ''} ${item.description ?? ''}`, item.tags).catch(() => {});
   indexContentLocation('portfolio_item', data.id, item.location).catch(() => {});
   return data as PortfolioItem;
 }
@@ -275,14 +275,14 @@ export async function updatePortfolioItem(
 ): Promise<boolean> {
   const { error } = await supabase.from('portfolio_items').update(updates).eq('id', id);
   if (error) { console.error('[portfolio] update error:', error.message); return false; }
-  if (updates.title !== undefined || updates.description !== undefined) {
+  if (updates.title !== undefined || updates.description !== undefined || updates.tags !== undefined) {
     // Re-select the CURRENT (post-update) title+description rather than
     // just the partial `updates` object -- a description-only edit must
     // not wipe out hashtags that live in an untouched title, and vice
     // versa (indexContentHashtags always replaces this content's full
     // mention set, so it needs the full current text, not just the diff).
-    const { data: row } = await supabase.from('portfolio_items').select('title, description').eq('id', id).maybeSingle();
-    indexContentHashtags('portfolio_item', id, `${row?.title ?? ''} ${row?.description ?? ''}`).catch(() => {});
+    const { data: row } = await supabase.from('portfolio_items').select('title, description, tags').eq('id', id).maybeSingle();
+    indexContentHashtags('portfolio_item', id, `${row?.title ?? ''} ${row?.description ?? ''}`, row?.tags).catch(() => {});
   }
   if (updates.location !== undefined) indexContentLocation('portfolio_item', id, updates.location).catch(() => {});
   return true;
@@ -297,9 +297,9 @@ export async function updatePortfolioItemFields(
 ): Promise<{ failed: string[]; error?: string }> {
   const { error } = await supabase.from('portfolio_items').update(updates).eq('id', id);
   if (!error) {
-    if (updates.title !== undefined || updates.description !== undefined) {
-      const { data: row } = await supabase.from('portfolio_items').select('title, description').eq('id', id).maybeSingle();
-      indexContentHashtags('portfolio_item', id, `${row?.title ?? ''} ${row?.description ?? ''}`).catch(() => {});
+    if (updates.title !== undefined || updates.description !== undefined || updates.tags !== undefined) {
+      const { data: row } = await supabase.from('portfolio_items').select('title, description, tags').eq('id', id).maybeSingle();
+      indexContentHashtags('portfolio_item', id, `${row?.title ?? ''} ${row?.description ?? ''}`, row?.tags).catch(() => {});
     }
     if (updates.location !== undefined) indexContentLocation('portfolio_item', id, updates.location).catch(() => {});
     return { failed: [] };
@@ -607,7 +607,7 @@ export async function createAlbum(
     .select()
     .single();
   if (error) { console.error('[albums] create error:', error.message); return null; }
-  indexContentHashtags('portfolio_album', row.id, `${data.title ?? ''} ${data.description ?? ''}`).catch(() => {});
+  indexContentHashtags('portfolio_album', row.id, `${data.title ?? ''} ${data.description ?? ''}`, (data as any).tags).catch(() => {});
   return row as PortfolioAlbum;
 }
 
@@ -620,9 +620,9 @@ export async function updateAlbum(
 ): Promise<boolean> {
   const { error } = await supabase.from('portfolio_albums').update(updates).eq('id', id);
   if (error) { console.error('[albums] update error:', error.message); return false; }
-  if (updates.title !== undefined || updates.description !== undefined) {
-    const { data: row } = await supabase.from('portfolio_albums').select('title, description').eq('id', id).maybeSingle();
-    indexContentHashtags('portfolio_album', id, `${row?.title ?? ''} ${row?.description ?? ''}`).catch(() => {});
+  if (updates.title !== undefined || updates.description !== undefined || updates.tags !== undefined) {
+    const { data: row } = await supabase.from('portfolio_albums').select('title, description, tags').eq('id', id).maybeSingle();
+    indexContentHashtags('portfolio_album', id, `${row?.title ?? ''} ${row?.description ?? ''}`, row?.tags).catch(() => {});
   }
   if (updates.location !== undefined) indexContentLocation('portfolio_album', id, updates.location).catch(() => {});
   return true;
