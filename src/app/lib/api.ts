@@ -807,6 +807,10 @@ export function mapListingRow(row: any): Listing {
   } as Listing;
 }
 
+/** Lean column set for listing CARDS in discovery rows / grids (no description, videos, contact methods or
+ *  price packages -- those only matter on the listing's own page). Noticeably smaller responses. */
+export const LISTING_CARD_COLUMNS = 'id, user_id, title, price, city, listing_type, listing_mode, service_category, tags, images, created_at, metadata, boosted, is_emergency, emergency_expires_at';
+
 export const LISTING_COLUMNS = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at';
 
 export const listingsApi = {

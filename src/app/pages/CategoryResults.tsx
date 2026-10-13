@@ -30,7 +30,7 @@ import {
   Bookmark, Calendar, CalendarClock, X, ChevronDown, ChevronLeft, ChevronRight, Heart, CheckCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { withModerationFilter, LISTING_COLUMNS, mapListingRow, postsApi } from '../lib/api';
+import { withModerationFilter, LISTING_COLUMNS, LISTING_CARD_COLUMNS, mapListingRow, postsApi } from '../lib/api';
 import { Listing, type Post } from '../types';
 import { PostCard } from '../components/PostCard';
 import { useAuth } from '../context/AuthContext';
@@ -1092,7 +1092,7 @@ function PreviewListingCard({ listing, badge, gridMode = false }: {
       className={`${PREVIEW_CARD_CLASS} ${gridMode ? 'w-full h-auto' : ''}`}>
       <div style={gridMode ? { aspectRatio: '4 / 3' } : PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
+          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
         {badge && (
           <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[badge]}`}>
@@ -1283,7 +1283,7 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
       {/* Image -- full-width top on mobile, fixed-width left column on desktop */}
       <div className="relative w-full h-48 md:w-56 md:h-40 shrink-0 bg-gray-100">
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt=""/>
+          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-3xl opacity-25">🎬</div>}
         {!isOpp && (
           <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[marketplaceTypeBadgeForListing(listing)]}`}>
@@ -1677,7 +1677,7 @@ function DesktopListingCard({ listing, badge }: { listing: Listing; badge?: Mark
     >
       <div style={DESKTOP_CARD_IMAGE_STYLE} className="relative w-full shrink-0 bg-gray-100">
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover object-center" alt=""/>
+          ? <img src={listing.images[0]} className="w-full h-full object-cover object-center" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
         {/* Opportunity's own Paid/Unpaid tag already conveys its type
             (plus the section header already says "Opportunities") -- the
@@ -2092,7 +2092,7 @@ function DiscoveryFailedCard({ onRetry }: { onRetry: () => void }) {
 // "missing = default" handling).
 async function fetchLatestMarketplaceListings(limit: number): Promise<Listing[]> {
   const res = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+    let q = supabase.from('listings').select(LISTING_CARD_COLUMNS).eq('is_active', true);
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('created_at', { ascending: false }).limit(limit * 2);
   });
@@ -2106,7 +2106,7 @@ async function fetchLatestMarketplaceListings(limit: number): Promise<Listing[]>
 // looks broken when nothing happens to be boosted right now.
 async function fetchTopMarketplaceListings(limit: number): Promise<Listing[]> {
   const res = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true);
+    let q = supabase.from('listings').select(LISTING_CARD_COLUMNS).eq('is_active', true);
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('boosted', { ascending: false }).order('created_at', { ascending: false }).limit(limit * 2);
   });
@@ -2126,7 +2126,7 @@ async function fetchTopMarketplaceListings(limit: number): Promise<Listing[]> {
 // elsewhere in this file.
 async function fetchNearbyMarketplaceListings(city: string, limit: number): Promise<Listing[]> {
   const res = await withModerationFilter((filterActive) => {
-    let q = supabase.from('listings').select(LISTING_COLUMNS).eq('is_active', true).ilike('city', `%${city}%`);
+    let q = supabase.from('listings').select(LISTING_CARD_COLUMNS).eq('is_active', true).ilike('city', `%${city}%`);
     if (filterActive) q = q.eq('moderation_status', 'active');
     return q.order('created_at', { ascending: false }).limit(limit * 2);
   });
