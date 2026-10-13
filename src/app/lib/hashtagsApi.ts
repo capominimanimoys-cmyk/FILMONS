@@ -101,159 +101,35 @@ export async function followHashtag(userId: string, tagInput: string): Promise<v
 export async function unfollowHashtag(userId: string, tagInput: string): Promise<void> {
   const tag = normalizeHashtag(tagInput);
   const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
-  if (!hashtagRow) return;
-  await supabase.from('hashtag_follows').delete().eq('user_id', userId).eq('hashtag_id', hashtagRow.id);
-}
 
-/** Most recently followed hashtag's tag -- drives the single "From
- *  hashtags you follow" discovery row (ProductDiscoveryGroups), same
- *  bounded one-signal approach the gear/skills rows already use rather
- *  than a full followed-hashtags feed. */
-export async function getMostRecentFollowedHashtag(userId: string): Promise<string | null> {
-  const { data } = await supabase.from('hashtag_follows').select('hashtags(tag)').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).maybeSingle();
-  return (data as any)?.hashtags?.tag ?? null;
-}
+  const { data: mentions } = hashtagRow
+    ? await supabase.from('hashtag_mentions')
+        .select('content_type, content_id, created_at')
+        .eq('hashtag_id', hashtagRow.id)
+        .order('created_at', { ascending: false })
+        .limit(200)
+    : { data: [] as any[] };
+  const rows: { content_type: string; content_id: string }[] = [...(mentions ?? [])];
 
-export interface RelatedHashtag { tag: string; count: number }
-
-/** Hashtags that co-occur with `tag` on the same content -- a lightweight
- *  co-occurrence count against the existing hashtag_mentions table, no
- *  new precomputed table. content_id is a uuid shared across every
- *  content type's own table, practically unique across them, so matching
- *  on it alone (without also pinning content_type) is safe here. */
-export async function getRelatedHashtags(tagInput: string, limit = 10): Promise<RelatedHashtag[]> {
-  const tag = normalizeHashtag(tagInput);
-  const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
-  if (!hashtagRow) return [];
-
-  const { data: mentions } = await supabase.from('hashtag_mentions').select('content_id').eq('hashtag_id', hashtagRow.id).limit(200);
-  const contentIds = [...new Set((mentions ?? []).map((r: any) => r.content_id))];
-  if (!contentIds.length) return [];
-
-  const { data: coMentions } = await supabase.from('hashtag_mentions').select('hashtag_id').in('content_id', contentIds).neq('hashtag_id', hashtagRow.id);
-  const rows = coMentions ?? [];
-  if (!rows.length) return [];
-
-  const counts = new Map<string, number>();
-  rows.forEach((r: any) => counts.set(r.hashtag_id, (counts.get(r.hashtag_id) ?? 0) + 1));
-  const { data: hashtagRows } = await supabase.from('hashtags').select('id, tag').in('id', [...counts.keys()]);
-  return (hashtagRows ?? [])
-    .map((h: any) => ({ tag: h.tag, count: counts.get(h.id) ?? 0 }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, limit);
-}
-
-/** Associate hashtag strings (no '#') with a post -- called right after
- *  post creation by the composer. Delegates to the same generic indexer
- *  everything else uses, so a post's mentions live in ONE place
- *  (hashtag_mentions) rather than a posts-only side table. */
-export async function attachHashtagsToPost(postId: string, tags: string[]): Promise<void> {
-  await indexContentHashtagList('post', postId, tags);
-}
-
-// ── New: generic multi-content-type indexing + discovery, per the FILMONS
-// Browse Search Hashtag Support spec. ──────────────────────────────────────
-
-export type HashtagContentType = 'post' | 'portfolio_item' | 'portfolio_album' | 'course' | 'listing';
-
-async function indexContentHashtagList(contentType: HashtagContentType, contentId: string, tags: string[]): Promise<void> {
-  try {
-    // Always clear this content's existing mentions first -- an edit that
-    // removes a hashtag must remove it from that hashtag's results too,
-    // not leave a stale mention forever.
-    await supabase.from('hashtag_mentions').delete().eq('content_type', contentType).eq('content_id', contentId);
-    const clean = [...new Set(tags.map(normalizeHashtag).filter(Boolean))];
-    if (!clean.length) return;
-
-    const { data: existing } = await supabase.from('hashtags').select('id, tag').in('tag', clean);
-    const idByTag = new Map((existing ?? []).map((h: any) => [h.tag, h.id as string]));
-    const missing = clean.filter(t => !idByTag.has(t));
-    if (missing.length) {
-      const { data: created } = await supabase.from('hashtags').insert(missing.map(tag => ({ tag }))).select('id, tag');
-      (created ?? []).forEach((h: any) => idByTag.set(h.tag, h.id));
-    }
-
-    const mentions = clean.map(t => idByTag.get(t)).filter((id): id is string => !!id)
-      .map(hashtag_id => ({ hashtag_id, content_type: contentType, content_id: contentId }));
-    if (mentions.length) await supabase.from('hashtag_mentions').upsert(mentions, { onConflict: 'hashtag_id,content_type,content_id', ignoreDuplicates: true });
-  } catch (e) {
-    console.warn('[hashtagsApi] indexContentHashtagList failed:', e);
+  // Content tagged through a "Hashtags" field is also in the item's own `tags` -- include it even
+  // when it was never indexed (older saves), and index it now so it is found normally next time.
+  const cases = [...new Set([tag, tag.charAt(0).toUpperCase() + tag.slice(1), tag.toUpperCase()])];
+  const variants = [...cases, ...cases.map(v => `#${v}`)];
+  const containsAny = variants.map(v => `tags.cs.${JSON.stringify([v])}`).join(',');
+  const seen = new Set(rows.map(r => `${r.content_type}:${r.content_id}`));
+  const tagged = await Promise.all((['portfolio_items', 'portfolio_albums', 'listings'] as const).map(async table => {
+    try {
+      const { data } = await supabase.from(table).select('id').or(containsAny).limit(60);
+      return (data ?? []).map((r: any) => ({ table, id: String(r.id) }));
+    } catch { return []; }
+  }));
+  const typeOf = { portfolio_items: 'portfolio_item', portfolio_albums: 'portfolio_album', listings: 'listing' } as const;
+  for (const { table, id } of tagged.flat()) {
+    const type = typeOf[table];
+    if (seen.has(`${type}:${id}`)) continue;
+    rows.push({ content_type: type, content_id: id });
+    indexContentHashtagList(type, id, [tag]).catch(() => {});
   }
-}
-
-/** Call after creating/editing any hashtag-bearing content whose hashtags
- *  live inline in free text (Portfolio title/description, course
- *  title/description, a post's own content -- extracted here rather than
- *  requiring the caller to pre-tokenize, unlike attachHashtagsToPost
- *  above, which the composer already tokenizes itself). Never blocks the
- *  actual content save on failure. */
-export async function indexContentHashtags(contentType: HashtagContentType, contentId: string, text: string | null | undefined): Promise<void> {
-  await indexContentHashtagList(contentType, contentId, extractHashtags(text));
-}
-
-export interface HashtagSuggestion {
-  tag: string;
-  usageCount: number;
-}
-
-/** Ranking per spec: exact match, then startsWith, then contains, ordered
- *  by usage/recency within each tier -- never sorted purely by popularity
- *  across the whole result set. Accepts either "filmmaking" or
- *  "#filmmaking". Distinct from searchHashtags() above (which returns the
- *  pre-existing Hashtag[]/post_count shape for the composer) -- this one
- *  powers Browse Search's cross-content-type hashtag discovery. */
-export async function searchHashtagSuggestions(query: string, limit = 10): Promise<HashtagSuggestion[]> {
-  const q = normalizeHashtag(query);
-  if (!q) return [];
-  const { data, error } = await supabase.from('hashtags').select('tag, post_count')
-    .ilike('tag', `%${q}%`)
-    .order('post_count', { ascending: false })
-    .order('last_used_at', { ascending: false })
-    .limit(50);
-  if (error || !data?.length) return [];
-
-  const tier = (tag: string) => tag === q ? 0 : tag.startsWith(q) ? 1 : 2;
-  const ranked = [...data].sort((a: any, b: any) => tier(a.tag) - tier(b.tag) || b.post_count - a.post_count);
-  return ranked.slice(0, limit).map((h: any) => ({ tag: h.tag, usageCount: h.post_count }));
-}
-
-export async function getHashtag(tagInput: string): Promise<HashtagSuggestion | null> {
-  const tag = normalizeHashtag(tagInput);
-  const { data } = await supabase.from('hashtags').select('tag, post_count').eq('tag', tag).maybeSingle();
-  return data ? { tag: data.tag, usageCount: data.post_count } : null;
-}
-
-export interface HashtagContent {
-  posts: Post[];
-  portfolio: PortfolioFeedEntry[];
-  courses: Course[];
-  listings: Listing[];
-}
-
-/** Hashtag results page's content -- only content types FILMONS actually
- *  indexes hashtags for (see this file's indexContentHashtags/
- *  attachHashtagsToPost call sites), and only publicly-visible rows (this
- *  is a discovery page, not gated by follow/connection like a
- *  personalized feed).
- *
- *  Per the FILMONS Hashtag Page Flow's "IMPORTANT CARD RULE" -- this page
- *  must never invent its own lighter content shape, since every card is
- *  rendered through Home's own real components (PostCard,
- *  PortfolioProjectCard/PortfolioAlbumCard). So this returns the exact
- *  same hydrated Post[]/PortfolioFeedEntry[] those components already
- *  consume elsewhere (postsApi.getByIds, getPortfolioEntriesByIds), not a
- *  hashtag-specific summary row. */
-export async function getHashtagContent(tagInput: string, limit = 30, viewerId?: string): Promise<HashtagContent> {
-  const tag = normalizeHashtag(tagInput);
-  const { data: hashtagRow } = await supabase.from('hashtags').select('id').eq('tag', tag).maybeSingle();
-  if (!hashtagRow) return { posts: [], portfolio: [], courses: [], listings: [] };
-
-  const { data: mentions } = await supabase.from('hashtag_mentions')
-    .select('content_type, content_id, created_at')
-    .eq('hashtag_id', hashtagRow.id)
-    .order('created_at', { ascending: false })
-    .limit(200);
-  const rows = mentions ?? [];
 
   const idsFor = (type: HashtagContentType) => rows.filter(r => r.content_type === type).map(r => r.content_id);
   const postIds = idsFor('post').slice(0, limit);
