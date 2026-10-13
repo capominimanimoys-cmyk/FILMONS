@@ -68,6 +68,18 @@ function slugifyPart(s: string): string {
  *  built -- province-qualified whenever known, so two different real
  *  cities sharing a name never collide. Falls back to city-only when no
  *  province is known (never block on a missing province). */
+/** The place a piece of work should show: its own location when it has one, otherwise the creator's
+ *  city. `label` is the short city name; `slug` opens that place's page. */
+export function placeFor(itemLocation: string | null | undefined, creatorCity?: string | null): { label: string; slug: string } | null {
+  const own = (itemLocation ?? '').trim();
+  if (own) {
+    const { city, province } = parseLocationFreeText(own);
+    if (city) return { label: city, slug: buildLocationSlug(city, province) };
+  }
+  const c = (creatorCity ?? '').trim();
+  return c ? { label: c, slug: buildLocationSlug(c) } : null;
+}
+
 export function buildLocationSlug(city: string, province?: string | null): string {
   const c = slugifyPart(city || '');
   const p = province ? slugifyPart(province) : '';

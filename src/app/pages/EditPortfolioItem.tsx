@@ -10,7 +10,7 @@ import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
-import { getPortfolioItem, updatePortfolioItem, type PortfolioItem } from '../lib/portfolioApi';
+import { getPortfolioItem, updatePortfolioItemFields, type PortfolioItem } from '../lib/portfolioApi';
 import {
   CategoryPanel, TextFieldPanel, TagsPanel, VisibilityPanel, LocationPanel, FieldRow, VISIBILITY_OPTIONS, type ItemVisibility,
 } from '../components/PortfolioFieldSelectors';
@@ -70,16 +70,23 @@ export function EditPortfolioItem() {
     const safeLink = normalizeExternalLink(link);
     if (link.trim() && !safeLink) { toast.error('Enter a valid link, e.g. https://vimeo.com/123'); return; }
     setSaving(true);
-    const ok = await updatePortfolioItem(item.id, {
+    const updates: Record<string, unknown> = {
       title: title.trim(), description: description.trim(), category,
       subcategory: subcategory || undefined, tags: hashtags,
       // '' / [] (not undefined) so clearing a field actually removes the stored value.
-      role: role.trim(), tools, collaborators, location: location.trim(), visibility,
-      // '' (not undefined) so clearing the field actually removes the stored link.
+      role: role.trim(), tools, location: location.trim(), visibility,
       external_link: safeLink ?? '',
-    });
+    };
+    // Only send collaborators when there is something to save or clear -- the column comes from a
+    // later migration, so an untouched empty list must not make the whole save fail.
+    if (collaborators.length || (item.collaborators?.length ?? 0) > 0) updates.collaborators = collaborators;
+    const { failed } = await updatePortfolioItemFields(item.id, updates as any);
     setSaving(false);
-    if (!ok) { toast.error('Could not save changes. Please try again.'); return; }
+    if (failed.length) {
+      // Stay on the page so nothing is lost; everything else was saved.
+      toast.error(`Couldn't save: ${failed.join(', ')}. The rest was saved.`);
+      return;
+    }
     toast.success('Project updated');
     navigate(-1);
   };

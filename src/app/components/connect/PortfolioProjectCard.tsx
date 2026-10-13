@@ -18,7 +18,7 @@ import { PortfolioCommentSheet, timeAgo } from '../PortfolioCommentSheet';
 import { TrustBadge } from '../trust/TrustBadge';
 import { TrustDetailsSheet } from '../trust/TrustDetailsSheet';
 import { TrustProfileOverlay } from '../trust/TrustProfileOverlay';
-import { buildLocationSlug } from '../../lib/locationsApi';
+import { placeFor } from '../../lib/locationsApi';
 import { ViewPortfolioLink } from './ViewPortfolioLink';
 import { PortfolioLinkChip } from '../PortfolioLinkChip';
 import { PostMoreMenu } from './PostMoreMenu';
@@ -58,6 +58,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
   const navigate = useNavigate();
   const { openPortfolioPreview, openPortfolioItem } = usePortfolioPreview();
   const { item, creator } = entry;
+  const place = placeFor(item.location, creator.city);
   const isOwn = !!user && user.id === creator.id;
 
   const [liked, setLiked] = useState(false);
@@ -194,7 +195,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
             {creator.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 fill-blue-100 shrink-0" />}
           </button>
           <p className="text-xs text-gray-400 mt-0.5">
-            {[getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }), creator.city].filter(Boolean).join(' · ')}{(getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }) || creator.city) ? ' · ' : ''}{timeAgo(entry.created_at)}
+            {[getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }), place?.label].filter(Boolean).join(' · ')}{(getDisplayIdentity({ accountType: creator.account_type, primaryRole: creator.primary_role, businessIndustry: creator.business_industry }) || place?.label) ? ' · ' : ''}{timeAgo(entry.created_at)}
           </p>
           {trustLevel && (
             <div className="mt-1">
@@ -225,10 +226,10 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
         {[item.category, item.subcategory].filter(Boolean).map(tag => (
           <span key={tag} className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">{tag}</span>
         ))}
-        {creator.city && (
-          <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(creator.city))}`); }}
+        {place && (
+          <button onClick={e => { e.stopPropagation(); navigate(`/search/locations/${encodeURIComponent(place.slug)}`); }}
             className="text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full hover:border-blue-300 hover:text-blue-600">
-            {creator.city}
+            {place.label}
           </button>
         )}
       </div>
