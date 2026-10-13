@@ -363,10 +363,14 @@ export async function toggleFeatured(id: string, current: boolean): Promise<bool
 // guaranteed to exist and have public access configured by the edge function.
 export const PORTFOLIO_BUCKET = 'make-ec8fe879-photos';
 
+/** Why the last portfolio upload failed, in words for the viewer (null = no specific reason). */
+let lastUploadError: string | null = null;
+export const getPortfolioUploadError = (fallback = 'Upload failed') => lastUploadError ?? fallback;
+
 // Supabase JS's storage .upload() doesn't expose XHR progress events, so
 // real "Uploading… 42%" feedback needs a raw XHR call against the same
 // Storage REST endpoint the SDK itself uses underneath.
-function xhrUploadToStorage(path: string, file: File, onProgress?: (pct: number) => void): Promise<boolean> {
+function xhrUploadToStorage(path: string, file: File, onProgress?: (pct: number) => void): Promise<{ ok: boolean; status: number }> {
   return new Promise(resolve => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `https://${projectId}.supabase.co/storage/v1/object/${PORTFOLIO_BUCKET}/${path}`);
@@ -377,8 +381,8 @@ function xhrUploadToStorage(path: string, file: File, onProgress?: (pct: number)
     xhr.upload.onprogress = e => {
       if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
     };
-    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
-    xhr.onerror = () => resolve(false);
+    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status });
+    xhr.onerror = () => resolve({ ok: false, status: 0 });
     xhr.send(file);
   });
 }
@@ -400,8 +404,20 @@ export async function uploadPortfolioMedia(
   const ext       = file.name.split('.').pop()?.toLowerCase() || 'bin';
   const path      = `${subfolder}/${userId}-${Date.now()}.${ext}`;
 
-  const ok = await xhrUploadToStorage(path, file, onProgress);
-  if (!ok) { console.error('[portfolio] upload error'); return null; }
+  lastUploadError = null;
+  const res = await xhrUploadToStorage(path, file, onProgress);
+  if (!res.ok) {
+    console.error('[portfolio] upload error', res.status);
+    const mb = (file.size / 1048576).toFixed(0);
+    if (res.status === 413 || (file.size > MAX_UPLOAD_BYTES && res.status !== 0)) {
+      lastUploadError = `This file is too heavy (${mb} MB) to upload. Try a shorter clip or a lower-resolution file.`;
+    } else if (original.size > MAX_UPLOAD_BYTES && !compressed) {
+      lastUploadError = `This file is too heavy (${(original.size / 1048576).toFixed(0)} MB) and couldn't be compressed here. Try a shorter clip or a lower-resolution file.`;
+    } else if (res.status === 0) {
+      lastUploadError = 'Upload failed — check your connection and try again.';
+    }
+    return null;
+  }
 
   const url = supabase.storage.from(PORTFOLIO_BUCKET).getPublicUrl(path).data.publicUrl;
 

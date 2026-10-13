@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { X, Loader2, ImagePlus, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
-  createPortfolioItem, uploadPortfolioMedia, readImageDimensions, readVideoDimensions,
+  createPortfolioItem, uploadPortfolioMedia, getPortfolioUploadError, readImageDimensions, readVideoDimensions,
   type MediaType, type PortfolioItem,
 } from '../lib/portfolioApi';
 import {
@@ -97,7 +97,7 @@ export function WorkEditor({ onClose, onCreated, onMultiFile }: {
     if (d) { setRatio(d.aspect_ratio); setDims({ width: d.width, height: d.height }); }
     const result = await uploadPortfolioMedia(user.id, f);
     setUploading(false);
-    if (!result) { toast.error('Upload failed'); return; }
+    if (!result) { toast.error(getPortfolioUploadError()); return; }
     setUploadedUrl(result.url);
     setThumbnailUrl(result.thumbnailUrl || result.url);
   };
