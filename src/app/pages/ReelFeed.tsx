@@ -146,10 +146,13 @@ function CommentsSheet({ post, onClose }: { post: Post; onClose: () => void }) {
 
 // ── Single Reel Card ──────────────────────────────────────────────────────────
 function ReelCard({
-  post, active, onLike, onComment, friendActivity,
+  post, active, hasPlayer, preload, onLike, onComment, friendActivity,
 }: {
   post: Post;
   active: boolean;
+  /** Previous / current / next reels own a <video>; farther ones keep only the poster (frees decoders + memory). */
+  hasPlayer: boolean;
+  preload: 'auto' | 'metadata' | 'none';
   onLike: (post: Post) => void;
   onComment: () => void;
   friendActivity: Array<{ id: string; avatar?: string; name: string; action: 'liked' | 'commented'; content?: string }>;
@@ -221,28 +224,61 @@ function ReelCard({
   };
 
   const videoSrc = post.videos?.[0];
+  const poster = post.images?.[0] || post.thumbnailUrl;
   const [videoReady, setVideoReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [blocked, setBlocked] = useState(false);   // autoplay refused -> show a play button
+  const [attempt, setAttempt] = useState(0);        // bump to retry a failed video
+  const wantPlay = useRef(false);
 
+  const tryPlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v || !wantPlay.current) return;
+    v.play().then(() => { setPlaying(true); setBlocked(false); }).catch(e => {
+      if (e?.name === 'NotAllowedError') { setBlocked(true); setPlaying(false); }
+    });
+  }, []);
+
+  // Only the visible reel plays. Swiping away pauses at once; the position is kept for when you come back.
   useEffect(() => {
     const v = videoRef.current;
+    wantPlay.current = active;
     if (!v) return;
     if (active) {
-      v.currentTime = 0;
-      // Load before playing
-      v.load();
-      const tryPlay = () => v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+      setBlocked(false);
       if (v.readyState >= 3) tryPlay();
-      else v.addEventListener('canplay', tryPlay, { once: true });
+      else { v.addEventListener('canplay', tryPlay, { once: true }); if (v.preload !== 'auto') v.load(); }
     } else {
-      v.pause();
-      setPlaying(false);
+      v.pause(); setPlaying(false);
     }
-  }, [active]);
+    return () => v.removeEventListener('canplay', tryPlay);
+  }, [active, hasPlayer, attempt, tryPlay]);
+
+  // Backgrounded app / hidden tab: pause; resume where it was when visible again.
+  useEffect(() => {
+    const onVis = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (document.hidden) { v.pause(); setPlaying(false); }
+      else if (active) tryPlay();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [active, tryPlay]);
+
+  // Leaving Reels: stop audio and release the media.
+  useEffect(() => () => {
+    const v = videoRef.current;
+    if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+  }, []);
+
+  // Players that scroll out of range are released (their element is unmounted); reset flags for a fresh start.
+  useEffect(() => { if (!hasPlayer) { setVideoReady(false); setPlaying(false); } }, [hasPlayer]);
 
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
-    if (playing) { v.pause(); setPlaying(false); } else { v.play(); setPlaying(true); }
+    if (playing) { wantPlay.current = false; v.pause(); setPlaying(false); } else { wantPlay.current = true; tryPlay(); }
   };
 
   const handleDoubleTap = () => {
@@ -277,23 +313,39 @@ function ReelCard({
       {/* Video */}
       {videoSrc
         ? <>
-            <video
-              ref={videoRef}
-              src={videoSrc}
-              muted={muted}
-              loop
-              playsInline
-              preload={active ? 'auto' : 'metadata'}
-              onCanPlay={() => setVideoReady(true)}
-              onWaiting={() => setVideoReady(false)}
-              onPlaying={() => setVideoReady(true)}
-              className="w-full h-full object-contain"
-              onClick={handleDoubleTap}
-            />
-            {/* Buffering spinner */}
-            {active && !videoReady && (
+            {/* Poster stays until the first frame is playing. */}
+            {poster && !(videoReady && playing) && (
+              <img src={poster} alt="" className="absolute inset-0 w-full h-full object-contain" />
+            )}
+            {hasPlayer && !failed && (
+              <video
+                key={attempt}
+                ref={videoRef}
+                src={videoSrc}
+                poster={poster}
+                muted={muted}
+                loop
+                playsInline
+                preload={preload}
+                onCanPlay={() => setVideoReady(true)}
+                onWaiting={() => setVideoReady(false)}
+                onPlaying={() => { setVideoReady(true); setPlaying(true); }}
+                onError={() => { if (videoRef.current?.error) { setFailed(true); setPlaying(false); } }}
+                className="relative w-full h-full object-contain"
+                onClick={handleDoubleTap}
+              />
+            )}
+            {/* Small buffering indicator over the poster */}
+            {active && hasPlayer && !failed && !blocked && !videoReady && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-10 h-10 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              </div>
+            )}
+            {active && failed && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40">
+                <p className="text-white text-sm">This video couldn't be played.</p>
+                <button onClick={() => { setFailed(false); setVideoReady(false); setAttempt(n => n + 1); }}
+                  className="px-5 py-2 rounded-full bg-white text-black text-sm font-semibold">Retry</button>
               </div>
             )}
           </>
@@ -302,8 +354,9 @@ function ReelCard({
           </div>
       }
 
-      {!playing && videoSrc && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      {!playing && videoSrc && !failed && (blocked || videoReady) && (
+        <div className={`absolute inset-0 flex items-center justify-center ${blocked ? '' : 'pointer-events-none'}`}
+          onClick={blocked ? () => { wantPlay.current = true; tryPlay(); } : undefined}>
           <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
             <Play className="w-7 h-7 text-white fill-white ml-1" />
           </div>
@@ -532,6 +585,11 @@ export function ReelFeed() {
     id: string; avatar?: string; name: string; action: 'liked' | 'commented'; content?: string;
   }>>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Slow / data-saver connections: don't buffer the next reel ahead of time.
+  const slowNet = (() => {
+    const c = (navigator as any).connection;
+    return !!c && (c.saveData || /(^|-)2g$/.test(String(c.effectiveType || '')) || c.effectiveType === '3g');
+  })();
   const touchStartY  = useRef(0);
   const touchStartT  = useRef(0);
   const isDragging   = useRef(false);
@@ -557,10 +615,11 @@ export function ReelFeed() {
       const { data } = await q;
       const rows = (data ?? []) as any[];
       if (!rows.length) { exhaustedRef.current = true; return []; }
-      cursorRef.current = rows[rows.length - 1].created_at;
+      const nextCursor = rows[rows.length - 1].created_at;
       const ids = rows.filter(r => Array.isArray(r.videos) && r.videos.length > 0 && !known.has(r.id)).map(r => String(r.id)).slice(0, count);
-      if (!ids.length) return [];
+      if (!ids.length) { cursorRef.current = nextCursor; return []; }
       const fetched = await postsApi.getByIds(ids);
+      cursorRef.current = nextCursor;   // advance only once the batch loaded, so a failure retries the same page
       const order = new Map(ids.map((id, i) => [id, i]));
       return fetched.filter(p => (p.videos?.length ?? 0) > 0).sort((x, y) => (order.get(x.id) ?? 0) - (order.get(y.id) ?? 0));
     } catch { return []; }
@@ -714,14 +773,17 @@ export function ReelFeed() {
         willChange: 'transform',
       }}>
         {posts.map((post, idx) => {
-          // Only render ±2 slides to save memory; preload src for adjacent
-          const inView = Math.abs(idx - activeIdx) <= 2;
-          if (!inView) return <div key={post.id} className="w-full h-full bg-black" />;
+          // Keep full slides (lightweight details + poster) within ±3 so swiping back stays smooth;
+          // only previous / current / next own a video player.
+          const dist = idx - activeIdx;
+          if (Math.abs(dist) > 3) return <div key={post.id} className="w-full h-full bg-black" />;
           return (
             <div key={post.id} className="w-full h-full">
               <ReelCard
                 post={post}
-                active={idx === activeIdx}
+                active={dist === 0}
+                hasPlayer={Math.abs(dist) <= 1}
+                preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
                 onLike={handleLike}
                 onComment={() => setCommentPost(post)}
                 friendActivity={idx === activeIdx ? friendActivity : []}
@@ -730,11 +792,6 @@ export function ReelFeed() {
           );
         })}
       </div>
-
-      {/* Preload next video in background */}
-      {posts[activeIdx + 1]?.videos?.[0] && (
-        <link rel="preload" as="video" href={posts[activeIdx + 1].videos![0]} />
-      )}
 
       {/* Navigation arrows */}
       <div className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 flex-col gap-3 z-10">
