@@ -23,6 +23,19 @@ const RETRY_IF_FASTER_THAN_MS = 6000;
 const RETRY_STATUS = new Set([429, 502, 503, 504, 520, 522, 524]);
 const isAdminApp = typeof window !== 'undefined' && (window.location.pathname.startsWith('/admin') || window.location.hostname.startsWith('admin.'));
 
+// At most this many reads are on the wire at once; the rest wait their turn. A burst of dozens of
+// requests (a search fanning out, a profile loading everything) saturates the connection pool and
+// turns into 429s / gateway timeouts -- which is exactly what the "Some content didn't load" notice
+// reports. The timeout clock starts when a request actually leaves, not while it is queued.
+const MAX_CONCURRENT_READS = 6;
+let activeReads = 0;
+const readQueue: Array<() => void> = [];
+const acquireReadSlot = (): Promise<void> =>
+  activeReads < MAX_CONCURRENT_READS
+    ? (activeReads++, Promise.resolve())
+    : new Promise<void>(res => readQueue.push(() => { activeReads++; res(); }));
+const releaseReadSlot = () => { activeReads--; readQueue.shift()?.(); };
+
 let lastBecameVisibleAt = 0;
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') lastBecameVisibleAt = Date.now(); });
@@ -60,6 +73,7 @@ function readWithResilience(input: RequestInfo | URL, init?: RequestInit): Promi
   const outer = init?.signal;
 
   const attempt = async (): Promise<{ res?: Response; err?: unknown; ms: number }> => {
+    await acquireReadSlot();
     const ctrl = new AbortController();
     if (outer) { if (outer.aborted) ctrl.abort(); else outer.addEventListener('abort', () => ctrl.abort(), { once: true }); }
     const t = setTimeout(() => ctrl.abort(), READ_TIMEOUT_MS);
@@ -69,7 +83,7 @@ function readWithResilience(input: RequestInfo | URL, init?: RequestInit): Promi
       return { res, ms: Date.now() - started };
     } catch (err) {
       return { err, ms: Date.now() - started };
-    } finally { clearTimeout(t); }
+    } finally { clearTimeout(t); releaseReadSlot(); }
   };
 
   return (async () => {
