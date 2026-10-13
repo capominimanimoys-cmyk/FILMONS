@@ -9,6 +9,7 @@ import { logProfileEngagement } from './profileEngagement';
 import { toStringArray } from './normalizeList';
 import { indexContentHashtags } from './hashtagsApi';
 import { indexContentLocation } from './locationsApi';
+import { compressForUpload, MAX_UPLOAD_BYTES } from './mediaCompress';
 import { logContentRepostActivity, removeContentRepostActivity } from './activityApi';
 import { fetchViewerConnectionsAndFollows, type RepostContextEntry } from './api';
 import { getConnectionStatus } from './connectionsApi';
@@ -357,9 +358,14 @@ function xhrUploadToStorage(path: string, file: File, onProgress?: (pct: number)
 
 export async function uploadPortfolioMedia(
   userId: string,
-  file: File,
+  original: File,
   onProgress?: (pct: number) => void,
 ): Promise<{ url: string; thumbnailUrl?: string } | null> {
+  // Over the size limit? Shrink it first (progress: compressing is the first half, upload the second).
+  const oversize = original.size > MAX_UPLOAD_BYTES;
+  const file = oversize ? await compressForUpload(original, pct => onProgress?.(Math.round(pct / 2))) : original;
+  const compressed = file !== original;
+  if (compressed) { const raw = onProgress; onProgress = pct => raw?.(50 + Math.round(pct / 2)); }
   const isVideo = file.type.startsWith('video/');
   const isAudio = file.type.startsWith('audio/');
 
