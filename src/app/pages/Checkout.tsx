@@ -748,6 +748,33 @@ export function Checkout() {
       toast.error('Please enter your delivery address'); return;
     }
 
+    // ── Server-side check before any money moves ───────────────────
+    // The screen may be minutes old: confirm the request is still payable and the listing still available.
+    // (An abort signal makes these reads bypass the app's short-lived read cache.)
+    setSubmitting(true);
+    try {
+      const fresh = () => new AbortController().signal;
+      const { data: row } = await supabase.from('messages').select('metadata, is_deleted').eq('id', msgId).abortSignal(fresh()).maybeSingle();
+      const meta = typeof row?.metadata === 'string' ? (() => { try { return JSON.parse(row.metadata); } catch { return {}; } })() : (row?.metadata || {});
+      const status = meta?.paymentRequest?.status;
+      if (row?.is_deleted || status === 'paid') {
+        toast.error(status === 'paid' ? 'This request has already been paid.' : 'This payment request is no longer available.');
+        setSubmitting(false); return;
+      }
+      if (status === 'cancelled' || status === 'declined' || status === 'expired') {
+        toast.error('This payment request was cancelled.'); setSubmitting(false); return;
+      }
+      if (pay.listingId) {
+        let res: any = await supabase.from('listings').select('id, is_active, moderation_status, is_sold').eq('id', pay.listingId).abortSignal(fresh()).maybeSingle();
+        if (res.error) res = await supabase.from('listings').select('id, is_active, moderation_status').eq('id', pay.listingId).abortSignal(fresh()).maybeSingle();
+        const l = res.data;
+        if (l && (l.is_active === false || l.is_sold === true || (l.moderation_status && l.moderation_status !== 'active'))) {
+          toast.error('This listing is no longer available.'); setSubmitting(false); return;
+        }
+      }
+    } catch { /* if the check itself can't run, the payment flow's own server validation still applies */ }
+    setSubmitting(false);
+
     // ── Card payment → Stripe Checkout ──────────────────────────
     if (isCardMethod) {
       setStripeRedirecting(true);

@@ -133,6 +133,17 @@ function RequestPayoutModal({
   const handleConfirm = async (hostId: string) => {
     if (!method || !destination) return;
     setSubmitting(true);
+    // Confirm against the server's CURRENT balance first -- the number on screen may be stale
+    // (a payout approved elsewhere, a refund, a second tab).
+    try {
+      const live = await walletApi.getBalance(hostId);
+      if (amountNum > live.available + 0.0001) {
+        window.dispatchEvent(new CustomEvent('filmons:wallet:updated', { detail: { userId: hostId } }));
+        toast.error(`Your available balance is now ${fmtCad(live.available)}. Please enter a smaller amount.`);
+        setSubmitting(false);
+        return;
+      }
+    } catch { /* if the check itself fails, the server still validates the request */ }
     const res = await walletApi.requestPayout(hostId, amountNum, method, destination, speed);
     if (res.success) {
       setResult({
