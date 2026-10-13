@@ -540,26 +540,76 @@ export function ReelFeed() {
   const [dragY, setDragY]       = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  // Load video posts
+  // The next reels after the one that was tapped. Two small steps -- ids of recent posts that have a
+  // video (tiny rows), then the full posts for just the first batch -- instead of loading 100 full
+  // posts before anything can play.
+  const cursorRef = useRef<string | undefined>(undefined);
+  const loadingMoreRef = useRef(false);
+  const exhaustedRef = useRef(false);
+  const fetchMoreVideos = useCallback(async (known: Set<string>, count = 12): Promise<Post[]> => {
+    if (loadingMoreRef.current || exhaustedRef.current) return [];
+    loadingMoreRef.current = true;
+    try {
+      let q = supabase.from('posts').select('id, videos, created_at')
+        .not('videos', 'is', null).or('is_archived.eq.false,is_archived.is.null')
+        .order('created_at', { ascending: false }).limit(120);
+      if (cursorRef.current) q = q.lt('created_at', cursorRef.current);
+      const { data } = await q;
+      const rows = (data ?? []) as any[];
+      if (!rows.length) { exhaustedRef.current = true; return []; }
+      cursorRef.current = rows[rows.length - 1].created_at;
+      const ids = rows.filter(r => Array.isArray(r.videos) && r.videos.length > 0 && !known.has(r.id)).map(r => String(r.id)).slice(0, count);
+      if (!ids.length) return [];
+      const fetched = await postsApi.getByIds(ids);
+      const order = new Map(ids.map((id, i) => [id, i]));
+      return fetched.filter(p => (p.videos?.length ?? 0) > 0).sort((x, y) => (order.get(x.id) ?? 0) - (order.get(y.id) ?? 0));
+    } catch { return []; }
+    finally { loadingMoreRef.current = false; }
+  }, []);
+
+  const appendReels = useCallback((extra: Post[]) => {
+    if (!extra.length) return;
+    setPosts(prev => {
+      const seen = new Set(prev.map(p => p.id));
+      const fresh = extra.filter(p => !seen.has(p.id));
+      return fresh.length ? [...prev, ...fresh] : prev;
+    });
+  }, []);
+
+  // Load video posts: the tapped reel plays at once; the queue fills in behind it.
   useEffect(() => {
+    let cancelled = false;
+    cursorRef.current = undefined; exhaustedRef.current = false;
     const init = async () => {
       setLoading(true);
       try {
         const stored = getAllPosts().filter(p => (p.videos?.length ?? 0) > 0);
-        let all = stored;
-        if (!stored.find(p => p.id === postId)) {
-          const fresh = await postsApi.getAll(100, 0);
-          all = fresh.filter(p => (p.videos?.length ?? 0) > 0);
+        let list = stored;
+        let idx = stored.findIndex(p => p.id === postId);
+        if (idx < 0) {
+          const [one] = postId ? await postsApi.getByIds([postId]) : [];
+          if (!one || (one.videos?.length ?? 0) === 0) { if (!cancelled) navigate(-1); return; }
+          list = [one, ...stored]; idx = 0;
         }
-        if (all.length === 0) { navigate(-1); return; }
-        setPosts(all);
-        const idx = all.findIndex(p => p.id === postId);
-        setActiveIdx(idx >= 0 ? idx : 0);
-      } catch { navigate(-1); }
-      finally { setLoading(false); }
+        if (cancelled) return;
+        setPosts(list);
+        setActiveIdx(idx);
+        setLoading(false);
+        // Top up the queue in the background (never blocks the tapped reel).
+        const extra = await fetchMoreVideos(new Set(list.map(p => p.id)), 15);
+        if (!cancelled) appendReels(extra);
+      } catch { if (!cancelled) navigate(-1); }
+      finally { if (!cancelled) setLoading(false); }
     };
     init();
+    return () => { cancelled = true; };
   }, [postId]);
+
+  // Keep the queue ahead of the viewer: a few reels before the end, fetch the next batch.
+  useEffect(() => {
+    if (!posts.length || activeIdx < posts.length - 3) return;
+    fetchMoreVideos(new Set(posts.map(p => p.id)), 15).then(appendReels);
+  }, [activeIdx, posts.length]); // eslint-disable-line
 
   // Realtime: watch for friend likes/comments on active post
   useEffect(() => {
