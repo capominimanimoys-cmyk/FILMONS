@@ -8,6 +8,7 @@
 //                              removable chips, bottom-sheet filters, infinite scroll,
 //                              skeletons, empty / error states, scroll/filter restore
 // Follow state comes from FollowContext, so Browse and Connect always agree.
+import { prefetchHandlers } from '../../lib/prefetch';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { BadgeCheck, ChevronLeft, ChevronRight, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
@@ -100,7 +101,7 @@ export function ProfileSearchCard({ profile: p, onOpen, onNavigate }: {
 
   return (
     <div
-      role="link" tabIndex={0} onClick={open}
+      role="link" tabIndex={0} onClick={open} {...prefetchHandlers('host', p.id)}
       onKeyDown={e => { if (e.key === 'Enter') open(); }}
       className={`${CARD_CLASS} cursor-pointer active:scale-[0.995] hover:border-gray-300 transition-colors text-left`}
     >

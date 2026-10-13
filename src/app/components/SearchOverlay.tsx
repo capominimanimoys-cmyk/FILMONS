@@ -2,6 +2,7 @@
  * Filmons — Universal AI Search Overlay
  * Instant typeahead suggestions + ranked results + filter sheet + sort picker.
  */
+import { prefetchHandlers } from '../lib/prefetch';
 import { thumbUrl } from '../lib/mediaUrl';
 import { ProfilesSection } from './search/ProfileSearch';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -887,7 +888,7 @@ function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
   const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))} {...prefetchHandlers('listing', l.id)}
       className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
@@ -917,7 +918,7 @@ function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: strin
   const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))} {...prefetchHandlers('listing', l.id)}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
@@ -950,7 +951,7 @@ function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
   const isEmergency = !!l.is_emergency && !!l.emergency_expires_at && new Date(l.emergency_expires_at) > new Date();
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))} {...prefetchHandlers('listing', l.id)}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
@@ -1012,7 +1013,7 @@ function DiscoveryListingCard({ l, onNavigate, gridMode = false }: { l: ListingR
     : `$${Number(l.price).toLocaleString()}${l.listing_mode === 'rent' ? '/day' : ''}`;
   return (
     <motion.button variants={itemV}
-      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))}
+      onClick={() => onNavigate(`/listing/${l.id}`, previewStateFor(l))} {...prefetchHandlers('listing', l.id)}
       className={`bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left ${gridMode ? 'w-full' : 'shrink-0 w-[150px] snap-start'}`}>
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]

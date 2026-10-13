@@ -19,6 +19,7 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
+import { prefetchHandlers } from '../lib/prefetch';
 import { thumbUrl } from '../lib/mediaUrl';
 import { ProfilesCategoryResults } from './ProfilesCategoryResults';
 import { ProfilesSection } from '../components/search/ProfileSearch';
@@ -1088,7 +1089,7 @@ function PreviewListingCard({ listing, badge, gridMode = false }: {
   const price = `$${Number(listing.price ?? 0).toLocaleString()}${listing.listingMode === 'rent' ? '/day' : ''}`;
   const isEmergency = !!listing.isEmergency && !!listing.emergencyExpiresAt && new Date(listing.emergencyExpiresAt) > new Date();
   return (
-    <button onClick={() => navigate(`/listing/${listing.id}`)}
+    <button onClick={() => navigate(`/listing/${listing.id}`)} {...prefetchHandlers('listing', listing.id)}
       style={gridMode ? { borderRadius: 16 } : PREVIEW_CARD_STYLE}
       className={`${PREVIEW_CARD_CLASS} ${gridMode ? 'w-full h-auto' : ''}`}>
       <div style={gridMode ? { aspectRatio: '4 / 3' } : PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
@@ -1332,7 +1333,7 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
         <div className="flex items-center justify-between mt-auto pt-2">
           {!isOpp && <p className="text-sm font-black text-blue-600">{price}</p>}
           <button
-            onClick={() => navigate(`/listing/${listing.id}`)}
+            onClick={() => navigate(`/listing/${listing.id}`)} {...prefetchHandlers('listing', listing.id)}
             className={`ml-auto px-4 py-2 rounded-xl text-white text-xs font-bold transition-colors ${isOpp ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
             View details
@@ -1672,7 +1673,7 @@ function DesktopListingCard({ listing, badge }: { listing: Listing; badge?: Mark
 
   return (
     <button
-      onClick={() => navigate(`/listing/${listing.id}`)}
+      onClick={() => navigate(`/listing/${listing.id}`)} {...prefetchHandlers('listing', listing.id)}
       style={DESKTOP_CARD_STYLE}
       className="snap-start text-left bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col hover:shadow-md transition-shadow"
     >

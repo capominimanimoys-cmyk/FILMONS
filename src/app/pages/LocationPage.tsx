@@ -1,6 +1,7 @@
 // FILMONS -- /search/locations/:slug. Everything in ONE place (e.g. "Surrey, BC"): marketplace
 // listings, posts, portfolio work, profiles and courses, filtered by the selected location and
 // then by the in-page search + category filters. Data lives in lib/locationSearch.ts.
+import { prefetchHandlers } from '../lib/prefetch';
 import { thumbUrl } from '../lib/mediaUrl';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router';
@@ -96,7 +97,7 @@ function LocationListingCard({ listing }: { listing: Listing }) {
   const badge = BADGE[listingKind(listing)];
   const price = `$${Number(listing.price ?? 0).toLocaleString()}${listing.listingMode === 'rent' ? '/day' : ''}`;
   return (
-    <button onClick={() => navigate(`/listing/${listing.id}`)} className="w-full text-left bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <button onClick={() => navigate(`/listing/${listing.id}`)} {...prefetchHandlers('listing', listing.id)} className="w-full text-left bg-white rounded-2xl border border-gray-100 overflow-hidden">
       <div className="relative w-full bg-gray-100" style={{ aspectRatio: '4 / 3' }}>
         {listing.images?.[0]
           ? <img src={thumbUrl(listing.images[0], 260)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />

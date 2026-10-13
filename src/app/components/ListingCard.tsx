@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router';
+import { prefetchHandlers } from '../lib/prefetch';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { Heart, Star, MapPin, MoreHorizontal, Bookmark, Share2, EyeOff, Flag, X, Pencil, Trash2, Loader2, AlertTriangle, Zap, Users, Lock } from 'lucide-react';
@@ -592,7 +593,7 @@ export function ListingCard({ listing, onClick, className = '', onDeleted, locke
           same :active moment with equal specificity and an unpredictable
           winner depending on cascade order. */}
       <div
-        onClick={handleClick}
+        onClick={handleClick} {...prefetchHandlers('listing', listing.id)}
         onTouchStart={startPress}
         onTouchEnd={endPress}
         onTouchMove={endPress}
