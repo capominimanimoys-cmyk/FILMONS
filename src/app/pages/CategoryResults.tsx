@@ -19,6 +19,7 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
+import { thumbUrl } from '../lib/mediaUrl';
 import { ProfilesCategoryResults } from './ProfilesCategoryResults';
 import { ProfilesSection } from '../components/search/ProfileSearch';
 import { usePopIn } from '../lib/usePopIn';
@@ -1092,7 +1093,7 @@ function PreviewListingCard({ listing, badge, gridMode = false }: {
       className={`${PREVIEW_CARD_CLASS} ${gridMode ? 'w-full h-auto' : ''}`}>
       <div style={gridMode ? { aspectRatio: '4 / 3' } : PREVIEW_IMAGE_STYLE} className={PREVIEW_IMAGE_CLASS}>
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(listing.images[0], 260)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
         {badge && (
           <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[badge]}`}>
@@ -1283,7 +1284,7 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
       {/* Image -- full-width top on mobile, fixed-width left column on desktop */}
       <div className="relative w-full h-48 md:w-56 md:h-40 shrink-0 bg-gray-100">
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(listing.images[0], 260)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-3xl opacity-25">🎬</div>}
         {!isOpp && (
           <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[marketplaceTypeBadgeForListing(listing)]}`}>
@@ -1677,7 +1678,7 @@ function DesktopListingCard({ listing, badge }: { listing: Listing; badge?: Mark
     >
       <div style={DESKTOP_CARD_IMAGE_STYLE} className="relative w-full shrink-0 bg-gray-100">
         {listing.images?.[0]
-          ? <img src={listing.images[0]} className="w-full h-full object-cover object-center" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(listing.images[0], 260)} className="w-full h-full object-cover object-center" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
         {/* Opportunity's own Paid/Unpaid tag already conveys its type
             (plus the section header already says "Opportunities") -- the

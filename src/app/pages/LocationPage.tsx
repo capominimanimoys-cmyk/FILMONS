@@ -1,6 +1,7 @@
 // FILMONS -- /search/locations/:slug. Everything in ONE place (e.g. "Surrey, BC"): marketplace
 // listings, posts, portfolio work, profiles and courses, filtered by the selected location and
 // then by the in-page search + category filters. Data lives in lib/locationSearch.ts.
+import { thumbUrl } from '../lib/mediaUrl';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router';
 import { ArrowLeft, MapPin, MessageCircle, Search, X, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -98,7 +99,7 @@ function LocationListingCard({ listing }: { listing: Listing }) {
     <button onClick={() => navigate(`/listing/${listing.id}`)} className="w-full text-left bg-white rounded-2xl border border-gray-100 overflow-hidden">
       <div className="relative w-full bg-gray-100" style={{ aspectRatio: '4 / 3' }}>
         {listing.images?.[0]
-          ? <img src={listing.images[0]} alt="" className="w-full h-full object-cover" loading="lazy" />
+          ? <img src={thumbUrl(listing.images[0], 260)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
         <span className={`absolute top-1.5 left-1.5 text-[9px] font-black tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${badge.cls}`}>{badge.label}</span>
       </div>

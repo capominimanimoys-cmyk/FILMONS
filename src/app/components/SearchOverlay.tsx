@@ -2,6 +2,7 @@
  * Filmons — Universal AI Search Overlay
  * Instant typeahead suggestions + ranked results + filter sheet + sort picker.
  */
+import { thumbUrl } from '../lib/mediaUrl';
 import { ProfilesSection } from './search/ProfileSearch';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -890,7 +891,7 @@ function MarketplaceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
       className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left">
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
-          ? <img src={l.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(l.images[0], 150)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>
         }
         {isEmergency && (
@@ -920,7 +921,7 @@ function ServiceCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: strin
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
-          ? <img src={l.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(l.images[0], 150)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-xl opacity-25">🛠️</div>
         }
       </div>
@@ -953,7 +954,7 @@ function OpportunityCard({ l, onNavigate }: { l: ListingRow; onNavigate: (url: s
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
         {l.images?.[0]
-          ? <img src={l.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(l.images[0], 150)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-xl opacity-25">💼</div>
         }
       </div>
@@ -1015,7 +1016,7 @@ function DiscoveryListingCard({ l, onNavigate, gridMode = false }: { l: ListingR
       className={`bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-[0.97] transition-transform text-left ${gridMode ? 'w-full' : 'shrink-0 w-[150px] snap-start'}`}>
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {l.images?.[0]
-          ? <img src={l.images[0]} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
+          ? <img src={thumbUrl(l.images[0], 150)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>
         }
         <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${BADGE_STYLE[badge]}`}>

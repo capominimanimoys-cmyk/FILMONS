@@ -118,26 +118,39 @@ function VideoPlayer({ src }: { src: string }) {
   // -- closer to a typical portrait post than 16:9 would be, minimizing
   // the jump for the common case while metadata is still loading.
   const [ratio, setRatio] = useState(4 / 5);
+  // The video file is only requested once the player is close to the screen (or tapped); until then a
+  // black frame with the play button is shown, so a long feed doesn't start dozens of video downloads.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const el = boxRef.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setNear(true); io.disconnect(); } }, { rootMargin: '600px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
   const toggle = () => {
+    if (!near) { setNear(true); return; }
     if (!ref.current) return;
     if (playing) { ref.current.pause(); setPlaying(false); }
     else { ref.current.play(); setPlaying(true); }
   };
   return (
     <div
+      ref={boxRef}
       className="relative bg-black overflow-hidden group cursor-pointer mx-auto"
       style={{ aspectRatio: ratio, maxHeight: '80vh', width: ratio < 1 ? `min(100%, calc(80vh * ${ratio}))` : '100%' }}
       onClick={toggle}
     >
-      <video
-        ref={ref} src={src} muted={muted} loop playsInline
+      {near && <video
+        ref={ref} src={`${src.split('#')[0]}#t=0.1`} muted={muted} loop playsInline preload="metadata"
         className="w-full h-full object-contain"
         onLoadedMetadata={e => {
           const v = e.currentTarget;
           if (v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight);
         }}
         onEnded={() => setPlaying(false)}
-      />
+      />}
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
           <div className="w-14 h-14 bg-white/90 rounded-full flex items-center justify-center shadow-lg">

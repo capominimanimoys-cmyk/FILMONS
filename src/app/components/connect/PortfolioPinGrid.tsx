@@ -3,6 +3,7 @@
 // Connect > Portfolio search page when nothing is typed. Columns are
 // filled greedily (each tile goes to the shortest column), so appending a
 // page never moves the tiles already on screen.
+import { thumbUrl } from '../../lib/mediaUrl';
 import { useEffect, useMemo, useState } from 'react';
 import { Heart, Layers, Play } from 'lucide-react';
 import type { PortfolioFeedEntry } from '../../lib/portfolioApi';
@@ -79,7 +80,7 @@ function PinTile({ entry: e, onOpen }: { entry: PortfolioFeedEntry; onOpen: () =
         className="relative block w-full overflow-hidden rounded-2xl bg-gray-200 active:scale-[0.98] transition-transform"
         style={{ aspectRatio: `1 / ${tileRatio(e)}` }}>
         {image && !failed ? (
-          <img src={image} alt="" loading="lazy" onError={() => setFailed(true)} className="h-full w-full object-cover" />
+          <img src={thumbUrl(image, 240)} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="h-full w-full object-cover" />
         ) : video ? (
           <video src={`${video}#t=0.5`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
         ) : (
