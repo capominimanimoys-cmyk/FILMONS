@@ -111,19 +111,30 @@ export async function unfollowHashtag(userId: string, tagInput: string): Promise
     : { data: [] as any[] };
   const rows: { content_type: string; content_id: string }[] = [...(mentions ?? [])];
 
-  // Content tagged through a "Hashtags" field is also in the item's own `tags` -- include it even
-  // when it was never indexed (older saves), and index it now so it is found normally next time.
-  const cases = [...new Set([tag, tag.charAt(0).toUpperCase() + tag.slice(1), tag.toUpperCase()])];
-  const variants = [...cases, ...cases.map(v => `#${v}`)];
-  const containsAny = variants.map(v => `tags.cs.${JSON.stringify([v])}`).join(',');
+  // Content tagged through a "Hashtags" field lives in the item's own `tags` (or as #tag text in its
+  // title/description) -- include it even when it was never indexed (older saves), and index it now
+  // so it is found the normal way next time. Compared case-insensitively, in the client, so it does
+  // not depend on how the column is typed or how the tag was capitalised when it was saved.
   const seen = new Set(rows.map(r => `${r.content_type}:${r.content_id}`));
+  const safeTag = tag.replace(/[^a-z0-9_]/g, '');
+  const typeOf = { portfolio_items: 'portfolio_item', portfolio_albums: 'portfolio_album', listings: 'listing' } as const;
   const tagged = await Promise.all((['portfolio_items', 'portfolio_albums', 'listings'] as const).map(async table => {
     try {
-      const { data } = await supabase.from(table).select('id').or(containsAny).limit(60);
-      return (data ?? []).map((r: any) => ({ table, id: String(r.id) }));
+      const [byTags, byText] = await Promise.all([
+        supabase.from(table).select('id, tags').not('tags', 'is', null).order('created_at', { ascending: false }).limit(400),
+        safeTag && table !== 'listings'
+          ? supabase.from(table).select('id').or(`title.ilike.%#${safeTag}%,description.ilike.%#${safeTag}%`).limit(60)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      const ids = new Set<string>();
+      for (const r of (byTags.data ?? []) as any[]) {
+        const list = Array.isArray(r.tags) ? r.tags : [];
+        if (list.some((t: unknown) => typeof t === 'string' && normalizeHashtag(t) === tag)) ids.add(String(r.id));
+      }
+      for (const r of (byText.data ?? []) as any[]) ids.add(String(r.id));
+      return [...ids].map(id => ({ table, id }));
     } catch { return []; }
   }));
-  const typeOf = { portfolio_items: 'portfolio_item', portfolio_albums: 'portfolio_album', listings: 'listing' } as const;
   for (const { table, id } of tagged.flat()) {
     const type = typeOf[table];
     if (seen.has(`${type}:${id}`)) continue;
