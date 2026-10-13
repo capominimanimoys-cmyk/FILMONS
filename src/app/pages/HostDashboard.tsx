@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { SectionState } from '../components/SectionState';
 import { DashboardTrustCard } from '../components/trust/DashboardTrustCard';
 import { useMobileScrollChrome } from '../lib/useMobileScrollChrome';
 import { useHeaderCollapse } from '../lib/useHeaderCollapse';
@@ -141,20 +142,30 @@ function isCreatorPlus(user: any): boolean {
 function TransactionHistory({ userId }: { userId: string }) {
   const [txs, setTxs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [nonce, setNonce] = useState(0);
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setError(false);
     supabase.from('orders')
       .select('id, paid_at, total_price, status, listing_title, listing_id')
       .or(`renter_id.eq.${userId},host_id.eq.${userId}`)
       .order('paid_at', { ascending: false })
       .limit(50)
-      .then(({ data }) => { setTxs(data || []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [userId]);
+      .then(({ data, error: err }) => {
+        if (cancelled) return;
+        if (err) { setError(true); setLoading(false); return; }
+        setTxs(data || []); setLoading(false);
+      }, () => { if (!cancelled) { setError(true); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [userId, nonce]);
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-10 gap-2">
-      <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
-      <p className="text-sm text-gray-400">Loading transactions…</p>
+  if (loading || error) return (
+    <div className="p-4">
+      <SectionState loading={loading} error={error} onRetry={() => setNonce(n => n + 1)} label="your transactions"
+        skeleton={<div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-14 animate-pulse rounded-xl bg-gray-100" />)}</div>}>
+        {null}
+      </SectionState>
     </div>
   );
   if (!txs.length) return (
