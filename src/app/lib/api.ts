@@ -3624,7 +3624,7 @@ export const chatApi = {
     }
   },
 
-  async fetchMessages(convId: string): Promise<ChatMessage[]> {
+  async fetchMessages(convId: string, opts: { limit?: number } = {}): Promise<ChatMessage[]> {
     // Direct Supabase, not the legacy /conversations/:id/messages edge
     // function -- that function pre-dates read_at entirely and has its own
     // (older, incomplete) row shape, so any column added directly to the
@@ -3644,7 +3644,7 @@ export const chatApi = {
         .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
         .eq('conversation_id', convId)
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(opts.limit ?? 40);
       if (error) {
         console.warn('[fetchMessages] error:', error.message);
         return loadConvs().find(c => c.id === convId)?.messages ?? [];
@@ -3674,6 +3674,20 @@ export const chatApi = {
       console.warn('[fetchMessages] threw:', e);
       return loadConvs().find(c => c.id === convId)?.messages ?? [];
     }
+  },
+
+  /** The page of messages OLDER than `before` (an ISO timestamp), oldest-first. Throws on failure so the
+   *  caller can offer a retry. */
+  async fetchOlderMessages(convId: string, before: string, limit = 40): Promise<ChatMessage[]> {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, conversation_id, sender_id, sender_name, sender_avatar, type, content, metadata, created_at, reply_to, forwarded_from, is_pinned, deleted_for, is_deleted, read_at')
+      .eq('conversation_id', convId)
+      .lt('created_at', before)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []).reverse().map(dbRowToMsg);
   },
 
   /** Get or create a conversation via `get_or_create_direct_conversation` RPC.

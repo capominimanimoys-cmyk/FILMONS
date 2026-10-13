@@ -1905,6 +1905,29 @@ export function Inbox() {
   // Track which conversations have been fully loaded from server
   const loadedConvIds = useRef<Set<string>>(new Set());
 
+  // "Load earlier messages": cursor pagination (the thread opens with the newest 40).
+  const [olderUi, setOlderUi] = useState<Record<string, { done?: boolean; loading?: boolean; failed?: boolean }>>({});
+  const loadEarlier = async () => {
+    const conv = conversations.find(c => c.id === activeId);
+    const oldest = conv?.messages[0]?.createdAt;
+    if (!conv || !oldest) return;
+    const id = conv.id;
+    const area = messagesAreaRef.current;
+    const heightBefore = area?.scrollHeight ?? 0;
+    setOlderUi(p => ({ ...p, [id]: { loading: true } }));
+    try {
+      const older = await chatApi.fetchOlderMessages(id, oldest);
+      setConversations(prev => prev.map(c => c.id !== id ? c : {
+        ...c, messages: [...older.filter(m => !c.messages.some(x => x.id === m.id)), ...c.messages],
+      }));
+      setOlderUi(p => ({ ...p, [id]: { done: older.length < 40 } }));
+      // Keep the viewer where they were instead of jumping to the top.
+      requestAnimationFrame(() => { if (area) area.scrollTop += area.scrollHeight - heightBefore; });
+    } catch {
+      setOlderUi(p => ({ ...p, [id]: { failed: true } }));
+    }
+  };
+
   useEffect(() => {
     if (!activeConv || !user) return;
     chatApi.markAsRead(activeConv.id, user.id);
@@ -1948,7 +1971,7 @@ export function Inbox() {
 
     // Poll every 8s as fallback when Realtime misses messages
     const pollId = setInterval(() => {
-      chatApi.fetchMessages(activeConv.id).then(msgs => {
+      chatApi.fetchMessages(activeConv.id, { limit: 20 }).then(msgs => {
         if (!msgs.length) return;
         setConversations(prev => prev.map(c => {
           if (c.id !== activeConv.id) return c;
@@ -3223,6 +3246,14 @@ export function Inbox() {
               {/* Messages */}
               <div ref={messagesAreaRef} onClick={handleChatAreaClick}
                 className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-3">
+                {activeConv.messages.length >= 40 && !olderUi[activeConv.id]?.done && (
+                  <div className="flex justify-center pb-1">
+                    <button onClick={loadEarlier} disabled={olderUi[activeConv.id]?.loading}
+                      className="rounded-full bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200 disabled:opacity-60">
+                      {olderUi[activeConv.id]?.loading ? 'Loading…' : olderUi[activeConv.id]?.failed ? "Couldn't load — retry" : 'Load earlier messages'}
+                    </button>
+                  </div>
+                )}
                 {activeConv.messages.length === 0 && (
                   <div className="text-center py-10"><p className="text-sm text-gray-400">No messages yet. Say hello! 👋</p></div>
                 )}
