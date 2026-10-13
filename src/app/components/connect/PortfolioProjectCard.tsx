@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Pencil, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -306,6 +306,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
         <PostMoreMenu
           onClose={() => setShowMoreMenu(false)}
           actions={[
+            ...(isOwn ? [{ icon: Pencil, label: 'Edit work', onClick: () => { setShowMoreMenu(false); navigate(`/edit-portfolio-item/${item.id}`); } }] : []),
             { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); openPortfolioPreview(creator.id); } },
             { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },
             { icon: Link2, label: 'Copy link', onClick: async () => { setShowMoreMenu(false); try { await navigator.clipboard.writeText(getSharedContentDeepLink(shareSnapshot)); toast.success('Link copied'); } catch { toast.error('Could not copy link'); } } },
