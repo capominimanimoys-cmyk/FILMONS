@@ -6,7 +6,7 @@
 // pages use; Category's options are the real distinct values present in
 // the current result set rather than an invented taxonomy (courses have
 // no fixed category list anywhere in this codebase).
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { ArrowLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { getCourses, type Course, type CourseLevel } from '../lib/coursesApi';
@@ -37,13 +37,51 @@ export function CoursesCategoryResults({ query: initialQuery, inConnect = false 
   const [results, setResults] = useState<Course[] | null>(null);
   const [filters, setFilters] = useState<CourseFilters>(loadFilters);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const PAGE = 20;
 
+  // First page after a short typing pause; later pages come from a cursor (created_at of the last
+  // course shown), so nothing is fetched twice and a slow page never blocks the first.
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
-    setResults(null);
-    const t = setTimeout(() => { getCourses({ query, limit: 50 }).then(setResults); }, 250);
-    return () => clearTimeout(t);
-  }, [query]);
+    if (!query.trim()) { setResults([]); setHasMore(false); setFailed(false); return; }
+    let cancelled = false;
+    setResults(null); setFailed(false);
+    const t = setTimeout(() => {
+      getCourses({ query, limit: PAGE, throwOnError: true })
+        .then(r => { if (cancelled) return; setResults(r); setHasMore(r.length === PAGE); })
+        .catch(() => { if (!cancelled) { setResults([]); setFailed(true); } });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query, nonce]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore || !results?.length) return;
+    const before = results[results.length - 1].createdAt;
+    setLoadingMore(true);
+    getCourses({ query, limit: PAGE, before, throwOnError: true })
+      .then(r => {
+        setResults(prev => {
+          const seen = new Set((prev ?? []).map(c => c.id));
+          return [...(prev ?? []), ...r.filter(c => !seen.has(c.id))];
+        });
+        setHasMore(r.length === PAGE);
+      })
+      .catch(() => setHasMore(false))
+      .finally(() => setLoadingMore(false));
+  }, [loadingMore, hasMore, results, query]);
+
+  // Ask for the next page shortly before the viewer reaches the end.
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !hasMore || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) loadMore(); }, { rootMargin: '600px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, loadMore]);
 
   useEffect(() => { try { sessionStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch {} }, [filters]);
 
@@ -159,12 +197,20 @@ export function CoursesCategoryResults({ query: initialQuery, inConnect = false 
             <p className="text-center text-sm text-gray-400 py-16">Search courses to get started.</p>
           ) : filtered === null ? (
             <div className="flex justify-center py-16"><FilmonsBrandLoader size="md" label="Searching" /></div>
+          ) : failed ? (
+            <div role="alert" className="mx-auto my-12 max-w-sm rounded-2xl border border-gray-100 bg-white p-6 text-center">
+              <p className="text-sm font-bold text-gray-900">We couldn’t load courses.</p>
+              <button onClick={() => setNonce(n => n + 1)} className="mt-3 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white">Retry</button>
+            </div>
           ) : filtered.length === 0 ? (
             <p className="text-center text-sm text-gray-400 py-16">No courses matching "{query}"</p>
           ) : (
-            <div data-pop-list className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-              {filtered.map(c => <CourseCard key={c.id} course={c} />)}
-            </div>
+            <>
+              <div data-pop-list className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                {filtered.map(c => <CourseCard key={c.id} course={c} />)}
+              </div>
+              {hasMore && <div ref={sentinel} className="flex justify-center py-6"><FilmonsBrandLoader size="sm" label="Loading more" /></div>}
+            </>
           )}
         </div>
       </div>
