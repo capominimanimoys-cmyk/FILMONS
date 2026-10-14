@@ -143,6 +143,8 @@ export interface Post {
 
   // Metadata
   visibility?: Visibility;
+  /** Picture posts: also play in Reels. */
+  showInReels?: boolean;
   allowComments?: boolean;
   allowSharing?: boolean;
   allowDuetRemix?: boolean;

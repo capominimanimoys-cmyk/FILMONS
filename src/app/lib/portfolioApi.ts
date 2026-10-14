@@ -90,6 +90,8 @@ export interface PortfolioAlbum {
   location?:         string;
   work_date?:        string;
   show_on_profile?:  boolean;
+  /** Creator opt-in: this (public) album plays in Reels as one picture carousel. */
+  show_in_reels?:    boolean;
 }
 
 export interface AlbumCredit {
@@ -2021,4 +2023,96 @@ export async function getReelPortfolioVideos(opts: { before?: string; limit?: nu
     if (videos.length >= limit) break;
   }
   return { videos, cursor, done: rows.length < limit * 3 };
+}
+
+
+// ── Reels: pictures ───────────────────────────────────────────────────────────
+export interface ReelPortfolioImage {
+  kind: 'item' | 'album';
+  /** The portfolio item id, or the album id. */
+  id: string;
+  title: string;
+  images: string[];
+  creator: PortfolioFeedCreator;
+  item?: PortfolioItem;
+  album?: PortfolioAlbum;
+  created_at: string;
+}
+
+/** Turn "Show in Reels" on/off for a portfolio item or album (best effort: false if the column isn't there yet). */
+export async function setShowInReels(kind: 'item' | 'album', id: string, value: boolean): Promise<boolean> {
+  const { error } = await supabase.from(kind === 'item' ? 'portfolio_items' : 'portfolio_albums').update({ show_in_reels: value }).eq('id', id);
+  return !error;
+}
+
+/** Public portfolio pictures that opted into Reels: a single picture is one full-screen slide, an album is one carousel.
+ *  Pictures that sit inside an album only appear through the album. Newest first, cursor on created_at. */
+export async function getReelPortfolioImages(opts: {
+  before?: string; limit?: number; excludeKeys?: Set<string>; creatorId?: string; kind?: 'item' | 'album'; id?: string;
+} = {}): Promise<{ entries: ReelPortfolioImage[]; cursor?: string; done: boolean }> {
+  const limit = opts.limit ?? 5;
+  const wantItems = !opts.kind || opts.kind === 'item';
+  const wantAlbums = !opts.kind || opts.kind === 'album';
+
+  let iq = supabase.from('portfolio_items').select('*').eq('show_in_reels', true).eq('media_type', 'image')
+    .order('created_at', { ascending: false }).limit(limit * 3);
+  let aq = supabase.from('portfolio_albums').select('*').eq('show_in_reels', true).eq('visibility', 'public')
+    .order('created_at', { ascending: false }).limit(limit * 2);
+  if (opts.before) { iq = iq.lt('created_at', opts.before); aq = aq.lt('created_at', opts.before); }
+  if (opts.creatorId) { iq = iq.eq('user_id', opts.creatorId); aq = aq.eq('user_id', opts.creatorId); }
+  if (opts.id) { iq = iq.eq('id', opts.id); aq = aq.eq('id', opts.id); }
+
+  const [iRes, aRes] = await Promise.all([
+    wantItems ? iq : Promise.resolve({ data: [], error: null } as any),
+    wantAlbums ? aq : Promise.resolve({ data: [], error: null } as any),
+  ]);
+  if (iRes.error && aRes.error) throw iRes.error;           // columns missing / network: caller keeps the feed playable
+  const items = ((iRes.data ?? []) as PortfolioItem[]).filter(i => i.media_url && !i.is_hidden && (!i.visibility || i.visibility === 'public'));
+  const albums = (aRes.data ?? []) as PortfolioAlbum[];
+  const rawTimes = [...(iRes.data ?? []), ...(aRes.data ?? [])].map((r: any) => r.created_at as string).sort().reverse();
+  if (!rawTimes.length) return { entries: [], done: true };
+
+  const itemIds = items.map(i => i.id);
+  const albumIds = albums.map(a => a.id);
+  const ownerIds = [...new Set([...items.map(i => i.user_id), ...albums.map(a => a.user_id)])];
+  const [{ data: inAlbumRows }, { data: albumItemRows }, { data: settings }, { data: profiles }] = await Promise.all([
+    itemIds.length ? supabase.from('portfolio_album_items').select('item_id').in('item_id', itemIds) : Promise.resolve({ data: [] as any[] }),
+    albumIds.length ? supabase.from('portfolio_album_items').select('album_id, sort_order, portfolio_items(*)').in('album_id', albumIds).order('sort_order') : Promise.resolve({ data: [] as any[] }),
+    ownerIds.length ? supabase.from('portfolio_settings').select('user_id').in('user_id', ownerIds).neq('visibility', 'public') : Promise.resolve({ data: [] as any[] }),
+    ownerIds.length ? supabase.from('profiles').select('id, name, username, avatar_url, primary_role, business_industry, account_type, city, is_verified').in('id', ownerIds) : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const closed = new Set((settings ?? []).map((s: any) => s.user_id));
+  const standalone = new Set(itemIds);
+  (inAlbumRows ?? []).forEach((r: any) => standalone.delete(r.item_id));
+  const prof = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  const creatorOf = (uid: string): PortfolioFeedCreator | null => {
+    const p: any = prof.get(uid); if (!p) return null;
+    return {
+      id: p.id, name: p.name, username: p.username ?? null, avatar_url: p.avatar_url ?? null, primary_role: p.primary_role ?? null,
+      business_industry: p.business_industry ?? null, account_type: p.account_type ?? null, city: p.city ?? null, is_verified: !!p.is_verified,
+    };
+  };
+  const albumPics = new Map<string, string[]>();
+  for (const r of (albumItemRows ?? []) as any[]) {
+    const it = r.portfolio_items;
+    if (!it || it.media_type !== 'image' || !it.media_url || it.is_hidden || (it.visibility && it.visibility !== 'public')) continue;
+    albumPics.set(r.album_id, [...(albumPics.get(r.album_id) ?? []), it.media_url]);
+  }
+
+  const out: ReelPortfolioImage[] = [];
+  for (const item of items) {
+    if (!standalone.has(item.id) || closed.has(item.user_id) || opts.excludeKeys?.has(`i:${item.id}`)) continue;
+    const creator = creatorOf(item.user_id); if (!creator) continue;
+    out.push({ kind: 'item', id: item.id, title: item.title, images: [item.media_url!], creator, item, created_at: item.created_at });
+  }
+  for (const album of albums) {
+    const pics = albumPics.get(album.id) ?? [];
+    if (!pics.length || closed.has(album.user_id) || opts.excludeKeys?.has(`a:${album.id}`)) continue;
+    const creator = creatorOf(album.user_id); if (!creator) continue;
+    out.push({ kind: 'album', id: album.id, title: album.title, images: pics, creator, album, created_at: album.created_at });
+  }
+  out.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+  const taken = out.slice(0, limit);
+  const full = (iRes.data?.length ?? 0) >= limit * 3 || (aRes.data?.length ?? 0) >= limit * 2;
+  return { entries: taken, cursor: rawTimes[rawTimes.length - 1], done: !full };
 }

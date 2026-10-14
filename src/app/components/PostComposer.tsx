@@ -2732,6 +2732,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [visibility, setVis]     = useState<Visibility>('public');
   const [hideLikes,  setHL]      = useState(false);
   const [allowComments,setAC]    = useState(true);
+  const [showInReels, setShowInReels] = useState(true);
   const [projectType,setPType]   = useState('');
   const [allowSharing, setSh]    = useState(true);
   const [allowRemix, setAR]      = useState(false);
@@ -3056,6 +3057,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           snippetStart: selectedMusic?.snippetStart,
           snippetEnd:   selectedMusic?.snippetEnd,
           location:     location || undefined,
+          showInReels:  showInReels && isPhoto,
           // Non-destructive crop: store transform metadata, keep original file
           cropMeta: isPhoto && perPhotoEdits.current.size > 0
             ? Array.from({ length: photos.length }, (_, i) => {
@@ -3869,6 +3871,18 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
                   <div className="flex-1"/><Bookmark className="w-5 h-5 text-gray-400"/>
                 </div>
               </div>
+              {isPhoto && (
+                <div className={`flex items-center justify-between gap-3 bg-violet-50 border border-violet-100 rounded-2xl px-4 py-3 ${visibility!=='public'?'opacity-60':''}`}>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Show in Reels</p>
+                    <p className="text-[11px] text-gray-500">{visibility==='public' ? 'Let people discover your pictures in Reels' : 'Only public posts can appear in Reels'}</p>
+                  </div>
+                  <button type="button" disabled={visibility!=='public'} onClick={()=>setShowInReels(v=>!v)} aria-pressed={showInReels&&visibility==='public'}
+                    className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${showInReels&&visibility==='public'?'bg-violet-500':'bg-gray-200'}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${showInReels&&visibility==='public'?'left-[22px]':'left-0.5'}`}/>
+                  </button>
+                </div>
+              )}
               <div className="text-xs text-gray-400 text-center">
                 {visibility==='public'?'Visible to everyone':visibility==='followers'?'Visible to followers':'Visible to only you'} · {allowComments?'Comments on':'Comments off'}
               </div>

@@ -16,6 +16,7 @@ import { notifyEvent } from '../lib/notifyEvent';
 import {
   PORTFOLIO_CATEGORIES, PORTFOLIO_SUBCATEGORIES, createPortfolioItem, uploadPortfolioMedia, getPortfolioUploadError,
   readImageDimensions, readVideoDimensions, workTypeToMediaType, createAlbum, updateAlbum, addItemToAlbum,
+  setShowInReels as setPortfolioShowInReels,
   type WorkType, type PortfolioItem, type MediaType,
 } from '../lib/portfolioApi';
 
@@ -96,6 +97,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [visibility,  setVisibility]  = useState<'public' | 'followers' | 'private'>('public');
   const [showVisSheet,setShowVisSheet]= useState(false);
   const [showInReels, setShowInReels] = useState(true);
+  const [albumInReels, setAlbumInReels] = useState(true);
   const [location,    setLocation]    = useState('');
   const [tags,        setTags]        = useState<string[]>([]);
   const [tagInput,    setTagInput]    = useState('');
@@ -258,6 +260,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       category: category || undefined, location: location.trim() || undefined,
       tags: tags.length ? tags : undefined, cover_item_id: coverItem?.id,
     });
+    if (albumInReels && visibility === 'public' && doneItems.some(d => d.mediaType === 'image')) setPortfolioShowInReels('album', album.id, true).catch(() => {});
 
     if (createdItems.length) {
       logActivityEvent({
@@ -342,7 +345,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       height:       imgHeight,
       aspect_ratio: imgAr,
       visibility,
-      ...(showInReels && visibility === 'public' && mediaType === 'video' ? { show_in_reels: true } : {}),
+      ...(showInReels && visibility === 'public' && (mediaType === 'video' || mediaType === 'image') ? { show_in_reels: true } : {}),
       location:     location.trim() || undefined,
       tags:         tags.length ? tags : undefined,
     });
@@ -743,13 +746,13 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   </div>
 
                   {/* Show in Reels -- public videos only; engagement stays on this portfolio item */}
-                  {(workType === 'video' || workType === 'reel') && (
+                  {(workType === 'video' || workType === 'reel' || workType === 'photo') && (
                     <div className={`flex items-center justify-between bg-violet-50 border border-violet-100 rounded-2xl px-4 py-3.5 mb-3 ${visibility !== 'public' ? 'opacity-60' : ''}`}>
                       <div className="flex items-center gap-2">
                         <Video className="w-4 h-4 text-violet-500" />
                         <div>
                           <p className="text-sm font-black text-gray-900">Show in Reels</p>
-                          <p className="text-[11px] text-gray-400">{visibility === 'public' ? 'Let people discover this video in Reels' : 'Only public videos can appear in Reels'}</p>
+                          <p className="text-[11px] text-gray-400">{visibility === 'public' ? 'Let people discover this in Reels' : 'Only public videos can appear in Reels'}</p>
                         </div>
                       </div>
                       <button disabled={visibility !== 'public'} onClick={() => setShowInReels(v => !v)}
@@ -844,6 +847,19 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                   </div>
                 ))}
               </div>
+
+              {albumItems.some(d => d.mediaType === 'image') && (
+                <div className={`flex items-center justify-between bg-violet-50 border border-violet-100 rounded-2xl px-4 py-3 ${visibility !== 'public' ? 'opacity-60' : ''}`}>
+                  <div>
+                    <p className="text-sm font-black text-gray-900">Show album pictures in Reels</p>
+                    <p className="text-[11px] text-gray-400">{visibility === 'public' ? 'Plays as one swipeable carousel' : 'Only public albums can appear in Reels'}</p>
+                  </div>
+                  <button disabled={visibility !== 'public'} onClick={() => setAlbumInReels(v => !v)}
+                    className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${albumInReels && visibility === 'public' ? 'bg-violet-500' : 'bg-gray-200'}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${albumInReels && visibility === 'public' ? 'left-[22px]' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              )}
 
               <button
                 onClick={() => fileRef.current?.click()}

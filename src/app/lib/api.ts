@@ -1578,6 +1578,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     tagPins:         row.tag_pins         || undefined,
     location:        row.location         || undefined,
     visibility:      (row.visibility as Visibility) || 'public',
+    showInReels:     !!row.show_in_reels,
     // Portfolio attachment metadata for PostCard's Portfolio section
     portfolioItemId:       row.portfolio_item_id       || undefined,
     portfolioItemTitle:    row.portfolio_item_title    || undefined,
@@ -2082,6 +2083,8 @@ export const postsApi = {
       // Linked course -- written into metadata.course (no column needed).
       course?: Post['course'];
       visibility?: Visibility;
+      /** Picture posts: also play in Reels (public posts only). */
+      showInReels?: boolean;
     },
   ): Promise<Post> => {
     const currentUser = authApi.getCurrentUser();
@@ -2163,11 +2166,20 @@ export const postsApi = {
     if (extraMeta?.portfolioItemCategory) insertPayload.portfolio_item_category = extraMeta.portfolioItemCategory;
     if (extraMeta?.portfolioItemThumb)    insertPayload.portfolio_item_thumb    = extraMeta.portfolioItemThumb;
 
-    const { data, error } = await supabase
+    const wantsReels = !!extraMeta?.showInReels && (extraMeta?.visibility || 'public') === 'public' && !!images?.length && !videos?.length;
+    if (wantsReels) insertPayload.show_in_reels = true;
+
+    let { data, error } = await supabase
       .from('posts')
       .insert(insertPayload)
       .select('id, created_at, content, post_type, media_urls, video_url, audio_url')
       .single();
+    if (error && wantsReels) {
+      // Reels migration not applied yet: publish the post without the opt-in rather than failing it.
+      delete insertPayload.show_in_reels;
+      ({ data, error } = await supabase.from('posts').insert(insertPayload)
+        .select('id, created_at, content, post_type, media_urls, video_url, audio_url').single());
+    }
 
     if (error) {
       console.error('Post insert error:', error);
