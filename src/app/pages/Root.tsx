@@ -38,6 +38,12 @@ const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opport
 export function Root() {
   const location = useLocation();
   const navigate = useNavigate();
+  // Profile pages use the San Francisco (SF Pro) font stack -- see styles/fonts.css.
+  const onProfilePage = location.pathname === '/profile' || location.pathname.startsWith('/profile/') || location.pathname.startsWith('/host/');
+  useEffect(() => {
+    document.documentElement.classList.toggle('font-profile', onProfilePage);
+    return () => document.documentElement.classList.remove('font-profile');
+  }, [onProfilePage]);
   const { user, isAuthenticated, isGuest, deviceVerified } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Bumped by the read-failure banner's Retry to remount the current page and re-run its loads.
