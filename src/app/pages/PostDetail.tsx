@@ -135,22 +135,69 @@ export function PostDetail() {
 
   const handleComment = async () => {
     const text = newComment.trim();
-    if (!user || !text || !post || submitting) return;
-    setSubmitting(true);
+    if (!user || !text || !post) return;
+    const parent = replyTo ? (replyTo.parentId || replyTo.id) : undefined;
+    const tempId = `tmp-${Date.now()}`;
+    const temp: Comment = {
+      id: tempId, postId: post.id, userId: user.id, userName: user.name || (user as any).username || 'You',
+      userAvatar: user.avatar, userAccountType: user.accountType as any, content: text,
+      likes: [], likesCount: 0, replyCount: 0, parentId: parent ?? null, createdAt: new Date().toISOString(),
+    };
+    // Show it at once; the server call finishes in the background.
+    setNewComment(''); setReplyTo(null);
+    if (parent) {
+      setReplies(prev => ({ ...prev, [parent]: [...(prev[parent] ?? []), temp] }));
+      setOpenReplies(prev => new Set(prev).add(parent));
+      setComments(prev => prev.map(x => x.id === parent ? { ...x, replyCount: (x.replyCount ?? 0) + 1 } : x));
+    } else {
+      setComments(prev => [temp, ...prev]);
+    }
+    setCount(1);
     try {
-      const parent = replyTo ? (replyTo.parentId || replyTo.id) : undefined;
-      const c = await commentsApi.add(post.id, text, post, parent);
+      const real = await commentsApi.add(post.id, text, post, parent);
+      const merged: Comment = { ...temp, ...real, id: real.id || tempId, createdAt: real.createdAt || temp.createdAt };
+      if (parent) setReplies(prev => ({ ...prev, [parent]: (prev[parent] ?? []).map(r => r.id === tempId ? merged : r) }));
+      else setComments(prev => prev.map(c => c.id === tempId ? merged : c));
+    } catch {
       if (parent) {
-        setReplies(prev => ({ ...prev, [parent]: [...(prev[parent] ?? []), c] }));
-        setOpenReplies(prev => new Set(prev).add(parent));
-        setComments(prev => prev.map(x => x.id === parent ? { ...x, replyCount: (x.replyCount ?? 0) + 1 } : x));
-      } else {
-        setComments(prev => [c, ...prev]);
-      }
-      setCount(1);
-      setNewComment(''); setReplyTo(null);
-    } catch { toast.error('Could not post your comment'); }
-    finally { setSubmitting(false); }
+        setReplies(prev => ({ ...prev, [parent]: (prev[parent] ?? []).filter(r => r.id !== tempId) }));
+        setComments(prev => prev.map(x => x.id === parent ? { ...x, replyCount: Math.max(0, (x.replyCount ?? 1) - 1) } : x));
+      } else setComments(prev => prev.filter(c => c.id !== tempId));
+      setCount(-1);
+      setNewComment(text);
+      toast.error('Could not post your comment');
+    }
+  };
+
+  // ── Edit (author, within 30 min) and delete (author) ───────────────────────
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const patchComment = (cid: string, parentId: string | undefined, fn: (c: Comment) => Comment) => {
+    if (parentId) setReplies(prev => ({ ...prev, [parentId]: (prev[parentId] ?? []).map(c => c.id === cid ? fn(c) : c) }));
+    else setComments(prev => prev.map(c => c.id === cid ? fn(c) : c));
+  };
+  const saveEdit = async (c: Comment, parentId?: string) => {
+    const text = editText.trim();
+    if (!text) return;
+    if (text === c.content) { setEditingId(null); return; }
+    const before = c.content;
+    patchComment(c.id, parentId, x => ({ ...x, content: text, editedAt: new Date().toISOString() }));
+    setEditingId(null);
+    try { await commentsApi.edit(c.id, text, c.createdAt); }
+    catch (e: any) { patchComment(c.id, parentId, x => ({ ...x, content: before, editedAt: c.editedAt })); toast.error(e?.message || 'Could not edit comment'); }
+  };
+  const removeComment = async (c: Comment, parentId?: string) => {
+    setConfirmDel(null);
+    const snapshotC = comments, snapshotR = replies;
+    const nReplies = parentId ? 0 : (c.replyCount ?? 0);
+    if (parentId) {
+      setReplies(prev => ({ ...prev, [parentId]: (prev[parentId] ?? []).filter(r => r.id !== c.id) }));
+      setComments(prev => prev.map(x => x.id === parentId ? { ...x, replyCount: Math.max(0, (x.replyCount ?? 1) - 1) } : x));
+    } else setComments(prev => prev.filter(x => x.id !== c.id));
+    setCount(-(1 + nReplies));
+    try { await commentsApi.delete(c.id); }
+    catch { setComments(snapshotC); setReplies(snapshotR); setCount(1 + nReplies); toast.error('Could not delete comment'); }
   };
 
   const toggleLike = async (commentId: string, isReply: boolean, parentId?: string) => {
@@ -211,14 +258,33 @@ export function PostDetail() {
             <button onClick={() => navigate(`/host/${c.userId}`)}>{c.userName}</button>
             {c.userAccountType && <AccountTypeBadge type={c.userAccountType} size="sm" />}
           </p>
-          <p className="text-sm text-gray-800 mt-0.5 leading-relaxed whitespace-pre-line break-words">{c.content}</p>
+          {editingId === c.id ? (
+            <div className="mt-1">
+              <textarea value={editText} onChange={e => setEditText(e.target.value)} autoFocus rows={2}
+                className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm outline-none focus:border-blue-300 resize-none" />
+              <div className="flex gap-3 mt-1">
+                <button onClick={() => saveEdit(c, parentId)} disabled={!editText.trim()} className="text-xs font-bold text-blue-600 disabled:opacity-40">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-xs font-semibold text-gray-500">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-800 mt-0.5 leading-relaxed whitespace-pre-line break-words">{c.content}</p>
+          )}
         </div>
         <div className="flex items-center gap-4 px-2 pt-1 text-[11px] font-semibold text-gray-500">
-          <span className="font-normal text-gray-400">{relTime(c.createdAt)}</span>
+          <span className="font-normal text-gray-400">{relTime(c.createdAt)}{c.editedAt ? ' · Edited' : ''}</span>
           <button onClick={() => toggleLike(c.id, isReply, parentId)} className={c.likedByMe ? 'text-red-500' : ''}>
             Like{(c.likesCount ?? 0) > 0 ? ` · ${c.likesCount}` : ''}
           </button>
           {user && post.allowComments !== false && <button onClick={() => startReply(c)}>Reply</button>}
+          {user?.id === c.userId && editingId !== c.id && Date.now() - new Date(c.createdAt).getTime() < 30 * 60_000 && (
+            <button onClick={() => { setEditText(c.content); setEditingId(c.id); }}>Edit</button>
+          )}
+          {user?.id === c.userId && !String(c.id).startsWith('tmp-') && (
+            confirmDel === c.id
+              ? <span className="flex items-center gap-2"><button className="text-red-600" onClick={() => removeComment(c, parentId)}>Confirm delete</button><button onClick={() => setConfirmDel(null)}>Cancel</button></span>
+              : <button onClick={() => setConfirmDel(c.id)}>Delete</button>
+          )}
         </div>
         {!isReply && (c.replyCount ?? 0) > 0 && (
           <button onClick={() => toggleReplies(c)} className="flex items-center gap-1 px-2 pt-1.5 text-[11px] font-bold text-blue-600">

@@ -112,15 +112,15 @@ export function ProfileAllTab({
   // gutters and needlessly narrow every card on mobile.
   return (
     <div className="py-4 space-y-3">
+      <TrustVerificationSection
+        trust={trust} isOwner={isOwner} accountType={accountType} isVerified={isVerified}
+        verificationStatus={verificationStatus} onOpenDetails={onOpenTrustDetails}
+      />
+
       <AboutSection
         bio={bio} primaryRole={primaryRole} businessIndustry={businessIndustry} accountType={accountType} secondaryRoles={secondaryRoles}
         location={location} openTo={openTo} languages={languages}
         isOwner={isOwner} onEdit={onEditAbout}
-      />
-
-      <TrustVerificationSection
-        trust={trust} isOwner={isOwner} accountType={accountType} isVerified={isVerified}
-        verificationStatus={verificationStatus} onOpenDetails={onOpenTrustDetails}
       />
 
       <PostsPreviewSection

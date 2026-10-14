@@ -98,6 +98,7 @@ export interface Comment {
   replyCount?: number;   // from DB replies_count column
   parentId?: string | null;
   createdAt: string;
+  editedAt?: string;
 }
 
 export type PostType = 'photo' | 'video' | 'audio' | 'text' | 'mixed';

@@ -1052,6 +1052,17 @@ export async function toggleCommentLike(commentId: string, userId: string, curre
   return !error;
 }
 
+/** Author-only edit within 30 minutes (also enforced by a DB trigger -- see migration 20240623). */
+export async function editItemComment(commentId: string, userId: string, body: string, createdAt?: string): Promise<void> {
+  const text = body.trim();
+  if (!text) throw new Error("Comment can't be empty");
+  if (createdAt && Date.now() - new Date(createdAt).getTime() > 30 * 60_000) throw new Error('Comments can only be edited within 30 minutes');
+  const { data, error } = await supabase.from('portfolio_item_comments').update({ body: text })
+    .eq('id', commentId).eq('user_id', userId).select('id');
+  if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error('Could not edit this comment');
+}
+
 export async function deleteItemComment(commentId: string): Promise<boolean> {
   const { error } = await supabase.from('portfolio_item_comments').delete().eq('id', commentId);
   return !error;

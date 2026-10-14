@@ -1,9 +1,9 @@
-// Read-only "About" card inside the All tab -- previously "About" WAS the
+// Read-only "About" card (bio + role / location / language rows) inside the All tab -- previously "About" WAS the
 // tab (an inline edit form, AboutEditor). Now About is a display section;
 // AboutEditor is reached via the Edit pencil here (and other sections'
 // Edit links) as a full-screen overlay instead of tab content.
-import { useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Pencil, Briefcase, User, MapPin, Globe } from 'lucide-react';
 import { normalizeTier } from '../../lib/reliabilityApi';
 
 // secondaryRoles/openTo/languages come from the free-form profile_meta
@@ -25,98 +25,97 @@ function toList(v: unknown): string[] {
 }
 
 export function AboutSection({
-  bio, primaryRole, businessIndustry, accountType, secondaryRoles, location, openTo, languages, isOwner, onEdit,
+  bio, primaryRole, businessIndustry, accountType, secondaryRoles, location, languages, isOwner, onEdit,
 }: {
   bio?: string;
   primaryRole?: string;
-  /** Business accounts only -- shown instead of primaryRole. See
-   *  getDisplayIdentity in lib/identity.ts for the shared resolution rule;
-   *  this component needs the raw pair (not a pre-resolved string) because
-   *  the LABEL itself changes too ("Business Industry" vs "Primary Role"),
-   *  not just the value. */
+  /** Business accounts only -- replaces the two role rows. */
   businessIndustry?: string;
   accountType?: string;
   secondaryRoles?: string[];
   location?: string;
+  /** Accepted for compatibility with callers; the About card no longer shows "Open to". */
   openTo?: string[];
   languages?: string[];
   isOwner: boolean;
   onEdit?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const bioRef = useRef<HTMLParagraphElement>(null);
   const isBusiness = normalizeTier(accountType) === 'business';
-  // Empty means null/undefined/""/whitespace-only, all treated identically.
-  const trimmedBio = (bio ?? '').trim();
-  const hasBio = trimmedBio.length > 0;
-  const longBio = trimmedBio.length > 180;
-  const shownBio = expanded || !longBio ? trimmedBio : `${trimmedBio.slice(0, 180)}…`;
+  const text = (bio ?? '').trim();
 
-  // Business: never falls back to primaryRole -- a Business account with no
-  // Business Industry set yet shows neither ("neutral until completed" per
-  // spec), not a misleading personal-role fallback.
-  const identityValue = isBusiness ? businessIndustry : primaryRole;
-  const identityLabel = isBusiness ? 'Business Industry' : 'Primary Role';
-  const secondaryLabel = isBusiness ? 'Specialties / Services' : 'Also Works As';
+  // "See more" only when the four-line preview actually cuts text off.
+  useLayoutEffect(() => {
+    const el = bioRef.current;
+    if (el && !expanded) setOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [text, expanded]);
+  useEffect(() => {
+    const on = () => { const el = bioRef.current; if (el && !expanded) setOverflowing(el.scrollHeight > el.clientHeight + 1); };
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, [expanded]);
 
-  const secondaryRolesList = toList(secondaryRoles);
-  const openToList = toList(openTo);
-  const languagesList = toList(languages);
+  const secondary = toList(secondaryRoles);
+  const langs = toList(languages);
+  const loc = (location ?? '').trim();
+  const rows: { key: string; Icon: typeof Briefcase; label: string; value: string }[] = [];
+  if (isBusiness) {
+    if (isRealValue((businessIndustry ?? '').trim())) rows.push({ key: 'industry', Icon: Briefcase, label: 'Business industry', value: businessIndustry!.trim() });
+  } else {
+    if (isRealValue((primaryRole ?? '').trim())) rows.push({ key: 'primary', Icon: Briefcase, label: 'Primary role', value: primaryRole!.trim() });
+    if (secondary.length) rows.push({ key: 'secondary', Icon: User, label: 'Secondary role', value: secondary.join(', ') });
+  }
+  if (isRealValue(loc)) rows.push({ key: 'loc', Icon: MapPin, label: 'Location', value: loc });
+  if (langs.length) rows.push({ key: 'lang', Icon: Globe, label: 'Languages', value: langs.join(', ') });
 
-  const hasAnything = hasBio || identityValue || secondaryRolesList.length || location || openToList.length || languagesList.length;
-  if (!hasAnything && !isOwner) return null;
+  const empty = !text && rows.length === 0;
+  if (empty && !isOwner) return null;
 
   return (
-    <section className="bg-white rounded-2xl border border-gray-100 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-black text-gray-900">About</p>
+    <section className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-gray-900">About</h2>
         {isOwner && (
-          <button onClick={onEdit} className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline">
-            <Pencil className="w-3 h-3" /> Edit
+          <button onClick={onEdit} aria-label="Edit about" className="-mr-1.5 w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
+            <Pencil className="w-4 h-4" strokeWidth={1.75} />
           </button>
         )}
       </div>
 
-      <div className="space-y-3">
-        {hasBio ? (
-          <div>
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{shownBio}</p>
-            {longBio && (
-              <button onClick={() => setExpanded(v => !v)} className="text-xs font-semibold text-gray-500 hover:underline mt-0.5">
-                {expanded ? 'See less' : 'See more'}
-              </button>
-            )}
-          </div>
-        ) : isOwner ? (
-          // Owner + empty bio -> "+ Add bio", opens straight to the Bio
-          // field (AboutEditor's Overview accordion); viewer + empty bio ->
-          // nothing here at all, not even a placeholder.
-          <button onClick={onEdit} className="text-sm font-semibold text-blue-600 hover:underline">
-            + Add bio
-          </button>
-        ) : null}
-
-        {(!!identityValue || !!secondaryRolesList.length || !!location || !!openToList.length || !!languagesList.length) && (
-          // Single column on narrow phones -- two cramped columns there
-          // made every value truncate. sm: and up (tablet-width+) is where
-          // there's actually room for two.
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 pt-1">
-            {identityValue && <Field label={identityLabel} value={identityValue} />}
-            {!!secondaryRolesList.length && <Field label={secondaryLabel} value={secondaryRolesList.join(', ')} />}
-            {location && <Field label="Location" value={location} />}
-            {!!openToList.length && <Field label="Open To" value={openToList.join(', ')} />}
-            {!!languagesList.length && <Field label="Languages" value={languagesList.join(', ')} />}
-          </div>
-        )}
-      </div>
+      {empty ? (
+        <div className="pt-2">
+          <p className="text-sm text-gray-500">Tell creators about yourself</p>
+          <button onClick={onEdit} className="mt-3 px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold active:scale-95 transition-transform">Add about</button>
+        </div>
+      ) : (
+        <>
+          {text && (
+            <div className="mt-2">
+              <p ref={bioRef} className={`text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words ${expanded ? '' : 'line-clamp-4'}`}>{text}</p>
+              {(overflowing || expanded) && (
+                <button onClick={() => setExpanded(v => !v)} className="mt-1 text-sm font-semibold text-gray-500 hover:text-gray-800">
+                  {expanded ? 'See less' : 'See more'}
+                </button>
+              )}
+            </div>
+          )}
+          {rows.length > 0 && (
+            <div className={text ? 'mt-3 border-t border-gray-100' : 'mt-2'}>
+              {rows.map((r, i) => (
+                <div key={r.key} className={`flex items-start gap-3 py-2.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                  <r.Icon className="w-[18px] h-[18px] mt-0.5 shrink-0 text-gray-500" strokeWidth={1.75} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-400 leading-tight">{r.label}</p>
+                    <p className="text-sm text-gray-900 font-medium break-words">{r.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className="text-xs text-gray-700 font-medium truncate">{value}</p>
-    </div>
   );
 }

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import url('https://api.fontshare.com/v2/css?f[]=neue-montreal@400,500,700,800&display=swap');
 
 /* San Francisco Pro is Apple's system font — accessible via system-ui */
@@ -18,4 +19,10 @@ html, body, #root {
 /* Tailwind font-sans override */
 *, *::before, *::after {
   font-family: var(--font-sans);
+}
+
+/* Profile pages: San Francisco on Apple devices. SF Pro can't be served from the web (Apple's license), so other
+   devices get Inter -- the closest open-source match -- instead of Segoe UI / Roboto. */
+html.font-profile {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Helvetica Neue', Arial, sans-serif;
 }

@@ -16,6 +16,7 @@ import { Comment } from '../types';
 import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
 import { Trash2, Reply, ChevronDown, Loader2, Send } from 'lucide-react';
 import { toast } from 'sonner';
+import { CommentEditBox, useCommentEdit } from './CommentEditor';
 
 // ── Module-level caches (survive component hide/show cycles) ──────────────────
 const _commentCache = new Map<string, Comment[]>();  // postId → comments[]
@@ -101,6 +102,7 @@ const CommentRow = memo(function CommentRow({ comment, postId, depth = 0, onDele
   const [showReplies, setShowReplies]       = useState(false);
   const [replyCount, setReplyCount]         = useState(comment.replyCount ?? 0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const edit = useCommentEdit(comment.content, comment.createdAt, comment.editedAt, t => commentsApi.edit(comment.id, t, comment.createdAt));
 
   // ── Like state — localStorage for persistence, likesCount from DB ──────────
   const _likeKey = user ? `filmons_clikes_${user.id}` : null;
@@ -191,10 +193,10 @@ const CommentRow = memo(function CommentRow({ comment, postId, depth = 0, onDele
               </button>
               {comment.userAccountType && <AccountTypeBadge type={comment.userAccountType} size="sm" />}
             </div>
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{comment.content}</p>
+            {edit.editing ? <CommentEditBox edit={edit} /> : <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{edit.text}</p>}
           </div>
           <div className="flex items-center gap-3 mt-0.5 ml-2">
-            <span className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}</span>
+            <span className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}{edit.edited && ' · Edited'}</span>
             <button onClick={handleLike} disabled={liking}
               className={`text-xs font-semibold transition-colors ${likedByMe ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}`}>
               {likedByMe ? '♥' : '♡'} {displayCount > 0 ? displayCount : ''}
@@ -204,10 +206,13 @@ const CommentRow = memo(function CommentRow({ comment, postId, depth = 0, onDele
                 <Reply className="w-3 h-3" /> Reply
               </button>
             )}
+            {isOwn && edit.canEdit && !edit.editing && (
+              <button onClick={edit.start} className="text-xs font-semibold text-gray-400 hover:text-blue-500 transition-colors">Edit</button>
+            )}
             {isOwn && (
               <div className="relative">
-                <button onClick={() => setShowDeleteConfirm(v => !v)} disabled={deleting}
-                  className="text-xs text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+                <button onClick={() => setShowDeleteConfirm(v => !v)} disabled={deleting} aria-label="Delete comment"
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-0.5">
                   <Trash2 className="w-3 h-3" />
                 </button>
                 {showDeleteConfirm && (
