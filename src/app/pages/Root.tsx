@@ -1,4 +1,4 @@
-import { Outlet, useLocation, Navigate } from 'react-router';
+import { Outlet, useLocation, Navigate, useNavigate } from 'react-router';
 import { SideDrawer } from '../components/SideDrawer';
 import { TopBar } from '../components/TopBar';
 import { MobileBottomNav } from '../components/MobileBottomNav';
@@ -37,6 +37,7 @@ const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opport
 
 export function Root() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, isAuthenticated, isGuest, deviceVerified } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Bumped by the read-failure banner's Retry to remount the current page and re-run its loads.
@@ -60,13 +61,21 @@ export function Root() {
   // Global portfolio item detail page (Pinterest-style) -- same reasoning
   // as the preview above: it must outlive whichever card or overlay opened it.
   const [portfolioPin, setPortfolioPin] = useState<{ entry: PortfolioFeedEntry; seed: PortfolioFeedEntry[] } | null>(null);
-  const openPortfolioItem = useCallback((item: string | PortfolioFeedEntry, seed: PortfolioFeedEntry[] = [], kind: 'item' | 'album' = 'item') => {
-    if (typeof item !== 'string') { setPortfolioPin({ entry: item, seed }); return; }
+  const openPortfolioItem = useCallback((item: string | PortfolioFeedEntry, seed: PortfolioFeedEntry[] = [], kind: 'item' | 'album' = 'item', opts?: { forceDetail?: boolean }) => {
+    // A public video its creator opted into Reels opens in the Reels viewer (swipe on through that creator's videos).
+    const toReels = (e: PortfolioFeedEntry) => {
+      if (opts?.forceDetail || e.type !== 'item') return false;
+      const it = e.item;
+      if (it.media_type !== 'video' || !it.show_in_reels || it.is_hidden || (it.visibility && it.visibility !== 'public') || !it.media_url) return false;
+      navigate(`/reels/pf_${it.id}`);
+      return true;
+    };
+    if (typeof item !== 'string') { if (!toReels(item)) setPortfolioPin({ entry: item, seed }); return; }
     getPortfolioEntriesByIds(kind === 'item' ? [item] : [], kind === 'album' ? [item] : [], user?.id).then(map => {
       const e = map.get(item);
-      if (e && e.type === kind) setPortfolioPin({ entry: e, seed });
+      if (e && e.type === kind && !toReels(e)) setPortfolioPin({ entry: e, seed });
     }).catch(() => {});
-  }, [user?.id]);
+  }, [user?.id, navigate]);
   // Leaving the page (e.g. the preview expanding into /portfolio/:id)
   // closes the detail page so it never sits over the new route.
   useEffect(() => { setPortfolioPin(null); }, [location.pathname]);

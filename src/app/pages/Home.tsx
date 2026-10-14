@@ -1390,6 +1390,10 @@ export function Home() {
                       >
                         Following
                       </button>
+                      <button role="tab" aria-selected={false} onClick={() => navigate('/reels')}
+                        className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-gray-600 border border-gray-200">
+                        Reels
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1552,6 +1556,10 @@ export function Home() {
                     }`}
                   >
                     Following
+                  </button>
+                  <button role="tab" aria-selected={false} onClick={() => navigate('/reels')}
+                    className="px-4 py-1.5 rounded-full text-sm font-bold bg-white text-gray-600 border border-gray-200">
+                    Reels
                   </button>
                 </div>
               ) : <div />}

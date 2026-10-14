@@ -1475,6 +1475,10 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
     items: activeTab === 'albums' && activeAlbum ? albumItems : filtered,
     isOwner,
     onTap: (item, index) => {
+      // A public video its creator put in Reels opens in the Reels viewer (swipe on through their other eligible videos).
+      if (item.media_type === 'video' && item.show_in_reels && !item.is_hidden && (!item.visibility || item.visibility === 'public')) {
+        navigate(`/reels/pf_${item.id}`); return;
+      }
       const src = activeTab === 'albums' && activeAlbum ? albumItems : items;
       const globalIndex = src.indexOf(item);
       setViewer({ open: true, index: globalIndex >= 0 ? globalIndex : index });

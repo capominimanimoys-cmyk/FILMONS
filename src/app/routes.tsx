@@ -54,6 +54,7 @@ export const router = createBrowserRouter([
       { path: 'post/:id', ...page(() => import('./pages/PostDetail'), 'PostDetail') },
       { path: 'audio/search', ...page(() => import('./pages/AudioPage')) },
       { path: 'audio/:id',    ...page(() => import('./pages/AudioPage')) },
+      { path: 'reels', ...page(() => import('./pages/ReelFeed'), 'ReelFeed') },
       { path: 'reels/:postId', ...page(() => import('./pages/ReelFeed'), 'ReelFeed') },
       { path: 'phone-signup', ...page(() => import('./pages/SignupPhone'), 'SignupPhone') },
       { path: 'phone-login', ...page(() => import('./pages/PhoneLogin'), 'PhoneLogin') },

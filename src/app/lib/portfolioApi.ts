@@ -45,6 +45,8 @@ export interface PortfolioItem {
    * portfolio_settings.visibility gate. Missing/undefined defaults to
    * 'public', same convention as posts.visibility. */
   visibility?:         'public' | 'followers' | 'private';
+  /** Creator opt-in: this (public) video may also play in the Reels feed. */
+  show_in_reels?:      boolean;
   location?:           string;
   views_count?:        number;
   saves_count?:        number;
@@ -257,12 +259,17 @@ export async function createPortfolioItem(
   userId: string,
   item: Omit<PortfolioItem, 'id' | 'user_id' | 'created_at'>,
 ): Promise<PortfolioItem | null> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('portfolio_items')
     .insert({ ...item, user_id: userId })
     .select()
     .single();
-  if (error) { console.error('[portfolio] create error:', error.message); return null; }
+  if (error && 'show_in_reels' in item) {
+    // Reels migration not applied yet: save the work without the opt-in rather than losing it.
+    const { show_in_reels: _drop, ...rest } = item as any;
+    ({ data, error } = await supabase.from('portfolio_items').insert({ ...rest, user_id: userId }).select().single());
+  }
+  if (error || !data) { console.error('[portfolio] create error:', error?.message); return null; }
   indexContentHashtags('portfolio_item', data.id, `${item.title ?? ''} ${item.description ?? ''}`, item.tags).catch(() => {});
   indexContentLocation('portfolio_item', data.id, item.location).catch(() => {});
   return data as PortfolioItem;
@@ -1935,4 +1942,65 @@ export async function getMutualConnectionsBatch(
     console.warn('[discovery] mutual connections batch error:', e);
     return result;
   }
+}
+
+
+// ── Reels ─────────────────────────────────────────────────────────────────────
+export interface ReelPortfolioVideo {
+  item: PortfolioItem;
+  creator: PortfolioFeedCreator;
+  /** First PUBLIC album this video sits in, if any ("View project" opens that album). */
+  albumId?: string;
+}
+
+/** Public portfolio videos whose creator switched "Show in Reels" on. Newest first, cursor on created_at.
+ *  Visibility is enforced here: item must be public + not hidden, the owner's portfolio must be public, and a
+ *  video that lives only in non-public albums is left out. Making a video private removes it from Reels. */
+export async function getReelPortfolioVideos(opts: { before?: string; limit?: number; excludeIds?: Set<string>; creatorId?: string; itemId?: string } = {}): Promise<{ videos: ReelPortfolioVideo[]; cursor?: string; done: boolean }> {
+  const limit = opts.limit ?? 6;
+  let q = supabase.from('portfolio_items').select('*')
+    .eq('show_in_reels', true).eq('media_type', 'video')
+    .order('created_at', { ascending: false }).limit(limit * 3);
+  if (opts.before) q = q.lt('created_at', opts.before);
+  if (opts.creatorId) q = q.eq('user_id', opts.creatorId);
+  if (opts.itemId) q = q.eq('id', opts.itemId);
+  const { data, error } = await q;
+  if (error) throw error;                       // column missing / network: the caller keeps the feed playable
+  const rows = (data ?? []) as PortfolioItem[];
+  if (!rows.length) return { videos: [], done: true };
+  const cursor = rows[rows.length - 1].created_at;
+  const cands = rows.filter(i => i.media_url && !i.is_hidden && (!i.visibility || i.visibility === 'public') && !opts.excludeIds?.has(i.id));
+  if (!cands.length) return { videos: [], cursor, done: rows.length < limit * 3 };
+
+  const ownerIds = [...new Set(cands.map(i => i.user_id))];
+  const ids = cands.map(i => i.id);
+  const [{ data: settings }, { data: profiles }, { data: links }] = await Promise.all([
+    supabase.from('portfolio_settings').select('user_id').in('user_id', ownerIds).neq('visibility', 'public'),
+    supabase.from('profiles').select('id, name, username, avatar_url, primary_role, business_industry, account_type, city, is_verified').in('id', ownerIds),
+    supabase.from('portfolio_album_items').select('item_id, album_id, portfolio_albums(id, visibility)').in('item_id', ids),
+  ]);
+  const closed = new Set((settings ?? []).map((s: any) => s.user_id));
+  const prof = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  const albumOf = new Map<string, string>(); const inAlbum = new Set<string>();
+  for (const l of (links ?? []) as any[]) {
+    inAlbum.add(l.item_id);
+    if (l.portfolio_albums?.visibility === 'public' && !albumOf.has(l.item_id)) albumOf.set(l.item_id, l.album_id);
+  }
+  const videos: ReelPortfolioVideo[] = [];
+  for (const item of cands) {
+    if (closed.has(item.user_id)) continue;
+    if (inAlbum.has(item.id) && !albumOf.has(item.id)) continue;   // only in private/connections albums
+    const p: any = prof.get(item.user_id);
+    if (!p) continue;
+    videos.push({
+      item,
+      creator: {
+        id: p.id, name: p.name, username: p.username ?? null, avatar_url: p.avatar_url ?? null, primary_role: p.primary_role ?? null,
+        business_industry: p.business_industry ?? null, account_type: p.account_type ?? null, city: p.city ?? null, is_verified: !!p.is_verified,
+      },
+      albumId: albumOf.get(item.id),
+    });
+    if (videos.length >= limit) break;
+  }
+  return { videos, cursor, done: rows.length < limit * 3 };
 }

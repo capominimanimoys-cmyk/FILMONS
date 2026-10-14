@@ -43,6 +43,8 @@ interface AlbumDraftItem {
   width?:       number;
   height?:      number;
   aspect_ratio?:number;
+  /** Album videos opt in to Reels one by one. */
+  showInReels?: boolean;
 }
 
 interface WorkTypeOption {
@@ -93,6 +95,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
   const [isFeatured,  setIsFeatured]  = useState(false);
   const [visibility,  setVisibility]  = useState<'public' | 'followers' | 'private'>('public');
   const [showVisSheet,setShowVisSheet]= useState(false);
+  const [showInReels, setShowInReels] = useState(true);
   const [location,    setLocation]    = useState('');
   const [tags,        setTags]        = useState<string[]>([]);
   const [tagInput,    setTagInput]    = useState('');
@@ -242,6 +245,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
         height:       d.height,
         aspect_ratio: d.aspect_ratio,
         visibility,
+        ...(d.showInReels && visibility === 'public' && d.mediaType === 'video' ? { show_in_reels: true } : {}),
         location:     location.trim() || undefined,
         tags:         tags.length ? tags : undefined,
       });
@@ -338,6 +342,7 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
       height:       imgHeight,
       aspect_ratio: imgAr,
       visibility,
+      ...(showInReels && visibility === 'public' && mediaType === 'video' ? { show_in_reels: true } : {}),
       location:     location.trim() || undefined,
       tags:         tags.length ? tags : undefined,
     });
@@ -737,6 +742,23 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                     </div>
                   </div>
 
+                  {/* Show in Reels -- public videos only; engagement stays on this portfolio item */}
+                  {(workType === 'video' || workType === 'reel') && (
+                    <div className={`flex items-center justify-between bg-violet-50 border border-violet-100 rounded-2xl px-4 py-3.5 mb-3 ${visibility !== 'public' ? 'opacity-60' : ''}`}>
+                      <div className="flex items-center gap-2">
+                        <Video className="w-4 h-4 text-violet-500" />
+                        <div>
+                          <p className="text-sm font-black text-gray-900">Show in Reels</p>
+                          <p className="text-[11px] text-gray-400">{visibility === 'public' ? 'Let people discover this video in Reels' : 'Only public videos can appear in Reels'}</p>
+                        </div>
+                      </div>
+                      <button disabled={visibility !== 'public'} onClick={() => setShowInReels(v => !v)}
+                        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${showInReels && visibility === 'public' ? 'bg-violet-500' : 'bg-gray-200'}`}>
+                        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${showInReels && visibility === 'public' ? 'left-[22px]' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Feature toggle */}
                   <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3.5">
                     <div className="flex items-center gap-2">
@@ -793,6 +815,13 @@ export function AddPortfolioItemSheet({ onClose, onAdded }: Props) {
                         <button onClick={() => setCoverId(d.id)} className="text-[11px] font-bold text-blue-600 flex items-center gap-1 mt-0.5">
                           {coverId === d.id ? <><Check className="w-3 h-3" /> Cover</> : 'Set as cover'}
                         </button>
+                      )}
+                      {d.mediaType === 'video' && d.status !== 'error' && (
+                        <label className="flex items-center gap-1.5 mt-1 text-[11px] font-bold text-gray-600">
+                          <input type="checkbox" checked={!!d.showInReels} disabled={visibility !== 'public'}
+                            onChange={e => setAlbumItems(prev => prev.map(x => x.id === d.id ? { ...x, showInReels: e.target.checked } : x))} />
+                          Show in Reels
+                        </label>
                       )}
                       {d.status === 'error' && <p className="text-[11px] text-red-500 font-semibold">{(d as any).error || 'Upload failed'}</p>}
                     </div>

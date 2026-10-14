@@ -21,7 +21,7 @@ interface PortfolioPreviewContextValue {
    *  detail page (PortfolioPinDetail). Pass the entry when you have it, or
    *  just its id (`kind` says which); `seed` is the list around it (swipe
    *  order, and More to explore while related work loads). */
-  openPortfolioItem: (item: string | PortfolioFeedEntry, seed?: PortfolioFeedEntry[], kind?: 'item' | 'album') => void;
+  openPortfolioItem: (item: string | PortfolioFeedEntry, seed?: PortfolioFeedEntry[], kind?: 'item' | 'album', opts?: { forceDetail?: boolean }) => void;
 }
 
 export const PortfolioPreviewContext = createContext<PortfolioPreviewContextValue | null>(null);

@@ -6,7 +6,7 @@
  * - Swipe navigation
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { usePostStore } from '../context/PostContext';
 import { postsApi, commentsApi, authApi } from '../lib/api';
@@ -21,11 +21,22 @@ import { RepostMenuSheet } from '../components/RepostMenuSheet';
 import { usePostRepostCompose } from '../context/PostRepostComposeContext';
 import { logContentRepostActivity, removeContentRepostActivity } from '../lib/activityApi';
 import * as notifs from '../lib/notifications';
-import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
 import { toast } from 'sonner';
+import { PortfolioReelCard } from '../components/PortfolioReelCard';
+import { PortfolioCommentSheet } from '../components/PortfolioCommentSheet';
+import { getReelPortfolioVideos, type ReelPortfolioVideo } from '../lib/portfolioApi';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { supabase } from '../../lib/supabase';
+
+/** A reel is a normal post, or a portfolio video (id `pf_<itemId>`) whose engagement lives on the portfolio item. */
+type Reel = Post & { portfolio?: ReelPortfolioVideo };
+const PF = 'pf_';
+const toReel = (v: ReelPortfolioVideo): Reel => ({
+  id: `${PF}${v.item.id}`, userId: v.item.user_id, userName: v.creator.name,
+  videos: [v.item.media_url!], images: v.item.thumbnail_url ? [v.item.thumbnail_url] : [], content: '', portfolio: v,
+} as unknown as Reel);
 
 // ── Friend activity toast ─────────────────────────────────────────────────────
 function FriendActivityToast({ avatar, name, action, content }: {
@@ -146,10 +157,13 @@ function CommentsSheet({ post, onClose }: { post: Post; onClose: () => void }) {
 
 // ── Single Reel Card ──────────────────────────────────────────────────────────
 function ReelCard({
-  post, active, onLike, onComment, friendActivity,
+  post, active, hasPlayer, preload, onLike, onComment, friendActivity,
 }: {
   post: Post;
   active: boolean;
+  /** Previous / current / next reels own a <video>; farther ones keep only the poster (frees decoders + memory). */
+  hasPlayer: boolean;
+  preload: 'auto' | 'metadata' | 'none';
   onLike: (post: Post) => void;
   onComment: () => void;
   friendActivity: Array<{ id: string; avatar?: string; name: string; action: 'liked' | 'commented'; content?: string }>;
@@ -221,28 +235,61 @@ function ReelCard({
   };
 
   const videoSrc = post.videos?.[0];
+  const poster = post.images?.[0] || post.thumbnailUrl;
   const [videoReady, setVideoReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [blocked, setBlocked] = useState(false);   // autoplay refused -> show a play button
+  const [attempt, setAttempt] = useState(0);        // bump to retry a failed video
+  const wantPlay = useRef(false);
 
+  const tryPlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v || !wantPlay.current) return;
+    v.play().then(() => { setPlaying(true); setBlocked(false); }).catch(e => {
+      if (e?.name === 'NotAllowedError') { setBlocked(true); setPlaying(false); }
+    });
+  }, []);
+
+  // Only the visible reel plays. Swiping away pauses at once; the position is kept for when you come back.
   useEffect(() => {
     const v = videoRef.current;
+    wantPlay.current = active;
     if (!v) return;
     if (active) {
-      v.currentTime = 0;
-      // Load before playing
-      v.load();
-      const tryPlay = () => v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+      setBlocked(false);
       if (v.readyState >= 3) tryPlay();
-      else v.addEventListener('canplay', tryPlay, { once: true });
+      else { v.addEventListener('canplay', tryPlay, { once: true }); if (v.preload !== 'auto') v.load(); }
     } else {
-      v.pause();
-      setPlaying(false);
+      v.pause(); setPlaying(false);
     }
-  }, [active]);
+    return () => v.removeEventListener('canplay', tryPlay);
+  }, [active, hasPlayer, attempt, tryPlay]);
+
+  // Backgrounded app / hidden tab: pause; resume where it was when visible again.
+  useEffect(() => {
+    const onVis = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (document.hidden) { v.pause(); setPlaying(false); }
+      else if (active) tryPlay();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [active, tryPlay]);
+
+  // Leaving Reels: stop audio and release the media.
+  useEffect(() => () => {
+    const v = videoRef.current;
+    if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+  }, []);
+
+  // Players that scroll out of range are released (their element is unmounted); reset flags for a fresh start.
+  useEffect(() => { if (!hasPlayer) { setVideoReady(false); setPlaying(false); } }, [hasPlayer]);
 
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
-    if (playing) { v.pause(); setPlaying(false); } else { v.play(); setPlaying(true); }
+    if (playing) { wantPlay.current = false; v.pause(); setPlaying(false); } else { wantPlay.current = true; tryPlay(); }
   };
 
   const handleDoubleTap = () => {
@@ -277,23 +324,39 @@ function ReelCard({
       {/* Video */}
       {videoSrc
         ? <>
-            <video
-              ref={videoRef}
-              src={videoSrc}
-              muted={muted}
-              loop
-              playsInline
-              preload={active ? 'auto' : 'metadata'}
-              onCanPlay={() => setVideoReady(true)}
-              onWaiting={() => setVideoReady(false)}
-              onPlaying={() => setVideoReady(true)}
-              className="w-full h-full object-contain"
-              onClick={handleDoubleTap}
-            />
-            {/* Buffering spinner */}
-            {active && !videoReady && (
+            {/* Poster stays until the first frame is playing. */}
+            {poster && !(videoReady && playing) && (
+              <img src={poster} alt="" className="absolute inset-0 w-full h-full object-contain" />
+            )}
+            {hasPlayer && !failed && (
+              <video
+                key={attempt}
+                ref={videoRef}
+                src={videoSrc}
+                poster={poster}
+                muted={muted}
+                loop
+                playsInline
+                preload={preload}
+                onCanPlay={() => setVideoReady(true)}
+                onWaiting={() => setVideoReady(false)}
+                onPlaying={() => { setVideoReady(true); setPlaying(true); }}
+                onError={() => { if (videoRef.current?.error) { setFailed(true); setPlaying(false); } }}
+                className="relative w-full h-full object-contain"
+                onClick={handleDoubleTap}
+              />
+            )}
+            {/* Small buffering indicator over the poster */}
+            {active && hasPlayer && !failed && !blocked && !videoReady && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-10 h-10 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              </div>
+            )}
+            {active && failed && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40">
+                <p className="text-white text-sm">This video couldn't be played.</p>
+                <button onClick={() => { setFailed(false); setVideoReady(false); setAttempt(n => n + 1); }}
+                  className="px-5 py-2 rounded-full bg-white text-black text-sm font-semibold">Retry</button>
               </div>
             )}
           </>
@@ -302,8 +365,9 @@ function ReelCard({
           </div>
       }
 
-      {!playing && videoSrc && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      {!playing && videoSrc && !failed && (blocked || videoReady) && (
+        <div className={`absolute inset-0 flex items-center justify-center ${blocked ? '' : 'pointer-events-none'}`}
+          onClick={blocked ? () => { wantPlay.current = true; tryPlay(); } : undefined}>
           <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
             <Play className="w-7 h-7 text-white fill-white ml-1" />
           </div>
@@ -524,7 +588,14 @@ export function ReelFeed() {
   const { user } = useAuth();
   const { getAllPosts, updatePost } = usePostStore();
 
-  const [posts, setPosts]         = useState<Post[]>([]);
+  const [posts, setPosts]         = useState<Reel[]>([]);
+  const { openPortfolioItem } = usePortfolioPreview();
+  const [searchParams] = useSearchParams();
+  const [muted, setMuted] = useState(true);
+  const [pfComment, setPfComment] = useState<ReelPortfolioVideo | null>(null);
+  const [commentDeltas, setCommentDeltas] = useState<Record<string, number>>({});
+  const pfCursor = useRef<string | undefined>(undefined);
+  const pfDone = useRef(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [loading, setLoading]     = useState(true);
   const [commentPost, setCommentPost] = useState<Post | null>(null);
@@ -532,6 +603,11 @@ export function ReelFeed() {
     id: string; avatar?: string; name: string; action: 'liked' | 'commented'; content?: string;
   }>>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Slow / data-saver connections: don't buffer the next reel ahead of time.
+  const slowNet = (() => {
+    const c = (navigator as any).connection;
+    return !!c && (c.saveData || /(^|-)2g$/.test(String(c.effectiveType || '')) || c.effectiveType === '3g');
+  })();
   const touchStartY  = useRef(0);
   const touchStartT  = useRef(0);
   const isDragging   = useRef(false);
@@ -546,7 +622,7 @@ export function ReelFeed() {
   const cursorRef = useRef<string | undefined>(undefined);
   const loadingMoreRef = useRef(false);
   const exhaustedRef = useRef(false);
-  const fetchMoreVideos = useCallback(async (known: Set<string>, count = 12): Promise<Post[]> => {
+  const fetchMorePosts = useCallback(async (known: Set<string>, count = 12): Promise<Post[]> => {
     if (loadingMoreRef.current || exhaustedRef.current) return [];
     loadingMoreRef.current = true;
     try {
@@ -557,17 +633,37 @@ export function ReelFeed() {
       const { data } = await q;
       const rows = (data ?? []) as any[];
       if (!rows.length) { exhaustedRef.current = true; return []; }
-      cursorRef.current = rows[rows.length - 1].created_at;
+      const nextCursor = rows[rows.length - 1].created_at;
       const ids = rows.filter(r => Array.isArray(r.videos) && r.videos.length > 0 && !known.has(r.id)).map(r => String(r.id)).slice(0, count);
-      if (!ids.length) return [];
+      if (!ids.length) { cursorRef.current = nextCursor; return []; }
       const fetched = await postsApi.getByIds(ids);
+      cursorRef.current = nextCursor;   // advance only once the batch loaded, so a failure retries the same page
       const order = new Map(ids.map((id, i) => [id, i]));
       return fetched.filter(p => (p.videos?.length ?? 0) > 0).sort((x, y) => (order.get(x.id) ?? 0) - (order.get(y.id) ?? 0));
     } catch { return []; }
     finally { loadingMoreRef.current = false; }
   }, []);
 
-  const appendReels = useCallback((extra: Post[]) => {
+  const busyRef = useRef(false);
+  // Posts and eligible portfolio videos load side by side; one portfolio video after every three posts.
+  const fetchMoreVideos = useCallback(async (known: Set<string>, count = 12): Promise<Reel[]> => {
+    if (busyRef.current) return [];
+    busyRef.current = true;
+    try {
+      const pfKnown = new Set([...known].filter(id => id.startsWith(PF)).map(id => id.slice(PF.length)));
+      const [p, pf] = await Promise.all([
+        fetchMorePosts(known, count),
+        pfDone.current ? Promise.resolve([] as ReelPortfolioVideo[]) : getReelPortfolioVideos({ before: pfCursor.current, limit: 5, excludeIds: pfKnown })
+          .then(r => { pfCursor.current = r.cursor; if (r.done) pfDone.current = true; return r.videos; })
+          .catch(() => [] as ReelPortfolioVideo[]),   // portfolio failing never blocks the feed
+      ]);
+      const out: Reel[] = []; const pfr = pf.map(toReel);
+      p.forEach((x, i) => { out.push(x as Reel); if ((i + 1) % 3 === 0 && pfr.length) out.push(pfr.shift()!); });
+      return [...out, ...pfr];
+    } finally { busyRef.current = false; }
+  }, [fetchMorePosts]);
+
+  const appendReels = useCallback((extra: Reel[]) => {
     if (!extra.length) return;
     setPosts(prev => {
       const seen = new Set(prev.map(p => p.id));
@@ -579,17 +675,39 @@ export function ReelFeed() {
   // Load video posts: the tapped reel plays at once; the queue fills in behind it.
   useEffect(() => {
     let cancelled = false;
-    cursorRef.current = undefined; exhaustedRef.current = false;
+    cursorRef.current = undefined; exhaustedRef.current = false; pfCursor.current = undefined; pfDone.current = false;
     const init = async () => {
       setLoading(true);
       try {
-        const stored = getAllPosts().filter(p => (p.videos?.length ?? 0) > 0);
+        if (!postId) {
+          // Reels tab: open the feed from the top.
+          const first = await fetchMoreVideos(new Set(), 15);
+          if (cancelled) return;
+          if (!first.length) { toast.error('No reels to show yet'); navigate(-1); return; }
+          setPosts(first); setActiveIdx(0); setLoading(false);
+          return;
+        }
+        if (postId?.startsWith(PF)) {
+          // Portfolio video opened directly (profile, search, activity, shared link).
+          const itemId = postId.slice(PF.length);
+          const first = (await getReelPortfolioVideos({ itemId, limit: 1 })).videos[0];
+          if (!first) { if (!cancelled) navigate(`/portfolio/${searchParams.get('creator') || ''}`.replace(/\/$/, ''), { replace: true }); return; }
+          let list: Reel[] = [toReel(first)];
+          const mine = await getReelPortfolioVideos({ creatorId: first.creator.id, limit: 10, excludeIds: new Set([itemId]) }).catch(() => null);
+          if (mine) list = [...list, ...mine.videos.map(toReel)];
+          if (cancelled) return;
+          setPosts(list); setActiveIdx(0); setLoading(false);
+          const extra = await fetchMoreVideos(new Set(list.map(p => p.id)), 15);
+          if (!cancelled) appendReels(extra);
+          return;
+        }
+        const stored = getAllPosts().filter(p => (p.videos?.length ?? 0) > 0) as Reel[];
         let list = stored;
         let idx = stored.findIndex(p => p.id === postId);
         if (idx < 0) {
           const [one] = postId ? await postsApi.getByIds([postId]) : [];
           if (!one || (one.videos?.length ?? 0) === 0) { if (!cancelled) navigate(-1); return; }
-          list = [one, ...stored]; idx = 0;
+          list = [one as Reel, ...stored]; idx = 0;
         }
         if (cancelled) return;
         setPosts(list);
@@ -714,14 +832,29 @@ export function ReelFeed() {
         willChange: 'transform',
       }}>
         {posts.map((post, idx) => {
-          // Only render ±2 slides to save memory; preload src for adjacent
-          const inView = Math.abs(idx - activeIdx) <= 2;
-          if (!inView) return <div key={post.id} className="w-full h-full bg-black" />;
+          // Keep full slides (lightweight details + poster) within ±3 so swiping back stays smooth;
+          // only previous / current / next own a video player.
+          const dist = idx - activeIdx;
+          if (Math.abs(dist) > 3) return <div key={post.id} className="w-full h-full bg-black" />;
+          if (post.portfolio) return (
+            <div key={post.id} className="w-full h-full">
+              <PortfolioReelCard reel={post.portfolio} active={dist === 0} hasPlayer={Math.abs(dist) <= 1}
+                preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
+                muted={muted} onToggleMuted={() => setMuted(m => !m)} onBack={() => navigate(-1)}
+                onProfile={() => navigate(`/host/${post.portfolio!.creator.id}`)}
+                onViewProject={() => post.portfolio!.albumId
+                  ? openPortfolioItem(post.portfolio!.albumId, [], 'album')
+                  : openPortfolioItem(post.portfolio!.item.id, [], 'item', { forceDetail: true })}
+                onComment={() => setPfComment(post.portfolio!)} commentDelta={commentDeltas[post.id] ?? 0} />
+            </div>
+          );
           return (
             <div key={post.id} className="w-full h-full">
               <ReelCard
                 post={post}
-                active={idx === activeIdx}
+                active={dist === 0}
+                hasPlayer={Math.abs(dist) <= 1}
+                preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
                 onLike={handleLike}
                 onComment={() => setCommentPost(post)}
                 friendActivity={idx === activeIdx ? friendActivity : []}
@@ -730,11 +863,6 @@ export function ReelFeed() {
           );
         })}
       </div>
-
-      {/* Preload next video in background */}
-      {posts[activeIdx + 1]?.videos?.[0] && (
-        <link rel="preload" as="video" href={posts[activeIdx + 1].videos![0]} />
-      )}
 
       {/* Navigation arrows */}
       <div className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 flex-col gap-3 z-10">
@@ -754,6 +882,13 @@ export function ReelFeed() {
               className={`rounded-full transition-all ${i === activeIdx ? 'w-1.5 h-5 bg-white' : 'w-1.5 h-1.5 bg-white/40'}`}
             />
           ))}
+        </div>
+      )}
+
+      {pfComment && (
+        <div onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          <PortfolioCommentSheet itemId={pfComment.item.id} creatorId={pfComment.item.user_id} itemCategory={pfComment.item.category}
+            itemSubcategory={pfComment.item.subcategory} canModerate={user?.id === pfComment.item.user_id} onClose={() => setPfComment(null)} />
         </div>
       )}
 
