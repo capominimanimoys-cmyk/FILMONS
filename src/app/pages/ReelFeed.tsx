@@ -6,7 +6,7 @@
  * - Swipe navigation
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { usePostStore } from '../context/PostContext';
 import { postsApi, commentsApi, authApi } from '../lib/api';
@@ -21,11 +21,22 @@ import { RepostMenuSheet } from '../components/RepostMenuSheet';
 import { usePostRepostCompose } from '../context/PostRepostComposeContext';
 import { logContentRepostActivity, removeContentRepostActivity } from '../lib/activityApi';
 import * as notifs from '../lib/notifications';
-import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
 import { toast } from 'sonner';
+import { PortfolioReelCard } from '../components/PortfolioReelCard';
+import { PortfolioCommentSheet } from '../components/PortfolioCommentSheet';
+import { getReelPortfolioVideos, type ReelPortfolioVideo } from '../lib/portfolioApi';
+import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { supabase } from '../../lib/supabase';
+
+/** A reel is a normal post, or a portfolio video (id `pf_<itemId>`) whose engagement lives on the portfolio item. */
+type Reel = Post & { portfolio?: ReelPortfolioVideo };
+const PF = 'pf_';
+const toReel = (v: ReelPortfolioVideo): Reel => ({
+  id: `${PF}${v.item.id}`, userId: v.item.user_id, userName: v.creator.name,
+  videos: [v.item.media_url!], images: v.item.thumbnail_url ? [v.item.thumbnail_url] : [], content: '', portfolio: v,
+} as unknown as Reel);
 
 // ── Friend activity toast ─────────────────────────────────────────────────────
 function FriendActivityToast({ avatar, name, action, content }: {
@@ -577,7 +588,14 @@ export function ReelFeed() {
   const { user } = useAuth();
   const { getAllPosts, updatePost } = usePostStore();
 
-  const [posts, setPosts]         = useState<Post[]>([]);
+  const [posts, setPosts]         = useState<Reel[]>([]);
+  const { openPortfolioItem } = usePortfolioPreview();
+  const [searchParams] = useSearchParams();
+  const [muted, setMuted] = useState(true);
+  const [pfComment, setPfComment] = useState<ReelPortfolioVideo | null>(null);
+  const [commentDeltas, setCommentDeltas] = useState<Record<string, number>>({});
+  const pfCursor = useRef<string | undefined>(undefined);
+  const pfDone = useRef(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [loading, setLoading]     = useState(true);
   const [commentPost, setCommentPost] = useState<Post | null>(null);
@@ -604,7 +622,7 @@ export function ReelFeed() {
   const cursorRef = useRef<string | undefined>(undefined);
   const loadingMoreRef = useRef(false);
   const exhaustedRef = useRef(false);
-  const fetchMoreVideos = useCallback(async (known: Set<string>, count = 12): Promise<Post[]> => {
+  const fetchMorePosts = useCallback(async (known: Set<string>, count = 12): Promise<Post[]> => {
     if (loadingMoreRef.current || exhaustedRef.current) return [];
     loadingMoreRef.current = true;
     try {
@@ -626,7 +644,26 @@ export function ReelFeed() {
     finally { loadingMoreRef.current = false; }
   }, []);
 
-  const appendReels = useCallback((extra: Post[]) => {
+  const busyRef = useRef(false);
+  // Posts and eligible portfolio videos load side by side; one portfolio video after every three posts.
+  const fetchMoreVideos = useCallback(async (known: Set<string>, count = 12): Promise<Reel[]> => {
+    if (busyRef.current) return [];
+    busyRef.current = true;
+    try {
+      const pfKnown = new Set([...known].filter(id => id.startsWith(PF)).map(id => id.slice(PF.length)));
+      const [p, pf] = await Promise.all([
+        fetchMorePosts(known, count),
+        pfDone.current ? Promise.resolve([] as ReelPortfolioVideo[]) : getReelPortfolioVideos({ before: pfCursor.current, limit: 5, excludeIds: pfKnown })
+          .then(r => { pfCursor.current = r.cursor; if (r.done) pfDone.current = true; return r.videos; })
+          .catch(() => [] as ReelPortfolioVideo[]),   // portfolio failing never blocks the feed
+      ]);
+      const out: Reel[] = []; const pfr = pf.map(toReel);
+      p.forEach((x, i) => { out.push(x as Reel); if ((i + 1) % 3 === 0 && pfr.length) out.push(pfr.shift()!); });
+      return [...out, ...pfr];
+    } finally { busyRef.current = false; }
+  }, [fetchMorePosts]);
+
+  const appendReels = useCallback((extra: Reel[]) => {
     if (!extra.length) return;
     setPosts(prev => {
       const seen = new Set(prev.map(p => p.id));
@@ -638,17 +675,39 @@ export function ReelFeed() {
   // Load video posts: the tapped reel plays at once; the queue fills in behind it.
   useEffect(() => {
     let cancelled = false;
-    cursorRef.current = undefined; exhaustedRef.current = false;
+    cursorRef.current = undefined; exhaustedRef.current = false; pfCursor.current = undefined; pfDone.current = false;
     const init = async () => {
       setLoading(true);
       try {
-        const stored = getAllPosts().filter(p => (p.videos?.length ?? 0) > 0);
+        if (!postId) {
+          // Reels tab: open the feed from the top.
+          const first = await fetchMoreVideos(new Set(), 15);
+          if (cancelled) return;
+          if (!first.length) { toast.error('No reels to show yet'); navigate(-1); return; }
+          setPosts(first); setActiveIdx(0); setLoading(false);
+          return;
+        }
+        if (postId?.startsWith(PF)) {
+          // Portfolio video opened directly (profile, search, activity, shared link).
+          const itemId = postId.slice(PF.length);
+          const first = (await getReelPortfolioVideos({ itemId, limit: 1 })).videos[0];
+          if (!first) { if (!cancelled) navigate(`/portfolio/${searchParams.get('creator') || ''}`.replace(/\/$/, ''), { replace: true }); return; }
+          let list: Reel[] = [toReel(first)];
+          const mine = await getReelPortfolioVideos({ creatorId: first.creator.id, limit: 10, excludeIds: new Set([itemId]) }).catch(() => null);
+          if (mine) list = [...list, ...mine.videos.map(toReel)];
+          if (cancelled) return;
+          setPosts(list); setActiveIdx(0); setLoading(false);
+          const extra = await fetchMoreVideos(new Set(list.map(p => p.id)), 15);
+          if (!cancelled) appendReels(extra);
+          return;
+        }
+        const stored = getAllPosts().filter(p => (p.videos?.length ?? 0) > 0) as Reel[];
         let list = stored;
         let idx = stored.findIndex(p => p.id === postId);
         if (idx < 0) {
           const [one] = postId ? await postsApi.getByIds([postId]) : [];
           if (!one || (one.videos?.length ?? 0) === 0) { if (!cancelled) navigate(-1); return; }
-          list = [one, ...stored]; idx = 0;
+          list = [one as Reel, ...stored]; idx = 0;
         }
         if (cancelled) return;
         setPosts(list);
@@ -777,6 +836,18 @@ export function ReelFeed() {
           // only previous / current / next own a video player.
           const dist = idx - activeIdx;
           if (Math.abs(dist) > 3) return <div key={post.id} className="w-full h-full bg-black" />;
+          if (post.portfolio) return (
+            <div key={post.id} className="w-full h-full">
+              <PortfolioReelCard reel={post.portfolio} active={dist === 0} hasPlayer={Math.abs(dist) <= 1}
+                preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
+                muted={muted} onToggleMuted={() => setMuted(m => !m)} onBack={() => navigate(-1)}
+                onProfile={() => navigate(`/host/${post.portfolio!.creator.id}`)}
+                onViewProject={() => post.portfolio!.albumId
+                  ? openPortfolioItem(post.portfolio!.albumId, [], 'album')
+                  : openPortfolioItem(post.portfolio!.item.id, [], 'item', { forceDetail: true })}
+                onComment={() => setPfComment(post.portfolio!)} commentDelta={commentDeltas[post.id] ?? 0} />
+            </div>
+          );
           return (
             <div key={post.id} className="w-full h-full">
               <ReelCard
@@ -811,6 +882,13 @@ export function ReelFeed() {
               className={`rounded-full transition-all ${i === activeIdx ? 'w-1.5 h-5 bg-white' : 'w-1.5 h-1.5 bg-white/40'}`}
             />
           ))}
+        </div>
+      )}
+
+      {pfComment && (
+        <div onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          <PortfolioCommentSheet itemId={pfComment.item.id} creatorId={pfComment.item.user_id} itemCategory={pfComment.item.category}
+            itemSubcategory={pfComment.item.subcategory} canModerate={user?.id === pfComment.item.user_id} onClose={() => setPfComment(null)} />
         </div>
       )}
 
