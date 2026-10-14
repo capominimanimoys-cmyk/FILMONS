@@ -2407,6 +2407,7 @@ export const commentsApi = {
             likedByMe:       likedSet.has(row.id),
             parentId:        row.parent_comment_id || undefined,
             createdAt:       row.created_at,
+            editedAt:        row.edited_at || undefined,
           };
         }) as Comment[];
         _commentCache.set(cacheKey, list);
@@ -2602,7 +2603,7 @@ export const commentsApi = {
     _commentCache.set(postId, [...existing, enriched]);
 
     // ── Notifications — only when edge function didn't run (it handles its own) ─
-    if (!usedEdgeFunction) {
+    if (!usedEdgeFunction) void (async () => {
       const commentSnip = content.slice(0, 120);
       try {
         if (parentId) {
@@ -2657,9 +2658,25 @@ export const commentsApi = {
             });
         }
       } catch {}
-    }
+    })();
 
     return enriched;
+  },
+
+  /** Author-only edit, within 30 minutes of posting (also enforced by a DB trigger). */
+  edit: async (commentId: string, content: string, createdAt?: string): Promise<{ content: string; editedAt: string }> => {
+    const me = authApi.getCurrentUser();
+    if (!me) throw new Error('Not authenticated');
+    const text = content.trim();
+    if (!text) throw new Error('Comment can\'t be empty');
+    if (createdAt && Date.now() - new Date(createdAt).getTime() > 30 * 60_000) throw new Error('Comments can only be edited within 30 minutes');
+    const now = new Date().toISOString();
+    const { data, error } = await supabase.from('comments').update({ content: text, updated_at: now })
+      .eq('id', commentId).eq('author_id', me.id).select('id');
+    if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('Could not edit this comment');
+    for (const k of _commentCache.keys()) _commentCache.delete(k);
+    return { content: text, editedAt: now };
   },
 
   delete: async (commentId: string): Promise<void> => {

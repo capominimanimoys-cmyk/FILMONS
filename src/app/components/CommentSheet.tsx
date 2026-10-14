@@ -192,6 +192,12 @@ const CommentRow = memo(function CommentRow({
   const [repliesLoaded, setRepliesLoaded]   = useState(_replyCache.has(comment.id));
   const [showReply, setShowReply]       = useState(false);
   const [replySubmitting, setReplySubmitting] = useState(false);
+  // Edit (author only, within 30 minutes of posting)
+  const [editing, setEditing]   = useState(false);
+  const [editText, setEditText] = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [shownContent, setShownContent] = useState<string | null>(null);
+  const [edited, setEdited]     = useState(!!(comment as any).editedAt);
 
   // ── Like state — count from DB column, liked-by-me from localStorage ─────
   const _likeKey = user ? `filmons_clikes_${user.id}` : null;
@@ -236,6 +242,19 @@ const CommentRow = memo(function CommentRow({
       setDisplayCount(c => wasLiked ? c + 1 : Math.max(0, c - 1));
     }
     finally { setLiking(false); }
+  };
+
+  const withinEditWindow = Date.now() - new Date(comment.createdAt).getTime() < 30 * 60_000;
+  const saveEdit = async () => {
+    const text = editText.trim();
+    if (!text || saving) return;
+    if (text === (shownContent ?? comment.content)) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      const r = await commentsApi.edit(comment.id, text, comment.createdAt);
+      setShownContent(r.content); setEdited(true); setEditing(false);
+    } catch (e: any) { toast.error(e?.message || 'Could not edit comment'); }
+    finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
@@ -360,9 +379,20 @@ const CommentRow = memo(function CommentRow({
                   <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">Author</span>
                 )}
               </div>
-              <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">
-                <RichText text={comment.content} />
-              </p>
+              {editing ? (
+                <div>
+                  <textarea value={editText} onChange={e => setEditText(e.target.value)} autoFocus rows={2}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm outline-none focus:border-blue-300 resize-none" />
+                  <div className="flex gap-3 mt-1">
+                    <button onClick={saveEdit} disabled={!editText.trim() || saving} className="text-xs font-bold text-blue-600 disabled:opacity-40">{saving ? 'Saving…' : 'Save'}</button>
+                    <button onClick={() => setEditing(false)} className="text-xs font-semibold text-gray-500">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">
+                  <RichText text={shownContent ?? comment.content} />
+                </p>
+              )}
             </div>
 
             <div className="flex-shrink-0 pt-1 pr-1">
@@ -372,7 +402,7 @@ const CommentRow = memo(function CommentRow({
 
           {/* Meta row */}
           <div className="flex items-center gap-3 mt-1 ml-1">
-            <span className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}</span>
+            <span className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}{edited && ' · Edited'}</span>
 
             {depth === 0 && user && (
               <button onClick={() => setShowReply(v => !v)}
@@ -381,10 +411,15 @@ const CommentRow = memo(function CommentRow({
               </button>
             )}
 
+            {isOwn && withinEditWindow && !editing && (
+              <button onClick={() => { setEditText(shownContent ?? comment.content); setEditing(true); }}
+                className="text-[11px] font-semibold text-gray-400 hover:text-blue-500 transition-colors">Edit</button>
+            )}
+
             {(isOwn || isPostOwner) && (
               <div className="relative">
                 <button onClick={() => setShowDeleteConfirm(v => !v)} disabled={deleting}
-                  className="text-[11px] font-semibold text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-50">
+                  className="text-[11px] font-semibold text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50">
                   {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Delete'}
                 </button>
                 {showDeleteConfirm && (
