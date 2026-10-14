@@ -24,6 +24,7 @@ import * as notifs from '../lib/notifications';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { buildLocationSlug, parseLocationFreeText } from '../lib/locationsApi';
 import { toast } from 'sonner';
+import { CommentEditBox, useCommentEdit } from '../components/CommentEditor';
 import { PortfolioReelCard } from '../components/PortfolioReelCard';
 import { PortfolioCommentSheet } from '../components/PortfolioCommentSheet';
 import { getReelPortfolioVideos, type ReelPortfolioVideo } from '../lib/portfolioApi';
@@ -53,6 +54,31 @@ function FriendActivityToast({ avatar, name, action, content }: {
         <p className="text-white/70 text-xs truncate">
           {action === 'liked' ? '❤️ liked this post' : `💬 ${content}`}
         </p>
+      </div>
+    </div>
+  );
+}
+
+function ReelCommentRow({ c, mine, onDelete }: { c: Comment; mine: boolean; onDelete: (c: Comment) => void }) {
+  const edit = useCommentEdit(c.content, c.createdAt, c.editedAt, t => commentsApi.edit(c.id, t, c.createdAt));
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <div className="flex gap-3">
+      {c.userAvatar
+        ? <img src={c.userAvatar} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
+        : <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold shrink-0">{c.userName?.[0]}</div>}
+      <div className="flex-1 min-w-0">
+        <p className="text-white text-xs font-semibold">{c.userName}</p>
+        {edit.editing ? <CommentEditBox edit={edit} dark /> : <p className="text-white/80 text-sm mt-0.5 whitespace-pre-wrap break-words">{edit.text}</p>}
+        {mine && !edit.editing && !String(c.id).startsWith('opt-') && (
+          <div className="flex items-center gap-3 mt-1 text-[11px] font-semibold text-white/50">
+            {edit.edited && <span className="font-normal">Edited</span>}
+            {edit.canEdit && <button onClick={edit.start}>Edit</button>}
+            {confirm
+              ? <><button className="text-red-400" onClick={() => onDelete(c)}>Confirm delete</button><button onClick={() => setConfirm(false)}>Cancel</button></>
+              : <button onClick={() => setConfirm(true)}>Delete</button>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -120,16 +146,11 @@ function CommentsSheet({ post, onClose }: { post: Post; onClose: () => void }) {
             : comments.length === 0
             ? <p className="text-white/40 text-sm text-center py-8">No comments yet. Be the first!</p>
             : comments.map(c => (
-              <div key={c.id} className="flex gap-3">
-                {c.userAvatar
-                  ? <img src={c.userAvatar} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
-                  : <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold shrink-0">{c.userName?.[0]}</div>
-                }
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-xs font-semibold">{c.userName}</p>
-                  <p className="text-white/80 text-sm mt-0.5">{c.content}</p>
-                </div>
-              </div>
+              <ReelCommentRow key={c.id} c={c} mine={user?.id === c.userId} onDelete={async cm => {
+                const before = comments;
+                setComments(prev => prev.filter(x => x.id !== cm.id));
+                try { await commentsApi.delete(cm.id); } catch { setComments(before); toast.error('Could not delete comment'); }
+              }} />
             ))
           }
         </div>

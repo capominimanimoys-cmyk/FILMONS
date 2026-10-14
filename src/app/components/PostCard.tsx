@@ -42,6 +42,7 @@ import { RepostMenuSheet } from './RepostMenuSheet';
 import { usePostRepostCompose } from '../context/PostRepostComposeContext';
 import { addImageWatermark, triggerDownload } from '../lib/watermark';
 import { BottomSheet } from './BottomSheet';
+import { CommentEditBox, useCommentEdit } from './CommentEditor';
 import { PostOwnMenuSheet } from './PostOwnMenuSheet';
 
 function timeAgo(dateString?: string | null): string {
@@ -180,6 +181,7 @@ function CommentItem({ comment, onDeleted }: { comment: Comment; onDeleted: (id:
   const [commentLikes, setCommentLikes] = useState<string[]>(comment.likes || []);
   const [likingComment, setLikingComment] = useState(false);
   const isCommentLiked = user ? commentLikes.includes(user.id) : false;
+  const edit = useCommentEdit(comment.content, comment.createdAt, comment.editedAt, t => commentsApi.edit(comment.id, t, comment.createdAt));
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this comment?')) return;
@@ -220,10 +222,10 @@ function CommentItem({ comment, onDeleted }: { comment: Comment; onDeleted: (id:
             </button>
             {comment.userAccountType && <AccountTypeBadge type={comment.userAccountType} size="sm" />}
           </div>
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
+          {edit.editing ? <CommentEditBox edit={edit} /> : <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{edit.text}</p>}
         </div>
         <div className="flex items-center gap-3 mt-0.5 ml-3">
-          <p className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}</p>
+          <p className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}{edit.edited && ' · Edited'}</p>
           <button onClick={handleLikeComment} disabled={likingComment}
             className={`flex items-center gap-1 text-[11px] font-medium transition-colors ${isCommentLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}`}>
             <Heart className={`w-3 h-3 ${isCommentLiked ? 'fill-red-500 scale-110' : ''} transition-transform`} />
@@ -232,10 +234,13 @@ function CommentItem({ comment, onDeleted }: { comment: Comment; onDeleted: (id:
         </div>
       </div>
       {isOwn && (
-        <button onClick={handleDelete} disabled={deleting}
-          className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all flex-shrink-0 mt-1">
-          {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-        </button>
+        <div className="flex items-center gap-1 flex-shrink-0 mt-1">
+          {edit.canEdit && !edit.editing && <button onClick={edit.start} className="px-1 text-[11px] font-semibold text-gray-400 hover:text-blue-500">Edit</button>}
+          <button onClick={handleDelete} disabled={deleting} aria-label="Delete comment"
+            className="p-1 text-gray-400 hover:text-red-500 transition-all">
+            {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+          </button>
+        </div>
       )}
     </div>
   );

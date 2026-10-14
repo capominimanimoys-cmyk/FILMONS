@@ -16,9 +16,10 @@ import { Heart, MoreHorizontal, ChevronUp, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
+import { CommentEditBox, useCommentEdit } from './CommentEditor';
 import {
   PortfolioComment, getItemComments, getAlbumComments, addItemComment, addAlbumComment,
-  toggleCommentLike, deleteItemComment,
+  toggleCommentLike, deleteItemComment, editItemComment,
 } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
 
@@ -43,6 +44,8 @@ function CommentRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const isOwnComment = !!meId && comment.user_id === meId;
   const canDelete = isOwnComment || canModerate;
+  const edit = useCommentEdit(comment.body, comment.created_at, undefined, t => editItemComment(comment.id, meId!, t, comment.created_at));
+  const canEditNow = isOwnComment && edit.canEdit;
 
   return (
     <div className={depth > 0 ? 'ml-9 mt-2.5' : ''}>
@@ -52,9 +55,9 @@ function CommentRow({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold text-gray-900">{comment.author?.name ?? 'Filmons user'}</p>
-          <p className="text-sm text-gray-800 leading-snug break-words">{comment.body}</p>
+          {edit.editing ? <CommentEditBox edit={edit} /> : <p className="text-sm text-gray-800 leading-snug break-words">{edit.text}</p>}
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] text-gray-400">{timeAgo(comment.created_at)}</span>
+            <span className="text-[10px] text-gray-400">{timeAgo(comment.created_at)}{edit.edited && ' · Edited'}</span>
             <button onClick={() => onReply(comment)} className="text-[10px] font-bold text-gray-500">Reply</button>
             {comment.likes_count > 0 && <span className="text-[10px] text-gray-400">{comment.likes_count} like{comment.likes_count === 1 ? '' : 's'}</span>}
           </div>
@@ -71,6 +74,10 @@ function CommentRow({
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-6 z-20 bg-white rounded-xl shadow-lg border border-gray-100 py-1 w-32">
+                  {canEditNow && (
+                    <button onClick={() => { setMenuOpen(false); edit.start(); }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50">Edit</button>
+                  )}
                   <button
                     onClick={() => { setMenuOpen(false); onDelete(comment); }}
                     className="w-full text-left px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
