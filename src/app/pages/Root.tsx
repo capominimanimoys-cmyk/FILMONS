@@ -33,7 +33,7 @@ const NO_TOPBAR_PAGES = ['/login', '/phone-signup', '/phone-login', '/share-card
 // (fixed bottom:0, same z-40 as MobileBottomNav) as well as
 // EmergencyListingFlow's sticky CTA and OpportunityApplicants -- all under
 // the /listing/:id prefix.
-const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio', '/listing', '/edit-portfolio-item'];
+const NO_BOTTOM_NAV_PAGES = ['/create-listing', '/edit-listing', '/create-opportunity', '/portfolio', '/listing', '/edit-portfolio-item', '/post/'];
 
 export function Root() {
   const location = useLocation();
@@ -157,7 +157,7 @@ export function Root() {
   // marketplace/connect/learning" tabs) -- both are `sticky top-0`,
   // meaning they were already designed to be the page's own topmost bar,
   // not to sit below the global one.
-  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections') || location.pathname.startsWith('/portfolio') || location.pathname.startsWith('/search/category') || location.pathname.startsWith('/search/hashtags/') || location.pathname.startsWith('/search/locations/') || location.pathname === '/notifications';
+  const hideTopBar   = NO_TOPBAR_PAGES.includes(location.pathname) || location.pathname.startsWith('/inbox') || location.pathname.startsWith('/connections') || location.pathname.startsWith('/portfolio') || location.pathname.startsWith('/post/') || location.pathname.startsWith('/search/category') || location.pathname.startsWith('/search/hashtags/') || location.pathname.startsWith('/search/locations/') || location.pathname === '/notifications';
   const showFooter   = location.pathname === '/';
   // /inbox wants the full viewport on mobile too, matching a dedicated
   // messaging app (no bottom tab bar under the conversation list OR an
