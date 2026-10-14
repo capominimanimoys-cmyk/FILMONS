@@ -152,6 +152,9 @@ export interface PortfolioComment {
   liked:       boolean;
   author:      PortfolioCommentAuthor | null;
   replies:     PortfolioComment[];
+  /** Set when deleted but kept as a placeholder because it has replies. */
+  deleted_at?: string | null;
+  edited_at?:  string | null;
 }
 
 // Extended with Acting/Animation/Events on top of the original 11 -- no
@@ -1063,9 +1066,13 @@ export async function editItemComment(commentId: string, userId: string, body: s
   if (!data?.length) throw new Error('Could not edit this comment');
 }
 
-export async function deleteItemComment(commentId: string): Promise<boolean> {
-  const { error } = await supabase.from('portfolio_item_comments').delete().eq('id', commentId);
-  return !error;
+export async function deleteItemComment(commentId: string, soft = false): Promise<boolean> {
+  // soft: it has replies, so keep the row as a "deleted" placeholder. Permissions are enforced by RLS / a DB trigger.
+  const q = soft
+    ? supabase.from('portfolio_item_comments').update({ body: '', deleted_at: new Date().toISOString() }).eq('id', commentId).select('id')
+    : supabase.from('portfolio_item_comments').delete().eq('id', commentId).select('id');
+  const { data, error } = await q;
+  return !error && !!data?.length;
 }
 
 // Save (bookmark) -- reuses the same generic `favorites` table already used

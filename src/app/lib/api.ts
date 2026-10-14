@@ -2408,6 +2408,7 @@ export const commentsApi = {
             parentId:        row.parent_comment_id || undefined,
             createdAt:       row.created_at,
             editedAt:        row.edited_at || undefined,
+            deleted:         !!row.deleted_at,
           };
         }) as Comment[];
         _commentCache.set(cacheKey, list);
@@ -2469,6 +2470,8 @@ export const commentsApi = {
             likesCount:      row.likes_count ?? 0,
             parentId:        row.parent_comment_id,
             createdAt:       row.created_at,
+            editedAt:        row.edited_at || undefined,
+            deleted:         !!row.deleted_at,
           } as Comment;
         });
         _commentCache.set(cacheKey, list);
@@ -2679,7 +2682,15 @@ export const commentsApi = {
     return { content: text, editedAt: now };
   },
 
-  delete: async (commentId: string): Promise<void> => {
+  delete: async (commentId: string, opts?: { soft?: boolean }): Promise<void> => {
+    if (opts?.soft) {
+      // Has replies: keep the row (so replies stay) but blank it. Permissions are enforced by a DB trigger.
+      const { data, error } = await supabase.from('comments').update({ content: '', deleted_at: new Date().toISOString() }).eq('id', commentId).select('id');
+      if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error('Could not delete this comment');
+      for (const k of _commentCache.keys()) _commentCache.delete(k);
+      return;
+    }
     try {
       await call(`/comments/${commentId}`, { method: 'DELETE' });
       return;
