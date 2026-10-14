@@ -55,6 +55,8 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
   const [location, setLocation]         = useState((post as any).location || '');
   const [allowComments, setAllowComments] = useState(post.allowComments !== false);
   const [allowDownload, setAllowDownload] = useState(post.allowDownload !== false);
+  const isPicturePost = (post.images?.length ?? 0) > 0 && (post.videos?.length ?? 0) === 0 && (post.visibility ?? 'public') === 'public';
+  const [showInReels, setShowInReels] = useState(!!(post as any).showInReels);
   const [hasAudio, setHasAudio]         = useState(!!(post.audioTitle || (post as any).audio_url));
   const [saving, setSaving]             = useState(false);
   const [showDiscard, setShowDiscard]   = useState(false);
@@ -85,6 +87,7 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
     location      !== ((post as any).location || '') ||
     allowComments !== (post.allowComments !== false) ||
     allowDownload !== (post.allowDownload !== false) ||
+    showInReels   !== !!(post as any).showInReels ||
     hasAudio      !== !!(post.audioTitle || (post as any).audio_url) ||
     mediaChanged;
 
@@ -125,6 +128,7 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
       if (location      !== ((post as any).location || ''))   updates.location = location || null;
       if (allowComments !== (post.allowComments !== false))   updates.allow_comments = allowComments;
       if (allowDownload !== (post.allowDownload !== false))   updates.allow_download = allowDownload;
+      if (isPicturePost && showInReels !== !!(post as any).showInReels) updates.show_in_reels = showInReels;
       if (!hasAudio && (post.audioTitle || (post as any).audio_url)) {
         updates.audio_url = null;
         updates.audio_title = null;
@@ -356,6 +360,16 @@ export function EditPostModal({ post, onSave, onClose }: Props) {
           {/* Settings */}
           <div className="px-4 py-2">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">Settings</p>
+
+            {isPicturePost && (
+              <div className="flex items-center justify-between py-3 border-b border-gray-50">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Show in Reels</p>
+                  <p className="text-xs text-gray-400">{showInReels ? 'Your pictures can appear in Reels' : 'Not shown in Reels'}</p>
+                </div>
+                <Toggle value={showInReels} onChange={setShowInReels}/>
+              </div>
+            )}
 
             <div className="flex items-center justify-between py-3 border-b border-gray-50">
               <div className="flex items-center gap-3">

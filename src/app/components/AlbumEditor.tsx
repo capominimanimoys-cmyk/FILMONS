@@ -29,6 +29,7 @@ import {
   createAlbum, updateAlbum, deleteAlbum, getAlbumItems, getAlbumCredits,
   addItemToAlbum, removeItemFromAlbum, setAlbumCoverFromItem, updateItemsOrder,
   uploadPortfolioMedia, getPortfolioUploadError, readImageDimensions, readVideoDimensions, createPortfolioItem,
+  setShowInReels as setPortfolioShowInReels,
   type PortfolioAlbum, type PortfolioItem, type AlbumCredit, type MediaType,
 } from '../lib/portfolioApi';
 import { logActivityEvent } from '../lib/activityApi';
@@ -89,9 +90,10 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
   const [category,    setCategory]    = useState(album?.category ?? '');
   const [tags,        setTags]        = useState<string[]>(album?.tags ?? []);
   const [visibility,  setVisibility]  = useState<ItemVisibility>((album?.visibility as ItemVisibility) ?? 'public');
+  const [inReels, setInReels] = useState<boolean>(album?.show_in_reels ?? mode !== 'edit');
 
   const initialFormSnapshot = useRef('');
-  const snapshot = () => JSON.stringify({ title, description, location, category, tags, visibility });
+  const snapshot = () => JSON.stringify({ title, description, location, category, tags, visibility, inReels });
 
   const [coverPreview,   setCoverPreview]   = useState('');
   const [coverUrl,       setCoverUrl]       = useState(album?.cover_url ?? '');
@@ -311,6 +313,7 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
     if (location.trim() || tags.length || category) {
       await updateAlbum(album2.id, { location: location.trim() || undefined, tags: tags.length ? tags : undefined, category: category || undefined });
     }
+    if (inReels && visibility === 'public') setPortfolioShowInReels('album', album2.id, true).catch(() => {});
     if (visibility === 'public') {
       logActivityEvent({ actorId: user.id, activityType: 'portfolio_album_published', targetType: 'portfolio_album', targetId: album2.id, title: album2.title || null });
     }
@@ -326,6 +329,9 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
       title: title.trim(), description: description.trim() || undefined, visibility,
       category: category || undefined, tags, location: location.trim() || undefined,
     });
+    if (ok && inReels !== !!album.show_in_reels || (ok && visibility !== 'public' && album.show_in_reels)) {
+      await setPortfolioShowInReels('album', album.id, inReels && visibility === 'public').catch(() => false);
+    }
     setSaving(false);
     if (!ok) { toast.error('Could not save'); return; }
     toast.success('Changes saved ✓');
@@ -443,6 +449,16 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
         <FieldRow label="Location" placeholder="Add location" value={location} onClick={() => setActivePanel('location')} />
         <FieldRow label="Hashtags" placeholder="Add hashtags" value={tags.map(t => `#${t}`).join(' ')} onClick={() => setActivePanel('hashtags')} />
         <FieldRow label="Visibility" placeholder="Public" value={VISIBILITY_OPTIONS.find(o => o.id === visibility)?.label} onClick={() => setActivePanel('visibility')} />
+        <div className={`flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3 ${visibility !== 'public' ? 'opacity-60' : ''}`}>
+          <div>
+            <p className="text-sm font-bold text-gray-900">Show in Reels</p>
+            <p className="text-[11px] text-gray-500">{visibility === 'public' ? "This album's pictures play as one swipeable reel" : 'Only public albums can appear in Reels'}</p>
+          </div>
+          <button type="button" disabled={visibility !== 'public'} onClick={() => setInReels(v => !v)} aria-pressed={inReels && visibility === 'public'}
+            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${inReels && visibility === 'public' ? 'bg-violet-500' : 'bg-gray-300'}`}>
+            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${inReels && visibility === 'public' ? 'left-[22px]' : 'left-0.5'}`} />
+          </button>
+        </div>
 
         {mode === 'edit' && album && (
           <AlbumCreditsSection albumId={album.id} credits={credits} setCredits={setCredits} creditProfiles={creditProfiles} setCreditProfiles={setCreditProfiles} />

@@ -80,7 +80,7 @@ export function EditPortfolioItem() {
       external_link: safeLink ?? '',
     };
     // Only touch the column for videos (it comes from a later migration), and private/followers videos can't be in Reels.
-    if (item.media_type === 'video') updates.show_in_reels = showInReels && visibility === 'public';
+    if (item.media_type === 'video' || item.media_type === 'image') updates.show_in_reels = showInReels && visibility === 'public';
     // Only send collaborators when there is something to save or clear -- the column comes from a
     // later migration, so an untouched empty list must not make the whole save fail.
     if (collaborators.length || (item.collaborators?.length ?? 0) > 0) updates.collaborators = collaborators;
@@ -165,11 +165,11 @@ export function EditPortfolioItem() {
         <FieldRow label="Collaborators" placeholder="Tag collaborators" value={collaborators.join(', ')} onClick={() => setActivePanel('collaborators')} />
         <FieldRow label="Hashtags" placeholder="Add hashtags" value={hashtags.map(t => `#${t}`).join(' ')} onClick={() => setActivePanel('hashtags')} />
         <FieldRow label="Visibility" placeholder="Public" value={VISIBILITY_OPTIONS.find(o => o.id === visibility)?.label} onClick={() => setActivePanel('visibility')} />
-        {item?.media_type === 'video' && (
+        {(item?.media_type === 'video' || item?.media_type === 'image') && (
           <div className={`flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3 ${visibility !== 'public' ? 'opacity-60' : ''}`}>
             <div>
               <p className="text-sm font-bold text-gray-900">Show in Reels</p>
-              <p className="text-[11px] text-gray-500">{visibility === 'public' ? 'Let people discover this video in Reels' : 'Only public videos can appear in Reels'}</p>
+              <p className="text-[11px] text-gray-500">{visibility === 'public' ? 'Let people discover this in Reels' : 'Only public videos can appear in Reels'}</p>
             </div>
             <button type="button" disabled={visibility !== 'public'} onClick={() => setShowInReels(v => !v)} aria-pressed={showInReels && visibility === 'public'}
               className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${showInReels && visibility === 'public' ? 'bg-violet-500' : 'bg-gray-300'}`}>
