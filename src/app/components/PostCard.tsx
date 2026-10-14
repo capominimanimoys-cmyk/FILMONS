@@ -23,6 +23,8 @@ import { logContentRepostActivity, removeContentRepostActivity } from '../lib/ac
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
+import { useFollow } from '../context/FollowContext';
+import { getPortfolioItem, type PortfolioItem } from '../lib/portfolioApi';
 import { AudioPlayer } from './AudioPlayer';
 import { AudioFeedCard } from './AudioFeedCard';
 import { AudioPostCard } from './AudioPostCard';
@@ -73,9 +75,10 @@ function repostContextLabel(entries: NonNullable<Post['repostContext']>, viewerI
 // accent styling; there's no hashtag search page yet, so tapping one goes
 // to general Search rather than a dead link.
 const CAPTION_TRUNCATE_LENGTH = 240;
-const HASHTAG_RX = /(#\w+)/g;
+const HASHTAG_RX = /([#@]\w+)/g;
 
-function CaptionText({ text, className, expanded, onExpand, onHashtagTap }: {
+function CaptionText({ text, className, expanded, onExpand, onHashtagTap, onMentionTap }: {
+  onMentionTap?: (name: string) => void;
   text: string;
   className: string;
   expanded: boolean;
@@ -90,7 +93,7 @@ function CaptionText({ text, className, expanded, onExpand, onHashtagTap }: {
   // of re-testing the (stateful, lastIndex-tracking) global regex per part.
   const renderPart = (part: string, i: number) =>
     i % 2 === 1
-      ? <button key={i} onClick={e => { e.stopPropagation(); onHashtagTap(part.slice(1)); }} className="text-blue-600 font-semibold hover:underline">{part}</button>
+      ? <button key={i} onClick={e => { e.stopPropagation(); if (part[0] === '@') onMentionTap?.(part.slice(1)); else onHashtagTap(part.slice(1)); }} className="text-blue-600 font-semibold hover:underline">{part}</button>
       : <span key={i}>{part}</span>;
 
   return (
@@ -254,6 +257,8 @@ interface PostCardProps {
    * repost showed the SAME "reposted" context twice: once from the
    * wrapper, once from this card's own repostContext row. */
   hideRepostContext?: boolean;
+  /** Post details page: the page owns the three-dot menu, comments list and composer. */
+  detail?: { onComment: () => void };
 }
 
 // Normalize a post's media fields — handles PG array strings e.g. "{url1,url2}"
@@ -268,7 +273,7 @@ function normalizePost(p: any): any {
   return { ...p, images: a(p.images), videos: a(p.videos), audios: a(p.audios) };
 }
 
-export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, userRepostPostId, hideRepostContext }: PostCardProps) {
+export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, userRepostPostId, hideRepostContext, detail }: PostCardProps) {
   const post = normalizePost(rawPost);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -288,8 +293,18 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // Link attached to the Portfolio work this post references (shown on the attachment card).
   const attachedPortfolioLink = usePortfolioItemLink(localPost.portfolioItemId);
   const [showMenu, setShowMenu] = useState(false);
+  const { isFollowing, follow } = useFollow();
+  useEffect(() => { if (detail) setCommentCount(post.commentCount ?? 0); }, [detail, post.commentCount]); // eslint-disable-line
+  // Details page: the attached portfolio work (contribution + whether it can play in Reels).
+  const [attachedWork, setAttachedWork] = useState<PortfolioItem | null>(null);
+  useEffect(() => {
+    if (!detail || !localPost.portfolioItemId) return;
+    let off = false;
+    getPortfolioItem(localPost.portfolioItemId).then(it => { if (!off) setAttachedWork(it); }).catch(() => {});
+    return () => { off = true; };
+  }, [detail, localPost.portfolioItemId]);
   const [audioPlaying,   setAudioPlaying]   = useState(false);
-  const [captionExpanded, setCaptionExpanded] = useState(false);
+  const [captionExpanded, setCaptionExpanded] = useState(!!detail);
   const [showListingTags, setShowListingTags] = useState(false);
   const [activeListing,   setActiveListing]   = useState<any|null>(null);
   const [tagOverlay,      setTagOverlay]      = useState<'people'|'listings'|null>(null);
@@ -928,6 +943,16 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
   const toggleMenu = () => { if (!showMenu) dispatchMenuOpen(); setShowMenu(v => !v); };
   const toggleOtherMenu = () => { if (!showOtherMenu) dispatchMenuOpen(); setShowOtherMenu(v => !v); };
+  // The details page header owns the three-dot button and asks this card to open its menu.
+  useEffect(() => {
+    if (!detail) return;
+    const open = (e: Event) => {
+      if ((e as CustomEvent).detail?.postId !== localPost.id) return;
+      if (isOwn) setShowMenu(true); else setShowOtherMenu(true);
+    };
+    window.addEventListener('postcard:detail-menu', open);
+    return () => window.removeEventListener('postcard:detail-menu', open);
+  }, [detail, localPost.id, isOwn]);
 
   if (hidden) return null;
 
@@ -1080,7 +1105,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
 
 
         {/* ── Three-dot for OTHER users' posts ── */}
-        {!isOwn && (
+        {!isOwn && !detail && (
           <div className="absolute top-3 right-3 z-30">
             <button onClick={toggleOtherMenu}
               className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-md text-gray-400 hover:text-gray-700 hover:border-gray-300 transition-all">
@@ -1109,6 +1134,19 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               />
             )}
           </div>
+        )}
+
+        {detail && showOtherMenu && (
+          <BottomSheet onClose={() => setShowOtherMenu(false)}>
+            <div className="px-2 py-1">
+              <button onClick={() => { setShowOtherMenu(false); navigator.clipboard?.writeText(`${window.location.origin}/post/${localPost.id}`); toast.success('Link copied!'); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl"><Link2 className="w-4 h-4 text-gray-400" /> Copy link</button>
+              <button onClick={() => { setShowOtherMenu(false); handleSave(); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl"><Bookmark className="w-4 h-4 text-gray-400" /> {saved ? 'Unsave' : 'Save'}</button>
+              <button onClick={() => { setShowOtherMenu(false); toast.warning("Post reported. We'll review it shortly."); }}
+                className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 rounded-xl"><Flag className="w-4 h-4" /> Report</button>
+            </div>
+          </BottomSheet>
         )}
 
         {/* ── Repost dropdown ── */}
@@ -1151,15 +1189,21 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                   {(localPost as any).collaborators?.length > 0
                     ? <>{localPost.userName}<span className="font-normal text-gray-400"> × </span>{(localPost as any).collaborators.map((c:any)=>c.username||c.name).join(' × ')}</>
                     : localPost.userName}
+                  {detail && localPost.userAccountType && <span className="ml-1.5 align-middle"><AccountTypeBadge type={localPost.userAccountType} size="sm" /></span>}
                 </p>
                 <p className="text-[11px] text-gray-400 leading-tight">
                   {localPost.userRole && <span className="capitalize">{localPost.userRole} · </span>}
+                  {detail && (localPost as any).location && <span>{(localPost as any).location} · </span>}
                   {timeAgo(localPost.createdAt)}
                   {localPost.updatedAt && new Date(localPost.updatedAt).getTime() - new Date(localPost.createdAt).getTime() > 60_000 && ' · Edited'}
                 </p>
               </button>
             </div>
-            {isOwn && (
+            {detail && !isOwn && user && !isFollowing(localPost.userId) && (
+              <button onClick={() => follow(localPost.userId).catch(() => toast.error('Could not follow'))}
+                className="shrink-0 px-3.5 py-1.5 rounded-full bg-blue-600 text-white text-xs font-bold active:scale-95 transition-transform">Follow</button>
+            )}
+            {isOwn && !detail && (
               <button onClick={toggleMenu}
                 className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-700 shrink-0">
                 <MoreHorizontal className="w-5 h-5"/>
@@ -1295,10 +1339,11 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               {localPost.content && (
                 <CaptionText
                   text={localPost.content}
-                  className={`text-gray-900 ${captionSizeClass}`}
+                  className={`text-gray-900 ${detail ? 'whitespace-pre-line break-words' : ''} ${captionSizeClass}`}
                   expanded={captionExpanded}
                   onExpand={() => setCaptionExpanded(true)}
                   onHashtagTap={tag => navigate(`/search/hashtags/${normalizeHashtag(tag)}`)}
+                  onMentionTap={name => window.dispatchEvent(new CustomEvent('filmons:open-search', { detail: { query: name } }))}
                 />
               )}
 
@@ -1540,7 +1585,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               viewer's scroll position in the feed underneath. */}
           {localPost.portfolioItemId && (
             <button
-              onClick={()=>openPortfolioPreview(localPost.userId)}
+              onClick={()=> detail ? openPortfolioItem(localPost.portfolioItemId!, [], 'item', { forceDetail: true }) : openPortfolioPreview(localPost.userId)}
               className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
               style={{ width: 'calc(100% - 1.5rem)' }}
             >
@@ -1551,11 +1596,19 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-900 truncate">{localPost.portfolioItemTitle}</p>
-                {localPost.portfolioItemCategory && <p className="text-xs text-gray-400 truncate">{localPost.portfolioItemCategory}</p>}
+                {detail && attachedWork?.role?.trim()
+                  ? <p className="text-xs text-gray-500 truncate">{attachedWork.role.trim()}</p>
+                  : localPost.portfolioItemCategory && <p className="text-xs text-gray-400 truncate">{localPost.portfolioItemCategory}</p>}
                 <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
-                  View in Portfolio <ArrowRight className="w-3 h-3" />
+                  {detail ? 'View project' : 'View in Portfolio'} <ArrowRight className="w-3 h-3" />
                 </span>
               </div>
+            </button>
+          )}
+          {detail && attachedWork && attachedWork.media_type === 'video' && attachedWork.show_in_reels && !attachedWork.is_hidden && (!attachedWork.visibility || attachedWork.visibility === 'public') && (
+            <button onClick={() => navigate(`/reels/pf_${attachedWork.id}`)}
+              className="mx-3 mt-1.5 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-gray-900 text-white text-xs font-bold active:scale-95 transition-transform">
+              <Play className="w-3.5 h-3.5 fill-white" /> Watch in Reels
             </button>
           )}
           {/* The attached work's own link (live lookup by portfolio_item_id). */}
@@ -1681,6 +1734,16 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
             </div>
           )}
 
+          {detail && ((localPost.likesCount ?? 0) + commentCount + (localPost.repostCount ?? 0)) > 0 && (
+            <p className="px-3 pt-2 pb-1 text-xs text-gray-500">
+              {[
+                (localPost.likesCount ?? 0) > 0 ? `${localPost.likesCount} like${localPost.likesCount === 1 ? '' : 's'}` : '',
+                commentCount > 0 ? `${localPost.totalCommentsCount ?? commentCount} comment${commentCount === 1 ? '' : 's'}` : '',
+                (localPost.repostCount ?? 0) > 0 ? `${localPost.repostCount} repost${localPost.repostCount === 1 ? '' : 's'}` : '',
+              ].filter(Boolean).join(' · ')}
+            </p>
+          )}
+
           {/* ══ 4. ACTIONS ══ */}
           <div className="flex items-center px-1 pt-0.5 pb-0.5">
             {/* Like */}
@@ -1698,7 +1761,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               )}
             </button>
             {/* Comment icon -- write intent, opens with the keyboard focused */}
-            <button onClick={()=>{ setCommentsFocusIntent(true); setShowComments(true); }}
+            <button onClick={()=>{ if (detail) { detail.onComment(); return; } setCommentsFocusIntent(true); setShowComments(true); }}
               className="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-gray-700 hover:text-blue-500 transition-all active:scale-90">
               <MessageCircle className="w-5 h-5"/>
               {/* Comment count -- read intent, opens WITHOUT auto-focusing the
@@ -1706,7 +1769,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
                   it doesn't also trigger the icon button underneath it). */}
               {((localPost.totalCommentsCount ?? commentCount) > 0) && (
                 <span
-                  onClick={e => { e.stopPropagation(); setCommentsFocusIntent(false); setShowComments(true); }}
+                  onClick={e => { e.stopPropagation(); if (detail) { detail.onComment(); return; } setCommentsFocusIntent(false); setShowComments(true); }}
                   className="text-[13px] font-semibold min-w-[12px] hover:underline"
                 >
                   {localPost.totalCommentsCount ?? commentCount}
@@ -1746,7 +1809,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
       </div>
 
       {/* ── Comment Sheet (Instagram-style bottom modal) ── */}
-      {showComments && (
+      {showComments && !detail && (
         <CommentSheet
           postId={localPost.id}
           postOwnerId={localPost.userId}
