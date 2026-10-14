@@ -99,6 +99,8 @@ export interface Comment {
   parentId?: string | null;
   createdAt: string;
   editedAt?: string;
+  /** Soft-deleted (it still has replies): shown as a placeholder. */
+  deleted?: boolean;
 }
 
 export type PostType = 'photo' | 'video' | 'audio' | 'text' | 'mixed';

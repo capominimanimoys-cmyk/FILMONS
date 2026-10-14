@@ -19,6 +19,7 @@ import { Comment } from '../types';
 import { UserAvatar, AccountTypeBadge } from './AccountTypeBadge';
 import { X, Heart, Loader2, Send, Pin } from 'lucide-react';
 import { toast } from 'sonner';
+import { useCommentActions } from './CommentActions';
 
 // ── Module-level cache (survives open/close) ──────────────────────────────────
 const _cache      = new Map<string, Comment[]>();
@@ -184,20 +185,12 @@ const CommentRow = memo(function CommentRow({
   const navigate = useNavigate();
 
   const [liking, setLiking]             = useState(false);
-  const [deleting, setDeleting]         = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [expanded, setExpanded]         = useState(false);
   const [replies, setReplies]           = useState<Comment[]>(_replyCache.get(comment.id) ?? []);
   const [loadingReplies, setLoadingReplies] = useState(false);
   const [repliesLoaded, setRepliesLoaded]   = useState(_replyCache.has(comment.id));
   const [showReply, setShowReply]       = useState(false);
   const [replySubmitting, setReplySubmitting] = useState(false);
-  // Edit (author only, within 30 minutes of posting)
-  const [editing, setEditing]   = useState(false);
-  const [editText, setEditText] = useState('');
-  const [saving, setSaving]     = useState(false);
-  const [shownContent, setShownContent] = useState<string | null>(null);
-  const [edited, setEdited]     = useState(!!(comment as any).editedAt);
 
   // ── Like state — count from DB column, liked-by-me from localStorage ─────
   const _likeKey = user ? `filmons_clikes_${user.id}` : null;
@@ -244,31 +237,16 @@ const CommentRow = memo(function CommentRow({
     finally { setLiking(false); }
   };
 
-  const withinEditWindow = Date.now() - new Date(comment.createdAt).getTime() < 30 * 60_000;
-  const saveEdit = async () => {
-    const text = editText.trim();
-    if (!text || saving) return;
-    if (text === (shownContent ?? comment.content)) { setEditing(false); return; }
-    setSaving(true);
-    try {
-      const r = await commentsApi.edit(comment.id, text, comment.createdAt);
-      setShownContent(r.content); setEdited(true); setEditing(false);
-    } catch (e: any) { toast.error(e?.message || 'Could not edit comment'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    setShowDeleteConfirm(false);
-    try {
-      await commentsApi.delete(comment.id);
+  const act = useCommentActions({
+    kind: 'post', commentId: comment.id, text: comment.content, authorId: comment.userId, contentOwnerId: postOwnerId,
+    createdAt: comment.createdAt, editedAt: comment.editedAt, pending: String(comment.id).startsWith('opt-'),
+    onSaveEdit: t => commentsApi.edit(comment.id, t, comment.createdAt),
+    onDelete: async () => {
       const hasReplies = totalReplies > 0;
-      onDeleted(comment.id, hasReplies); // soft delete if has replies
-    } catch {
-      toast.error('Could not delete');
-      setDeleting(false);
-    }
-  };
+      await commentsApi.delete(comment.id, { soft: hasReplies });
+      onDeleted(comment.id, hasReplies);   // soft: replies stay under "This comment was deleted."
+    },
+  });
 
   const loadReplies = async () => {
     if (repliesLoaded) { setExpanded(true); return; }
@@ -325,7 +303,7 @@ const CommentRow = memo(function CommentRow({
     return (
       <div className={depth > 0 ? 'ml-11' : ''}>
         <div className="bg-gray-50 rounded-xl px-3 py-2 border border-dashed border-gray-200">
-          <p className="text-xs text-gray-400 italic">This comment was deleted</p>
+          <p className="text-xs text-gray-400 italic">This comment was deleted.</p>
         </div>
         {expanded && replies.length > 0 && (
           <div className="mt-2 space-y-3">
@@ -352,7 +330,7 @@ const CommentRow = memo(function CommentRow({
 
   return (
     <div className={depth > 0 ? 'ml-11' : ''}>
-      <div className="flex items-start gap-2.5 group">
+      <div className="flex items-start gap-2.5 group" {...act.longPress}>
         {/* Avatar */}
         <button onClick={() => navigate(`/host/${comment.userId}`)} className="flex-shrink-0 mt-0.5">
           <UserAvatar user={{ name: comment.userName, avatar: comment.userAvatar, id: comment.userId }} size={avatarSize} />
@@ -379,18 +357,9 @@ const CommentRow = memo(function CommentRow({
                   <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">Author</span>
                 )}
               </div>
-              {editing ? (
-                <div>
-                  <textarea value={editText} onChange={e => setEditText(e.target.value)} autoFocus rows={2}
-                    className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm outline-none focus:border-blue-300 resize-none" />
-                  <div className="flex gap-3 mt-1">
-                    <button onClick={saveEdit} disabled={!editText.trim() || saving} className="text-xs font-bold text-blue-600 disabled:opacity-40">{saving ? 'Saving…' : 'Save'}</button>
-                    <button onClick={() => setEditing(false)} className="text-xs font-semibold text-gray-500">Cancel</button>
-                  </div>
-                </div>
-              ) : (
+              {act.editing ? act.editor : (
                 <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">
-                  <RichText text={shownContent ?? comment.content} />
+                  <RichText text={act.text} />
                 </p>
               )}
             </div>
@@ -402,7 +371,7 @@ const CommentRow = memo(function CommentRow({
 
           {/* Meta row */}
           <div className="flex items-center gap-3 mt-1 ml-1">
-            <span className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}{edited && ' · Edited'}</span>
+            <span className="text-[11px] text-gray-400">{timeAgo(comment.createdAt)}{act.edited && ' · Edited'}</span>
 
             {depth === 0 && user && (
               <button onClick={() => setShowReply(v => !v)}
@@ -411,37 +380,7 @@ const CommentRow = memo(function CommentRow({
               </button>
             )}
 
-            {isOwn && withinEditWindow && !editing && (
-              <button onClick={() => { setEditText(shownContent ?? comment.content); setEditing(true); }}
-                className="text-[11px] font-semibold text-gray-400 hover:text-blue-500 transition-colors">Edit</button>
-            )}
-
-            {(isOwn || isPostOwner) && (
-              <div className="relative">
-                <button onClick={() => setShowDeleteConfirm(v => !v)} disabled={deleting}
-                  className="text-[11px] font-semibold text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50">
-                  {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Delete'}
-                </button>
-                {showDeleteConfirm && (
-                  <div className="absolute bottom-6 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-44">
-                    <p className="text-xs text-gray-700 font-semibold mb-1">Delete this comment?</p>
-                    {totalReplies > 0 && (
-                      <p className="text-[10px] text-gray-400 mb-2">Replies will remain visible.</p>
-                    )}
-                    <div className="flex gap-2">
-                      <button onClick={handleDelete}
-                        className="flex-1 text-xs font-bold bg-red-500 text-white rounded-lg py-1.5 hover:bg-red-600">
-                        Delete
-                      </button>
-                      <button onClick={() => setShowDeleteConfirm(false)}
-                        className="flex-1 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg py-1.5 hover:bg-gray-200">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            <span className="ml-auto">{act.optionsButton}</span>
           </div>
 
           {/* Inline reply composer */}
@@ -489,6 +428,7 @@ const CommentRow = memo(function CommentRow({
           )}
         </div>
       </div>
+      {act.overlays}
     </div>
   );
 });
@@ -692,10 +632,8 @@ export function CommentSheet({
       _cache.set(postId, next);
       return next;
     });
-    if (!soft) {
-      setTotalCount(c => Math.max(0, c - 1));
-      onCountChange?.(Math.max(0, totalCount - 1));
-    }
+    setTotalCount(c => Math.max(0, c - 1));
+    onCountChange?.(Math.max(0, totalCount - 1));
   };
 
   // ── Swipe down to close ───────────────────────────────────────────────────

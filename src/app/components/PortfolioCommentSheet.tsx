@@ -16,7 +16,7 @@ import { Heart, MoreHorizontal, ChevronUp, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
-import { CommentEditBox, useCommentEdit } from './CommentEditor';
+import { useCommentActions, DeletedComment } from './CommentActions';
 import {
   PortfolioComment, getItemComments, getAlbumComments, addItemComment, addAlbumComment,
   toggleCommentLike, deleteItemComment, editItemComment,
@@ -33,65 +33,52 @@ export function timeAgo(iso: string): string {
 }
 
 function CommentRow({
-  comment, depth = 0, onReply, onToggleLike, onDelete, canModerate, meId,
+  comment, depth = 0, onReply, onToggleLike, onDelete, ownerId, meId,
 }: {
   comment: PortfolioComment; depth?: number;
   onReply: (c: PortfolioComment) => void;
   onToggleLike: (c: PortfolioComment) => void;
-  onDelete: (c: PortfolioComment) => void;
-  canModerate: boolean; meId?: string;
+  /** Throws on failure; removes the comment (or leaves a "deleted" placeholder when it has replies). */
+  onDelete: (c: PortfolioComment) => Promise<void>;
+  /** The portfolio owner: may delete (not edit) anyone's comment. */
+  ownerId: string; meId?: string;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const isOwnComment = !!meId && comment.user_id === meId;
-  const canDelete = isOwnComment || canModerate;
-  const edit = useCommentEdit(comment.body, comment.created_at, undefined, t => editItemComment(comment.id, meId!, t, comment.created_at));
-  const canEditNow = isOwnComment && edit.canEdit;
+  const act = useCommentActions({
+    kind: 'portfolio', commentId: comment.id, text: comment.body, authorId: comment.user_id, contentOwnerId: ownerId,
+    createdAt: comment.created_at, editedAt: (comment as any).edited_at ?? undefined,
+    pending: String(comment.id).startsWith('tmp') || String(comment.id).startsWith('opt'),
+    onSaveEdit: t => editItemComment(comment.id, meId!, t, comment.created_at),
+    onDelete: () => onDelete(comment),
+  });
+  const deleted = !!(comment as any).deleted_at;
 
   return (
     <div className={depth > 0 ? 'ml-9 mt-2.5' : ''}>
-      <div className="flex items-start gap-2.5">
-        <div className="w-7 h-7 rounded-full bg-gray-200 shrink-0 overflow-hidden">
-          {comment.author?.avatar_url && <img src={comment.author.avatar_url} alt="" className="w-full h-full object-cover" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-gray-900">{comment.author?.name ?? 'Filmons user'}</p>
-          {edit.editing ? <CommentEditBox edit={edit} /> : <p className="text-sm text-gray-800 leading-snug break-words">{edit.text}</p>}
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-[10px] text-gray-400">{timeAgo(comment.created_at)}{edit.edited && ' · Edited'}</span>
-            <button onClick={() => onReply(comment)} className="text-[10px] font-bold text-gray-500">Reply</button>
-            {comment.likes_count > 0 && <span className="text-[10px] text-gray-400">{comment.likes_count} like{comment.likes_count === 1 ? '' : 's'}</span>}
+      {deleted ? (
+        <DeletedComment />
+      ) : (
+        <div className="flex items-start gap-2.5" {...act.longPress}>
+          <div className="w-7 h-7 rounded-full bg-gray-200 shrink-0 overflow-hidden">
+            {comment.author?.avatar_url && <img src={comment.author.avatar_url} alt="" className="w-full h-full object-cover" />}
           </div>
-        </div>
-        <button onClick={() => onToggleLike(comment)} className="shrink-0 pt-0.5">
-          <Heart className={`w-3.5 h-3.5 ${comment.liked ? 'text-red-500 fill-red-500' : 'text-gray-300'}`} />
-        </button>
-        {canDelete && (
-          <div className="relative shrink-0">
-            <button onClick={() => setMenuOpen(v => !v)} className="w-6 h-6 flex items-center justify-center text-gray-300">
-              <MoreHorizontal className="w-3.5 h-3.5" />
-            </button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-6 z-20 bg-white rounded-xl shadow-lg border border-gray-100 py-1 w-32">
-                  {canEditNow && (
-                    <button onClick={() => { setMenuOpen(false); edit.start(); }}
-                      className="w-full text-left px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50">Edit</button>
-                  )}
-                  <button
-                    onClick={() => { setMenuOpen(false); onDelete(comment); }}
-                    className="w-full text-left px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </>
-            )}
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-gray-900">{comment.author?.name ?? 'Filmons user'}</p>
+            {act.editing ? act.editor : <p className="text-sm text-gray-800 leading-snug break-words whitespace-pre-wrap">{act.text}</p>}
+            <div className="flex items-center gap-3 mt-1">
+              <span className="text-[10px] text-gray-400">{timeAgo(comment.created_at)}{act.edited && ' · Edited'}</span>
+              <button onClick={() => onReply(comment)} className="text-[10px] font-bold text-gray-500">Reply</button>
+              {comment.likes_count > 0 && <span className="text-[10px] text-gray-400">{comment.likes_count} like{comment.likes_count === 1 ? '' : 's'}</span>}
+            </div>
           </div>
-        )}
-      </div>
+          <button onClick={() => onToggleLike(comment)} className="shrink-0 pt-0.5" aria-label="Like comment">
+            <Heart className={`w-3.5 h-3.5 ${comment.liked ? 'text-red-500 fill-red-500' : 'text-gray-300'}`} />
+          </button>
+          <span className="shrink-0">{act.optionsButton}</span>
+          {act.overlays}
+        </div>
+      )}
       {comment.replies.map(r => (
-        <CommentRow key={r.id} comment={r} depth={depth + 1} onReply={onReply} onToggleLike={onToggleLike} onDelete={onDelete} canModerate={canModerate} meId={meId} />
+        <CommentRow key={r.id} comment={r} depth={depth + 1} onReply={onReply} onToggleLike={onToggleLike} onDelete={onDelete} ownerId={ownerId} meId={meId} />
       ))}
     </div>
   );
@@ -119,7 +106,7 @@ export function PortfolioCommentSheet({
   const fetchComments = targetType === 'album' ? getAlbumComments : getItemComments;
   const createComment = targetType === 'album' ? addAlbumComment : addItemComment;
 
-  const countAll = (list: PortfolioComment[]) => list.reduce((n, c) => n + 1 + c.replies.length, 0);
+  const countAll = (list: PortfolioComment[]) => list.reduce((n, c) => n + (c.deleted_at ? 0 : 1) + c.replies.length, 0);
 
   useEffect(() => {
     fetchComments(itemId, { viewerId: user?.id }).then(({ comments: c, hasMore: hm }) => {
@@ -185,14 +172,14 @@ export function PortfolioCommentSheet({
   };
 
   const handleDelete = async (c: PortfolioComment) => {
-    if (!window.confirm('Delete this comment?')) return;
-    const ok = await deleteItemComment(c.id);
-    if (!ok) { toast.error('Could not delete comment'); return; }
+    const soft = c.replies.length > 0;
+    const ok = await deleteItemComment(c.id, soft);
+    if (!ok) throw new Error('delete failed');
     setComments(prev => {
       if (!prev) return prev;
-      const merged = prev
-        .filter(row => row.id !== c.id)
-        .map(row => ({ ...row, replies: row.replies.filter(r => r.id !== c.id) }));
+      const merged = soft
+        ? prev.map(row => row.id === c.id ? { ...row, body: '', deleted_at: new Date().toISOString() } as PortfolioComment : row)
+        : prev.filter(row => row.id !== c.id).map(row => ({ ...row, replies: row.replies.filter(r => r.id !== c.id) }));
       setCount(countAll(merged));
       return merged;
     });
@@ -248,7 +235,7 @@ export function PortfolioCommentSheet({
                 onReply={cm => { setReplyingTo(cm); inputRef.current?.focus(); }}
                 onToggleLike={handleToggleLike}
                 onDelete={handleDelete}
-                canModerate={canModerate}
+                ownerId={creatorId}
                 meId={user?.id}
               />
             ))}

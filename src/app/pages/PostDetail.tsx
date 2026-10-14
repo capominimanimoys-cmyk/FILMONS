@@ -8,6 +8,7 @@ import { PostCard } from '../components/PostCard';
 import { commentsApi, postsApi, fetchRepostContext } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { useCommentActions, DeletedComment } from '../components/CommentActions';
 import { UserAvatar, AccountTypeBadge } from '../components/AccountTypeBadge';
 
 export function PostDetail() {
@@ -169,35 +170,24 @@ export function PostDetail() {
     }
   };
 
-  // ── Edit (author, within 30 min) and delete (author) ───────────────────────
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  // ── Edit / delete (server checks permissions; lists update in place) ───────
   const patchComment = (cid: string, parentId: string | undefined, fn: (c: Comment) => Comment) => {
     if (parentId) setReplies(prev => ({ ...prev, [parentId]: (prev[parentId] ?? []).map(c => c.id === cid ? fn(c) : c) }));
     else setComments(prev => prev.map(c => c.id === cid ? fn(c) : c));
   };
-  const saveEdit = async (c: Comment, parentId?: string) => {
-    const text = editText.trim();
-    if (!text) return;
-    if (text === c.content) { setEditingId(null); return; }
-    const before = c.content;
-    patchComment(c.id, parentId, x => ({ ...x, content: text, editedAt: new Date().toISOString() }));
-    setEditingId(null);
-    try { await commentsApi.edit(c.id, text, c.createdAt); }
-    catch (e: any) { patchComment(c.id, parentId, x => ({ ...x, content: before, editedAt: c.editedAt })); toast.error(e?.message || 'Could not edit comment'); }
+  const saveEdit = async (c: Comment, parentId: string | undefined, text: string) => {
+    const r = await commentsApi.edit(c.id, text, c.createdAt);
+    patchComment(c.id, parentId, x => ({ ...x, content: r.content, editedAt: r.editedAt }));
   };
   const removeComment = async (c: Comment, parentId?: string) => {
-    setConfirmDel(null);
-    const snapshotC = comments, snapshotR = replies;
-    const nReplies = parentId ? 0 : (c.replyCount ?? 0);
-    if (parentId) {
+    const hasReplies = !parentId && (c.replyCount ?? 0) > 0;
+    await commentsApi.delete(c.id, { soft: hasReplies });       // throws -> the comment stays visible
+    if (hasReplies) patchComment(c.id, undefined, x => ({ ...x, deleted: true, content: '' }));
+    else if (parentId) {
       setReplies(prev => ({ ...prev, [parentId]: (prev[parentId] ?? []).filter(r => r.id !== c.id) }));
       setComments(prev => prev.map(x => x.id === parentId ? { ...x, replyCount: Math.max(0, (x.replyCount ?? 1) - 1) } : x));
     } else setComments(prev => prev.filter(x => x.id !== c.id));
-    setCount(-(1 + nReplies));
-    try { await commentsApi.delete(c.id); }
-    catch { setComments(snapshotC); setReplies(snapshotR); setCount(1 + nReplies); toast.error('Could not delete comment'); }
+    setCount(-1);
   };
 
   const toggleLike = async (commentId: string, isReply: boolean, parentId?: string) => {
@@ -247,54 +237,13 @@ export function PostDetail() {
     </div>
   );
 
-  const renderComment = (c: Comment, isReply = false, parentId?: string) => (
-    <div key={c.id} className={`flex items-start gap-2.5 ${isReply ? 'ml-10 mt-3' : ''}`}>
-      <button onClick={() => navigate(`/host/${c.userId}`)} className="shrink-0">
-        <UserAvatar user={{ id: c.userId, name: c.userName, avatar: c.userAvatar }} size={isReply ? 26 : 32} />
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="bg-gray-50 rounded-2xl px-3 py-2">
-          <p className="text-xs font-black text-gray-900 flex items-center gap-1.5">
-            <button onClick={() => navigate(`/host/${c.userId}`)}>{c.userName}</button>
-            {c.userAccountType && <AccountTypeBadge type={c.userAccountType} size="sm" />}
-          </p>
-          {editingId === c.id ? (
-            <div className="mt-1">
-              <textarea value={editText} onChange={e => setEditText(e.target.value)} autoFocus rows={2}
-                className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm outline-none focus:border-blue-300 resize-none" />
-              <div className="flex gap-3 mt-1">
-                <button onClick={() => saveEdit(c, parentId)} disabled={!editText.trim()} className="text-xs font-bold text-blue-600 disabled:opacity-40">Save</button>
-                <button onClick={() => setEditingId(null)} className="text-xs font-semibold text-gray-500">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-800 mt-0.5 leading-relaxed whitespace-pre-line break-words">{c.content}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-4 px-2 pt-1 text-[11px] font-semibold text-gray-500">
-          <span className="font-normal text-gray-400">{relTime(c.createdAt)}{c.editedAt ? ' · Edited' : ''}</span>
-          <button onClick={() => toggleLike(c.id, isReply, parentId)} className={c.likedByMe ? 'text-red-500' : ''}>
-            Like{(c.likesCount ?? 0) > 0 ? ` · ${c.likesCount}` : ''}
-          </button>
-          {user && post.allowComments !== false && <button onClick={() => startReply(c)}>Reply</button>}
-          {user?.id === c.userId && editingId !== c.id && Date.now() - new Date(c.createdAt).getTime() < 30 * 60_000 && (
-            <button onClick={() => { setEditText(c.content); setEditingId(c.id); }}>Edit</button>
-          )}
-          {user?.id === c.userId && !String(c.id).startsWith('tmp-') && (
-            confirmDel === c.id
-              ? <span className="flex items-center gap-2"><button className="text-red-600" onClick={() => removeComment(c, parentId)}>Confirm delete</button><button onClick={() => setConfirmDel(null)}>Cancel</button></span>
-              : <button onClick={() => setConfirmDel(c.id)}>Delete</button>
-          )}
-        </div>
-        {!isReply && (c.replyCount ?? 0) > 0 && (
-          <button onClick={() => toggleReplies(c)} className="flex items-center gap-1 px-2 pt-1.5 text-[11px] font-bold text-blue-600">
-            <ChevronDown className={`w-3 h-3 transition-transform ${openReplies.has(c.id) ? 'rotate-180' : ''}`} />
-            {openReplies.has(c.id) ? 'Hide replies' : `View ${c.replyCount} ${c.replyCount === 1 ? 'reply' : 'replies'}`}
-          </button>
-        )}
-        {!isReply && openReplies.has(c.id) && (replies[c.id] ?? []).map(r => renderComment(r, true, c.id))}
-      </div>
-    </div>
+  const renderComment = (c: Comment, isReply = false, parentId?: string): React.ReactNode => (
+    <DetailComment key={c.id} c={c} isReply={isReply} parentId={parentId} postOwnerId={post.userId}
+      canReply={!!user && post.allowComments !== false} repliesOpen={openReplies.has(c.id)}
+      onLike={() => toggleLike(c.id, isReply, parentId)} onReply={() => startReply(c)} onToggleReplies={() => toggleReplies(c)}
+      onSaveEdit={t => saveEdit(c, parentId, t)} onDelete={() => removeComment(c, parentId)}>
+      {!isReply && openReplies.has(c.id) && (replies[c.id] ?? []).map(r => renderComment(r, true, c.id))}
+    </DetailComment>
   );
 
   const total = post.totalCommentsCount ?? post.commentCount ?? comments.length;
@@ -387,6 +336,56 @@ export function PostDetail() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function DetailComment({ c, isReply, parentId, postOwnerId, canReply, repliesOpen, onLike, onReply, onToggleReplies, onSaveEdit, onDelete, children }: {
+  c: Comment; isReply: boolean; parentId?: string; postOwnerId?: string; canReply: boolean; repliesOpen: boolean;
+  onLike: () => void; onReply: () => void; onToggleReplies: () => void;
+  onSaveEdit: (t: string) => Promise<unknown>; onDelete: () => Promise<unknown>; children?: React.ReactNode;
+}) {
+  const navigate = useNavigate();
+  const act = useCommentActions({
+    kind: 'post', commentId: c.id, text: c.content, authorId: c.userId, contentOwnerId: postOwnerId, createdAt: c.createdAt,
+    editedAt: c.editedAt, pending: String(c.id).startsWith('tmp-'), onSaveEdit, onDelete,
+  });
+  const replyToggle = !isReply && (c.replyCount ?? 0) > 0 && (
+    <button onClick={onToggleReplies} className="flex items-center gap-1 px-2 pt-1.5 text-[11px] font-bold text-blue-600">
+      <ChevronDown className={`w-3 h-3 transition-transform ${repliesOpen ? 'rotate-180' : ''}`} />
+      {repliesOpen ? 'Hide replies' : `View ${c.replyCount} ${c.replyCount === 1 ? 'reply' : 'replies'}`}
+    </button>
+  );
+  if (c.deleted) return (
+    <div className={isReply ? 'ml-10 mt-3' : ''}>
+      <DeletedComment />
+      {replyToggle}{children}
+    </div>
+  );
+  return (
+    <div className={`flex items-start gap-2.5 ${isReply ? 'ml-10 mt-3' : ''}`} {...act.longPress}>
+      <button onClick={() => navigate(`/host/${c.userId}`)} className="shrink-0">
+        <UserAvatar user={{ id: c.userId, name: c.userName, avatar: c.userAvatar }} size={isReply ? 26 : 32} />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="bg-gray-50 rounded-2xl px-3 py-2">
+          <p className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+            <button onClick={() => navigate(`/host/${c.userId}`)}>{c.userName}</button>
+            {c.userAccountType && <AccountTypeBadge type={c.userAccountType} size="sm" />}
+          </p>
+          {act.editing ? <div className="mt-1">{act.editor}</div>
+            : <p className="text-sm text-gray-800 mt-0.5 leading-relaxed whitespace-pre-wrap break-words">{act.text}</p>}
+        </div>
+        <div className="flex items-center gap-4 px-2 pt-1 text-[11px] font-semibold text-gray-500">
+          <span className="font-normal text-gray-400">{relTime(c.createdAt)}{act.edited ? ' · Edited' : ''}</span>
+          <button onClick={onLike} className={c.likedByMe ? 'text-red-500' : ''}>Like{(c.likesCount ?? 0) > 0 ? ` · ${c.likesCount}` : ''}</button>
+          {canReply && <button onClick={onReply}>Reply</button>}
+          <span className="ml-auto">{act.optionsButton}</span>
+        </div>
+        {replyToggle}
+        {children}
+      </div>
+      {act.overlays}
     </div>
   );
 }
