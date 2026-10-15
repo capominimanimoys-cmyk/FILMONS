@@ -10,16 +10,10 @@ import {
   type ReelPortfolioImage, isItemLiked, toggleItemLike, isAlbumLiked, toggleAlbumLike, isPortfolioSaved, togglePortfolioSave,
   incrementItemView, logPortfolioEngagementEvent,
 } from '../lib/portfolioApi';
-import type { Post } from '../types';
+import type { Post, SharedContentSnapshot } from '../types';
 
-async function share(url: string, title?: string) {
-  try {
-    if (navigator.share) await navigator.share({ title, url });
-    else { await navigator.clipboard.writeText(url); toast.success('Link copied'); }
-  } catch { /* cancelled */ }
-}
-
-export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, onBack, onComment, commentDelta }: {
+export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, onBack, onComment, commentDelta, onShare }: {
+  onShare: (s: SharedContentSnapshot) => void;
   entry: ReelPortfolioImage; active: boolean; near: boolean; muted: boolean; onToggleMuted: () => void;
   onBack: () => void; onComment: () => void; commentDelta: number;
 }) {
@@ -64,7 +58,12 @@ export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, 
     onComment,
     onShare: () => {
       if (!isAlbum) logPortfolioEngagementEvent(ownerId, entry.id, 'share', user?.id);
-      share(`${window.location.origin}/reels/${isAlbum ? 'pfa_' : 'pfi_'}${entry.id}`, entry.title);
+      onShare({
+        contentType: isAlbum ? 'portfolio_album' : 'portfolio_item', contentId: entry.id, creatorId: entry.creator.id,
+        creatorName: entry.creator.name, creatorAvatar: entry.creator.avatar_url ?? undefined, creatorVerified: entry.creator.is_verified,
+        title: entry.title, caption: isAlbum ? entry.album!.description : entry.item!.description, thumbnailUrl: entry.images[0],
+        meta: [isAlbum ? entry.album!.category : entry.item!.category, entry.item?.subcategory].filter(Boolean) as string[],
+      });
     },
     onSave: async () => {
       if (!user) { showGuestPrompt?.(); return; }
@@ -77,13 +76,14 @@ export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, 
   return (
     <ImageReelCard images={entry.images} active={active} near={near} source="Portfolio" title={entry.title}
       creator={{ id: entry.creator.id, name: entry.creator.name, avatar: entry.creator.avatar_url, accountType: entry.creator.account_type }}
-      engagement={engagement} viewLabel="View project"
+      engagement={engagement} viewLabel="View project" link={isAlbum ? undefined : entry.item!.external_link}
       onView={() => openPortfolioItem(entry.id, [], isAlbum ? 'album' : 'item', { forceDetail: true })}
       onProfile={() => navigate(`/host/${entry.creator.id}`)} onBack={onBack} muted={muted} onToggleMuted={onToggleMuted} />
   );
 }
 
-export function PostImageReel({ post, active, near, muted, onToggleMuted, onBack, onComment }: {
+export function PostImageReel({ post, active, near, muted, onToggleMuted, onBack, onComment, onShare }: {
+  onShare: (s: SharedContentSnapshot) => void;
   post: Post; active: boolean; near: boolean; muted: boolean; onToggleMuted: () => void; onBack: () => void; onComment: () => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
@@ -102,7 +102,10 @@ export function PostImageReel({ post, active, near, muted, onToggleMuted, onBack
       catch { setLiked(was); setLikes(c => Math.max(0, c + (was ? 1 : -1))); toast.error('Could not update like'); }
     },
     onComment,
-    onShare: () => share(`${window.location.origin}/reels/${post.id}`, post.content?.slice(0, 80)),
+    onShare: () => onShare({
+      contentType: 'post', contentId: post.id, creatorId: post.userId, creatorName: post.userName, creatorAvatar: post.userAvatar,
+      caption: post.content, thumbnailUrl: post.images?.[0] || undefined,
+    }),
     onSave: async () => {
       if (!user) { showGuestPrompt?.(); return; }
       const was = saved; setSaved(!was);

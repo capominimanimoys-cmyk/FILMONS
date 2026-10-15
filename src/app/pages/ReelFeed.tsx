@@ -29,6 +29,8 @@ import { PortfolioReelCard } from '../components/PortfolioReelCard';
 import { PortfolioCommentSheet } from '../components/PortfolioCommentSheet';
 import { getReelPortfolioVideos, getReelPortfolioImages, type ReelPortfolioVideo, type ReelPortfolioImage } from '../lib/portfolioApi';
 import { PortfolioImageReel, PostImageReel } from '../components/ReelImageViews';
+import { SharePostSheet } from '../components/connect/SharePostSheet';
+import type { SharedContentSnapshot } from '../types';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import { supabase } from '../../lib/supabase';
 
@@ -181,9 +183,10 @@ function CommentsSheet({ post, onClose }: { post: Post; onClose: () => void }) {
 
 // ── Single Reel Card ──────────────────────────────────────────────────────────
 function ReelCard({
-  post, active, hasPlayer, preload, onLike, onComment, friendActivity,
+  post, active, hasPlayer, preload, onLike, onComment, onShare, friendActivity,
 }: {
   post: Post;
+  onShare: (s: SharedContentSnapshot) => void;
   active: boolean;
   /** Previous / current / next reels own a <video>; farther ones keep only the poster (frees decoders + memory). */
   hasPlayer: boolean;
@@ -477,7 +480,7 @@ function ReelCard({
         </div>
         {/* Share */}
         <div className="flex flex-col items-center gap-1">
-          <button onClick={() => { navigator.share?.({ url: window.location.href }).catch(() => {}); }} className="w-11 h-11 flex items-center justify-center">
+          <button onClick={() => onShare({ contentType: 'post', contentId: post.id, creatorId: post.userId, creatorName: post.userName, creatorAvatar: post.userAvatar, caption: post.content, thumbnailUrl: post.images?.[0] || undefined })} aria-label="Share" className="w-11 h-11 flex items-center justify-center">
             <Share2 className="w-7 h-7 text-white drop-shadow-lg" />
           </button>
         </div>
@@ -616,6 +619,7 @@ export function ReelFeed() {
   const { openPortfolioItem } = usePortfolioPreview();
   const [searchParams] = useSearchParams();
   const [muted, setMuted] = useState(true);
+  const [shareSnap, setShareSnap] = useState<SharedContentSnapshot | null>(null);
   const [pfComment, setPfComment] = useState<{ id: string; ownerId: string; category?: string; sub?: string; target: 'item' | 'album' } | null>(null);
   const [commentDeltas, setCommentDeltas] = useState<Record<string, number>>({});
   const pfCursor = useRef<string | undefined>(undefined);
@@ -923,7 +927,7 @@ export function ReelFeed() {
             const e = post.pfImage;
             return (
               <div key={post.id} className="w-full h-full">
-                <PortfolioImageReel entry={e} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
+                <PortfolioImageReel entry={e} onShare={setShareSnap} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
                   onBack={() => navigate(-1)} commentDelta={commentDeltas[post.id] ?? 0}
                   onComment={() => setPfComment(e.kind === 'album'
                     ? { id: e.id, ownerId: e.album!.user_id, category: e.album!.category, target: 'album' }
@@ -933,13 +937,13 @@ export function ReelFeed() {
           }
           if (post.imagePost) return (
             <div key={post.id} className="w-full h-full">
-              <PostImageReel post={post} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
+              <PostImageReel post={post} onShare={setShareSnap} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
                 onBack={() => navigate(-1)} onComment={() => setCommentPost(post)} />
             </div>
           );
           if (post.portfolio) return (
             <div key={post.id} className="w-full h-full">
-              <PortfolioReelCard reel={post.portfolio} active={dist === 0} hasPlayer={Math.abs(dist) <= 1}
+              <PortfolioReelCard reel={post.portfolio} onShare={() => { const it = post.portfolio!.item, cr = post.portfolio!.creator; setShareSnap({ contentType: 'portfolio_item', contentId: it.id, creatorId: cr.id, creatorName: cr.name, creatorAvatar: cr.avatar_url ?? undefined, creatorVerified: cr.is_verified, title: it.title, caption: it.description, thumbnailUrl: it.thumbnail_url || undefined, meta: [it.category, it.subcategory].filter(Boolean) as string[] }); }} active={dist === 0} hasPlayer={Math.abs(dist) <= 1}
                 preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
                 muted={muted} onToggleMuted={() => setMuted(m => !m)} onBack={() => navigate(-1)}
                 onProfile={() => navigate(`/host/${post.portfolio!.creator.id}`)}
@@ -958,6 +962,7 @@ export function ReelFeed() {
                 preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
                 onLike={handleLike}
                 onComment={() => setCommentPost(post)}
+                onShare={setShareSnap}
                 friendActivity={idx === activeIdx ? friendActivity : []}
               />
             </div>
@@ -983,6 +988,12 @@ export function ReelFeed() {
               className={`rounded-full transition-all ${i === activeIdx ? 'w-1.5 h-5 bg-white' : 'w-1.5 h-1.5 bg-white/40'}`}
             />
           ))}
+        </div>
+      )}
+
+      {shareSnap && (
+        <div onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()} onWheel={e => e.stopPropagation()}>
+          <SharePostSheet snapshot={shareSnap} onClose={() => setShareSnap(null)} />
         </div>
       )}
 
