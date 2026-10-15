@@ -23,6 +23,7 @@ import { useFollow } from '../context/FollowContext';
 import { UserAvatar } from './AccountTypeBadge';
 import { BottomSheet, SheetCancel } from './BottomSheet';
 import { PortfolioItemActionSheet } from './PortfolioItemActionSheet';
+import { ReelsToggleRow, useReelsToggle } from './ReelsToggle';
 import { toast } from 'sonner';
 import {
   PortfolioFeedEntry, PortfolioItem, PortfolioFeedPreviewItem,
@@ -249,6 +250,7 @@ function AlbumCardMenu({
   const navigate = useNavigate();
   const { openPortfolioPreview } = usePortfolioPreview();
   const { user, showGuestPrompt } = useAuth();
+  const reels = useReelsToggle('album', entry.album.id, entry.album.show_in_reels, entry.album.visibility, v => { entry.album.show_in_reels = v; });
   const [deleting, setDeleting] = useState(false);
 
   const run = (fn: () => void) => { onClose(); fn(); };
@@ -280,6 +282,7 @@ function AlbumCardMenu({
             <button onClick={() => run(() => navigate('/portfolio'))} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <FolderCog className="w-4 h-4 text-gray-400" /> Manage in Portfolio
             </button>
+            <ReelsToggleRow state={reels} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors" />
             <button onClick={() => run(onShare)} className="flex items-center gap-3 w-full px-4 py-3.5 text-sm text-gray-800 hover:bg-gray-50 rounded-xl transition-colors">
               <Share2 className="w-4 h-4 text-gray-400" /> Share
             </button>

@@ -33,6 +33,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet, SheetCancel } from './BottomSheet';
 import { AddToAlbumSheet } from './AddToAlbumSheet';
+import { ReelsToggleRow, useReelsToggle } from './ReelsToggle';
 import { downloadFromUrl, portfolioFilename } from '../lib/watermark';
 import { logPortfolioInteraction } from '../lib/personalization';
 import { logProfileEngagement } from '../lib/profileEngagement';
@@ -69,6 +70,8 @@ export function PortfolioItemActionSheet({
   // Owners can always download their own work; visitors only when the creator's
   // Portfolio settings allow it (all images, or this item selected).
   const [visitorCanDownload, setVisitorCanDownload] = useState(false);
+  const reels = useReelsToggle('item', item.id, item.show_in_reels, item.visibility, v => { item.show_in_reels = v; });
+  const canReels = isOwn && (item.media_type === 'video' || item.media_type === 'image');
   const hasFile = !!item.media_url && item.media_type !== 'link';
   const canDownload = hasFile && (isOwn || visitorCanDownload);
 
@@ -158,6 +161,7 @@ export function PortfolioItemActionSheet({
               <button onClick={() => run(() => navigate(`/edit-portfolio-item/${item.id}`))} className={rowClass}>
                 <Pencil className="w-4 h-4 text-gray-400" /> Edit Work
               </button>
+              {canReels && <ReelsToggleRow state={reels} className={rowClass} />}
               <button onClick={() => run(handleOpenAddToAlbum)} className={rowClass}>
                 <FolderCog className="w-4 h-4 text-gray-400" /> Add to Album
               </button>

@@ -8,7 +8,8 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Pencil, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, BadgeCheck, MoreHorizontal, Pencil, Link2, EyeOff, Flag, ExternalLink, Repeat2, Clapperboard } from 'lucide-react';
+import { useReelsToggle } from '../ReelsToggle';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -77,6 +78,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
   const [showComments, setShowComments] = useState(false);
   const [showItemDetail, setShowItemDetail] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const reels = useReelsToggle('item', item.id, item.show_in_reels, item.visibility, v => { item.show_in_reels = v; });
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [showTrustDetails, setShowTrustDetails] = useState(false);
@@ -306,6 +308,7 @@ export function PortfolioProjectCard({ entry, trustLevel, hideRepostContext }: {
         <PostMoreMenu
           onClose={() => setShowMoreMenu(false)}
           actions={[
+            ...(isOwn && (item.media_type === 'video' || item.media_type === 'image') ? [{ icon: Clapperboard, label: reels.on ? 'Remove from Reels' : 'Show in Reels', onClick: () => { setShowMoreMenu(false); reels.toggle(); } }] : []),
             ...(isOwn ? [{ icon: Pencil, label: 'Edit work', onClick: () => { setShowMoreMenu(false); navigate(`/edit-portfolio-item/${item.id}`); } }] : []),
             { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); openPortfolioPreview(creator.id); } },
             { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },

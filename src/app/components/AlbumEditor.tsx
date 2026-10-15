@@ -33,17 +33,18 @@ import {
   type PortfolioAlbum, type PortfolioItem, type AlbumCredit, type MediaType,
 } from '../lib/portfolioApi';
 import { logActivityEvent } from '../lib/activityApi';
+import { externalLinkLabel, normalizeExternalLink } from '../lib/externalLink';
 import { PortfolioContentPicker } from './PortfolioContentPicker';
 import { AlbumCreditsSection } from './AlbumCreditsSection';
 import { BottomSheet } from './BottomSheet';
 import {
-  CategoryPanel, LocationPanel, TagsPanel, VisibilityPanel, FieldRow, VISIBILITY_OPTIONS, type ItemVisibility,
+  CategoryPanel, LocationPanel, TagsPanel, VisibilityPanel, TextFieldPanel, FieldRow, VISIBILITY_OPTIONS, type ItemVisibility,
 } from './PortfolioFieldSelectors';
 
 // AlbumEditor is z-[92]; field panels (z 85 + depth*2) must stack above it.
 const PANEL_DEPTH = 4;
 
-type PanelId = 'category' | 'location' | 'hashtags' | 'visibility';
+type PanelId = 'category' | 'location' | 'hashtags' | 'visibility' | 'link';
 
 interface NewMediaDraft {
   localId: string; file: File; previewUrl?: string;
@@ -90,10 +91,11 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
   const [category,    setCategory]    = useState(album?.category ?? '');
   const [tags,        setTags]        = useState<string[]>(album?.tags ?? []);
   const [visibility,  setVisibility]  = useState<ItemVisibility>((album?.visibility as ItemVisibility) ?? 'public');
+  const [link, setLink] = useState(album?.external_link ?? '');
   const [inReels, setInReels] = useState<boolean>(album?.show_in_reels ?? mode !== 'edit');
 
   const initialFormSnapshot = useRef('');
-  const snapshot = () => JSON.stringify({ title, description, location, category, tags, visibility, inReels });
+  const snapshot = () => JSON.stringify({ title, description, location, category, tags, visibility, inReels, link });
 
   const [coverPreview,   setCoverPreview]   = useState('');
   const [coverUrl,       setCoverUrl]       = useState(album?.cover_url ?? '');
@@ -313,6 +315,7 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
     if (location.trim() || tags.length || category) {
       await updateAlbum(album2.id, { location: location.trim() || undefined, tags: tags.length ? tags : undefined, category: category || undefined });
     }
+    if (link) { const okLink = await updateAlbum(album2.id, { external_link: link }); if (!okLink) toast.error("The link couldn't be saved yet"); }
     if (inReels && visibility === 'public') setPortfolioShowInReels('album', album2.id, true).catch(() => {});
     if (visibility === 'public') {
       logActivityEvent({ actorId: user.id, activityType: 'portfolio_album_published', targetType: 'portfolio_album', targetId: album2.id, title: album2.title || null });
@@ -329,6 +332,10 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
       title: title.trim(), description: description.trim() || undefined, visibility,
       category: category || undefined, tags, location: location.trim() || undefined,
     });
+    if (ok && link !== (album.external_link ?? '')) {
+      const okLink = await updateAlbum(album.id, { external_link: link });
+      if (!okLink) toast.error("The link couldn't be saved yet");
+    }
     if (ok && inReels !== !!album.show_in_reels || (ok && visibility !== 'public' && album.show_in_reels)) {
       await setPortfolioShowInReels('album', album.id, inReels && visibility === 'public').catch(() => false);
     }
@@ -448,6 +455,7 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
         <FieldRow label="Category" placeholder="Select category" value={category} onClick={() => setActivePanel('category')} />
         <FieldRow label="Location" placeholder="Add location" value={location} onClick={() => setActivePanel('location')} />
         <FieldRow label="Hashtags" placeholder="Add hashtags" value={tags.map(t => `#${t}`).join(' ')} onClick={() => setActivePanel('hashtags')} />
+        <FieldRow label="Link" placeholder="Add a link (website, video, article)" value={link ? externalLinkLabel(normalizeExternalLink(link) ?? link) : ''} onClick={() => setActivePanel('link')} />
         <FieldRow label="Visibility" placeholder="Public" value={VISIBILITY_OPTIONS.find(o => o.id === visibility)?.label} onClick={() => setActivePanel('visibility')} />
         <div className={`flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3 ${visibility !== 'public' ? 'opacity-60' : ''}`}>
           <div>
@@ -542,6 +550,14 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
       )}
       {activePanel === 'hashtags' && (
         <TagsPanel depth={PANEL_DEPTH} title="Hashtags" placeholder="Add hashtags" values={tags} onSave={v => { setTags(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'link' && (
+        <TextFieldPanel depth={PANEL_DEPTH} title="Link" placeholder="https://example.com/your-work" value={link}
+          onSave={v => {
+            if (v && !normalizeExternalLink(v)) { toast.error('Enter a valid link, e.g. https://vimeo.com/123'); return; }
+            setLink(v ? normalizeExternalLink(v)! : ''); setActivePanel(null);
+          }}
+          onClose={() => setActivePanel(null)} />
       )}
       {activePanel === 'visibility' && (
         <VisibilityPanel depth={PANEL_DEPTH} value={visibility} onSave={v => { setVisibility(v); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
