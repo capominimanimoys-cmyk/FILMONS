@@ -16,8 +16,7 @@ import { getHashtagContent, getHashtagCreators, getRelatedHashtags, getTopHashta
 import type { Post, Listing } from '../types';
 import type { PortfolioFeedEntry, SuggestedCreator } from '../lib/portfolioApi';
 import { PostCard } from '../components/PostCard';
-import { PortfolioProjectCard } from '../components/connect/PortfolioProjectCard';
-import { PortfolioAlbumCard } from '../components/connect/PortfolioAlbumCard';
+import { PortfolioPinGrid } from '../components/connect/PortfolioPinGrid';
 import { SuggestedConnectionCard } from '../components/connect/SuggestedConnectionCard';
 import { CourseCard } from '../components/courses/CourseCard';
 import { ListingCard } from '../components/ListingCard';
@@ -71,12 +70,6 @@ function SortToggle({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode
       ))}
     </div>
   );
-}
-
-function PortfolioEntryCard({ entry }: { entry: PortfolioFeedEntry }) {
-  return entry.type === 'item'
-    ? <PortfolioProjectCard entry={entry as Extract<PortfolioFeedEntry, { type: 'item' }>} />
-    : <PortfolioAlbumCard entry={entry as Extract<PortfolioFeedEntry, { type: 'album' }>} />;
 }
 
 function SectionHeader({ label, count, onViewAll }: { label: string; count: number; onViewAll?: () => void }) {
@@ -240,18 +233,12 @@ export function HashtagPage() {
               </div>
             )}
 
-            {content.portfolio.length > 0 && (() => {
-              const [left, right] = splitTwoColumns(topPortfolio.slice(0, PREVIEW_CAP));
-              return (
-                <div className="space-y-2.5">
-                  <SectionHeader label="Portfolio" count={content.portfolio.length} onViewAll={content.portfolio.length > PREVIEW_CAP ? () => setActiveTab('portfolio') : undefined} />
-                  <div className="grid grid-cols-2 gap-3 items-start">
-                    <div className="space-y-3">{left.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
-                    <div className="space-y-3">{right.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
-                  </div>
-                </div>
-              );
-            })()}
+            {content.portfolio.length > 0 && (
+              <div className="space-y-2.5">
+                <SectionHeader label="Portfolio" count={content.portfolio.length} onViewAll={content.portfolio.length > PREVIEW_CAP ? () => setActiveTab('portfolio') : undefined} />
+                <PortfolioPinGrid entries={topPortfolio.slice(0, PREVIEW_CAP)} />
+              </div>
+            )}
 
             {content.listings.length > 0 && (
               <div className="space-y-2.5">
@@ -304,15 +291,9 @@ export function HashtagPage() {
         ) : activeTab === 'portfolio' ? (
           <div className="space-y-3">
             {content.portfolio.length > 1 && <SortToggle mode={sortMode} onChange={setSortMode} />}
-            {content.portfolio.length === 0 ? <EmptyTab label="portfolio work" /> : (() => {
-              const [left, right] = splitTwoColumns(sortMode === 'top' ? topPortfolio : content.portfolio);
-              return (
-                <div className="grid grid-cols-2 gap-3 items-start">
-                  <div className="space-y-3">{left.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
-                  <div className="space-y-3">{right.map(e => <PortfolioEntryCard key={`${e.type}-${e.id}`} entry={e} />)}</div>
-                </div>
-              );
-            })()}
+            {content.portfolio.length === 0 ? <EmptyTab label="portfolio work" /> : (
+              <PortfolioPinGrid entries={sortMode === 'top' ? topPortfolio : content.portfolio} />
+            )}
           </div>
         ) : activeTab === 'marketplace' ? (
           <div className="space-y-3">
