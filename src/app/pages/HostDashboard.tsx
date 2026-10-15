@@ -430,18 +430,10 @@ function CreatorDashboard({ user }: { user: any }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab');
-  const [tab, setTab] = useState<'orders' | 'opportunities' | 'applications' | 'transactions'>(
-    initialTab === 'opportunities' || initialTab === 'applications' || initialTab === 'transactions' ? initialTab : 'orders',
-  );
+  const [tab, setTab] = useState<'orders' | 'transactions'>(initialTab === 'transactions' ? initialTab : 'orders');
   const [orders, setOrders] = useState<any[]>([]);
   const [savedListings, setSavedListings] = useState<any[]>([]);
-  const [myOpportunities, setMyOpportunities] = useState<Listing[]>([]);
-  const lockedOpportunityIds = useMemo(
-    () => getLockedOpportunityIds(user.accountType, myOpportunities),
-    [user.accountType, myOpportunities],
-  );
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showOpportunityGate, setShowOpportunityGate] = useState(false);
   const header = useHeaderCollapse();
   // Slide the app top bar + mobile bottom nav away on scroll down, back on scroll up.
   useMobileScrollChrome();
@@ -459,12 +451,6 @@ function CreatorDashboard({ user }: { user: any }) {
       .then(({ data }) => setOrders(data || []))
       .catch(() => setOrders([]));
     savedListingsApi.getSaved(user.id).then(listings => setSavedListings(Array.isArray(listings) ? listings : [])).catch(() => setSavedListings([]));
-    // Opportunities don't require Creator+ (unlike gear/service listings
-    // below, which stay locked) -- every account tier has a monthly
-    // Opportunity posting entitlement, see src/app/lib/entitlements.ts.
-    listingsApi.getUserListings(user.id)
-      .then(listings => setMyOpportunities(listings.filter(l => l.listingType === 'opportunity' || l.listingKind === 'talent')))
-      .catch(() => setMyOpportunities([]));
   }, [user.id]);
 
   const statusColors: Record<string, string> = {
@@ -491,8 +477,6 @@ function CreatorDashboard({ user }: { user: any }) {
         <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-gray-100 overflow-x-auto overflow-y-hidden flex-nowrap no-scrollbar" style={{ scrollBehavior: 'smooth' }}>
           {[
             { key: 'orders',        label: 'My Orders',    icon: ShoppingCart },
-            { key: 'opportunities', label: 'Opportunities', icon: Briefcase   },
-            { key: 'applications',  label: 'Applications', icon: FileText    },
             { key: 'transactions',  label: 'Transactions', icon: DollarSign   },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} ref={el => { tabRefs.current[key] = el; }} onClick={() => setTab(key as any)}
@@ -506,7 +490,6 @@ function CreatorDashboard({ user }: { user: any }) {
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4 overflow-x-hidden">
         <DashboardTrustCard userId={user.id} />
         <DashboardCalendarCard userId={user.id} />
-        <ManagementCards onOpen={tab => setTab(tab)} />
         {/* Become a Host CTA */}
         <div className="bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg shadow-purple-200">
           <div className="flex items-start gap-4">
@@ -583,27 +566,6 @@ function CreatorDashboard({ user }: { user: any }) {
               </div>
             )}
           </div>
-        )}
-
-        {/* Opportunities — open to every account tier, unlike gear/service
-            listings below which stay Creator+-gated. */}
-        {tab === 'opportunities' && (
-          <div className="space-y-3">
-            <button onClick={() => setShowOpportunityGate(true)}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-2xl transition-colors flex items-center justify-center gap-1.5">
-              <Plus className="w-4 h-4" /> Post Opportunity
-            </button>
-            <MyOpportunitiesOverview opportunities={myOpportunities} lockedIds={lockedOpportunityIds} />
-          </div>
-        )}
-
-        {/* Applications — Opportunities this user has applied to, tracked
-            separately from "Opportunities" above (the ones they posted).
-            showCreatorUpsell: CreatorDashboard only ever renders for the
-            'creator' tier, which can't apply at all right now (see
-            submit-opportunity-application's applications: 0 entitlement). */}
-        {tab === 'applications' && (
-          <MyApplicationsSection userId={user.id} showCreatorUpsell />
         )}
 
         {/* Saved */}
@@ -693,31 +655,6 @@ function CreatorDashboard({ user }: { user: any }) {
         </div>
       )}
 
-      {/* Creator+ Required gate -- Opportunities are viewable at the
-          Creator tier, but posting one requires Creator+ (matches the
-          server-side entitlement: creator.posts === 0, see
-          src/app/lib/entitlements.ts). Shown instead of navigating to
-          /create-opportunity, never as a partial/then-blocked flow. */}
-      {showOpportunityGate && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowOpportunityGate(false)} />
-          <div className="relative bg-white w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl shadow-2xl p-6 space-y-4 text-center">
-            <button onClick={() => setShowOpportunityGate(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200"><X className="w-4 h-4" /></button>
-            <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto"><Lock className="w-7 h-7 text-blue-600" /></div>
-            <div>
-              <h3 className="text-xl font-black text-gray-900">Creator+ Required</h3>
-              <p className="text-sm text-gray-500 mt-1 leading-relaxed">You need a Creator+ account or higher to post an opportunity on FILMONS.</p>
-            </div>
-            <div className="space-y-2">
-              <button onClick={() => { setShowOpportunityGate(false); navigate('/account/upgrade'); }}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold rounded-xl py-3 transition-all shadow-md">
-                Upgrade to Creator+
-              </button>
-              <button onClick={() => setShowOpportunityGate(false)} className="w-full text-gray-500 text-sm py-2 hover:text-gray-700 transition-colors">Not Now</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
