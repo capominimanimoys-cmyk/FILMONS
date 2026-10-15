@@ -77,7 +77,7 @@ export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, 
   return (
     <ImageReelCard images={entry.images} active={active} near={near} source="Portfolio" title={entry.title}
       creator={{ id: entry.creator.id, name: entry.creator.name, avatar: entry.creator.avatar_url, accountType: entry.creator.account_type }}
-      engagement={engagement} viewLabel="View project" link={isAlbum ? undefined : entry.item!.external_link} extra={extra}
+      engagement={engagement} viewLabel="View project" link={isAlbum ? entry.album!.external_link : entry.item!.external_link} extra={extra}
       onView={() => openPortfolioItem(entry.id, [], isAlbum ? 'album' : 'item', { forceDetail: true })}
       onProfile={() => navigate(`/host/${entry.creator.id}`)} onBack={onBack} muted={muted} onToggleMuted={onToggleMuted} />
   );

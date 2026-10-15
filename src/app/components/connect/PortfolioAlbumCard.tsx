@@ -1,10 +1,12 @@
 // Desktop Connect feed card for a Portfolio ALBUM entry (PortfolioFeedEntry,
 // type: 'album'). Cover + item count instead of a single item's media/
 // description -- an album has no single description/likes count of its own.
+import { PortfolioLinkChip } from '../PortfolioLinkChip';
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send, Link2, EyeOff, Flag, ExternalLink, Repeat2 } from 'lucide-react';
+import { Bookmark, BadgeCheck, Layers, MoreHorizontal, Heart, MessageCircle, Send, Link2, EyeOff, Flag, ExternalLink, Repeat2, Clapperboard } from 'lucide-react';
+import { useReelsToggle } from '../ReelsToggle';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../AccountTypeBadge';
@@ -53,6 +55,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
   const { openPortfolioItem } = usePortfolioPreview();
   const { requestAlbumRepostCompose } = usePostRepostCompose();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const reels = useReelsToggle('album', album.id, album.show_in_reels, album.visibility, v => { album.show_in_reels = v; });
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -221,6 +224,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
       <div className="mt-3">
         <p className="text-base font-black text-gray-900 leading-snug">{album.title}</p>
         {album.description && <p className="text-sm text-gray-600 mt-1 leading-relaxed line-clamp-3">{album.description}</p>}
+        <PortfolioLinkChip url={album.external_link} className="mt-2" />
       </div>
 
       <button onClick={openAlbum} className="relative block w-full mt-3 rounded-2xl overflow-hidden bg-gray-100" style={{ aspectRatio: coverAspectRatio || 4 / 5 }}>
@@ -282,6 +286,7 @@ export function PortfolioAlbumCard({ entry, trustLevel, hideRepostContext }: {
         <PostMoreMenu
           onClose={() => setShowMoreMenu(false)}
           actions={[
+            ...(isOwn ? [{ icon: Clapperboard, label: reels.on ? 'Remove from Reels' : 'Show in Reels', onClick: () => { setShowMoreMenu(false); reels.toggle(); } }] : []),
             { icon: ExternalLink, label: 'View portfolio', onClick: () => { setShowMoreMenu(false); openAlbum(); } },
             { icon: Bookmark, label: saved ? 'Unsave' : 'Save', onClick: () => { setShowMoreMenu(false); handleToggleSave(); } },
             { icon: Link2, label: 'Copy link', onClick: async () => { setShowMoreMenu(false); try { await navigator.clipboard.writeText(getSharedContentDeepLink(shareSnapshot)); toast.success('Link copied'); } catch { toast.error('Could not copy link'); } } },

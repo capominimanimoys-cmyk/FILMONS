@@ -92,6 +92,8 @@ export interface PortfolioAlbum {
   show_on_profile?:  boolean;
   /** Creator opt-in: this (public) album plays in Reels as one picture carousel. */
   show_in_reels?:    boolean;
+  /** A link attached to the album (website, video, article). */
+  external_link?:    string;
 }
 
 export interface AlbumCredit {
@@ -627,7 +629,7 @@ export async function updateAlbum(
   id: string,
   updates: Partial<Pick<PortfolioAlbum,
     'title' | 'description' | 'visibility' | 'cover_item_id' | 'cover_url' |
-    'primary_role' | 'additional_roles' | 'category' | 'tags' | 'location' | 'work_date' | 'show_on_profile'
+    'primary_role' | 'additional_roles' | 'category' | 'tags' | 'location' | 'work_date' | 'show_on_profile' | 'external_link'
   >>,
 ): Promise<boolean> {
   const { error } = await supabase.from('portfolio_albums').update(updates).eq('id', id);
