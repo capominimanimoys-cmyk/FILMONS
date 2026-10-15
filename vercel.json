@@ -18,6 +18,6 @@
     { "source": "/admin/(.*)", "destination": "/admin.html" },
     { "source": "/learning", "destination": "/learning.html" },
     { "source": "/learning/(.*)", "destination": "/learning.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }

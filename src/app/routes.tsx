@@ -10,8 +10,17 @@ import { Login }         from './pages/Login';
 
 // Pages load on demand (one small chunk each) instead of all being in the first download. The app's
 // first paint no longer waits for the code of ~70 pages it may never open.
+import { isChunkLoadError, reloadOnceForNewVersion } from '../lib/chunkRecovery';
+
 const page = (load: () => Promise<any>, pick?: string) => ({
-  lazy: async () => { const m = await load(); return { Component: pick ? m[pick] : m.default }; },
+  lazy: async () => {
+    try { const m = await load(); return { Component: pick ? m[pick] : m.default }; }
+    catch (e) {
+      // Old tab after a deploy: its chunk is gone. Reload once to pick up the new app; wait forever meanwhile.
+      if (isChunkLoadError(e) && reloadOnceForNewVersion()) return new Promise<never>(() => {});
+      throw e;
+    }
+  },
 });
 
 export const router = createBrowserRouter([
