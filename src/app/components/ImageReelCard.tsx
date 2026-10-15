@@ -28,8 +28,10 @@ const fmt = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$
 
 export function ImageReelCard({
   images, active, near, source, title, caption, creator, engagement, viewLabel, onView, onProfile, onBack,
-  audio, muted, onToggleMuted, link,
+  audio, muted, onToggleMuted, link, extra,
 }: {
+  /** Caption / location / hashtags / mentions block supplied by the caller. */
+  extra?: React.ReactNode;
   /** portfolio_items.external_link, when the creator attached one. */
   link?: string | null;
   images: string[]; active: boolean; near: boolean;
@@ -151,6 +153,7 @@ export function ImageReelCard({
         {text && (
           <p onClick={() => setExpanded(v => !v)} className={`pointer-events-auto mt-1 text-white/90 text-sm leading-snug whitespace-pre-line ${expanded ? '' : 'line-clamp-2'}`}>{text}</p>
         )}
+        {extra && <div className="pointer-events-auto mt-1.5">{extra}</div>}
         <div><ReelLinkChip url={link} /></div>
         <button onClick={onView} className="pointer-events-auto mt-3 inline-flex items-center gap-1 px-4 py-2 rounded-full bg-white text-black text-sm font-bold active:scale-95 transition-transform">
           {viewLabel} <ArrowUpRight className="w-4 h-4" />

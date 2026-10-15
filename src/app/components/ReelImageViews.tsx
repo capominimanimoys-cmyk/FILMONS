@@ -12,8 +12,9 @@ import {
 } from '../lib/portfolioApi';
 import type { Post, SharedContentSnapshot } from '../types';
 
-export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, onBack, onComment, commentDelta, onShare }: {
+export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, onBack, onComment, commentDelta, onShare, extra }: {
   onShare: (s: SharedContentSnapshot) => void;
+  extra?: React.ReactNode;
   entry: ReelPortfolioImage; active: boolean; near: boolean; muted: boolean; onToggleMuted: () => void;
   onBack: () => void; onComment: () => void; commentDelta: number;
 }) {
@@ -76,14 +77,16 @@ export function PortfolioImageReel({ entry, active, near, muted, onToggleMuted, 
   return (
     <ImageReelCard images={entry.images} active={active} near={near} source="Portfolio" title={entry.title}
       creator={{ id: entry.creator.id, name: entry.creator.name, avatar: entry.creator.avatar_url, accountType: entry.creator.account_type }}
-      engagement={engagement} viewLabel="View project" link={isAlbum ? undefined : entry.item!.external_link}
+      engagement={engagement} viewLabel="View project" link={isAlbum ? undefined : entry.item!.external_link} extra={extra}
       onView={() => openPortfolioItem(entry.id, [], isAlbum ? 'album' : 'item', { forceDetail: true })}
       onProfile={() => navigate(`/host/${entry.creator.id}`)} onBack={onBack} muted={muted} onToggleMuted={onToggleMuted} />
   );
 }
 
-export function PostImageReel({ post, active, near, muted, onToggleMuted, onBack, onComment, onShare }: {
+export function PostImageReel({ post, active, near, muted, onToggleMuted, onBack, onComment, onShare, extra }: {
   onShare: (s: SharedContentSnapshot) => void;
+  /** The post's caption (tappable #hashtags / @mentions), location, tags, sound... */
+  extra?: React.ReactNode;
   post: Post; active: boolean; near: boolean; muted: boolean; onToggleMuted: () => void; onBack: () => void; onComment: () => void;
 }) {
   const { user, showGuestPrompt } = useAuth();
@@ -115,7 +118,7 @@ export function PostImageReel({ post, active, near, muted, onToggleMuted, onBack
   };
 
   return (
-    <ImageReelCard images={post.images ?? []} active={active} near={near} source="Post" caption={post.content}
+    <ImageReelCard images={post.images ?? []} active={active} near={near} source="Post" extra={extra}
       creator={{ id: post.userId, name: post.userName, avatar: post.userAvatar, accountType: post.userAccountType }}
       engagement={engagement} viewLabel="View post" onView={() => navigate(`/post/${post.id}`)}
       onProfile={() => navigate(`/host/${post.userId}`)} onBack={onBack}
