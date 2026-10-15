@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { ReelVideo } from './ReelVideo';
 import { AccountTypeBadge } from './AccountTypeBadge';
+import { ReelLinkChip } from './ImageReelCard';
 import {
   ReelPortfolioVideo, isItemLiked, toggleItemLike, isPortfolioSaved, togglePortfolioSave,
   incrementItemView, logPortfolioEngagementEvent,
@@ -12,7 +13,8 @@ import {
 
 const fmt = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
 
-export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onToggleMuted, onBack, onProfile, onViewProject, onComment, commentDelta }: {
+export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onToggleMuted, onBack, onProfile, onViewProject, onComment, commentDelta, onShare }: {
+  onShare: () => void;
   reel: ReelPortfolioVideo; active: boolean; hasPlayer: boolean; preload: 'auto' | 'metadata' | 'none';
   muted: boolean; onToggleMuted: () => void; onBack: () => void; onProfile: () => void; onViewProject: () => void;
   onComment: () => void; commentDelta: number;
@@ -60,15 +62,6 @@ export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onT
     const ok = await togglePortfolioSave(user.id, item.id, 'portfolio_item', was, item.user_id).catch(() => false);
     if (!ok) setSaved(was); else toast.success(was ? 'Removed from saved' : 'Saved');
   };
-  const share = async () => {
-    const url = `${window.location.origin}/reels/pf_${item.id}`;
-    logPortfolioEngagementEvent(item.user_id, item.id, 'share', user?.id);
-    try {
-      if (navigator.share) await navigator.share({ title: item.title, url });
-      else { await navigator.clipboard.writeText(url); toast.success('Link copied'); }
-    } catch { /* cancelled */ }
-  };
-
   const comments = Math.max(0, (item.comments_count ?? 0) + commentDelta);
   const roles = item.role?.trim();
   const poster = item.thumbnail_url || undefined;
@@ -98,7 +91,7 @@ export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onT
           <button onClick={onComment} aria-label="Comments" className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform"><MessageCircle className="w-8 h-8 text-white drop-shadow-lg" /></button>
           <Count n={comments} />
         </div>
-        <button onClick={share} aria-label="Share" className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform"><Share2 className="w-7 h-7 text-white drop-shadow-lg" /></button>
+        <button onClick={() => { logPortfolioEngagementEvent(item.user_id, item.id, 'share', user?.id); onShare(); }} aria-label="Share" className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform"><Share2 className="w-7 h-7 text-white drop-shadow-lg" /></button>
         <button onClick={save} aria-label={saved ? 'Unsave' : 'Save'} className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform">
           <Bookmark className={`w-7 h-7 drop-shadow-lg ${saved ? 'fill-white text-white' : 'text-white'}`} />
         </button>
@@ -117,6 +110,7 @@ export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onT
         {(roles || views > 0) && (
           <p className="mt-0.5 text-white/80 text-xs">{[roles, views > 0 ? `${fmt(views)} views` : ''].filter(Boolean).join(' · ')}</p>
         )}
+        <div><ReelLinkChip url={item.external_link} /></div>
         <button onClick={onViewProject} className="pointer-events-auto mt-3 inline-flex items-center gap-1 px-4 py-2 rounded-full bg-white text-black text-sm font-bold active:scale-95 transition-transform">
           View project <ArrowUpRight className="w-4 h-4" />
         </button>

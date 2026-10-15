@@ -3,6 +3,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Heart, MessageCircle, Share2, Bookmark, ArrowUpRight, ArrowLeft, Volume2, VolumeX, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { AccountTypeBadge } from './AccountTypeBadge';
+import { Link2 } from 'lucide-react';
+import { externalLinkLabel, normalizeExternalLink } from '../lib/externalLink';
+
+/** The link attached to a portfolio work, as a small chip on a dark Reels slide. */
+export function ReelLinkChip({ url }: { url?: string | null }) {
+  const safe = normalizeExternalLink(url);
+  if (!safe) return null;
+  return (
+    <a href={safe} target="_blank" rel="noopener noreferrer nofollow" onClick={e => e.stopPropagation()}
+      className="pointer-events-auto mt-2 inline-flex items-center gap-1.5 max-w-full rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 px-2.5 py-1 text-xs font-semibold transition-colors">
+      <Link2 className="w-3 h-3 shrink-0" />
+      <span className="truncate">{externalLinkLabel(safe)}</span>
+    </a>
+  );
+}
 
 export interface ReelEngagement {
   liked: boolean; likes: number; comments: number; saved: boolean;
@@ -13,8 +28,10 @@ const fmt = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$
 
 export function ImageReelCard({
   images, active, near, source, title, caption, creator, engagement, viewLabel, onView, onProfile, onBack,
-  audio, muted, onToggleMuted,
+  audio, muted, onToggleMuted, link,
 }: {
+  /** portfolio_items.external_link, when the creator attached one. */
+  link?: string | null;
   images: string[]; active: boolean; near: boolean;
   source: 'Post' | 'Portfolio';
   title?: string; caption?: string;
@@ -134,6 +151,7 @@ export function ImageReelCard({
         {text && (
           <p onClick={() => setExpanded(v => !v)} className={`pointer-events-auto mt-1 text-white/90 text-sm leading-snug whitespace-pre-line ${expanded ? '' : 'line-clamp-2'}`}>{text}</p>
         )}
+        <div><ReelLinkChip url={link} /></div>
         <button onClick={onView} className="pointer-events-auto mt-3 inline-flex items-center gap-1 px-4 py-2 rounded-full bg-white text-black text-sm font-bold active:scale-95 transition-transform">
           {viewLabel} <ArrowUpRight className="w-4 h-4" />
         </button>
