@@ -13,8 +13,10 @@ import {
 
 const fmt = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
 
-export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onToggleMuted, onBack, onProfile, onViewProject, onComment, commentDelta, onShare }: {
+export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onToggleMuted, onBack, onProfile, onViewProject, onComment, commentDelta, onShare, extra }: {
   onShare: () => void;
+  /** Description, location, hashtags and mentions of the work. */
+  extra?: React.ReactNode;
   reel: ReelPortfolioVideo; active: boolean; hasPlayer: boolean; preload: 'auto' | 'metadata' | 'none';
   muted: boolean; onToggleMuted: () => void; onBack: () => void; onProfile: () => void; onViewProject: () => void;
   onComment: () => void; commentDelta: number;
@@ -110,6 +112,7 @@ export function PortfolioReelCard({ reel, active, hasPlayer, preload, muted, onT
         {(roles || views > 0) && (
           <p className="mt-0.5 text-white/80 text-xs">{[roles, views > 0 ? `${fmt(views)} views` : ''].filter(Boolean).join(' · ')}</p>
         )}
+        {extra && <div className="pointer-events-auto mt-1.5">{extra}</div>}
         <div><ReelLinkChip url={item.external_link} /></div>
         <button onClick={onViewProject} className="pointer-events-auto mt-3 inline-flex items-center gap-1 px-4 py-2 rounded-full bg-white text-black text-sm font-bold active:scale-95 transition-transform">
           View project <ArrowUpRight className="w-4 h-4" />

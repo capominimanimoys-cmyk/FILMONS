@@ -14,7 +14,7 @@ import { Post, Comment } from '../types';
 import {
   Heart, MessageCircle, Share2, X,
   Volume2, VolumeX, ChevronUp, ChevronDown, Play,
-  Send, Loader2, MapPin, Music2, Link2, Tag, GraduationCap, Briefcase, FolderOpen, Repeat2, Check, Plus,
+  Send, Loader2, MapPin, Music2, Link2, Tag, Hash, GraduationCap, Briefcase, FolderOpen, Repeat2, Check, Plus,
 } from 'lucide-react';
 import { useFollow } from '../context/FollowContext';
 import { RepostMenuSheet } from '../components/RepostMenuSheet';
@@ -549,6 +549,39 @@ function Chip({ icon: Icon, children, onClick, thumb }: { icon: any; children: R
   );
 }
 
+/** Description, location, hashtags and collaborators of a portfolio work, as on its project page. */
+function PortfolioReelAttachments({ description, location, tags, collaborators }: {
+  description?: string | null; location?: string | null; tags?: string[] | null; collaborators?: string[] | null;
+}) {
+  const navigate = useNavigate();
+  const text = (description || '').trim();
+  const inText = new Set((text.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()));
+  const hashtags = (tags || []).map(t => String(t).replace(/^#/, '')).filter(t => t && !inText.has(t.toLowerCase()));
+  const chips: React.ReactNode[] = [];
+  if (location) chips.push(
+    <Chip key="loc" icon={MapPin} onClick={() => {
+      const { city, province } = parseLocationFreeText(location);
+      navigate(`/search/locations/${encodeURIComponent(buildLocationSlug(city, province))}`);
+    }}>{String(location).split(',')[0]}</Chip>);
+  hashtags.forEach(t => chips.push(
+    <Chip key={`h-${t}`} icon={Hash} onClick={() => navigate(`/search/hashtags/${t.toLowerCase()}`)}>#{t}</Chip>));
+  (collaborators || []).forEach(name => chips.push(
+    <Chip key={`c-${name}`} icon={Tag}
+      onClick={() => window.dispatchEvent(new CustomEvent('filmons:open-search', { detail: { query: name } }))}>{name}</Chip>));
+  if (!text && !chips.length) return null;
+  return (
+    <>
+      {text && <ReelCaption text={text} />}
+      {chips.length > 0 && (
+        <div className="mt-2 -mr-4 flex gap-2 overflow-x-auto no-scrollbar pr-4" style={{ touchAction: 'pan-x' }}
+          onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          {chips}
+        </div>
+      )}
+    </>
+  );
+}
+
 function ReelAttachments({ post }: { post: Post }) {
   const navigate = useNavigate();
   const { openPortfolioItem } = usePortfolioPreview();
@@ -927,7 +960,7 @@ export function ReelFeed() {
             const e = post.pfImage;
             return (
               <div key={post.id} className="w-full h-full">
-                <PortfolioImageReel entry={e} onShare={setShareSnap} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
+                <PortfolioImageReel entry={e} extra={<PortfolioReelAttachments description={(e.kind === 'album' ? e.album!.description : e.item!.description)} location={(e.kind === 'album' ? e.album!.location : e.item!.location)} tags={(e.kind === 'album' ? e.album!.tags : e.item!.tags)} collaborators={e.item?.collaborators} />} onShare={setShareSnap} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
                   onBack={() => navigate(-1)} commentDelta={commentDeltas[post.id] ?? 0}
                   onComment={() => setPfComment(e.kind === 'album'
                     ? { id: e.id, ownerId: e.album!.user_id, category: e.album!.category, target: 'album' }
@@ -937,13 +970,13 @@ export function ReelFeed() {
           }
           if (post.imagePost) return (
             <div key={post.id} className="w-full h-full">
-              <PostImageReel post={post} onShare={setShareSnap} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
+              <PostImageReel post={post} extra={<ReelAttachments post={post} />} onShare={setShareSnap} active={dist === 0} near={Math.abs(dist) <= 1} muted={muted} onToggleMuted={() => setMuted(m => !m)}
                 onBack={() => navigate(-1)} onComment={() => setCommentPost(post)} />
             </div>
           );
           if (post.portfolio) return (
             <div key={post.id} className="w-full h-full">
-              <PortfolioReelCard reel={post.portfolio} onShare={() => { const it = post.portfolio!.item, cr = post.portfolio!.creator; setShareSnap({ contentType: 'portfolio_item', contentId: it.id, creatorId: cr.id, creatorName: cr.name, creatorAvatar: cr.avatar_url ?? undefined, creatorVerified: cr.is_verified, title: it.title, caption: it.description, thumbnailUrl: it.thumbnail_url || undefined, meta: [it.category, it.subcategory].filter(Boolean) as string[] }); }} active={dist === 0} hasPlayer={Math.abs(dist) <= 1}
+              <PortfolioReelCard reel={post.portfolio} extra={<PortfolioReelAttachments description={post.portfolio.item.description} location={post.portfolio.item.location} tags={post.portfolio.item.tags} collaborators={post.portfolio.item.collaborators} />} onShare={() => { const it = post.portfolio!.item, cr = post.portfolio!.creator; setShareSnap({ contentType: 'portfolio_item', contentId: it.id, creatorId: cr.id, creatorName: cr.name, creatorAvatar: cr.avatar_url ?? undefined, creatorVerified: cr.is_verified, title: it.title, caption: it.description, thumbnailUrl: it.thumbnail_url || undefined, meta: [it.category, it.subcategory].filter(Boolean) as string[] }); }} active={dist === 0} hasPlayer={Math.abs(dist) <= 1}
                 preload={dist === 0 ? 'auto' : dist === 1 ? (slowNet ? 'none' : 'auto') : 'none'}
                 muted={muted} onToggleMuted={() => setMuted(m => !m)} onBack={() => navigate(-1)}
                 onProfile={() => navigate(`/host/${post.portfolio!.creator.id}`)}
