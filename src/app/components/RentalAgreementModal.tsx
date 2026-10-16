@@ -63,7 +63,7 @@ function mkAgreementNumber() {
 }
 
 // ── Signature canvas (draw) ─────────────────────────────────────────
-function SignatureCanvas({ onChange }: { onChange: (v: string | null) => void }) {
+export function SignatureCanvas({ onChange }: { onChange: (v: string | null) => void }) {
   const cvRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const hasStroke = useRef(false);

@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '../../lib/supabase';
+import { signRentalDoc } from '../../lib/upload';
 import { BASE_CSS, fetchLegalName } from './generatePDF';
 import { withTimeout } from './withTimeout';
 import type { HireRequestRow, HireTransactionRow } from './hireApi';
@@ -19,7 +20,12 @@ export interface ServiceAgreementData {
   provider_name?: string;    // host / creator, legal name
   provider_email?: string;
   provider_username?: string;
+  // Signatures captured in ServiceAgreementModal (image as data URL).
+  client_signature?: PartySignature;
+  provider_signature?: PartySignature;
 }
+
+export interface PartySignature { name: string; dataUrl?: string; signedAt: string }
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const DASH = '&#x2014;';
@@ -41,6 +47,9 @@ export function buildServiceAgreementHTML(d: ServiceAgreementData): string {
   const agreedAt = t?.funded_at ? fmtDate(t.funded_at) : DASH;
   const clientName = d.client_name || DASH;
   const providerName = d.provider_name || DASH;
+  const sigBox = (sig: PartySignature | undefined, fallback: string) => sig
+    ? `<div class="sig-box">${sig.dataUrl ? `<img src="${sig.dataUrl}" alt="Signature"/>` : ''}<div class="sig-line">Digitally signed by ${esc(sig.name)} &#x2014; ${esc(new Date(sig.signedAt).toLocaleString('en-CA', { timeZone: 'America/Toronto', dateStyle: 'long', timeStyle: 'short' }))} EST</div></div>`
+    : `<div class="sig-box"><div class="sig-line">Not yet signed</div></div>`;
   const links = (h.reference_links || []).filter(Boolean);
 
   return `<!DOCTYPE html>
@@ -142,14 +151,14 @@ export function buildServiceAgreementHTML(d: ServiceAgreementData): string {
     <div>
       <div class="sub" style="margin-top:0">SERVICE PROVIDER</div>
       <div class="field"><div class="fl">Full Name</div><div class="fv">${esc(providerName)}</div></div>
-      <div class="field"><div class="fl">Acceptance</div><div class="sig-box"><div class="sig-line">Digitally accepted (Filmons platform)</div></div></div>
-      <div class="field"><div class="fl">Date</div><div class="fv">${agreedAt}</div></div>
+      <div class="field"><div class="fl">Acceptance</div>${sigBox(d.provider_signature, 'Digitally accepted (Filmons platform)')}</div>
+      <div class="field"><div class="fl">Date</div><div class="fv">${d.provider_signature ? fmtDate(d.provider_signature.signedAt) : agreedAt}</div></div>
     </div>
     <div>
       <div class="sub" style="margin-top:0">CLIENT</div>
       <div class="field"><div class="fl">Full Name</div><div class="fv">${esc(clientName)}</div></div>
-      <div class="field"><div class="fl">Acceptance</div><div class="sig-box"><div class="sig-line">Digitally accepted and funded (Filmons platform)</div></div></div>
-      <div class="field"><div class="fl">Date</div><div class="fv">${agreedAt}</div></div>
+      <div class="field"><div class="fl">Acceptance</div>${sigBox(d.client_signature, 'Digitally accepted and funded (Filmons platform)')}</div>
+      <div class="field"><div class="fl">Date</div><div class="fv">${d.client_signature ? fmtDate(d.client_signature.signedAt) : agreedAt}</div></div>
     </div>
   </div>
   <table class="info" style="margin-top:14px;border:2px solid #e5e7eb">
@@ -184,9 +193,30 @@ export async function generateServiceAgreement(hire: HireRequestRow, txn?: HireT
     fetchLegalName(hire.host_id, providerProfile?.name),
   ]);
 
+  const sigs: any[] = await withTimeout(
+    Promise.resolve(supabase.from('service_agreement_signatures').select('*').eq('hire_request_id', hire.id))
+      .then(r => r.data || []).catch(() => []), 3500, []);
+  const toSig = async (row: any): Promise<PartySignature | undefined> => {
+    if (!row) return undefined;
+    let dataUrl: string | undefined;
+    const url = await withTimeout(signRentalDoc(row.signature_path, 300), 3000, null);
+    if (url) {
+      try {
+        const blob = await (await fetch(url)).blob();
+        dataUrl = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(blob); });
+      } catch { /* best-effort: document still renders without the image */ }
+    }
+    return { name: `${row.legal_first_name} ${row.legal_last_name}`.trim(), dataUrl, signedAt: row.signed_at };
+  };
+  const [clientSig, providerSig] = await Promise.all([
+    toSig(sigs.find(x => x.user_id === hire.requester_id)),
+    toSig(sigs.find(x => x.user_id === hire.host_id)),
+  ]);
+
   return buildServiceAgreementHTML({
     hire, txn: txnRow,
-    client_name: clientName, client_email: clientProfile?.email, client_username: clientProfile?.username,
-    provider_name: providerName, provider_email: providerProfile?.email, provider_username: providerProfile?.username,
+    client_signature: clientSig, provider_signature: providerSig,
+    client_name: clientSig?.name || clientName, client_email: clientProfile?.email, client_username: clientProfile?.username,
+    provider_name: providerSig?.name || providerName, provider_email: providerProfile?.email, provider_username: providerProfile?.username,
   });
 }

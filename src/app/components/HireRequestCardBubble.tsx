@@ -5,6 +5,7 @@ import { ChatMessage, User } from '../types';
 import { authApi } from '../lib/api';
 import { hireApi, hirePaymentApi, HireRequestRow, HireTransactionRow } from '../lib/hireApi';
 import { supabase } from '../../lib/supabase';
+import { ServiceAgreementModal } from './ServiceAgreementModal';
 import { generateServiceAgreement } from '../lib/generateServiceAgreement';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
@@ -45,11 +46,17 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
   const [otherParty, setOtherParty] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [signedBy, setSignedBy] = useState<Set<string>>(new Set());
+  const [signOpen, setSignOpen] = useState<null | 'fund' | 'complete' | 'only'>(null);
   const [busy, setBusy] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [counterAmount, setCounterAmount] = useState('');
   const [decliningOpen, setDecliningOpen] = useState(false);
 
+  const reloadSigs = () => {
+    supabase.from('service_agreement_signatures').select('user_id').eq('hire_request_id', card.hireRequestId)
+      .then(({ data }) => setSignedBy(new Set((data || []).map((r: any) => r.user_id))));
+  };
   const reloadTxn = () => {
     supabase.from('hire_transactions').select('*').eq('hire_request_id', card.hireRequestId).maybeSingle()
       .then(({ data }) => setTxn(data as HireTransactionRow | null));
@@ -81,6 +88,7 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
       setOtherParty(otherProfile);
       setLoading(false);
       reloadTxn();
+      reloadSigs();
     })();
 
     // Host viewing their own hire request marks it seen.
@@ -127,6 +135,12 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
       if (win) win.location.href = url; else window.location.href = url;
     } catch (e) { win?.close(); throw e; }
   });
+  const iSigned = !!user && signedBy.has(user.id);
+  // Pay / mark-complete are gated on the caller having signed the Service Agreement.
+  const onSigned = () => {
+    const next = signOpen; setSignOpen(null); reloadSigs();
+    if (next === 'fund') doFund(); else if (next === 'complete') doMarkComplete();
+  };
   const doFund = () => run(async () => {
     const origin = window.location.origin;
     const { url } = await hirePaymentApi.startFunding(
@@ -202,16 +216,19 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
         )}
 
         {hr.status === 'accepted' && isRequester && (
-          <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Pay for Hire</button>
+          <button disabled={busy} onClick={() => iSigned ? doFund() : setSignOpen('fund')} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Pay for Hire</button>
         )}
         {hr.status === 'payment_pending' && isRequester && txn?.payment_status === 'pending' && (
-          <button disabled={busy} onClick={doFund} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Retry Payment</button>
+          <button disabled={busy} onClick={() => iSigned ? doFund() : setSignOpen('fund')} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50"><DollarSign className="w-3 h-3" /> Retry Payment</button>
         )}
         {hr.status === 'hired' && txn?.work_status === 'in_progress' && isHost && (
-          <button disabled={busy} onClick={doMarkComplete} className="flex-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50">Mark Work Completed</button>
+          <button disabled={busy} onClick={() => iSigned ? doMarkComplete() : setSignOpen('complete')} className="flex-1 text-xs font-bold text-white bg-indigo-600 rounded-xl py-2 disabled:opacity-50">Mark Work Completed</button>
         )}
         {hr.status === 'hired' && txn?.work_status === 'marked_complete_by_worker' && isRequester && (
           <button disabled={busy} onClick={doConfirmCompletion} className="flex-1 text-xs font-bold text-white bg-green-600 rounded-xl py-2 disabled:opacity-50">Confirm Completion</button>
+        )}
+        {['accepted', 'payment_pending', 'hired'].includes(hr.status) && !iSigned && (isRequester || isHost) && (
+          <button disabled={busy} onClick={() => setSignOpen('only')} className="flex-1 text-xs font-bold text-white bg-gray-900 rounded-xl py-2 disabled:opacity-50">Sign Agreement</button>
         )}
         {(hr.status === 'hired' || hr.status === 'completed') && (
           <button disabled={busy} onClick={doViewAgreement} className="flex-1 text-xs font-bold text-indigo-700 bg-indigo-50 rounded-xl py-2 disabled:opacity-50">{busy ? 'Opening…' : 'Service Agreement'}</button>
@@ -220,6 +237,11 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
           <button disabled={busy} onClick={doReportProblem} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50"><AlertTriangle className="w-3 h-3" /> Report a Problem</button>
         )}
       </div>
+
+      {signOpen && user && (
+        <ServiceAgreementModal hire={hr} txn={txn} userId={user.id} role={isRequester ? 'client' : 'provider'}
+          onSigned={onSigned} onClose={() => setSignOpen(null)} />
+      )}
 
       {counterOpen && (
         <div className="px-3.5 pb-3.5 -mt-1">
