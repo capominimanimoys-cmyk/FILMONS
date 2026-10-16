@@ -580,6 +580,12 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                       </div>
                     ) : (
                       <>
+                        {isFullyVerified && (
+                          <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
+                            <ShieldCheck className="w-4 h-4 shrink-0" />
+                            <span>Your legal name, date of birth, email, phone, address and ID were already verified during your Filmons identity verification, so they're filled in and locked here.</span>
+                          </p>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal first name *</label>
                             <input value={legalFirst} onChange={e => setLegalFirst(e.target.value)} placeholder="John" readOnly={personalLocked}
@@ -630,7 +636,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                           <Check className="w-3 h-3" /> Verified by Filmons
                         </span>
                         <p className="text-xs text-blue-800 bg-white/60 rounded-xl px-3 py-2.5">
-                          This address was verified by Filmons and cannot be changed from the Rental Agreement.
+                          This address was already verified during your identity verification, so it's locked and cannot be changed from the Rental Agreement.
                         </p>
                         <button type="button" onClick={goVerifyNow} className="text-xs font-bold text-blue-700 underline underline-offset-2">
                           Contact Support to change it
@@ -701,7 +707,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                             </p>
                           </div>
                           <p className="text-xs text-blue-800 bg-white/60 rounded-xl px-3 py-2.5">
-                            Your identity and residential address have already been verified by Filmons. You do not need to submit your documents again.
+                            Your identity and residential address were already verified during your identity verification. They're locked here, and you do not need to submit your documents again.
                           </p>
                         </div>
                       </>

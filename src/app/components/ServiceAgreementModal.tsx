@@ -152,7 +152,7 @@ export function ServiceAgreementModal({ hire, txn, userId, role, onSigned, onClo
           <>
             {verified && (
               <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
-                <ShieldCheck className="w-4 h-4 shrink-0" /> Filled from your Filmons identity verification. These details can't be changed here.
+                <ShieldCheck className="w-4 h-4 shrink-0" /> Your legal name, date of birth, email, phone, address and ID were already verified during your Filmons identity verification, so they're filled in and locked here.
               </p>
             )}
             <div className="grid grid-cols-2 gap-3">
