@@ -514,11 +514,11 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
         .ram-step-enter { animation: ramStepIn 0.22s ease both; }
         @keyframes ramStepIn { from { opacity: 0; transform: translateX(var(--ram-dir, 24px)); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
-      <div className={`fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex ${overview ? 'items-stretch justify-stretch' : 'items-end md:items-center justify-center'}`} style={{ animation: 'ramFadeIn 0.2s ease' }} onClick={onClose}>
+      <div className={`fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex ${overview ? 'items-stretch justify-stretch' : 'items-end justify-center'}`} style={{ animation: 'ramFadeIn 0.2s ease' }} onClick={onClose}>
         <div
           className={overview
             ? 'bg-white w-full h-full flex flex-col shadow-2xl'
-            : 'bg-white w-full md:max-w-2xl rounded-t-3xl md:rounded-[22px] max-h-[94vh] md:max-h-[88vh] flex flex-col shadow-2xl'}
+            : 'bg-white w-full md:max-w-2xl rounded-t-3xl max-h-[94vh] max-h-[94dvh] md:max-h-[88vh] flex flex-col shadow-2xl'}
           style={{ animation: 'ramSlideUp 0.32s cubic-bezier(0.32,0.72,0,1)', paddingBottom: overview ? undefined : 'env(safe-area-inset-bottom)' }}
           onClick={e => e.stopPropagation()}
         >
@@ -588,16 +588,28 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                         )}
                         <div className="grid grid-cols-2 gap-3">
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal first name *</label>
-                            <input value={legalFirst} onChange={e => setLegalFirst(e.target.value)} placeholder="John" readOnly={personalLocked}
-                              className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} /></div>
+                            {personalLocked ? (
+                              <div className={lockedField} aria-readonly="true">{legalFirst || '—'}</div>
+                            ) : (
+                              <input value={legalFirst} onChange={e => setLegalFirst(e.target.value)} placeholder="John" 
+                              className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} />
+                            )}</div>
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal last name *</label>
-                            <input value={legalLast} onChange={e => setLegalLast(e.target.value)} placeholder="Doe" readOnly={personalLocked}
-                              className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} /></div>
+                            {personalLocked ? (
+                              <div className={lockedField} aria-readonly="true">{legalLast || '—'}</div>
+                            ) : (
+                              <input value={legalLast} onChange={e => setLegalLast(e.target.value)} placeholder="Doe" 
+                              className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} />
+                            )}</div>
                         </div>
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Date of birth *</label>
-                          <input type="date" value={dob} onChange={e => setDob(e.target.value)} readOnly={personalLocked}
+                          {personalLocked && !!verification?.dateOfBirth ? (
+                            <div className={lockedField} aria-readonly="true">{dob || '—'}</div>
+                          ) : (
+                            <input type="date" value={dob} onChange={e => setDob(e.target.value)} 
                             max={new Date(Date.now() - 16 * 365.25 * 86400000).toISOString().split('T')[0]}
-                            className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} /></div>
+                            className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} />
+                          )}</div>
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Email</label>
                           <div className="flex items-center gap-2 border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5">
                             <Lock className="w-3.5 h-3.5 text-gray-400 shrink-0" />

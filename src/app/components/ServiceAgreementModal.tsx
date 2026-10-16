@@ -114,7 +114,6 @@ export function ServiceAgreementModal({ hire, txn, userId, role, onSigned, onClo
 
   const lockedCls = 'w-full border border-gray-200 bg-gray-50 text-gray-700 rounded-xl px-3 py-2.5 text-base cursor-not-allowed';
   const openCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-indigo-400';
-  const fieldCls = verified ? lockedCls : openCls;
   const lockRow = (label: string, value: string) => (
     <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">{label}</label>
       <div className="flex items-center gap-2 border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5">
@@ -157,13 +156,14 @@ export function ServiceAgreementModal({ hire, txn, userId, role, onSigned, onClo
             )}
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal first name *</label>
-                <input value={first} onChange={e => setFirst(e.target.value)} readOnly={verified} className={fieldCls} /></div>
+                {verified ? <div className={lockedCls} aria-readonly="true">{first || '—'}</div> : <input value={first} onChange={e => setFirst(e.target.value)} className={openCls} />}</div>
               <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal last name *</label>
-                <input value={last} onChange={e => setLast(e.target.value)} readOnly={verified} className={fieldCls} /></div>
+                {verified ? <div className={lockedCls} aria-readonly="true">{last || '—'}</div> : <input value={last} onChange={e => setLast(e.target.value)} className={openCls} />}</div>
             </div>
             <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Date of birth *</label>
-              <input type="date" value={dob} onChange={e => setDob(e.target.value)} readOnly={verified}
-                max={new Date(Date.now() - 18 * 365.25 * 86400000).toISOString().split('T')[0]} className={fieldCls} /></div>
+              {verified && dob ? <div className={lockedCls} aria-readonly="true">{dob}</div> : (
+                <input type="date" value={dob} onChange={e => setDob(e.target.value)}
+                  max={new Date(Date.now() - 18 * 365.25 * 86400000).toISOString().split('T')[0]} className={openCls} />)}</div>
             {lockRow('Email', email)}
             {lockRow('Phone', phone)}
             {verified && lockRow('Verified address', address)}
