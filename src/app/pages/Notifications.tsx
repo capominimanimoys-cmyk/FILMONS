@@ -8,6 +8,7 @@ import {
   CalendarDays, CreditCard, GraduationCap, ArrowLeft, Settings,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useRefreshHandler } from '../lib/refreshBus';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { useFollow } from '../context/FollowContext';
 import { useNotifications } from '../context/NotificationsContext';
@@ -682,6 +683,8 @@ export function Notifications() {
     loadOlder, hasMore, loadingOlder,
     clearAll: ctxClearAll,
   } = useNotifications();
+
+  useRefreshHandler(() => load({ throwOnError: true }));
 
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [activeTab,   setActiveTab]   = useState<Tab>('all');

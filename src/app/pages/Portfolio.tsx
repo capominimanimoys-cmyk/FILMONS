@@ -3,6 +3,7 @@ import { downloadFromUrl, portfolioFilename } from '../lib/watermark';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
+import { useRefreshHandler } from '../lib/refreshBus';
 import { useFollow } from '../context/FollowContext';
 import { useFollowCounts } from '../lib/useFollowCounts';
 import { authApi, socialApi } from '../lib/api';
@@ -1324,8 +1325,8 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
     }
   }, [location.state, isOwner]); // eslint-disable-line
 
-  const loadPage = async (uid: string) => {
-    setLoading(true);
+  const loadPage = async (uid: string, quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const [hostData, portfolioData, albumData, settingsData] = await Promise.all([
         authApi.getUserById(uid),
@@ -1357,6 +1358,8 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
       setLoading(false);
     }
   };
+  // Pull-to-refresh / refresh button: refetch in place, content stays on screen.
+  useRefreshHandler(async () => { if (targetId) await loadPage(targetId, true); });
 
   const openAlbum = async (album: PortfolioAlbum) => {
     setActiveAlbum(album);

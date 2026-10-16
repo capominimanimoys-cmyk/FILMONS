@@ -21,7 +21,7 @@ interface NotificationsState {
   notifications: Notification[];
   unreadCount:   number;
   loading:       boolean;
-  refresh:       () => Promise<void>;
+  refresh:       (opts?: { throwOnError?: boolean }) => Promise<void>;
   /** Older notifications (cursor pagination); resolves false if the request failed. */
   loadOlder:     () => Promise<boolean>;
   hasMore:       boolean;
@@ -91,15 +91,15 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Fetch from server and MERGE into local state ──────────────────────────────
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { throwOnError?: boolean }) => {
     if (!user) return;
     setLoading(true);
     try {
-      const fresh = await notifStore.getAll(user.id);
+      const fresh = await notifStore.getAll(user.id, opts?.throwOnError ? { throwOnError: true } : undefined);
       fresh.forEach(n => seenIds.current.add(n.id));
       setNotifications(prev => merge(fresh, prev));
       if (fresh.length < notifStore.NOTIFICATION_PAGE_SIZE) setHasMore(false);
-    } catch {}
+    } catch (e) { if (opts?.throwOnError) throw e; }
     finally { setLoading(false); }
   }, [user?.id]); // eslint-disable-line
 

@@ -12,6 +12,7 @@ import { SubscriptionDowngradeBanner } from '../components/SubscriptionDowngrade
 import { BusinessIndustryPrompt } from '../components/BusinessIndustryPrompt';
 import { GuestAuthPrompt } from '../components/GuestAuthPrompt';
 import { CookieConsent } from '../components/CookieConsent';
+import { PullToRefresh } from '../components/PullToRefresh';
 import { RouteProgressBar } from '../components/RouteProgressBar';
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { ReadFailureBanner } from '../components/ReadFailureBanner';
@@ -267,7 +268,8 @@ export function Root() {
         <div className="flex flex-1">
           {!hideDesktopSidebar && <DesktopSidebar />}
 
-          <main
+          <PullToRefresh
+            onFallbackRefresh={() => setRetryKey(k => k + 1)}
             className={`flex-1 min-w-0 md:pb-0 ${hideBottomNav ? '' : 'pb-[calc(54px+env(safe-area-inset-bottom))]'}`}
             style={{
               paddingBottom: chromeHidden ? 0 : undefined,
@@ -276,7 +278,7 @@ export function Root() {
           >
             {!hideTopBar && <DesktopTopBar onSearchOpen={() => { setSearchTab(undefined); setSearchQuery(undefined); setSearchOpen(true); }} />}
             <Fragment key={retryKey}><Outlet /></Fragment>
-          </main>
+          </PullToRefresh>
           <ReadFailureBanner onRetry={() => setRetryKey(k => k + 1)} />
         </div>
 

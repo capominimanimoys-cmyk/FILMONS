@@ -13,6 +13,7 @@ import { normalizeTier } from '../lib/reliabilityApi';
 import { supabase } from '../../lib/supabase';
 import { filterOutLockedOpportunities } from '../lib/entitlements';
 import { useAuth } from '../context/AuthContext';
+import { useRefreshHandler } from '../lib/refreshBus';
 import { useLearningTransition } from '../context/LearningTransitionContext';
 import { useFollow } from '../context/FollowContext';
 import { Listing, type Post } from '../types';
@@ -487,9 +488,9 @@ export function Home() {
   // matching feedCacheRef's old per-tab pattern one level deeper.
   const connectCacheKey = `${connectTab}::${connectSort}`;
 
-  const loadConnect = useCallback((cacheKey: string, tab: PortfolioFilterId, sort: ConnectSort) => {
-    setConnectLoading(true);
-    setConnectError(false);
+  const loadConnect = useCallback((cacheKey: string, tab: PortfolioFilterId, sort: ConnectSort, quiet = false): Promise<void> => {
+    // quiet = pull-to-refresh: keep the current feed on screen, no skeleton, errors go back to the caller.
+    if (!quiet) { setConnectLoading(true); setConnectError(false); }
     const isCategoryTab = tab !== 'foryou' && tab !== 'following';
     const resolved = isCategoryTab ? resolveCategoryFilter(tab) : null;
     // "Following" has no meaning for a guest (no authenticated following
@@ -499,7 +500,7 @@ export function Home() {
     // session on this browser, so this is a defensive fallback to the
     // public discovery feed, never a fake/empty "Following" result.
     const effectiveTab = !user && tab === 'following' ? 'foryou' : tab;
-    getConnectFeed({
+    return getConnectFeed({
       tab: effectiveTab === 'following' ? 'following' : 'foryou', viewerId: user?.id, followingIds,
       category: resolved?.category, subcategory: resolved?.subcategory, sort,
       limit: 12, // first screen only; the next pages load as the viewer nears the end
@@ -513,8 +514,8 @@ export function Home() {
         setConnectTrustLevels(page.trustLevels);
         setConnectHasMore(page.portfolioHasMore || page.activityHasMore);
       })
-      .catch(() => setConnectError(true))
-      .finally(() => setConnectLoading(false));
+      .catch(e => { if (quiet) throw e; setConnectError(true); })
+      .finally(() => { if (!quiet) setConnectLoading(false); });
   }, [user?.id, followingIds]);
 
   useEffect(() => {
@@ -532,6 +533,13 @@ export function Home() {
   }, [homeMode, connectCacheKey, connectTab, connectSort, loadConnect]);
 
   const retryConnect = () => { delete connectCacheRef.current[connectCacheKey]; CONNECT_PAGE_CACHE.pages.delete(`${user?.id ?? ''}::${connectCacheKey}`); loadConnect(connectCacheKey, connectTab, connectSort); };
+
+  // Pull-to-refresh / desktop refresh button -- refetches the visible feed in place.
+  useRefreshHandler(async () => {
+    if (homeMode === 'portfolio') { await loadConnect(connectCacheKey, connectTab, connectSort, true); return; }
+    setRefreshKey(k => k + 1);
+    await new Promise(r => setTimeout(r, 900));
+  });
 
   const loadMoreConnect = useCallback(() => {
     const cached = connectCacheRef.current[connectCacheKey];
