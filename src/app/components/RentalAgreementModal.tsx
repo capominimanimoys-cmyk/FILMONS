@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { uploadRentalDoc, signRentalDoc } from '../../lib/upload';
-import { buildAgreementHTML, type AgreementData } from '../lib/generatePDF';
+import { buildAgreementHTML, fetchLegalName, type AgreementData } from '../lib/generatePDF';
 import { SmartAddressInput, type AddressComponents } from './SmartAddressInput';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
@@ -235,6 +235,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   const isFullyVerified = verification?.status === 'approved';
 
   // Step 1 — Personal
+  const [hostLegalName, setHostLegalName] = useState<string | undefined>(hostUser?.name);
   const [legalFirst, setLegalFirst] = useState(user?.name?.split(' ')[0] || '');
   const [legalLast, setLegalLast] = useState(user?.name?.split(' ').slice(1).join(' ') || '');
   const [dob, setDob] = useState('');
@@ -316,6 +317,10 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     } else {
       setProfileLoading(false);
       setVerificationLoading(false);
+    }
+
+    if (hostUser?.id) {
+      fetchLegalName(hostUser.id, hostUser.name).then(n => { if (n) setHostLegalName(n); });
     }
 
     if (pay?.listingId) {
@@ -478,14 +483,14 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     duration: pay?.duration,
     duration_type: pay?.durationType,
     signed_at: '',
-    host_name: hostUser?.name,
+    host_name: hostLegalName,
     host_email: hostUser?.email,
     host_username: hostUser?.username,
     verification_reused: isFullyVerified,
   }), [
     agreementNumber, legalFirst, legalLast, dob, idType, idCountry, profile,
     addressText, unit, addrParts, addrCountryCode, proofType, sigDataUrl,
-    pay, quote, selectedMethod, hostUser, isFullyVerified,
+    pay, quote, selectedMethod, hostUser, hostLegalName, isFullyVerified,
   ]);
 
   const overviewField = (label: string, value: string | null | undefined) => (
@@ -844,7 +849,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                     <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Rental</p>
                       {overviewField('Listing', pay?.listingTitle)}
-                      {overviewField('Owner', hostUser?.name)}
+                      {overviewField('Owner', hostLegalName)}
                       {overviewField('Rental dates', pay?.startDate ? `${pay.startDate} · ${pay.duration || 1} ${pay.durationType || 'day(s)'}` : null)}
                     </div>
 

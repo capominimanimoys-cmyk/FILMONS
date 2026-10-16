@@ -8,6 +8,24 @@
 
 import { supabase } from '../../lib/supabase';
 import { signRentalDoc } from '../../lib/upload';
+import { withTimeout } from './withTimeout';
+
+/**
+ * The name a user gave during identity verification (legal first + last).
+ * Rental agreements must show this, not the editable public profile name.
+ * Falls back to `fallback` only when the user has no verification on file.
+ */
+export async function fetchLegalName(userId: string | null | undefined, fallback?: string | null): Promise<string | undefined> {
+  if (!userId) return fallback || undefined;
+  const fromVerification = await withTimeout(
+    Promise.resolve(
+      supabase.from('identity_verifications').select('legal_first_name, legal_last_name')
+        .eq('user_id', userId).maybeSingle()
+    ).then(({ data }) => [data?.legal_first_name, data?.legal_last_name].filter(Boolean).join(' ').trim()).catch(() => ''),
+    3000, '',
+  );
+  return fromVerification || fallback || undefined;
+}
 
 // ── Types ──────────────────────────────────────────────────────────
 export interface AgreementData {
@@ -515,6 +533,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     }
   }
 
+  const hostLegalName = await fetchLegalName(agRow.host_id, hostProfile?.name);
   const details = agRow.rental_details_snapshot || {};
   const pricing = agRow.pricing_snapshot || {};
 
@@ -538,7 +557,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     payment_method: details.paymentMethod || 'Card',
     start_date: details.startDate, duration: details.duration, duration_type: details.durationType,
     signed_at: agRow.signed_at || '',
-    host_name: hostProfile?.name, host_email: hostProfile?.email, host_username: hostProfile?.username,
+    host_name: hostLegalName, host_email: hostProfile?.email, host_username: hostProfile?.username,
     verification_reused: !!agRow.renter_verification_id,
   };
 
@@ -549,7 +568,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     renter_id: agRow.renter_id, host_id: agRow.host_id,
     renter_name: `${baseAgreement.first_name} ${baseAgreement.last_name}`.trim(),
     renter_email: baseAgreement.email, renter_phone: baseAgreement.phone,
-    host_name: hostProfile?.name, host_email: hostProfile?.email,
+    host_name: hostLegalName, host_email: hostProfile?.email,
     listing_title: baseAgreement.listing_title, start_date: baseAgreement.start_date,
     duration: baseAgreement.duration, duration_type: baseAgreement.duration_type,
     total_amount: baseAgreement.total_amount, subtotal: baseAgreement.subtotal, buyer_fee_amount: baseAgreement.buyer_fee_amount,
