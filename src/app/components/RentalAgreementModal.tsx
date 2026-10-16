@@ -54,7 +54,7 @@ const ID_TYPES: Record<string, string[]> = {
 
 const PROOF_TYPES = ['Utility bill', 'Bank statement', 'Credit-card statement', 'Government correspondence', 'Lease/rental agreement'];
 
-const STEP_LABELS = ['Personal', 'Address', 'Identity & Address', 'Rental Rules', 'Signature', 'Review'];
+const ALL_STEP_LABELS = ['Personal', 'Address', 'Identity & Address', 'Rental Rules', 'Signature', 'Review'];
 type StepKey = 'personal' | 'address' | 'verify' | 'rules' | 'signature' | 'review';
 const STEPS: StepKey[] = ['personal', 'address', 'verify', 'rules', 'signature', 'review'];
 
@@ -161,7 +161,8 @@ function UploadCard({ label, sub, filePreview, onPick, uploading }: {
 }
 
 // ── Progress stepper ─────────────────────────────────────────────────
-function Stepper({ stepIdx }: { stepIdx: number }) {
+function Stepper({ stepIdx, isService }: { stepIdx: number; isService?: boolean }) {
+  const STEP_LABELS = isService ? ALL_STEP_LABELS.map(l => l === 'Rental Rules' ? 'Service Terms' : l) : ALL_STEP_LABELS;
   return (
     <div className="flex items-center px-5 pt-3 pb-1">
       {STEP_LABELS.map((label, i) => (
@@ -211,6 +212,9 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   // intended behaviour — so an approved account also satisfies this gate.
   const [profile, setProfile] = useState<{ email: string; phone: string; email_verified: boolean; phone_verified: boolean; is_verified: boolean } | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  // Service listings use the same signing flow but must never say "Rental".
+  const isService = String(pay?.listingType || '').toLowerCase() === 'service';
+  const Agr = isService ? 'Service Agreement' : 'Rental Agreement';
   const isCreatorPlusApproved = !!profile?.is_verified;
   const emailVerified = !!profile?.email_verified || isCreatorPlusApproved;
   const phoneVerified = !!profile?.phone_verified || isCreatorPlusApproved;
@@ -492,6 +496,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     host_name: hostLegalName,
     host_email: hostUser?.email,
     host_username: hostUser?.username,
+    listing_type: pay?.listingType,
     verification_reused: isFullyVerified,
   }), [
     agreementNumber, legalFirst, legalLast, dob, idType, idCountry, profile,
@@ -531,8 +536,8 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                 </button>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">FILMONS · Rental Agreement</p>
-                <p className="text-sm font-bold text-gray-900">{overview ? 'Rental Agreement Preview' : `Step ${stepIdx + 1} of 6`}</p>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">FILMONS · {Agr}</p>
+                <p className="text-sm font-bold text-gray-900">{overview ? `${Agr} Preview` : `Step ${stepIdx + 1} of 6`}</p>
               </div>
               <button onClick={() => setOverview(v => !v)}
                 className="flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-colors shrink-0">
@@ -542,7 +547,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                 <X className="w-4 h-4 text-gray-600" />
               </button>
             </div>
-            {!overview && <Stepper stepIdx={stepIdx} />}
+            {!overview && <Stepper stepIdx={stepIdx} isService={isService} />}
           </div>
 
           {/* Body */}
@@ -554,7 +559,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                   <p className="text-[11px] text-gray-400">This is a preview of the document you'll sign — it isn't final until you complete and sign the agreement.</p>
                 </div>
                 <iframe
-                  title="Rental Agreement Preview"
+                  title={`${Agr} Preview`}
                   srcDoc={buildAgreementHTML(draftAgreementData)}
                   className="flex-1 w-full border-0 bg-white"
                 />
@@ -573,7 +578,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-3">
                         <ShieldCheck className="w-8 h-8 text-amber-500 mx-auto" />
                         <p className="font-black text-gray-900">Contact verification required</p>
-                        <p className="text-xs text-gray-500">Your rental agreement must use the verified contact information connected to your Filmons account.</p>
+                        <p className="text-xs text-gray-500">Your {Agr.toLowerCase()} must use the verified contact information connected to your Filmons account.</p>
                         <button onClick={() => navigate('/verification')} className="w-full py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm">
                           Verify contact information
                         </button>
@@ -648,7 +653,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                           <Check className="w-3 h-3" /> Verified by Filmons
                         </span>
                         <p className="text-xs text-blue-800 bg-white/60 rounded-xl px-3 py-2.5">
-                          This address was already verified during your identity verification, so it's locked and cannot be changed from the Rental Agreement.
+                          This address was already verified during your identity verification, so it's locked and cannot be changed from the {Agr}.
                         </p>
                         <button type="button" onClick={goVerifyNow} className="text-xs font-bold text-blue-700 underline underline-offset-2">
                           Contact Support to change it
@@ -677,7 +682,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                           <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit 4B"
                             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
                         <p className="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2.5 flex items-start gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Your residential address is private and is used only for rental verification and agreement purposes.
+                          <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Your residential address is private and is used only for identity verification and agreement purposes.
                         </p>
                       </>
                     )}
@@ -730,7 +735,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                         {verification?.status === 'pending' || verification?.status === 'under_review' ? (
                           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-1.5">
                             <p className="text-sm font-bold text-gray-900">Verification in progress</p>
-                            <p className="text-xs text-gray-500">Your Creator+ verification is under review. You can finish this rental agreement now using the documents below, or wait for that review to complete.</p>
+                            <p className="text-xs text-gray-500">Your Creator+ verification is under review. You can finish this {Agr.toLowerCase()} now using the documents below, or wait for that review to complete.</p>
                           </div>
                         ) : verification?.status === 'changes_requested' || verification?.status === 'denied' ? (
                           <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-1.5">
@@ -743,7 +748,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                         ) : (
                           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-1.5">
                             <p className="text-sm font-bold text-gray-900">Verify your identity</p>
-                            <p className="text-xs text-gray-500">Complete Creator+ verification once and Filmons will reuse it for this and future rentals — or submit documents for this rental only below.</p>
+                            <p className="text-xs text-gray-500">Complete Creator+ verification once and Filmons will reuse it for this and future bookings — or submit documents for this booking only below.</p>
                             <button type="button" onClick={goVerifyNow} className="w-full mt-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm">
                               Become Creator+ / Complete verification
                             </button>
@@ -794,16 +799,16 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                 {/* ── Step 4: Rental Rules ── */}
                 {step === 'rules' && (
                   <div className="px-5 py-5 space-y-4">
-                    <h2 className="text-lg font-black text-gray-900">Rental Rules</h2>
-                    <p className="text-xs text-gray-500">{pay?.listingTitle} Rental Rules</p>
+                    <h2 className="text-lg font-black text-gray-900">{isService ? 'Service Terms' : 'Rental Rules'}</h2>
+                    <p className="text-xs text-gray-500">{pay?.listingTitle} {isService ? 'Service Terms' : 'Rental Rules'}</p>
                     <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                       {listing?.requirements || listing?.cancellation
                         ? [listing?.requirements, listing?.cancellation].filter(Boolean).join('\n\n')
-                        : 'The owner has not listed specific rental rules for this item. Standard Filmons rental terms apply.'}
+                        : (isService ? 'The provider has not listed specific terms for this service. Standard Filmons service terms apply.' : 'The owner has not listed specific rental rules for this item. Standard Filmons rental terms apply.')}
                     </div>
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input type="checkbox" checked={rulesAgreed} onChange={e => setRulesAgreed(e.target.checked)} className="mt-0.5 w-4 h-4 accent-blue-600" />
-                      <span className="text-sm text-gray-700">I have read and agree to the rental rules set by the owner.</span>
+                      <span className="text-sm text-gray-700">I have read and agree to the {isService ? 'service terms set by the provider' : 'rental rules set by the owner'}.</span>
                     </label>
                   </div>
                 )}
@@ -811,7 +816,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                 {/* ── Step 5: Signature ── */}
                 {step === 'signature' && (
                   <div className="px-5 py-5 space-y-4">
-                    <h2 className="text-lg font-black text-gray-900">Sign your Rental Agreement</h2>
+                    <h2 className="text-lg font-black text-gray-900">Sign your {Agr}</h2>
                     <div><p className="text-xs font-semibold text-gray-700 mb-1">Legal name</p>
                       <p className="text-sm text-gray-900 font-bold">{legalFirst} {legalLast}</p></div>
 
@@ -850,7 +855,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                     </label>
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input type="checkbox" checked={confirmAgree} onChange={e => setConfirmAgree(e.target.checked)} className="mt-0.5 w-4 h-4 accent-blue-600" />
-                      <span className="text-sm text-gray-700">I have read and agree to the Rental Agreement and listing rental rules.</span>
+                      <span className="text-sm text-gray-700">I have read and agree to the {Agr} and listing {isService ? 'terms' : 'rental rules'}.</span>
                     </label>
                   </div>
                 )}
@@ -858,7 +863,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                 {/* ── Step 6: Review ── */}
                 {step === 'review' && (
                   <div className="px-5 py-5 space-y-4">
-                    <h2 className="text-lg font-black text-gray-900">Review your Rental Agreement</h2>
+                    <h2 className="text-lg font-black text-gray-900">Review your {Agr}</h2>
 
                     <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Renter</p>
@@ -875,15 +880,15 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                     </div>
 
                     <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Rental</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{isService ? 'Service' : 'Rental'}</p>
                       {overviewField('Listing', pay?.listingTitle)}
-                      {overviewField('Owner', hostLegalName)}
-                      {overviewField('Rental dates', pay?.startDate ? `${pay.startDate} · ${pay.duration || 1} ${pay.durationType || 'day(s)'}` : null)}
+                      {overviewField(isService ? 'Service provider' : 'Owner', hostLegalName)}
+                      {overviewField(isService ? 'Service dates' : 'Rental dates', pay?.startDate ? `${pay.startDate} · ${pay.duration || 1} ${pay.durationType || 'day(s)'}` : null)}
                     </div>
 
                     <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Price</p>
-                      <div className="flex justify-between text-sm"><span className="text-gray-500">Rental</span><span className="text-gray-800">${(quote?.subtotal ?? (Number(pay?.amount) || 0)).toFixed(2)} CAD</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-gray-500">{isService ? 'Service' : 'Rental'}</span><span className="text-gray-800">${(quote?.subtotal ?? (Number(pay?.amount) || 0)).toFixed(2)} CAD</span></div>
                       <div className="flex justify-between text-sm"><span className="text-gray-500">Filmons Fee{quote ? ` (${(quote.buyerFeeRate * 100).toFixed(0)}%)` : ''}</span><span className="text-gray-800">${(quote?.buyerFeeAmount ?? 0).toFixed(2)} CAD</span></div>
                       <div className="flex justify-between text-sm font-bold border-t border-gray-200 pt-1.5 mt-0.5"><span className="text-gray-900">Total</span><span className="text-gray-900">${(quote?.total ?? totalAmount).toFixed(2)} CAD</span></div>
                     </div>

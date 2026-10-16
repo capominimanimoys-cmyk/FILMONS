@@ -177,6 +177,7 @@ async function finalizeOrder(params: {
         payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
         duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
         host_name: hostLegalName, host_email: hostUser?.email,
+        listing_type: pay.listingType,
         verification_reused: !!agRow.renter_verification_id,
       };
 
@@ -1365,7 +1366,7 @@ export function Checkout() {
               <span>Your payment is protected by Filmons. Contact support if you have issues.</span>
             </div>
 
-            {/* ── Rental Agreement ── */}
+            {/* ── Rental / Service Agreement ── */}
             <div className={`rounded-2xl border-2 p-4 transition-colors ${agreementAccepted ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
               <div className="flex items-start gap-3">
                 <div className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${agreementAccepted ? 'bg-green-600 border-green-600' : 'border-gray-300 bg-white'}`}>
@@ -1374,8 +1375,8 @@ export function Checkout() {
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-gray-800">
                     {agreementAccepted
-                      ? '✅ Rental agreement signed'
-                      : <><button type="button" onClick={() => setShowAgreementModal(true)} className="text-blue-600 underline underline-offset-2 font-semibold hover:text-blue-700">Sign the Rental Agreement</button> to continue</>
+                      ? `✅ ${kind === 'service' ? 'Service' : 'Rental'} agreement signed`
+                      : <><button type="button" onClick={() => setShowAgreementModal(true)} className="text-blue-600 underline underline-offset-2 font-semibold hover:text-blue-700">Sign the {kind === 'service' ? 'Service' : 'Rental'} Agreement</button> to continue</>
                     }
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
