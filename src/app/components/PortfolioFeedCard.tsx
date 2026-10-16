@@ -256,7 +256,7 @@ function AlbumCardMenu({
   const run = (fn: () => void) => { onClose(); fn(); };
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this album? Its photos/videos will stay in your portfolio, just ungrouped.')) return;
+    if (!window.confirm('Delete this album? Everything inside it (photos and videos) will be permanently deleted too.')) return;
     setDeleting(true);
     const ok = await deleteAlbum(entry.album.id);
     setDeleting(false);

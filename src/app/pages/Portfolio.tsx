@@ -1367,10 +1367,13 @@ export function Portfolio({ overrideUserId, initialAlbumId, embedded, onTabChang
   };
 
   const handleDeleteAlbum = async (albumId: string) => {
-    if (!window.confirm('Delete this album? Portfolio items inside this album will not be deleted.')) return;
+    if (!window.confirm('Delete this album? Everything inside it (photos, videos and works) will be permanently deleted too.')) return;
     setAlbumMenuId(null);
-    await deleteAlbum(albumId);
+    const removedIds = new Set((await getAlbumItems(albumId)).map(i => i.id));
+    const ok = await deleteAlbum(albumId);
+    if (!ok) { toast.error('Could not delete album'); return; }
     setAlbums(prev => prev.filter(a => a.id !== albumId));
+    setItems(prev => prev.filter(p => !removedIds.has(p.id)));
     toast.success('Album deleted');
   };
 

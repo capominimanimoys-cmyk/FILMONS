@@ -12,7 +12,7 @@ import { consumeSettingsReturnTo } from '../lib/settingsReturnTo';
 import {
   getPortfolioSettings, upsertPortfolioSettings, resetPortfolioSettings,
   uploadPortfolioCover, getPortfolioItems, updateItemsOrder, setItemDownloadAllowed,
-  getAlbums, updateAlbum, deleteAlbum, deleteAlbumCascadeItems, reorderAlbums,
+  getAlbums, updateAlbum, deleteAlbum, reorderAlbums,
   deletePortfolioItem,
   DEFAULT_PORTFOLIO_SETTINGS,
   type PortfolioSettings, type PortfolioLayout, type PortfolioSortOrder,
@@ -185,11 +185,11 @@ export function PortfolioSettings() {
     const ok = await updateAlbum(album.id, { cover_url: url });
     if (ok) setAlbums(prev => prev.map(a => a.id === album.id ? { ...a, cover_url: url } : a));
   };
-  const confirmDeleteAlbum = async (removeWork: boolean) => {
+  const confirmDeleteAlbum = async (removeWork: boolean = true) => {
     if (!deleteAlbumTarget) return;
     const album = deleteAlbumTarget;
     setDeleteAlbumTarget(null);
-    const ok = removeWork ? await deleteAlbumCascadeItems(album.id) : await deleteAlbum(album.id);
+    const ok = await deleteAlbum(album.id);
     if (!ok) { toast.error('Could not delete album'); return; }
     setAlbums(prev => prev.filter(a => a.id !== album.id));
     if (removeWork) {
@@ -599,15 +599,11 @@ export function PortfolioSettings() {
           <div className="fixed inset-0 z-[60] bg-black/50" onClick={() => setDeleteAlbumTarget(null)} />
           <div className="fixed inset-x-4 bottom-6 z-[61] bg-white rounded-3xl p-5 max-w-sm mx-auto">
             <p className="font-black text-gray-900 mb-1">Delete this album?</p>
-            <p className="text-xs text-gray-400 mb-4">"{deleteAlbumTarget.title}" — choose what happens to the work inside it.</p>
+            <p className="text-xs text-gray-400 mb-4">"{deleteAlbumTarget.title}" and everything inside it (photos, videos and works) will be permanently deleted.</p>
             <div className="space-y-2">
-              <button onClick={() => confirmDeleteAlbum(false)}
-                className="w-full py-3 rounded-2xl border border-gray-200 text-sm font-bold text-gray-800 hover:bg-gray-50">
-                Delete album only, keep the work
-              </button>
               <button onClick={() => confirmDeleteAlbum(true)}
                 className="w-full py-3 rounded-2xl bg-red-50 border border-red-200 text-sm font-bold text-red-600 hover:bg-red-100">
-                Delete album and remove its work
+                Delete album and everything inside
               </button>
               <button onClick={() => setDeleteAlbumTarget(null)}
                 className="w-full py-2.5 text-sm font-semibold text-gray-400">
