@@ -233,6 +233,16 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   const [verification, setVerification] = useState<CreatorPlusVerification | null>(null);
   const [verificationLoading, setVerificationLoading] = useState(true);
   const isFullyVerified = verification?.status === 'approved';
+  // The renter's legal name is the one they gave during identity
+  // verification whenever a verification record exists (any status) — it is
+  // shown read-only, and rental-agreement-sign re-derives it server-side.
+  const hasVerifiedName = !!(verification?.legalFirstName && verification?.legalLastName);
+
+  // Host's legal name from *their* identity verification — only the two
+  // name columns are read. Display name is a fallback for hosts who have
+  // never submitted verification (the signed record notes which was used).
+  const [hostLegalName, setHostLegalName] = useState<string | null>(null);
+  const hostDisplayName = hostLegalName || hostUser?.name || '';
 
   // Step 1 — Personal
   const [legalFirst, setLegalFirst] = useState(user?.name?.split(' ')[0] || '');
@@ -318,6 +328,16 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
       setVerificationLoading(false);
     }
 
+    if (hostUser?.id) {
+      supabase.from('identity_verifications').select('legal_first_name, legal_last_name')
+        .eq('user_id', hostUser.id).maybeSingle()
+        .then(({ data }) => {
+          const name = [data?.legal_first_name, data?.legal_last_name].map(v => (v || '').trim()).filter(Boolean);
+          if (name.length === 2) setHostLegalName(name.join(' '));
+        })
+        .catch(() => {});
+    }
+
     if (pay?.listingId) {
       supabase.from('listings').select('requirements, cancellation').eq('id', pay.listingId).maybeSingle()
         .then(({ data }) => setListing(data));
@@ -338,9 +358,13 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   // final saved record uses verification.* directly regardless (see
   // handleSubmit), but pre-filling here keeps what's on screen honest too.
   useEffect(() => {
+    if (!hasVerifiedName) return;
+    setLegalFirst(verification!.legalFirstName);
+    setLegalLast(verification!.legalLastName);
+  }, [hasVerifiedName, verification]); // eslint-disable-line
+
+  useEffect(() => {
     if (!isFullyVerified || !verification) return;
-    setLegalFirst(verification.legalFirstName);
-    setLegalLast(verification.legalLastName);
     setAddrCountryCode(verification.country === 'US' ? 'US' : 'CA');
     const formatted = [verification.addressLine1, verification.city, verification.provinceState, verification.postalCode].filter(Boolean).join(', ');
     setAddressText(verification.addressLine1);
@@ -412,7 +436,9 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
         signature_type: sigMode, signature_path: sigPath,
         status: 'ready_to_sign',
       } : {
-        legal_first_name: legalFirst.trim(), legal_last_name: legalLast.trim(), date_of_birth: dob,
+        legal_first_name: hasVerifiedName ? verification!.legalFirstName : legalFirst.trim(),
+        legal_last_name: hasVerifiedName ? verification!.legalLastName : legalLast.trim(),
+        date_of_birth: dob,
         address_country: addrCountryCode, address_line1: addressText.trim(), address_line2: unit.trim() || null,
         city: addrParts?.city || '', province_state: addrParts?.province || '', postal_code: addrParts?.postalCode || '',
         id_issuing_country: idCountry, id_type: idType, id_front_path: idFrontPath, id_back_path: idBackPath,
@@ -439,7 +465,8 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
 
       onAccepted({
         agreementId, refNo: agreementNumber, receiptNo: `RCP-${agreementNumber.split('-')[1]}`,
-        renterName: `${legalFirst} ${legalLast}`, renterEmail: profile?.email || user?.email || '', renterPhone: profile?.phone || user?.phone || '',
+        renterName: [result.agreement?.legal_first_name, result.agreement?.legal_last_name].filter(Boolean).join(' ') || `${legalFirst} ${legalLast}`,
+        renterEmail: profile?.email || user?.email || '', renterPhone: profile?.phone || user?.phone || '',
         agreementUrl: '', hostAgreementUrl: '', receiptUrl: '', idUrl, proofUrl, signedAt,
       });
     } catch (e: any) {
@@ -478,14 +505,14 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     duration: pay?.duration,
     duration_type: pay?.durationType,
     signed_at: '',
-    host_name: hostUser?.name,
+    host_name: hostDisplayName,
     host_email: hostUser?.email,
     host_username: hostUser?.username,
     verification_reused: isFullyVerified,
   }), [
     agreementNumber, legalFirst, legalLast, dob, idType, idCountry, profile,
     addressText, unit, addrParts, addrCountryCode, proofType, sigDataUrl,
-    pay, quote, selectedMethod, hostUser, isFullyVerified,
+    pay, quote, selectedMethod, hostUser, hostDisplayName, isFullyVerified,
   ]);
 
   const overviewField = (label: string, value: string | null | undefined) => (
@@ -572,11 +599,16 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                         <div className="grid grid-cols-2 gap-3">
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal first name *</label>
                             <input value={legalFirst} onChange={e => setLegalFirst(e.target.value)} placeholder="John"
-                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+                              readOnly={hasVerifiedName} aria-readonly={hasVerifiedName}
+                              className={`w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 ${hasVerifiedName ? 'bg-gray-50 text-gray-700 cursor-not-allowed' : ''}`} /></div>
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal last name *</label>
                             <input value={legalLast} onChange={e => setLegalLast(e.target.value)} placeholder="Doe"
-                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+                              readOnly={hasVerifiedName} aria-readonly={hasVerifiedName}
+                              className={`w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 ${hasVerifiedName ? 'bg-gray-50 text-gray-700 cursor-not-allowed' : ''}`} /></div>
                         </div>
+                        {hasVerifiedName && (
+                          <p className="text-[10px] text-gray-400 -mt-1">🔒 Legal name from your Filmons identity verification</p>
+                        )}
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Date of birth *</label>
                           <input type="date" value={dob} onChange={e => setDob(e.target.value)}
                             max={new Date(Date.now() - 16 * 365.25 * 86400000).toISOString().split('T')[0]}
@@ -844,7 +876,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                     <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Rental</p>
                       {overviewField('Listing', pay?.listingTitle)}
-                      {overviewField('Owner', hostUser?.name)}
+                      {overviewField('Owner (legal name)', hostDisplayName)}
                       {overviewField('Rental dates', pay?.startDate ? `${pay.startDate} · ${pay.duration || 1} ${pay.durationType || 'day(s)'}` : null)}
                     </div>
 

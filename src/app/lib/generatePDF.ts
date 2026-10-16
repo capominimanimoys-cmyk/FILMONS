@@ -517,6 +517,10 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
 
   const details = agRow.rental_details_snapshot || {};
   const pricing = agRow.pricing_snapshot || {};
+  // Host legal name frozen into the signed agreement (from the host's
+  // identity verification); display name only for agreements signed
+  // before that was recorded.
+  const hostName = [agRow.host_legal_first_name, agRow.host_legal_last_name].filter(Boolean).join(' ') || hostProfile?.name;
 
   const baseAgreement: AgreementData = {
     id: agRow.id,
@@ -538,7 +542,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     payment_method: details.paymentMethod || 'Card',
     start_date: details.startDate, duration: details.duration, duration_type: details.durationType,
     signed_at: agRow.signed_at || '',
-    host_name: hostProfile?.name, host_email: hostProfile?.email, host_username: hostProfile?.username,
+    host_name: hostName, host_email: hostProfile?.email, host_username: hostProfile?.username,
     verification_reused: !!agRow.renter_verification_id,
   };
 
@@ -549,7 +553,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     renter_id: agRow.renter_id, host_id: agRow.host_id,
     renter_name: `${baseAgreement.first_name} ${baseAgreement.last_name}`.trim(),
     renter_email: baseAgreement.email, renter_phone: baseAgreement.phone,
-    host_name: hostProfile?.name, host_email: hostProfile?.email,
+    host_name: hostName, host_email: hostProfile?.email,
     listing_title: baseAgreement.listing_title, start_date: baseAgreement.start_date,
     duration: baseAgreement.duration, duration_type: baseAgreement.duration_type,
     total_amount: baseAgreement.total_amount, subtotal: baseAgreement.subtotal, buyer_fee_amount: baseAgreement.buyer_fee_amount,

@@ -541,6 +541,7 @@ Deno.serve(async (req) => {
           const orderId = `ORD-${agRow.agreement_number}`;
           const receiptId = `RCP-${String(agRow.agreement_number).split('-')[1] || Date.now()}`;
           const renterName = [agRow.legal_first_name, agRow.legal_last_name].filter(Boolean).join(' ') || 'Renter';
+          const hostLegalName = [agRow.host_legal_first_name, agRow.host_legal_last_name].filter(Boolean).join(' ') || hostProfile?.name || '';
 
           // Minimal order record — best-effort; if finalizeOrder also runs
           // client-side later it'll hit a duplicate-key conflict on this
@@ -616,7 +617,7 @@ Deno.serve(async (req) => {
 
           const sharedParams = {
             ref_no: agRow.agreement_number, renter_name: renterName, renter_email: agRow.verified_email || '',
-            renter_phone: agRow.verified_phone || '', host_name: hostProfile?.name || '—',
+            renter_phone: agRow.verified_phone || '', host_name: hostLegalName || '—',
             listing_title: details.listingTitle || '—', listing_type: details.listingType || 'Rental',
             start_date: details.startDate || '—', duration: `${details.duration || 1} ${details.durationType || 'day'}(s)`,
             payment_method: 'Credit/Debit Card', total_amount: `$${total.toFixed(2)}`,

@@ -47,6 +47,14 @@ async function insertAudit(row: Record<string, unknown>) {
 
 import { computeBreakdown } from '../_shared/pricing.ts';
 
+// The legal name a user gave during identity verification, or null if they
+// have no verification record (or it has no name on it).
+function legalNameOf(v: any): { first: string; last: string } | null {
+  const first = String(v?.legal_first_name || '').trim();
+  const last  = String(v?.legal_last_name || '').trim();
+  return first && last ? { first, last } : null;
+}
+
 const AGREEMENT_TERMS_VERSION = '2026.1';
 
 Deno.serve(async (req) => {
@@ -87,8 +95,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Both parties are named by the legal name they gave during identity
+    // verification — never the client-entered draft value when a
+    // verification record exists. The renter's draft name is only used when
+    // they have no verification record at all (they verify with the ID
+    // uploaded inside this agreement instead).
+    const renterVerification = reusedVerification
+      || await selectOne('identity_verifications', `user_id=eq.${renterId}`);
+    const renterLegal = legalNameOf(renterVerification);
+    const renterFirst = renterLegal?.first ?? draft.legal_first_name;
+    const renterLast  = renterLegal?.last  ?? draft.legal_last_name;
+
     const missing: string[] = [];
-    if (!draft.legal_first_name || !draft.legal_last_name) missing.push('legal name');
+    if (!renterFirst || !renterLast) missing.push('legal name');
     if (!draft.date_of_birth) missing.push('date of birth');
     if (!draft.address_line1 || !draft.city || !draft.postal_code) missing.push('address');
     if (!reusedVerification) {
@@ -145,6 +164,25 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Host legal name — from the host's own identity verification. Falls back
+    // to the profile display name only if the host has never submitted
+    // verification, and records which source was used.
+    let hostLegal: { first: string; last: string } | null = null;
+    let hostVerificationId: string | null = null;
+    let hostNameSource: 'verification' | 'profile' | null = null;
+    if (hostId) {
+      const hostVerification = await selectOne('identity_verifications', `user_id=eq.${hostId}`);
+      hostLegal = legalNameOf(hostVerification);
+      if (hostLegal) {
+        hostVerificationId = hostVerification.id;
+        hostNameSource = 'verification';
+      } else {
+        const hostProfile = await selectOne('profiles', `id=eq.${hostId}`);
+        const [f, ...rest] = String(hostProfile?.name || '').trim().split(/\s+/);
+        if (f) { hostLegal = { first: f, last: rest.join(' ') }; hostNameSource = 'profile'; }
+      }
+    }
+
     const now = new Date().toISOString();
     const agreementNumber = draft.agreement_number || `FLM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
 
@@ -158,6 +196,12 @@ Deno.serve(async (req) => {
     const signed = await patch('rental_agreements', `id=eq.${agreementId}`, {
       agreement_number: agreementNumber,
       host_id: hostId,
+      legal_first_name: renterFirst,
+      legal_last_name: renterLast,
+      host_legal_first_name: hostLegal?.first ?? null,
+      host_legal_last_name: hostLegal?.last ?? null,
+      host_verification_id: hostVerificationId,
+      host_name_source: hostNameSource,
       verified_email: profile.email,
       verified_phone: profile.phone,
       rental_rules_snapshot: rulesSnapshot,

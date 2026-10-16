@@ -136,9 +136,14 @@ async function finalizeOrder(params: {
   // DB never persists a permanent/public link (Dashboard → Orders mints a
   // fresh signed URL on demand instead).
   let agreementRenterUrl = '', agreementHostUrl = '', receiptDocUrl = '';
+  // Legal names frozen into the signed agreement by rental-agreement-sign
+  // (each party's identity-verification name). Display names are only a
+  // fallback if the row can't be read.
+  let hostLegalName = hostUser?.name || '';
   try {
     const { data: agRow } = await supabase.from('rental_agreements').select('*').eq('id', sa.agreementId).maybeSingle();
     if (agRow) {
+      hostLegalName = [agRow.host_legal_first_name, agRow.host_legal_last_name].filter(Boolean).join(' ') || hostLegalName;
       let signatureDataUrl = '';
       if (agRow.signature_path) {
         const sigSigned = await signRentalDoc(agRow.signature_path, 300);
@@ -173,7 +178,7 @@ async function finalizeOrder(params: {
         subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
         payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
         duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
-        host_name: hostUser?.name, host_email: hostUser?.email,
+        host_name: hostLegalName, host_email: hostUser?.email,
         verification_reused: !!agRow.renter_verification_id,
       };
 
@@ -183,7 +188,7 @@ async function finalizeOrder(params: {
         id: sa.receiptNo, agreement_id: sa.refNo,
         renter_id: user?.id, host_id: hostUser?.id,
         renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
-        host_name: hostUser?.name, host_email: hostUser?.email,
+        host_name: hostLegalName, host_email: hostUser?.email,
         listing_title: pay.listingTitle || '—', listing_type: pay.listingType,
         start_date: pay.startDate, duration: pay.duration, duration_type: pay.durationType,
         total_amount: totalAmount, subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
@@ -222,7 +227,7 @@ async function finalizeOrder(params: {
   const sharedParams = {
     ref_no: sa.refNo, today, signed_at: signedAt,
     renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
-    host_name: hostUser?.name || '—', listing_title: pay.listingTitle,
+    host_name: hostLegalName || '—', listing_title: pay.listingTitle,
     listing_type: pay.listingType || 'Rental', start_date: pay.startDate || '—',
     duration: `${pay.duration || 1} ${pay.durationType || 'day(s)'}`,
     payment_method: selectedMethod, total_amount: `$${totalAmount.toFixed(2)}`,
