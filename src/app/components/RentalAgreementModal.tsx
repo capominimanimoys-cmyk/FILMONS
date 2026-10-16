@@ -223,7 +223,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   // document copying.
   interface CreatorPlusVerification {
     id: string; status: string; decisionReason: string | null;
-    legalFirstName: string; legalLastName: string;
+    legalFirstName: string; legalLastName: string; dateOfBirth: string; idType: string; idCountry: string;
     addressLine1: string; addressLine2: string; city: string; provinceState: string; postalCode: string; country: string;
     verifiedAt: string | null;
     // Derived, not manually settable — true once a document existed at
@@ -298,13 +298,14 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
         .catch(e => { console.warn('[rental-agreement] profile fetch failed:', e); setProfileLoading(false); });
 
       supabase.from('identity_verifications')
-        .select('id, status, decision_reason, legal_first_name, legal_last_name, address_line1, address_line2, city, province_state, postal_code, country_of_residence, verified_at, id_front_path, proof_of_address_path, documents_deleted_at')
+        .select('id, status, decision_reason, legal_first_name, legal_last_name, date_of_birth, id_type, id_issuing_country, address_line1, address_line2, city, province_state, postal_code, country_of_residence, verified_at, id_front_path, proof_of_address_path, documents_deleted_at')
         .eq('user_id', user.id).order('submitted_at', { ascending: false }).limit(1).maybeSingle()
         .then(({ data, error }) => {
           if (error) console.warn('[rental-agreement] verification fetch failed:', error.message);
           setVerification(data ? {
             id: data.id, status: data.status, decisionReason: data.decision_reason,
             legalFirstName: data.legal_first_name || '', legalLastName: data.legal_last_name || '',
+            dateOfBirth: data.date_of_birth || '', idType: data.id_type || '', idCountry: data.id_issuing_country || '',
             addressLine1: data.address_line1 || '', addressLine2: data.address_line2 || '',
             city: data.city || '', provinceState: data.province_state || '', postalCode: data.postal_code || '',
             country: data.country_of_residence || '', verifiedAt: data.verified_at,
@@ -346,6 +347,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
     if (!isFullyVerified || !verification) return;
     setLegalFirst(verification.legalFirstName);
     setLegalLast(verification.legalLastName);
+    setDob(verification.dateOfBirth);
     setAddrCountryCode(verification.country === 'US' ? 'US' : 'CA');
     const formatted = [verification.addressLine1, verification.city, verification.provinceState, verification.postalCode].filter(Boolean).join(', ');
     setAddressText(verification.addressLine1);
@@ -371,6 +373,10 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
   };
 
   const canContinuePersonal = emailVerified && phoneVerified && legalFirst.trim() && legalLast.trim() && dob;
+  // Verified accounts (Creator+, Professional, Business) use the details from
+  // verification as-is: name and date of birth are shown locked.
+  const personalLocked = isFullyVerified;
+  const lockedField = 'w-full border border-gray-200 bg-gray-50 text-gray-700 rounded-xl px-3 py-2.5 text-base cursor-not-allowed';
   const canContinueAddress  = !!addrParts?.city && !!addrParts?.postalCode && !!addressText.trim();
   const canContinueVerify   = isFullyVerified || (!!idType && !!idFrontPath && (!requiresIdBack || !!idBackPath) && !!proofType && !!proofPath);
   const canContinueRules    = rulesAgreed;
@@ -406,7 +412,7 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
       // form state — so "Verified by Filmons" can never end up attached to
       // unverified self-entered data.
       const updatePayload: Record<string, unknown> = isFullyVerified ? {
-        legal_first_name: verification!.legalFirstName, legal_last_name: verification!.legalLastName, date_of_birth: dob,
+        legal_first_name: verification!.legalFirstName, legal_last_name: verification!.legalLastName, date_of_birth: verification!.dateOfBirth || dob,
         address_country: verification!.country === 'US' ? 'US' : 'CA',
         address_line1: verification!.addressLine1, address_line2: verification!.addressLine2 || null,
         city: verification!.city, province_state: verification!.provinceState, postal_code: verification!.postalCode,
@@ -576,16 +582,16 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                       <>
                         <div className="grid grid-cols-2 gap-3">
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal first name *</label>
-                            <input value={legalFirst} onChange={e => setLegalFirst(e.target.value)} placeholder="John"
-                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+                            <input value={legalFirst} onChange={e => setLegalFirst(e.target.value)} placeholder="John" readOnly={personalLocked}
+                              className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} /></div>
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Legal last name *</label>
-                            <input value={legalLast} onChange={e => setLegalLast(e.target.value)} placeholder="Doe"
-                              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+                            <input value={legalLast} onChange={e => setLegalLast(e.target.value)} placeholder="Doe" readOnly={personalLocked}
+                              className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} /></div>
                         </div>
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Date of birth *</label>
-                          <input type="date" value={dob} onChange={e => setDob(e.target.value)}
+                          <input type="date" value={dob} onChange={e => setDob(e.target.value)} readOnly={personalLocked}
                             max={new Date(Date.now() - 16 * 365.25 * 86400000).toISOString().split('T')[0]}
-                            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+                            className={personalLocked ? lockedField : "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"} /></div>
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">Email</label>
                           <div className="flex items-center gap-2 border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5">
                             <Lock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
@@ -682,6 +688,10 @@ export function RentalAgreementModal({ pay, user, hostUser, convId, msgId, total
                           <div>
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Legal Name</p>
                             <p className="text-sm font-semibold text-gray-900">{verification!.legalFirstName} {verification!.legalLastName}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Date of Birth</p><p className="text-sm font-semibold text-gray-900">{verification!.dateOfBirth || '—'}</p></div>
+                            <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ID</p><p className="text-sm font-semibold text-gray-900">{[verification!.idType, verification!.idCountry].filter(Boolean).join(' · ') || '—'}</p></div>
                           </div>
                           <div>
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verified Address</p>
