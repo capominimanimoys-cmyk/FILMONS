@@ -95,7 +95,7 @@ export interface ReceiptData {
 }
 
 // ── Shared CSS ──────────────────────────────────────────────────────
-const BASE_CSS = `
+export const BASE_CSS = `
   *{box-sizing:border-box;margin:0;padding:0}
   @page{size:A4;margin:20mm 18mm}
   body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:10.5px;color:#111;background:#fff;max-width:780px;margin:0 auto;padding:24px 0}

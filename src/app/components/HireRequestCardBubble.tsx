@@ -5,6 +5,7 @@ import { ChatMessage, User } from '../types';
 import { authApi } from '../lib/api';
 import { hireApi, hirePaymentApi, HireRequestRow, HireTransactionRow } from '../lib/hireApi';
 import { supabase } from '../../lib/supabase';
+import { generateServiceAgreement } from '../lib/generateServiceAgreement';
 import { useAuth } from '../context/AuthContext';
 import { BottomSheet } from './BottomSheet';
 
@@ -117,6 +118,15 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
   const doMarkComplete = () => run(async () => { await hireApi.markWorkCompleted(hr.id, user!.id); toast.success('Marked as completed — awaiting confirmation'); });
   const doConfirmCompletion = () => run(async () => { await hireApi.confirmCompletion(hr.id, user!.id); toast.success('Completion confirmed — remaining funds released'); });
   const doReportProblem = () => run(async () => { await hireApi.reportProblem(hr.id, user!.id); toast.success('Problem reported — held funds are frozen'); });
+  const doViewAgreement = () => run(async () => {
+    // Open the tab synchronously so the popup isn't blocked while we load.
+    const win = window.open('', '_blank');
+    try {
+      const html = await generateServiceAgreement(hr, txn);
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html; charset=utf-8' }));
+      if (win) win.location.href = url; else window.location.href = url;
+    } catch (e) { win?.close(); throw e; }
+  });
   const doFund = () => run(async () => {
     const origin = window.location.origin;
     const { url } = await hirePaymentApi.startFunding(
@@ -202,6 +212,9 @@ export function HireRequestCardBubble({ msg }: { msg: ChatMessage }) {
         )}
         {hr.status === 'hired' && txn?.work_status === 'marked_complete_by_worker' && isRequester && (
           <button disabled={busy} onClick={doConfirmCompletion} className="flex-1 text-xs font-bold text-white bg-green-600 rounded-xl py-2 disabled:opacity-50">Confirm Completion</button>
+        )}
+        {(hr.status === 'hired' || hr.status === 'completed') && (
+          <button disabled={busy} onClick={doViewAgreement} className="flex-1 text-xs font-bold text-indigo-700 bg-indigo-50 rounded-xl py-2 disabled:opacity-50">{busy ? 'Opening…' : 'Service Agreement'}</button>
         )}
         {hr.status === 'hired' && (
           <button disabled={busy} onClick={doReportProblem} className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-red-600 bg-red-50 rounded-xl py-2 disabled:opacity-50"><AlertTriangle className="w-3 h-3" /> Report a Problem</button>
