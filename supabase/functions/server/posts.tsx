@@ -348,8 +348,18 @@ export async function toggleLike(postId: string, userId: string): Promise<{ like
   return { liked, likesCount, postId, userId };
 }
 
-export async function remove(postId: string): Promise<void> {
-  await sql()`DELETE FROM posts WHERE id = ${postId}`;
+/** Deletes a post (and its dependents). When `userId` is given the post must be theirs.
+ *  Returns false when no matching post was found / owned. */
+export async function remove(postId: string, userId?: string | null): Promise<boolean> {
+  // Dependents first, so a foreign key without ON DELETE CASCADE can't block the delete.
+  for (const t of ["comments", "post_likes", "reposts"]) {
+    try { await sql().unsafe(`DELETE FROM ${t} WHERE post_id::text = $1`, [postId]); } catch { /* table/column may not exist */ }
+  }
+  const rows = await sql().unsafe(
+    `DELETE FROM posts WHERE id::text = $1 AND ($2::text IS NULL OR author_id::text = $2) RETURNING id`,
+    [postId, userId ?? null],
+  );
+  return (rows as any[]).length > 0;
 }
 
 // ── Get all user IDs who have reposted a given post ───────────────────────────

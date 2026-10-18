@@ -717,7 +717,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
       onDeleted?.(localPost.id);
       toast.success('Post deleted');
     }
-    catch { toast.error('Could not delete post'); }
+    catch (e: any) { console.error('[post] delete failed:', e); toast.error(e?.message ? `Could not delete post: ${String(e.message).slice(0, 120)}` : 'Could not delete post'); }
     finally { setDeleting(false); }
   };
 

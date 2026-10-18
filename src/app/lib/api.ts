@@ -2354,12 +2354,21 @@ export const postsApi = {
       if (!error && data?.length) return;
     }
 
+    // The server route deletes with elevated access (RLS can't block it) and
+    // checks the post belongs to the caller.
+    if (currentUser?.id) {
+      try {
+        await call(`/posts/${encodeURIComponent(postId)}?userId=${encodeURIComponent(currentUser.id)}`, { method: 'DELETE' });
+        return;
+      } catch (e) { error = error ?? ({ message: String((e as any)?.message ?? e) } as any); }
+    }
+
     // Last resort: archive it. Every feed query already hides archived posts
     // (is_archived), so to everyone it is gone. Still scoped to the author.
     const softQ = supabase.from('posts').update({ is_archived: true }).eq('id', postId);
     if (currentUser?.id) softQ.eq('author_id', currentUser.id);
     const { data: soft, error: softErr } = await softQ.select('id');
-    if (softErr || !soft?.length) throw new Error(error?.message || softErr?.message || 'Could not delete post');
+    if (softErr || !soft?.length) throw new Error(error?.message || softErr?.message || 'Could not delete post (no permission)');
   },
 
   /** Delete the current user's repost of a specific original post */

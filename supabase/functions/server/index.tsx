@@ -1195,7 +1195,9 @@ app.delete(
 
 app.delete("/make-server-ec8fe879/posts/:id", async (c) => {
   try {
-    await postsDb.remove(c.req.param("id"));
+    const userId = c.req.query("userId") || null;
+    const removed = await postsDb.remove(c.req.param("id"), userId);
+    if (!removed) return c.json({ error: "Post not found or not yours" }, 404);
     return c.json({ success: true });
   } catch (e) {
     console.error("Delete post error:", e);
