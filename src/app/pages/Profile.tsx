@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { BioText } from '../components/BioText';
 import { AnimatePresence, motion } from 'motion/react';
 import { useT } from '../lib/i18n';
 import { useAuth } from '../context/AuthContext';
@@ -1434,7 +1435,7 @@ export function Profile() {
               {(user.bio || (user as any).birthdate || user.location || user.city) && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 mb-4 space-y-2">
                   {user.bio && (
-                    <p className="text-sm text-gray-700 leading-relaxed line-clamp-3">{user.bio}</p>
+                    <p className="text-sm text-gray-700 leading-relaxed line-clamp-3"><BioText text={user.bio} /></p>
                   )}
                   {((user as any).birthdate) && (
                     <div className="flex items-center gap-2 text-xs text-gray-500">
