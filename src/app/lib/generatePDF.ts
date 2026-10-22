@@ -8,6 +8,24 @@
 
 import { supabase } from '../../lib/supabase';
 import { signRentalDoc } from '../../lib/upload';
+import { withTimeout } from './withTimeout';
+
+/**
+ * The name a user gave during identity verification (legal first + last).
+ * Rental agreements must show this, not the editable public profile name.
+ * Falls back to `fallback` only when the user has no verification on file.
+ */
+export async function fetchLegalName(userId: string | null | undefined, fallback?: string | null): Promise<string | undefined> {
+  if (!userId) return fallback || undefined;
+  const fromVerification = await withTimeout(
+    Promise.resolve(
+      supabase.from('identity_verifications').select('legal_first_name, legal_last_name')
+        .eq('user_id', userId).maybeSingle()
+    ).then(({ data }) => [data?.legal_first_name, data?.legal_last_name].filter(Boolean).join(' ').trim()).catch(() => ''),
+    3000, '',
+  );
+  return fromVerification || fallback || undefined;
+}
 
 // ── Types ──────────────────────────────────────────────────────────
 export interface AgreementData {
@@ -47,6 +65,8 @@ export interface AgreementData {
   duration_type?: string;
   signed_at: string;
   agreement_url?: string;
+  // 'service' switches the document wording from equipment rental to service.
+  listing_type?: string;
   // joined from host profile
   host_name?: string;
   host_email?: string;
@@ -77,7 +97,7 @@ export interface ReceiptData {
 }
 
 // ── Shared CSS ──────────────────────────────────────────────────────
-const BASE_CSS = `
+export const BASE_CSS = `
   *{box-sizing:border-box;margin:0;padding:0}
   @page{size:A4;margin:20mm 18mm}
   body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:10.5px;color:#111;background:#fff;max-width:780px;margin:0 auto;padding:24px 0}
@@ -130,6 +150,7 @@ const BASE_CSS = `
 
 // ── Agreement HTML ─────────────────────────────────────────────────
 export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string {
+  const isService = String(d.listing_type || '').toLowerCase() === 'service';
   const subtotal = d.subtotal ?? d.total_amount;
   const buyerFeeAmount = d.buyer_fee_amount ?? 0;
   const dailyRate = d.duration ? (subtotal / d.duration).toFixed(2) : subtotal.toFixed(2);
@@ -151,7 +172,7 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>Filmons Rental Agreement &#x2014; ${d.id}</title>
+<title>Filmons ${isService ? 'Service' : 'Rental'} Agreement &#x2014; ${d.id}</title>
 <style>${BASE_CSS}</style>
 </head><body>
 
@@ -159,8 +180,8 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 <div class="cover">
   <div class="cover-logo">&#x1F3AC; FILMONS</div>
   <div class="cover-sub">Film Gear Rental Marketplace</div>
-  <div class="cover-title">EQUIPMENT RENTAL AGREEMENT${isHostCopy ? ' &#x2014; HOST COPY' : ''}</div>
-  <div class="cover-desc">This Agreement governs the rental of film and production equipment between Hosts and Renters on the Filmons platform.</div>
+  <div class="cover-title">${isService ? 'SERVICE AGREEMENT' : 'EQUIPMENT RENTAL AGREEMENT'}${isHostCopy ? ' &#x2014; HOST COPY' : ''}</div>
+  <div class="cover-desc">${isService ? 'This Agreement governs the engagement of a Service Provider by a Client for services booked on the Filmons platform.' : 'This Agreement governs the rental of film and production equipment between Hosts and Renters on the Filmons platform.'}</div>
   <div class="cover-ref">
     Booking Reference: ${d.id}<br/>
     Agreement Date: ${d.signed_at ? d.signed_at.split('T')[0] : '&#x2014;'}
@@ -213,11 +234,11 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 
 <!-- SECTION 2 -->
 <div class="sec">
-  <div class="sec-title">Section 2 &#x2014; Equipment Description</div>
+  <div class="sec-title">Section 2 &#x2014; ${isService ? 'Service Description' : 'Equipment Description'}</div>
   <div class="sub">2.1 Rented Equipment</div>
   <table class="data">
     <tr><th>#</th><th>Equipment Description</th><th>Type</th><th>Duration</th><th>Condition</th></tr>
-    <tr><td>1</td><td>${d.listing_title}</td><td>Rental</td><td>${d.duration||1} ${d.duration_type||'day'}(s)</td><td>As listed on Filmons</td></tr>
+    <tr><td>1</td><td>${d.listing_title}</td><td>${isService ? 'Service' : 'Rental'}</td><td>${d.duration||1} ${d.duration_type||'day'}(s)</td><td>As listed on Filmons</td></tr>
   </table>
   <div class="note">&#x23F1; The Renter must inspect all equipment at the time of pickup and report any pre-existing damage or missing accessories via the Filmons platform within <strong>2 hours</strong> of taking possession. Failure to report constitutes acceptance of equipment as described.</div>
 </div>
@@ -273,7 +294,7 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 <!-- SECTION 10 -->
 <div class="sec">
   <div class="sec-title">Section 10 &#x2014; Acknowledgement &amp; Signatures</div>
-  <p style="font-size:9.5px;color:#374151;margin-bottom:14px;line-height:1.6">By signing below (or accepting digitally on the Filmons platform), both parties confirm they have read, understood, and agree to be bound by all terms of this Film Gear Rental Agreement.</p>
+  <p style="font-size:9.5px;color:#374151;margin-bottom:14px;line-height:1.6">By signing below (or accepting digitally on the Filmons platform), both parties confirm they have read, understood, and agree to be bound by all terms of this ${isService ? 'Service Agreement' : 'Film Gear Rental Agreement'}.</p>
 
   <div class="two">
     <div>
@@ -515,6 +536,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     }
   }
 
+  const hostLegalName = await fetchLegalName(agRow.host_id, hostProfile?.name);
   const details = agRow.rental_details_snapshot || {};
   const pricing = agRow.pricing_snapshot || {};
 
@@ -538,7 +560,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     payment_method: details.paymentMethod || 'Card',
     start_date: details.startDate, duration: details.duration, duration_type: details.durationType,
     signed_at: agRow.signed_at || '',
-    host_name: hostProfile?.name, host_email: hostProfile?.email, host_username: hostProfile?.username,
+    host_name: hostLegalName, host_email: hostProfile?.email, host_username: hostProfile?.username,
     verification_reused: !!agRow.renter_verification_id,
   };
 
@@ -549,7 +571,7 @@ export async function regenerateAgreementDocuments(agreementId: string): Promise
     renter_id: agRow.renter_id, host_id: agRow.host_id,
     renter_name: `${baseAgreement.first_name} ${baseAgreement.last_name}`.trim(),
     renter_email: baseAgreement.email, renter_phone: baseAgreement.phone,
-    host_name: hostProfile?.name, host_email: hostProfile?.email,
+    host_name: hostLegalName, host_email: hostProfile?.email,
     listing_title: baseAgreement.listing_title, start_date: baseAgreement.start_date,
     duration: baseAgreement.duration, duration_type: baseAgreement.duration_type,
     total_amount: baseAgreement.total_amount, subtotal: baseAgreement.subtotal, buyer_fee_amount: baseAgreement.buyer_fee_amount,

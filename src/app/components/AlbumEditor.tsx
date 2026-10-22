@@ -566,7 +566,7 @@ export function AlbumEditor({ mode, album, initialWorks, initialFiles, onClose, 
       {showDeleteConfirm && (
         <BottomSheet onClose={() => setShowDeleteConfirm(false)} title="Delete this album?">
           <div className="px-4 pb-4">
-            <p className="text-sm text-gray-500 mb-4">The album will be permanently deleted. Projects and media originally stored in your Portfolio will not be deleted.</p>
+            <p className="text-sm text-gray-500 mb-4">The album and everything inside it (photos, videos and works) will be permanently deleted. This can't be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3 rounded-2xl bg-gray-100 text-gray-600 font-semibold text-sm">Cancel</button>
               <button onClick={handleDelete} disabled={deleting} className="flex-1 py-3 rounded-2xl bg-red-500 text-white font-black text-sm disabled:opacity-50">

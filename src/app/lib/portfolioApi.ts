@@ -671,11 +671,33 @@ export async function replaceItemMedia(itemId: string, file: File): Promise<bool
   });
 }
 
-export async function deleteAlbum(id: string): Promise<boolean> {
+/** Deletes the album row only. Likes, comments, credits and album-item links go
+ *  with it via ON DELETE CASCADE foreign keys. Prefer `deleteAlbum`. */
+async function deleteAlbumRow(id: string): Promise<boolean> {
   const { error } = await supabase.from('portfolio_albums').delete().eq('id', id);
   if (error) { console.error('[albums] delete error:', error.message); return false; }
   announceContentDeleted('portfolio_album', id);
   return true;
+}
+
+/** Deletes an album AND everything inside it: every portfolio item in the
+ *  album (including their stored media files), plus the album's own likes,
+ *  comments and credits. */
+export async function deleteAlbum(id: string): Promise<boolean> {
+  const { data, error: fetchError } = await supabase
+    .from('portfolio_album_items')
+    .select('item_id')
+    .eq('album_id', id);
+  if (fetchError) { console.error('[albums] delete: could not list items:', fetchError.message); return false; }
+
+  const itemIds = (data ?? []).map((r: any) => r.item_id as string);
+  if (itemIds.length) {
+    const results = await Promise.all(itemIds.map(itemId => deletePortfolioItem(itemId)));
+    // Abort before touching the album so a partial failure can be retried
+    // without orphaning items that are no longer reachable from any album.
+    if (results.some(ok => !ok)) { console.error('[albums] delete: some items could not be deleted'); return false; }
+  }
+  return deleteAlbumRow(id);
 }
 
 export async function getAlbumItems(albumId: string): Promise<PortfolioItem[]> {
@@ -737,21 +759,8 @@ export async function reorderAlbums(order: { id: string; sort_order: number }[])
   return results.every(r => !r.error);
 }
 
-/** Deletes an album AND every portfolio item inside it (the "remove work too" choice). */
-export async function deleteAlbumCascadeItems(albumId: string): Promise<boolean> {
-  const { data, error: fetchError } = await supabase
-    .from('portfolio_album_items')
-    .select('item_id')
-    .eq('album_id', albumId);
-  if (fetchError) { console.error('[albums] cascade fetch error:', fetchError.message); return false; }
-
-  const itemIds = (data ?? []).map((r: any) => r.item_id as string);
-  if (itemIds.length > 0) {
-    const { error: delItemsError } = await supabase.from('portfolio_items').delete().in('id', itemIds);
-    if (delItemsError) { console.error('[albums] cascade delete items error:', delItemsError.message); return false; }
-  }
-  return deleteAlbum(albumId);
-}
+/** @deprecated `deleteAlbum` now always removes the items too. */
+export const deleteAlbumCascadeItems = deleteAlbum;
 
 // ── Album credits ─────────────────────────────────────────────────────────────
 export async function getAlbumCredits(albumId: string): Promise<AlbumCredit[]> {

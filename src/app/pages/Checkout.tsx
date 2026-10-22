@@ -17,7 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { RentalAgreementModal, SignedAgreementData } from '../components/RentalAgreementModal';
 import emailjs from '@emailjs/browser';
 import { EMAILJS_CONFIG } from '../lib/emailjs-config';
-import { buildAgreementHTML, buildReceiptHTML, uploadPDFDoc } from '../lib/generatePDF';
+import { buildAgreementHTML, buildReceiptHTML, uploadPDFDoc, fetchLegalName } from '../lib/generatePDF';
 import * as notifications from '../lib/notifications';
 import { signRentalDoc } from '../../lib/upload';
 
@@ -136,6 +136,8 @@ async function finalizeOrder(params: {
   // DB never persists a permanent/public link (Dashboard → Orders mints a
   // fresh signed URL on demand instead).
   let agreementRenterUrl = '', agreementHostUrl = '', receiptDocUrl = '';
+  // Agreement shows the host's legal name from identity verification, not the public profile name.
+  let hostLegalName: string | undefined = hostUser?.name;
   try {
     const { data: agRow } = await supabase.from('rental_agreements').select('*').eq('id', sa.agreementId).maybeSingle();
     if (agRow) {
@@ -155,6 +157,7 @@ async function finalizeOrder(params: {
         }
       }
 
+      hostLegalName = (await fetchLegalName(hostUser?.id, hostUser?.name)) || hostLegalName;
       const baseAgreement = {
         id: sa.agreementId,
         conversation_id: convId, message_id: msgId,
@@ -173,7 +176,8 @@ async function finalizeOrder(params: {
         subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
         payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
         duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
-        host_name: hostUser?.name, host_email: hostUser?.email,
+        host_name: hostLegalName, host_email: hostUser?.email,
+        listing_type: pay.listingType,
         verification_reused: !!agRow.renter_verification_id,
       };
 
@@ -183,7 +187,7 @@ async function finalizeOrder(params: {
         id: sa.receiptNo, agreement_id: sa.refNo,
         renter_id: user?.id, host_id: hostUser?.id,
         renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
-        host_name: hostUser?.name, host_email: hostUser?.email,
+        host_name: hostLegalName, host_email: hostUser?.email,
         listing_title: pay.listingTitle || '—', listing_type: pay.listingType,
         start_date: pay.startDate, duration: pay.duration, duration_type: pay.durationType,
         total_amount: totalAmount, subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
@@ -222,7 +226,7 @@ async function finalizeOrder(params: {
   const sharedParams = {
     ref_no: sa.refNo, today, signed_at: signedAt,
     renter_name: sa.renterName, renter_email: sa.renterEmail, renter_phone: sa.renterPhone,
-    host_name: hostUser?.name || '—', listing_title: pay.listingTitle,
+    host_name: hostLegalName || '—', listing_title: pay.listingTitle,
     listing_type: pay.listingType || 'Rental', start_date: pay.startDate || '—',
     duration: `${pay.duration || 1} ${pay.durationType || 'day(s)'}`,
     payment_method: selectedMethod, total_amount: `$${totalAmount.toFixed(2)}`,
@@ -1362,7 +1366,7 @@ export function Checkout() {
               <span>Your payment is protected by Filmons. Contact support if you have issues.</span>
             </div>
 
-            {/* ── Rental Agreement ── */}
+            {/* ── Rental / Service Agreement ── */}
             <div className={`rounded-2xl border-2 p-4 transition-colors ${agreementAccepted ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
               <div className="flex items-start gap-3">
                 <div className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${agreementAccepted ? 'bg-green-600 border-green-600' : 'border-gray-300 bg-white'}`}>
@@ -1371,8 +1375,8 @@ export function Checkout() {
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-gray-800">
                     {agreementAccepted
-                      ? '✅ Rental agreement signed'
-                      : <><button type="button" onClick={() => setShowAgreementModal(true)} className="text-blue-600 underline underline-offset-2 font-semibold hover:text-blue-700">Sign the Rental Agreement</button> to continue</>
+                      ? `✅ ${kind === 'service' ? 'Service' : 'Rental'} agreement signed`
+                      : <><button type="button" onClick={() => setShowAgreementModal(true)} className="text-blue-600 underline underline-offset-2 font-semibold hover:text-blue-700">Sign the {kind === 'service' ? 'Service' : 'Rental'} Agreement</button> to continue</>
                     }
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">

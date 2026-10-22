@@ -2331,19 +2331,36 @@ export const postsApi = {
   delete: async (postId: string): Promise<void> => {
     const currentUser = authApi.getCurrentUser();
 
-    // Hard delete — removes the row from the DB entirely
-    const hardQ = supabase.from('posts').delete().eq('id', postId);
-    // Scope to own posts when we have the user id (prevents accidental cross-user deletes)
-    if (currentUser?.id) hardQ.eq('author_id', currentUser.id);
-    const { error: hardErr } = await hardQ;
-    if (!hardErr) { announceContentDeleted('post', postId); return; }
+    // `.select('id')` so a delete the database silently refuses (RLS matching
+    // 0 rows returns no error) is detected instead of reported as success.
+    const hardDelete = async () => {
+      const q = supabase.from('posts').delete().eq('id', postId);
+      // Scope to own posts when we have the user id (prevents accidental cross-user deletes)
+      if (currentUser?.id) q.eq('author_id', currentUser.id);
+      return q.select('id');
+    };
 
-    // Fallback: soft delete if RLS or FK constraints block the hard delete
-    const { error: softErr } = await supabase
-      .from('posts')
-      .update({ is_archived: true, is_deleted: true })
-      .eq('id', postId);
-    if (softErr) throw new Error(hardErr.message || softErr.message);
+    let { data, error } = await hardDelete();
+    if (!error && data?.length) { announceContentDeleted('post', postId); return; }
+
+    // Foreign keys from comments/likes/reposts can block the delete: clear the
+    // post's dependents, then try once more.
+    if (error) {
+      await Promise.allSettled([
+        supabase.from('comments').delete().eq('post_id', postId),
+        supabase.from('post_likes').delete().eq('post_id', postId),
+        supabase.from('reposts').delete().eq('post_id', postId),
+      ]);
+      ({ data, error } = await hardDelete());
+      if (!error && data?.length) { announceContentDeleted('post', postId); return; }
+    }
+
+    // Last resort: archive it. Every feed query already hides archived posts
+    // (is_archived), so to everyone it is gone. Still scoped to the author.
+    const softQ = supabase.from('posts').update({ is_archived: true }).eq('id', postId);
+    if (currentUser?.id) softQ.eq('author_id', currentUser.id);
+    const { data: soft, error: softErr } = await softQ.select('id');
+    if (softErr || !soft?.length) throw new Error(error?.message || softErr?.message || 'Could not delete post');
     announceContentDeleted('post', postId);
   },
 

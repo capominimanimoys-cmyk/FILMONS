@@ -7,7 +7,7 @@ import { captureSnapshot } from '../lib/smartAnimate';
 
 export function MobileBottomNav() {
   const location = useLocation();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, showGuestPrompt } = useAuth();
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [dimmed, setDimmed] = useState(false);
   // Home -> Portfolio mode auto-hide -- full slide-away (not just the dim
@@ -128,7 +128,10 @@ export function MobileBottomNav() {
                 to={primaryTo}
                 title={primaryLabel}
                 aria-label={primaryLabel}
-                onClick={() => { captureSnapshot(); if (primaryOpensCreatePost) window.dispatchEvent(new CustomEvent('filmons:open-create-post')); }}
+                onClick={(e) => {
+                  // Guests can't create anything — show the sign-in UI instead of navigating.
+                  if (!isAuthenticated) { e.preventDefault(); showGuestPrompt('Sign in to post listings and activity, portfolios etc.', 'Sign in to create'); return; }
+                  captureSnapshot(); if (primaryOpensCreatePost) window.dispatchEvent(new CustomEvent('filmons:open-create-post')); }}
                 className="flex-1 flex flex-col items-center justify-center pt-1.5 pb-1.5"
               >
                 <div

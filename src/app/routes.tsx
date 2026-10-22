@@ -23,6 +23,15 @@ const page = (load: () => Promise<any>, pick?: string) => ({
   },
 });
 
+// Same stale-chunk recovery as page(), for routes that build their element by hand.
+const guardedImport = async <T,>(load: () => Promise<T>): Promise<T> => {
+  try { return await load(); }
+  catch (e) {
+    if (isChunkLoadError(e) && reloadOnceForNewVersion()) return new Promise<never>(() => {});
+    throw e;
+  }
+};
+
 export const router = createBrowserRouter([
   {
     path: '/',
@@ -35,10 +44,10 @@ export const router = createBrowserRouter([
       { path: 'checkout', ...page(() => import('./pages/Checkout'), 'Checkout') },
       { path: 'dashboard', ...page(() => import('./pages/HostDashboard'), 'HostDashboard') },
       { path: 'wallet', ...page(() => import('./pages/Wallet'), 'Wallet') },
-      { path: 'liked-listings', lazy: async () => { const m = await import('./pages/LikedItems'); const C = m.LikedItems; return { element: <C type="listing"  /> }; } },
-      { path: 'liked-creators', lazy: async () => { const m = await import('./pages/LikedItems'); const C = m.LikedItems; return { element: <C type="creator"  /> }; } },
-      { path: 'saved-posts', lazy: async () => { const m = await import('./pages/SavedLikedPosts'); const C = m.SavedLikedPosts; return { element: <C type="saved"  /> }; } },
-      { path: 'liked-posts', lazy: async () => { const m = await import('./pages/SavedLikedPosts'); const C = m.SavedLikedPosts; return { element: <C type="liked"  /> }; } },
+      { path: 'liked-listings', lazy: async () => { const m = await guardedImport(() => import('./pages/LikedItems')); const C = m.LikedItems; return { element: <C type="listing"  /> }; } },
+      { path: 'liked-creators', lazy: async () => { const m = await guardedImport(() => import('./pages/LikedItems')); const C = m.LikedItems; return { element: <C type="creator"  /> }; } },
+      { path: 'saved-posts', lazy: async () => { const m = await guardedImport(() => import('./pages/SavedLikedPosts')); const C = m.SavedLikedPosts; return { element: <C type="saved"  /> }; } },
+      { path: 'liked-posts', lazy: async () => { const m = await guardedImport(() => import('./pages/SavedLikedPosts')); const C = m.SavedLikedPosts; return { element: <C type="liked"  /> }; } },
       { path: 'wallet/payout-method', ...page(() => import('./pages/PayoutMethodSetup'), 'PayoutMethodSetup') },
       { path: 'notifications', ...page(() => import('./pages/Notifications'), 'Notifications') },
       { path: 'settings/notifications',  ...page(() => import('./pages/NotificationSettings'), 'NotificationSettings')  },
