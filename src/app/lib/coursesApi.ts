@@ -164,6 +164,26 @@ async function attachCurriculumStats(courses: Course[]): Promise<Course[]> {
   });
 }
 
+// Questions and phrases rarely match a title word for word ("how to create opportunity listing" vs a course called
+// "Create an opportunity listing"), so search also matches the meaningful words on their own and ranks by how many match.
+const COURSE_STOP_WORDS = new Set(['how', 'to', 'a', 'an', 'the', 'of', 'for', 'and', 'in', 'on', 'my', 'your', 'i', 'me', 'what', 'is', 'are', 'do', 'does', 'can', 'with', 'about', 'learn']);
+function searchWords(query: string): string[] {
+  return [...new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 2 && !COURSE_STOP_WORDS.has(w)))].slice(0, 6);
+}
+function rankByWords(rows: any[], words: string[], limit: number): any[] {
+  if (words.length < 2) return rows.slice(0, limit);
+  const need = Math.max(1, Math.ceil(words.length * 0.5));
+  const scored = rows.map(r => {
+    const title = String(r.title || '').toLowerCase();
+    const rest = `${r.category || ''} ${r.short_description || ''}`.toLowerCase();
+    let score = 0, hit = 0;
+    for (const w of words) { const inTitle = title.includes(w); if (inTitle || rest.includes(w)) { hit++; score += inTitle ? 2 : 1; } }
+    return { r, score, hit };
+  }).filter(x => x.hit >= need);
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(x => x.r).slice(0, limit);
+}
+
 export async function getCourses(opts: {
   category?: string;
   subcategory?: string;
@@ -179,7 +199,9 @@ export async function getCourses(opts: {
   throwOnError?: boolean;
 } = {}): Promise<Course[]> {
   const limit = opts.limit ?? 20;
-  let q = supabase.from('courses').select('*').order('created_at', { ascending: false }).limit(limit);
+  const words = opts.query?.trim() ? searchWords(opts.query) : [];
+  // With several words, fetch a wider net, then keep and rank the best matches.
+  let q = supabase.from('courses').select('*').order('created_at', { ascending: false }).limit(words.length >= 2 ? limit * 4 : limit);
   q = q.eq('status', opts.status ?? 'published');
   if (opts.before) q = q.lt('created_at', opts.before);
   if (opts.category) q = q.eq('category', opts.category);
@@ -194,20 +216,23 @@ export async function getCourses(opts: {
     // Topics are stored normalized (lowercase, no spaces/#), so match the
     // query in that form too: "Color grading" finds #colorgrading.
     const tag = term.toLowerCase().replace(/^#/, '').replace(/[^a-z0-9_]/g, '');
-    q = q.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%${tag ? `,topics.cs.{${tag}}` : ''}`);
+    const wordFilters = words.length >= 2 ? words.flatMap(w => [`title.ilike.%${w}%`, `short_description.ilike.%${w}%`, `category.ilike.%${w}%`]) : [];
+    q = q.or([`title.ilike.%${term}%`, `category.ilike.%${term}%`, `short_description.ilike.%${term}%`, ...(tag ? [`topics.cs.{${tag}}`] : []), ...wordFilters].join(','));
   }
   let { data, error } = await q;
   if (error && opts.query?.trim()) {
     // Before the course-builder migration there's no topics column to match.
     const term = opts.query.trim().replace(/[,()]/g, ' ');
-    let retry = supabase.from('courses').select('*').order('created_at', { ascending: false }).limit(limit).eq('status', opts.status ?? 'published');
+    let retry = supabase.from('courses').select('*').order('created_at', { ascending: false }).limit(words.length >= 2 ? limit * 4 : limit).eq('status', opts.status ?? 'published');
     if (opts.category) retry = retry.eq('category', opts.category);
     if (opts.subcategory) retry = retry.eq('subcategory', opts.subcategory);
     if (opts.instructorId) retry = retry.eq('instructor_id', opts.instructorId);
-    ({ data, error } = await retry.or(`title.ilike.%${term}%,category.ilike.%${term}%,short_description.ilike.%${term}%`));
+    const retryWords = words.length >= 2 ? words.flatMap(w => [`title.ilike.%${w}%`, `short_description.ilike.%${w}%`, `category.ilike.%${w}%`]) : [];
+    ({ data, error } = await retry.or([`title.ilike.%${term}%`, `category.ilike.%${term}%`, `short_description.ilike.%${term}%`, ...retryWords].join(',')));
   }
   if (error) { console.warn('[coursesApi] getCourses error:', error.message); if (opts.throwOnError) throw error; return []; }
-  const withInstructors = await attachInstructors(data ?? []);
+  const rows = opts.query?.trim() ? rankByWords(data ?? [], words, limit) : (data ?? []);
+  const withInstructors = await attachInstructors(rows);
   return attachCurriculumStats(withInstructors);
 }
 
