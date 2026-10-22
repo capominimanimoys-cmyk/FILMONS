@@ -145,6 +145,14 @@ export interface Post {
   visibility?: Visibility;
   /** Picture posts: also play in Reels. */
   showInReels?: boolean;
+  listingId?: string;
+  listingTitle?: string;
+  listingPrice?: number;
+  listingMode?: string;
+  listingCity?: string;
+  listingImage?: string;
+  /** All listings linked to the post (listingId/listingTitle... describe the first). */
+  listings?: { id: string; title?: string; price?: number; mode?: string; city?: string; image?: string | null }[];
   allowComments?: boolean;
   allowSharing?: boolean;
   allowDuetRemix?: boolean;

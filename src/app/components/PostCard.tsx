@@ -1646,6 +1646,22 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </div>
             </button>
           )}
+          {(localPost.listings ?? []).filter(l => l.id !== localPost.listingId).map(l => (
+            <button key={l.id} onClick={()=>navigate(`/listing/${l.id}`)}
+              className="w-full flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
+              style={{ width: 'calc(100% - 1.5rem)' }}>
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {l.image && <img src={l.image} className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{l.title || 'Listing'}</p>
+                <p className="text-xs text-gray-400 truncate">
+                  {[l.price != null ? `$${l.price}${l.mode==='rent'?'/day':''}` : null, l.city].filter(Boolean).join(' · ')}
+                </p>
+                <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">View Listing <ArrowRight className="w-3 h-3" /></span>
+              </div>
+            </button>
+          ))}
           {localPost.listingId && (
             <button
               onClick={()=>navigate(`/listing/${localPost.listingId}`)}
