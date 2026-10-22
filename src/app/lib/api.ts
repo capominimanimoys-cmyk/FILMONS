@@ -90,6 +90,9 @@ function normalizePostMedia(p: any): any {
 }
 
 
+// Business / Professional / Creator+ accounts count as verified automatically (the database does the same via a trigger).
+const isPaidTierType = (t?: string | null) => ['business', 'professional', 'creator_plus', 'service'].includes(String(t || ''));
+
 // ============================================
 // SERVER BASE
 // ============================================
@@ -171,8 +174,8 @@ function profileRowToUser(data: Record<string, any>): User {
     avatar:               data.avatar_url,
     accountType:          data.account_type,
     accountMode:          data.account_mode,
-    isVerified:           data.is_verified ?? false,
-    verificationStatus:   data.verification_status ?? 'not_started',
+    isVerified:           (data.is_verified ?? false) || isPaidTierType(data.account_type) || isPaidTierType(data.account_mode),
+    verificationStatus:   (isPaidTierType(data.account_type) || isPaidTierType(data.account_mode)) ? 'approved' : (data.verification_status ?? 'not_started'),
     profileSetupCompleted: !!(data.onboarding_completed) || !!(meta.onboarding_completed),
     emailVerified:        data.email_verified ?? true,
     phoneVerified:        data.phone_verified ?? false,
@@ -465,8 +468,8 @@ export const authApi = {
       avatar:               profile.avatar_url || profile.avatar,
       accountType:          profile.account_type || 'creator',
       accountMode:          profile.account_mode || 'creator',
-      isVerified:           profile.is_verified ?? false,
-      verificationStatus:   profile.verification_status || 'not_started',
+      isVerified:           (profile.is_verified ?? false) || isPaidTierType(profile.account_type) || isPaidTierType(profile.account_mode),
+      verificationStatus:   (isPaidTierType(profile.account_type) || isPaidTierType(profile.account_mode)) ? 'approved' : (profile.verification_status || 'not_started'),
       bio:                  profile.bio,
       location:             profile.location,
       city:                 profile.city             || undefined,
@@ -515,8 +518,8 @@ export const authApi = {
           avatar:               data.avatar_url          || cached.avatar,
           accountType:          resolvedType,
           accountMode:          data.account_mode || (resolvedType !== rawType ? 'creator_plus' : cached.accountMode),
-          isVerified:           data.is_verified         ?? cached.isVerified,
-          verificationStatus:   data.verification_status ?? cached.verificationStatus,
+          isVerified:           (data.is_verified ?? cached.isVerified) || isPaidTierType(data.account_type) || isPaidTierType(data.account_mode),
+          verificationStatus:   (isPaidTierType(data.account_type) || isPaidTierType(data.account_mode)) ? 'approved' : (data.verification_status ?? cached.verificationStatus),
           bio:                  data.bio                 || cached.bio,
           location:             data.location            || cached.location,
           city:                 data.city                || cached.city,
