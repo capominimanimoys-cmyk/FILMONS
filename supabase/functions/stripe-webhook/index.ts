@@ -11,6 +11,7 @@
 // stripe-charge) as environment variables.
 import { syncPayoutMethodFromStripeAccount } from '../_shared/payoutMethodSync.ts';
 import { sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
+import { returnFailedPayout, describePayoutFailure } from '../_shared/payoutReturn.ts';
 import { addBusinessDays } from '../_shared/businessDays.ts';
 import { coveredDates } from '../_shared/bookingDates.ts';
 import { fetchStripeAvailability } from '../_shared/stripeBalanceAvailability.ts';
@@ -185,7 +186,8 @@ Deno.serve(async (req) => {
           method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' },
           body: JSON.stringify({ status: 'paid', completed_at: new Date().toISOString() }),
         });
-        await insertNotification({ user_id: row.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_paid', title: `Your $${Number(row.amount).toFixed(2)} CAD payout has arrived`, is_read: false });
+        await rpc('fn_mark_payout_paid', { p_payout_request_id: row.id });
+        await insertNotification({ user_id: row.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_paid', title: `Paid — your $${Number(row.amount).toFixed(2)} CAD withdrawal has been sent to your bank account.`, is_read: false });
       }
       return new Response(JSON.stringify({ received: true, updated: !!row }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
@@ -198,14 +200,19 @@ Deno.serve(async (req) => {
       const payout = event.data?.object;
       const row = payout?.id ? await selectOne('payout_requests', `stripe_payout_id=eq.${payout.id}`) : null;
       if (row && row.status !== 'failed') {
-        await rpc('fn_reverse_payout_request', { p_payout_request_id: row.id });
+        const code = payout.failure_code || null;
         await fetch(rest(`/payout_requests?id=eq.${row.id}`), {
           method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' },
-          body: JSON.stringify({ status: 'failed', admin_notes: payout.failure_message || null, completed_at: new Date().toISOString() }),
+          body: JSON.stringify({ status: 'failed', admin_notes: payout.failure_message || null, failure_code: code, failure_message: payout.failure_message || null, completed_at: new Date().toISOString() }),
         });
+        // Explain what happened and what to do; the money returns to Available only once Stripe has it back
+        // (the transfer is reversed first -- see returnFailedPayout).
+        const outcome = await returnFailedPayout(row.id);
+        const amt = Number(row.amount).toFixed(2);
+        await insertNotification({ user_id: row.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_failed', is_read: false,
+          title: `Your $${amt} CAD withdrawal failed. ${describePayoutFailure(code, payout.failure_message)} ${outcome === 'returned' ? 'The money is back in Available to withdraw.' : 'We’ll return it to Available to withdraw as soon as Stripe confirms the funds are back.'}` });
         const host = await selectOne('profiles', `id=eq.${row.host_id}`);
         await sendPayoutFailedEmail({ toEmail: host?.email, toName: host?.name, amount: Number(row.amount), currency: row.currency || 'CAD', withdrawalId: row.id }).catch(() => {});
-        await insertNotification({ user_id: row.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_failed', title: `Your $${Number(row.amount).toFixed(2)} CAD payout could not be completed`, is_read: false });
       }
       return new Response(JSON.stringify({ received: true, updated: !!row }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }

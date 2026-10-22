@@ -18,7 +18,7 @@ import {
 // Every earning on Filmons clears on the same flat 5-business-day hold,
 // regardless of account tier (server-authoritative, set on
 // wallet_transactions.available_at by stripe-webhook / finalize-cash-payment).
-const PENDING_HOLD_COPY = 'Every amount earned on Filmons stays pending for 5 business days before becoming available in your wallet. Saturday and Sunday do not count toward the 5 days.';
+const PENDING_HOLD_COPY = 'Stripe may need time to process your funds before they’re available for payout. Your earnings will remain pending until they’re ready to withdraw. We’ll notify you when they become available.';
 
 // stripeAvailableOn present means this date came from Stripe's own
 // balance transaction (the real settlement date Stripe's own dashboard
@@ -26,8 +26,8 @@ const PENDING_HOLD_COPY = 'Every amount earned on Filmons stays pending for 5 bu
 // definite fact ("Available <date>"), never hedged with "Estimated".
 function estimatedAvailabilityLabel(availableAt: string | null, stripeAvailableOn?: string | null): string {
   const date = stripeAvailableOn || availableAt;
-  if (!date) return 'This transaction should be available within 5 business days.';
-  return `This transaction should be available on ${new Date(date).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}.`;
+  if (!date) return 'Waiting for Stripe to confirm these funds are available.';
+  return `Stripe expects these funds around ${new Date(date).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}. They move to Available to withdraw only once Stripe confirms.`;
 }
 
 const fmtCad = (cad: number) =>
@@ -53,7 +53,7 @@ const PAYOUT_STATUS_LABEL: Record<string, { label: string; className: string }> 
   under_review: { label: 'Under review', className: 'bg-blue-100 text-blue-600' },
   approved:     { label: 'Approved',     className: 'bg-indigo-100 text-indigo-600' },
   processing:   { label: 'Processing',   className: 'bg-amber-100 text-amber-600' },
-  sent:         { label: 'Payout sent',  className: 'bg-blue-100 text-blue-600' },
+  sent:         { label: 'Processing',   className: 'bg-amber-100 text-amber-600' },
   paid:         { label: 'Paid',         className: 'bg-green-100 text-green-600' },
   rejected:     { label: 'Rejected',     className: 'bg-red-100 text-red-600' },
   cancelled:    { label: 'Cancelled',    className: 'bg-gray-100 text-gray-500' },
@@ -388,11 +388,11 @@ function PayoutModalInner(props: {
             <div className="flex flex-col items-center text-center gap-4 py-4">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"><Check className="w-8 h-8 text-green-600" /></div>
               <div>
-                <p className="text-base font-black text-gray-900">Payout Sent ✓</p>
+                <p className="text-base font-black text-gray-900">Withdrawal processing ✓</p>
                 <p className="text-sm text-gray-500 mt-1">
-                  {result.payoutCurrency && result.payoutAmount != null
+                  Your {result.payoutCurrency && result.payoutAmount != null
                     ? `${fmtCad(result.payoutAmount)} ${result.payoutCurrency}`
-                    : fmtCad(result.amount)} is on the way to {walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}.
+                    : fmtCad(result.amount)} withdrawal is being sent to your bank account ({walletApi.maskDestination(result.method, result.destination, (result.destination as any)?.last4)}).
                 </p>
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2.5 text-left">
@@ -444,7 +444,7 @@ function PayoutModalInner(props: {
               disabled={submitting}
               className={`w-full py-3.5 text-white font-black text-sm rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2 ${speed === 'instant' ? 'bg-amber-500' : 'bg-blue-600'}`}
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : speed === 'instant' ? 'Confirm Instant Payout' : 'Confirm Payout'}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : speed === 'instant' ? 'Confirm instant withdrawal' : 'Confirm withdrawal'}
             </button>
           )}
         </div>
@@ -465,7 +465,7 @@ function PayoutModalInner(props: {
 export function Wallet() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
-  const [balance, setBalance] = useState<WalletBalance>({ pending: 0, available: 0, currency: 'CAD' });
+  const [balance, setBalance] = useState<WalletBalance>({ pending: 0, available: 0, processing: 0, currency: 'CAD' });
   const [txs, setTxs] = useState<WalletTransaction[]>([]);
   const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
   const [defaultMethod, setDefaultMethod] = useState<PayoutMethod | null>(null);
@@ -554,7 +554,7 @@ export function Wallet() {
 
   // Every earning on Filmons clears on the same 5-business-day hold,
   // regardless of account tier (see stripe-webhook/index.ts).
-  const pendingCaption = 'typically available within 5 business days';
+  const pendingCaption = 'available once Stripe confirms';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -587,7 +587,7 @@ export function Wallet() {
           {/* Balance — mobile/tablet: single Available-focused card */}
           {!loadError && <div className="bg-white/10 backdrop-blur rounded-3xl p-6 lg:hidden">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">Available</p>
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">Available to withdraw</p>
               <span className="text-[10px] text-blue-300 bg-white/10 px-2 py-0.5 rounded-full font-semibold">{balance.currency}</span>
             </div>
             <div className="flex items-end gap-3">
@@ -599,19 +599,24 @@ export function Wallet() {
               {!showWalletLoader && <Clock className="w-3.5 h-3.5" />}
               {!showWalletLoader && <span>{fmtCad(balance.pending)} pending, {pendingCaption}</span>}
             </div>
+            {!showWalletLoader && balance.processing > 0 && (
+              <div className="flex items-center gap-1.5 mt-1.5 text-blue-200 text-sm">
+                <Loader2 className="w-3.5 h-3.5" /> <span>{fmtCad(balance.processing)} withdrawals processing</span>
+              </div>
+            )}
             <button
               onClick={() => setShowModal(true)}
               disabled={balance.available <= 0}
               className="w-full mt-4 py-3 bg-white text-blue-700 font-black text-sm rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
             >
-              Request Payout
+              Withdraw
             </button>
           </div>}
 
           {/* Balance — desktop: 3-tile row (Available / Pending / Total earned) */}
           {!loadError && <div className="hidden lg:grid grid-cols-3 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
-              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Available</p>
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Available to withdraw</p>
               {showWalletLoader
                 ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
                 : <span className="text-4xl font-black leading-none">{fmtCad(balance.available)}</span>}
@@ -620,7 +625,7 @@ export function Wallet() {
                 disabled={balance.available <= 0}
                 className="w-full mt-4 py-2.5 bg-white text-blue-700 font-black text-sm rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
               >
-                Request Payout
+                Withdraw
               </button>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
@@ -631,16 +636,16 @@ export function Wallet() {
               {!showWalletLoader && (
                 <p className="flex items-center gap-1.5 mt-4 text-blue-200 text-xs">
                   <Clock className="w-3.5 h-3.5 shrink-0" />
-                  Typically available within 5 business days
+                  Available once Stripe confirms the funds
                 </p>
               )}
             </div>
             <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
-              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Total Earned</p>
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-2">Withdrawals processing</p>
               {showWalletLoader
                 ? <div className="h-10 flex items-center"><FilmonsBrandLoader size="sm" tone="light" label="Loading"/></div>
-                : <span className="text-4xl font-black leading-none">{fmtCad(balance.available + balance.pending)}</span>}
-              {!showWalletLoader && <p className="mt-4 text-blue-200 text-xs">{balance.currency} · available + pending</p>}
+                : <span className="text-4xl font-black leading-none">{fmtCad(balance.processing)}</span>}
+              {!showWalletLoader && <p className="mt-4 text-blue-200 text-xs">On their way to your bank account</p>}
             </div>
           </div>}
         </div>
@@ -773,6 +778,12 @@ export function Wallet() {
                       )}
                       {p.payout_currency && p.payout_amount != null && (
                         <p className="text-xs text-gray-400">Sent as {fmtCad(p.payout_amount)} {p.payout_currency} to your bank</p>
+                      )}
+                      {p.status === 'failed' && (
+                        <p className="text-xs text-red-500 mt-0.5">
+                          {p.failure_message || 'This withdrawal could not be completed.'}{' '}
+                          {p.return_status === 'returned' ? 'The money is back in Available to withdraw.' : p.return_status === 'needs_review' ? 'We’re reviewing this — support will contact you.' : 'It returns to Available to withdraw once Stripe confirms the funds are back.'}
+                        </p>
                       )}
                       {p.status === 'rejected' && p.rejection_reason && (
                         <p className="text-xs text-red-500 mt-0.5">{p.rejection_reason}</p>

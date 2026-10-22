@@ -6,6 +6,7 @@
 import { claimEmailEvent } from '../_shared/emailEvents.ts';
 import { sendWithdrawalReceivedEmail, sendCashOutRequestAdminEmail, sendPayoutSentEmail, sendPayoutFailedEmail } from '../_shared/notificationEmails.ts';
 import { addBusinessDays } from '../_shared/businessDays.ts';
+import { returnFailedPayout, describePayoutFailure } from '../_shared/payoutReturn.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -122,19 +123,36 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
   }
 
   const SK = Deno.env.get('STRIPE_SECRET_KEY');
-  if (!SK) { await rpc('fn_reverse_payout_request', { p_payout_request_id: payoutRequestId }); return j({ error: 'Payouts are temporarily unavailable' }, 500); }
+  if (!SK) {
+    // Nothing was sent to Stripe: the reservation can simply be released.
+    await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'failed', failure_message: 'Payouts unavailable', completed_at: new Date().toISOString() }) });
+    await returnFailedPayout(payoutRequestId);
+    return j({ error: 'Payouts are temporarily unavailable' }, 500);
+  }
   const stripeHeaders = { Authorization: `Bearer ${SK}`, 'Content-Type': 'application/x-www-form-urlencoded' };
   const cents = Math.round(amount * 100);
 
-  const fail = async (reason: string) => {
-    await rpc('fn_reverse_payout_request', { p_payout_request_id: payoutRequestId });
+  // Failure after the reservation: mark it failed, then give the money back -- but only once it has really come
+  // back (if a transfer already moved it to the user's Stripe account, that transfer is reversed first and the
+  // wallet is credited only after Stripe confirms; otherwise it stays "return pending" and is retried).
+  const fail = async (reason: string, code?: string) => {
     await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), {
       method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'failed', admin_notes: reason, completed_at: new Date().toISOString() }),
+      body: JSON.stringify({ status: 'failed', admin_notes: reason, failure_code: code || null, failure_message: reason, completed_at: new Date().toISOString() }),
     });
+    const outcome = await returnFailedPayout(payoutRequestId);
     const host = await selectOne('profiles', `id=eq.${hostId}`);
     await sendPayoutFailedEmail({ toEmail: host?.email, toName: host?.name, amount, currency: 'CAD', withdrawalId: payoutRequestId }).catch(() => {});
-    return j({ error: 'Could not complete payout — your funds have been returned to your available balance.' }, 400);
+    await fetch(rest('/notifications'), {
+      method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ user_id: hostId, actor_id: null, actor_name: 'Filmons', type: 'payout_failed', is_read: false,
+        title: outcome === 'returned'
+          ? `Your $${amount.toFixed(2)} CAD withdrawal didn’t go through. The money is back in Available to withdraw.`
+          : `Your $${amount.toFixed(2)} CAD withdrawal didn’t go through. We’ll return it to Available to withdraw as soon as Stripe confirms the funds are back.` }),
+    }).catch(() => {});
+    return j({ error: outcome === 'returned'
+      ? 'Could not complete the withdrawal — your money is back in Available to withdraw.'
+      : 'Could not complete the withdrawal. Your money will return to Available to withdraw once Stripe confirms it is back — we’ll notify you.' }, 400);
   };
 
   const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
@@ -142,7 +160,9 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
     body: new URLSearchParams({ amount: String(cents), currency: 'cad', destination: method.stripe_connect_account_id, 'metadata[payout_request_id]': payoutRequestId }),
   });
   const transfer = await transferRes.json();
-  if (transfer.error) return fail(transfer.error.message);
+  if (transfer.error) return fail(transfer.error.message, transfer.error.code);
+  // Remember the transfer right away: if anything below fails, it is what gets reversed.
+  await fetch(rest(`/payout_requests?id=eq.${payoutRequestId}`), { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ stripe_transfer_id: transfer.id }) });
 
   // CAD destinations pay out exactly what was transferred, no conversion.
   // Anything else (today: USD) needs a real exchange rate -- see
@@ -164,7 +184,7 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
     body: new URLSearchParams({ amount: String(payoutAmountCents), currency: payoutCurrency }),
   });
   const payout = await payoutRes.json();
-  if (payout.error) return fail(payout.error.message);
+  if (payout.error) return fail(payout.error.message, payout.error.code);
 
   // Never promise an exact arrival date beyond Stripe's own -- if the
   // Payout response includes one, store/show it; otherwise the frontend
@@ -196,7 +216,7 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
   }
   await fetch(rest('/notifications'), {
     method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-    body: JSON.stringify({ user_id: hostId, actor_id: null, actor_name: 'Filmons', type: 'payout_sent', title: `Your ${isCrossCurrency ? `$${sentAmount.toFixed(2)} ${sentCurrency}` : `$${amount.toFixed(2)} CAD`} payout is on the way`, is_read: false }),
+    body: JSON.stringify({ user_id: hostId, actor_id: null, actor_name: 'Filmons', type: 'payout_sent', title: `Withdrawal processing — your ${isCrossCurrency ? `$${sentAmount.toFixed(2)} ${sentCurrency}` : `$${amount.toFixed(2)} CAD`} withdrawal is being sent to your bank account.`, is_read: false }),
   }).catch(() => {});
 
   return j({
