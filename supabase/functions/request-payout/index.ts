@@ -181,7 +181,8 @@ async function handleAutomatedPayout(hostId: string, amount: number, method: any
 
   const payoutRes = await fetch('https://api.stripe.com/v1/payouts', {
     method: 'POST', headers: { ...stripeHeaders, 'Stripe-Account': method.stripe_connect_account_id },
-    body: new URLSearchParams({ amount: String(payoutAmountCents), currency: payoutCurrency }),
+    // Pay out to the bank account saved on Filmons explicitly (its default on Stripe), never "whichever is first".
+    body: new URLSearchParams({ amount: String(payoutAmountCents), currency: payoutCurrency, ...(method.stripe_external_account_id ? { destination: method.stripe_external_account_id } : {}) }),
   });
   const payout = await payoutRes.json();
   if (payout.error) return fail(payout.error.message, payout.error.code);
