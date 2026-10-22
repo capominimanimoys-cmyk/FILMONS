@@ -901,7 +901,7 @@ export function AboutEditor(props: Props) {
           <textarea value={props.bio} onChange={e=>props.setBio(e.target.value)} rows={4} maxLength={300}
             placeholder="Cinematographer specializing in music videos and commercial lighting."
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-blue-400 resize-none bg-white"/>
-          <p className="text-xs text-gray-400 text-right">{props.bio.length}/300</p>
+          <p className="text-xs text-gray-400 text-right">Add @mentions, #hashtags or links · {props.bio.length}/300</p>
         </SField>
         <SField label="Years of experience">
           <SInput type="number" min={0} max={50} value={props.yearsExp} onChange={e=>props.setYearsExp(e.target.value)} placeholder="e.g. 5"/>

@@ -4,6 +4,7 @@
 // Edit links) as a full-screen overlay instead of tab content.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Pencil, Briefcase, User, MapPin, Globe } from 'lucide-react';
+import { BioText } from '../BioText';
 import { normalizeTier } from '../../lib/reliabilityApi';
 
 // secondaryRoles/openTo/languages come from the free-form profile_meta
@@ -93,7 +94,7 @@ export function AboutSection({
         <>
           {text && (
             <div className="mt-2">
-              <p ref={bioRef} className={`text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words ${expanded ? '' : 'line-clamp-4'}`}>{text}</p>
+              <p ref={bioRef} className={`text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words ${expanded ? '' : 'line-clamp-4'}`}><BioText text={text} /></p>
               {(overflowing || expanded) && (
                 <button onClick={() => setExpanded(v => !v)} className="mt-1 text-sm font-semibold text-gray-500 hover:text-gray-800">
                   {expanded ? 'See less' : 'See more'}

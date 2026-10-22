@@ -8,6 +8,7 @@
 // Follow/Message live in the sticky bottom bar for a viewer, not here too --
 // putting the same two actions in both places was redundant. This header's
 // viewer-mode action row is Share + 3-dot only.
+import { BioText } from '../BioText';
 import { ShieldCheck, CircleAlert, MessageCircle, UserCheck, UserPlus, Loader2, UserRoundPlus, Clock } from 'lucide-react';
 import { AccountTypeBadge } from '../AccountTypeBadge';
 import { TrustBadge } from '../trust/TrustBadge';
@@ -185,7 +186,7 @@ export function ProfileHeader({
               <TrustBadge level={trustLevel} size="sm" onClick={onTapTrustBadge} />
             </div>
           )}
-          {bio && <p className="text-sm text-gray-700 mt-2 leading-relaxed">{bio}</p>}
+          {bio && <p className="text-sm text-gray-700 mt-2 leading-relaxed whitespace-pre-line break-words"><BioText text={bio} /></p>}
         </div>
       </div>
 
