@@ -108,6 +108,8 @@ Deno.serve(async (req) => {
       // number is sent directly.
       'external_account[routing_number]': country === 'CA' ? `${transitNumber}-${institutionNumber}` : routingNumber!,
       'external_account[account_number]': accountNumber,
+      // The bank account saved on Filmons must be the one Stripe pays out to.
+      default_for_currency: 'true',
     });
     const res = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts`, {
       method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, body: params,
@@ -147,6 +149,25 @@ Deno.serve(async (req) => {
           : message,
       }, 400);
     }
+
+    // Make sure Stripe really treats it as the default for its currency (a first account for a currency is
+    // automatically; a later one is not unless asked), then drop any other bank accounts left on the connected
+    // account so Stripe can never pay out to a different one.
+    try {
+      if (!externalAccount.default_for_currency) {
+        await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${externalAccount.id}`, {
+          method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ default_for_currency: 'true' }),
+        });
+      }
+      const listRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts?object=bank_account&limit=20`, { headers: authHeader });
+      const list = await listRes.json();
+      for (const other of list?.data || []) {
+        if (other.id !== externalAccount.id) {
+          await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${other.id}`, { method: 'DELETE', headers: authHeader }).catch(() => {});
+        }
+      }
+    } catch (e) { console.warn('could not finalise default external account:', e); }
 
     const safe = await syncPayoutMethodFromStripeAccount(userId, accountId);
 

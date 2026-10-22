@@ -15,6 +15,7 @@
 // fn_release_pending_earnings itself refuses to release anything still
 // flagged payout_availability_status = 'pending', regardless of date.
 import { fetchStripeAvailability, fetchBalanceTransaction } from '../_shared/stripeBalanceAvailability.ts';
+import { returnFailedPayout } from '../_shared/payoutReturn.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -140,10 +141,26 @@ async function notifyHireReminders(rows: any[]) {
   }
 }
 
+// Failed withdrawals whose money hasn't come back yet: try again, and tell the user once it is back in Available.
+async function retryPendingReturns(): Promise<number> {
+  const res = await fetch(rest('/payout_requests?status=eq.failed&return_status=eq.pending&select=id,host_id,amount&limit=50'), { headers: H });
+  const rows: Array<{ id: string; host_id: string; amount: number }> = await res.json().catch(() => []);
+  let returned = 0;
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const outcome = await returnFailedPayout(r.id);
+    if (outcome === 'returned') {
+      returned++;
+      await insertNotification({ user_id: r.host_id, actor_id: null, actor_name: 'Filmons', type: 'payout_failed', title: `Your $${Number(r.amount).toFixed(2)} CAD is back in Available to withdraw.` });
+    }
+  }
+  return returned;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
+    const returnedPayouts = await retryPendingReturns().catch(() => 0);
     const stripeSync = await syncStripeAvailability().catch(e => {
       console.error('syncStripeAvailability failed (non-fatal, release still runs off whatever status is already stored):', e);
       return { checked: 0, updated: 0, nowAvailable: 0 };
@@ -166,7 +183,7 @@ Deno.serve(async (req) => {
     ]);
 
     return new Response(JSON.stringify({
-      success: true, released, stripeSync,
+      success: true, released, stripeSync, returnedPayouts,
       autoReleased: { opportunity: oppReleased.length, hire: hireReleased.length },
       reminders: { opportunity: oppReminders.length, hire: hireReminders.length },
     }), { headers: { ...cors, 'Content-Type': 'application/json' } });

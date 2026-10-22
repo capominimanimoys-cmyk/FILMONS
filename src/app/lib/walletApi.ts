@@ -12,6 +12,8 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 export interface WalletBalance {
   pending: number;
   available: number;
+  /** Withdrawals reserved and on their way to the bank (not yet confirmed paid by Stripe). */
+  processing: number;
   currency: string;
 }
 
@@ -107,6 +109,10 @@ export interface PayoutRequest {
   rejected_at: string | null;
   stripe_transfer_id: string | null;
   stripe_payout_id: string | null;
+  /** Why a withdrawal failed, in Stripe's words, and whether the money is back in Available. */
+  failure_code?: string | null;
+  failure_message?: string | null;
+  return_status?: 'pending' | 'returned' | 'needs_review' | null;
   arrival_date: string | null;
   payout_currency: string | null;
   payout_amount: number | null;
@@ -131,9 +137,13 @@ async function getOrCreateHostWalletId(hostId: string): Promise<string | null> {
 
 export const walletApi = {
   async getBalance(hostId: string): Promise<WalletBalance> {
-    const { data } = await supabase.from('wallets').select('pending_balance, available_balance, currency').eq('owner_type', 'host').eq('owner_id', hostId).maybeSingle();
-    if (!data) return { pending: 0, available: 0, currency: 'CAD' };
-    return { pending: Number(data.pending_balance) || 0, available: Number(data.available_balance) || 0, currency: data.currency || 'CAD' };
+    const [{ data }, { data: inFlight }] = await Promise.all([
+      supabase.from('wallets').select('pending_balance, available_balance, currency').eq('owner_type', 'host').eq('owner_id', hostId).maybeSingle(),
+      supabase.from('payout_requests').select('amount').eq('host_id', hostId).in('status', ['requested', 'under_review', 'approved', 'processing', 'sent']),
+    ]);
+    const processing = (inFlight ?? []).reduce((n: number, r: any) => n + (Number(r.amount) || 0), 0);
+    if (!data) return { pending: 0, available: 0, processing, currency: 'CAD' };
+    return { pending: Number(data.pending_balance) || 0, available: Number(data.available_balance) || 0, processing, currency: data.currency || 'CAD' };
   },
 
   async getTransactions(hostId: string, limit = 100): Promise<WalletTransaction[]> {
