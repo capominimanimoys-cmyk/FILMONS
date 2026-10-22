@@ -2,6 +2,7 @@
  * Filmons Home — Tinder-style discovery deck.
  * Users swipe through a mixed feed of listings, services, studios, and creator profiles.
  */
+import { CONTENT_DELETED_EVENT } from '../../lib/contentDeleted';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router';
@@ -245,6 +246,23 @@ const CONNECT_PAGE_CACHE = {
   pages: new Map<string, { at: number; entry: any }>(),
   levels: new Map<string, Map<string, TrustLevel>>(),
 };
+/** Does this Connect feed item show the deleted post / portfolio work / album / listing? */
+function connectItemShows(item: any, kind: string, id: string): boolean {
+  if (item.kind === 'portfolio') return (kind === 'portfolio_item' || kind === 'portfolio_album') && item.entry.id === id;
+  if (item.kind === 'activity') return item.entry.targetId === id || item.entry.post?.id === id || item.entry.portfolioEntry?.id === id;
+  if (item.kind === 'repost-group') return item.targetId === id || item.post?.id === id || item.portfolioEntry?.id === id;
+  return false;
+}
+// Cached Connect pages must forget deleted content even while Home isn't on screen.
+if (typeof window !== 'undefined') {
+  window.addEventListener(CONTENT_DELETED_EVENT, e => {
+    const { kind, id } = (e as CustomEvent).detail ?? {};
+    if (!id) return;
+    CONNECT_PAGE_CACHE.pages.forEach(v => {
+      if (v.entry?.items) v.entry = { ...v.entry, items: v.entry.items.filter((i: any) => !connectItemShows(i, kind, id)) };
+    });
+  });
+}
 function readConnectPageCache(userId?: string): Partial<Record<string, any>> {
   const out: Record<string, any> = {};
   const prefix = `${userId ?? ''}::`;
@@ -465,6 +483,27 @@ export function Home() {
   // Removes every feed item that displays this specific post: the owner's
   // own post_published entry, a content_reposted entry pointing at it, or
   // a combined repost-group whose attached post is it.
+  // Anything deleted anywhere (post, listing, portfolio work or album) leaves Home right away -- the Connect feed,
+  // its cached pages, the listing deck and the portfolio suggestions.
+  useEffect(() => {
+    const onDeleted = (e: Event) => {
+      const { kind, id } = (e as CustomEvent).detail ?? {};
+      if (!id) return;
+      setConnectItems(prev => prev.filter(i => !connectItemShows(i, kind, id)));
+      Object.keys(connectCacheRef.current).forEach(k => {
+        const c = connectCacheRef.current[k];
+        if (c) connectCacheRef.current[k] = { ...c, items: c.items.filter(i => !connectItemShows(i, kind, id)) };
+      });
+      if (kind === 'listing') {
+        setListings(prev => prev.filter(l => l.id !== id));
+        setRawListings(prev => prev.filter(l => l.id !== id));
+      }
+      setRecommendedPortfolio(prev => prev.filter(en => en.id !== id));
+    };
+    window.addEventListener(CONTENT_DELETED_EVENT, onDeleted);
+    return () => window.removeEventListener(CONTENT_DELETED_EVENT, onDeleted);
+  }, []);
+
   const handleConnectPostDeleted = useCallback((postId: string) => {
     setConnectItems(prev => prev.filter(item => {
       if (item.kind === 'activity') return item.entry.targetId !== postId;
