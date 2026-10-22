@@ -3,6 +3,7 @@
  * CRUD for portfolio_items table.
  * Fails gracefully if the table doesn't exist yet.
  */
+import { announceContentDeleted } from '../../lib/contentDeleted';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { logProfileEngagement } from './profileEngagement';
@@ -350,6 +351,7 @@ export async function deletePortfolioItem(id: string): Promise<boolean> {
   const { data: deleted, error } = await supabase.from('portfolio_items').delete().eq('id', id).select('id');
   if (error) { console.error('[portfolio] delete error:', error.message); return false; }
   if (!deleted?.length) { console.error('[portfolio] delete removed no rows for', id); return false; }
+  announceContentDeleted('portfolio_item', id);
 
   if (item) {
     const paths = [item.media_url, item.thumbnail_url, item.media_url_original]
@@ -672,6 +674,7 @@ export async function replaceItemMedia(itemId: string, file: File): Promise<bool
 export async function deleteAlbum(id: string): Promise<boolean> {
   const { error } = await supabase.from('portfolio_albums').delete().eq('id', id);
   if (error) { console.error('[albums] delete error:', error.message); return false; }
+  announceContentDeleted('portfolio_album', id);
   return true;
 }
 

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router';
+import { announceContentDeleted } from '../../lib/contentDeleted';
 import { prefetchHandlers } from '../lib/prefetch';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
@@ -354,6 +355,7 @@ function DeleteConfirmModal({ listing, userId, onCancel, onDeleted }: {
       }
       toast.success('Listing deleted');
       invalidateListingsCache();
+      announceContentDeleted('listing', listing.id);
       onDeleted();
     } catch (e: any) {
       toast.error(e?.message || 'Could not delete listing');

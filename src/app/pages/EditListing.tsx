@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { announceContentDeleted } from '../../lib/contentDeleted';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { listingsApi } from '../lib/api';
@@ -128,6 +129,7 @@ export function EditListing() {
         throw new Error(data.error || 'Could not delete listing');
       }
       toast.success('Listing deleted');
+      announceContentDeleted('listing', id);
       navigate('/my-listings');
     } catch (e: any) {
       toast.error(e?.message || 'Could not delete listing');

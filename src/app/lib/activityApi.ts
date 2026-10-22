@@ -144,6 +144,14 @@ async function filterVisible(rows: any[], viewerId?: string): Promise<any[]> {
     return r.data ?? [];
   };
 
+  // A post that could only be soft-deleted (archived) still has a row: look those up separately and best-effort,
+  // so a missing column can never blank the whole feed (see the note on `posts` below).
+  const archivedPostIds = new Set<string>();
+  if (postIds.length) {
+    const { data: arch } = await supabase.from('posts').select('id, is_archived').in('id', postIds).eq('is_archived', true);
+    (arch ?? []).forEach((r: any) => archivedPostIds.add(r.id));
+  }
+
   const [itemRows, albumRows, albumItemCounts, listingRows, connectionRows, recommendationRows, postRows] = await Promise.all([
     portfolioItemIds.length
       ? supabase.from('portfolio_items').select('id, user_id, is_hidden').in('id', portfolioItemIds).then(checked('portfolio_items'))
@@ -214,7 +222,7 @@ async function filterVisible(rows: any[], viewerId?: string): Promise<any[]> {
     switch (r.target_type) {
       case 'post': {
         const post = postMap.get(r.target_id);
-        if (!post) return false;
+        if (!post || archivedPostIds.has(r.target_id)) return false;
         if (post.visibility === 'private') return post.author_id === viewerId;
         if (post.visibility === 'connections') return post.author_id === viewerId || viewerConnections.has(post.author_id);
         return true;

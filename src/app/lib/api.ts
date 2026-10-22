@@ -1,4 +1,5 @@
 import { Listing, User, Review, Post, Comment, Conversation, ChatMessage, Visibility } from '../types';
+import { announceContentDeleted } from '../../lib/contentDeleted';
 import { supabase } from '../../lib/supabase';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as notifs from './notifications';
@@ -2335,7 +2336,7 @@ export const postsApi = {
     // Scope to own posts when we have the user id (prevents accidental cross-user deletes)
     if (currentUser?.id) hardQ.eq('author_id', currentUser.id);
     const { error: hardErr } = await hardQ;
-    if (!hardErr) return;
+    if (!hardErr) { announceContentDeleted('post', postId); return; }
 
     // Fallback: soft delete if RLS or FK constraints block the hard delete
     const { error: softErr } = await supabase
@@ -2343,6 +2344,7 @@ export const postsApi = {
       .update({ is_archived: true, is_deleted: true })
       .eq('id', postId);
     if (softErr) throw new Error(hardErr.message || softErr.message);
+    announceContentDeleted('post', postId);
   },
 
   /** Delete the current user's repost of a specific original post */

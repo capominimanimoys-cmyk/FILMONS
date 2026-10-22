@@ -5,19 +5,39 @@
 // rail's height is fixed, but a portrait item still crops less than a
 // landscape one would at the same box, per spec ("don't force all cards
 // into the same media ratio, keep the rail visually stable").
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { Heart, Layers, BadgeCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserAvatar } from './AccountTypeBadge';
 import { TrustBadge } from './trust/TrustBadge';
-import { getPortfolioMediaAspectRatio } from './PortfolioMedia';
 import { togglePortfolioSave, isPortfolioSaved, type PortfolioFeedEntry } from '../lib/portfolioApi';
 import { logPortfolioInteraction } from '../lib/personalization';
 import { usePortfolioPreview } from '../context/PortfolioPreviewContext';
 import type { TrustLevel } from '../lib/trustApi';
 
-const RAIL_HEIGHT = 160;
+// Every card is the same size: same width, same picture box, same text area.
+const CARD_WIDTH = 176;
+const MEDIA_HEIGHT = 208;
+
+/** A video work plays a muted looping preview while it is on screen (paused off screen to save battery/data). */
+function VideoPreview({ src, poster }: { src: string; poster?: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const v = ref.current; if (!v) return;
+    const io = new IntersectionObserver(([e]) => {
+      setNear(e.isIntersecting);
+      if (e.isIntersecting) v.play().catch(() => {}); else v.pause();
+    }, { threshold: 0.4 });
+    io.observe(v);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <video ref={ref} src={near ? src : undefined} poster={poster} muted loop playsInline autoPlay preload="metadata"
+      className="w-full h-full object-cover" />
+  );
+}
 
 function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEntry; trustLevel?: TrustLevel }) {
   const navigate = useNavigate();
@@ -31,7 +51,7 @@ function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEn
   const title = isAlbum ? entry.album.title : entry.item.title;
   const category = isAlbum ? (entry.album as any).category : entry.item.category;
   const thumb = isAlbum ? entry.coverUrl : (entry.item.thumbnail_url || entry.item.media_url);
-  const ratio = isAlbum ? (entry.coverAspectRatio || 4 / 5) : getPortfolioMediaAspectRatio(entry.item);
+  const videoSrc = !isAlbum && entry.item.media_type === 'video' ? entry.item.media_url : undefined;
 
   useEffect(() => { if (user) isPortfolioSaved(user.id, targetId, targetType).then(setSaved); }, [targetId, user?.id]);
 
@@ -47,19 +67,16 @@ function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEn
     logPortfolioInteraction(user.id, { category: category ?? '' }, next ? 'save' : 'unsave');
   };
 
-  // Width scales with the item's own ratio at a fixed rail height, so a
-  // vertical reel and a widescreen still both read at their real shape
-  // instead of being stretched/cropped into one uniform box.
-  const width = Math.round(RAIL_HEIGHT * Math.min(Math.max(ratio, 0.6), 1.6));
-
   return (
     <button
       onClick={openCreatorPortfolio}
       className="shrink-0 snap-start bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden text-left flex flex-col"
-      style={{ width }}
+      style={{ width: CARD_WIDTH }}
     >
-      <div className="relative bg-gray-100" style={{ height: RAIL_HEIGHT }}>
-        {thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100" />}
+      <div className="relative bg-gray-100 shrink-0" style={{ height: MEDIA_HEIGHT }}>
+        {videoSrc
+          ? <VideoPreview src={videoSrc} poster={thumb && thumb !== videoSrc ? thumb : undefined} />
+          : thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100" />}
         {isAlbum && (
           <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 text-[10px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded-full">
             <Layers className="w-2.5 h-2.5" /> {entry.itemCount}
@@ -72,7 +89,7 @@ function PortfolioSuggestionCard({ entry, trustLevel }: { entry: PortfolioFeedEn
           <Heart className={`w-3 h-3 ${saved ? 'text-red-500 fill-red-500' : 'text-white'}`} />
         </button>
       </div>
-      <div className="p-2.5">
+      <div className="p-2.5 flex-1 min-h-[88px]">
         <p className="text-xs font-bold text-gray-900 truncate">{title}</p>
         <div className="flex items-center gap-1 mt-1 min-w-0">
           <UserAvatar user={{ id: entry.creator.id, name: entry.creator.name, avatar: entry.creator.avatar_url }} size={16} />
@@ -111,7 +128,7 @@ export function PortfolioYouMayLikeRow({ entries, trustLevels, onSeeAll }: {
           <button onClick={onSeeAll} className="text-xs font-bold text-blue-600 shrink-0">See all →</button>
         )}
       </div>
-      <div className="flex gap-2.5 overflow-x-auto no-scrollbar px-3.5" style={{ scrollSnapType: 'x mandatory' }}>
+      <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar px-3.5" style={{ scrollSnapType: 'x mandatory', scrollPaddingLeft: 14 }}>
         {entries.map(entry => (
           <PortfolioSuggestionCard key={entry.id} entry={entry} trustLevel={trustLevels?.get(entry.creator.id)} />
         ))}
