@@ -1584,6 +1584,7 @@ function rowToPostClient(row: any, currentUserId?: string, likedPostIds?: Set<st
     visibility:      (row.visibility as Visibility) || 'public',
     showInReels:     !!row.show_in_reels,
     listings:        Array.isArray(meta.listings) ? meta.listings : undefined,
+    portfolioItems:  Array.isArray(meta.portfolioItems) ? meta.portfolioItems : undefined,
     // Portfolio attachment metadata for PostCard's Portfolio section
     portfolioItemId:       row.portfolio_item_id       || undefined,
     portfolioItemTitle:    row.portfolio_item_title    || undefined,
@@ -2092,6 +2093,8 @@ export const postsApi = {
       showInReels?: boolean;
       /** Every listing linked to the post (the first also fills the single listing_* columns). */
       listings?: { id: string; title?: string; price?: number; mode?: string; city?: string; image?: string | null }[];
+      /** Every portfolio work attached (the first also fills the single portfolio_item_* columns). */
+      portfolioItems?: { id: string; title?: string; category?: string; thumb?: string | null }[];
     },
   ): Promise<Post> => {
     const currentUser = authApi.getCurrentUser();
@@ -2121,6 +2124,7 @@ export const postsApi = {
       ownAlbum:        extraMeta?.ownAlbum      || null,
       course:          extraMeta?.course        || null,
       listings:        extraMeta?.listings?.length ? extraMeta.listings : null,
+      portfolioItems:  extraMeta?.portfolioItems?.length ? extraMeta.portfolioItems : null,
     };
 
     // Direct Supabase insert — only columns that exist in posts table

@@ -518,7 +518,7 @@ function TagPeopleSheet({ photo, editedPhoto, tagPins, setTagPins, collabs, setC
 }
 
 // ── RichCaptionBox ────────────────────────────────────────────────────────────
-function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollabs, mentionedUsers, setMentionedUsers, photos, editedPhotos, isPhoto, isCreatorPlus, selectedListings, setSelectedListings, onOpenListingBrowser, onOpenListingTagger, listingPins, onOpenCollabSheet, onOpenTrimSheet, publishedPostId, tagPins, setTagPins, selectedPortfolioItem, setSelectedPortfolioItem, onOpenPortfolioBrowser, selectedCourse, setSelectedCourse }: any) {
+function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollabs, mentionedUsers, setMentionedUsers, photos, editedPhotos, isPhoto, isCreatorPlus, selectedListings, setSelectedListings, onOpenListingBrowser, onOpenListingTagger, listingPins, onOpenCollabSheet, onOpenTrimSheet, publishedPostId, tagPins, setTagPins, selectedPortfolioItems, setSelectedPortfolioItems, onOpenPortfolioBrowser, selectedCourse, setSelectedCourse }: any) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showTagPeople,setShowTagPeople]= useState(false);
   const [pendingPin,   setPendingPin]   = useState<{x:number;y:number}|null>(null);
@@ -859,24 +859,24 @@ function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollab
                 (see selectedPortfolioItem), never a copy of the item's
                 data, per spec ("Don't duplicate the Portfolio project's
                 data inside the Post"). */}
-            {selectedPortfolioItem && (
-              <div className="px-4 pt-2 pb-1">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Attached Portfolio</p>
-                <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
-                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
-                    {selectedPortfolioItem.thumbnail_url && (
-                      <img src={selectedPortfolioItem.thumbnail_url} className="w-full h-full object-cover" />
-                    )}
+            {(selectedPortfolioItems ?? []).length > 0 && (
+              <div className="px-4 pt-2 pb-1 space-y-2">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Attached Portfolio ({selectedPortfolioItems.length})</p>
+                {selectedPortfolioItems.map((it: any) => (
+                  <div key={it.id} className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                      {it.thumbnail_url && <img src={it.thumbnail_url} className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-gray-900 truncate">{it.title}</p>
+                      <p className="text-xs text-gray-400 truncate">{[it.category, it.subcategory].filter(Boolean).join(' · ')}</p>
+                    </div>
+                    <button onClick={()=>setSelectedPortfolioItems((p: any[])=>p.filter(x=>x.id!==it.id))}
+                      className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                      <X className="w-3.5 h-3.5 text-gray-600"/>
+                    </button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{selectedPortfolioItem.title}</p>
-                    <p className="text-xs text-gray-400 truncate">{[selectedPortfolioItem.category, selectedPortfolioItem.subcategory].filter(Boolean).join(' · ')}</p>
-                  </div>
-                  <button onClick={()=>setSelectedPortfolioItem(null)}
-                    className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
-                    <X className="w-3.5 h-3.5 text-gray-600"/>
-                  </button>
-                </div>
+                ))}
               </div>
             )}
             <button onClick={onOpenPortfolioBrowser}
@@ -885,8 +885,8 @@ function RichCaptionBox({ caption, setCaption, tags, setTags, collabs, setCollab
                 <Image className="w-4 h-4 text-gray-500"/>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">{selectedPortfolioItem ? 'Change Portfolio Work' : 'Attach Portfolio Work'}</p>
-                <p className="text-xs text-gray-400">{selectedPortfolioItem ? selectedPortfolioItem.title : 'Show off a project from your Portfolio'}</p>
+                <p className="text-sm font-semibold text-gray-900">{selectedPortfolioItems?.length ? 'Add / Change Portfolio Work' : 'Attach Portfolio Work'}</p>
+                <p className="text-xs text-gray-400">{selectedPortfolioItems?.length ? `${selectedPortfolioItems.length} selected` : 'Show off projects from your Portfolio'}</p>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-300 shrink-0"/>
             </button>
@@ -1167,7 +1167,7 @@ const CANADA_LOCATIONS_GEO = [
 // Alias without geo for simple use
 const CANADA_LOCATIONS = CANADA_LOCATIONS_GEO;
 
-function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,textAlign,kind,ratio,audioTitle,audioArtist,caption,setCaption,tags,setTags,collabs,setCollabs,mentionedUsers,setMentionedUsers,location,setLoc,credits,setCredits,selectedMusic,setSelectedMusic,onOpenMusicBrowser,onOpenTrimSheet,selectedListings,setSelectedListings,onOpenListingBrowser,onOpenListingTagger,listingPins,tagPins,setTagPins,isCreatorPlus,onOpenCollabSheet,publishedPostId,ic,isPhoto,isVideo,selectedPortfolioItem,setSelectedPortfolioItem,onOpenPortfolioBrowser,selectedCourse,setSelectedCourse }: any) {
+function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,textAlign,kind,ratio,audioTitle,audioArtist,caption,setCaption,tags,setTags,collabs,setCollabs,mentionedUsers,setMentionedUsers,location,setLoc,credits,setCredits,selectedMusic,setSelectedMusic,onOpenMusicBrowser,onOpenTrimSheet,selectedListings,setSelectedListings,onOpenListingBrowser,onOpenListingTagger,listingPins,tagPins,setTagPins,isCreatorPlus,onOpenCollabSheet,publishedPostId,ic,isPhoto,isVideo,selectedPortfolioItems,setSelectedPortfolioItems,onOpenPortfolioBrowser,selectedCourse,setSelectedCourse }: any) {
   const [showLocSheet, setShowLocSheet] = useState(false);
   const [locSearch,    setLocSearch]    = useState('');
   const [locResults,   setLocResults]   = useState<LocationResult[]>([]);
@@ -1284,8 +1284,8 @@ function CaptionStep({ photos,editedPhotos,videoUrl,audioUrl,textContent,textBg,
         listingPins={listingPins}
         tagPins={tagPins}
         setTagPins={setTagPins}
-        selectedPortfolioItem={selectedPortfolioItem}
-        setSelectedPortfolioItem={setSelectedPortfolioItem}
+        selectedPortfolioItems={selectedPortfolioItems}
+        setSelectedPortfolioItems={setSelectedPortfolioItems}
         onOpenPortfolioBrowser={onOpenPortfolioBrowser}
         selectedCourse={selectedCourse}
         setSelectedCourse={setSelectedCourse}
@@ -2679,7 +2679,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [publishedPostId,   setPublishedPostId]  = useState<string|null>(null);
   const [showListingBrowser, setShowListingBrowser] = useState(false);
   const [showPortfolioBrowser, setShowPortfolioBrowser] = useState(false);
-  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem|null>(null);
+  const [selectedPortfolioItems, setSelectedPortfolioItems] = useState<PortfolioItem[]>([]);
+  const selectedPortfolioItem = selectedPortfolioItems[0] ?? null;
   const [selectedCourse, setSelectedCourse] = useState<PostCourseAttachment|null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [textOverlays,       setTextOverlays]       = useState<TextLayer[]>([]);
@@ -3022,7 +3023,11 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
         // uploadPostMedia hands back that same in-flight/finished upload.
         return Promise.all(urls.map(async (url) => {
           if (!(url.startsWith('blob:') || url.startsWith('data:'))) return url; // already remote
-          return (await uploadPostMedia(url, user.id, folder)) ?? url;
+          const remote = await uploadPostMedia(url, user.id, folder);
+          // A local blob:/data: URL only works on this device, so saving it would
+          // publish a post whose media never loads for anyone. Fail visibly instead.
+          if (!remote) throw new Error(`Your ${folder === 'videos' ? 'video' : 'photo'} couldn't be uploaded. Check your connection and try again.`);
+          return remote;
         }));
       };
 
@@ -3105,6 +3110,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           portfolioItemTitle:    selectedPortfolioItem?.title,
           portfolioItemCategory: selectedPortfolioItem?.category,
           portfolioItemThumb:    selectedPortfolioItem?.thumbnail_url,
+          portfolioItems:        selectedPortfolioItems.map(i=>({id:i.id,title:i.title,category:i.category,thumb:i.thumbnail_url})),
           course:                selectedCourse ?? undefined,
         }
       );
@@ -3338,8 +3344,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
       {/* Portfolio Browser -- "Select Portfolio Work" */}
       {showPortfolioBrowser && (
         <PortfolioBrowser
-          selectedId={selectedPortfolioItem?.id}
-          onSelect={(item)=>{ setSelectedPortfolioItem(item); setShowPortfolioBrowser(false); }}
+          selectedIds={selectedPortfolioItems.map(i=>i.id)}
+          onSelect={(item)=>setSelectedPortfolioItems(p=>p.some(x=>x.id===item.id)?p.filter(x=>x.id!==item.id):[...p,item])}
           onClose={()=>setShowPortfolioBrowser(false)}
         />
       )}
@@ -3803,8 +3809,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
               listingPins={listingPins}
               tagPins={tagPins}
               setTagPins={setTagPins}
-              selectedPortfolioItem={selectedPortfolioItem}
-              setSelectedPortfolioItem={setSelectedPortfolioItem}
+              selectedPortfolioItems={selectedPortfolioItems}
+              setSelectedPortfolioItems={setSelectedPortfolioItems}
               onOpenPortfolioBrowser={()=>setShowPortfolioBrowser(true)}
               selectedCourse={selectedCourse}
               setSelectedCourse={setSelectedCourse}

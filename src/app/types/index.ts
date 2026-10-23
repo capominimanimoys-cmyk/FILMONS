@@ -152,6 +152,7 @@ export interface Post {
   listingCity?: string;
   listingImage?: string;
   /** All listings linked to the post (listingId/listingTitle... describe the first). */
+  portfolioItems?: { id: string; title?: string; category?: string; thumb?: string | null }[];
   listings?: { id: string; title?: string; price?: number; mode?: string; city?: string; image?: string | null }[];
   allowComments?: boolean;
   allowSharing?: boolean;

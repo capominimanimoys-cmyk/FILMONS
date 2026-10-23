@@ -59,6 +59,7 @@ export function PostDetail() {
           audio_url:       data.audio_url,
           listingId:       data.listing_id,
           listings:        Array.isArray(data.metadata?.listings) ? data.metadata.listings : undefined,
+          portfolioItems:  Array.isArray(data.metadata?.portfolioItems) ? data.metadata.portfolioItems : undefined,
           listingTitle:    data.listing_title,
           listingPrice:    data.listing_price,
           listingMode:     data.listing_mode,
