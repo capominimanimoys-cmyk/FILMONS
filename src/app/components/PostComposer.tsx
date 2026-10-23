@@ -2580,6 +2580,9 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   // Media
   const [photos,     setPhotos]  = useState<string[]>([]);
   const [videoUrl,   setVideo]   = useState('');
+  // More videos picked in "Select Multiple" (videoUrl stays the first one, used for preview/trim).
+  const [extraVideos, setExtraVideos] = useState<string[]>([]);
+  useEffect(() => { if (!videoUrl) setExtraVideos([]); }, [videoUrl]);
   const [audioUrl,   setAudio]   = useState('');
   const [textContent,setText]    = useState('');
   const [textBg,     setTextBg]  = useState('dark');
@@ -2819,15 +2822,24 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
     if (multiSelectMode) {
       // Multi-select: numbered selection order
       if (item.type === 'video') {
-        if (videoUrl === item.url) { setVideo(''); setGalSel(prev=>{ const n=new Set(prev); n.delete(i); return n; }); }
-        else { setVideo(item.url); setGalSel(prev=>{ const n=new Set(prev); n.add(i); return n; }); }
+        const dropSel = () => setGalSel(prev=>{ const n=new Set(prev); n.delete(i); return n; });
+        if (videoUrl === item.url) {
+          // Removing the first video: the next one (if any) takes its place.
+          dropSel();
+          if (extraVideos.length) { setVideo(extraVideos[0]); setExtraVideos(extraVideos.slice(1)); } else setVideo('');
+        } else if (extraVideos.includes(item.url)) {
+          dropSel(); setExtraVideos(v => v.filter(u => u !== item.url));
+        } else if (photos.length + (videoUrl ? 1 : 0) + extraVideos.length < 10) {
+          if (!videoUrl) setVideo(item.url); else setExtraVideos(v => [...v, item.url]);
+          setGalSel(prev=>{ const n=new Set(prev); n.add(i); return n; });
+        } else toast.info('You can select up to 10 photos and videos');
       } else {
         setGalSel(prev => {
           const n = new Set(prev);
           if (n.has(i)) {
             n.delete(i);
             setPhotos(galItems.filter((_,idx) => n.has(idx) && galItems[idx].type==='photo').map(g=>g.url));
-          } else if (n.size < 10) {
+          } else if (n.size < 10 && photos.length + (videoUrl ? 1 : 0) + extraVideos.length < 10) {
             n.add(i);
             setPhotos(p => {
               const next = [...p.filter(u => u!==item.url), item.url];
@@ -3015,7 +3027,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
       };
 
       const rawImgs = isPhoto ? photos : [];
-      const rawVids = isVideo && videoUrl ? [videoUrl] : [];
+      // Every selected video is published (a photo+video post used to drop its video), several at once included.
+      const rawVids = (isVideo || isPhoto) && videoUrl ? [videoUrl, ...extraVideos] : [];
       console.log('[publish] rawImgs:', rawImgs.length, 'rawVids:', rawVids.length);
       const [imgs, vids] = await Promise.all([
         rawImgs.length ? uploadMedia(rawImgs, 'images') : Promise.resolve([] as string[]),
@@ -3057,7 +3070,12 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           snippetStart: selectedMusic?.snippetStart,
           snippetEnd:   selectedMusic?.snippetEnd,
           location:     location || undefined,
-          showInReels:  showInReels && isPhoto,
+          postType:     (isPhoto && rawImgs.length && rawVids.length) ? 'mixed' : undefined,
+          // Every linked listing, not just the first.
+          listings:     (selectedListings?.length ? selectedListings : []).filter((l:any)=>isUUID(l.id)).map((l:any)=>({
+            id: String(l.id), title: l.title, price: l.price, mode: l.listingMode || l.mode, city: l.city, image: l.images?.[0] || l.image || null,
+          })),
+          showInReels:  showInReels && isPhoto && !rawVids.length,
           // Non-destructive crop: store transform metadata, keep original file
           cropMeta: isPhoto && perPhotoEdits.current.size > 0
             ? Array.from({ length: photos.length }, (_, i) => {
@@ -3489,7 +3507,7 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
             const selectedPhoto = photos.length > 0 ? photos[0] : null;
             const selectedVideo = videoUrl || null;
             const hasSelection  = !!(selectedPhoto || selectedVideo);
-            const totalSelected = photos.length + (videoUrl ? 1 : 0);
+            const totalSelected = photos.length + (videoUrl ? 1 : 0) + extraVideos.length;
             return (
               <div className="flex flex-col bg-black" style={{minHeight:'calc(100vh - 3.5rem)'}}>
 
