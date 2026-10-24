@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
       buyer_fee_rate:   parseFloat(session.metadata?.buyer_fee_rate || '0'),
       buyer_fee_amount: parseFloat(session.metadata?.buyer_fee_amount || '0'),
       fee_config_version: session.metadata?.fee_config_version || null,
+      deposit_amount:   parseFloat(session.metadata?.deposit_amount || '0'),
     };
 
     if (!userId) return new Response(JSON.stringify({ error: 'Missing metadata' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -106,7 +107,7 @@ Deno.serve(async (req) => {
 
   // ── POST /stripe-charge — Create Checkout Session ─────────────
   try {
-    const { subtotal, customer_email, description, success_url, cancel_url, user_id, host_id, rental_end_date, agreement_id, conversation_id, message_id } = await req.json();
+    const { subtotal, customer_email, description, success_url, cancel_url, user_id, host_id, rental_end_date, agreement_id, conversation_id, message_id, listing_id } = await req.json();
 
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return new Response(JSON.stringify({ error: 'Stripe not configured' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -146,12 +147,37 @@ Deno.serve(async (req) => {
     // account, Stripe applies it on top of what's sent here.
     const breakdown = await computeBreakdown({ subtotal });
 
+    // Refundable security deposit -- looked up from the listing itself, never
+    // taken from the client. Charged on top of price + Filmons Fee, carries no
+    // Filmons Fee, and is never credited to the host (see complete-order).
+    let depositAmount = 0;
+    {
+      let listingId: string | null = listing_id || null;
+      if (agreement_id) {
+        const ag = await dbSelectOne('rental_agreements', `id=eq.${agreement_id}`);
+        if (ag?.listing_id) listingId = ag.listing_id;
+      }
+      if (listingId) {
+        const l = await dbSelectOne('listings', `id=eq.${encodeURIComponent(listingId)}`);
+        let meta = l?.metadata;
+        if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+        const amt = Number(meta?.securityDeposit);
+        if (meta?.depositRequired && Number.isFinite(amt) && amt > 0) depositAmount = Math.round(amt * 100) / 100;
+      }
+    }
+
     const params = new URLSearchParams({
       'mode':                                           'payment',
       'line_items[0][price_data][currency]':            'cad',
       'line_items[0][price_data][unit_amount]':         String(Math.round(breakdown.total * 100)),
       'line_items[0][price_data][product_data][name]':  description || 'Filmons Payment',
       'line_items[0][quantity]':                        '1',
+      ...(depositAmount > 0 ? {
+        'line_items[1][price_data][currency]':           'cad',
+        'line_items[1][price_data][unit_amount]':        String(Math.round(depositAmount * 100)),
+        'line_items[1][price_data][product_data][name]': 'Refundable security deposit',
+        'line_items[1][quantity]':                       '1',
+      } : {}),
       'success_url':                                    success_url,
       'cancel_url':                                     cancel_url,
       // Store metadata for verification — Stripe metadata values are capped
@@ -161,6 +187,7 @@ Deno.serve(async (req) => {
       'metadata[host_id]':                              host_id || '',
       'metadata[cad_amount]':                           String(breakdown.total),
       'metadata[subtotal]':                             String(breakdown.subtotal),
+      'metadata[deposit_amount]':                       String(depositAmount),
       'metadata[buyer_fee_rate]':                        String(breakdown.buyerFeeRate),
       'metadata[buyer_fee_amount]':                      String(breakdown.buyerFeeAmount),
       'metadata[seller_fee_amount]':                     String(breakdown.sellerFeeAmount),

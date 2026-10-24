@@ -495,6 +495,7 @@ Deno.serve(async (req) => {
 
     const hostId = meta.host_id;
     const subtotal = parseFloat(meta.subtotal || '0');
+    const depositAmount = parseFloat(meta.deposit_amount || '0') || 0;
     const buyerFeeAmount = parseFloat(meta.buyer_fee_amount || '0');
     const sellerFeeAmount = parseFloat(meta.seller_fee_amount || '0');
 
@@ -568,6 +569,7 @@ Deno.serve(async (req) => {
               buyer_fee_amount: buyerFeeAmount, seller_fee_rate: 0, seller_fee_amount: sellerFeeAmount,
               fee_config_version: meta.fee_config_version || null,
               stripe_payment_intent_id: session.payment_intent || null,
+              ...(depositAmount > 0 ? { deposit_amount: depositAmount, deposit_status: 'held' } : {}),
             }),
           });
 
@@ -582,10 +584,18 @@ Deno.serve(async (req) => {
             });
           }
 
+          // The client-side order insert may have won the race (ignore-duplicates above), so make sure the deposit is recorded either way.
+          if (depositAmount > 0) {
+            await fetch(rest(`/orders?id=eq.${orderId}&deposit_status=eq.none`), {
+              method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' },
+              body: JSON.stringify({ deposit_amount: depositAmount, deposit_status: 'held' }),
+            });
+          }
+
           if (hostId) {
             await insertNotification({
               user_id: hostId, actor_id: agRow.renter_id, actor_name: renterName,
-              type: 'payment_received', title: `Payment received from ${renterName}`,
+              type: 'payment_received', title: `Payment received from ${renterName}` + (depositAmount > 0 ? ` (+$${depositAmount.toFixed(2)} deposit held until you mark it finished)` : ''),
               conversation_id: meta.conversation_id || null, is_read: false,
             });
           }

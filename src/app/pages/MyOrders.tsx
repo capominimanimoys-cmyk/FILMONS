@@ -36,6 +36,9 @@ interface Order {
   buyer_fee_rate:       number;
   buyer_fee_amount:     number;
   seller_fee_amount:    number;
+  deposit_amount:       number;
+  deposit_status:       string;
+  completed_at:         string | null;
 }
 
 function formatDate(iso: string | null) {
@@ -227,6 +230,33 @@ function RequestRefundButton({ userId, order, onRequested }: { userId: string; o
   );
 }
 
+function FinishButton({ order, onDone }: { order: Order; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  if (order.completed_at || order.refund_status === 'refunded') {
+    return order.completed_at ? <p className="mx-5 mb-3 text-xs font-semibold text-green-600">✓ Finished {formatDate(order.completed_at)}</p> : null;
+  }
+  const finish = async () => {
+    const hasDeposit = order.deposit_amount > 0 && order.deposit_status === 'held';
+    if (!window.confirm(hasDeposit ? `Mark this finished? The $${order.deposit_amount.toFixed(2)} deposit will be returned to the renter.` : 'Mark this rental / service as finished?')) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('complete-order', { body: { orderId: order.id } });
+      let msg = data?.error;
+      if (!msg && error && (error as any).context?.json) { try { msg = (await (error as any).context.json())?.error; } catch {} }
+      if (error || data?.error) toast.error(msg || 'Could not mark as finished');
+      else { toast.success(data?.depositReleased ? 'Finished — deposit returned to the renter' : 'Marked as finished'); onDone(); }
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="px-5 pb-3">
+      <button onClick={finish} disabled={busy}
+        className="w-full py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold disabled:opacity-50">
+        {busy ? 'Working…' : order.deposit_amount > 0 && order.deposit_status === 'held' ? 'Mark finished & return deposit' : 'Mark as finished'}
+      </button>
+    </div>
+  );
+}
+
 function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab: 'renter' | 'host'; userId: string; onRefreshNeeded: () => void }) {
   const navigate = useNavigate();
   return (
@@ -318,6 +348,16 @@ function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab:
           </div>
         )}
       </div>
+
+      {/* Refundable deposit + host "mark finished" */}
+      {order.deposit_amount > 0 && (
+        <div className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {order.deposit_status === 'released'
+            ? <>Deposit ${order.deposit_amount.toFixed(2)} CAD {tab === 'renter' ? 'returned to your card' : 'returned to the renter'} ✓</>
+            : <>Refundable deposit ${order.deposit_amount.toFixed(2)} CAD held{tab === 'host' ? ' — returned to the renter when you mark this finished.' : ' — returned to you when the host marks this finished.'}</>}
+        </div>
+      )}
+      {tab === 'host' && <FinishButton order={order} onDone={onRefreshNeeded} />}
 
       {/* Verification status — statuses only, never the underlying documents */}
       {tab === 'host' && (order.id_verification_status || order.address_verification_status) && (
@@ -433,6 +473,9 @@ export default function MyOrders() {
           buyer_fee_rate:       Number(r.buyer_fee_rate ?? 0),
           buyer_fee_amount:     Number(r.buyer_fee_amount ?? 0),
           seller_fee_amount:    Number(r.seller_fee_amount ?? 0),
+          deposit_amount:       Number(r.deposit_amount ?? 0),
+          deposit_status:       r.deposit_status || 'none',
+          completed_at:         r.completed_at || null,
         };
       }));
     } catch (e) {

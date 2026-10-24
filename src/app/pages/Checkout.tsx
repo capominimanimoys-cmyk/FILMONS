@@ -119,9 +119,10 @@ async function finalizeOrder(params: {
   user: { id?: string; name?: string } | null;
   convId: string;
   msgId: string;
+  depositAmount?: number; // refundable deposit charged on top of totalAmount (card only)
   breakdown: PriceQuote; // server-computed subtotal/fee/total — the single source for what the host is owed and what gets persisted
 }) {
-  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, breakdown } = params;
+  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, breakdown, depositAmount = 0 } = params;
   // Host is only ever charged the seller-side fee — the buyer fee is the
   // renter's cost, not deducted from what the host earns.
   const hostEarnings = breakdown.subtotal - breakdown.sellerFeeAmount;
@@ -303,6 +304,7 @@ async function finalizeOrder(params: {
     seller_fee_rate:     breakdown.sellerFeeRate,
     seller_fee_amount:   breakdown.sellerFeeAmount,
     fee_config_version:  breakdown.feeConfigVersion,
+    ...(depositAmount > 0 ? { deposit_amount: depositAmount, deposit_status: 'held' } : {}),
   })).catch(e => console.warn('Order/transaction save failed:', e));
 
   if (hostUser?.id) {
@@ -597,6 +599,7 @@ export function Checkout() {
             await finalizeOrder({
               pay: msg.paymentRequest!, totalAmount: paidAmount, selectedMethod: method,
               signedAgreement: sa, hostUser, user, convId, msgId, breakdown,
+              depositAmount: Number(result.deposit_amount) || 0,
             });
           } catch (e) { console.warn('finalizeOrder failed:', e); }
         }
@@ -656,7 +659,8 @@ export function Checkout() {
         const all = getListings();
         const l = all.find((x: Listing) => x.id === found.paymentRequest!.listingId) || null;
         setListing(l);
-        if (l?.paymentMethods?.length) setSelectedMethod(l.paymentMethods[0]);
+        if ((l as any)?.depositRequired && Number((l as any)?.securityDeposit) > 0) setSelectedMethod('Credit/Debit Card');
+        else if (l?.paymentMethods?.length) setSelectedMethod(l.paymentMethods[0]);
         if (l?.deliveryOptions?.length) setSelectedDelivery(l.deliveryOptions[0]);
       }
 
@@ -716,6 +720,9 @@ export function Checkout() {
     ? listing.paymentMethods
     : ['Credit/Debit Card']
   ).filter((m: string) => m !== 'Cash' && m !== 'FP');
+  // A deposit has to be refunded to the payer later, so it can only be taken by card.
+  const methodsForPay = (listing as any)?.depositRequired && Number((listing as any)?.securityDeposit) > 0
+    ? ['Credit/Debit Card'] : availableMethods;
   const availableDelivery = listing?.deliveryOptions?.length
     ? listing.deliveryOptions
     : ['pickup'];
@@ -738,6 +745,11 @@ export function Checkout() {
   // (so the page isn't blank) — Pay/Continue stay disabled until quote
   // actually resolves, so this fallback is never what's charged.
   const totalAmount = quote?.total ?? subtotal;
+  // Refundable security deposit the host requires -- charged on top of the total, card only
+  // (stripe-charge re-reads it from the listing; this is just for display). Returned when the host marks the booking finished.
+  const depositAmount = (listing as any)?.depositRequired && Number((listing as any)?.securityDeposit) > 0
+    ? Math.round(Number((listing as any).securityDeposit) * 100) / 100 : 0;
+  const payNowAmount = totalAmount + depositAmount;
 
   const deliveryAddrStr = [deliveryAddress.street, deliveryAddress.city, deliveryAddress.province, deliveryAddress.postal].filter(Boolean).join(', ');
 
@@ -803,6 +815,7 @@ export function Checkout() {
             // if this tab never completes the redirect back — can look up
             // the agreement and send its own notification/email fallback.
             agreement_id:    signedAgreement?.agreementId,
+            listing_id:      pay.listingId,
             conversation_id: convId,
             message_id:      msgId,
           },
@@ -924,7 +937,7 @@ export function Checkout() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Payment Complete!</h2>
           <p className="text-gray-500 text-sm">
-            Your payment of <strong className="text-gray-800">${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</strong> has been confirmed.
+            Your payment of <strong className="text-gray-800">${(Number(payNowAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</strong> has been confirmed.{depositAmount > 0 ? ` $${depositAmount.toFixed(2)} of it is a refundable deposit, returned when the host marks the booking finished.` : ''}
             {effectiveDelivery === 'delivery'
               ? ' The host will arrange delivery with you.'
               : ' Please coordinate pickup details with the host.'}
@@ -1105,11 +1118,20 @@ export function Checkout() {
                       <p>This fee helps Filmons operate the marketplace, provide platform features, process transactions and support the rental experience.</p>
                     </div>
                   )}
+                  {depositAmount > 0 && (
+                    <div className="flex justify-between items-baseline text-sm">
+                      <span className="text-gray-500">Refundable deposit</span>
+                      <span className="font-semibold text-gray-700">+${depositAmount.toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</span>
+                    </div>
+                  )}
+                  {depositAmount > 0 && (
+                    <p className="text-[11px] text-gray-400 leading-snug">Held securely and returned to your card once the host marks the {kind === 'service' ? 'service' : 'rental'} as finished. The host is not paid this amount.</p>
+                  )}
                   <div className="flex items-baseline justify-between border-t border-gray-100 pt-2 mt-1">
                     <span className="text-sm text-gray-600 font-semibold">Total</span>
                     <div className="flex items-baseline gap-1">
                       <span className="text-2xl font-black text-gray-900">
-                        ${totalAmount.toLocaleString('en-CA', { minimumFractionDigits: 2 })}
+                        ${payNowAmount.toLocaleString('en-CA', { minimumFractionDigits: 2 })}
                       </span>
                       <span className="text-xs text-gray-400">CAD</span>
                     </div>
@@ -1145,7 +1167,7 @@ export function Checkout() {
                 <h2 className="font-bold text-gray-900 text-sm">Payment Method</h2>
               </div>
               <div className="p-4 space-y-2">
-                {availableMethods.map(method => {
+                {methodsForPay.map(method => {
                   return (
                     <button key={method} onClick={() => setSelectedMethod(method)}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
@@ -1349,10 +1371,19 @@ export function Checkout() {
                       <span className="font-semibold text-green-600">Free</span>
                     </div>
                   )}
+                  {depositAmount > 0 && (
+                    <div className="flex justify-between items-baseline text-sm">
+                      <span className="text-gray-500">Refundable deposit</span>
+                      <span className="font-semibold text-gray-700">+${depositAmount.toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</span>
+                    </div>
+                  )}
+                  {depositAmount > 0 && (
+                    <p className="text-[11px] text-gray-400 leading-snug">Held securely and returned to your card once the host marks the {kind === 'service' ? 'service' : 'rental'} as finished. The host is not paid this amount.</p>
+                  )}
                   <div className="flex justify-between items-baseline border-t border-gray-100 pt-2 mt-1">
                     <span className="text-sm font-bold text-gray-700">Total to Pay</span>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-black text-gray-900">${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-3xl font-black text-gray-900">${(Number(payNowAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</span>
                       <span className="text-sm text-gray-400">CAD</span>
                     </div>
                   </div>
@@ -1429,7 +1460,7 @@ export function Checkout() {
                           ? <>✍️ Sign agreement to pay</>
                           : isCardMethod
                             ? <>🔒 Pay securely →</>
-                            : <><CreditCard className="w-4 h-4" /> Pay ${(Number(totalAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
+                            : <><CreditCard className="w-4 h-4" /> Pay ${(Number(payNowAmount) || 0).toLocaleString('en-CA', { minimumFractionDigits: 2 })} CAD</>}
               </button>
             </div>
           </>
