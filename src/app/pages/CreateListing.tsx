@@ -820,6 +820,12 @@ function Step5({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
           <Toggle checked={form.depositRequired} onChange={v=>set({depositRequired:v})} label="Deposit Required" sub="Collect a security deposit before the booking"/>
           <Toggle checked={form.insuranceRequired} onChange={v=>set({insuranceRequired:v})} label="Insurance Required" sub="Renter must provide proof of insurance"/>
         </div>
+        {form.depositRequired && (
+          <PriceField label="Deposit amount *" value={form.securityDeposit} onChange={v=>set({securityDeposit:v})} unit="CAD"/>
+        )}
+        {form.depositRequired && (
+          <p className="text-xs text-gray-400 -mt-1">The renter pays this on top of the price. It is held until you mark the rental or service finished, then returned to them. Card payments only.</p>
+        )}
         <Field>
           <Label>Age Requirement</Label>
           <Input value={form.ageRequirement} onChange={e=>set({ageRequirement:e.target.value})} placeholder="e.g. Must be 21+" />

@@ -122,6 +122,8 @@ function VideoPlayer({ src }: { src: string }) {
   // -- closer to a typical portrait post than 16:9 would be, minimizing
   // the jump for the common case while metadata is still loading.
   const [ratio, setRatio] = useState(4 / 5);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   // The video file is only requested once the player is close to the screen (or tapped); until then a
   // black frame with the play button is shown, so a long feed doesn't start dozens of video downloads.
   const boxRef = useRef<HTMLDivElement>(null);
@@ -137,7 +139,7 @@ function VideoPlayer({ src }: { src: string }) {
     if (!near) { setNear(true); return; }
     if (!ref.current) return;
     if (playing) { ref.current.pause(); setPlaying(false); }
-    else { ref.current.play(); setPlaying(true); }
+    else { ref.current.play().then(() => setPlaying(true)).catch(() => setFailed(true)); }
   };
   return (
     <div
@@ -146,16 +148,23 @@ function VideoPlayer({ src }: { src: string }) {
       style={{ aspectRatio: ratio, maxHeight: '80vh', width: ratio < 1 ? `min(100%, calc(80vh * ${ratio}))` : '100%' }}
       onClick={toggle}
     >
-      {near && <video
-        ref={ref} src={`${src.split('#')[0]}#t=0.1`} muted={muted} loop playsInline preload="metadata"
+      {near && !failed && <video
+        key={attempt} ref={ref} src={`${src.split('#')[0]}#t=0.1`} muted={muted} loop playsInline preload="metadata"
         className="w-full h-full object-contain"
         onLoadedMetadata={e => {
           const v = e.currentTarget;
           if (v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight);
         }}
         onEnded={() => setPlaying(false)}
+        onError={() => setFailed(true)}
       />}
-      {!playing && (
+      {failed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-900 text-white">
+          <p className="text-xs font-semibold">{src.startsWith('blob:') ? 'This video was not uploaded' : 'Video couldn\'t load'}</p>
+          {!src.startsWith('blob:') && <button onClick={e => { e.stopPropagation(); setFailed(false); setAttempt(a => a + 1); }} className="px-3 py-1 rounded-full bg-white/20 text-xs font-bold">Retry</button>}
+        </div>
+      )}
+      {!playing && !failed && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
           <div className="w-14 h-14 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
             <Play className="w-6 h-6 text-gray-900 ml-0.5" />
@@ -899,7 +908,7 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
   // have both a portfolio/listing attachment AND photos/video (the media
   // wins for sizing purposes -- it's still visually a media post).
   const hasVisualMedia = hasVideos || photoImages.length > 0 || hasGifs || isStandaloneAudio;
-  const hasAttachment  = !hasVisualMedia && (!!localPost.portfolioItemId || !!localPost.course || !!localPost.listingId || !!localPost.link);
+  const hasAttachment  = !hasVisualMedia && (!!localPost.portfolioItemId || !!localPost.portfolioItems?.length || !!localPost.course || !!localPost.listingId || !!localPost.link);
   const captionVariant: 'with-media' | 'with-attachment' | 'text-only' =
     hasVisualMedia ? 'with-media' : hasAttachment ? 'with-attachment' : 'text-only';
   const captionSizeClass =
@@ -1610,6 +1619,23 @@ export function PostCard({ post: rawPost, onDeleted, onLikeToggled, onReposted, 
               </div>
             </button>
           )}
+          {(localPost.portfolioItems ?? []).filter(w => w.id !== localPost.portfolioItemId).map(w => (
+            <button key={w.id}
+              onClick={()=> detail ? openPortfolioItem(w.id, [], 'item', { forceDetail: true }) : openPortfolioPreview(localPost.userId)}
+              className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5 mx-3 mt-2 text-left hover:bg-gray-100 transition-colors"
+              style={{ width: 'calc(100% - 1.5rem)' }}>
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                {w.thumb && <img src={w.thumb} className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{w.title}</p>
+                {w.category && <p className="text-xs text-gray-400 truncate">{w.category}</p>}
+                <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 mt-0.5">
+                  {detail ? 'View project' : 'View in Portfolio'} <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
+            </button>
+          ))}
           {detail && attachedWork && attachedWork.media_type === 'video' && attachedWork.show_in_reels && !attachedWork.is_hidden && (!attachedWork.visibility || attachedWork.visibility === 'public') && (
             <button onClick={() => navigate(`/reels/pf_${attachedWork.id}`)}
               className="mx-3 mt-1.5 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-gray-900 text-white text-xs font-bold active:scale-95 transition-transform">

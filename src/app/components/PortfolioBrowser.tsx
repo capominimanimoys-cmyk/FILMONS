@@ -20,6 +20,8 @@ interface PortfolioBrowserProps {
    *  extraMeta.ownAlbum) rather than a copy of its items. */
   mode?:       'work' | 'album';
   selectedId?: string;
+  /** Multi-select: highlights every id; onSelect toggles, header shows Done. */
+  selectedIds?: string[];
   onSelect:    (item: PortfolioItem) => void;
   onSelectAlbum?: (album: PortfolioAlbum) => void;
   onClose:     () => void;
@@ -80,7 +82,7 @@ function PortfolioCard({ item, selected, onSelect }: {
   );
 }
 
-export function PortfolioBrowser({ mode = 'work', selectedId, onSelect, onSelectAlbum, onClose }: PortfolioBrowserProps) {
+export function PortfolioBrowser({ mode = 'work', selectedId, selectedIds, onSelect, onSelectAlbum, onClose }: PortfolioBrowserProps) {
   const { user } = useAuth();
   const [activeMode, setActiveMode] = useState<'work' | 'album'>(mode);
   const isAlbumMode = activeMode === 'album';
@@ -124,9 +126,15 @@ export function PortfolioBrowser({ mode = 'work', selectedId, onSelect, onSelect
               <p className="text-base font-black text-gray-900">{isAlbumMode ? 'Select Album' : 'Select Portfolio Work'}</p>
               {loading && <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
             </div>
-            <button onClick={onClose} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-              <X className="w-3.5 h-3.5 text-gray-500" />
-            </button>
+            {selectedIds && !isAlbumMode ? (
+              <button onClick={onClose} className="px-3 h-7 rounded-full bg-blue-600 text-white text-xs font-bold">
+                Done{selectedIds.length ? ` (${selectedIds.length})` : ''}
+              </button>
+            ) : (
+              <button onClick={onClose} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                <X className="w-3.5 h-3.5 text-gray-500" />
+              </button>
+            )}
           </div>
           {onSelectAlbum && (
             <div className="flex gap-1.5 mb-3">
@@ -182,7 +190,7 @@ export function PortfolioBrowser({ mode = 'work', selectedId, onSelect, onSelect
           ) : (
             <div>
               {filtered.map(item => (
-                <PortfolioCard key={item.id} item={item} selected={selectedId === item.id} onSelect={() => onSelect(item)} />
+                <PortfolioCard key={item.id} item={item} selected={selectedIds ? selectedIds.includes(item.id) : selectedId === item.id} onSelect={() => onSelect(item)} />
               ))}
               <div className="h-6" />
             </div>
