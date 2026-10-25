@@ -17,6 +17,7 @@ import { authApi } from '../lib/api';
 import { UserAvatar } from '../components/AccountTypeBadge';
 import { respondToConnectionRequest } from '../lib/connectionsApi';
 import { toast } from 'sonner';
+import { InProgressBookings } from '../components/InProgressBookings';
 
 // ── Time helper ───────────────────────────────────────────────────────────────
 function timeAgo(d: string) {
@@ -835,6 +836,8 @@ export function Notifications() {
             </button>
           )}
         </div>
+
+        <InProgressBookings userId={user.id} />
 
         {/* ── Category filters (sticky under the title row) ── */}
         <div className="bg-white sticky top-14 z-30 border-b border-gray-200">

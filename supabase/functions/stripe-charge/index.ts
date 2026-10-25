@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
 
   // ── POST /stripe-charge — Create Checkout Session ─────────────
   try {
-    const { subtotal, customer_email, description, success_url, cancel_url, user_id, host_id, rental_end_date, agreement_id, conversation_id, message_id, listing_id } = await req.json();
+    const { subtotal, customer_email, description, success_url, cancel_url, user_id, host_id, rental_end_date, agreement_id, conversation_id, message_id, listing_id, late_fee_consent } = await req.json();
 
     const SK = Deno.env.get('STRIPE_SECRET_KEY');
     if (!SK) return new Response(JSON.stringify({ error: 'Stripe not configured' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -151,6 +151,7 @@ Deno.serve(async (req) => {
     // taken from the client. Charged on top of price + Filmons Fee, carries no
     // Filmons Fee, and is never credited to the host (see complete-order).
     let depositAmount = 0;
+    let lateFeeTerms: Record<string, unknown> | null = null;
     {
       let listingId: string | null = listing_id || null;
       if (agreement_id) {
@@ -163,7 +164,16 @@ Deno.serve(async (req) => {
         if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
         const amt = Number(meta?.securityDeposit);
         if (meta?.depositRequired && Number.isFinite(amt) && amt > 0) depositAmount = Math.round(amt * 100) / 100;
+        // Late-fee terms (rentals): the renter must have agreed to them, and the card is saved for off-session charges.
+        const lf = Number(meta?.lateFee);
+        if (l?.listing_mode === 'rent' && Number.isFinite(lf) && lf > 0) {
+          lateFeeTerms = { a: lf, i: meta?.lateFeeInterval === 'hourly' ? 'h' : 'd', g: Number(meta?.lateFeeGraceHours) || 0, m: Number(meta?.lateFeeMax) || 0 };
+        }
       }
+    }
+
+    if (lateFeeTerms && !late_fee_consent) {
+      return new Response(JSON.stringify({ error: 'Please agree to the late-fee terms to continue.' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     const params = new URLSearchParams({
@@ -199,6 +209,14 @@ Deno.serve(async (req) => {
       'metadata[platform]':                             'filmons',
     });
 
+    if (lateFeeTerms) {
+      // Save the card so an overdue rental's late fee can be charged later, off-session, under the terms just accepted.
+      params.set('customer_creation', 'always');
+      params.set('payment_intent_data[setup_future_usage]', 'off_session');
+      params.set('metadata[late_fee_consent]', '1');
+      params.set('metadata[late_fee_terms]', JSON.stringify(lateFeeTerms));
+      params.set('metadata[listing_id]', String(listing_id || ''));
+    }
     if (customer_email?.includes('@')) params.set('customer_email', customer_email);
 
     const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {

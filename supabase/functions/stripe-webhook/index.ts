@@ -584,6 +584,32 @@ Deno.serve(async (req) => {
             });
           }
 
+          // Booking record: listing reference, the exact listing terms accepted, late-fee consent and the saved card
+          // (the card is what an overdue late fee is later charged to).
+          try {
+            const lst = agRow.listing_id ? await selectOne('listings', `id=eq.${agRow.listing_id}`) : null;
+            let lmeta = lst?.metadata; if (typeof lmeta === 'string') { try { lmeta = JSON.parse(lmeta); } catch { lmeta = {}; } }
+            const patch: Record<string, unknown> = { listing_id: agRow.listing_id || null };
+            if (lst) patch.listing_terms_snapshot = {
+              title: lst.title, description: lst.description, price: lst.price, listingMode: lst.listing_mode,
+              cancellationPolicy: lmeta?.cancellationPolicy ?? null,
+              lateFee: lmeta?.lateFee ?? null, lateFeeInterval: lmeta?.lateFeeInterval ?? null, lateFeeGraceHours: lmeta?.lateFeeGraceHours ?? null,
+              lateFeeMax: lmeta?.lateFeeMax ?? null, lateFeeExplanation: lmeta?.lateFeeExplanation ?? null,
+              returnTime: lmeta?.returnTime ?? null, returnTimezone: lmeta?.returnTimezone ?? null,
+              securityDeposit: depositAmount || null, capturedAt: new Date().toISOString(),
+            };
+            if (meta.late_fee_consent === '1') {
+              patch.late_fee_consent_at = new Date().toISOString();
+              patch.stripe_customer_id = session.customer || null;
+              const SKW = Deno.env.get('STRIPE_SECRET_KEY');
+              if (SKW && session.payment_intent) {
+                const pi = await (await fetch(`https://api.stripe.com/v1/payment_intents/${session.payment_intent}`, { headers: { Authorization: `Bearer ${SKW}` } })).json();
+                patch.stripe_payment_method_id = typeof pi.payment_method === 'string' ? pi.payment_method : null;
+              }
+            }
+            await fetch(rest(`/orders?id=eq.${orderId}`), { method: 'PATCH', headers: { ...REST_H, Prefer: 'return=minimal' }, body: JSON.stringify(patch) });
+          } catch (e) { console.warn('booking terms snapshot failed:', e); }
+
           // The client-side order insert may have won the race (ignore-duplicates above), so make sure the deposit is recorded either way.
           if (depositAmount > 0) {
             await fetch(rest(`/orders?id=eq.${orderId}&deposit_status=eq.none`), {

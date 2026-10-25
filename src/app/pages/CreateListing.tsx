@@ -72,6 +72,12 @@ interface FormState {
   hourlyRate: string;
   securityDeposit: string;
   lateFee: string;
+  lateFeeInterval: 'hourly' | 'daily';
+  lateFeeGraceHours: string;
+  lateFeeMax: string;
+  lateFeeExplanation: string;
+  returnTime: string;
+  returnTimezone: string;
   minDuration: string;
   cleaningFee: string;
   pricingPackages: PricingPkg[];
@@ -192,7 +198,7 @@ function defaultForm(): FormState {
     coverSource: 'upload', coverVideoUrl: '', coverTimestamp: 0, coverPositionY: 50,
     dailyRate: '', weeklyRate: '', monthlyRate: '', salePrice: '',
     acceptOffers: false, negotiable: false, startingPrice: '', hourlyRate: '',
-    securityDeposit: '', lateFee: '', minDuration: '', cleaningFee: '',
+    securityDeposit: '', lateFee: '', lateFeeInterval: 'daily', lateFeeGraceHours: '1', lateFeeMax: '', lateFeeExplanation: DEFAULT_LATE_FEE_EXPLANATION, returnTime: '18:00', returnTimezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto'; } catch { return 'America/Toronto'; } })(), minDuration: '', cleaningFee: '',
     pricingPackages: [],
     depositRequired: false, insuranceRequired: false,
     ageRequirement: '', usageRules: '', customRequirements: '',
@@ -253,6 +259,49 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
 // changes), so React treated each render's PriceField as a different
 // component type and remounted the underlying <input>, dropping focus and
 // closing the mobile keyboard after a single digit.
+const DEFAULT_LATE_FEE_EXPLANATION = 'Late returns can prevent another customer from using this equipment and disrupt the host\u2019s schedule. This fee applies when equipment is returned after the agreed deadline and grace period.';
+const isRentalKind = (k: string | null) => k === 'equipment-rental' || k === 'studio';
+
+function LateFeeCard({ form, set }: { form: FormState; set: (f: Partial<FormState>) => void }) {
+  const unit = form.lateFeeInterval === 'hourly' ? 'CAD/hour' : 'CAD/day';
+  return (
+    <SectionCard title="Late return fee *" icon={<Clock className="w-4 h-4"/>}>
+      <div className="flex gap-2">
+        {(['daily','hourly'] as const).map(i => (
+          <button key={i} type="button" onClick={()=>set({lateFeeInterval:i})}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-bold border ${form.lateFeeInterval===i?'bg-blue-600 text-white border-blue-600':'bg-white text-gray-600 border-gray-200'}`}>
+            Charged {i}
+          </button>
+        ))}
+      </div>
+      <PriceField label="Late fee amount *" value={form.lateFee} onChange={v=>set({lateFee:v})} unit={unit}/>
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <Label>Grace period (hours)</Label>
+          <Input type="number" min="0" value={form.lateFeeGraceHours} onChange={e=>set({lateFeeGraceHours:e.target.value})} placeholder="1"/>
+        </Field>
+        <PriceField label="Maximum total late fee *" value={form.lateFeeMax} onChange={v=>set({lateFeeMax:v})} unit="CAD"/>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <Label>Return deadline (time of day)</Label>
+          <Input type="time" value={form.returnTime} onChange={e=>set({returnTime:e.target.value})}/>
+        </Field>
+        <Field>
+          <Label>Timezone</Label>
+          <Input value={form.returnTimezone} onChange={e=>set({returnTimezone:e.target.value})} placeholder="America/Toronto"/>
+        </Field>
+      </div>
+      <Field>
+        <Label>Why this fee applies</Label>
+        <textarea value={form.lateFeeExplanation} onChange={e=>set({lateFeeExplanation:e.target.value})} rows={3}
+          className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 outline-none focus:border-blue-400 resize-none"/>
+      </Field>
+      <p className="text-xs text-gray-400">Currency: CAD. Renters see these terms at checkout and must agree to be charged late fees on their saved card.</p>
+    </SectionCard>
+  );
+}
+
 function PriceField({ label, value, onChange, placeholder, unit }: { label: string; value: string; onChange: (v:string)=>void; placeholder?: string; unit?: string }) {
   return (
     <Field>
@@ -717,7 +766,6 @@ function Step4({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
           <PriceField label="Monthly Rate" value={form.monthlyRate} onChange={v=>set({monthlyRate:v})} unit="CAD/month"/>
           <div className="grid grid-cols-2 gap-3">
             <PriceField label="Security Deposit" value={form.securityDeposit} onChange={v=>set({securityDeposit:v})} unit="CAD"/>
-            <PriceField label="Late Fee / day" value={form.lateFee} onChange={v=>set({lateFee:v})} unit="CAD"/>
           </div>
           <Field>
             <Label>Minimum Rental Duration</Label>
@@ -785,6 +833,8 @@ function Step4({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
           </SectionCard>
         </>
       )}
+
+      {isRentalKind(form.kind) && <LateFeeCard form={form} set={set}/>}
 
       {form.kind==='studio' && (
         <SectionCard title="Studio Rates" icon={<DollarSign className="w-4 h-4"/>}>
@@ -1491,7 +1541,12 @@ export function CreateListing() {
     if (step===2) return !!f.title.trim() && !!f.category && !!f.description.trim();
     if (step===4) {
       const hasPrice=f.dailyRate||f.salePrice||f.hourlyRate||f.startingPrice;
-      return !!hasPrice;
+      if (!hasPrice) return false;
+      if (isRentalKind(f.kind) && !(parseFloat(f.lateFee) > 0 && parseFloat(f.lateFeeMax) > 0 && f.returnTime)) {
+        toast.error('Add the late fee amount, maximum late fee and return time');
+        return false;
+      }
+      return true;
     }
     if (step===8) return !!f.city.trim();
     return true;
@@ -1518,6 +1573,15 @@ export function CreateListing() {
       monthlyRate: form.monthlyRate||null,
       securityDeposit: form.securityDeposit||null,
       lateFee: form.lateFee||null,
+      ...(isRentalKind(form.kind) ? {
+        lateFeeInterval: form.lateFeeInterval,
+        lateFeeGraceHours: parseFloat(form.lateFeeGraceHours)||0,
+        lateFeeMax: form.lateFeeMax||null,
+        lateFeeExplanation: form.lateFeeExplanation.trim()||DEFAULT_LATE_FEE_EXPLANATION,
+        returnTime: form.returnTime,
+        returnTimezone: form.returnTimezone,
+        lateFeeCurrency: 'CAD',
+      } : {}),
       minDuration: form.minDuration||null,
       cleaningFee: form.cleaningFee||null,
       acceptOffers: form.acceptOffers,

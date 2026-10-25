@@ -295,6 +295,7 @@ async function finalizeOrder(params: {
     agreement_id:      sa.refNo,
     receipt_id:        sa.receiptNo,
     rental_agreement_id: sa.agreementId,
+    listing_id:        (pay as any).listingId || null,
     conversation_id:   convId,
     message_id:        msgId,
     paid_at:           new Date().toISOString(),
@@ -503,6 +504,7 @@ export function Checkout() {
 
   const [step, setStep] = useState<Step>('review');
   const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [lateFeeAgreed, setLateFeeAgreed] = useState(false);
   const [showAgreementModal, setShowAgreementModal] = useState(false);
   const [signedAgreement, setSignedAgreement] = useState<SignedAgreementData | null>(null);
   const [cardData, setCardData] = useState<any>(null);
@@ -750,12 +752,17 @@ export function Checkout() {
   const depositAmount = (listing as any)?.depositRequired && Number((listing as any)?.securityDeposit) > 0
     ? Math.round(Number((listing as any).securityDeposit) * 100) / 100 : 0;
   const payNowAmount = totalAmount + depositAmount;
+  // Rental late-fee terms the renter must accept (stripe-charge re-reads them from the listing and saves the card).
+  const lf: any = listing;
+  const lateFeeAmt = pay?.listingMode === 'rent' ? Number(lf?.lateFee) || 0 : 0;
+  const lateFeeUnit = lf?.lateFeeInterval === 'hourly' ? 'hour' : 'day';
 
   const deliveryAddrStr = [deliveryAddress.street, deliveryAddress.city, deliveryAddress.province, deliveryAddress.postal].filter(Boolean).join(', ');
 
   // ── Complete payment ───────────────────────────────────────────
   const handlePay = async () => {
     if (!selectedMethod) { toast.error('Please select a payment method'); return; }
+    if (lateFeeAmt > 0 && !lateFeeAgreed) { toast.error('Please agree to the late-fee terms to continue.'); return; }
     // hostUser loads async off msg.senderId — guard against paying before it
     // resolves, which would otherwise write host_id=null onto the order.
     if (msg.senderId && !hostUser) { toast.error('Still loading host details — try again in a moment.'); return; }
@@ -816,6 +823,7 @@ export function Checkout() {
             // the agreement and send its own notification/email fallback.
             agreement_id:    signedAgreement?.agreementId,
             listing_id:      pay.listingId,
+            late_fee_consent: lateFeeAgreed,
             conversation_id: convId,
             message_id:      msgId,
           },
@@ -1398,6 +1406,21 @@ export function Checkout() {
             </div>
 
             {/* ── Rental / Service Agreement ── */}
+            {lateFeeAmt > 0 && (
+              <label className="flex items-start gap-3 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 cursor-pointer">
+                <input type="checkbox" checked={lateFeeAgreed} onChange={e => setLateFeeAgreed(e.target.checked)} className="mt-1 w-4 h-4 shrink-0" />
+                <span className="text-xs text-amber-900 leading-relaxed">
+                  <strong className="block text-sm mb-0.5">Late return fee</strong>
+                  ${lateFeeAmt.toFixed(2)} CAD per {lateFeeUnit} after the return deadline
+                  {lf?.returnTime ? ` (${lf.returnTime}${lf?.returnTimezone ? ` ${lf.returnTimezone}` : ''})` : ''}
+                  {Number(lf?.lateFeeGraceHours) > 0 ? `, after a ${lf.lateFeeGraceHours}h grace period` : ''}
+                  {Number(lf?.lateFeeMax) > 0 ? `, up to a maximum of $${Number(lf.lateFeeMax).toFixed(2)} CAD` : ''}.
+                  <span className="block mt-1">{lf?.lateFeeExplanation || 'Late returns can prevent another customer from using this equipment and disrupt the host\u2019s schedule.'}</span>
+                  <span className="block mt-1 font-semibold">I agree that FILMONS may charge late fees to the card I pay with, under these terms. A late charge can fail if the card is declined or my bank needs me to confirm it; any unpaid amount stays outstanding.</span>
+                </span>
+              </label>
+            )}
+
             <div className={`rounded-2xl border-2 p-4 transition-colors ${agreementAccepted ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
               <div className="flex items-start gap-3">
                 <div className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${agreementAccepted ? 'bg-green-600 border-green-600' : 'border-gray-300 bg-white'}`}>
@@ -1446,7 +1469,7 @@ export function Checkout() {
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
               <button onClick={quoteError && !quoteLoading ? () => setQuoteRetryToken(t => t + 1) : handlePay}
-                disabled={submitting || stripeRedirecting || (!quoteError && (!agreementAccepted || quoteLoading || !quote))}
+                disabled={submitting || stripeRedirecting || (lateFeeAmt > 0 && !lateFeeAgreed) || (!quoteError && (!agreementAccepted || quoteLoading || !quote))}
                 className="flex-[2] flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-2xl py-3.5 transition-colors shadow-md">
                 {stripeRedirecting
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing payment…</>
