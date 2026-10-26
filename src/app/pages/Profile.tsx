@@ -1569,7 +1569,18 @@ export function Profile() {
                   ? <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100"><FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" /><p className="text-gray-500">No activity yet</p></div>
                   : [
                       ...posts.map(p => ({ kind: 'post' as const, createdAt: p.createdAt, post: p })),
-                      ...repostActivity.map(e => ({ kind: 'repost' as const, createdAt: e.createdAt, entry: e })),
+                      // One card per reposted item: a repost of a post that's already listed here (the user's own
+                      // post) is that post's own card ("You reposted this post"), never a second copy.
+                      ...(() => {
+                        const own = new Set(posts.map(p => p.id));
+                        const seen = new Set<string>();
+                        return repostActivity.filter(e => {
+                          const key = `${e.targetType}:${e.targetId}`;
+                          if (seen.has(key)) return false;
+                          seen.add(key);
+                          return !(e.targetType === 'post' && e.targetId && own.has(e.targetId));
+                        }).map(e => ({ kind: 'repost' as const, createdAt: e.createdAt, entry: e }));
+                      })(),
                     ]
                       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                       .map(row => row.kind === 'post'
@@ -1577,7 +1588,9 @@ export function Profile() {
                             setPosts(prev=>prev.filter(x=>x.id!==id));
                             try { localStorage.removeItem(`filmons_posts_${user?.id}`); } catch {}
                           }} onLikeToggled={handleLikeToggled} />
-                        : <RepostedActivityCard key={row.entry.id} entry={row.entry} />)
+                        : row.entry.post && row.entry.post.userId === user.id
+                          ? <PostCard key={`rp-${row.entry.id}`} post={row.entry.post} onLikeToggled={handleLikeToggled} />
+                          : <RepostedActivityCard key={row.entry.id} entry={row.entry} />)
               }
 
               {/* Liked Listings — folded into Activity (was its own "Liked"

@@ -134,9 +134,20 @@ function relevanceScore(item: ConnectFeedItem, opts: { followingIds: Set<string>
 }
 
 function mergeAndSort(
-  portfolioEntries: PortfolioFeedEntry[], activityEntries: ActivityEntry[],
+  portfolioEntries: PortfolioFeedEntry[], activityEntriesIn: ActivityEntry[],
   sort: ConnectSort, followingIds: Set<string>, trustLevels: Map<string, TrustLevel>,
 ): ConnectFeedItem[] {
+  // Someone reposting their OWN post must not produce a second card: the post's own card already carries
+  // "You reposted this post". One repost entry per such post is kept and shown as the post itself (when the
+  // post's own entry isn't on this page); any other entry for it is dropped as redundant below.
+  const publishedPosts = new Set(activityEntriesIn.filter(e => e.activityType === 'post_published' && e.targetId).map(e => e.targetId as string));
+  const activityEntries = activityEntriesIn.flatMap((e): ActivityEntry[] => {
+    if (e.activityType !== 'content_reposted' || e.targetType !== 'post' || !e.targetId || !e.post || e.post.userId !== e.actor.id) return [e];
+    if (publishedPosts.has(e.targetId)) return [e];
+    publishedPosts.add(e.targetId);
+    return [{ ...e, activityType: 'post_published' }];
+  });
+
   // A repost's own activity entry is redundant once the reposted content
   // ALREADY has its own card on this page -- a Portfolio item/album (via
   // portfolioEntries) or a Post (via its own post_published entry). That
