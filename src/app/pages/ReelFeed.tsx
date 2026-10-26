@@ -695,15 +695,17 @@ export function ReelFeed() {
     if (loadingMoreRef.current || exhaustedRef.current) return [];
     loadingMoreRef.current = true;
     try {
-      let q = supabase.from('posts').select('id, videos, created_at')
-        .not('videos', 'is', null).or('is_archived.eq.false,is_archived.is.null')
+      // Posts keep their first video in `video_url` (the rest in media_urls) -- there is no `videos` column, so
+      // selecting one made this whole query fail and left Reels with portfolio videos only.
+      let q = supabase.from('posts').select('id, video_url, created_at')
+        .not('video_url', 'is', null).or('visibility.eq.public,visibility.is.null').or('is_archived.eq.false,is_archived.is.null')
         .order('created_at', { ascending: false }).limit(120);
       if (cursorRef.current) q = q.lt('created_at', cursorRef.current);
       const { data } = await q;
       const rows = (data ?? []) as any[];
       if (!rows.length) { exhaustedRef.current = true; return []; }
       const nextCursor = rows[rows.length - 1].created_at;
-      const ids = rows.filter(r => Array.isArray(r.videos) && r.videos.length > 0 && !known.has(r.id)).map(r => String(r.id)).slice(0, count);
+      const ids = rows.filter(r => r.video_url && !known.has(r.id)).map(r => String(r.id)).slice(0, count);
       if (!ids.length) { cursorRef.current = nextCursor; return []; }
       const fetched = await postsApi.getByIds(ids);
       cursorRef.current = nextCursor;   // advance only once the batch loaded, so a failure retries the same page
