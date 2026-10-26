@@ -36,6 +36,7 @@ interface Order {
   buyer_fee_rate:       number;
   buyer_fee_amount:     number;
   seller_fee_amount:    number;
+  type:                 string;
   deposit_amount:       number;
   deposit_status:       string;
   completed_at:         string | null;
@@ -357,7 +358,7 @@ function OrderCard({ order, tab, userId, onRefreshNeeded }: { order: Order; tab:
             : <>Refundable deposit ${order.deposit_amount.toFixed(2)} CAD held{tab === 'host' ? ' — returned to the renter when you mark this finished.' : ' — returned to you when the host marks this finished.'}</>}
         </div>
       )}
-      {tab === 'host' && <FinishButton order={order} onDone={onRefreshNeeded} />}
+      {tab === 'host' && order.type !== 'service' && <FinishButton order={order} onDone={onRefreshNeeded} />}
 
       {/* Verification status — statuses only, never the underlying documents */}
       {tab === 'host' && (order.id_verification_status || order.address_verification_status) && (
@@ -473,6 +474,7 @@ export default function MyOrders() {
           buyer_fee_rate:       Number(r.buyer_fee_rate ?? 0),
           buyer_fee_amount:     Number(r.buyer_fee_amount ?? 0),
           seller_fee_amount:    Number(r.seller_fee_amount ?? 0),
+          type:                 r.type || 'rental',
           deposit_amount:       Number(r.deposit_amount ?? 0),
           deposit_status:       r.deposit_status || 'none',
           completed_at:         r.completed_at || null,

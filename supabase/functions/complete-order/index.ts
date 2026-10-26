@@ -31,12 +31,19 @@ Deno.serve(async (req) => {
     const caller = userRes?.ok ? await userRes.json() : null;
     if (!caller?.id) return json({ error: 'Please sign in again.' }, 401);
 
-    const { orderId } = await req.json();
+    const { orderId, condition } = await req.json();
     if (!orderId) return json({ error: 'Missing orderId' }, 400);
 
     const order = await selectOne('orders', `id=eq.${encodeURIComponent(orderId)}`);
     if (!order) return json({ error: 'Order not found' }, 404);
-    if (order.host_id !== caller.id) return json({ error: 'Only the host can mark this finished.' }, 403);
+    // Rentals are finished by the host (after checking the equipment); services by the customer (after the provider submits the work).
+    const isService = order.type === 'service';
+    if (isService) {
+      if (order.renter_id !== caller.id) return json({ error: 'Only the customer can confirm the service is finished.' }, 403);
+      if (!order.work_submitted_at) return json({ error: 'The provider has not submitted the work yet.' }, 400);
+    } else if (order.host_id !== caller.id) {
+      return json({ error: 'Only the host can mark this rental finished.' }, 403);
+    }
     if (order.refund_status === 'refunded') return json({ error: 'This order was fully refunded.' }, 400);
 
     const deposit = Number(order.deposit_amount) || 0;
@@ -84,13 +91,13 @@ Deno.serve(async (req) => {
     if (!order.completed_at) {
       await fetch(rest(`/orders?id=eq.${encodeURIComponent(orderId)}`), {
         method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
-        body: JSON.stringify({ completed_at: new Date().toISOString(), completed_by: caller.id }),
+        body: JSON.stringify({ completed_at: new Date().toISOString(), completed_by: caller.id, ...(!isService && typeof condition === 'string' && condition.trim() ? { return_condition: condition.trim().slice(0, 1000) } : {}) }),
       });
-      const kind = order.type === 'service' ? 'service' : 'rental';
+      const kind = isService ? 'service' : 'rental';
       await fetch(rest('/notifications'), {
         method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
         body: JSON.stringify({
-          user_id: order.renter_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', is_read: false,
+          user_id: isService ? order.host_id : order.renter_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', is_read: false,
           conversation_id: order.conversation_id || null,
           title: `Your ${kind} of ${order.listing_title || 'this booking'} was marked finished` + (depositReleased && deposit > 0 ? ` — your $${deposit.toFixed(2)} deposit is on its way back to your card (5–10 business days).` : '.'),
         }),
