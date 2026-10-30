@@ -562,6 +562,13 @@ export function EditListing() {
       }
 
       // Write directly to Supabase — bypasses edge function timeout
+      let existingMeta: Record<string, any> = {};
+      try {
+        const { data: mrow } = await supabase.from('listings').select('metadata').eq('id', id).maybeSingle();
+        const m = (mrow as any)?.metadata;
+        existingMeta = (typeof m === 'string' ? JSON.parse(m) : m) || {};
+      } catch { /* keep whatever the form edits */ }
+
       const updatePayload: Record<string, any> = {
         title:            title.trim(),
         description:      description.trim(),
@@ -587,7 +594,10 @@ export function EditListing() {
         service_start_time: listingType === 'service' ? startTime : null,
         service_end_time:   listingType === 'service' ? endTime   : null,
         updated_at:       new Date().toISOString(),
+        // Merge into the listing's existing metadata -- replacing it wholesale used to wipe deposit, late-fee and other terms.
         metadata:         JSON.stringify({
+          ...existingMeta,
+          deliveryPrice:   deliveryOptions.includes('delivery') && deliveryPrice !== '' ? parseFloat(deliveryPrice) : null,
           contactMethods:  selectedContactMethods.length > 0 ? selectedContactMethods : undefined,
           pricingPackages: listingType === 'service' ? pricingPackages : undefined,
           qualification:   listingType === 'service' ? qualification : undefined,

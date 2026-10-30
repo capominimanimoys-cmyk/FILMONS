@@ -796,6 +796,7 @@ export function mapListingRow(row: any): Listing {
     image:           row.image || undefined,
     images,
     videos,
+    deliveryPrice:   row.delivery_price ?? meta.deliveryPrice ?? undefined,
     contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
     pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
     createdAt:       row.created_at,
@@ -808,6 +809,10 @@ export function mapListingRow(row: any): Listing {
     insuranceRequired: !!meta.insuranceRequired,
     listingKind:     meta.listingKind || undefined,
     opportunity:     meta.opportunity || undefined,
+    // Video-frame covers: the card plays this video as a muted preview (poster = the cover frame).
+    coverSource:     meta.coverSource || undefined,
+    coverVideoUrl:   meta.coverSource === 'video_frame' ? (meta.coverVideoUrl || undefined) : undefined,
+    coverTimestamp:  meta.coverTimestamp ?? undefined,
   } as Listing;
 }
 
