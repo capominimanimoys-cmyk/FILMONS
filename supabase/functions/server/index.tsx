@@ -68,7 +68,9 @@ app.post("/make-server-ec8fe879/send-phone-otp", async (c) => {
     const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
     const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
     const fromPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
-    if (!accountSid || !authToken || !fromPhone) {
+    // Optional: a Twilio Messaging Service (sender pool, better US/CA delivery speed and filtering) replaces the single From number.
+    const messagingServiceSid = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID");
+    if (!accountSid || !authToken || (!fromPhone && !messagingServiceSid)) {
       return c.json(
         { error: "Twilio credentials not configured" },
         500,
@@ -85,37 +87,38 @@ app.post("/make-server-ec8fe879/send-phone-otp", async (c) => {
       100000 + Math.random() * 900000,
     ).toString();
 
-    // Store code in KV with timestamp for 10-minute expiry
-    await Promise.race([
-      kv.set(kvKey, { code, createdAt: Date.now() }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("KV store timed out")), 15000)
-      ),
-    ]);
-
-    console.log(
-      `[OTP] Storing code for key="${kvKey}" code="${code}"`,
-    );
+    console.log(`[OTP] Storing code for key="${kvKey}"`);
 
     // Send SMS via Twilio REST API
     const body = new URLSearchParams({
       To: e164,
-      From: fromPhone,
       Body: `Your Filmons verification code is: ${code}. Expires in 10 minutes.`,
     });
+    if (messagingServiceSid) body.set("MessagingServiceSid", messagingServiceSid);
+    else body.set("From", fromPhone!);
 
-    const twilioRes = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
-          "Content-Type": "application/x-www-form-urlencoded",
+    // Store the code and hand the SMS to Twilio at the same time -- the KV write used to finish first, adding its full
+    // latency before the text was even requested.
+    const [, twilioRes] = await Promise.all([
+      Promise.race([
+        kv.set(kvKey, { code, createdAt: Date.now() }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("KV store timed out")), 15000)
+        ),
+      ]),
+      fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: body.toString(),
+          signal: AbortSignal.timeout(10000),
         },
-        body: body.toString(),
-        signal: AbortSignal.timeout(10000),
-      },
-    );
+      ),
+    ]);
 
     if (!twilioRes.ok) {
       const err = await twilioRes.json().catch(() => ({}));
