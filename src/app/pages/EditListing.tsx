@@ -602,7 +602,7 @@ export function EditListing() {
           pricingPackages: listingType === 'service' ? pricingPackages : undefined,
           qualification:   listingType === 'service' ? qualification : undefined,
           coverSource,
-          coverVideoUrl: coverSource === 'video_frame' ? coverVideoUrl : undefined,
+          coverVideoUrl: coverSource === 'video_frame' ? (() => { const i = videoPreviews.indexOf(coverVideoUrl); const r = i >= 0 ? videoUrls[i] : coverVideoUrl; return typeof r === 'string' && r.startsWith('http') ? r : (videoUrls[0] || undefined); })() : undefined,
           coverTimestamp: coverSource === 'video_frame' ? coverTimestamp : undefined,
           coverPositionY,
         }),
