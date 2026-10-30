@@ -7,7 +7,7 @@ import {
   Check, DollarSign, MapPin, Clock, Image as ImageIcon, Video,
   CheckCircle, Camera, Building2, Tag,
   Star, Shield, Calendar, Info, Eye, Globe,
-  Loader2, Zap, AlertCircle, Film,
+  Loader2, Zap, AlertCircle, Film, Rocket,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SmartAddressInput, AddressComponents } from '../components/SmartAddressInput';
@@ -142,6 +142,8 @@ interface FormState {
   // this listing is created, via emergencyApi.charge -- selecting a plan
   // here just carries the choice through to that point.
   emergencyPlan: EmergencyPlan | null;
+  /** After publishing, go straight to the Boost flow for the new listing. */
+  boostAfterPublish: boolean;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -219,7 +221,7 @@ function defaultForm(): FormState {
     amenities: '', houseRules: '', height: '', skills: [],
     projectType: '', roleNeeded: '', shootDates: '', experienceRequired: '',
     applicationProcess: '',
-    emergencyPlan: null,
+    emergencyPlan: null, boostAfterPublish: false,
   };
 }
 
@@ -1371,6 +1373,19 @@ function Step10({ form, set, onPublish, onSaveDraft, isSubmitting, limitReached,
         )}
       </div>
 
+      {/* Boost — after publishing, continue straight into the Boost flow (goal, audience, budget, payment) for this listing. */}
+      <div className={`rounded-2xl shadow-sm p-5 border-2 transition-all ${form.boostAfterPublish ? 'bg-amber-50 border-amber-400' : 'bg-white border-transparent'}`}>
+        <div className="flex items-center gap-2 mb-1">
+          <Rocket className="w-4 h-4 text-amber-500"/>
+          <h3 className="text-sm font-bold text-gray-800">Boost this listing</h3>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">Reach more people. After you publish, you’ll choose your goal, audience and budget, then pay securely.</p>
+        <button type="button" onClick={() => set({ boostAfterPublish: !form.boostAfterPublish, ...(form.boostAfterPublish ? {} : { emergencyPlan: null }) })}
+          className={`w-full py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${form.boostAfterPublish ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}>
+          <Rocket className="w-4 h-4"/> {form.boostAfterPublish ? 'Boost added — tap to remove' : 'Boost listing'}
+        </button>
+      </div>
+
       {/* Emergency Listing — optional paid feed-recycling boost. The actual
           Stripe charge only ever happens after this listing is created
           (emergency-charge requires a real listing id); selecting a plan
@@ -1394,7 +1409,7 @@ function Step10({ form, set, onPublish, onSaveDraft, isSubmitting, limitReached,
             <span className="text-sm font-black text-gray-700">Free</span>
           </button>
           {EMERGENCY_PLANS.map(p => (
-            <button key={p.plan} type="button" onClick={() => set({ emergencyPlan: p.plan })}
+            <button key={p.plan} type="button" onClick={() => set({ emergencyPlan: p.plan, boostAfterPublish: false })}
               className={`w-full px-4 py-3.5 rounded-2xl border-2 transition-all text-left ${
                 form.emergencyPlan === p.plan ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-red-200'
               }`}>
@@ -1439,6 +1454,8 @@ function Step10({ form, set, onPublish, onSaveDraft, isSubmitting, limitReached,
             ? <><Loader2 className="w-4 h-4 animate-spin"/> Publishing…</>
             : form.emergencyPlan
               ? <><Zap className="w-4 h-4"/> Publish & Continue to Payment</>
+              : form.boostAfterPublish
+              ? <><Rocket className="w-4 h-4"/> Publish & Boost</>
               : <><Zap className="w-4 h-4"/> Publish Listing</>}
         </button>
         <button type="button" onClick={onSaveDraft}
@@ -1681,6 +1698,7 @@ export function CreateListing() {
   // it just lands on the listing page instead of Stripe, same as if no
   // Emergency plan had been chosen at all.
   const finishPublish = async (listingId: string) => {
+    if (form.boostAfterPublish && !form.emergencyPlan) { navigate(`/boost/${listingId}`); return; }
     if (!form.emergencyPlan || !user) { navigate(`/listing/${listingId}`); return; }
     try {
       const origin = window.location.origin;

@@ -86,9 +86,9 @@ export const router = createBrowserRouter([
       { path: 'listing/:id/share-card', ...page(() => import('./pages/ListingShareCard'), 'ListingShareCard') },
       { path: 'listing/:id/applicants', ...page(() => import('./pages/OpportunityApplicants'), 'OpportunityApplicants') },
       { path: 'listing/:id/emergency', ...page(() => import('./pages/EmergencyListingFlow'), 'EmergencyListingFlow') },
-      // Boost Listing routes temporarily removed (feature disabled, not
-      // deleted — BoostListingFlow.tsx/BoostInsights.tsx still exist,
-      // just unreachable from the active app until this is re-enabled).
+      // Boost Listing: re-enabled for the Boost button in Create Listing's Review & Publish step.
+      { path: 'boost/:listingId', ...page(() => import('./pages/BoostListingFlow'), 'BoostListingFlow') },
+      { path: 'boost/:listingId/insights', ...page(() => import('./pages/BoostInsights'), 'BoostInsights') },
       // NOTE: FILMONS Learning is NOT a route in this router at all -- it's
       // a true separate product/Rollup bundle (learning.html, built from
       // src/app/learningRoutes.tsx + LearningApp.tsx), never imported by
