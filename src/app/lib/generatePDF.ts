@@ -59,6 +59,9 @@ export interface AgreementData {
   // tax is calculated by Filmons — Stripe handles applicable tax on its own.
   subtotal?: number;
   buyer_fee_amount?: number;
+  /** Delivery fee included in `subtotal`, and where it goes. */
+  delivery_fee?: number;
+  delivery_address?: string;
   payment_method: string;
   start_date?: string;
   duration?: number;
@@ -91,6 +94,8 @@ export interface ReceiptData {
   total_amount: number;
   subtotal?: number;
   buyer_fee_amount?: number;
+  delivery_fee?: number;
+  delivery_address?: string;
   payment_method: string;
   issued_at: string;
   receipt_url?: string;
@@ -151,7 +156,8 @@ export const BASE_CSS = `
 // ── Agreement HTML ─────────────────────────────────────────────────
 export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string {
   const isService = String(d.listing_type || '').toLowerCase() === 'service';
-  const subtotal = d.subtotal ?? d.total_amount;
+  const deliveryFee = d.delivery_fee ?? 0;
+  const subtotal = (d.subtotal ?? d.total_amount) - deliveryFee;
   const buyerFeeAmount = d.buyer_fee_amount ?? 0;
   const dailyRate = d.duration ? (subtotal / d.duration).toFixed(2) : subtotal.toFixed(2);
   const returnDate = d.start_date && d.duration
@@ -249,6 +255,7 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
   <table class="info">
     <tr><td>Daily Rate</td><td>$${dailyRate} CAD</td><td>Number of Days</td><td>${d.duration || 1}</td></tr>
     <tr><td>Subtotal (Rate &#xD7; Days)</td><td>$${subtotal.toFixed(2)} CAD</td><td>Payment Method</td><td>${d.payment_method}</td></tr>
+    ${deliveryFee > 0 ? `<tr><td>Delivery fee</td><td>$${deliveryFee.toFixed(2)} CAD</td><td>Deliver to</td><td>${d.delivery_address || '&#x2014;'}</td></tr>` : (d.delivery_address ? `<tr><td>Deliver to</td><td colspan="3">${d.delivery_address}</td></tr>` : '')}
     <tr><td>Filmons Fee</td><td>$${buyerFeeAmount.toFixed(2)} CAD</td><td></td><td></td></tr>
     <tr><td style="font-weight:800">TOTAL PAID AT BOOKING</td><td style="font-weight:800;color:#1e3a5f" colspan="3">$${d.total_amount.toFixed(2)} CAD</td></tr>
   </table>
@@ -335,7 +342,8 @@ export function buildAgreementHTML(d: AgreementData, isHostCopy = false): string
 
 // ── Receipt HTML ───────────────────────────────────────────────────
 export function buildReceiptHTML(d: ReceiptData): string {
-  const subtotalNum = d.subtotal ?? d.total_amount;
+  const receiptDeliveryFee = d.delivery_fee ?? 0;
+  const subtotalNum = (d.subtotal ?? d.total_amount) - receiptDeliveryFee;
   const buyerFeeAmount = d.buyer_fee_amount ?? 0;
   const dailyRate = d.duration ? (subtotalNum / d.duration).toFixed(2) : subtotalNum.toFixed(2);
   const subtotal   = subtotalNum.toFixed(2);
@@ -431,6 +439,12 @@ export function buildReceiptHTML(d: ReceiptData): string {
       <td style="text-align:center">$${dailyRate} CAD</td>
       <td>$${subtotal} CAD</td>
     </tr>
+    ${receiptDeliveryFee > 0 ? `<tr class="price-row">
+      <td>Delivery fee${d.delivery_address ? ` &#x2014; ${d.delivery_address}` : ''}</td>
+      <td style="text-align:center">1</td>
+      <td style="text-align:center">&#x2014;</td>
+      <td>$${receiptDeliveryFee.toFixed(2)} CAD</td>
+    </tr>` : ''}
     <tr class="price-row">
       <td>Filmons Fee</td>
       <td style="text-align:center">1</td>

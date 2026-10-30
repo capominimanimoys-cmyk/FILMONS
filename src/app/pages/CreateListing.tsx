@@ -97,6 +97,8 @@ interface FormState {
   startTime: string;
   endTime: string;
   deliveryAvailable: boolean;
+  /** What the host charges for delivery (CAD); '0' = free delivery. Required when delivery is offered. */
+  deliveryFee: string;
   pickupAvailable: boolean;
   remoteAvailable: boolean;
   travelAvailable: boolean;
@@ -209,7 +211,7 @@ function defaultForm(): FormState {
     refundPolicy: 'Full Refund',
     blockedDates: [], availableDays: ['Mon','Tue','Wed','Thu','Fri'],
     startTime: '09:00', endTime: '18:00',
-    deliveryAvailable: false, pickupAvailable: true, remoteAvailable: false,
+    deliveryAvailable: false, deliveryFee: '', pickupAvailable: true, remoteAvailable: false,
     travelAvailable: false, instantBooking: false,
     addressInput: '', streetAddress: '', city: '', province: '', country: 'Canada',
     postalCode: '', latitude: null, longitude: null,
@@ -1012,6 +1014,12 @@ function Step7({ form, set }: { form: FormState; set: (f: Partial<FormState>) =>
         <div className="divide-y divide-gray-100">
           <Toggle checked={form.pickupAvailable} onChange={v=>set({pickupAvailable:v})} label="Pickup Available" sub="Client picks up in person"/>
           <Toggle checked={form.deliveryAvailable} onChange={v=>set({deliveryAvailable:v})} label="Delivery Available" sub="You deliver to client"/>
+          {form.deliveryAvailable && (
+            <div className="py-3">
+              <PriceField label="Delivery fee *" value={form.deliveryFee} onChange={v=>set({deliveryFee:v})} unit="CAD"/>
+              <p className="text-xs text-gray-400 mt-1">Added to the customer’s invoice when they choose delivery, and they’ll be asked for their address. Enter 0 for free delivery.</p>
+            </div>
+          )}
           <Toggle checked={form.remoteAvailable} onChange={v=>set({remoteAvailable:v})} label="Remote / Online Available" sub="Can work remotely"/>
           {(form.kind==='creative-service'||form.kind==='talent') && (
             <Toggle checked={form.travelAvailable} onChange={v=>set({travelAvailable:v})} label="Travel Available" sub="Willing to travel to client"/>
@@ -1569,6 +1577,10 @@ export function CreateListing() {
       }
       return true;
     }
+    if (step===7 && f.deliveryAvailable && (f.deliveryFee.trim()==='' || !(parseFloat(f.deliveryFee) >= 0))) {
+      toast.error('Enter your delivery fee (0 for free delivery)');
+      return false;
+    }
     if (step===8) return !!f.city.trim();
     return true;
   };
@@ -1615,6 +1627,7 @@ export function CreateListing() {
       cancellationPolicy: form.cancellationPolicy,
       refundPolicy: form.refundPolicy,
       deliveryAvailable: form.deliveryAvailable,
+      deliveryPrice: form.deliveryAvailable ? (parseFloat(form.deliveryFee) || 0) : null,
       pickupAvailable: form.pickupAvailable,
       remoteAvailable: form.remoteAvailable,
       travelAvailable: form.travelAvailable,
@@ -1861,6 +1874,7 @@ export function CreateListing() {
           listingMode: payload.listing_mode as any,
           paymentMethods: payload.payment_methods,
           deliveryOptions: payload.delivery_options,
+          deliveryPrice: payload.metadata.deliveryPrice ?? undefined,
           requirements: payload.requirements||undefined,
           cancellation: payload.cancellation||undefined,
           workingHours: payload.working_hours||undefined,

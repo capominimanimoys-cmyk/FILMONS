@@ -496,6 +496,8 @@ Deno.serve(async (req) => {
     const hostId = meta.host_id;
     const subtotal = parseFloat(meta.subtotal || '0');
     const depositAmount = parseFloat(meta.deposit_amount || '0') || 0;
+    const deliveryFee = parseFloat(meta.delivery_fee || '0') || 0;
+    const deliveryAddress = meta.delivery_address || '';
     const buyerFeeAmount = parseFloat(meta.buyer_fee_amount || '0');
     const sellerFeeAmount = parseFloat(meta.seller_fee_amount || '0');
 
@@ -570,6 +572,7 @@ Deno.serve(async (req) => {
               fee_config_version: meta.fee_config_version || null,
               stripe_payment_intent_id: session.payment_intent || null,
               ...(depositAmount > 0 ? { deposit_amount: depositAmount, deposit_status: 'held' } : {}),
+              ...(deliveryFee > 0 || deliveryAddress ? { delivery_fee: deliveryFee, delivery_address: deliveryAddress || null } : {}),
             }),
           });
 

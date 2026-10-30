@@ -119,10 +119,11 @@ async function finalizeOrder(params: {
   user: { id?: string; name?: string } | null;
   convId: string;
   msgId: string;
+  delivery?: { fee: number; address?: string }; // chosen delivery: its fee is already inside breakdown.subtotal
   depositAmount?: number; // refundable deposit charged on top of totalAmount (card only)
   breakdown: PriceQuote; // server-computed subtotal/fee/total — the single source for what the host is owed and what gets persisted
 }) {
-  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, breakdown, depositAmount = 0 } = params;
+  const { pay, totalAmount, selectedMethod, signedAgreement: sa, hostUser, user, convId, msgId, breakdown, depositAmount = 0, delivery } = params;
   // Host is only ever charged the seller-side fee — the buyer fee is the
   // renter's cost, not deducted from what the host earns.
   const hostEarnings = breakdown.subtotal - breakdown.sellerFeeAmount;
@@ -175,6 +176,7 @@ async function finalizeOrder(params: {
         signature_data: signatureDataUrl,
         listing_title: pay.listingTitle || '—', total_amount: totalAmount,
         subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
+        delivery_fee: delivery?.fee, delivery_address: delivery?.address,
         payment_method: selectedMethod, start_date: pay.startDate, duration: pay.duration,
         duration_type: pay.durationType, signed_at: agRow.signed_at || new Date().toISOString(),
         host_name: hostLegalName, host_email: hostUser?.email,
@@ -192,6 +194,7 @@ async function finalizeOrder(params: {
         listing_title: pay.listingTitle || '—', listing_type: pay.listingType,
         start_date: pay.startDate, duration: pay.duration, duration_type: pay.durationType,
         total_amount: totalAmount, subtotal: breakdown.subtotal, buyer_fee_amount: breakdown.buyerFeeAmount,
+        delivery_fee: delivery?.fee, delivery_address: delivery?.address,
         payment_method: selectedMethod,
         issued_at: new Date().toISOString(),
       });
@@ -306,6 +309,7 @@ async function finalizeOrder(params: {
     seller_fee_amount:   breakdown.sellerFeeAmount,
     fee_config_version:  breakdown.feeConfigVersion,
     ...(depositAmount > 0 ? { deposit_amount: depositAmount, deposit_status: 'held' } : {}),
+    ...(delivery && (delivery.fee > 0 || delivery.address) ? { delivery_fee: delivery.fee, delivery_address: delivery.address || null } : {}),
   })).catch(e => console.warn('Order/transaction save failed:', e));
 
   if (hostUser?.id) {
@@ -589,7 +593,7 @@ export function Checkout() {
         if (pending) {
           sessionStorage.removeItem(key);
           try {
-            const { signedAgreement: sa, totalAmount: paidAmount, selectedMethod: method } = JSON.parse(pending);
+            const { signedAgreement: sa, totalAmount: paidAmount, selectedMethod: method, delivery } = JSON.parse(pending);
             const breakdown: PriceQuote = {
               subtotal: result.subtotal || 0, buyerFeeRate: result.buyer_fee_rate || 0, buyerFeeAmount: result.buyer_fee_amount || 0,
               sellerFeeRate: 0, sellerFeeAmount: 0,
@@ -602,6 +606,7 @@ export function Checkout() {
               pay: msg.paymentRequest!, totalAmount: paidAmount, selectedMethod: method,
               signedAgreement: sa, hostUser, user, convId, msgId, breakdown,
               depositAmount: Number(result.deposit_amount) || 0,
+              delivery,
             });
           } catch (e) { console.warn('finalizeOrder failed:', e); }
         }
@@ -767,7 +772,7 @@ export function Checkout() {
     // resolves, which would otherwise write host_id=null onto the order.
     if (msg.senderId && !hostUser) { toast.error('Still loading host details — try again in a moment.'); return; }
     if (availableDelivery.length > 1 && !selectedDelivery) { toast.error('Please select a delivery option'); return; }
-    if (effectiveDelivery === 'delivery' && !deliveryAddress.city) {
+    if (effectiveDelivery === 'delivery' && (!deliveryAddress.street.trim() || !deliveryAddress.city.trim())) {
       toast.error('Please enter your delivery address'); return;
     }
 
@@ -824,6 +829,8 @@ export function Checkout() {
             agreement_id:    signedAgreement?.agreementId,
             listing_id:      pay.listingId,
             late_fee_consent: lateFeeAgreed,
+            delivery_fee:    effectiveDelivery === 'delivery' ? deliveryFee : 0,
+            delivery_address: effectiveDelivery === 'delivery' ? deliveryAddrStr : '',
             conversation_id: convId,
             message_id:      msgId,
           },
@@ -853,6 +860,7 @@ export function Checkout() {
           try {
             sessionStorage.setItem(pendingAgreementKey(data.session_id), JSON.stringify({
               signedAgreement, totalAmount, selectedMethod,
+              delivery: effectiveDelivery === 'delivery' ? { fee: deliveryFee, address: deliveryAddrStr } : undefined,
             }));
           } catch { /* storage full/unavailable — finalizeOrder just won't run on return */ }
         }
@@ -913,6 +921,7 @@ export function Checkout() {
       finalizeOrder({
         pay, totalAmount, selectedMethod, signedAgreement, hostUser, user, convId, msgId,
         breakdown: quote,
+        delivery: effectiveDelivery === 'delivery' ? { fee: deliveryFee, address: deliveryAddrStr } : undefined,
       }).catch(e => console.warn('finalizeOrder failed:', e));
     }
   };

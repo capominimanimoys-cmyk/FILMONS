@@ -796,6 +796,7 @@ export function mapListingRow(row: any): Listing {
     image:           row.image || undefined,
     images,
     videos,
+    deliveryPrice:   row.delivery_price ?? meta.deliveryPrice ?? undefined,
     contactMethods:  firstNonEmpty(row.contact_methods, meta.contactMethods),
     pricingPackages: firstNonEmpty(row.pricing_packages, meta.pricingPackages),
     createdAt:       row.created_at,
