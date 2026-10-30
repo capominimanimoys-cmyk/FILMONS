@@ -1533,7 +1533,11 @@ export function CreateListing() {
   }, [form, step]);
 
   const TOTAL_STEPS = 10;
-  const progress = Math.round((step / TOTAL_STEPS) * 100);
+  // Sale listings have no deposit / "Requirements & Protection" step -- it's skipped everywhere (nav, sidebar, counter).
+  const isSale = form.kind === 'equipment-sale';
+  const visibleSteps = STEP_LABELS.map((label, i) => ({ label, s: i + 1 })).filter(x => !(isSale && x.s === 5));
+  const stepPos = Math.max(1, visibleSteps.findIndex(x => x.s === step) + 1);
+  const progress = Math.round((stepPos / visibleSteps.length) * 100);
 
   const canAdvance = (): boolean => {
     const f = formRef.current;
@@ -1552,8 +1556,8 @@ export function CreateListing() {
     return true;
   };
 
-  const goNext = () => { if (step < TOTAL_STEPS && canAdvance()) setStep(s=>s+1); else if (!canAdvance()) { toast.error('Please complete required fields'); } };
-  const goPrev = () => { if (step > 1) setStep(s=>s-1); };
+  const goNext = () => { if (step < TOTAL_STEPS && canAdvance()) setStep(s=>(isSale && s+1===5 ? 6 : s+1)); else if (!canAdvance()) { toast.error('Please complete required fields'); } };
+  const goPrev = () => { if (step > 1) setStep(s=>(isSale && s-1===5 ? 4 : s-1)); };
 
   // ── Build submit payload ──
   const buildPayload = () => {
@@ -1571,7 +1575,7 @@ export function CreateListing() {
       listingKind: form.kind,
       weeklyRate: form.weeklyRate||null,
       monthlyRate: form.monthlyRate||null,
-      securityDeposit: form.securityDeposit||null,
+      securityDeposit: isSale ? null : form.securityDeposit||null,
       lateFee: form.lateFee||null,
       ...(isRentalKind(form.kind) ? {
         lateFeeInterval: form.lateFeeInterval,
@@ -1586,8 +1590,8 @@ export function CreateListing() {
       cleaningFee: form.cleaningFee||null,
       acceptOffers: form.acceptOffers,
       negotiable: form.negotiable,
-      depositRequired: form.depositRequired,
-      insuranceRequired: form.insuranceRequired,
+      depositRequired: isSale ? false : form.depositRequired,
+      insuranceRequired: isSale ? false : form.insuranceRequired,
       ageRequirement: form.ageRequirement||null,
       usageRules: form.usageRules||null,
       customRequirements: form.customRequirements||null,
@@ -1895,7 +1899,7 @@ export function CreateListing() {
       case 2:  return <Step2 form={form} set={set}/>;
       case 3:  return <Step3 form={form} set={set}/>;
       case 4:  return <Step4 form={form} set={set}/>;
-      case 5:  return <Step5 form={form} set={set}/>;
+      case 5:  return isSale ? <Step6 form={form} set={set}/> : <Step5 form={form} set={set}/>;
       case 6:  return <Step6 form={form} set={set}/>;
       case 7:  return <Step7 form={form} set={set}/>;
       case 8:  return <Step8 form={form} set={set}/>;
@@ -1932,7 +1936,7 @@ export function CreateListing() {
               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{width:`${progress}%`}}/>
               </div>
-              <span className="text-[10px] font-bold text-gray-500 shrink-0">Step {step}/{TOTAL_STEPS}</span>
+              <span className="text-[10px] font-bold text-gray-500 shrink-0">Step {stepPos}/{visibleSteps.length}</span>
             </div>
           </div>
         </div>
@@ -1943,8 +1947,7 @@ export function CreateListing() {
         {/* Desktop left step nav */}
         <aside className="hidden md:flex w-52 shrink-0 flex-col pt-6 pb-32 sticky top-[73px] h-[calc(100vh-73px)] overflow-y-auto">
           <div className="px-4 space-y-1">
-            {STEP_LABELS.map((label, i) => {
-              const s = i+1;
+            {visibleSteps.map(({ label, s }, i) => {
               const done = s < step;
               const active = s === step;
               return (
@@ -1961,7 +1964,7 @@ export function CreateListing() {
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[11px] font-black ${
                     active?'bg-white text-blue-600':done?'bg-green-500 text-white':'bg-gray-200 text-gray-400'
                   }`}>
-                    {done?<Check className="w-3 h-3"/>:s}
+                    {done?<Check className="w-3 h-3"/>:i+1}
                   </div>
                   <span className={active?'font-bold':done?'font-semibold':''}>{label}</span>
                 </button>
