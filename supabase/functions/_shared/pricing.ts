@@ -44,6 +44,17 @@ function calcFee(row: any | undefined, subtotal: number): number {
   return 0;
 }
 
+/** Fee context for a listing: sales carry no buyer Filmons Fee (no 'sale' fee rows are seeded, so it computes to 0 —
+ *  add an active platform_fee_config row with context='sale' to charge one later); everything else keeps 'rental'. */
+export async function feeContextForListing(listingId?: string | null): Promise<string> {
+  if (!listingId) return 'rental';
+  try {
+    const res = await fetch(rest(`/listings?id=eq.${encodeURIComponent(listingId)}&select=listing_mode&limit=1`), { headers: H });
+    const rows = await res.json();
+    return Array.isArray(rows) && rows[0]?.listing_mode === 'sale' ? 'sale' : 'rental';
+  } catch { return 'rental'; }
+}
+
 export async function computeBreakdown(input: { subtotal: number; context?: string }): Promise<PricingBreakdown> {
   const subtotal = Math.max(0, Number(input.subtotal) || 0);
   // Every existing caller (rental/service checkout) passes no context and

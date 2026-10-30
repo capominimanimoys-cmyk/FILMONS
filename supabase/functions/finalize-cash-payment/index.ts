@@ -7,7 +7,7 @@
 // only supplies the reference numbers, never the split itself (the amounts
 // passed here are cross-checked against a fresh checkout-quote calculation,
 // not trusted as-is).
-import { computeBreakdown } from '../_shared/pricing.ts';
+import { computeBreakdown, feeContextForListing } from '../_shared/pricing.ts';
 import { addBusinessDays } from '../_shared/businessDays.ts';
 
 const cors = {
@@ -39,14 +39,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { orderId, hostId, subtotal, rentalEndDate } = await req.json();
+    const { orderId, hostId, subtotal, rentalEndDate, listingId } = await req.json();
     if (!orderId || !hostId || typeof subtotal !== 'number') {
       return new Response(JSON.stringify({ error: 'Missing orderId, hostId, or subtotal' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
     // Re-derive the fee split server-side — never trust a client-sent fee
     // breakdown, same principle as stripe-charge.
-    const breakdown = await computeBreakdown({ subtotal });
+    const breakdown = await computeBreakdown({ subtotal, context: await feeContextForListing(listingId) });
 
     // Same 5-business-day hold as every other earning path on Filmons (see
     // stripe-webhook/index.ts), anchored to the rental end date if known.

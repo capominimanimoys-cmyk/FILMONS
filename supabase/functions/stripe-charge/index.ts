@@ -1,4 +1,4 @@
-import { computeBreakdown } from '../_shared/pricing.ts';
+import { computeBreakdown, feeContextForListing } from '../_shared/pricing.ts';
 import { coveredDates } from '../_shared/bookingDates.ts';
 
 const cors = {
@@ -145,7 +145,12 @@ Deno.serve(async (req) => {
     // actually charged can never drift apart. This is the amount before any
     // Stripe-side adjustments — if Stripe Tax is enabled on this Stripe
     // account, Stripe applies it on top of what's sent here.
-    const breakdown = await computeBreakdown({ subtotal });
+    let feeListingId: string | null = listing_id || null;
+    if (agreement_id) {
+      const ag0 = await dbSelectOne('rental_agreements', `id=eq.${agreement_id}`);
+      if (ag0?.listing_id) feeListingId = ag0.listing_id;
+    }
+    const breakdown = await computeBreakdown({ subtotal, context: await feeContextForListing(feeListingId) });
 
     // Refundable security deposit -- looked up from the listing itself, never
     // taken from the client. Charged on top of price + Filmons Fee, carries no

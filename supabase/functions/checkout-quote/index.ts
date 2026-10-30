@@ -5,7 +5,7 @@
 // independently calls the same shared computeBreakdown, so the quote shown
 // here and the amount actually charged can never drift apart. No tax is
 // calculated here — Stripe handles applicable tax on its own.
-import { computeBreakdown } from "../_shared/pricing.ts";
+import { computeBreakdown, feeContextForListing } from "../_shared/pricing.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { subtotal } = await req.json();
+    const { subtotal, listing_id } = await req.json();
     if (typeof subtotal !== "number" || subtotal < 0) {
       return new Response(JSON.stringify({ error: "subtotal must be a non-negative number" }), {
         status: 400,
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const breakdown = await computeBreakdown({ subtotal });
+    const breakdown = await computeBreakdown({ subtotal, context: await feeContextForListing(listing_id) });
     return new Response(JSON.stringify(breakdown), {
       headers: { ...cors, "Content-Type": "application/json" },
     });

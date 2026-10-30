@@ -45,7 +45,7 @@ async function insertAudit(row: Record<string, unknown>) {
   }).catch(() => {});
 }
 
-import { computeBreakdown } from '../_shared/pricing.ts';
+import { computeBreakdown, feeContextForListing } from '../_shared/pricing.ts';
 
 const AGREEMENT_TERMS_VERSION = '2026.1';
 
@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
     // changes must never alter an already-signed agreement's snapshot. No
     // tax is calculated here — Stripe handles applicable tax on its own.
     const subtotalForSnapshot = Number(rentalDetails.amount ?? draft.pricing_snapshot?.amount ?? 0);
-    const pricingBreakdown = await computeBreakdown({ subtotal: subtotalForSnapshot });
+    const pricingBreakdown = await computeBreakdown({ subtotal: subtotalForSnapshot, context: await feeContextForListing(listingId) });
 
     const signed = await patch('rental_agreements', `id=eq.${agreementId}`, {
       agreement_number: agreementNumber,
