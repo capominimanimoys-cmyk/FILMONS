@@ -81,14 +81,14 @@ interface PriceQuote {
 // deployed) leaves the browser's default fetch pending far longer than any
 // user will wait, and the caller has no way to tell "still loading" apart
 // from "never going to resolve".
-async function fetchQuote(subtotal: number): Promise<PriceQuote | null> {
+async function fetchQuote(subtotal: number, listingId?: string): Promise<PriceQuote | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const res = await fetch(`https://${projectId}.supabase.co/functions/v1/checkout-quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
-      body: JSON.stringify({ subtotal }),
+      body: JSON.stringify({ subtotal, listing_id: listingId }),
       signal: controller.signal,
     });
     const data = await res.json();
@@ -690,7 +690,7 @@ export function Checkout() {
     let cancelled = false;
     setQuoteLoading(true);
     setQuoteError(false);
-    fetchQuote(subtotal).then(q => {
+    fetchQuote(subtotal, msg?.paymentRequest?.listingId).then(q => {
       if (cancelled) return;
       setQuote(q);
       setQuoteError(!q);
@@ -899,7 +899,7 @@ export function Checkout() {
       fetch(`https://${projectId}.supabase.co/functions/v1/finalize-cash-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
-        body: JSON.stringify({ orderId, hostId: hostUser.id, subtotal: quote.subtotal, rentalEndDate }),
+        body: JSON.stringify({ orderId, hostId: hostUser.id, subtotal: quote.subtotal, rentalEndDate, listingId: pay.listingId }),
       }).then(() => {
         window.dispatchEvent(new CustomEvent('filmons:wallet:updated', { detail: { userId: hostUser.id } }));
       }).catch(e => console.warn('finalize-cash-payment failed:', e));
@@ -1109,7 +1109,7 @@ export function Checkout() {
                       </span>
                     </div>
                   )}
-                  <div className="flex items-baseline justify-between text-sm">
+                  <div className={`flex items-baseline justify-between text-sm ${quote && quote.buyerFeeAmount === 0 ? 'hidden' : ''}`}>
                     <span className="text-gray-400 flex items-center gap-1">
                       Filmons Fee{quote ? ` (${(quote.buyerFeeRate * 100).toFixed(0)}%)` : ''}
                       <button type="button" onClick={() => setShowFeeInfo(v => !v)} className="text-gray-300 hover:text-gray-500" aria-label="About the Filmons Fee">

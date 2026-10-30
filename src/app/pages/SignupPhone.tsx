@@ -269,13 +269,20 @@ export function SignupPhone() {
         return;
       }
 
-      // Send OTP via edge function
-      await authApi.sendPhoneOTP(fullE164);
-      console.log('[phone-signup] OTP send succeeded, advancing to otp step');
-      toast.success(`Code sent to ${country.flag} ${country.dial} ${phone}`);
+      // Show the code screen right away and send in the background, so the wait for the SMS happens
+      // where the user is already looking at the code box (not on a spinner). A failed send returns them to the form.
       setOtp('');
       setOtpKey(k => k + 1);
       setStep('otp');
+      toast.message(`Sending a code to ${country.flag} ${country.dial} ${phone}…`);
+      try {
+        await authApi.sendPhoneOTP(fullE164);
+      } catch (sendErr) {
+        setStep('form');
+        throw sendErr;
+      }
+      console.log('[phone-signup] OTP send succeeded');
+      toast.success(`Code sent to ${country.flag} ${country.dial} ${phone}`);
     } catch (err: any) {
       console.error('[phone-signup] sendPhoneOTP failed:', err);
       const msg: string = err?.message ?? '';
