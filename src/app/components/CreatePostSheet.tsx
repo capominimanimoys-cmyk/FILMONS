@@ -87,7 +87,9 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   const [media, setMedia] = useState<MediaDraft[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<ProfileResult[]>([]);
-  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioItem | null>(initialPortfolioItem ?? null);
+  // Several portfolio works can be attached; the first also fills the post's single portfolio_item_* columns.
+  const [selectedPortfolioItems, setSelectedPortfolioItems] = useState<PortfolioItem[]>(initialPortfolioItem ? [initialPortfolioItem] : []);
+  const selectedPortfolioItem = selectedPortfolioItems[0] ?? null;
   // Fixed at mount -- true only when this composer session STARTED as a
   // Portfolio "repost with thoughts" (see initialPortfolioItem's own doc
   // comment), never for the ordinary "+ Portfolio" attach-my-own-work
@@ -297,6 +299,7 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
           portfolioItemTitle: selectedPortfolioItem?.title,
           portfolioItemCategory: selectedPortfolioItem?.category,
           portfolioItemThumb: selectedPortfolioItem?.thumbnail_url,
+          portfolioItems: selectedPortfolioItems.map(i => ({ id: i.id, title: i.title, category: i.category, thumb: i.thumbnail_url })),
           repostOfAlbum: repostOfAlbum,
           ownAlbum: ownAlbum,
           course: selectedCourse ?? undefined,
@@ -609,20 +612,23 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         )}
 
         {/* Attached: Portfolio / Listing / Location / Link */}
-        {selectedPortfolioItem && (
-          <div className="px-4 pt-3">
-            <div className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
-              <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
-                {selectedPortfolioItem.thumbnail_url && <img src={selectedPortfolioItem.thumbnail_url} className="w-full h-full object-cover" />}
+        {selectedPortfolioItems.length > 0 && (
+          <div className="px-4 pt-3 space-y-2">
+            {selectedPortfolioItems.map(it => (
+              <div key={it.id} className="flex items-center gap-3 bg-gray-50 rounded-2xl p-2.5">
+                <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 shrink-0">
+                  {it.thumbnail_url && <img src={it.thumbnail_url} className="w-full h-full object-cover" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-black text-blue-600">View in portfolio →</p>
+                  <p className="text-sm font-bold text-gray-900 truncate">{it.title}</p>
+                </div>
+                <button onClick={() => setSelectedPortfolioItems(p => p.filter(x => x.id !== it.id))} className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                  <X className="w-3.5 h-3.5 text-gray-600" />
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-black text-blue-600">View in portfolio →</p>
-                <p className="text-sm font-bold text-gray-900 truncate">{selectedPortfolioItem.title}</p>
-              </div>
-              <button onClick={() => setSelectedPortfolioItem(null)} className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
-                <X className="w-3.5 h-3.5 text-gray-600" />
-              </button>
-            </div>
+            ))}
+            <button onClick={() => setShowPortfolioBrowser(true)} className="text-xs font-bold text-blue-600">+ Add more portfolio work</button>
           </div>
         )}
 
@@ -809,14 +815,15 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
       {/* Portfolio / Listing browsers */}
       {showPortfolioBrowser && (
         <PortfolioBrowser
-          selectedId={selectedPortfolioItem?.id ?? ownAlbum?.albumId}
-          onSelect={item => { setSelectedPortfolioItem(item); setOwnAlbum(undefined); setShowPortfolioBrowser(false); }}
+          selectedId={ownAlbum?.albumId}
+          selectedIds={selectedPortfolioItems.map(i => i.id)}
+          onSelect={item => { setOwnAlbum(undefined); setSelectedPortfolioItems(p => p.some(x => x.id === item.id) ? p.filter(x => x.id !== item.id) : [...p, item]); }}
           onSelectAlbum={album => {
             setOwnAlbum({
               albumId: album.id, userId: user!.id, userName: user!.name || user!.username || '',
               userAvatar: user!.avatar || undefined, title: album.title, coverUrl: album.cover_url, itemCount: album.item_count,
             });
-            setSelectedPortfolioItem(null);
+            setSelectedPortfolioItems([]);
             setShowPortfolioBrowser(false);
           }}
           onClose={() => setShowPortfolioBrowser(false)}
