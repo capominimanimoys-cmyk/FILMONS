@@ -18,6 +18,12 @@ import { BUSINESS_INDUSTRIES } from '../lib/businessIndustries';
  *  this field-editor picker and BusinessIndustryPrompt's completion prompt. */
 export function BusinessIndustryList({ value, onSelect }: { value?: string; onSelect: (industry: string) => void }) {
   const [q, setQ] = useState('');
+  // "Other" asks for the industry's name; the typed name is what gets saved (and shown), so a saved value that isn't in the
+  // list is a custom industry and reopens on "Other" with its name filled in.
+  const isCustom = !!value && !BUSINESS_INDUSTRIES.includes(value);
+  const [askOther, setAskOther] = useState(false);
+  const [otherName, setOtherName] = useState(isCustom ? value! : '');
+  const saveOther = () => { const n = otherName.trim().slice(0, 60); if (n.length >= 2) onSelect(n); };
   const rows = q.trim()
     ? BUSINESS_INDUSTRIES.filter(i => i.toLowerCase().includes(q.trim().toLowerCase()))
     : BUSINESS_INDUSTRIES;
@@ -35,15 +41,35 @@ export function BusinessIndustryList({ value, onSelect }: { value?: string; onSe
         </div>
       </div>
       <div className="pb-2">
-        {rows.map(item => (
-          <button key={item} type="button" onClick={() => onSelect(item)}
-            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
-            <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${value === item ? 'border-blue-600' : 'border-gray-300'}`}>
-              {value === item && <span className="w-2 h-2 rounded-full bg-blue-600" />}
-            </span>
-            <span className="text-sm font-semibold text-gray-800">{item}</span>
-          </button>
-        ))}
+        {rows.map(item => {
+          const isOther = item === 'Other';
+          const selected = isOther ? (askOther || isCustom || value === 'Other') : value === item;
+          return (
+            <div key={item}>
+              <button type="button" onClick={() => isOther ? setAskOther(true) : onSelect(item)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${selected ? 'border-blue-600' : 'border-gray-300'}`}>
+                  {selected && <span className="w-2 h-2 rounded-full bg-blue-600" />}
+                </span>
+                <span className="text-sm font-semibold text-gray-800">{item}{isOther && isCustom && !askOther ? ` — ${value}` : ''}</span>
+              </button>
+              {isOther && (askOther || isCustom) && (
+                <div className="px-4 pb-3 pl-11">
+                  <input
+                    autoFocus={askOther} value={otherName} onChange={e => setOtherName(e.target.value)} maxLength={60}
+                    onKeyDown={e => { if (e.key === 'Enter') saveOther(); }}
+                    placeholder="Enter your industry name"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-400"
+                  />
+                  <button type="button" onClick={saveOther} disabled={otherName.trim().length < 2}
+                    className="mt-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-40">
+                    Save industry
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
         {rows.length === 0 && <p className="px-4 py-3 text-sm text-gray-400">No matches</p>}
       </div>
     </>
