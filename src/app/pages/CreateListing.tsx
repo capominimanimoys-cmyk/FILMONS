@@ -1788,6 +1788,13 @@ export function CreateListing() {
     if (isService) {
       try {
         const payload = buildPayload();
+        // The cover picker stored the local preview of the chosen video; point it at the uploaded copy so cards can play it.
+        if (payload.metadata.coverSource === 'video_frame') {
+          const i = [...form.existingVideos, ...form.videoPreviews].indexOf(form.coverVideoUrl);
+          const r = i >= 0 ? videoUrls[i] : form.coverVideoUrl;
+          payload.metadata.coverVideoUrl = typeof r === 'string' && r.startsWith('http') ? r : (videoUrls[0] || null);
+        }
+
         const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -1822,6 +1829,13 @@ export function CreateListing() {
 
     try {
       const payload = buildPayload();
+        // The cover picker stored the local preview of the chosen video; point it at the uploaded copy so cards can play it.
+        if (payload.metadata.coverSource === 'video_frame') {
+          const i = [...form.existingVideos, ...form.videoPreviews].indexOf(form.coverVideoUrl);
+          const r = i >= 0 ? videoUrls[i] : form.coverVideoUrl;
+          payload.metadata.coverVideoUrl = typeof r === 'string' && r.startsWith('http') ? r : (videoUrls[0] || null);
+        }
+
 
       // listings.id has no database-side default — without an explicit id
       // this insert always fails with a not-null violation and silently
@@ -1859,6 +1873,13 @@ export function CreateListing() {
       // Fallback to edge function
       try {
         const payload = buildPayload();
+        // The cover picker stored the local preview of the chosen video; point it at the uploaded copy so cards can play it.
+        if (payload.metadata.coverSource === 'video_frame') {
+          const i = [...form.existingVideos, ...form.videoPreviews].indexOf(form.coverVideoUrl);
+          const r = i >= 0 ? videoUrls[i] : form.coverVideoUrl;
+          payload.metadata.coverVideoUrl = typeof r === 'string' && r.startsWith('http') ? r : (videoUrls[0] || null);
+        }
+
         const listing = await listingsApi.create({
           title: payload.title, description: payload.description,
           tags: payload.tags, price: payload.price,

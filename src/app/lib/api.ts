@@ -811,14 +811,15 @@ export function mapListingRow(row: any): Listing {
     opportunity:     meta.opportunity || undefined,
     // Video-frame covers: the card plays this video as a muted preview (poster = the cover frame).
     coverSource:     meta.coverSource || undefined,
-    coverVideoUrl:   meta.coverSource === 'video_frame' ? (meta.coverVideoUrl || undefined) : undefined,
+    // Older listings saved the picker's local preview URL here (unplayable); fall back to the listing's own first video.
+    coverVideoUrl:   meta.coverSource === 'video_frame' ? ((typeof meta.coverVideoUrl === 'string' && meta.coverVideoUrl.startsWith('http')) ? meta.coverVideoUrl : videos.find((v: string) => typeof v === 'string' && v.startsWith('http'))) : undefined,
     coverTimestamp:  meta.coverTimestamp ?? undefined,
   } as Listing;
 }
 
 /** Lean column set for listing CARDS in discovery rows / grids (no description, videos, contact methods or
  *  price packages -- those only matter on the listing's own page). Noticeably smaller responses. */
-export const LISTING_CARD_COLUMNS = 'id, user_id, title, price, city, listing_type, listing_mode, service_category, tags, images, created_at, metadata, boosted, is_emergency, emergency_expires_at';
+export const LISTING_CARD_COLUMNS = 'id, user_id, title, price, city, listing_type, listing_mode, service_category, tags, images, videos, created_at, metadata, boosted, is_emergency, emergency_expires_at';
 
 export const LISTING_COLUMNS = 'id, user_id, title, description, price, city, listing_type, listing_mode, service_category, tags, images, videos, contact_methods, pricing_packages, created_at, metadata, boosted, is_emergency, emergency_plan, emergency_expires_at';
 
