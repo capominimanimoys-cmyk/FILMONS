@@ -26,7 +26,11 @@ Deno.serve(async (req) => {
     if (order.completed_at) return json({ error: 'This booking is already finished.' }, 400);
     if (order.refund_status === 'refunded') return json({ error: 'This booking was refunded.' }, 400);
 
-    const patch = async (body: Record<string, unknown>) => fetch(rest(`/orders?id=eq.${encodeURIComponent(orderId)}`), { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
+    // A failed write (e.g. the booking-lifecycle migration not applied yet) must be reported, not silently treated as success.
+    const patch = async (body: Record<string, unknown>) => {
+      const r = await fetch(rest(`/orders?id=eq.${encodeURIComponent(orderId)}`), { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error(`Could not save: ${(await r.text().catch(() => '')).slice(0, 200)}`);
+    };
     const notify = (user_id: string, title: string) => fetch(rest('/notifications'), {
       method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
       body: JSON.stringify({ user_id, actor_id: null, actor_name: 'Filmons', type: 'system_notification', is_read: false, conversation_id: order.conversation_id || null, title }),
@@ -54,6 +58,6 @@ Deno.serve(async (req) => {
     return json({ error: 'Unknown action' }, 400);
   } catch (e) {
     console.error('booking-action error:', e);
-    return json({ error: 'Internal error' }, 500);
+    return json({ error: e instanceof Error && e.message.startsWith('Could not save') ? e.message : 'Internal error' }, 500);
   }
 });
