@@ -16,7 +16,7 @@ const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE
 
 // Fixed by design -- the spec is explicit that the code goes to exactly
 // one address, not a configurable/admin-selectable recipient.
-const ADMIN_RECIPIENT_EMAIL = 'gabriel@filmons.app';
+const ADMIN_RECIPIENT_EMAIL = 'filmons481@gmail.com';
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 45 * 1000;
 
