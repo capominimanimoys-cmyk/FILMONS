@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { authApi } from '../lib/api';
-import { sendEmail } from '../lib/emailjs-config';
+import { sendEmail, EMAILJS_CONFIG } from '../lib/emailjs-config';
 import {
   ShieldCheck, ArrowLeft, ChevronRight, ChevronLeft, ChevronDown,
   Check, Upload, Camera, FileText, User, MapPin, CreditCard, AlertCircle,
@@ -787,12 +787,22 @@ export function Verification() {
     // generic reused one. Points at the real admin.filmons.app subdomain
     // now, not the old flat /admin-verifications redirect.
     const fullLegalName = [legalFirstName, legalLastName].filter(Boolean).join(' ');
-    sendEmail('template_TODO_verification_request', {
-      to_email: 'gabriel@filmons.app', to_name: 'Admin',
-      user_name: fullLegalName || user.name, user_email: user.email || '',
-      user_id: user.id, id_type: idType, city, province,
-      submitted_at: new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }),
-      admin_link: 'https://admin.filmons.app/verifications',
+    // Sent through the generic admin-notification template (subject + message): the dedicated verification template id
+    // was still a placeholder, so this email never actually went out.
+    const submittedLabel = new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' });
+    sendEmail(EMAILJS_CONFIG.templates.adminNotification, {
+      to_email: 'filmons481@gmail.com', to_name: 'Filmons Admin',
+      subject: `New identity verification request — ${fullLegalName || user.name}`,
+      message: [
+        `${fullLegalName || user.name} submitted an identity verification request.`,
+        `Email: ${user.email || '—'}`,
+        `User ID: ${user.id}`,
+        `ID type: ${idType}`,
+        `Location: ${[city, province].filter(Boolean).join(', ') || '—'}`,
+        `Submitted: ${submittedLabel}`,
+        '',
+        'Review it here: https://admin.filmons.app/verifications',
+      ].join('\n'),
     }).catch(e => console.warn('Admin email failed:', e));
 
     setLoading(false);
