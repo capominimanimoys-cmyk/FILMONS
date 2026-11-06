@@ -53,7 +53,7 @@ function maskEmail(email: string): string {
   const masked = user.slice(0, visible) + '*'.repeat(Math.max(3, user.length - visible * 2)) + user.slice(-visible);
   return `${masked}@${domain}`;
 }
-const ADMIN_RECIPIENT_EMAIL_MASKED = maskEmail('gabriel@filmons.app');
+const ADMIN_RECIPIENT_EMAIL_MASKED = maskEmail('filmons481@gmail.com');
 
 // Always the real main-site origin, absolute -- deliberately NOT a
 // relative '/' navigate(), because on admin.filmons.app a relative '/'

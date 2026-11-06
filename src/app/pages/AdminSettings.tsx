@@ -352,7 +352,7 @@ export function AdminSettings() {
               </SettingsGroup>
               <SettingsGroup title="Admin Login">
                 <InfoRow label="Authentication method" value="Email One-Time Code" />
-                <InfoRow label="Authorized admin email" value={maskEmail('gabriel@filmons.app')} />
+                <InfoRow label="Authorized admin email" value={maskEmail('filmons481@gmail.com')} />
               </SettingsGroup>
               <SettingsGroup title="Login Security">
                 <FactRow text="One-time codes expire automatically after 10 minutes" />
