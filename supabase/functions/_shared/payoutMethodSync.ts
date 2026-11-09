@@ -132,15 +132,25 @@ async function upsertPayoutMethodRow(hostId: string, stripeAccountId: string, ex
   // account_type/account_holder_type set separately by
   // submit-payout-bank-account/setup-payout-account each time it fired.
   const existing = await fetch(
-    rest(`/payout_methods?host_id=eq.${hostId}&stripe_connect_account_id=eq.${stripeAccountId}&select=id,status&limit=1`),
+    rest(`/payout_methods?host_id=eq.${hostId}&stripe_connect_account_id=eq.${stripeAccountId}&select=id,status&order=created_at.desc&limit=1`),
     { headers: H },
   ).then(r => r.json()).catch(() => []);
   const existingRow = Array.isArray(existing) ? existing[0] : null;
 
   if (existingRow?.id) {
-    await fetch(rest(`/payout_methods?id=eq.${existingRow.id}`), {
+    // Older versions could leave several rows for the same Stripe account. Update ALL of them (so none keeps showing a
+    // previous bank) and keep exactly one row -- the newest -- as the host's default, which is the one Wallet reads.
+    await fetch(rest(`/payout_methods?host_id=eq.${hostId}&stripe_connect_account_id=eq.${stripeAccountId}`), {
       method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
       body: JSON.stringify(fields),
+    });
+    await fetch(rest(`/payout_methods?host_id=eq.${hostId}&id=neq.${existingRow.id}&is_default=eq.true`), {
+      method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ is_default: false }),
+    });
+    await fetch(rest(`/payout_methods?id=eq.${existingRow.id}`), {
+      method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ is_default: true }),
     });
     // Only on the transition into action_required, not every re-sync, so a
     // host isn't re-emailed on every account.updated webhook while still

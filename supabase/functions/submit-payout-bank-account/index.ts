@@ -178,6 +178,10 @@ Deno.serve(async (req) => {
     } catch (e) { console.warn('could not finalise default external account:', e); }
 
     const safe = await syncPayoutMethodFromStripeAccount(userId, accountId);
+    // Verify against what Stripe now reports: if the payout account isn't the one just entered, say so rather than "saved".
+    if (safe?.last4 && safe.last4 !== String(accountNumber).slice(-4)) {
+      return json({ error: `Stripe still lists the bank account ending ${safe.last4} as your payout account, not the one ending ${String(accountNumber).slice(-4)}. Please try again, or contact support.` }, 409);
+    }
 
     // account_type (chequing/savings) has no Stripe equivalent -- it's
     // stored purely for Filmons' own display, so write it directly here
