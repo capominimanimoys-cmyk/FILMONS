@@ -279,7 +279,7 @@ async function finalizeOrder(params: {
     },
   }).then(() => supabase.from('orders').insert({
     id:                orderId,
-    type:              (pay.listingType === 'Service' ? 'service' : pay.listingMode === 'sale' ? 'sale' : 'rental'),
+    type:              (String(pay.listingType || '').toLowerCase() === 'service' ? 'service' : pay.listingMode === 'sale' ? 'sale' : 'rental'),
     status:            'paid',
     renter_id:         user?.id,
     host_id:           hostUser?.id,
