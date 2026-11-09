@@ -177,10 +177,32 @@ Deno.serve(async (req) => {
       }
     } catch (e) { console.warn('could not finalise default external account:', e); }
 
-    const safe = await syncPayoutMethodFromStripeAccount(userId, accountId);
-    // Verify against what Stripe now reports: if the payout account isn't the one just entered, say so rather than "saved".
-    if (safe?.last4 && safe.last4 !== String(accountNumber).slice(-4)) {
-      return json({ error: `Stripe still lists the bank account ending ${safe.last4} as your payout account, not the one ending ${String(accountNumber).slice(-4)}. Please try again, or contact support.` }, 409);
+    let safe = await syncPayoutMethodFromStripeAccount(userId, accountId);
+    // Verify against what Stripe now reports. If the payout account isn't the one just entered, try once more to
+    // promote it directly, and if that still doesn't take, say exactly what Stripe holds instead of "saved".
+    const enteredLast4 = String(accountNumber).slice(-4);
+    if (safe?.last4 && safe.last4 !== enteredLast4) {
+      const describe = async () => {
+        const r = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts?limit=20`, { headers: authHeader });
+        const l = await r.json();
+        return (l?.data || []).map((a: any) => ({ id: a.id, last4: a.last4, bank: a.bank_name || null, currency: a.currency, default: !!a.default_for_currency, status: a.status }));
+      };
+      let accounts = await describe().catch(() => [] as any[]);
+      const mine = accounts.find((a: any) => a.last4 === enteredLast4) || { id: externalAccount.id };
+      const retry = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${mine.id}`, {
+        method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ default_for_currency: 'true' }),
+      }).then(r => r.json()).catch(() => ({}));
+      for (const other of accounts) {
+        if (other.id !== mine.id) await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${other.id}`, { method: 'DELETE', headers: authHeader }).catch(() => {});
+      }
+      safe = await syncPayoutMethodFromStripeAccount(userId, accountId);
+      if (safe?.last4 && safe.last4 !== enteredLast4) {
+        accounts = await describe().catch(() => accounts);
+        console.error('payout default mismatch', JSON.stringify({ account: accountId, accounts, retryError: retry?.error?.message }));
+        const detail = accounts.map((a: any) => `${a.bank || 'bank'} ••${a.last4}${a.default ? ' (default)' : ''}`).join(', ') || 'none';
+        return json({ error: `Stripe still pays out to the account ending ${safe.last4}, not the one ending ${enteredLast4}. Accounts on your Stripe profile: ${detail}.${retry?.error?.message ? ` Stripe said: ${retry.error.message}` : ''}` }, 409);
+      }
     }
 
     // account_type (chequing/savings) has no Stripe equivalent -- it's
