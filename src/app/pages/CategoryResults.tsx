@@ -19,6 +19,7 @@
  * just at the Browse Search preview's "View More" gate — a restricted-tier
  * user typing this URL directly must still never see more than that many.
  */
+import { CoverVideoPreview } from '../components/CoverVideoPreview';
 import { prefetchHandlers } from '../lib/prefetch';
 import { thumbUrl } from '../lib/mediaUrl';
 import { ProfilesCategoryResults } from './ProfilesCategoryResults';
@@ -1096,6 +1097,7 @@ function PreviewListingCard({ listing, badge, gridMode = false }: {
         {listing.images?.[0]
           ? <img src={thumbUrl(listing.images[0], 260)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
+        {(listing as any).coverVideoUrl && <CoverVideoPreview src={(listing as any).coverVideoUrl} startAt={Number((listing as any).coverTimestamp) || 0} />}
         {badge && (
           <span className={`absolute top-1.5 left-1.5 text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[badge]}`}>
             {badge}
@@ -1287,6 +1289,7 @@ function ListingResultRow({ listing, onSave }: { listing: Listing; onSave: () =>
         {listing.images?.[0]
           ? <img src={thumbUrl(listing.images[0], 260)} className="w-full h-full object-cover" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-3xl opacity-25">🎬</div>}
+        {(listing as any).coverVideoUrl && <CoverVideoPreview src={(listing as any).coverVideoUrl} startAt={Number((listing as any).coverTimestamp) || 0} />}
         {!isOpp && (
           <span className={`absolute top-2 left-2 text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-full text-white shadow-sm ${MARKETPLACE_BADGE_STYLE[marketplaceTypeBadgeForListing(listing)]}`}>
             {marketplaceTypeBadgeForListing(listing)}
@@ -1681,6 +1684,7 @@ function DesktopListingCard({ listing, badge }: { listing: Listing; badge?: Mark
         {listing.images?.[0]
           ? <img src={thumbUrl(listing.images[0], 260)} className="w-full h-full object-cover object-center" alt="" loading="lazy" decoding="async"/>
           : <div className="w-full h-full flex items-center justify-center text-2xl opacity-25">🎬</div>}
+        {(listing as any).coverVideoUrl && <CoverVideoPreview src={(listing as any).coverVideoUrl} startAt={Number((listing as any).coverTimestamp) || 0} />}
         {/* Opportunity's own Paid/Unpaid tag already conveys its type
             (plus the section header already says "Opportunities") -- the
             generic RENTAL/SALE/SERVICE badge only adds value for the
