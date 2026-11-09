@@ -328,7 +328,7 @@ export const walletApi = {
     accountHolderName: string; accountNumber: string; accountType: 'chequing' | 'savings';
     institutionNumber?: string; transitNumber?: string; // CA only
     routingNumber?: string; // US only
-  }): Promise<{ success: boolean; error?: string }> {
+  }): Promise<{ success: boolean; error?: string; payoutLabel?: string }> {
     try {
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/submit-payout-bank-account`, {
         method: 'POST',
@@ -337,7 +337,9 @@ export const walletApi = {
       });
       const data = await res.json();
       if (!res.ok || data.error) return { success: false, error: data.error || 'Could not save bank account' };
-      return { success: true };
+      // What Stripe itself now reports as the payout account.
+      const pm = data.payoutMethod;
+      return { success: true, payoutLabel: pm ? `${pm.displayName || 'Bank account'}${pm.last4 ? ` ••${pm.last4}` : ''}` : undefined };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
