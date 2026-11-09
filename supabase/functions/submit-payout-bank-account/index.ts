@@ -155,16 +155,24 @@ Deno.serve(async (req) => {
     // account so Stripe can never pay out to a different one.
     try {
       if (!externalAccount.default_for_currency) {
-        await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${externalAccount.id}`, {
+        const setRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${externalAccount.id}`, {
           method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ default_for_currency: 'true' }),
         });
+        const setBody = await setRes.json().catch(() => ({}));
+        // Don't pretend it worked: if Stripe refused, the old account would stay the payout destination.
+        if (setBody?.error) {
+          console.error('could not make new bank account the default:', setBody.error.message);
+          return json({ error: `Your new bank account was added, but Stripe wouldn't make it the payout account: ${setBody.error.message}` }, 400);
+        }
       }
       const listRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts?object=bank_account&limit=20`, { headers: authHeader });
       const list = await listRes.json();
       for (const other of list?.data || []) {
         if (other.id !== externalAccount.id) {
-          await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${other.id}`, { method: 'DELETE', headers: authHeader }).catch(() => {});
+          const delRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts/${other.id}`, { method: 'DELETE', headers: authHeader });
+          const delBody = await delRes.json().catch(() => ({}));
+          if (delBody?.error) console.warn('could not remove old bank account:', delBody.error.message);
         }
       }
     } catch (e) { console.warn('could not finalise default external account:', e); }
