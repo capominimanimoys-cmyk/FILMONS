@@ -181,6 +181,7 @@ Deno.serve(async (req) => {
     // Verify against what Stripe now reports. If the payout account isn't the one just entered, try once more to
     // promote it directly, and if that still doesn't take, say exactly what Stripe holds instead of "saved".
     const enteredLast4 = String(accountNumber).slice(-4);
+    if (!safe) return json({ error: 'Stripe does not list a payout bank account on your profile yet. Please try saving it again.' }, 409);
     if (safe?.last4 && safe.last4 !== enteredLast4) {
       const describe = async () => {
         const r = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/external_accounts?limit=20`, { headers: authHeader });

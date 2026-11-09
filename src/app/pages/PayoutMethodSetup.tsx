@@ -236,7 +236,7 @@ export function PayoutMethodSetup() {
       ...(isCA ? { institutionNumber: institutionNumber.trim(), transitNumber: transitNumber.trim() } : { routingNumber: routingNumber.trim() }),
     });
     setSaving(false);
-    if (res.success) { toast.success('Payout method saved'); navigate('/wallet'); }
+    if (res.success) { toast.success(res.payoutLabel ? `Stripe will now pay out to ${res.payoutLabel}` : 'Payout method saved', { duration: 8000 }); navigate('/wallet'); }
     else if (res.error === 'reauth_required') {
       // The account this profile pointed at wasn't a Custom account this
       // flow can edit (e.g. a leftover from the old Express-based setup) --
