@@ -82,6 +82,8 @@ export function PayoutMethodSetup() {
   const [accountNumber, setAccountNumber] = useState('');
   const [accountType, setAccountType] = useState<'chequing' | 'savings'>('chequing');
   const [saving, setSaving] = useState(false);
+  // Result of the last save, shown on the page itself (a toast alone is easy to miss, and errors used to be console-only).
+  const [saveResult, setSaveResult] = useState<null | { ok: boolean; text: string }>(null);
 
   // Only needs the Stripe account itself (profile.stripe_connect_account_id,
   // checked server-side) -- NOT a payout_methods row, which doesn't exist
@@ -231,13 +233,17 @@ export function PayoutMethodSetup() {
   const submitBank = async () => {
     if (!bankValid || !country) return;
     setSaving(true);
+    setSaveResult(null);
     const res = await walletApi.submitPayoutBankAccount(user.id, stepUpToken, {
       accountHolderName: accountHolder.trim(), accountNumber: accountNumber.trim(), accountType,
       ...(isCA ? { institutionNumber: institutionNumber.trim(), transitNumber: transitNumber.trim() } : { routingNumber: routingNumber.trim() }),
     });
     setSaving(false);
-    if (res.success) { toast.success(res.payoutLabel ? `Stripe will now pay out to ${res.payoutLabel}` : 'Payout method saved', { duration: 8000 }); navigate('/wallet'); }
+    if (res.success) {
+      setSaveResult({ ok: true, text: res.payoutLabel ? `Saved. Stripe will now pay out to ${res.payoutLabel}.` : 'Saved. Your payout method was updated.' });
+    }
     else if (res.error === 'reauth_required') {
+      setSaveResult({ ok: false, text: 'Please set up your payout account again.' });
       // The account this profile pointed at wasn't a Custom account this
       // flow can edit (e.g. a leftover from the old Express-based setup) --
       // the edge function already cleared it, so start over from scratch.
@@ -251,10 +257,10 @@ export function PayoutMethodSetup() {
       // by resubmitting this form -- staying here would just fail again.
       // Wallet.tsx's payout-method card already shows "Bank account
       // requires attention" once the status sync lands.
+      setSaveResult({ ok: false, text: res.error });
       toast.error(res.error);
-      navigate('/wallet');
     }
-    else toast.error(res.error || 'Could not save payout method');
+    else { setSaveResult({ ok: false, text: res.error || 'Could not save payout method' }); toast.error(res.error || 'Could not save payout method'); }
   };
 
   return (
@@ -472,6 +478,14 @@ export function PayoutMethodSetup() {
             className="w-full mt-4 py-3.5 bg-blue-600 text-white font-black text-sm rounded-2xl disabled:opacity-40 flex items-center justify-center gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Landmark className="w-4 h-4" /> Save Payout Method</>}
           </button>
+          {saveResult && (
+            <div role="status" className={`mt-3 rounded-xl border px-3.5 py-3 text-sm leading-snug ${saveResult.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              {saveResult.text}
+              {saveResult.ok && (
+                <button onClick={() => navigate('/wallet')} className="block mt-2 font-bold underline">Back to Wallet</button>
+              )}
+            </div>
+          )}
           <p className="text-[11px] text-gray-400 leading-relaxed mt-2">
             Only masked details (e.g. •••• 4821) are ever shown after saving.
           </p>
