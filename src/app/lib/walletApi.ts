@@ -250,7 +250,11 @@ export const walletApi = {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    return data || null;
+    if (data) return data;
+    // No row is flagged default (e.g. an interrupted update): show the newest saved method rather than none.
+    const { data: newest } = await supabase.from('payout_methods').select('*').eq('host_id', hostId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    return newest || null;
   },
 
   async savePayoutMethod(hostId: string, method: PayoutMethodType, details: PayoutDestination): Promise<{ success: boolean; error?: string }> {
