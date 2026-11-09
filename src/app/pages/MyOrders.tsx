@@ -236,9 +236,11 @@ function FinishButton({ order, onDone }: { order: Order; onDone: () => void }) {
   if (order.completed_at || order.refund_status === 'refunded') {
     return order.completed_at ? <p className="mx-5 mb-3 text-xs font-semibold text-green-600">✓ Finished {formatDate(order.completed_at)}</p> : null;
   }
+  // window.confirm is blocked in installed web apps / in-app browsers (the button then looks dead), so confirm with a second tap.
+  const [armed, setArmed] = useState(false);
   const finish = async () => {
-    const hasDeposit = order.deposit_amount > 0 && order.deposit_status === 'held';
-    if (!window.confirm(hasDeposit ? `Mark this finished? The $${order.deposit_amount.toFixed(2)} deposit will be returned to the renter.` : 'Mark this rental / service as finished?')) return;
+    if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 6000); return; }
+    setArmed(false);
     setBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke('complete-order', { body: { orderId: order.id } });
@@ -252,7 +254,9 @@ function FinishButton({ order, onDone }: { order: Order; onDone: () => void }) {
     <div className="px-5 pb-3">
       <button onClick={finish} disabled={busy}
         className="w-full py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold disabled:opacity-50">
-        {busy ? 'Working…' : order.deposit_amount > 0 && order.deposit_status === 'held' ? 'Mark finished & return deposit' : 'Mark as finished'}
+        {busy ? 'Working…' : armed
+          ? (order.deposit_amount > 0 && order.deposit_status === 'held' ? `Tap again — returns the $${order.deposit_amount.toFixed(2)} deposit` : 'Tap again to confirm')
+          : order.deposit_amount > 0 && order.deposit_status === 'held' ? 'Mark finished & return deposit' : 'Mark as finished'}
       </button>
     </div>
   );
