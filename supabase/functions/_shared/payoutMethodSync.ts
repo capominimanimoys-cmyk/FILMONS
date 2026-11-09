@@ -164,12 +164,17 @@ async function upsertPayoutMethodRow(hostId: string, stripeAccountId: string, ex
 
   // First time this account produces a row — only one default payout
   // method per host, same pattern walletApi.savePayoutMethod uses.
-  await fetch(rest(`/payout_methods?host_id=eq.${hostId}&is_default=eq.true`), {
+  // Insert the new default FIRST and only then demote the others: clearing first meant a failed insert left the host
+  // with no default row at all, so Wallet showed no payout method.
+  const ins = await fetch(rest('/payout_methods'), {
+    method: 'POST', headers: { ...H, Prefer: 'return=representation' },
+    body: JSON.stringify({ host_id: hostId, is_default: true, ...fields }),
+  });
+  const created = await ins.json().catch(() => null);
+  const newId = Array.isArray(created) ? created[0]?.id : null;
+  if (!ins.ok || !newId) throw new Error(`Could not save payout method row: ${JSON.stringify(created).slice(0, 200)}`);
+  await fetch(rest(`/payout_methods?host_id=eq.${hostId}&id=neq.${newId}&is_default=eq.true`), {
     method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
     body: JSON.stringify({ is_default: false }),
-  });
-  await fetch(rest('/payout_methods'), {
-    method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-    body: JSON.stringify({ host_id: hostId, is_default: true, ...fields }),
   });
 }
