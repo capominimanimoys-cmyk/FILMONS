@@ -5,6 +5,7 @@
  * | Eye button → 👀 See Listing (dedicated button only, never a gesture —
  * doesn't advance the deck; the same card is shown again on return).
  */
+import { CoverVideoPreview } from './CoverVideoPreview';
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Heart, X, Eye, Star, MapPin, ShieldCheck, RotateCcw, Lock, AlertTriangle, Sparkles, CheckCircle2, Circle } from 'lucide-react';
 import { useNavigate } from 'react-router';
@@ -102,6 +103,7 @@ function ListingContent({ listing }: { listing: EnrichedListing }) {
           ? <img src={listing.images[0]} className="w-full h-full object-cover" alt="" draggable={false}/>
           : <div className="w-full h-full flex items-center justify-center text-5xl opacity-20">🎬</div>
         }
+        {(listing as any).coverVideoUrl && <CoverVideoPreview src={(listing as any).coverVideoUrl} startAt={Number((listing as any).coverTimestamp) || 0} />}
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/60 to-transparent"/>
         <div className="absolute top-3 left-3 flex flex-col items-start gap-1.5">
           <span className={`text-[10px] font-black text-white backdrop-blur-sm px-2.5 py-1 rounded-full uppercase tracking-wide ${isOpportunity ? 'bg-indigo-600' : 'bg-black/55'}`}>

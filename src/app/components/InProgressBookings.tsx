@@ -66,8 +66,31 @@ function fmt(d: Date | null) {
   return d ? d.toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 }
 
+/** In-page text prompt. window.prompt is silently blocked in installed web apps and some in-app browsers, which made the
+ *  buttons look dead, so notes/conditions are collected here instead. */
+function NoteDialog({ title, label, initial, confirmLabel, onCancel, onConfirm }: {
+  title: string; label: string; initial: string; confirmLabel: string; onCancel: () => void; onConfirm: (text: string) => void;
+}) {
+  const [text, setText] = useState(initial);
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-black text-gray-900">{title}</h3>
+        <label className="block text-xs font-semibold text-gray-500">{label}</label>
+        <textarea autoFocus value={text} onChange={e => setText(e.target.value)} rows={3} maxLength={500}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 resize-none" />
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-bold">Cancel</button>
+          <button onClick={() => onConfirm(text.trim())} className="flex-1 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold">{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function InProgressBookings({ userId }: { userId: string }) {
   const navigate = useNavigate();
+  const [dialog, setDialog] = useState<null | { kind: 'finish' | 'returned'; booking: Booking }>(null);
   const [items, setItems] = useState<Booking[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -176,22 +199,14 @@ export function InProgressBookings({ userId }: { userId: string }) {
                 {/* Completion — rentals: host; services: customer once the provider has submitted */}
                 {!isService && isHost && !b.dispute && (
                   <button disabled={working}
-                    onClick={() => {
-                      const condition = window.prompt('Record the equipment’s condition on return (e.g. “Good, no damage”):', 'Good condition');
-                      if (condition === null) return;
-                      call('complete-order', { condition }, b.depositHeld ? 'Rental finished — deposit returned' : 'Rental finished', b);
-                    }}
+                    onClick={() => setDialog({ kind: 'finish', booking: b })}
                     className="px-3 py-2 rounded-xl bg-green-600 text-white text-xs font-bold disabled:opacity-50">
                     {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Rental finished'}
                   </button>
                 )}
                 {!isService && !isHost && !b.returnedAt && !b.dispute && b.status !== 'upcoming' && (
                   <button disabled={working}
-                    onClick={() => {
-                      const note = window.prompt('Add a note about the return (optional):', '');
-                      if (note === null) return;
-                      call('booking-action', { action: 'returned', note }, 'Return recorded — the host has been notified', b);
-                    }}
+                    onClick={() => setDialog({ kind: 'returned', booking: b })}
                     className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold disabled:opacity-50">
                     {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'I returned it'}
                   </button>
@@ -227,6 +242,18 @@ export function InProgressBookings({ userId }: { userId: string }) {
           );
         })}
       </div>
+      {dialog?.kind === 'finish' && (
+        <NoteDialog title="Rental finished" label="Record the equipment’s condition on return" initial="Good condition"
+          confirmLabel={dialog.booking.depositHeld > 0 ? 'Finish & return deposit' : 'Rental finished'}
+          onCancel={() => setDialog(null)}
+          onConfirm={condition => { const b = dialog.booking; setDialog(null); call('complete-order', { condition }, b.depositHeld > 0 ? 'Rental finished — deposit returned' : 'Rental finished', b); }} />
+      )}
+      {dialog?.kind === 'returned' && (
+        <NoteDialog title="I returned it" label="Add a note about the return (optional)" initial=""
+          confirmLabel="Record return"
+          onCancel={() => setDialog(null)}
+          onConfirm={note => { const b = dialog.booking; setDialog(null); call('booking-action', { action: 'returned', note }, 'Return recorded — the host has been notified', b); }} />
+      )}
     </section>
   );
 }
