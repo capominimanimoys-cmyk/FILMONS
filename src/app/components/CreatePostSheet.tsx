@@ -34,7 +34,7 @@ import { toast } from 'sonner';
 import type { Visibility, Listing, Post, PostCourseAttachment } from '../types';
 import { registerPortfolioRepost, type PortfolioItem } from '../lib/portfolioApi';
 import { QuotedPostPreview } from './QuotedPostPreview';
-import { uploadPostMedia, forgetPostMedia } from '../lib/mediaPreupload';
+import { uploadPostMedia, forgetPostMedia, subscribeMediaStatus } from '../lib/mediaPreupload';
 
 interface MediaDraft {
   id: string;
@@ -126,6 +126,8 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
   const [drafts, setDrafts] = useState<PostDraft[]>([]);
 
   const [stage, setStage] = useState<'editing' | 'posting' | 'done'>('editing');
+  const [mediaStatus, setMediaStatus] = useState<string | null>(null);
+  useEffect(() => subscribeMediaStatus(setMediaStatus), []);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -255,7 +257,9 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
       // them (in parallel) and starts any that never began.
       const uploadMedia = async (items: MediaDraft[], folder: 'images' | 'videos'): Promise<string[]> => {
         const urls = await Promise.all(items.map(m => uploadPostMedia(m.previewUrl, user.id, folder, m.file)));
-        return urls.filter((u): u is string => !!u);
+        // Never publish a post that quietly lost its media: stop and say so, so the person can retry.
+        if (urls.some(u => !u)) throw new Error(`Some of your ${folder === 'videos' ? 'videos' : 'photos'} couldn’t be uploaded, so nothing was posted. Check your connection and try again.`);
+        return urls as string[];
       };
 
       const photoItems = media.filter(m => m.type === 'photo');
@@ -464,7 +468,8 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         {stage === 'posting' ? (
           <>
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-            <p className="text-sm font-bold text-gray-500">Posting…</p>
+            <p className="text-sm font-bold text-gray-500">{mediaStatus || 'Posting…'}</p>
+            {mediaStatus && <p className="text-xs text-gray-400 max-w-[16rem] text-center">Large files are compressed first so they upload and play everywhere.</p>}
           </>
         ) : (
           <>
