@@ -3,42 +3,109 @@
 // already in storage and publish only awaits whatever is left. Keyed by the
 // local blob: URL; a failed upload is evicted so publish retries it.
 //
-// Heavy files are shrunk in the browser first (see mediaCompress.ts), so a big photo or video
-// no longer fails the storage size limit and silently goes missing from the post.
+// Crash-safety rules this file enforces:
+//   * photos are always optimised first (1920px, WebP) -- the original never goes to storage;
+//   * heavy work is serialised: one photo/video optimisation at a time, at most two uploads at once;
+//   * uploads report progress, and everything is released when it finishes.
 import { supabase } from '../../lib/supabase';
-import { compressForUpload } from './mediaCompress';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { compressForUpload, optimizePhoto } from './mediaCompress';
 
 const inflight = new Map<string, Promise<string | null>>();
 
-// What the media pipeline is doing right now ("Compressing video… 40%"), for the posting screen.
+// ── Tiny FIFO limiter ────────────────────────────────────────────────────────────
+function limiter(max: number) {
+  let running = 0;
+  const queue: Array<() => void> = [];
+  const next = () => { running--; queue.shift()?.(); };
+  return async function run<T>(task: () => Promise<T>): Promise<T> {
+    if (running >= max) await new Promise<void>(res => queue.push(res));
+    running++;
+    try { return await task(); } finally { next(); }
+  };
+}
+const processOne = limiter(1);   // optimising/compressing is the memory-heavy part
+const uploadTwo = limiter(2);
+
+// ── Status for the posting screen ("Compressing video… 40%", "Uploading 2 files… 63%") ──
+let processing: string | null = null;
+const uploading = new Map<string, number>();   // upload id -> 0..100
 let status: string | null = null;
 const listeners = new Set<(s: string | null) => void>();
-function setStatus(s: string | null) { status = s; listeners.forEach(l => l(s)); }
+function publish() {
+  let next: string | null = processing;
+  if (!next && uploading.size) {
+    const avg = Math.round([...uploading.values()].reduce((a, b) => a + b, 0) / uploading.size);
+    next = `Uploading ${uploading.size > 1 ? `${uploading.size} files` : 'your media'}… ${avg}%`;
+  }
+  status = next;
+  listeners.forEach(l => l(status));
+}
+function setProcessing(s: string | null) { processing = s; publish(); }
 export function subscribeMediaStatus(cb: (s: string | null) => void): () => void {
   listeners.add(cb); cb(status);
   return () => { listeners.delete(cb); };
 }
 
-// Photos rarely need more than a few MB on a feed; videos get close to the storage cap before we touch them.
-const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+// Videos get close to the storage cap before we touch them; photos are always optimised.
 const VIDEO_MAX_BYTES = 40 * 1024 * 1024;
 
-async function shrink(blob: Blob, isVideo: boolean, maxBytes: number): Promise<Blob> {
-  const file = blob instanceof File ? blob : new File([blob], isVideo ? 'video' : 'image', { type: blob.type, lastModified: Date.now() });
+async function shrinkVideo(blob: Blob, maxBytes: number): Promise<Blob> {
+  const file = blob instanceof File ? blob : new File([blob], 'video', { type: blob.type, lastModified: Date.now() });
   if (file.size <= maxBytes) return blob;
-  setStatus(isVideo ? 'Compressing video…' : 'Compressing photo…');
-  try {
-    return await compressForUpload(file, pct => setStatus(`${isVideo ? 'Compressing video' : 'Compressing photo'}… ${pct}%`), maxBytes);
-  } finally {
-    setStatus(null);
-  }
+  return processOne(async () => {
+    setProcessing('Compressing video…');
+    try {
+      return await compressForUpload(file, pct => setProcessing(`Compressing video… ${pct}%`), maxBytes);
+    } finally {
+      setProcessing(null);
+    }
+  });
 }
 
-async function put(folder: string, userId: string, blob: Blob, isVideo: boolean) {
+async function shrinkPhoto(blob: Blob): Promise<Blob> {
+  return processOne(async () => {
+    setProcessing('Optimising photo…');
+    try { return await optimizePhoto(blob); } finally { setProcessing(null); }
+  });
+}
+
+/** POST to Storage with upload progress (supabase-js's upload() has none). */
+function putWithProgress(path: string, blob: Blob, onProgress: (pct: number) => void, token: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `https://${projectId}.supabase.co/storage/v1/object/posts/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('apikey', publicAnonKey);
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      let msg = `Upload failed (${xhr.status})`;
+      try { msg = JSON.parse(xhr.responseText)?.message || msg; } catch { /* keep generic */ }
+      reject(new Error(msg));
+    };
+    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.ontimeout = () => reject(new Error('Upload timed out'));
+    xhr.send(blob);
+  });
+}
+
+async function put(folder: string, userId: string, blob: Blob, isVideo: boolean): Promise<string> {
   const ext = blob.type.split('/')[1]?.split(';')[0].replace('jpeg', 'jpg') || (isVideo ? 'mp4' : 'jpg');
   const path = `${folder}/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-  const { error } = await supabase.storage.from('posts').upload(path, blob, { upsert: false, contentType: blob.type });
-  if (error) throw error;
+  const id = path;
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || publicAnonKey;
+  await uploadTwo(async () => {
+    uploading.set(id, 0); publish();
+    try {
+      await putWithProgress(path, blob, pct => { uploading.set(id, pct); publish(); }, token);
+    } finally {
+      uploading.delete(id); publish();
+    }
+  });
   return supabase.storage.from('posts').getPublicUrl(path).data.publicUrl;
 }
 
@@ -46,13 +113,13 @@ async function doUpload(previewUrl: string, userId: string, folder: string, file
   try {
     const isVideo = folder === 'videos';
     let blob: Blob = file ?? await (await fetch(previewUrl)).blob();
-    blob = await shrink(blob, isVideo, isVideo ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES);
+    blob = isVideo ? await shrinkVideo(blob, VIDEO_MAX_BYTES) : await shrinkPhoto(blob);
     try {
       return await put(folder, userId, blob, isVideo);
     } catch (e: any) {
       // The bucket may cap files lower than we assumed: squeeze harder once and retry.
       if (!/size|large|exceed/i.test(String(e?.message ?? e)) || blob.size < 2 * 1024 * 1024) throw e;
-      blob = await shrink(blob, isVideo, Math.floor(blob.size * 0.5));
+      blob = isVideo ? await shrinkVideo(blob, Math.floor(blob.size * 0.5)) : blob;
       return await put(folder, userId, blob, isVideo);
     }
   } catch (e) {

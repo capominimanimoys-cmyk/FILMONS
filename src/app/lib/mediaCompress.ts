@@ -158,3 +158,40 @@ export function maxTrimSeconds(file: File, duration: number, maxBytes = MAX_VIDE
 export async function trimVideo(file: File, range: TrimRange, onProgress?: Progress, maxBytes = MAX_VIDEO_BYTES): Promise<File> {
   return compressVideo(file, Math.floor(maxBytes * 0.9), onProgress, range);
 }
+
+// ── Photos: always optimise before upload ───────────────────────────────────────
+const PHOTO_MAX_SIDE = 1920;
+const PHOTO_SKIP_BYTES = 600 * 1024;   // already small: keep as-is
+
+/** Resizes (longest side 1920px), fixes orientation and re-encodes as WebP (JPEG where WebP can't be encoded).
+ *  Metadata (EXIF/GPS) is dropped by the re-encode. GIFs and anything that fails are returned unchanged. */
+export async function optimizePhoto(file: File | Blob): Promise<File | Blob> {
+  const type = (file.type || '').toLowerCase();
+  if (type === 'image/gif' || !type.startsWith('image/')) return file;
+  if (file.size <= PHOTO_SKIP_BYTES && type === 'image/webp') return file;
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size <= PHOTO_SKIP_BYTES) return file;
+    const w = Math.max(1, Math.round(bitmap.width * scale)), h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close(); bitmap = null;
+    let out = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/webp', 0.82));
+    if (!out || out.type !== 'image/webp') out = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.85));
+    canvas.width = canvas.height = 0;   // release the backing store right away
+    if (!out || out.size >= file.size) return file;
+    const ext = out.type === 'image/webp' ? 'webp' : 'jpg';
+    const base = (file instanceof File ? file.name : 'photo').replace(/\.[^.]+$/, '');
+    return new File([out], `${base}.${ext}`, { type: out.type, lastModified: Date.now() });
+  } catch (e) {
+    console.warn('[mediaCompress] photo optimisation failed, uploading original:', e);
+    return file;
+  } finally {
+    bitmap?.close();
+  }
+}

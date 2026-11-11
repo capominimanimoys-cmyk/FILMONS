@@ -36,6 +36,7 @@ import { registerPortfolioRepost, type PortfolioItem } from '../lib/portfolioApi
 import { QuotedPostPreview } from './QuotedPostPreview';
 import { uploadPostMedia, forgetPostMedia, subscribeMediaStatus } from '../lib/mediaPreupload';
 import { VideoTrimDialog } from './VideoTrimDialog';
+import { filterValidMedia } from '../lib/mediaValidate';
 
 interface MediaDraft {
   id: string;
@@ -218,9 +219,14 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
     setTimeout(() => { el?.focus(); el?.setSelectionRange(before.length, before.length); autoResize(); }, 10);
   };
 
-  const handleFiles = (files: FileList | null) => {
-    if (!files?.length) return;
-    const next: MediaDraft[] = Array.from(files).map(file => ({
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    // Reject unsupported / oversized media up front with a clear message, before anything heavy runs.
+    const { ok, errors } = await filterValidMedia(Array.from(fileList));
+    errors.forEach(msg => toast.error(msg, { duration: 7000 }));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!ok.length) return;
+    const next: MediaDraft[] = ok.map(file => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       file,
       previewUrl: URL.createObjectURL(file),
