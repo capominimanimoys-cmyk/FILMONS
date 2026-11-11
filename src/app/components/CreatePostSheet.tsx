@@ -35,6 +35,7 @@ import type { Visibility, Listing, Post, PostCourseAttachment } from '../types';
 import { registerPortfolioRepost, type PortfolioItem } from '../lib/portfolioApi';
 import { QuotedPostPreview } from './QuotedPostPreview';
 import { uploadPostMedia, forgetPostMedia, subscribeMediaStatus } from '../lib/mediaPreupload';
+import { VideoTrimDialog } from './VideoTrimDialog';
 
 interface MediaDraft {
   id: string;
@@ -127,6 +128,8 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
 
   const [stage, setStage] = useState<'editing' | 'posting' | 'done'>('editing');
   const [mediaStatus, setMediaStatus] = useState<string | null>(null);
+  // A video that couldn't be uploaded even after compression: the person trims it to the allowed length.
+  const [trimTarget, setTrimTarget] = useState<MediaDraft | null>(null);
   useEffect(() => subscribeMediaStatus(setMediaStatus), []);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -258,7 +261,14 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
       const uploadMedia = async (items: MediaDraft[], folder: 'images' | 'videos'): Promise<string[]> => {
         const urls = await Promise.all(items.map(m => uploadPostMedia(m.previewUrl, user.id, folder, m.file)));
         // Never publish a post that quietly lost its media: stop and say so, so the person can retry.
-        if (urls.some(u => !u)) throw new Error(`Some of your ${folder === 'videos' ? 'videos' : 'photos'} couldn’t be uploaded, so nothing was posted. Check your connection and try again.`);
+        const failed = items.filter((_, i) => !urls[i]);
+        if (failed.length) {
+          if (folder === 'videos' && failed[0].file) {
+            setTrimTarget(failed[0]);
+            throw new Error('This video is too large to upload. Trim it to the allowed length, then post again — nothing was posted.');
+          }
+          throw new Error(`Some of your ${folder === 'videos' ? 'videos' : 'photos'} couldn’t be uploaded, so nothing was posted. Check your connection and try again.`);
+        }
         return urls as string[];
       };
 
@@ -462,6 +472,17 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
 
   const canPost = hasContent && stage === 'editing';
 
+  const applyTrimmed = (trimmed: File) => {
+    const target = trimTarget;
+    if (!target || !user) { setTrimTarget(null); return; }
+    forgetPostMedia(target.previewUrl);
+    const previewUrl = URL.createObjectURL(trimmed);
+    setMedia(p => p.map(m => m.id === target.id ? { ...m, file: trimmed, previewUrl } : m));
+    uploadPostMedia(previewUrl, user.id, 'videos', trimmed);   // start uploading the trimmed clip right away
+    setTrimTarget(null);
+    toast.success('Video trimmed. Tap Post when you’re ready.');
+  };
+
   if (stage === 'posting' || stage === 'done') {
     return (
       <div className="fixed inset-0 z-[85] bg-white flex flex-col items-center justify-center gap-4">
@@ -495,6 +516,8 @@ export function CreatePostSheet({ onClose, onPost, currentUser, initialAction, i
         @keyframes createPostIn  { from { transform:translateY(100%) } to { transform:translateY(0) } }
         @keyframes createPostOut { from { transform:translateY(0) } to { transform:translateY(100%) } }
       `}</style>
+
+      {trimTarget && <VideoTrimDialog file={trimTarget.file} onCancel={() => setTrimTarget(null)} onDone={applyTrimmed} />}
 
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 pt-12 pb-3 border-b border-gray-100">

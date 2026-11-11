@@ -62,7 +62,9 @@ function pickVideoMime(): { mime: string; ext: string } | null {
 }
 
 /** Plays the video once into a MediaRecorder (real time) at a bitrate sized to fit the limit. */
-async function compressVideo(file: File, target: number, onProgress?: Progress): Promise<File> {
+export type TrimRange = { start: number; end: number };
+
+async function compressVideo(file: File, target: number, onProgress?: Progress, range?: TrimRange): Promise<File> {
   const fmt = pickVideoMime();
   if (!fmt || typeof HTMLCanvasElement.prototype.captureStream !== 'function') throw new Error('video compression unsupported');
 
@@ -74,7 +76,11 @@ async function compressVideo(file: File, target: number, onProgress?: Progress):
       video.onloadedmetadata = () => res();
       video.onerror = () => rej(new Error('video unreadable'));
     });
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    const fullDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    const rangeStart = range ? Math.max(0, range.start) : 0;
+    const rangeEnd = range ? Math.min(range.end, fullDuration || range.end) : fullDuration;
+    // Only the selected part is re-encoded, so the bitrate budget is spread over just that length.
+    const duration = range ? Math.max(0.1, rangeEnd - rangeStart) : fullDuration;
     const AUDIO_BPS = 96_000;
     const budgetBits = target * 8 * 0.9;
     const videoBps = duration
@@ -109,25 +115,46 @@ async function compressVideo(file: File, target: number, onProgress?: Progress):
     let raf = 0;
     const draw = () => {
       ctx.drawImage(video, 0, 0, w, h);
-      if (duration) onProgress?.(Math.min(99, Math.round((video.currentTime / duration) * 100)));
+      if (duration) onProgress?.(Math.min(99, Math.round(((video.currentTime - rangeStart) / duration) * 100)));
       raf = requestAnimationFrame(draw);
     };
-    const ended = new Promise<void>(res => { video.onended = () => res(); });
+    const ended = new Promise<void>(res => {
+      video.onended = () => res();
+      if (range) video.ontimeupdate = () => { if (video.currentTime >= rangeEnd) res(); };
+    });
+    if (rangeStart > 0) {
+      await new Promise<void>(res => { video.onseeked = () => res(); video.currentTime = rangeStart; });
+    }
     recorder.start(1000);
     await video.play();
     draw();
     await ended;
     cancelAnimationFrame(raf);
+    video.pause();
     recorder.stop();
     await stopped;
     audioCtx?.close().catch(() => {});
 
     const blob = new Blob(chunks, { type: fmt.mime.split(';')[0] });
-    if (!blob.size || blob.size >= file.size) throw new Error('compressed video not smaller');
+    if (!blob.size || (!range && blob.size >= file.size)) throw new Error('compressed video not smaller');
     onProgress?.(100);
     return renamed(file, fmt.ext, blob.type, blob);
   } finally {
     URL.revokeObjectURL(url);
     video.removeAttribute('src');
   }
+}
+
+/** Largest video we will upload, and the length-per-size rule the trimmer uses. */
+export const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+
+/** The longest stretch of this video that still fits the size limit (at its own average bitrate). */
+export function maxTrimSeconds(file: File, duration: number, maxBytes = MAX_VIDEO_BYTES): number {
+  if (!duration || file.size <= maxBytes) return duration;
+  return Math.max(1, Math.floor(duration * (maxBytes / file.size)));
+}
+
+/** Cuts [start, end] out of a video, re-encoded to fit the size limit. */
+export async function trimVideo(file: File, range: TrimRange, onProgress?: Progress, maxBytes = MAX_VIDEO_BYTES): Promise<File> {
+  return compressVideo(file, Math.floor(maxBytes * 0.9), onProgress, range);
 }

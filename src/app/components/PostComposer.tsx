@@ -30,7 +30,8 @@ import { inviteCollaborator } from '../lib/collabApi';
 import { ListingBrowser } from './ListingBrowser';
 import { PortfolioBrowser } from './PortfolioBrowser';
 import { AudioPostComposer } from './AudioPostComposer';
-import { uploadPostMedia, subscribeMediaStatus } from '../lib/mediaPreupload';
+import { uploadPostMedia, subscribeMediaStatus, forgetPostMedia } from '../lib/mediaPreupload';
+import { VideoTrimFromUrl } from './VideoTrimDialog';
 import * as notifs from '../lib/notifications';
 import { notifyEvent } from '../lib/notifyEvent';
 import { toast } from 'sonner';
@@ -2560,6 +2561,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [kind,       setKind]    = useState<PostKind>(mode==='reel'?'reel':'photo');
   const [publishing, setPub]     = useState(false);
   const [mediaStatus, setMediaStatus] = useState<string | null>(null);
+  // A video that couldn't be uploaded even after compression: the person trims it to the allowed length.
+  const [trimVideoUrl, setTrimVideoUrl] = useState<string | null>(null);
   useEffect(() => subscribeMediaStatus(setMediaStatus), []);
   const [showAudioComposer, setShowAudioComposer] = useState(false);
 
@@ -3028,7 +3031,13 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           const remote = await uploadPostMedia(url, user.id, folder);
           // A local blob:/data: URL only works on this device, so saving it would
           // publish a post whose media never loads for anyone. Fail visibly instead.
-          if (!remote) throw new Error(`Your ${folder === 'videos' ? 'video' : 'photo'} couldn't be uploaded. Check your connection and try again.`);
+          if (!remote) {
+            if (folder === 'videos') {
+              setTrimVideoUrl(url);
+              throw new Error('This video is too large to upload. Trim it to the allowed length, then post again — nothing was posted.');
+            }
+            throw new Error(`Your photo couldn't be uploaded. Check your connection and try again.`);
+          }
           return remote;
         }));
       };
@@ -3244,6 +3253,17 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
     if (tags.length > 0) { try { await attachHashtagsToPost(postId, tags); } catch {} }
   };
 
+  const applyTrimmedVideo = (trimmed: File) => {
+    const old = trimVideoUrl;
+    setTrimVideoUrl(null);
+    if (!old || !user) return;
+    forgetPostMedia(old);
+    const fresh = URL.createObjectURL(trimmed);
+    if (videoUrl === old) setVideo(fresh); else setExtraVideos(v => v.map(u => u === old ? fresh : u));
+    uploadPostMedia(fresh, user.id, 'videos', trimmed);   // start uploading the trimmed clip right away
+    toast.success('Video trimmed. Tap Post when you’re ready.');
+  };
+
   if(publishing) return (
     <div className="fixed inset-0 z-[60] bg-gray-950 flex flex-col items-center justify-center gap-4">
       <div className="w-12 h-12 border-3 border-blue-400 border-t-transparent rounded-full animate-spin"/>
@@ -3300,6 +3320,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
           onClose={() => { setPublishedPost(null); onClose(); }}
         />
       )}
+
+      {trimVideoUrl && <VideoTrimFromUrl url={trimVideoUrl} onCancel={() => setTrimVideoUrl(null)} onDone={applyTrimmedVideo} />}
 
       {/* SoundTrimSheet — edit audio segment */}
       {showTrimSheet && selectedMusic && (
