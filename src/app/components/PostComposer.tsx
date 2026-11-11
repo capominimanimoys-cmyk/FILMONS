@@ -30,7 +30,7 @@ import { inviteCollaborator } from '../lib/collabApi';
 import { ListingBrowser } from './ListingBrowser';
 import { PortfolioBrowser } from './PortfolioBrowser';
 import { AudioPostComposer } from './AudioPostComposer';
-import { uploadPostMedia } from '../lib/mediaPreupload';
+import { uploadPostMedia, subscribeMediaStatus } from '../lib/mediaPreupload';
 import * as notifs from '../lib/notifications';
 import { notifyEvent } from '../lib/notifyEvent';
 import { toast } from 'sonner';
@@ -2559,6 +2559,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   const [step,       setStep]    = useState<FlowStep>(mode==='reel'?'gallery':'typeSelect');
   const [kind,       setKind]    = useState<PostKind>(mode==='reel'?'reel':'photo');
   const [publishing, setPub]     = useState(false);
+  const [mediaStatus, setMediaStatus] = useState<string | null>(null);
+  useEffect(() => subscribeMediaStatus(setMediaStatus), []);
   const [showAudioComposer, setShowAudioComposer] = useState(false);
 
   // Permission
@@ -3245,7 +3247,8 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
   if(publishing) return (
     <div className="fixed inset-0 z-[60] bg-gray-950 flex flex-col items-center justify-center gap-4">
       <div className="w-12 h-12 border-3 border-blue-400 border-t-transparent rounded-full animate-spin"/>
-      <p className="text-sm font-bold text-white/60">Publishing…</p>
+      <p className="text-sm font-bold text-white/60">{mediaStatus || 'Publishing…'}</p>
+      {mediaStatus && <p className="text-xs text-white/40 max-w-[16rem] text-center">Large files are compressed first so they upload and play everywhere.</p>}
     </div>
   );
 
