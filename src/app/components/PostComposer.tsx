@@ -32,6 +32,7 @@ import { PortfolioBrowser } from './PortfolioBrowser';
 import { AudioPostComposer } from './AudioPostComposer';
 import { uploadPostMedia, subscribeMediaStatus, forgetPostMedia } from '../lib/mediaPreupload';
 import { VideoTrimFromUrl } from './VideoTrimDialog';
+import { filterValidMedia } from '../lib/mediaValidate';
 import * as notifs from '../lib/notifications';
 import { notifyEvent } from '../lib/notifyEvent';
 import { toast } from 'sonner';
@@ -2773,8 +2774,13 @@ export function PostComposer({onClose,onPost,currentUser,mode='post',initialAudi
     fileRef.current.value='';
     fileRef.current.click();
   };
-  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
+    // Reject unsupported / oversized media up front with a clear message, before anything heavy runs.
+    const { ok: files, errors } = await filterValidMedia(picked.filter(f => !f.type.startsWith('audio')));
+    errors.forEach(msg => toast.error(msg, { duration: 7000 }));
+    picked.filter(f => f.type.startsWith('audio')).forEach(f => files.push(f));
     if (!files.length) return;
     const items: GalleryFile[] = files.map(f => ({
       url:  URL.createObjectURL(f),
