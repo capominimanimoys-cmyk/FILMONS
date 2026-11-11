@@ -171,7 +171,7 @@ GRANT SELECT (
 
 -- ── storage: lesson videos, intro videos, resources ─────────────────────
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
-VALUES ('course-media', 'course-media', true, 2147483648)  -- 2 GB per file (the project-wide limit may be lower)
+VALUES ('course-media', 'course-media', true, 524288000)  -- 500 MB per file; must not exceed the project-wide upload limit
 ON CONFLICT (id) DO UPDATE SET file_size_limit = EXCLUDED.file_size_limit;
 
 DROP POLICY IF EXISTS "course_media_bucket_all" ON storage.objects;

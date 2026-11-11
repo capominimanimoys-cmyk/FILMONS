@@ -47,8 +47,10 @@ export function subscribeMediaStatus(cb: (s: string | null) => void): () => void
   return () => { listeners.delete(cb); };
 }
 
-// Videos get close to the storage cap before we touch them; photos are always optimised.
-const VIDEO_MAX_BYTES = 40 * 1024 * 1024;
+// Videos up to 500 MB upload as they are. If storage still refuses one (its own cap is lower), it is compressed to the
+// safe size below and retried once. Photos are always optimised.
+const VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const VIDEO_SAFE_BYTES = 40 * 1024 * 1024;
 
 async function shrinkVideo(blob: Blob, maxBytes: number): Promise<Blob> {
   const file = blob instanceof File ? blob : new File([blob], 'video', { type: blob.type, lastModified: Date.now() });
@@ -119,7 +121,7 @@ async function doUpload(previewUrl: string, userId: string, folder: string, file
     } catch (e: any) {
       // The bucket may cap files lower than we assumed: squeeze harder once and retry.
       if (!/size|large|exceed/i.test(String(e?.message ?? e)) || blob.size < 2 * 1024 * 1024) throw e;
-      blob = isVideo ? await shrinkVideo(blob, Math.floor(blob.size * 0.5)) : blob;
+      blob = isVideo ? await shrinkVideo(blob, Math.min(VIDEO_SAFE_BYTES, Math.floor(blob.size * 0.5))) : blob;
       return await put(folder, userId, blob, isVideo);
     }
   } catch (e) {
